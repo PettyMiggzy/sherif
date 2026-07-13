@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>$SHERIFF: Rob the Rich</title>
   <meta name="description" content="Catch the gold falling from the Sheriff's overloaded carriage — dodge the tax stamps. A $SHERIFF community arcade game." />
-  <link rel="icon" href="../assets/logo.svg" type="image/svg+xml" />
+  <link rel="icon" href="../assets/brand/sheriff-pfp.webp" type="image/webp" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
@@ -32,7 +32,7 @@
     .wrap{ display:grid; gap:10px; justify-items:center; width:min(500px, 96vw); }
     .titlebar{ width:100%; display:flex; align-items:center; justify-content:space-between; }
     .logo{ display:flex; align-items:center; gap:.5rem; font-family:'Bebas Neue'; font-size:1.5rem; letter-spacing:1px; }
-    .logo img{ width:28px; height:28px; filter:drop-shadow(0 0 8px rgba(204,255,0,.5)); }
+    .logo img{ width:28px; height:28px; border-radius:50%; object-fit:cover; border:1.5px solid var(--lime); filter:drop-shadow(0 0 8px rgba(204,255,0,.45)); }
     .logo b{ color:var(--lime); font-weight:400; }
     .home{ font-weight:700; font-size:.82rem; color:var(--muted); text-decoration:none;
       background:var(--card); border:1px solid var(--line); padding:.45em .9em; border-radius:999px; }
@@ -60,7 +60,7 @@
 <body>
   <div class="wrap">
     <div class="titlebar">
-      <div class="logo"><img src="../assets/logo.svg" alt="" /> <span><b>$SHERIFF</b> · ROB THE RICH</span></div>
+      <div class="logo"><img src="../assets/brand/sheriff-pfp.webp" alt="" /> <span><b>$SHERIFF</b> · ROB THE RICH</span></div>
       <a class="home" href="../index.html">← Home</a>
     </div>
 
