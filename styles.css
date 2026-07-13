@@ -280,6 +280,7 @@ h1,h2,h3,.display{font-family:'Bebas Neue',sans-serif;font-weight:400;letter-spa
   .nav-links.open{transform:none}
   .nav-toggle{display:block}
   .hero-inner{grid-template-columns:1fr;text-align:center}
+  .hero-art{order:-1;margin-bottom:1.6rem}
   .hero-sub{margin-inline:auto}.hero-cta,.contract,.chips,.badge{justify-content:center;margin-inline:auto}
   .hero-logo{margin-inline:auto}
   .why{grid-template-columns:repeat(2,1fr)}
