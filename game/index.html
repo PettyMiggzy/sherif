@@ -1,82 +1,364 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>TAX GRAB — $SHERIFF</title>
-<meta name="description" content="Play the Sheriff. Grab every falling coin, sack and bill — dodge Robin Hood's arrows. He keeps ALL the taxes." />
-<link rel="icon" href="../assets/logo.svg" type="image/svg+xml" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet" />
-<style>
-:root{--lime:#ccff00;--gold:#f5c542;--ink:#0c0e05;--bg:#0d0f07;--white:#f6f7f1;--muted:#a7ad97}
-*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;overflow:hidden;background:var(--bg);font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:var(--white)}
-#wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
-canvas{display:block;touch-action:none}
-.ui{position:absolute;inset:0;pointer-events:none}
-.top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px;font-family:'Bebas Neue';letter-spacing:1px}
-.score{font-size:2.4rem;line-height:1;color:var(--gold);text-shadow:0 2px 8px rgba(0,0,0,.6)}
-.score small{display:block;font-family:'Plus Jakarta Sans';font-weight:700;font-size:.7rem;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
-.right{text-align:right}
-.combo{font-size:1.6rem;color:var(--lime);opacity:0;transition:opacity .2s;text-shadow:0 2px 8px rgba(0,0,0,.6)}
-.combo.on{opacity:1}
-.lives{font-size:1.4rem;margin-top:2px;letter-spacing:2px}
-.back{position:absolute;top:16px;left:50%;transform:translateX(-50%);pointer-events:auto;font-family:'Plus Jakarta Sans';font-weight:700;font-size:.8rem;color:var(--muted);text-decoration:none;background:rgba(0,0,0,.35);padding:.4em .9em;border-radius:999px;border:1px solid rgba(255,255,255,.12)}
-.bubble{position:absolute;max-width:230px;background:var(--white);color:var(--ink);font-weight:700;font-size:.92rem;padding:.6em .9em;border-radius:14px;opacity:0;transform:translateY(6px) scale(.96);transition:opacity .2s,transform .2s;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.4)}
-.bubble.on{opacity:1;transform:none}
-.bubble::after{content:"";position:absolute;bottom:-8px;left:28px;border:8px solid transparent;border-top-color:var(--white);border-bottom:0}
-.overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;pointer-events:auto;background:radial-gradient(circle at 50% 40%,rgba(13,15,7,.72),rgba(13,15,7,.94))}
-.overlay.hidden{display:none}
-.overlay h1{font-family:'Bebas Neue';font-size:clamp(3rem,13vw,5.5rem);line-height:.9;letter-spacing:2px}
-.overlay h1 .g{color:var(--gold)}.overlay h1 .l{color:var(--lime)}
-.overlay p{color:var(--muted);max-width:34ch;margin:.7rem 0 1.4rem;font-size:1.02rem;line-height:1.5}
-.overlay .big{font-family:'Bebas Neue';font-size:2rem;color:var(--gold);margin:.2rem 0}
-.overlay .big small{font-family:'Plus Jakarta Sans';font-weight:700;font-size:.7rem;letter-spacing:2px;color:var(--muted);display:block;text-transform:uppercase}
-.btn{pointer-events:auto;background:var(--lime);color:var(--ink);font-family:'Plus Jakarta Sans';font-weight:800;font-size:1.15rem;padding:.85em 2em;border:none;border-radius:999px;cursor:pointer;box-shadow:0 10px 30px rgba(204,255,0,.3);transition:transform .12s}
-.btn:active{transform:scale(.96)}
-.hint{margin-top:1.1rem;font-size:.82rem;color:var(--muted)}
-.mute{position:absolute;bottom:14px;right:16px;pointer-events:auto;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.12);color:var(--white);width:42px;height:42px;border-radius:50%;font-size:1.1rem;cursor:pointer}
-.sheriffPeek{width:min(240px,52vw);margin-bottom:.6rem;filter:drop-shadow(0 12px 30px rgba(0,0,0,.6))}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>$SHERIFF: Rob the Rich</title>
+  <meta name="description" content="Catch the gold falling from the Sheriff's overloaded carriage — dodge the tax stamps. A $SHERIFF community arcade game." />
+  <link rel="icon" href="../assets/logo.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <!--
+    $SHERIFF: Rob the Rich — a reskin of "Catch & Dodge" by Mehedi Hasan Siddique.
+    Original: https://github.com/Darkraider888/Catch-Dodge  (MIT License)
+    MIT License, Copyright (c) 2026 Mehedi Hasan Siddique — see CATCH-DODGE-LICENSE.
+    Community meme game. No financial value, reward, or token/airdrop mechanic.
+  -->
+  <style>
+    :root{ color-scheme: dark;
+      --bg:#0d0f07; --card:rgba(255,255,255,.04); --line:rgba(255,255,255,.1);
+      --lime:#ccff00; --gold:#f5c542; --white:#f6f7f1; --muted:#a7ad97; --ink:#0c0e05; }
+    *{box-sizing:border-box}
+    body{
+      margin:0; min-height:100vh; display:grid; place-items:center;
+      background:
+        radial-gradient(1100px 700px at 50% 8%, rgba(204,255,0,.08), transparent 60%),
+        radial-gradient(700px 500px at 50% 100%, rgba(245,197,66,.07), transparent 60%),
+        var(--bg);
+      font-family:'Plus Jakarta Sans', system-ui, sans-serif; color:var(--white);
+      user-select:none; overflow:hidden; padding:12px;
+    }
+    .wrap{ display:grid; gap:10px; justify-items:center; width:min(500px, 96vw); }
+    .titlebar{ width:100%; display:flex; align-items:center; justify-content:space-between; }
+    .logo{ display:flex; align-items:center; gap:.5rem; font-family:'Bebas Neue'; font-size:1.5rem; letter-spacing:1px; }
+    .logo img{ width:28px; height:28px; filter:drop-shadow(0 0 8px rgba(204,255,0,.5)); }
+    .logo b{ color:var(--lime); font-weight:400; }
+    .home{ font-weight:700; font-size:.82rem; color:var(--muted); text-decoration:none;
+      background:var(--card); border:1px solid var(--line); padding:.45em .9em; border-radius:999px; }
+    .home:hover{ color:var(--lime); border-color:rgba(204,255,0,.3); }
+    .bar{ width:100%; display:flex; justify-content:space-between; align-items:center; font-family:'Bebas Neue'; letter-spacing:1px; font-size:1.3rem; }
+    .bar .gold{ color:var(--gold); }
+    .bar .best{ color:var(--muted); }
+    canvas{ width:100%; aspect-ratio:3/4; background:#0a0d05; border:1px solid var(--line);
+      border-radius:16px; box-shadow:0 22px 60px rgba(0,0,0,.55); touch-action:none; }
+    .buttons{ width:100%; display:flex; gap:10px; justify-content:center; }
+    button{ appearance:none; border:1px solid var(--line); background:var(--card); color:var(--white);
+      padding:13px 16px; border-radius:12px; font-family:'Plus Jakarta Sans'; font-weight:700; cursor:pointer;
+      min-width:92px; transition:transform .05s, border-color .2s; }
+    button:hover{ border-color:rgba(204,255,0,.3); }
+    button:active{ transform:translateY(1px) scale(.99); }
+    .small{ min-width:64px; padding:13px 14px; font-size:1.2rem; }
+    #btnPause{ background:var(--lime); color:var(--ink); border-color:var(--lime); }
+    .hint{ opacity:.7; font-size:.78rem; text-align:center; line-height:1.4; color:var(--muted); }
+    .kbd{ font-family:ui-monospace,Menlo,Consolas,monospace; background:rgba(255,255,255,.07);
+      border:1px solid rgba(255,255,255,.12); padding:1px 6px; border-radius:6px; }
+    .credit{ font-size:.66rem; color:var(--muted); opacity:.55; text-align:center; }
+    .credit a{ color:var(--muted); }
+  </style>
 </head>
 <body>
-<div id="wrap"><canvas id="c"></canvas></div>
-
-<div class="ui">
-  <div class="top">
-    <div class="score" id="scoreBox">0<small>Taxes</small></div>
-    <a class="back" href="../index.html">← Home</a>
-    <div class="right">
-      <div class="combo" id="comboBox">x2</div>
-      <div class="lives" id="livesBox">🪙🪙🪙</div>
+  <div class="wrap">
+    <div class="titlebar">
+      <div class="logo"><img src="../assets/logo.svg" alt="" /> <span><b>$SHERIFF</b> · ROB THE RICH</span></div>
+      <a class="home" href="../index.html">← Home</a>
     </div>
+
+    <div class="bar">
+      <div id="uiLeft"><span class="gold">GOLD 0</span> · VILLAGERS 🪙🪙🪙</div>
+      <div id="uiRight" class="best">BEST 0</div>
+    </div>
+
+    <canvas id="game" width="480" height="640" aria-label="Rob the Rich game"></canvas>
+
+    <div class="buttons">
+      <button id="btnLeft" class="small">◀</button>
+      <button id="btnPause">Play</button>
+      <button id="btnRight" class="small">▶</button>
+    </div>
+
+    <div class="hint">
+      Catch the <b>gold</b> (+10) &amp; <b>TAXES sacks</b> (+50) — dodge the <b>tax stamps</b> (lose a villager).<br/>
+      <span class="kbd">←</span>/<span class="kbd">→</span> or <span class="kbd">A</span>/<span class="kbd">D</span> · drag to move · <span class="kbd">P</span> to pause
+    </div>
+    <div class="credit">Community meme game · no financial value or reward · based on <a href="https://github.com/Darkraider888/Catch-Dodge" target="_blank" rel="noopener">Catch &amp; Dodge</a> (MIT)</div>
   </div>
-  <div class="bubble" id="bubble"></div>
-  <button class="mute" id="muteBtn">🔊</button>
-</div>
 
-<!-- START -->
-<div class="overlay" id="startScreen">
-  <img class="sheriffPeek" id="peek" alt="" src="sprites/face-scheme.png" />
-  <h1><span class="g">TAX</span> <span class="l">GRAB</span></h1>
-  <p>You're the Sheriff. Catch every falling coin, sack &amp; bill — and <b>dodge Robin Hood's arrows</b>. Keep it <i>all</i>.</p>
-  <button class="btn" id="startBtn">▶ Start Collecting</button>
-  <div class="hint">Drag / move mouse to slide · ← → or A/D on keyboard</div>
-</div>
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const uiLeft  = document.getElementById('uiLeft');
+  const uiRight = document.getElementById('uiRight');
+  const btnLeft = document.getElementById('btnLeft');
+  const btnRight = document.getElementById('btnRight');
+  const btnPause = document.getElementById('btnPause');
 
-<!-- GAME OVER -->
-<div class="overlay hidden" id="overScreen">
-  <img class="sheriffPeek" id="overFace" alt="" src="sprites/face-nervous.png" />
-  <h1><span class="g">TAX</span> <span class="l">AUDIT</span></h1>
-  <div class="big" id="finalScore">0<small>You collected</small></div>
-  <div class="big" id="bestScore">0<small>Best haul</small></div>
-  <p id="overQuote">"Every road leads to my taxes."</p>
-  <button class="btn" id="againBtn">↻ Collect Again</button>
-  <div class="hint"><a href="../index.html" style="color:var(--muted)">← Back to $SHERIFF</a></div>
-</div>
+  // Sheriff portrait (real brand art) for overlays
+  const sheriffImg = new Image(); let sheriffReady = false;
+  sheriffImg.onload = () => sheriffReady = true;
+  sheriffImg.src = '../assets/brand/sheriff-pfp.webp';
 
-<script src="game.js"></script>
+  // ---------- sound ----------
+  let audioCtx = null;
+  function beep(freq = 440, dur = 0.06, vol = 0.05, type = 'sine', slide = 0) {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const t0 = audioCtx.currentTime;
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = type; o.frequency.value = freq;
+      if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(50, freq + slide), t0 + dur);
+      g.gain.value = vol; g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(g); g.connect(audioCtx.destination); o.start(t0); o.stop(t0 + dur);
+    } catch {}
+  }
+
+  const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+  const rand = (a,b) => a + Math.random()*(b-a);
+  function rectCircleCollide(rx,ry,rw,rh,cx,cy,cr){
+    const px=clamp(cx,rx,rx+rw), py=clamp(cy,ry,ry+rh), dx=cx-px, dy=cy-py;
+    return (dx*dx+dy*dy) <= cr*cr;
+  }
+
+  // ---------- gold-dust ambient ----------
+  const dust = Array.from({length:70}, () => ({ x:Math.random()*canvas.width, y:Math.random()*canvas.height, r:rand(.5,1.7), s:rand(8,34) }));
+
+  // ---------- state ----------
+  const STORAGE_KEY = 'sheriff_rob_the_rich_best_v1';
+  let best = Number(localStorage.getItem(STORAGE_KEY) || 0);
+  let state = 'menu';
+  let score = 0, lives = 3, elapsed = 0, spawnAcc = 0, lastT = performance.now(), shake = 0;
+  const player = { w: 74, h: 26, x: canvas.width/2 - 37, y: canvas.height - 52, speed: 360 };
+  const drops = [];
+  const pops = []; // score popups
+
+  const QUOTES = [
+    'Every road leads to my taxes.', 'The kingdom runs on taxes… and I own the kingdom.',
+    'Justice has a price.', 'Tax season never ends.', "You can't rob a robber.",
+    'Your gold looks better in my vault.', 'I don’t steal. I collect.'
+  ];
+  let overQuote = QUOTES[0];
+
+  // ---------- input ----------
+  const keys = { left:false, right:false };
+  function setKey(s,v){ keys[s]=v; }
+  addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    if (k==='arrowleft'||k==='a') setKey('left',true);
+    if (k==='arrowright'||k==='d') setKey('right',true);
+    if (k==='p') togglePause();
+    if (k==='enter'||k===' ') { if (state==='menu'||state==='gameover') startGame(); else if (state==='paused') togglePause(); }
+  });
+  addEventListener('keyup', (e) => {
+    const k = e.key.toLowerCase();
+    if (k==='arrowleft'||k==='a') setKey('left',false);
+    if (k==='arrowright'||k==='d') setKey('right',false);
+  });
+  function holdButton(btn, side){
+    const down=(e)=>{e.preventDefault();setKey(side,true);}; const up=(e)=>{e.preventDefault();setKey(side,false);};
+    btn.addEventListener('pointerdown',down); btn.addEventListener('pointerup',up);
+    btn.addEventListener('pointercancel',up); btn.addEventListener('pointerleave',up);
+  }
+  holdButton(btnLeft,'left'); holdButton(btnRight,'right');
+  btnPause.addEventListener('click', () => { if (state==='menu'||state==='gameover') startGame(); else togglePause(); });
+
+  let dragging=false;
+  canvas.addEventListener('pointerdown', (e)=>{ dragging=true; canvas.setPointerCapture(e.pointerId); if(state==='menu'||state==='gameover') startGame(); movePlayerToPointer(e); });
+  canvas.addEventListener('pointermove', (e)=>{ if(dragging) movePlayerToPointer(e); });
+  canvas.addEventListener('pointerup', ()=>dragging=false);
+  canvas.addEventListener('pointercancel', ()=>dragging=false);
+  function movePlayerToPointer(e){ const r=canvas.getBoundingClientRect(); const nx=(e.clientX-r.left)/r.width*canvas.width; player.x=clamp(nx-player.w/2,10,canvas.width-player.w-10); }
+
+  // ---------- control ----------
+  function reset(){ score=0; lives=3; elapsed=0; spawnAcc=0; drops.length=0; pops.length=0; player.x=canvas.width/2-player.w/2; shake=0; }
+  function startGame(){ reset(); state='playing'; btnPause.textContent='Pause'; try{if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();audioCtx.resume();}catch{} beep(680,0.05,0.06,'triangle',200); }
+  function togglePause(){
+    if(state==='playing'){ state='paused'; btnPause.textContent='Resume'; beep(300,0.05,0.04); }
+    else if(state==='paused'){ state='playing'; btnPause.textContent='Pause'; beep(520,0.05,0.04); }
+  }
+  function gameOver(){
+    state='gameover'; btnPause.textContent='Play';
+    beep(200,0.12,0.06,'sawtooth',-90); beep(150,0.14,0.06,'sawtooth',-60);
+    overQuote = QUOTES[(Math.random()*QUOTES.length)|0];
+    if(score>best){ best=score; localStorage.setItem(STORAGE_KEY,String(best)); }
+  }
+
+  // ---------- spawn ----------
+  function spawnDrop(){
+    const t = elapsed;
+    const taxChance = clamp(0.12 + t*0.01, 0.12, 0.55);
+    let type;
+    if (Math.random() < taxChance) type = 'tax';
+    else if (Math.random() < 0.07) type = 'bag';   // rare bonus sack
+    else type = 'coin';
+    const r = type==='bag' ? rand(17,20) : (type==='coin' ? rand(11,15) : rand(13,17));
+    const x = rand(20+r, canvas.width-20-r), y = -30-r;
+    const vy = (120 + t*8) + rand(0,90);
+    drops.push({ x, y, r, vy, type, spin: rand(0,6.28) });
+  }
+
+  // ---------- update ----------
+  function update(dt){
+    if(state!=='playing') return;
+    elapsed += dt;
+    const dir = (keys.right?1:0) - (keys.left?1:0);
+    player.x = clamp(player.x + dir*player.speed*dt, 10, canvas.width-player.w-10);
+    for(const s of dust){ s.y += s.s*dt; if(s.y>canvas.height+4){ s.y=-4; s.x=Math.random()*canvas.width; } }
+    const interval = clamp(0.75 - elapsed*0.01, 0.22, 0.75);
+    spawnAcc += dt;
+    while(spawnAcc>=interval){ spawnAcc-=interval; spawnDrop(); }
+    for(let i=drops.length-1;i>=0;i--){
+      const d=drops[i]; d.y += d.vy*dt; d.spin += dt*4;
+      if(rectCircleCollide(player.x,player.y,player.w,player.h,d.x,d.y,d.r)){
+        if(d.type==='tax'){
+          lives--; shake=12; beep(120,0.09,0.07,'square',-40);
+          if(lives<=0){ drops.splice(i,1); gameOver(); return; }
+        } else {
+          const val = d.type==='bag' ? 50 : 10;
+          score += val;
+          pops.push({ x:d.x, y:d.y, life:1, text:'+'+val, gold:true });
+          if(d.type==='bag'){ beep(520,0.14,0.06,'square',260); setTimeout(()=>beep(780,0.12,0.05,'square',160),60); }
+          else beep(860,0.05,0.05,'triangle',260);
+        }
+        drops.splice(i,1); continue;
+      }
+      if(d.y>canvas.height+40) drops.splice(i,1);
+    }
+    for(let i=pops.length-1;i>=0;i--){ const p=pops[i]; p.life-=dt*1.5; p.y-=34*dt; if(p.life<=0) pops.splice(i,1); }
+    shake = Math.max(0, shake - 30*dt);
+  }
+
+  // ---------- draw helpers ----------
+  function shieldArrow(cx, cy, s, color){
+    ctx.save(); ctx.translate(cx,cy);
+    ctx.strokeStyle=color; ctx.lineWidth=s*0.16; ctx.lineCap='round'; ctx.lineJoin='round';
+    // shield outline
+    ctx.beginPath();
+    ctx.moveTo(0,-s); ctx.lineTo(s*0.8,-s*0.6); ctx.lineTo(s*0.8,s*0.15);
+    ctx.quadraticCurveTo(s*0.8,s*0.9,0,s*1.1); ctx.quadraticCurveTo(-s*0.8,s*0.9,-s*0.8,s*0.15);
+    ctx.lineTo(-s*0.8,-s*0.6); ctx.closePath(); ctx.stroke();
+    // arrow
+    ctx.beginPath(); ctx.moveTo(-s*0.35,s*0.4); ctx.lineTo(s*0.4,-s*0.4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s*0.4,-s*0.4); ctx.lineTo(s*0.05,-s*0.34); ctx.moveTo(s*0.4,-s*0.4); ctx.lineTo(s*0.34,-s*0.05); ctx.stroke();
+    ctx.restore();
+  }
+  function drawCoin(d){
+    const g=ctx.createRadialGradient(d.x-d.r*0.3,d.y-d.r*0.3,2,d.x,d.y,d.r);
+    g.addColorStop(0,'#fff0b0'); g.addColorStop(.6,'#f5c542'); g.addColorStop(1,'#c8901a');
+    ctx.fillStyle=g; ctx.strokeStyle='#8a5e12'; ctx.lineWidth=d.r*0.16;
+    ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,6.29); ctx.fill(); ctx.stroke();
+    shieldArrow(d.x,d.y,d.r*0.52,'#5da000');
+  }
+  function drawBag(d){
+    ctx.save(); ctx.translate(d.x,d.y);
+    ctx.shadowColor='rgba(245,197,66,.5)'; ctx.shadowBlur=d.r*0.6;
+    ctx.fillStyle='#c9a86a'; ctx.strokeStyle='#5a4326'; ctx.lineWidth=d.r*0.12;
+    ctx.beginPath(); ctx.moveTo(-d.r*0.8,-d.r*0.4); ctx.quadraticCurveTo(-d.r*1.05,d.r,0,d.r*1.05);
+    ctx.quadraticCurveTo(d.r*1.05,d.r,d.r*0.8,-d.r*0.4);
+    ctx.quadraticCurveTo(d.r*0.3,-d.r*0.2,0,-d.r*0.4); ctx.quadraticCurveTo(-d.r*0.3,-d.r*0.2,-d.r*0.8,-d.r*0.4); ctx.closePath();
+    ctx.fill(); ctx.stroke(); ctx.shadowBlur=0;
+    ctx.fillStyle='#2a2113'; ctx.font=`700 ${d.r*0.6}px 'Bebas Neue', sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('TAX', 0, d.r*0.28);
+    ctx.restore();
+  }
+  function drawTax(d){
+    ctx.save(); ctx.translate(d.x,d.y); ctx.rotate(Math.sin(d.spin)*0.15);
+    ctx.shadowColor='rgba(192,57,43,.6)'; ctx.shadowBlur=d.r*0.7;
+    // scalloped red wax seal
+    ctx.fillStyle='#c0392b'; ctx.strokeStyle='#7a1f16'; ctx.lineWidth=d.r*0.14;
+    ctx.beginPath();
+    const spikes=10;
+    for(let i=0;i<spikes*2;i++){ const ang=Math.PI*i/spikes; const rad=(i%2? d.r: d.r*0.82); ctx.lineTo(Math.cos(ang)*rad, Math.sin(ang)*rad); }
+    ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.shadowBlur=0;
+    ctx.fillStyle='#ffdcd6'; ctx.font=`700 ${d.r*0.62}px 'Bebas Neue', sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('TAX', 0, d.r*0.06);
+    ctx.restore();
+  }
+  function drawSack(){ // player: an open burlap catch-sack
+    const {x,y,w,h}=player;
+    ctx.save();
+    // body
+    ctx.fillStyle='#c9a86a'; ctx.strokeStyle='#5a4326'; ctx.lineWidth=3;
+    roundRect(ctx,x,y,w,h,9); ctx.fill(); ctx.stroke();
+    // burlap weave hint
+    ctx.strokeStyle='rgba(90,67,38,.35)'; ctx.lineWidth=1;
+    for(let i=1;i<4;i++){ ctx.beginPath(); ctx.moveTo(x+w*i/4,y+3); ctx.lineTo(x+w*i/4,y+h-3); ctx.stroke(); }
+    // open rim
+    ctx.fillStyle='#8a6a3a';
+    ctx.beginPath(); ctx.ellipse(x+w/2, y+3, w/2-4, 6, 0, 0, 6.29); ctx.fill();
+    ctx.fillStyle='#5a4326';
+    ctx.beginPath(); ctx.ellipse(x+w/2, y+3, w/2-9, 3.5, 0, 0, 6.29); ctx.fill();
+    // coin glint inside
+    ctx.fillStyle='#f5c542'; ctx.beginPath(); ctx.arc(x+w*0.4,y+2,3,0,6.29); ctx.arc(x+w*0.58,y+3,2.4,0,6.29); ctx.fill();
+    ctx.restore();
+  }
+  function roundRect(c,x,y,w,h,r){ const rr=Math.min(r,w/2,h/2); c.beginPath(); c.moveTo(x+rr,y);
+    c.arcTo(x+w,y,x+w,y+h,rr); c.arcTo(x+w,y+h,x,y+h,rr); c.arcTo(x,y+h,x,y,rr); c.arcTo(x,y,x+w,y,rr); c.closePath(); }
+
+  // ---------- draw ----------
+  function draw(){
+    const sx=(shake>0)?rand(-shake,shake):0, sy=(shake>0)?rand(-shake,shake):0;
+    ctx.save(); ctx.translate(sx,sy);
+    // bg
+    const bg=ctx.createLinearGradient(0,0,0,canvas.height); bg.addColorStop(0,'#141a0a'); bg.addColorStop(1,'#0a0d05');
+    ctx.fillStyle=bg; ctx.fillRect(-20,-20,canvas.width+40,canvas.height+40);
+    // grid
+    ctx.strokeStyle='rgba(204,255,0,.04)'; ctx.lineWidth=1;
+    for(let gx=0;gx<canvas.width;gx+=48){ ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,canvas.height); ctx.stroke(); }
+    for(let gy=0;gy<canvas.height;gy+=48){ ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(canvas.width,gy); ctx.stroke(); }
+    // gold dust
+    ctx.fillStyle='rgba(245,197,66,.8)';
+    for(const s of dust){ ctx.globalAlpha=0.15+(s.r/2)*0.3; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,6.29); ctx.fill(); }
+    ctx.globalAlpha=1;
+    // ground glow
+    const gg=ctx.createLinearGradient(0,canvas.height-170,0,canvas.height);
+    gg.addColorStop(0,'rgba(245,197,66,0)'); gg.addColorStop(1,'rgba(245,197,66,.12)');
+    ctx.fillStyle=gg; ctx.fillRect(0,canvas.height-170,canvas.width,170);
+
+    drawSack();
+    for(const d of drops){ if(d.type==='coin') drawCoin(d); else if(d.type==='bag') drawBag(d); else drawTax(d); }
+    // score pops
+    ctx.font=`700 20px 'Bebas Neue', sans-serif`; ctx.textAlign='center';
+    for(const p of pops){ ctx.globalAlpha=Math.max(0,p.life); ctx.fillStyle='#f5c542'; ctx.fillText(p.text,p.x,p.y); }
+    ctx.globalAlpha=1;
+
+    // HUD
+    const hearts='🪙'.repeat(Math.max(0,lives));
+    uiLeft.innerHTML = `<span class="gold">GOLD ${score}</span> · VILLAGERS ${hearts||'—'}`;
+    uiRight.textContent = `BEST ${best}`;
+
+    if(state==='menu') overlay('$SHERIFF: ROB THE RICH','The Sheriff’s carriage is overflowing.\nCatch the gold the peasants are owed.\nTap or press Start to rob back.','▶  Tap / Enter to start');
+    if(state==='paused') overlay('PAUSED','The tax man waits for no one.','Press P or Resume');
+    if(state==='gameover') overlay('TAX AUDIT','You robbed back '+score+' gold.\n“'+overQuote+'”','Tap / Enter to rob again');
+
+    ctx.restore();
+  }
+  function overlay(title, subtitle, foot){
+    ctx.save();
+    ctx.fillStyle='rgba(8,10,4,.72)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    // sheriff portrait
+    if(sheriffReady){
+      const s=132; ctx.save();
+      ctx.beginPath(); ctx.arc(canvas.width/2, canvas.height*0.28, s/2, 0, 6.29); ctx.closePath(); ctx.clip();
+      ctx.drawImage(sheriffImg, canvas.width/2 - s/2, canvas.height*0.28 - s/2, s, s);
+      ctx.restore();
+      ctx.strokeStyle='#ccff00'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(canvas.width/2, canvas.height*0.28, s/2, 0, 6.29); ctx.stroke();
+    }
+    ctx.textAlign='center';
+    ctx.fillStyle='#f6f7f1'; ctx.font=`400 ${title.length>18?30:38}px 'Bebas Neue', sans-serif`;
+    ctx.fillText(title, canvas.width/2, canvas.height*0.47);
+    ctx.font=`500 15px 'Plus Jakarta Sans', sans-serif`; ctx.fillStyle='rgba(246,247,241,.82)';
+    let y=canvas.height*0.47+30;
+    for(const line of subtitle.split('\n')){ ctx.fillText(line, canvas.width/2, y); y+=21; }
+    ctx.font=`700 13px 'Plus Jakarta Sans', sans-serif`; ctx.fillStyle='#ccff00';
+    ctx.fillText(foot, canvas.width/2, canvas.height*0.9);
+    ctx.restore();
+  }
+
+  function loop(t){ const dt=clamp((t-lastT)/1000,0,1/20); lastT=t; update(dt); draw(); requestAnimationFrame(loop); }
+  uiRight.textContent = `BEST ${best}`;
+  requestAnimationFrame(loop);
+})();
+</script>
 </body>
 </html>

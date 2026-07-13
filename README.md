@@ -17,8 +17,17 @@ styles.css      # clean dark UI system (warm-black + lime #ccff00 + gold), Bebas
 script.js       # mobile nav, copy-contract, scroll reveals, animated counters, donut fill
 assets/brand/   # brand art + intro video (web-optimized WebP / MP4)
 assets/logo.svg # shield-arrow mark / favicon
-game/art/       # transparent character sprites — prep for the "Tax Heist" mini-game (roadmap)
+game/           # "$SHERIFF: Rob the Rich" — playable browser arcade game
 ```
+
+## The game — $SHERIFF: Rob the Rich
+
+`game/index.html` is a self-contained arcade game (catch the gold falling from the
+Sheriff's carriage, dodge the tax stamps). It's a reskin of **Catch & Dodge** by
+Mehedi Hasan Siddique (MIT license — see `game/CATCH-DODGE-LICENSE`), rebranded to
+the $SHERIFF theme with the site's palette and the real Sheriff art on its
+overlays. Linked from the site's **🏹 Play** nav item. It's a community meme game
+with no financial value, reward, or token/airdrop mechanic.
 
 ## Run locally
 
