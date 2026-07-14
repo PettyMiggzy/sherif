@@ -36,6 +36,8 @@ const cfg = {
   x:   process.env.SOCIAL_X  || 'https://x.com/hoodedsheriff',
   tg:  process.env.SOCIAL_TG || 'https://t.me/hoodedsheriff',
   web: process.env.WEBSITE   || '',
+  veniceKey:   (process.env.VENICE_API_KEY || '').trim(),
+  veniceModel: process.env.VENICE_IMAGE_MODEL || 'hunyuan-image-v3',
 };
 cfg.apePage = process.env.CHART_URL || `https://ape.store/${cfg.apeChain}/${cfg.token}`;
 
@@ -51,7 +53,7 @@ const compact = (n) => { n = Number(n) || 0; const a = Math.abs(n); if (a >= 1e9
 
 // ---------- persistent state ----------
 function loadState() { try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { return { lastId: 0, seen: [], mediaFileId: null }; } }
-function saveState() { try { fs.writeFileSync(STATE_FILE, JSON.stringify({ lastId: store.lastId, seen: (store.seen||[]).slice(-4000), mediaFileId: store.mediaFileId||null, muted: !!store.muted, minBuyUsd: store.minBuyUsd, buyEmoji: store.buyEmoji })); } catch (e) { console.error('state', e.message); } }
+function saveState() { try { fs.writeFileSync(STATE_FILE, JSON.stringify({ lastId: store.lastId, seen: (store.seen||[]).slice(-4000), mediaFileId: store.mediaFileId||null, muted: !!store.muted, minBuyUsd: store.minBuyUsd, buyEmoji: store.buyEmoji, pfpUsed: store.pfpUsed||[] })); } catch (e) { console.error('state', e.message); } }
 const store = loadState();
 const effMin   = () => (store.minBuyUsd ?? cfg.minBuyUsd);
 const effEmoji = () => (store.buyEmoji || cfg.buyEmoji);
@@ -164,6 +166,36 @@ const QUOTES = [
 ];
 const pick = (a) => a[(Math.random() * a.length) | 0];
 
+// ---------- PFP generator (locked to the Sheriff character) ----------
+const PFP_BG   = ['vivid chartreuse lime-green', 'deep forest green', 'royal purple', 'crimson red', 'electric blue', 'rich gold', 'dark teal', 'sunset orange'];
+const PFP_ACC  = ['', ', wearing cool dark sunglasses', ', with a thick gold chain necklace', ', chewing a cigar', ', wearing a small tilted golden crown', ', with shiny gold grillz', ', with a lit blunt', ', wearing a backwards cap'];
+const PFP_EXPR = ['a sly confident grin', 'a menacing toothy snarl', 'a smug half-lidded smirk', 'a wild laughing expression', 'a greedy scheming look'];
+function hashCode(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); }
+function pfpPrompt(userId) {
+  const s = hashCode(String(userId));
+  const bg = PFP_BG[s % PFP_BG.length], acc = PFP_ACC[(s >> 3) % PFP_ACC.length], expr = PFP_EXPR[(s >> 6) % PFP_EXPR.length];
+  return `Head-and-shoulders profile-picture avatar of the Sheriff of Nottingham, a big comedic anthropomorphic grey wolf villain with a lighter cream muzzle, bright yellow eyes, thick black bushy eyebrows, freckled snout and sharp fangs, showing ${expr}${acc}. He wears a red and purple vertically striped cap with a tall purple feather, a forest-green tunic with a glowing lime-green shield feather emblem, a golden five-point sheriff star badge, purple and pink striped puffy sleeves, a dark red cape, and a round gold medallion. Thick clean black ink outlines, rich painterly cel shading, vibrant saturated colors, polished Disney Robin Hood cartoon villain style, centered, solid ${bg} background. High quality meme avatar.`;
+}
+async function generatePfp(userId) {
+  const r = await fetch('https://api.venice.ai/api/v1/image/generate', {
+    method: 'POST', headers: { Authorization: `Bearer ${cfg.veniceKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: cfg.veniceModel, prompt: pfpPrompt(userId), width: 1024, height: 1024, safe_mode: false, format: 'png' }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!j.images || !j.images[0]) throw new Error(j.error || j.details || `venice ${r.status}`);
+  return Buffer.from(j.images[0], 'base64');
+}
+async function sendPhotoBytes(chatId, buf, caption, kb = null) {
+  const fd = new FormData();
+  fd.append('chat_id', String(chatId));
+  if (caption) { fd.append('caption', caption); fd.append('parse_mode', 'HTML'); }
+  if (kb) fd.append('reply_markup', JSON.stringify({ inline_keyboard: kb }));
+  fd.append('photo', new Blob([buf]), 'sheriff-pfp.png');
+  const r = await fetch(`${TG}/sendPhoto`, { method: 'POST', body: fd });
+  return r.json();
+}
+const uname = (u) => (u.username ? '@' + u.username : (u.first_name || 'outlaw'));
+
 async function dashboard(info, trades) {
   const price = Number(info.currentPrice) || 0;
   const vol = trades ? volumeUsd(trades, price) : null;
@@ -213,6 +245,7 @@ const HELP = [
   '/price · /mc · /stats · /curve · /king · /vol · /supply · /holders',
   '🏆 <b>Community</b>',
   '/top · /recent · /info · /ca · /chart · /buy · /links · /quote · /shill',
+  '🎨 <b>/pfp</b> — claim your FREE 1-of-1 Sheriff avatar (one per member)',
   'ℹ️ /help /ping',
 ].join('\n');
 
@@ -278,6 +311,22 @@ async function handleCommand(cmd, args, m) {
       `🐺 <b>$${meta.symbol} — Sheriff of Nottingham</b>\n<i>Takes from the poor. Feeds his greed.</i>\n\n`+
       `The taxman meme on Robinhood Chain. He keeps ALL the taxes.\n\n`+
       `📜 <code>${cfg.token}</code>\n📈 ${cfg.apePage}`, chat, linkKb());
+
+    case 'pfp': {
+      if (!cfg.veniceKey) return sendText('🎨 The PFP generator isn\'t configured yet.', chat);
+      const uid = String(m.from.id);
+      const claimed = (store.pfpUsed || []).includes(uid);
+      if (claimed && !isAdmin)
+        return sendText(`🐺 You already claimed your free Sheriff PFP, ${uname(m.from)}. One per outlaw — now go buy some $${meta.symbol}.`, chat, linkKb());
+      sendText(`🎨 Deputizing you… minting a 1-of-1 <b>Sheriff PFP</b>, ${uname(m.from)}. Give it ~30–60s. 🐺🏹`, chat);
+      generatePfp(m.from.id)
+        .then(async (buf) => {
+          await sendPhotoBytes(chat, buf, `🐺 <b>Your Sheriff PFP</b>, ${uname(m.from)} — right-click / long-press to save.\nOne free per member. 📈 $${meta.symbol}`, linkKb());
+          if (!isAdmin) { store.pfpUsed = [...new Set([...(store.pfpUsed || []), uid])]; saveState(); }
+        })
+        .catch((e) => { console.error('pfp', e.message); sendText('⚠️ PFP forge jammed — try /pfp again in a moment.', chat); });
+      return;
+    }
 
     // ---- admin ----
     case 'testbuy': { if (!isAdmin) return; const i = await apeToken().catch(()=>({currentPrice:6.3e-6,marketCap:6349,apeProgress:4,kingProgress:18}));
@@ -379,6 +428,13 @@ async function main() {
   meta.symbol = info.token?.symbol || meta.symbol; meta.name = info.token?.name || meta.name;
   console.log(`Token: ${meta.name} ($${meta.symbol})  ${usdStr(info.currentPrice||0)}  MC $${fmt(info.marketCap||0,0)}  Curve ${info.apeProgress??0}%  King ${info.kingProgress??0}%`);
   if (check) { console.log('Check OK.'); process.exit(0); }
+  if (process.argv.includes('--pfp')) {
+    const id = process.argv[process.argv.indexOf('--pfp') + 1] || '12345';
+    console.log(`Generating test PFP for user ${id} via ${cfg.veniceModel}…`);
+    const buf = await generatePfp(id);
+    const out = `/tmp/pfp-${id}.png`; fs.writeFileSync(out, buf);
+    console.log('Saved', out, buf.length, 'bytes'); process.exit(0);
+  }
   if (process.argv.includes('--cmd')) {
     const i = process.argv.indexOf('--cmd');
     const name = (process.argv[i + 1] || 'help').toLowerCase();
@@ -402,7 +458,9 @@ async function main() {
     saveState(); console.log('Baselined at trade id', store.lastId);
   }
   if (cfg.adminId) sendText('🟢 <b>Sheriff Buy Bot online.</b> /help for commands.', cfg.adminId).catch(() => {});
-  if (!DRY) commandLoop();
+  // multi-bot server safety: this bot uses long-polling — clear any stale webhook
+  // on its token so getUpdates never 409s (does not affect your other bots).
+  if (!DRY) { await fetch(`${TG}/deleteWebhook`).catch(() => {}); commandLoop(); }
   if (cfg.rpc) await onchainLoop();   // premium RPC = instant on-chain buys
   else await apePollForever();        // no RPC = ape.store polling
 }
