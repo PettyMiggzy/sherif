@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Meme Vault — $SHERIFF | Sheriff of Nottingham</title>
+<meta name="description" content="The Sheriff's Meme Vault — the finest $SHERIFF memes on Robinhood Chain. Right-click, steal, and spread. The taxman would want you to." />
+<meta property="og:title" content="$SHERIFF Meme Vault" />
+<meta property="og:description" content="Takes from the poor. Feeds his greed. The official $SHERIFF meme stash." />
+<meta property="og:image" content="assets/memes/meme-02.webp" />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="assets/brand/sheriff-pfp.webp" type="image/webp" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow"></div>
+<div class="bg-glow-2"></div>
+
+<!-- NAV -->
+<header class="nav" id="nav">
+  <a class="brand" href="index.html#top">
+    <img src="assets/brand/sheriff-pfp.webp" alt="" class="brand-mark" />
+    <span class="brand-text"><b>$SHERIFF</b></span>
+  </a>
+  <nav class="nav-links" id="navLinks">
+    <a href="index.html#legend">The Legend</a>
+    <a href="index.html#cast">The Cast</a>
+    <a href="index.html#tokenomics">Tokenomics</a>
+    <a href="memes.html" class="active">Memes</a>
+    <a href="index.html#buy">How to Buy</a>
+    <a href="game/">🏹 Play</a>
+    <a href="https://x.com/hoodedsheriff" target="_blank" rel="noopener" aria-label="Twitter / X">𝕏</a>
+    <a href="https://t.me/hoodedsheriff" target="_blank" rel="noopener" aria-label="Telegram">✈️</a>
+    <a class="btn btn-sm" href="https://ape.store/robinhood/0x01d8d7995d0e656315715ef0ed3b81d92171b3cc" target="_blank" rel="noopener">Buy $SHERIFF</a>
+  </nav>
+  <button class="nav-toggle" id="navToggle" aria-label="Menu">☰</button>
+</header>
+
+<!-- MEME HEADER -->
+<section class="section meme-hero" id="top">
+  <div class="head reveal">
+    <span class="eyebrow">The Sheriff's stash</span>
+    <h1 class="meme-title">The <span class="text-lime">Meme</span> Vault</h1>
+    <p>He hoards the gold. You hoard the memes. Tap any one to enlarge and steal it — right-click &rarr; save, then flood the timeline. Fresh loot dropped straight from the townsfolk.</p>
+    <div class="accent-line"></div>
+    <div class="meme-cta">
+      <a class="btn" href="https://t.me/hoodedsheriff" target="_blank" rel="noopener">✈️ Get more in Telegram</a>
+      <a class="btn btn-ghost" href="https://x.com/hoodedsheriff" target="_blank" rel="noopener">𝕏 Tag @hoodedsheriff</a>
+    </div>
+  </div>
+
+  <!-- MEME GRID -->
+  <div class="meme-grid" id="memeGrid"></div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-links">
+    <a href="index.html#legend">The Legend</a><a href="index.html#cast">The Cast</a><a href="index.html#tokenomics">Tokenomics</a>
+    <a href="index.html#buy">How to Buy</a><a href="memes.html">Memes</a><a href="game/">Play</a><a href="https://x.com/hoodedsheriff" target="_blank" rel="noopener">Twitter / X</a><a href="https://t.me/hoodedsheriff" target="_blank" rel="noopener">Telegram</a>
+  </div>
+  <div class="legal">
+    <img src="assets/brand/sheriff-pfp.webp" alt="" />
+    <p>$SHERIFF is a community meme coin for entertainment only — no intrinsic value, no promise of profit, no financial return expected. It is <b>not affiliated with, endorsed by, or connected to</b> Robinhood Markets, Inc., The Walt Disney Company, or any historical office. Crypto is volatile and risky; never invest more than you can afford to lose, and always do your own research.</p>
+  </div>
+  <p class="sources">© 2026 Sheriff of Nottingham. Memes are made by the community, for the community.</p>
+</footer>
+
+<!-- LIGHTBOX -->
+<div class="lightbox" id="lightbox" aria-hidden="true">
+  <button class="lb-close" id="lbClose" aria-label="Close">&times;</button>
+  <button class="lb-nav lb-prev" id="lbPrev" aria-label="Previous">&#8249;</button>
+  <div class="lb-stage" id="lbStage"></div>
+  <button class="lb-nav lb-next" id="lbNext" aria-label="Next">&#8250;</button>
+  <div class="lb-cap" id="lbCap"></div>
+</div>
+
+<script>
+// ---- meme data ----
+const MEMES = [
+  { v:'assets/memes/meme-vid-01.mp4', p:'assets/memes/meme-vid-01.webp', c:'The shot heard ’round the shire' },
+  { s:'assets/memes/meme-02.webp', c:'He kept all the taxes' },
+  { v:'assets/memes/meme-vid-02.mp4', p:'assets/memes/meme-vid-02.webp', c:'Taxation, in motion' },
+  { s:'assets/memes/meme-08.webp', c:'I don’t steal. I collect.' },
+  { s:'assets/memes/meme-16.webp', c:'The kingdom runs on taxes… and I own the kingdom' },
+  { s:'assets/memes/meme-09.webp', c:'Checking the charts 🔥' },
+  { s:'assets/memes/meme-07.webp', c:'Protect the rich' },
+  { s:'assets/memes/meme-11.webp', c:'Comfy. Up only.' },
+  { s:'assets/memes/meme-12.webp', c:'Cozy in the treasury' },
+  { s:'assets/memes/meme-14.webp', c:'Diamond claws' },
+  { s:'assets/memes/meme-19.webp', c:'Washing the tax Lambo' },
+  { s:'assets/memes/meme-20.webp', c:'Paid for by the peasants' },
+  { s:'assets/memes/meme-10.webp', c:'He said WHAT about my bags?' },
+  { s:'assets/memes/meme-15.webp', c:'Always three moves ahead' },
+  { v:'assets/memes/meme-vid-03.mp4', p:'assets/memes/meme-vid-03.webp', c:'The original villain' },
+  { s:'assets/memes/meme-22.webp', c:'To the peasants 🍻' },
+  { s:'assets/memes/meme-13.webp', c:'Stare down the market' },
+  { s:'assets/memes/meme-21.webp', c:'Catch that fox' },
+  { s:'assets/memes/meme-23.webp', c:'Is this a fair launch?' },
+  { s:'assets/memes/meme-03.webp', c:'Taxes due — pay the Sheriff' },
+  { s:'assets/memes/meme-04.webp', c:'No exemptions' },
+  { s:'assets/memes/meme-06.webp', c:'Riding first class on your fares' },
+  { s:'assets/memes/meme-05.webp', c:'Many moods, one greed' },
+  { s:'assets/memes/meme-17.webp', c:'Front page of The Block' },
+  { s:'assets/memes/meme-18.webp', c:'When the tax rolls in' },
+  { s:'assets/memes/meme-24.webp', c:'Say that again?' },
+  { s:'assets/memes/meme-01.webp', c:'Robin of the rich' },
+];
+
+// ---- build grid ----
+const grid = document.getElementById('memeGrid');
+MEMES.forEach((m, i) => {
+  const fig = document.createElement('figure');
+  fig.className = 'meme-card reveal';
+  fig.dataset.i = i;
+  fig.style.transitionDelay = `${(i % 4) * 60}ms`;
+  if (m.v) {
+    fig.innerHTML =
+      `<video src="${m.v}" poster="${m.p}" muted loop playsinline preload="metadata"></video>` +
+      `<span class="meme-badge">▶ GIF</span>` +
+      `<figcaption>${m.c}</figcaption>`;
+    const vid = fig.querySelector('video');
+    fig.addEventListener('mouseenter', () => vid.play().catch(()=>{}));
+    fig.addEventListener('mouseleave', () => { vid.pause(); });
+  } else {
+    fig.innerHTML =
+      `<img src="${m.s}" alt="${m.c}" loading="lazy" />` +
+      `<figcaption>${m.c}</figcaption>`;
+  }
+  fig.addEventListener('click', () => openLB(i));
+  grid.appendChild(fig);
+});
+
+// ---- lightbox ----
+const lb = document.getElementById('lightbox');
+const stage = document.getElementById('lbStage');
+const cap = document.getElementById('lbCap');
+let cur = 0;
+function render() {
+  const m = MEMES[cur];
+  stage.innerHTML = m.v
+    ? `<video src="${m.v}" poster="${m.p}" controls autoplay loop muted playsinline></video>`
+    : `<img src="${m.s}" alt="${m.c}" />`;
+  cap.innerHTML = `<span>${m.c}</span>` +
+    (m.v ? '' : `<a class="lb-dl" href="${m.s}" download>⬇ Save</a>`);
+}
+function openLB(i) { cur = i; render(); lb.classList.add('open'); lb.setAttribute('aria-hidden','false'); document.body.style.overflow='hidden'; }
+function closeLB() { lb.classList.remove('open'); lb.setAttribute('aria-hidden','true'); stage.innerHTML=''; document.body.style.overflow=''; }
+function step(d) { cur = (cur + d + MEMES.length) % MEMES.length; render(); }
+document.getElementById('lbClose').addEventListener('click', closeLB);
+document.getElementById('lbPrev').addEventListener('click', () => step(-1));
+document.getElementById('lbNext').addEventListener('click', () => step(1));
+lb.addEventListener('click', (e) => { if (e.target === lb) closeLB(); });
+addEventListener('keydown', (e) => {
+  if (!lb.classList.contains('open')) return;
+  if (e.key === 'Escape') closeLB();
+  if (e.key === 'ArrowLeft') step(-1);
+  if (e.key === 'ArrowRight') step(1);
+});
+
+// ---- nav ----
+const toggle = document.getElementById('navToggle');
+const links = document.getElementById('navLinks');
+toggle.addEventListener('click', () => links.classList.toggle('open'));
+links.addEventListener('click', (e) => { if (e.target.tagName === 'A') links.classList.remove('open'); });
+const nav = document.getElementById('nav');
+const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 40);
+onScroll(); addEventListener('scroll', onScroll, { passive: true });
+
+// ---- reveal ----
+const io = new IntersectionObserver((entries) => {
+  entries.forEach((entry) => { if (entry.isIntersecting) { entry.target.classList.add('in'); io.unobserve(entry.target); } });
+}, { threshold: 0.12 });
+document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+</script>
+</body>
+</html>
