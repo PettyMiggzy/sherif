@@ -141,10 +141,11 @@ function bar(pct, len = 12) {
   const filled = Math.round((p / 100) * len);
   return '▰'.repeat(filled) + '▱'.repeat(len - filled) + `  ${p.toFixed(p > 0 && p < 10 ? 1 : 0)}%`;
 }
-// ape.store's apeProgress can sit at 0 until near graduation; kingProgress is the
-// live metric that climbs with market cap. Use ape when it's meaningful, else king.
-const curveOf = (info) => { const a = Number(info?.apeProgress) || 0, k = Number(info?.kingProgress) || 0; return a > 0 ? a : k; };
-const showKing = (info) => (Number(info?.apeProgress) || 0) > 0 && (Number(info?.kingProgress) || 0) > 0;
+// ape.store "Free the Ape" bonding-curve progress = marketCap / graduation cap
+// (ape.store hardcodes 69e3 = $69,000), or 100 once the token has launched/graduated.
+const GRAD_MCAP = Number(process.env.GRAD_MCAP || 69000);
+const curveOf = (info) => { if (info?.token?.launchDate) return 100; return Math.min(100, (Number(info?.marketCap) || 0) / GRAD_MCAP * 100); };
+const kingOf = (info) => Number(info?.kingProgress) || 0;
 function pctStr(x) { if (x === null || x === undefined) return '—'; const n = Number(x); const s = n >= 0 ? '🟢 +' : '🔴 '; return s + n.toFixed(1) + '%'; }
 const linkKb = () => [[
   { text: '📈 Chart', url: cfg.apePage }, { text: '🪙 Buy', url: cfg.apePage },
@@ -215,7 +216,7 @@ async function dashboard(info, trades) {
   L.push(`👥 Holders: <b>${info.token?.holders ?? 0}</b>`);
   L.push('');
   L.push(`📈 Bonding curve  ${bar(curveOf(info))}`);
-  if (showKing(info)) L.push(`👑 King of hill   ${bar(info.kingProgress ?? 0)}`);
+  L.push(`🦍 King of Apes   ${bar(kingOf(info))}`);
   return L.join('\n');
 }
 
@@ -239,7 +240,7 @@ async function buildBuyMsg(t, info, seenSet) {
   L.push(`👤 <a href="${cfg.explorer}/address/${buyer}">${short(buyer)}</a>${isNew ? '  🆕 New holder' : ''}`);
   if (price) L.push(`📊 ${usdStr(price)}   ·   🏦 MC <b>$${fmt(info.marketCap || 0, 0)}</b>`);
   L.push(`📈 Curve  ${bar(curveOf(info))}`);
-  if (showKing(info)) L.push(`👑 King   ${bar(info.kingProgress)}`);
+  if (kingOf(info) > 0) L.push(`🦍 King of Apes  ${bar(kingOf(info))}`);
   L.push(`🔗 <a href="${cfg.explorer}/tx/${hash}">TX</a>  |  <a href="${cfg.apePage}">Chart</a>  |  <a href="${cfg.apePage}">Buy</a>`);
   return L.join('\n');
 }
@@ -274,9 +275,9 @@ async function handleCommand(cmd, args, m) {
     case 'stats': case 'status': if (!info) return apiDown(chat);
       return sendText(await dashboard(info, trades), chat, linkKb());
     case 'curve': case 'progress': if (!info) return apiDown(chat);
-      return sendText(`📈 <b>Bonding curve</b>\n${bar(curveOf(info))}\n\nMC $${fmt(info.marketCap||0,0)} — graduates the higher it climbs.`, chat, linkKb());
+      return sendText(`📈 <b>Bonding curve</b> (Free the Ape)\n${bar(curveOf(info))}\n\n$${fmt(info.marketCap||0,0)} / $${fmt(GRAD_MCAP,0)} MC to graduate 🎓`, chat, linkKb());
     case 'king': if (!info) return apiDown(chat);
-      return sendText(`👑 <b>King of the hill</b>\n${bar(info.kingProgress??0)}${info.token?.isKing?'\n\n🏆 $'+meta.symbol+' is currently KING!':''}`, chat, linkKb());
+      return sendText(`🦍 <b>King of Apes</b> (trending)\n${bar(kingOf(info))}${info.token?.isKing?'\n\n🏆 $'+meta.symbol+' is currently KING!':''}`, chat, linkKb());
     case 'vol': case 'volume': if (!info) return apiDown(chat);
       return sendText(`💧 <b>$${meta.symbol}</b> recent volume: <b>$${compact(volumeUsd(trades||[], Number(info.currentPrice)||0))}</b> (${(trades||[]).length} trades)`, chat, linkKb());
     case 'supply': if (!info) return apiDown(chat);
@@ -346,11 +347,11 @@ async function handleCommand(cmd, args, m) {
     case 'debug': { if (!isAdmin) return; const i = await apeToken().catch(() => null);
       if (!i) return sendText('debug: ape.store unreachable', chat);
       return sendText(
-        `<b>DEBUG</b> (code build: curveOf)\n`+
-        `marketCap: ${i.marketCap}\n`+
-        `apeProgress (graduation): ${i.apeProgress}\n`+
-        `kingProgress (King of Apes): ${i.kingProgress}\n`+
-        `curveOf() shows: <b>${curveOf(i)}%</b>\n`+
+        `<b>DEBUG</b> (Free-the-Ape build)\n`+
+        `marketCap: $${i.marketCap}\n`+
+        `grad cap: $${GRAD_MCAP}\n`+
+        `Free the Ape (curve): <b>${curveOf(i).toFixed(1)}%</b>\n`+
+        `King of Apes: ${kingOf(i)}%\n`+
         `bar: ${bar(curveOf(i))}`, chat); }
     default: return; // unknown command: ignore
   }
@@ -471,7 +472,7 @@ async function main() {
   console.log(`Media: ${cfg.mediaUrl || cfg.mediaPath || '(none)'}  ·  Commands: ${cfg.enableCommands}`);
   let info; try { info = await apeToken(); } catch (e) { console.error('ape.store unreachable:', e.message); process.exit(1); }
   meta.symbol = info.token?.symbol || meta.symbol; meta.name = info.token?.name || meta.name;
-  console.log(`Token: ${meta.name} ($${meta.symbol})  ${usdStr(info.currentPrice||0)}  MC $${fmt(info.marketCap||0,0)}  Curve ${curveOf(info)}%  King ${info.kingProgress??0}%`);
+  console.log(`Token: ${meta.name} ($${meta.symbol})  ${usdStr(info.currentPrice||0)}  MC $${fmt(info.marketCap||0,0)}  Curve ${curveOf(info).toFixed(0)}%  King ${kingOf(info)}%`);
   if (check) { console.log('Check OK.'); process.exit(0); }
   if (process.argv.includes('--pfp')) {
     const id = process.argv[process.argv.indexOf('--pfp') + 1] || '12345';
