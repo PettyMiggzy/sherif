@@ -25,13 +25,16 @@ npm start                 # runs the bot
 
 See `.env.example` for the full list (price, thresholds, links, media).
 
-## Detection modes
-- **Premium RPC (instant)** — set `RPC_URL` to your Robinhood Chain RPC and the bot
-  watches the curve/pair (`0x37F84F3A…`) on-chain, firing alerts the moment a buy
-  lands (checks new blocks every `RPC_POLL_MS`, default 4s). ape.store is still used
-  to enrich each alert with price / MC / curve %. **Recommended.**
-- **ape.store polling (default)** — no RPC needed; polls the ape.store `/trades`
-  API every `POLL_MS`.
+## Detection modes (bot picks the best you configure)
+- **WSS realtime (best)** — set `RPC_WSS` (a `wss://` endpoint) and the bot
+  `eth_subscribe`s to the pair and gets buys **pushed instantly**, auto-reconnecting.
+- **HTTP poll** — set `RPC_URL` (https) and it checks new blocks every `RPC_POLL_MS`
+  (default 4s) via `eth_getLogs`. Near-instant.
+- **ape.store polling (default)** — no RPC needed; polls the ape.store `/trades` API
+  every `POLL_MS`.
+
+All modes enrich each alert with live price / MC / curve % from ape.store. An RPC
+url/key is a **secret** — keep it in `.env`.
 
 An RPC url with an API key in it is a **secret** — keep it in `.env` (gitignored).
 

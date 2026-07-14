@@ -27,7 +27,8 @@ const cfg = {
   buyEmoji:  process.env.BUY_EMOJI || '🟢',
   emojiStepUsd: Number(process.env.EMOJI_STEP_USD || 20),
   pollMs:    Number(process.env.POLL_MS || 12000),
-  rpc:       (process.env.RPC_URL || '').trim(),        // premium RPC -> instant on-chain buys
+  rpc:       (process.env.RPC_URL || '').trim(),        // premium RPC (HTTP) -> on-chain buys
+  rpcWss:    (process.env.RPC_WSS || '').trim(),         // premium RPC (WebSocket) -> realtime buys
   pair:      (process.env.PAIR_ADDRESS || '').toLowerCase(),
   rpcPollMs: Number(process.env.RPC_POLL_MS || 4000),
   mediaUrl:  (process.env.MEDIA_URL || '').trim(),
@@ -139,6 +140,10 @@ function bar(pct, len = 12) {
   const filled = Math.round((p / 100) * len);
   return '▰'.repeat(filled) + '▱'.repeat(len - filled) + `  ${p.toFixed(p > 0 && p < 10 ? 1 : 0)}%`;
 }
+// ape.store's apeProgress can sit at 0 until near graduation; kingProgress is the
+// live metric that climbs with market cap. Use ape when it's meaningful, else king.
+const curveOf = (info) => { const a = Number(info?.apeProgress) || 0, k = Number(info?.kingProgress) || 0; return a > 0 ? a : k; };
+const showKing = (info) => (Number(info?.apeProgress) || 0) > 0 && (Number(info?.kingProgress) || 0) > 0;
 function pctStr(x) { if (x === null || x === undefined) return '—'; const n = Number(x); const s = n >= 0 ? '🟢 +' : '🔴 '; return s + n.toFixed(1) + '%'; }
 const linkKb = () => [[
   { text: '📈 Chart', url: cfg.apePage }, { text: '🪙 Buy', url: cfg.apePage },
@@ -208,8 +213,8 @@ async function dashboard(info, trades) {
   if (vol !== null) L.push(`💧 Volume (recent): <b>$${compact(vol)}</b>`);
   L.push(`👥 Holders: <b>${info.token?.holders ?? 0}</b>`);
   L.push('');
-  L.push(`📈 Bonding curve  ${bar(info.apeProgress ?? 0)}`);
-  L.push(`👑 King of hill   ${bar(info.kingProgress ?? 0)}`);
+  L.push(`📈 Bonding curve  ${bar(curveOf(info))}`);
+  if (showKing(info)) L.push(`👑 King of hill   ${bar(info.kingProgress ?? 0)}`);
   return L.join('\n');
 }
 
@@ -232,8 +237,8 @@ async function buildBuyMsg(t, info, seenSet) {
   L.push(`🪙 Got: <b>${fmt(tokens, tokens < 1 ? 6 : 0)} ${meta.symbol}</b>`);
   L.push(`👤 <a href="${cfg.explorer}/address/${buyer}">${short(buyer)}</a>${isNew ? '  🆕 New holder' : ''}`);
   if (price) L.push(`📊 ${usdStr(price)}   ·   🏦 MC <b>$${fmt(info.marketCap || 0, 0)}</b>`);
-  L.push(`📈 Curve  ${bar(info.apeProgress ?? 0)}`);
-  if (info.kingProgress) L.push(`👑 King   ${bar(info.kingProgress)}`);
+  L.push(`📈 Curve  ${bar(curveOf(info))}`);
+  if (showKing(info)) L.push(`👑 King   ${bar(info.kingProgress)}`);
   L.push(`🔗 <a href="${cfg.explorer}/tx/${hash}">TX</a>  |  <a href="${cfg.apePage}">Chart</a>  |  <a href="${cfg.apePage}">Buy</a>`);
   return L.join('\n');
 }
@@ -265,11 +270,11 @@ async function handleCommand(cmd, args, m) {
     case 'price': if (!info) return apiDown(chat);
       return sendText(`📊 <b>$${meta.symbol}</b>: <b>${usdStr(info.currentPrice||0)}</b>\n1h ${pctStr(info.token?.price1H)} · 24h ${pctStr(info.token?.price24H)}`, chat, linkKb());
     case 'mc': case 'marketcap': if (!info) return apiDown(chat);
-      return sendText(`🏦 <b>$${meta.symbol}</b> Market Cap: <b>$${fmt(info.marketCap||0,0)}</b>\n📈 Curve ${bar(info.apeProgress??0)}`, chat, linkKb());
+      return sendText(`🏦 <b>$${meta.symbol}</b> Market Cap: <b>$${fmt(info.marketCap||0,0)}</b>\n📈 Curve ${bar(curveOf(info))}`, chat, linkKb());
     case 'stats': case 'status': if (!info) return apiDown(chat);
       return sendText(await dashboard(info, trades), chat, linkKb());
     case 'curve': case 'progress': if (!info) return apiDown(chat);
-      return sendText(`📈 <b>Bonding curve</b>\n${bar(info.apeProgress??0)}\n\nMC $${fmt(info.marketCap||0,0)} — graduates the higher it climbs.`, chat, linkKb());
+      return sendText(`📈 <b>Bonding curve</b>\n${bar(curveOf(info))}\n\nMC $${fmt(info.marketCap||0,0)} — graduates the higher it climbs.`, chat, linkKb());
     case 'king': if (!info) return apiDown(chat);
       return sendText(`👑 <b>King of the hill</b>\n${bar(info.kingProgress??0)}${info.token?.isKing?'\n\n🏆 $'+meta.symbol+' is currently KING!':''}`, chat, linkKb());
     case 'vol': case 'volume': if (!info) return apiDown(chat);
@@ -361,39 +366,69 @@ async function commandLoop() {
   }
 }
 
-// ---------- on-chain detection (premium RPC) ----------
+// ---------- on-chain detection (premium RPC: WSS realtime or HTTP poll) ----------
+let onchainPair = '', onchainDec = 18;
+async function resolvePairDec() {
+  onchainPair = cfg.pair || ((await getInfo())?.token?.pairAddress || '').toLowerCase();
+  if (!onchainPair) return false;
+  if (cfg.rpc) { try { onchainDec = hexInt(await rpc('eth_call', [{ to: cfg.token, data: '0x313ce567' }, 'latest'])) || 18; } catch {} }
+  return true;
+}
+// Process one on-chain Transfer-from-pair log = a buy. Shared by WSS + HTTP paths.
+async function processBuyLog(log) {
+  const buyer = ('0x' + log.topics[2].slice(26)).toLowerCase();
+  const seen = new Set(store.seen || []);
+  if (buyer === onchainPair || /^0x0+$/.test(buyer)) { seen.add(buyer); store.seen = [...seen]; return; }
+  const tokens = Number(BigInt(log.data)) / 10 ** onchainDec;
+  let native = 0;
+  if (cfg.rpc) { try { const tx = await rpc('eth_getTransactionByHash', [log.transactionHash]); native = Number(BigInt(tx?.value || '0x0')) / 1e18; } catch {} }
+  const info = await getInfo();
+  if (info && !store.muted) {
+    const t = { tokenChange: tokens, nativeVolume: native, transactionHash: log.transactionHash, to: buyer, nativeIn: '1', tokenOut: '1' };
+    try { const msg = await buildBuyMsg(t, info, seen); if (msg) await sendAlert(msg); } catch (e) { console.error('buy', e.message); }
+  }
+  seen.add(buyer); store.seen = [...seen]; saveState();
+}
+// HTTP fast-poll mode
 async function onchainLoop() {
-  let pair = cfg.pair;
-  if (!pair) { const info = await getInfo(); pair = (info?.token?.pairAddress || '').toLowerCase(); }
-  if (!pair) { console.error('No pair address — set PAIR_ADDRESS. Falling back to ape.store polling.'); return apePollForever(); }
-  let dec = 18;
-  try { dec = hexInt(await rpc('eth_call', [{ to: cfg.token, data: '0x313ce567' }, 'latest'])) || 18; } catch {}
+  if (!(await resolvePairDec())) { console.error('No pair — set PAIR_ADDRESS. Falling back to ape.store.'); return apePollForever(); }
   let last = hexInt(await rpc('eth_blockNumber'));
-  console.log(`⚡ On-chain mode via premium RPC — pair ${pair}, decimals ${dec}, from block ${last}`);
+  console.log(`⚡ On-chain (HTTP poll ${cfg.rpcPollMs}ms) — pair ${onchainPair}, dec ${onchainDec}, from block ${last}`);
   for (;;) {
     try {
       const latest = hexInt(await rpc('eth_blockNumber'));
       if (latest > last) {
-        const logs = await rpc('eth_getLogs', [{ address: cfg.token, topics: [TRANSFER_TOPIC, padTopic(pair)], fromBlock: '0x' + (last + 1).toString(16), toBlock: '0x' + latest.toString(16) }]);
-        const info = await getInfo();
-        const seen = new Set(store.seen || []);
-        for (const log of logs) {
-          const buyer = ('0x' + log.topics[2].slice(26)).toLowerCase();
-          if (buyer === pair || /^0x0+$/.test(buyer)) { seen.add(buyer); continue; }
-          const tokens = Number(BigInt(log.data)) / 10 ** dec;
-          let native = 0;
-          try { const tx = await rpc('eth_getTransactionByHash', [log.transactionHash]); native = Number(BigInt(tx?.value || '0x0')) / 1e18; } catch {}
-          if (info && !store.muted) {
-            const t = { tokenChange: tokens, nativeVolume: native, transactionHash: log.transactionHash, to: buyer, nativeIn: '1', tokenOut: '1' };
-            try { const msg = await buildBuyMsg(t, info, seen); if (msg) await sendAlert(msg); } catch (e) { console.error('buy', e.message); }
-          }
-          seen.add(buyer);
-        }
-        store.seen = [...seen]; last = latest; saveState();
+        const logs = await rpc('eth_getLogs', [{ address: cfg.token, topics: [TRANSFER_TOPIC, padTopic(onchainPair)], fromBlock: '0x' + (last + 1).toString(16), toBlock: '0x' + latest.toString(16) }]);
+        for (const log of logs) await processBuyLog(log);
+        last = latest;
       }
     } catch (e) { console.error('onchain:', e.message); }
     await sleep(cfg.rpcPollMs);
   }
+}
+// WSS realtime mode (eth_subscribe) — instant push, auto-reconnect
+async function wssLoop() {
+  if (typeof WebSocket === 'undefined') { console.error('No global WebSocket (need Node 22+). Falling back.'); return cfg.rpc ? onchainLoop() : apePollForever(); }
+  if (!(await resolvePairDec())) { console.error('No pair — falling back.'); return cfg.rpc ? onchainLoop() : apePollForever(); }
+  console.log(`⚡ On-chain (WSS realtime) — pair ${onchainPair}, dec ${onchainDec}`);
+  let backoff = 1000;
+  const connect = () => {
+    let ws;
+    try { ws = new WebSocket(cfg.rpcWss); } catch (e) { console.error('WSS init', e.message); return setTimeout(connect, backoff); }
+    ws.addEventListener('open', () => {
+      backoff = 1000;
+      ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_subscribe', params: ['logs', { address: cfg.token, topics: [TRANSFER_TOPIC, padTopic(onchainPair)] }] }));
+      console.log('⚡ WSS connected & subscribed to buys');
+    });
+    ws.addEventListener('message', async (ev) => {
+      try { const m = JSON.parse(typeof ev.data === 'string' ? ev.data : ev.data.toString()); if (m.method === 'eth_subscription' && m.params?.result?.topics) await processBuyLog(m.params.result); }
+      catch (e) { console.error('wss msg', e.message); }
+    });
+    ws.addEventListener('close', () => { console.error(`WSS closed — reconnect in ${backoff}ms`); setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 30000); });
+    ws.addEventListener('error', (e) => { console.error('WSS error', e?.message || ''); try { ws.close(); } catch {} });
+  };
+  connect();
+  await new Promise(() => {}); // keep process alive
 }
 async function apePollForever() {
   console.log(`Polling ape.store every ${cfg.pollMs}ms…`);
@@ -426,7 +461,7 @@ async function main() {
   console.log(`Media: ${cfg.mediaUrl || cfg.mediaPath || '(none)'}  ·  Commands: ${cfg.enableCommands}`);
   let info; try { info = await apeToken(); } catch (e) { console.error('ape.store unreachable:', e.message); process.exit(1); }
   meta.symbol = info.token?.symbol || meta.symbol; meta.name = info.token?.name || meta.name;
-  console.log(`Token: ${meta.name} ($${meta.symbol})  ${usdStr(info.currentPrice||0)}  MC $${fmt(info.marketCap||0,0)}  Curve ${info.apeProgress??0}%  King ${info.kingProgress??0}%`);
+  console.log(`Token: ${meta.name} ($${meta.symbol})  ${usdStr(info.currentPrice||0)}  MC $${fmt(info.marketCap||0,0)}  Curve ${curveOf(info)}%  King ${info.kingProgress??0}%`);
   if (check) { console.log('Check OK.'); process.exit(0); }
   if (process.argv.includes('--pfp')) {
     const id = process.argv[process.argv.indexOf('--pfp') + 1] || '12345';
@@ -461,7 +496,8 @@ async function main() {
   // multi-bot server safety: this bot uses long-polling — clear any stale webhook
   // on its token so getUpdates never 409s (does not affect your other bots).
   if (!DRY) { await fetch(`${TG}/deleteWebhook`).catch(() => {}); commandLoop(); }
-  if (cfg.rpc) await onchainLoop();   // premium RPC = instant on-chain buys
-  else await apePollForever();        // no RPC = ape.store polling
+  if (cfg.rpcWss) await wssLoop();         // WebSocket = realtime on-chain buys
+  else if (cfg.rpc) await onchainLoop();   // HTTP RPC = fast-poll on-chain buys
+  else await apePollForever();             // no RPC = ape.store polling
 }
 main().catch((e) => { console.error(e); process.exit(1); });
