@@ -419,24 +419,29 @@ async function onchainLoop() {
 }
 // WSS realtime mode (eth_subscribe) — instant push, auto-reconnect
 async function wssLoop() {
-  if (typeof WebSocket === 'undefined') { console.error('No global WebSocket (need Node 22+). Falling back.'); return cfg.rpc ? onchainLoop() : apePollForever(); }
+  // Use the built-in WebSocket (Node 22+) or fall back to the `ws` package (Node 18/20).
+  let WS = globalThis.WebSocket, viaPkg = false;
+  if (!WS) { try { const m = await import('ws'); WS = m.WebSocket || m.default; viaPkg = true; } catch { WS = null; } }
+  if (!WS) { console.error('No WebSocket available (Node <22 and `ws` not installed — run npm install). Falling back.'); return cfg.rpc ? onchainLoop() : apePollForever(); }
   if (!(await resolvePairDec())) { console.error('No pair — falling back.'); return cfg.rpc ? onchainLoop() : apePollForever(); }
-  console.log(`⚡ On-chain (WSS realtime) — pair ${onchainPair}, dec ${onchainDec}`);
+  console.log(`⚡ On-chain (WSS realtime${viaPkg ? ' via ws' : ''}) — pair ${onchainPair}, dec ${onchainDec}`);
   let backoff = 1000;
   const connect = () => {
     let ws;
-    try { ws = new WebSocket(cfg.rpcWss); } catch (e) { console.error('WSS init', e.message); return setTimeout(connect, backoff); }
-    ws.addEventListener('open', () => {
+    try { ws = new WS(cfg.rpcWss); } catch (e) { console.error('WSS init', e.message); return setTimeout(connect, backoff); }
+    const onOpen = () => {
       backoff = 1000;
       ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_subscribe', params: ['logs', { address: cfg.token, topics: [TRANSFER_TOPIC, padTopic(onchainPair)] }] }));
       console.log('⚡ WSS connected & subscribed to buys');
-    });
-    ws.addEventListener('message', async (ev) => {
-      try { const m = JSON.parse(typeof ev.data === 'string' ? ev.data : ev.data.toString()); if (m.method === 'eth_subscription' && m.params?.result?.topics) await processBuyLog(m.params.result); }
+    };
+    const onMsg = async (payload) => {
+      try { const s = typeof payload === 'string' ? payload : payload.toString(); const m = JSON.parse(s); if (m.method === 'eth_subscription' && m.params?.result?.topics) await processBuyLog(m.params.result); }
       catch (e) { console.error('wss msg', e.message); }
-    });
-    ws.addEventListener('close', () => { console.error(`WSS closed — reconnect in ${backoff}ms`); setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 30000); });
-    ws.addEventListener('error', (e) => { console.error('WSS error', e?.message || ''); try { ws.close(); } catch {} });
+    };
+    const onClose = () => { console.error(`WSS closed — reconnect in ${backoff}ms`); setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 30000); };
+    const onErr = (e) => { console.error('WSS error', e?.message || ''); try { ws.close(); } catch {} };
+    if (viaPkg) { ws.on('open', onOpen); ws.on('message', onMsg); ws.on('close', onClose); ws.on('error', onErr); }
+    else { ws.addEventListener('open', onOpen); ws.addEventListener('message', (ev) => onMsg(ev.data)); ws.addEventListener('close', onClose); ws.addEventListener('error', onErr); }
   };
   connect();
   await new Promise(() => {}); // keep process alive

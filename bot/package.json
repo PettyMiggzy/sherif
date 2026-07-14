@@ -11,6 +11,7 @@
   },
   "engines": { "node": ">=18" },
   "dependencies": {
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "ws": "^8.18.0"
   }
 }
