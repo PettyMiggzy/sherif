@@ -32,9 +32,15 @@ spent, used for price and market cap. Works with UniswapV2-style pairs
 (`token0`/`token1`/`getReserves`). If price data can't be resolved it still posts
 the token amount, buyer, and tx link.
 
+## Buy alert media
+Each buy alert attaches the **animated Sheriff** (`media/buy.mp4`) — uploaded to
+Telegram once, then reused via its `file_id` (fast, no re-upload). Override with
+`MEDIA_PATH` (local file) or `MEDIA_URL` (public url), or set `MEDIA_PATH=` empty
+for text-only alerts.
+
 ## Commands
-- `/ping`, `/status` — anyone
-- `/testbuy` — admin only (posts a sample alert to check formatting)
+- `/ping`, `/status` (alias `/curve`) — anyone; `/status` shows the live curve bar
+- `/testbuy` — admin only (posts a sample alert, with media, to check formatting)
 
 ## Security
 - **Never commit `.env`.** It's gitignored. Only `.env.example` (placeholders) is
@@ -42,12 +48,22 @@ the token amount, buyer, and tx link.
 - If a bot token was ever shared in plaintext, rotate it in @BotFather.
 
 ## Running 24/7
-Use a process manager or a small host:
+Deploy configs are included — pick one:
+
 ```bash
-# pm2
-npm i -g pm2 && pm2 start buybot.js --name sheriff-buybot
-# or systemd / a Railway/Fly/VPS worker
+# pm2 (loads bot/.env automatically)
+npm i -g pm2 && pm2 start ecosystem.config.cjs && pm2 save
+
+# Docker (pass secrets as env, not baked in)
+docker build -t sheriff-buybot .
+docker run -d --restart=always --env-file .env --name sheriff-buybot sheriff-buybot
+
+# systemd (edit paths/user in sheriff-buybot.service first)
+sudo cp sheriff-buybot.service /etc/systemd/system/ && sudo systemctl enable --now sheriff-buybot
+
+# Railway / Render / Fly / Heroku-style: uses the Procfile (worker: node buybot.js)
 ```
+Set the env vars (`.env` values) in your host's dashboard for hosted platforms.
 
 ## Notes on the current token address
 At the time this was set up, `TOKEN_ADDRESS` had **no contract code** on Robinhood

@@ -1,0 +1,19 @@
+# systemd unit. Edit WorkingDirectory + User, then:
+#   sudo cp sheriff-buybot.service /etc/systemd/system/
+#   sudo systemctl enable --now sheriff-buybot
+[Unit]
+Description=$SHERIFF Telegram Buy Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sheriff-buybot
+EnvironmentFile=/opt/sheriff-buybot/.env
+ExecStart=/usr/bin/node buybot.js
+Restart=always
+RestartSec=5
+User=nobody
+
+[Install]
+WantedBy=multi-user.target
