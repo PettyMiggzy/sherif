@@ -5,7 +5,8 @@
   "description": "Fair-launch launchpad for Robinhood Chain (Uniswap v3, atomic launch, milestone vault, buy-and-burn, 1% router fee)",
   "scripts": {
     "build": "hardhat compile",
-    "test": "hardhat test"
+    "test": "hardhat test",
+    "sim": "node sim/curve-sim.mjs"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

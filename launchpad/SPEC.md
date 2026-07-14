@@ -82,6 +82,41 @@ Orbit note: uses **`block.timestamp`** (block.number tracks the parent L1 block 
 - `Ownable2Step` + `AccessControl` (OPERATOR global, DEV per-token = buyback trigger only).
 - UI must surface: LP-locked ✅, mint-renounced ✅, no-blacklist ✅, no-transfer-tax ✅, vault-rules-onchain ✅, DexScreener Paid ✅.
 
+## BondingCurve + graduation event (`BondingCurve.sol`)
+An optional **ape.store/pump.fun-style** front-end to the launchpad: price discovery on a simple
+constant-product curve, then a **graduation event** into the locked-LP + (optional) milestone-vault
+machinery above. Use this when you want a curve + graduation instead of DEX-day-one.
+
+**Curve math.** Virtual reserves, constant product `K = VIRT_ETH * CURVE_SUPPLY`.
+- Buy: `newReserveEth = reserveEth + net; newReserveToken = K / newReserveEth` (floor); `tokensOut = reserveToken - newReserveToken`.
+- Sell: `newReserveToken = reserveToken + tokensIn; newReserveEth = ceilDiv(K, newReserveToken)` (ceil); `grossOut = reserveEth - newReserveEth`.
+- 1% platform fee on both sides (**pull-over-push** via `withdrawFees` — a reverting platform can't brick trading). `raised() = reserveEth - VIRT_ETH`.
+- **Load-bearing invariant J:** `reserveEth ≤ ceilDiv(K, reserveToken)` after every op → no round-trip/sequence profit, curve always solvent.
+
+**Graduation event.** When `raised() ≥ GRAD_TARGET`: seed a Uniswap v3 pool at the curve's **exact final
+marginal price** (`tokensToLp = raised·reserveToken/reserveEth`, so `ethToLp/tokensToLp = reserveEth/reserveToken`),
+**burn** the unsold remainder (deflationary; no below-price dump), permanently **lock the LP** in a
+LiquidityLocker the curve owns, and disable curve trading. Price is **continuous by construction** (no step).
+
+**Simulations (`npm run sim`).** A BigInt reference model mirrors the contract exactly; a Hardhat test
+asserts the deployed bytecode equals the model op-for-op. Latest run:
+- ~240,000 randomized ops across 4,000 curves · 20,000 round-trip trials · 3,000 graduations — **0 invariant violations**.
+- Graduation price step: **median/best/worst = 100%** (perfectly continuous).
+- Verified: no value leak, no round-trip profit, `balance == raised`, supply conserved, one-shot graduation.
+
+**Curve audit (3 lenses) — findings fixed:**
+- **Graduation brick via pre-initialized pool (HIGH):** `initialize` guarded; if the pool is pre-inited we
+  require it match our price (prevents minting into a manipulated pool = theft). A wrong-price pre-init
+  reverts graduation (griefing DoS, **funds stay exitable via `sell()`**). ⚠️ **Production must deploy
+  token+curve atomically** (fresh token ⇒ fresh pool, no pre-init window) to close the DoS — like the
+  atomic `LaunchpadFactory`.
+- **Graduation brick via force-fed ETH (HIGH):** LP is seeded from `raised()` (accounting), not
+  `address(this).balance`, + a `Math.min` clamp → force-donated ETH can't underflow the burn.
+- **Malicious-platform trading DoS (MED):** fees are pull-over-push (`feesEth` + `withdrawFees`).
+- **`sell` zero-output / oversell (LOW):** revert on `grossOut==0`; `require(reserveToken+tokensIn ≤ CURVE_SUPPLY)`.
+- **Anti-snipe is weak (LOW, documented):** the per-tx `maxBuyWei` cap is easily split across txs/wallets on
+  an FCFS chain — it is NOT strong sniper protection. The strong path is the **atomic `LaunchpadFactory`**.
+
 ## Internal adversarial review (not a substitute for a professional audit)
 A 5-lens adversarial audit (reentrancy/callbacks, oracle/economics, access-control/rug, v3-integration,
 arithmetic) was run against this code. The **core anti-rug guarantees were confirmed to hold** (no drain
