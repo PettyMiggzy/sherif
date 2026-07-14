@@ -11,3 +11,10 @@ game/art_raw/
 bot/.env
 bot/node_modules/
 bot/state.json
+
+# launchpad (Hardhat) — build output & deps
+launchpad/node_modules/
+launchpad/artifacts/
+launchpad/cache/
+launchpad/.env
+launchpad/typechain-types/

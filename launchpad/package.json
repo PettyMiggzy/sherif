@@ -1,0 +1,17 @@
+{
+  "name": "sheriff-launchpad",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fair-launch launchpad for Robinhood Chain (Uniswap v3, atomic launch, milestone vault, buy-and-burn, 1% router fee)",
+  "scripts": {
+    "build": "hardhat compile",
+    "test": "hardhat test"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.10"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2"
+  }
+}
