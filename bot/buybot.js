@@ -39,6 +39,7 @@ const cfg = {
   web: process.env.WEBSITE   || '',
   veniceKey:   (process.env.VENICE_API_KEY || '').trim(),
   veniceModel: process.env.VENICE_IMAGE_MODEL || 'hunyuan-image-v3',
+  pfpEnabled:  (process.env.PFP_ENABLED || 'false') === 'true', // off for now; set true to enable /pfp
 };
 cfg.apePage = process.env.CHART_URL || `https://ape.store/${cfg.apeChain}/${cfg.token}`;
 
@@ -250,7 +251,6 @@ const HELP = [
   '/price · /mc · /stats · /curve · /king · /vol · /supply · /holders',
   '🏆 <b>Community</b>',
   '/top · /recent · /info · /ca · /chart · /buy · /links · /quote · /shill',
-  '🎨 <b>/pfp</b> — claim your FREE 1-of-1 Sheriff avatar (one per member)',
   'ℹ️ /help /ping',
 ].join('\n');
 
@@ -303,7 +303,7 @@ async function handleCommand(cmd, args, m) {
         `CA: <code>${cfg.token}</code>\n`+
         `Chain: Robinhood Chain (${cfg.apeChain})\n`+
         `📊 ${usdStr(info.currentPrice||0)} · 🏦 $${fmt(info.marketCap||0,0)} · 👥 ${info.token?.holders??0}\n`+
-        `📈 Curve ${bar(info.apeProgress??0)}`, chat, linkKb()); }
+        `📈 Curve ${bar(curveOf(info))}`, chat, linkKb()); }
 
     case 'ca': case 'contract': return sendText(`📜 <b>$${meta.symbol}</b> contract:\n<code>${cfg.token}</code>`, chat, linkKb());
     case 'chart': return sendText(`📈 Chart & trade $${meta.symbol}:\n${cfg.apePage}`, chat, linkKb());
@@ -318,6 +318,7 @@ async function handleCommand(cmd, args, m) {
       `📜 <code>${cfg.token}</code>\n📈 ${cfg.apePage}`, chat, linkKb());
 
     case 'pfp': {
+      if (!cfg.pfpEnabled && !isAdmin) return sendText('🎨 The Sheriff PFP generator is <b>coming soon</b>. Stay tuned, outlaw. 🐺', chat, linkKb());
       if (!cfg.veniceKey) return sendText('🎨 The PFP generator isn\'t configured yet.', chat);
       const uid = String(m.from.id);
       const claimed = (store.pfpUsed || []).includes(uid);
