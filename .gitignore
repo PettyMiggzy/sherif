@@ -6,3 +6,8 @@ node_modules/
 
 # large intermediate art (blue-screen raws, regenerable) — keep only processed sprites
 game/art_raw/
+
+# buy bot — never commit secrets or runtime state
+bot/.env
+bot/node_modules/
+bot/state.json

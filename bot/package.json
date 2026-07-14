@@ -1,0 +1,17 @@
+{
+  "name": "sheriff-buybot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "$SHERIFF Telegram buy bot — posts on-chain buy alerts to Telegram (Robinhood Chain)",
+  "main": "buybot.js",
+  "scripts": {
+    "start": "node buybot.js",
+    "check": "node buybot.js --check"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.2"
+  }
+}
