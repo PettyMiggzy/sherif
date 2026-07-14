@@ -343,6 +343,15 @@ async function handleCommand(cmd, args, m) {
     case 'setmin': if (!isAdmin) return; { const v = Number(args[0]); if (isNaN(v)) return sendText('Usage: /setmin <usd>', chat); store.minBuyUsd = v; saveState(); return sendText(`✅ Min buy alert set to $${v}.`, chat); }
     case 'setemoji': if (!isAdmin) return; { if (!args[0]) return sendText('Usage: /setemoji 🟢', chat); store.buyEmoji = args[0]; saveState(); return sendText(`✅ Buy emoji set to ${args[0]}.`, chat); }
     case 'say': if (!isAdmin) return; { const text = args.join(' '); if (!text) return sendText('Usage: /say <message>', chat); return sendText(text, cfg.chatId); }
+    case 'debug': { if (!isAdmin) return; const i = await apeToken().catch(() => null);
+      if (!i) return sendText('debug: ape.store unreachable', chat);
+      return sendText(
+        `<b>DEBUG</b> (code build: curveOf)\n`+
+        `marketCap: ${i.marketCap}\n`+
+        `apeProgress (graduation): ${i.apeProgress}\n`+
+        `kingProgress (King of Apes): ${i.kingProgress}\n`+
+        `curveOf() shows: <b>${curveOf(i)}%</b>\n`+
+        `bar: ${bar(curveOf(i))}`, chat); }
     default: return; // unknown command: ignore
   }
 }
