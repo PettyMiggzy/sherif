@@ -25,6 +25,16 @@ npm start                 # runs the bot
 
 See `.env.example` for the full list (price, thresholds, links, media).
 
+## Detection modes
+- **Premium RPC (instant)** — set `RPC_URL` to your Robinhood Chain RPC and the bot
+  watches the curve/pair (`0x37F84F3A…`) on-chain, firing alerts the moment a buy
+  lands (checks new blocks every `RPC_POLL_MS`, default 4s). ape.store is still used
+  to enrich each alert with price / MC / curve %. **Recommended.**
+- **ape.store polling (default)** — no RPC needed; polls the ape.store `/trades`
+  API every `POLL_MS`.
+
+An RPC url with an API key in it is a **secret** — keep it in `.env` (gitignored).
+
 ## How buy detection works
 An ERC-20 `Transfer` where `from == PAIR_ADDRESS` means tokens left the pool → a
 **buy**. The base token that flowed into the pool in the same tx is the amount

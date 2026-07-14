@@ -27,6 +27,9 @@ const cfg = {
   buyEmoji:  process.env.BUY_EMOJI || '🟢',
   emojiStepUsd: Number(process.env.EMOJI_STEP_USD || 20),
   pollMs:    Number(process.env.POLL_MS || 12000),
+  rpc:       (process.env.RPC_URL || '').trim(),        // premium RPC -> instant on-chain buys
+  pair:      (process.env.PAIR_ADDRESS || '').toLowerCase(),
+  rpcPollMs: Number(process.env.RPC_POLL_MS || 4000),
   mediaUrl:  (process.env.MEDIA_URL || '').trim(),
   mediaPath: (process.env.MEDIA_PATH || (fs.existsSync(DEFAULT_MEDIA) ? DEFAULT_MEDIA : '')).trim(),
   enableCommands: (process.env.ENABLE_COMMANDS || 'true') === 'true',
@@ -59,6 +62,25 @@ async function apeTrades() { const r = await fetch(`${cfg.apeBase}/token/${cfg.a
 const isBuy  = (t) => Number(t.nativeIn) > 0 && Number(t.tokenOut) > 0;
 const isSell = (t) => Number(t.tokenIn) > 0 && Number(t.nativeOut) > 0;
 
+// cached token info (price / MC / curve) — enrichment for both modes
+let _info = null, _infoAt = 0;
+async function getInfo(maxAgeMs = 10000) {
+  if (_info && Date.now() - _infoAt < maxAgeMs) return _info;
+  try { _info = await apeToken(); _infoAt = Date.now(); meta.symbol = _info.token?.symbol || meta.symbol; meta.name = _info.token?.name || meta.name; } catch (e) { /* keep last */ }
+  return _info;
+}
+
+// ---------- premium RPC (on-chain instant buy detection) ----------
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+const hexInt = (h) => parseInt(h, 16);
+const padTopic = (addr) => '0x' + '0'.repeat(24) + addr.replace(/^0x/, '').toLowerCase();
+async function rpc(method, params = []) {
+  const r = await fetch(cfg.rpc, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+  const j = await r.json();
+  if (j.error) throw new Error(`${method}: ${j.error.message || j.error}`);
+  return j.result;
+}
+
 // ---------- telegram ----------
 async function tg(method, body) {
   const r = await fetch(`${TG}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -66,7 +88,7 @@ async function tg(method, body) {
   if (!j.ok) console.error(`TG ${method}:`, j.description || r.status);
   return j;
 }
-const DRY = process.argv.includes('--cmd'); // print instead of posting (for testing)
+const DRY = process.argv.includes('--cmd') || process.argv.includes('--dry'); // print instead of posting
 async function sendText(text, toChat = cfg.chatId, kb = null) {
   if (DRY) { console.log('\n' + text.replace(/<[^>]+>/g, '') + (kb ? '\n[buttons: ' + kb.flat().map(b => b.text).join(' ') + ']' : '')); return { ok: true }; }
   const body = { chat_id: toChat, text, parse_mode: 'HTML', disable_web_page_preview: true };
@@ -172,7 +194,9 @@ async function buildBuyMsg(t, info, seenSet) {
   const L = [];
   L.push(effEmoji().repeat(n)); L.push('');
   L.push(`<b>$${meta.symbol} Buy!</b> 🐺🏹`);
-  L.push(`💰 <b>${usd > 0 ? usdStr(usd) : ''}</b>${usd > 0 ? '  ·  ' : ''}${fmt(native, 5)} ${cfg.nativeSym}`);
+  let money = usd > 0 ? `<b>${usdStr(usd)}</b>` : '';
+  if (native > 0) money += (money ? '  ·  ' : '') + `${fmt(native, 5)} ${cfg.nativeSym}`;
+  if (money) L.push(`💰 ${money}`);
   L.push(`🪙 Got: <b>${fmt(tokens, tokens < 1 ? 6 : 0)} ${meta.symbol}</b>`);
   L.push(`👤 <a href="${cfg.explorer}/address/${buyer}">${short(buyer)}</a>${isNew ? '  🆕 New holder' : ''}`);
   if (price) L.push(`📊 ${usdStr(price)}   ·   🏦 MC <b>$${fmt(info.marketCap || 0, 0)}</b>`);
@@ -288,7 +312,46 @@ async function commandLoop() {
   }
 }
 
-// ---------- poll ----------
+// ---------- on-chain detection (premium RPC) ----------
+async function onchainLoop() {
+  let pair = cfg.pair;
+  if (!pair) { const info = await getInfo(); pair = (info?.token?.pairAddress || '').toLowerCase(); }
+  if (!pair) { console.error('No pair address — set PAIR_ADDRESS. Falling back to ape.store polling.'); return apePollForever(); }
+  let dec = 18;
+  try { dec = hexInt(await rpc('eth_call', [{ to: cfg.token, data: '0x313ce567' }, 'latest'])) || 18; } catch {}
+  let last = hexInt(await rpc('eth_blockNumber'));
+  console.log(`⚡ On-chain mode via premium RPC — pair ${pair}, decimals ${dec}, from block ${last}`);
+  for (;;) {
+    try {
+      const latest = hexInt(await rpc('eth_blockNumber'));
+      if (latest > last) {
+        const logs = await rpc('eth_getLogs', [{ address: cfg.token, topics: [TRANSFER_TOPIC, padTopic(pair)], fromBlock: '0x' + (last + 1).toString(16), toBlock: '0x' + latest.toString(16) }]);
+        const info = await getInfo();
+        const seen = new Set(store.seen || []);
+        for (const log of logs) {
+          const buyer = ('0x' + log.topics[2].slice(26)).toLowerCase();
+          if (buyer === pair || /^0x0+$/.test(buyer)) { seen.add(buyer); continue; }
+          const tokens = Number(BigInt(log.data)) / 10 ** dec;
+          let native = 0;
+          try { const tx = await rpc('eth_getTransactionByHash', [log.transactionHash]); native = Number(BigInt(tx?.value || '0x0')) / 1e18; } catch {}
+          if (info && !store.muted) {
+            const t = { tokenChange: tokens, nativeVolume: native, transactionHash: log.transactionHash, to: buyer, nativeIn: '1', tokenOut: '1' };
+            try { const msg = await buildBuyMsg(t, info, seen); if (msg) await sendAlert(msg); } catch (e) { console.error('buy', e.message); }
+          }
+          seen.add(buyer);
+        }
+        store.seen = [...seen]; last = latest; saveState();
+      }
+    } catch (e) { console.error('onchain:', e.message); }
+    await sleep(cfg.rpcPollMs);
+  }
+}
+async function apePollForever() {
+  console.log(`Polling ape.store every ${cfg.pollMs}ms…`);
+  for (;;) { try { await poll(); } catch (e) { console.error('poll', e.message); } await sleep(cfg.pollMs); }
+}
+
+// ---------- ape.store polling ----------
 async function poll() {
   let trades; try { trades = await apeTrades(); } catch (e) { console.error('trades', e.message); return; }
   const info = await apeToken().catch(() => null);
@@ -316,7 +379,7 @@ async function main() {
   meta.symbol = info.token?.symbol || meta.symbol; meta.name = info.token?.name || meta.name;
   console.log(`Token: ${meta.name} ($${meta.symbol})  ${usdStr(info.currentPrice||0)}  MC $${fmt(info.marketCap||0,0)}  Curve ${info.apeProgress??0}%  King ${info.kingProgress??0}%`);
   if (check) { console.log('Check OK.'); process.exit(0); }
-  if (DRY) {
+  if (process.argv.includes('--cmd')) {
     const i = process.argv.indexOf('--cmd');
     const name = (process.argv[i + 1] || 'help').toLowerCase();
     const rest = process.argv.slice(i + 2);
@@ -339,8 +402,8 @@ async function main() {
     saveState(); console.log('Baselined at trade id', store.lastId);
   }
   if (cfg.adminId) sendText('🟢 <b>Sheriff Buy Bot online.</b> /help for commands.', cfg.adminId).catch(() => {});
-  commandLoop();
-  console.log(`Polling every ${cfg.pollMs}ms…`);
-  for (;;) { try { await poll(); } catch (e) { console.error('poll', e.message); } await sleep(cfg.pollMs); }
+  if (!DRY) commandLoop();
+  if (cfg.rpc) await onchainLoop();   // premium RPC = instant on-chain buys
+  else await apePollForever();        // no RPC = ape.store polling
 }
 main().catch((e) => { console.error(e); process.exit(1); });
