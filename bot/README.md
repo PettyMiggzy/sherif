@@ -39,8 +39,21 @@ Telegram once, then reused via its `file_id` (fast, no re-upload). Override with
 for text-only alerts.
 
 ## Commands
-- `/ping`, `/status` (alias `/curve`) — anyone; `/status` shows the live curve bar
-- `/testbuy` — admin only (posts a sample alert, with media, to check formatting)
+Every reply has inline **Chart / Buy / 𝕏 / TG** buttons and pulls live ape.store data.
+
+**Market:** `/price` · `/mc` · `/stats` · `/curve` · `/king` · `/vol` · `/supply` · `/holders`
+**Community:** `/top` (top buyers) · `/recent` · `/info` · `/ca` · `/chart` · `/buy` · `/links` · `/quote` · `/shill` · `/gm`
+**General:** `/help` · `/ping`
+
+**Admin only** (your `ADMIN_ID`):
+- `/testbuy` — post a sample buy alert (with media)
+- `/mute` / `/unmute` — pause / resume buy alerts
+- `/setmin <usd>` — only alert buys above this USD
+- `/setemoji <emoji>` — change the buy emoji
+- `/say <message>` — broadcast to the group
+
+Admin overrides (`mute`, `min`, `emoji`) persist across restarts. Test any command
+without posting: `node buybot.js --cmd stats`
 
 ## Security
 - **Never commit `.env`.** It's gitignored. Only `.env.example` (placeholders) is

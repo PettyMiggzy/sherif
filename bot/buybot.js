@@ -1,11 +1,10 @@
 /*
  * $SHERIFF Buy Bot — ape.store (Robinhood Chain)
  * ----------------------------------------------
- * $SHERIFF is a bonding-curve token on ape.store. This bot polls the ape.store
- * API for new trades, posts BUY alerts to Telegram (with the animated Sheriff),
- * and shows the live bonding-curve progress bar (+ king-of-the-hill), price, MC.
- *
- * No keys, no funds — reads the public API and posts messages. Config via env.
+ * Posts BUY alerts (with the animated Sheriff + live bonding-curve bar) and
+ * answers a full suite of community commands (/mc, /price, /curve, /top, …).
+ * Reads the public ape.store API and posts messages — no keys, no funds.
+ * Config via env (.env — never commit real secrets).
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -31,6 +30,9 @@ const cfg = {
   mediaUrl:  (process.env.MEDIA_URL || '').trim(),
   mediaPath: (process.env.MEDIA_PATH || (fs.existsSync(DEFAULT_MEDIA) ? DEFAULT_MEDIA : '')).trim(),
   enableCommands: (process.env.ENABLE_COMMANDS || 'true') === 'true',
+  x:   process.env.SOCIAL_X  || 'https://x.com/hoodedsheriff',
+  tg:  process.env.SOCIAL_TG || 'https://t.me/hoodedsheriff',
+  web: process.env.WEBSITE   || '',
 };
 cfg.apePage = process.env.CHART_URL || `https://ape.store/${cfg.apeChain}/${cfg.token}`;
 
@@ -41,17 +43,21 @@ const STATE_FILE = path.join(__dirname, 'state.json');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fmt = (n, d = 2) => Number(n).toLocaleString('en-US', { maximumFractionDigits: d });
 const short = (a) => a.slice(0, 6) + '…' + a.slice(-4);
-const usdStr = (n) => (n >= 1 ? '$' + fmt(n, 2) : '$' + Number(n).toPrecision(3));
+const usdStr = (n) => (Number(n) >= 1 ? '$' + fmt(n, 2) : '$' + Number(n).toPrecision(3));
+const compact = (n) => { n = Number(n) || 0; const a = Math.abs(n); if (a >= 1e9) return (n/1e9).toFixed(2)+'B'; if (a >= 1e6) return (n/1e6).toFixed(2)+'M'; if (a >= 1e3) return (n/1e3).toFixed(1)+'K'; return fmt(n, 0); };
 
-// ---------- persistent state (module-level) ----------
+// ---------- persistent state ----------
 function loadState() { try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { return { lastId: 0, seen: [], mediaFileId: null }; } }
-function saveState() { try { fs.writeFileSync(STATE_FILE, JSON.stringify({ lastId: store.lastId, seen: (store.seen || []).slice(-4000), mediaFileId: store.mediaFileId || null })); } catch (e) { console.error('state', e.message); } }
+function saveState() { try { fs.writeFileSync(STATE_FILE, JSON.stringify({ lastId: store.lastId, seen: (store.seen||[]).slice(-4000), mediaFileId: store.mediaFileId||null, muted: !!store.muted, minBuyUsd: store.minBuyUsd, buyEmoji: store.buyEmoji })); } catch (e) { console.error('state', e.message); } }
 const store = loadState();
+const effMin   = () => (store.minBuyUsd ?? cfg.minBuyUsd);
+const effEmoji = () => (store.buyEmoji || cfg.buyEmoji);
 
 // ---------- ape.store API ----------
-async function apeToken() { const r = await fetch(`${cfg.apeBase}/token/${cfg.apeChain}/${cfg.token}`); if (!r.ok) throw new Error('token ' + r.status); return r.json(); }
+async function apeToken()  { const r = await fetch(`${cfg.apeBase}/token/${cfg.apeChain}/${cfg.token}`); if (!r.ok) throw new Error('token ' + r.status); return r.json(); }
 async function apeTrades() { const r = await fetch(`${cfg.apeBase}/token/${cfg.apeChain}/${cfg.token}/trades`); if (!r.ok) throw new Error('trades ' + r.status); return r.json(); }
-const isBuy = (t) => Number(t.nativeIn) > 0 && Number(t.tokenOut) > 0;
+const isBuy  = (t) => Number(t.nativeIn) > 0 && Number(t.tokenOut) > 0;
+const isSell = (t) => Number(t.tokenIn) > 0 && Number(t.nativeOut) > 0;
 
 // ---------- telegram ----------
 async function tg(method, body) {
@@ -60,89 +66,209 @@ async function tg(method, body) {
   if (!j.ok) console.error(`TG ${method}:`, j.description || r.status);
   return j;
 }
-async function sendText(text, toChat = cfg.chatId) {
-  return tg('sendMessage', { chat_id: toChat, text, parse_mode: 'HTML', disable_web_page_preview: true });
+const DRY = process.argv.includes('--cmd'); // print instead of posting (for testing)
+async function sendText(text, toChat = cfg.chatId, kb = null) {
+  if (DRY) { console.log('\n' + text.replace(/<[^>]+>/g, '') + (kb ? '\n[buttons: ' + kb.flat().map(b => b.text).join(' ') + ']' : '')); return { ok: true }; }
+  const body = { chat_id: toChat, text, parse_mode: 'HTML', disable_web_page_preview: true };
+  if (kb) body.reply_markup = { inline_keyboard: kb };
+  return tg('sendMessage', body);
 }
 function mediaKind(src) {
   if (/\.(mp4|webm|mov)$/i.test(src)) return ['sendVideo', 'video'];
   if (/\.gif$/i.test(src)) return ['sendAnimation', 'animation'];
   return ['sendPhoto', 'photo'];
 }
-function grabFileId(res = {}) {
-  return res.video?.file_id || res.animation?.file_id || (res.photo && res.photo[res.photo.length - 1]?.file_id) || null;
-}
-// Buy alerts: attach the animated Sheriff. Uploads the local file once, then
-// reuses Telegram's file_id (fast, no re-upload). Falls back to plain text.
-async function sendAlert(text, toChat = cfg.chatId) {
+const grabFileId = (res = {}) => res.video?.file_id || res.animation?.file_id || (res.photo && res.photo[res.photo.length-1]?.file_id) || null;
+
+async function sendAlert(text, toChat = cfg.chatId, kb = null) {
+  if (DRY) { console.log('\n[🎬 media] ' + text.replace(/<[^>]+>/g, '') + (kb ? '\n[buttons: ' + kb.flat().map(b => b.text).join(' ') + ']' : '')); return { ok: true }; }
   const src = cfg.mediaUrl || cfg.mediaPath;
-  if (!src) return sendText(text, toChat);
+  const markup = kb ? { reply_markup: { inline_keyboard: kb } } : {};
+  if (!src) return sendText(text, toChat, kb);
   const [method, key] = mediaKind(src);
   try {
     if (store.mediaFileId) {
-      const j = await tg(method, { chat_id: toChat, [key]: store.mediaFileId, caption: text, parse_mode: 'HTML' });
+      const j = await tg(method, { chat_id: toChat, [key]: store.mediaFileId, caption: text, parse_mode: 'HTML', ...markup });
       if (j.ok) return j;
-      store.mediaFileId = null; // stale id — re-upload below
+      store.mediaFileId = null;
     }
     let j;
     if (cfg.mediaUrl) {
-      j = await tg(method, { chat_id: toChat, [key]: cfg.mediaUrl, caption: text, parse_mode: 'HTML' });
+      j = await tg(method, { chat_id: toChat, [key]: cfg.mediaUrl, caption: text, parse_mode: 'HTML', ...markup });
     } else {
       const fd = new FormData();
-      fd.append('chat_id', String(toChat));
-      fd.append('caption', text);
-      fd.append('parse_mode', 'HTML');
+      fd.append('chat_id', String(toChat)); fd.append('caption', text); fd.append('parse_mode', 'HTML');
+      if (kb) fd.append('reply_markup', JSON.stringify({ inline_keyboard: kb }));
       fd.append(key, new Blob([fs.readFileSync(cfg.mediaPath)]), path.basename(cfg.mediaPath));
       const r = await fetch(`${TG}/${method}`, { method: 'POST', body: fd });
       j = await r.json().catch(() => ({}));
       if (!j.ok) console.error(`TG ${method}:`, j.description);
     }
-    if (j.ok) {
-      const fid = grabFileId(j.result);
-      if (fid) { store.mediaFileId = fid; saveState(); }
-      return j;
-    }
+    if (j.ok) { const fid = grabFileId(j.result); if (fid) { store.mediaFileId = fid; saveState(); } return j; }
   } catch (e) { console.error('media send error:', e.message); }
-  return sendText(text, toChat); // graceful fallback
+  return sendText(text, toChat, kb);
 }
 
-// ---------- progress bar ----------
+// ---------- helpers ----------
 function bar(pct, len = 12) {
   const p = Math.max(0, Math.min(100, Number(pct) || 0));
   const filled = Math.round((p / 100) * len);
   return '▰'.repeat(filled) + '▱'.repeat(len - filled) + `  ${p.toFixed(p > 0 && p < 10 ? 1 : 0)}%`;
 }
+function pctStr(x) { if (x === null || x === undefined) return '—'; const n = Number(x); const s = n >= 0 ? '🟢 +' : '🔴 '; return s + n.toFixed(1) + '%'; }
+const linkKb = () => [[
+  { text: '📈 Chart', url: cfg.apePage }, { text: '🪙 Buy', url: cfg.apePage },
+], [
+  ...(cfg.web ? [{ text: '🌐 Site', url: cfg.web }] : []),
+  { text: '𝕏', url: cfg.x }, { text: '✈️ TG', url: cfg.tg },
+]];
 
-let meta = { symbol: 'SHERIFF', name: 'Sheriff of Nottingham' };
+let meta = { symbol: 'SHERIFF', name: 'Sheriff of Nottingham', ca: cfg.token };
+
+function volumeUsd(trades, price) { return trades.reduce((s, t) => s + Math.abs(Number(t.tokenChange)) * price, 0); }
+function supplyOf(info) { const p = Number(info.currentPrice) || 0, mc = Number(info.marketCap) || 0; return p > 0 ? mc / p : 0; }
+function topBuyers(trades, price, n = 5) {
+  const agg = new Map();
+  for (const t of trades) if (isBuy(t)) { const k = String(t.to).toLowerCase(); agg.set(k, (agg.get(k) || 0) + Math.abs(Number(t.tokenChange))); }
+  return [...agg.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([a, tok]) => ({ a, tok, usd: tok * price }));
+}
+
+const QUOTES = [
+  'Tax first. Ask questions never.', 'The rich deserve more.', 'Your gold looks better in my vault.',
+  "Poor is a choice. Mine wasn't.", "I don't steal. I collect.", 'Every road leads to my taxes.',
+  'No coin left behind… unless it\'s yours.', 'Your wallet is public property.', 'Justice has a price.',
+  "If you're smiling, you're not paying enough.", "Robin Hood is the criminal. I'm just doing my job.",
+  'The kingdom runs on taxes… and I own the kingdom.', 'Greed is law.', 'Steal. Tax. Repeat.', 'Protect the rich.',
+];
+const pick = (a) => a[(Math.random() * a.length) | 0];
+
+async function dashboard(info, trades) {
+  const price = Number(info.currentPrice) || 0;
+  const vol = trades ? volumeUsd(trades, price) : null;
+  const L = [];
+  L.push(`<b>🐺 $${meta.symbol}</b> — ${meta.name}`);
+  L.push(`📊 Price: <b>${usdStr(price)}</b>`);
+  L.push(`🏦 Market Cap: <b>$${fmt(info.marketCap || 0, 0)}</b>`);
+  if (info.token?.price1H != null || info.token?.price24H != null)
+    L.push(`📈 1h ${pctStr(info.token?.price1H)}   ·   24h ${pctStr(info.token?.price24H)}`);
+  if (vol !== null) L.push(`💧 Volume (recent): <b>$${compact(vol)}</b>`);
+  L.push(`👥 Holders: <b>${info.token?.holders ?? 0}</b>`);
+  L.push('');
+  L.push(`📈 Bonding curve  ${bar(info.apeProgress ?? 0)}`);
+  L.push(`👑 King of hill   ${bar(info.kingProgress ?? 0)}`);
+  return L.join('\n');
+}
 
 async function buildBuyMsg(t, info, seenSet) {
   const tokens = Math.abs(Number(t.tokenChange));
   const native = Math.abs(Number(t.nativeVolume));
-  const price = Number(info.currentPrice) || 0;   // USD per token
+  const price = Number(info.currentPrice) || 0;
   const usd = tokens * price;
-  if (cfg.minBuyUsd && usd < cfg.minBuyUsd) return null;
-  const mcap = Number(info.marketCap) || 0;
-  const ape = info.apeProgress ?? 0;
-  const king = info.kingProgress ?? 0;
+  if (effMin() && usd < effMin()) return null;
   const hash = String(t.transactionHash).split('[')[0];
   const buyer = String(t.to).toLowerCase();
   const isNew = seenSet && !seenSet.has(buyer);
-
   const n = Math.max(1, Math.min(72, Math.floor(usd / cfg.emojiStepUsd) || 1));
   const L = [];
-  L.push(cfg.buyEmoji.repeat(n));
-  L.push('');
+  L.push(effEmoji().repeat(n)); L.push('');
   L.push(`<b>$${meta.symbol} Buy!</b> 🐺🏹`);
   L.push(`💰 <b>${usd > 0 ? usdStr(usd) : ''}</b>${usd > 0 ? '  ·  ' : ''}${fmt(native, 5)} ${cfg.nativeSym}`);
   L.push(`🪙 Got: <b>${fmt(tokens, tokens < 1 ? 6 : 0)} ${meta.symbol}</b>`);
   L.push(`👤 <a href="${cfg.explorer}/address/${buyer}">${short(buyer)}</a>${isNew ? '  🆕 New holder' : ''}`);
-  if (price) L.push(`📊 ${usdStr(price)}   ·   🏦 MC <b>$${fmt(mcap, 0)}</b>`);
-  L.push(`📈 Curve  ${bar(ape)}`);
-  if (king) L.push(`👑 King   ${bar(king)}`);
+  if (price) L.push(`📊 ${usdStr(price)}   ·   🏦 MC <b>$${fmt(info.marketCap || 0, 0)}</b>`);
+  L.push(`📈 Curve  ${bar(info.apeProgress ?? 0)}`);
+  if (info.kingProgress) L.push(`👑 King   ${bar(info.kingProgress)}`);
   L.push(`🔗 <a href="${cfg.explorer}/tx/${hash}">TX</a>  |  <a href="${cfg.apePage}">Chart</a>  |  <a href="${cfg.apePage}">Buy</a>`);
   return L.join('\n');
 }
 
-// ---------- commands ----------
+// ---------- command router ----------
+const HELP = [
+  '<b>🐺 Sheriff Bot — commands</b>', '',
+  '📊 <b>Market</b>',
+  '/price · /mc · /stats · /curve · /king · /vol · /supply · /holders',
+  '🏆 <b>Community</b>',
+  '/top · /recent · /info · /ca · /chart · /buy · /links · /quote · /shill',
+  'ℹ️ /help /ping',
+].join('\n');
+
+async function handleCommand(cmd, args, m) {
+  const chat = m.chat.id;
+  const isAdmin = cfg.adminId && String(m.from.id) === String(cfg.adminId);
+  const info = ['price','mc','marketcap','stats','status','curve','progress','king','vol','volume','supply','holders','top','recent','trades','info'].includes(cmd)
+    ? await apeToken().catch(() => null) : null;
+  if (info) { meta.symbol = info.token?.symbol || meta.symbol; meta.name = info.token?.name || meta.name; }
+  const needTrades = ['stats','status','vol','volume','top','recent','trades'].includes(cmd);
+  const trades = needTrades ? await apeTrades().catch(() => []) : null;
+
+  switch (cmd) {
+    case 'start': case 'help': return sendText(HELP, chat);
+    case 'ping': return sendText('🟢 Pong. The Sheriff is watching the vault.', chat);
+
+    case 'price': if (!info) return apiDown(chat);
+      return sendText(`📊 <b>$${meta.symbol}</b>: <b>${usdStr(info.currentPrice||0)}</b>\n1h ${pctStr(info.token?.price1H)} · 24h ${pctStr(info.token?.price24H)}`, chat, linkKb());
+    case 'mc': case 'marketcap': if (!info) return apiDown(chat);
+      return sendText(`🏦 <b>$${meta.symbol}</b> Market Cap: <b>$${fmt(info.marketCap||0,0)}</b>\n📈 Curve ${bar(info.apeProgress??0)}`, chat, linkKb());
+    case 'stats': case 'status': if (!info) return apiDown(chat);
+      return sendText(await dashboard(info, trades), chat, linkKb());
+    case 'curve': case 'progress': if (!info) return apiDown(chat);
+      return sendText(`📈 <b>Bonding curve</b>\n${bar(info.apeProgress??0)}\n\nMC $${fmt(info.marketCap||0,0)} — graduates the higher it climbs.`, chat, linkKb());
+    case 'king': if (!info) return apiDown(chat);
+      return sendText(`👑 <b>King of the hill</b>\n${bar(info.kingProgress??0)}${info.token?.isKing?'\n\n🏆 $'+meta.symbol+' is currently KING!':''}`, chat, linkKb());
+    case 'vol': case 'volume': if (!info) return apiDown(chat);
+      return sendText(`💧 <b>$${meta.symbol}</b> recent volume: <b>$${compact(volumeUsd(trades||[], Number(info.currentPrice)||0))}</b> (${(trades||[]).length} trades)`, chat, linkKb());
+    case 'supply': if (!info) return apiDown(chat);
+      return sendText(`🪙 <b>$${meta.symbol}</b> supply: <b>${compact(supplyOf(info))}</b>`, chat);
+    case 'holders': if (!info) return apiDown(chat);
+      return sendText(`👥 <b>$${meta.symbol}</b> holders: <b>${info.token?.holders ?? 0}</b>`, chat, linkKb());
+
+    case 'top': { if (!info) return apiDown(chat);
+      const tb = topBuyers(trades||[], Number(info.currentPrice)||0);
+      if (!tb.length) return sendText('No buys in the recent window yet.', chat);
+      const medals = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+      const rows = tb.map((b,i)=>`${medals[i]||'▫️'} <a href="${cfg.explorer}/address/${b.a}">${short(b.a)}</a> — ${compact(b.tok)} ${meta.symbol} (${usdStr(b.usd)})`);
+      return sendText(`🏆 <b>Top buyers</b> (recent)\n`+rows.join('\n'), chat, linkKb()); }
+    case 'recent': case 'trades': { if (!info) return apiDown(chat);
+      const price = Number(info.currentPrice)||0;
+      const buys = (trades||[]).filter(isBuy).sort((a,b)=>b.id-a.id).slice(0,5);
+      if (!buys.length) return sendText('No recent buys.', chat);
+      const rows = buys.map(t=>`🟢 ${compact(Math.abs(+t.tokenChange))} ${meta.symbol} · ${usdStr(Math.abs(+t.tokenChange)*price)} — ${short(String(t.to).toLowerCase())}`);
+      return sendText(`🧾 <b>Recent buys</b>\n`+rows.join('\n'), chat, linkKb()); }
+    case 'info': { if (!info) return apiDown(chat);
+      return sendText(
+        `🐺 <b>${meta.name}</b> ($${meta.symbol})\n`+
+        `<i>${info.token?.description||''}</i>\n\n`+
+        `CA: <code>${cfg.token}</code>\n`+
+        `Chain: Robinhood Chain (${cfg.apeChain})\n`+
+        `📊 ${usdStr(info.currentPrice||0)} · 🏦 $${fmt(info.marketCap||0,0)} · 👥 ${info.token?.holders??0}\n`+
+        `📈 Curve ${bar(info.apeProgress??0)}`, chat, linkKb()); }
+
+    case 'ca': case 'contract': return sendText(`📜 <b>$${meta.symbol}</b> contract:\n<code>${cfg.token}</code>`, chat, linkKb());
+    case 'chart': return sendText(`📈 Chart & trade $${meta.symbol}:\n${cfg.apePage}`, chat, linkKb());
+    case 'buy': return sendText(`🪙 Buy $${meta.symbol} on ape.store:\n${cfg.apePage}`, chat, linkKb());
+    case 'links': case 'socials': return sendText(
+      `🔗 <b>$${meta.symbol} links</b>\n📈 Chart: ${cfg.apePage}\n𝕏 ${cfg.x}\n✈️ ${cfg.tg}${cfg.web?`\n🌐 ${cfg.web}`:''}`, chat, linkKb());
+    case 'quote': return sendText(`🐺 <i>"${pick(QUOTES)}"</i>\n— The Sheriff`, chat);
+    case 'gm': return sendText(`☀️ GM, tax collectors. Another day to protect the rich. 🐺💰`, chat);
+    case 'shill': return sendAlert(
+      `🐺 <b>$${meta.symbol} — Sheriff of Nottingham</b>\n<i>Takes from the poor. Feeds his greed.</i>\n\n`+
+      `The taxman meme on Robinhood Chain. He keeps ALL the taxes.\n\n`+
+      `📜 <code>${cfg.token}</code>\n📈 ${cfg.apePage}`, chat, linkKb());
+
+    // ---- admin ----
+    case 'testbuy': { if (!isAdmin) return; const i = await apeToken().catch(()=>({currentPrice:6.3e-6,marketCap:6349,apeProgress:4,kingProgress:18}));
+      const msg = await buildBuyMsg({ tokenChange:5723015.23, nativeVolume:0.0297, transactionHash:'0x0000000000000000000000000000000000000000000000000000000000000000[0x0]', to:'0x1111111111111111111111111111111111111111', nativeIn:'1', tokenOut:'1' }, i, new Set());
+      return sendAlert(msg+'\n<i>(test alert)</i>', chat); }
+    case 'mute': if (!isAdmin) return; store.muted = true; saveState(); return sendText('🔇 Buy alerts muted.', chat);
+    case 'unmute': if (!isAdmin) return; store.muted = false; saveState(); return sendText('🔊 Buy alerts on.', chat);
+    case 'setmin': if (!isAdmin) return; { const v = Number(args[0]); if (isNaN(v)) return sendText('Usage: /setmin <usd>', chat); store.minBuyUsd = v; saveState(); return sendText(`✅ Min buy alert set to $${v}.`, chat); }
+    case 'setemoji': if (!isAdmin) return; { if (!args[0]) return sendText('Usage: /setemoji 🟢', chat); store.buyEmoji = args[0]; saveState(); return sendText(`✅ Buy emoji set to ${args[0]}.`, chat); }
+    case 'say': if (!isAdmin) return; { const text = args.join(' '); if (!text) return sendText('Usage: /say <message>', chat); return sendText(text, cfg.chatId); }
+    default: return; // unknown command: ignore
+  }
+}
+const apiDown = (chat) => sendText('⚠️ Could not reach ape.store right now — try again in a moment.', chat);
+
 async function commandLoop() {
   if (!cfg.enableCommands) return;
   let offset = 0;
@@ -153,25 +279,10 @@ async function commandLoop() {
       for (const u of j.result || []) {
         offset = u.update_id + 1;
         const m = u.message; if (!m || !m.text) continue;
-        const isAdmin = cfg.adminId && String(m.from.id) === String(cfg.adminId);
-        const cmd = m.text.trim().split(/\s+/)[0].toLowerCase().replace(/@.*$/, '');
-        if (cmd === '/ping') await sendText('🟢 Pong. The Sheriff is watching the vault.', m.chat.id);
-        else if (cmd === '/status' || cmd === '/curve') {
-          try {
-            const info = await apeToken();
-            await sendText(
-              `<b>$${meta.symbol}</b> — ${meta.name}\n` +
-              `📊 ${usdStr(Number(info.currentPrice) || 0)}  ·  🏦 MC $${fmt(info.marketCap || 0, 0)}\n` +
-              `📈 Curve  ${bar(info.apeProgress ?? 0)}\n` +
-              `👑 King   ${bar(info.kingProgress ?? 0)}\n` +
-              `👥 Holders: ${info.token?.holders ?? 0}\n` +
-              `🔗 <a href="${cfg.apePage}">ape.store</a>`, m.chat.id);
-          } catch { await sendText('Could not reach ape.store right now.', m.chat.id); }
-        } else if (cmd === '/testbuy' && isAdmin) {
-          const info = await apeToken().catch(() => ({ currentPrice: 6.3e-6, marketCap: 6349, apeProgress: 4, kingProgress: 18 }));
-          const msg = await buildBuyMsg({ tokenChange: 5723015.23, nativeVolume: 0.0297, transactionHash: '0x0000000000000000000000000000000000000000000000000000000000000000[0x0]', to: '0x1111111111111111111111111111111111111111', nativeIn: '1', tokenOut: '1' }, info, new Set());
-          await sendAlert(msg + '\n<i>(test alert)</i>', m.chat.id);
-        }
+        const parts = m.text.trim().split(/\s+/);
+        const cmd = parts[0].toLowerCase().replace(/^\//, '').replace(/@.*$/, '');
+        if (!m.text.startsWith('/')) continue;
+        try { await handleCommand(cmd, parts.slice(1), m); } catch (e) { console.error('cmd', cmd, e.message); }
       }
     } catch { await sleep(3000); }
   }
@@ -179,8 +290,7 @@ async function commandLoop() {
 
 // ---------- poll ----------
 async function poll() {
-  let trades;
-  try { trades = await apeTrades(); } catch (e) { console.error('trades', e.message); return; }
+  let trades; try { trades = await apeTrades(); } catch (e) { console.error('trades', e.message); return; }
   const info = await apeToken().catch(() => null);
   if (info) { meta.symbol = info.token?.symbol || meta.symbol; meta.name = info.token?.name || meta.name; }
   const seen = new Set(store.seen || []);
@@ -188,49 +298,49 @@ async function poll() {
   for (const t of fresh) {
     store.lastId = Math.max(store.lastId, t.id);
     const buyer = String(t.to).toLowerCase();
-    if (isBuy(t) && info) {
+    if (isBuy(t) && info && !store.muted) {
       try { const msg = await buildBuyMsg(t, info, seen); if (msg) await sendAlert(msg); }
       catch (e) { console.error('buy msg', e.message); }
     }
     seen.add(buyer);
   }
-  store.seen = [...seen];
-  saveState();
+  store.seen = [...seen]; saveState();
 }
 
 // ---------- boot ----------
 async function main() {
   const check = process.argv.includes('--check');
   console.log(`Sheriff Buy Bot (ape.store/${cfg.apeChain}) — token ${cfg.token}`);
-  console.log(`Media: ${cfg.mediaUrl || cfg.mediaPath || '(none — text alerts)'}`);
-  let info;
-  try { info = await apeToken(); } catch (e) { console.error('ape.store unreachable:', e.message); process.exit(1); }
+  console.log(`Media: ${cfg.mediaUrl || cfg.mediaPath || '(none)'}  ·  Commands: ${cfg.enableCommands}`);
+  let info; try { info = await apeToken(); } catch (e) { console.error('ape.store unreachable:', e.message); process.exit(1); }
   meta.symbol = info.token?.symbol || meta.symbol; meta.name = info.token?.name || meta.name;
-  console.log(`Token: ${meta.name} ($${meta.symbol})  price ${usdStr(Number(info.currentPrice) || 0)}  MC $${fmt(info.marketCap || 0, 0)}`);
-  console.log(`Curve ${info.apeProgress ?? 0}%  ·  King ${info.kingProgress ?? 0}%  ·  pair ${info.token?.pairAddress || '?'}`);
-
+  console.log(`Token: ${meta.name} ($${meta.symbol})  ${usdStr(info.currentPrice||0)}  MC $${fmt(info.marketCap||0,0)}  Curve ${info.apeProgress??0}%  King ${info.kingProgress??0}%`);
   if (check) { console.log('Check OK.'); process.exit(0); }
-
-  if (process.argv.includes('--preview')) {
-    const trades = await apeTrades();
-    const buy = trades.filter(isBuy).sort((a, b) => b.id - a.id)[0];
-    if (!buy) { console.log('No recent buy to preview.'); process.exit(0); }
-    const msg = await buildBuyMsg(buy, info, new Set());
-    console.log('\n----- BUY ALERT PREVIEW (not sent) -----\n' + msg.replace(/<[^>]+>/g, '') + '\n----------------------------------------');
+  if (DRY) {
+    const i = process.argv.indexOf('--cmd');
+    const name = (process.argv[i + 1] || 'help').toLowerCase();
+    const rest = process.argv.slice(i + 2);
+    const fakeMsg = { chat: { id: cfg.chatId }, from: { id: cfg.adminId || 0 } };
+    console.log(`===== /${name} =====`);
+    await handleCommand(name, rest, fakeMsg);
+    console.log('\n===================');
     process.exit(0);
   }
-
+  if (process.argv.includes('--preview')) {
+    const trades = await apeTrades(); const buy = trades.filter(isBuy).sort((a,b)=>b.id-a.id)[0];
+    if (!buy) { console.log('No recent buy.'); process.exit(0); }
+    console.log('\n----- PREVIEW -----\n' + (await buildBuyMsg(buy, info, new Set())).replace(/<[^>]+>/g,'') + '\n-------------------');
+    process.exit(0);
+  }
   if (!store.lastId) {
     const trades = await apeTrades().catch(() => []);
     store.lastId = trades.reduce((m, t) => Math.max(m, t.id), 0);
     store.seen = trades.map((t) => String(t.to).toLowerCase());
-    saveState();
-    console.log('Baselined at trade id', store.lastId, '(watching new buys only)');
+    saveState(); console.log('Baselined at trade id', store.lastId);
   }
-
-  if (cfg.adminId) sendText('🟢 <b>Sheriff Buy Bot online.</b> Watching ape.store for buys…', cfg.adminId).catch(() => {});
+  if (cfg.adminId) sendText('🟢 <b>Sheriff Buy Bot online.</b> /help for commands.', cfg.adminId).catch(() => {});
   commandLoop();
-  console.log(`Polling ape.store every ${cfg.pollMs}ms…`);
+  console.log(`Polling every ${cfg.pollMs}ms…`);
   for (;;) { try { await poll(); } catch (e) { console.error('poll', e.message); } await sleep(cfg.pollMs); }
 }
 main().catch((e) => { console.error(e); process.exit(1); });
