@@ -74,6 +74,19 @@ async function getInfo(maxAgeMs = 10000) {
   return _info;
 }
 
+// ---------- holder count (blockscout — ape.store's token.holders is 0/stale) ----------
+let _holders = 0, _holdersAt = 0;
+async function holderCount(maxAgeMs = 60000) {
+  if (_holders && Date.now() - _holdersAt < maxAgeMs) return _holders;
+  try {
+    const r = await fetch(`${cfg.explorer}/api/v2/tokens/${cfg.token}/counters`);
+    if (r.ok) { const j = await r.json(); const n = Number(j?.token_holders_count); if (n > 0) { _holders = n; _holdersAt = Date.now(); } }
+  } catch { /* keep last */ }
+  return _holders;
+}
+// best holder number we can show: live blockscout, else ape.store field, else last cached
+const holdersOf = (info) => _holders || Number(info?.token?.holders) || 0;
+
 // ---------- premium RPC (on-chain instant buy detection) ----------
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 const hexInt = (h) => parseInt(h, 16);
@@ -206,6 +219,7 @@ const uname = (u) => (u.username ? '@' + u.username : (u.first_name || 'outlaw')
 async function dashboard(info, trades) {
   const price = Number(info.currentPrice) || 0;
   const vol = trades ? volumeUsd(trades, price) : null;
+  await holderCount().catch(() => {});
   const L = [];
   L.push(`<b>🐺 $${meta.symbol}</b> — ${meta.name}`);
   L.push(`📊 Price: <b>${usdStr(price)}</b>`);
@@ -213,7 +227,7 @@ async function dashboard(info, trades) {
   if (info.token?.price1H != null || info.token?.price24H != null)
     L.push(`📈 1h ${pctStr(info.token?.price1H)}   ·   24h ${pctStr(info.token?.price24H)}`);
   if (vol !== null) L.push(`💧 Volume (recent): <b>$${compact(vol)}</b>`);
-  L.push(`👥 Holders: <b>${info.token?.holders ?? 0}</b>`);
+  L.push(`👥 Holders: <b>${holdersOf(info)}</b>`);
   L.push('');
   L.push(`📈 Bonding curve  ${bar(curveOf(info))}`);
   L.push(`🦍 King of Apes   ${bar(kingOf(info))}`);
@@ -282,8 +296,9 @@ async function handleCommand(cmd, args, m) {
       return sendText(`💧 <b>$${meta.symbol}</b> recent volume: <b>$${compact(volumeUsd(trades||[], Number(info.currentPrice)||0))}</b> (${(trades||[]).length} trades)`, chat, linkKb());
     case 'supply': if (!info) return apiDown(chat);
       return sendText(`🪙 <b>$${meta.symbol}</b> supply: <b>${compact(supplyOf(info))}</b>`, chat);
-    case 'holders': if (!info) return apiDown(chat);
-      return sendText(`👥 <b>$${meta.symbol}</b> holders: <b>${info.token?.holders ?? 0}</b>`, chat, linkKb());
+    case 'holders': { if (!info) return apiDown(chat);
+      await holderCount().catch(() => {});
+      return sendText(`👥 <b>$${meta.symbol}</b> holders: <b>${holdersOf(info)}</b>`, chat, linkKb()); }
 
     case 'top': { if (!info) return apiDown(chat);
       const tb = topBuyers(trades||[], Number(info.currentPrice)||0);
@@ -298,12 +313,13 @@ async function handleCommand(cmd, args, m) {
       const rows = buys.map(t=>`🟢 ${compact(Math.abs(+t.tokenChange))} ${meta.symbol} · ${usdStr(Math.abs(+t.tokenChange)*price)} — ${short(String(t.to).toLowerCase())}`);
       return sendText(`🧾 <b>Recent buys</b>\n`+rows.join('\n'), chat, linkKb()); }
     case 'info': { if (!info) return apiDown(chat);
+      await holderCount().catch(() => {});
       return sendText(
         `🐺 <b>${meta.name}</b> ($${meta.symbol})\n`+
         `<i>${info.token?.description||''}</i>\n\n`+
         `CA: <code>${cfg.token}</code>\n`+
         `Chain: Robinhood Chain (${cfg.apeChain})\n`+
-        `📊 ${usdStr(info.currentPrice||0)} · 🏦 $${fmt(info.marketCap||0,0)} · 👥 ${info.token?.holders??0}\n`+
+        `📊 ${usdStr(info.currentPrice||0)} · 🏦 $${fmt(info.marketCap||0,0)} · 👥 ${holdersOf(info)}\n`+
         `📈 Curve ${bar(curveOf(info))}`, chat, linkKb()); }
 
     case 'ca': case 'contract': return sendText(`📜 <b>$${meta.symbol}</b> contract:\n<code>${cfg.token}</code>`, chat, linkKb());
