@@ -25,6 +25,17 @@ contract SwapProbe is IUniswapV3SwapCallback {
         );
     }
 
+    /// @dev Like swapExactIn but stops at `sqrtLimit` (e.g. the graduation price), so a buyout can't push
+    /// the price past the curve's top into the empty region.
+    function swapExactInLimit(address pool, address tokenIn, uint256 amountIn, uint160 sqrtLimit)
+        external
+        returns (int256 amount0, int256 amount1)
+    {
+        bool zeroForOne = tokenIn == IUniswapV3Pool(pool).token0();
+        (amount0, amount1) =
+            IUniswapV3Pool(pool).swap(msg.sender, zeroForOne, int256(amountIn), sqrtLimit, abi.encode(tokenIn, msg.sender));
+    }
+
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external override {
         (address tokenIn, address payer) = abi.decode(data, (address, address));
         uint256 owed = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
