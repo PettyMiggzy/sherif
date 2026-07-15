@@ -73,6 +73,22 @@ library PoolMath {
         return Math.mulDiv(amount1, Q96, uint256(sqrtUpper) - uint256(sqrtLower));
     }
 
+    /// @notice Liquidity for a SINGLE-SIDED (range-order) position that sits entirely on one side of the
+    /// current price. `token0Side` = the band is entirely ABOVE the current tick (holds only token0);
+    /// otherwise it is entirely BELOW (holds only token1). `sqrtLo`/`sqrtHi` are the band's tick bounds.
+    function singleSidedLiquidity(uint160 sqrtLo, uint160 sqrtHi, uint256 amount, bool token0Side)
+        internal
+        pure
+        returns (uint128)
+    {
+        require(sqrtHi > sqrtLo, "band");
+        uint256 l = token0Side
+            ? _liquidityForAmount0(sqrtLo, sqrtHi, amount)
+            : _liquidityForAmount1(sqrtLo, sqrtHi, amount);
+        require(l > 0 && l <= type(uint128).max, "bad L");
+        return uint128(l);
+    }
+
     /// @notice Canonical Uniswap v3 TickMath.getSqrtRatioAtTick — sqrt(1.0001^tick) * 2^96.
     /// Used to price the TWAP mean tick for manipulation-resistant slippage floors (relies on unchecked
     /// overflow exactly as Uniswap's original does).
