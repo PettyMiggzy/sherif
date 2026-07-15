@@ -179,9 +179,13 @@ with `FORK_RPC=<rpc>`; chainId 4663, verified factory `0x1f7d…2efa`, WETH `0x0
 proves what the flat-price mock couldn't: the constructor **creates + initializes the real pool** at the
 committed price, graduation **mints a real full-range LP** (our `±887200` tick-snapping matches the 1% tier's
 spacing) and **locks it**, the **TWAP arms** and `observe()` works, and a **real swap trades** against the
-graduated pool. The Bond's v3 range-order machinery (Moat/Ramparts/Recycle/keeper) is **design-locked and
-economically validated in `sim/bond-sim.mjs`**; the on-chain implementation is the next build phase and will
-be fork-tested the same way before mainnet. The earlier `OtcVault` remains in the repo but is superseded.
+graduated pool. The Bond's v3 range-order machinery (`Bond.sol`: Keep/Moat/Ramparts + the recentering
+`poke()` keeper) is **built, economically validated in `sim/bond-sim.mjs`, and fork-verified end-to-end**:
+`CurveLaunchFactory.launch` → curve → graduation now **deploys + funds + `post()`s the Bond** (75% curve /
+25% Ramparts; the raise splits 60% Keep LP / 40% Moat floor). `test/fork/graduation.fork.test.js` runs the
+whole creation→trade→graduate→Bond→tradeable-pool→poke flow on real Uniswap v3, and `test/fork/bond.fork.test.js`
+proves the Moat catches a dip, `poke()` recenters, and Keep fees stream to the platform. The earlier
+`OtcVault`/`AthVault`/`SheriffStaking` remain in the repo but are superseded by the Bond.
 
 **Curve-launchpad audit (2 lenses) — findings fixed:**
 - **Graduation brick via pool pre-init (HIGH):** the curve **creates + initializes its Uniswap pool at

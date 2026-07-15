@@ -5,9 +5,18 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IUniswapV3Factory, IUniswapV3Pool, IUniswapV3MintCallback, IWETH9} from "./interfaces/IUniswapV3.sol";
+import {IUniswapV3Factory, IUniswapV3Pool, IWETH9} from "./interfaces/IUniswapV3.sol";
 import {PoolMath} from "./libraries/PoolMath.sol";
-import {LiquidityLocker} from "./LiquidityLocker.sol";
+
+interface IBondDeployer {
+    function deploy(address token, address weth, address v3Factory, address platform, address curve)
+        external
+        returns (address);
+}
+
+interface IBond {
+    function post(uint256 keepWeth, uint256 keepTokens, uint256 moatWeth, uint256 rampTokens) external;
+}
 
 /// @title BondingCurve
 /// @notice A simple constant-product (x*y=k) bonding curve with virtual reserves, like ape.store /
@@ -23,7 +32,7 @@ import {LiquidityLocker} from "./LiquidityLocker.sol";
 ///            pay out ETH it actually took in; graduation deposits exactly raised() into the LP.
 ///   INV-GRAD: graduation happens at most once, only when raised >= GRAD_TARGET, seeds the pool at the
 ///            curve's EXACT final price (continuous), burns the unsold remainder, and locks the LP.
-contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
+contract BondingCurve is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint24 public constant POOL_FEE = 10000;
@@ -32,14 +41,16 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
     uint16 public constant BUY_FEE_BPS = 100; // 1% on buys
     uint16 public constant BUY_BUFFER_BPS = 10; // 0.1% of a buy kept in-curve as a buffer, sent to platform at grad
     uint16 public constant SELL_FEE_BPS = 100; // 1% on sells -> project dev
-    uint16 public constant CARDINALITY = 200; // TWAP observation slots armed at graduation (for the AthVault)
+    uint16 public constant CARDINALITY = 200; // TWAP observation slots armed at graduation (for the Bond)
+    uint16 public constant KEEP_WETH_BPS = 6000; // 60% of the raise seeds the Keep LP; 40% seeds the Moat floor
 
     // immutables
     IERC20 public immutable token;
     address public immutable WETH;
     IUniswapV3Factory public immutable v3Factory;
-    LiquidityLocker public immutable locker;
-    address public immutable platform; // buy fee + LP fee recipient
+    address public immutable bondDeployer; // deploys the per-launch Bond at graduation
+    uint256 public immutable rampSupply; // tokens (held by this curve) handed to the Bond's Ramparts at grad
+    address public immutable platform; // buy fee + LP (Keep) fee recipient
     address public immutable dev; // project dev — receives sell fees (burn or collect)
 
     uint256 public immutable VIRT_ETH; // virtual ETH reserve (sets the starting price)
@@ -60,6 +71,7 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
     uint256 public devSellReserve; // accrued 1% sell fees, for the project dev to burn or collect
     bool public graduated;
     address public pool;
+    address public bond; // the Bond posted at graduation (Keep + Moat + Ramparts)
 
     error AlreadyGraduated();
     error NotGraduated();
@@ -87,11 +99,13 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
         uint256 curveSupply_,
         uint256 gradTarget_,
         uint32 antiSnipeSecs_,
-        uint256 maxBuyWei_
+        uint256 maxBuyWei_,
+        address bondDeployer_,
+        uint256 rampSupply_
     ) {
         require(
             token_ != address(0) && weth_ != address(0) && v3Factory_ != address(0)
-                && platform_ != address(0) && dev_ != address(0),
+                && platform_ != address(0) && dev_ != address(0) && bondDeployer_ != address(0),
             "zero addr"
         );
         require(virtEth_ > 0 && curveSupply_ > 0 && gradTarget_ > 0, "params");
@@ -101,7 +115,8 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
         token = IERC20(token_);
         WETH = weth_;
         v3Factory = IUniswapV3Factory(v3Factory_);
-        locker = new LiquidityLocker(address(this)); // curve owns its locker; LP locked to it forever
+        bondDeployer = bondDeployer_;
+        rampSupply = rampSupply_;
         platform = platform_;
         dev = dev_;
         VIRT_ETH = virtEth_;
@@ -121,7 +136,7 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
         // (Deploy token+curve atomically — as CurveLaunchFactory does — so there's no gap before this runs.)
         uint256 gradRE = virtEth_ + gradTarget_;
         uint256 gradRT = K / gradRE;
-        (,, uint256 ga0, uint256 ga1) = _orderedAddr(token_, weth_, gradRT, gradRE);
+        (uint256 ga0, uint256 ga1) = token_ < weth_ ? (gradRT, gradRE) : (gradRE, gradRT);
         uint160 sp = PoolMath.sqrtPriceX96FromAmounts(ga0, ga1);
         gradSqrtPriceX96 = sp;
         address p = IUniswapV3Factory(v3Factory_).getPool(token_, weth_, POOL_FEE);
@@ -265,34 +280,37 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
 
     function _graduate() internal {
         graduated = true;
-        uint256 ethToLp = raised(); // real ETH raised for LP (accrued fees stay claimable, not deposited)
+        uint256 ethToLp = raised(); // real ETH raised (accrued fees stay claimable, not deposited)
         require(ethToLp > 0, "empty grad");
 
-        // Seed the pool at the price it was committed to at launch (gradSqrtPriceX96). Choose tokensToLp so
-        // ethToLp/tokensToLp matches that price; burn the unsold remainder (deflationary, no below-price dump).
-        address p = pool; // created + initialized at launch
-        uint256 quote = PoolMath.quoteWethPerToken(gradSqrtPriceX96, address(token) < WETH); // WETH-wei per 1e18 token
-        require(quote > 0, "bad price");
-        uint256 tokensToLp = Math.min(reserveToken, Math.mulDiv(ethToLp, 1e18, quote));
-        require(tokensToLp > 0, "empty grad");
-        uint256 burnTokens = reserveToken - tokensToLp;
-        if (burnTokens > 0) token.safeTransfer(0x000000000000000000000000000000000000dEaD, burnTokens);
-
-        IWETH9(WETH).deposit{value: ethToLp}();
-
-        (address token0, address token1, uint256 amt0, uint256 amt1) =
-            _orderedAddr(address(token), WETH, tokensToLp, ethToLp);
-
-        // The pool is ours from launch, so it should still be at gradSqrtPriceX96. Requiring this refuses to
-        // mint into a pool whose price a griefer moved (they'd need to add real liquidity + swap — costly, no
-        // profit, and defeated by the private mempool); that reverts graduation (no theft, ETH exitable).
+        // The pool is ours from launch, so it must still be at gradSqrtPriceX96. Requiring this refuses to
+        // seed into a pool whose price a griefer moved (they'd need real liquidity + a swap — costly, no
+        // profit, defeated by a private mempool); reverting graduation is safe (no theft, ETH exitable).
+        address p = pool;
         (uint160 existing,,,,,,) = IUniswapV3Pool(p).slot0();
         require(existing == gradSqrtPriceX96, "pool price moved");
-        IUniswapV3Pool(p).increaseObservationCardinalityNext(CARDINALITY); // arm the TWAP for the AthVault
+        IUniswapV3Pool(p).increaseObservationCardinalityNext(CARDINALITY); // arm the TWAP for the Bond's poke guard
 
-        uint128 L = PoolMath.fullRangeLiquidity(gradSqrtPriceX96, amt0, amt1);
-        IUniswapV3Pool(p).mint(address(locker), PoolMath.MIN_TICK, PoolMath.MAX_TICK, L, abi.encode(token0, token1));
-        locker.register(p, platform); // LP swap fees go to the platform
+        // Split the raise: KEEP_WETH_BPS seeds the Keep LP, the rest seeds the Moat floor.
+        uint256 keepWeth = (ethToLp * KEEP_WETH_BPS) / 10_000;
+        uint256 moatWeth = ethToLp - keepWeth;
+
+        // Keep tokens: pair `keepWeth` at the committed graduation price; burn the unsold curve remainder
+        // (NOT the ramp reserve, which is handed to the Bond's Ramparts).
+        uint256 quote = PoolMath.quoteWethPerToken(gradSqrtPriceX96, address(token) < WETH); // WETH-wei per 1e18 token
+        require(quote > 0, "bad price");
+        uint256 keepTokens = Math.min(reserveToken, Math.mulDiv(keepWeth, 1e18, quote));
+        require(keepTokens > 0, "empty grad");
+        uint256 burnTokens = reserveToken - keepTokens;
+        if (burnTokens > 0) token.safeTransfer(0x000000000000000000000000000000000000dEaD, burnTokens);
+
+        // Deploy the Bond, fund it (all raised ETH as WETH + Keep tokens + the Ramparts reserve), and post.
+        IWETH9(WETH).deposit{value: ethToLp}();
+        address b = IBondDeployer(bondDeployer).deploy(address(token), WETH, address(v3Factory), platform, address(this));
+        bond = b;
+        IERC20(WETH).safeTransfer(b, ethToLp);
+        IERC20(token).safeTransfer(b, keepTokens + rampSupply);
+        IBond(b).post(keepWeth, keepTokens, moatWeth, rampSupply);
 
         // sweep the accrued buy-fee buffer to the platform (the devSellReserve stays for the dev)
         uint256 buf = platformBuffer;
@@ -305,25 +323,10 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
         uint256 wethDust = IERC20(WETH).balanceOf(address(this));
         if (wethDust > 0) IERC20(WETH).safeTransfer(platform, wethDust);
 
-        emit Graduated(p, ethToLp, tokensToLp, gradSqrtPriceX96);
-    }
-
-    function uniswapV3MintCallback(uint256 amount0Owed, uint256 amount1Owed, bytes calldata data) external override {
-        (address token0, address token1) = abi.decode(data, (address, address));
-        if (msg.sender != v3Factory.getPool(token0, token1, POOL_FEE)) revert NotPool();
-        if (amount0Owed > 0) IERC20(token0).safeTransfer(msg.sender, amount0Owed);
-        if (amount1Owed > 0) IERC20(token1).safeTransfer(msg.sender, amount1Owed);
+        emit Graduated(p, ethToLp, keepTokens, gradSqrtPriceX96);
     }
 
     // --------------------------------------------------------------- helpers
-    function _orderedAddr(address t, address w, uint256 tokenAmt, uint256 ethAmt)
-        internal
-        pure
-        returns (address token0, address token1, uint256 amt0, uint256 amt1)
-    {
-        return t < w ? (t, w, tokenAmt, ethAmt) : (w, t, ethAmt, tokenAmt);
-    }
-
     function _sendEth(address to, uint256 amount) internal {
         (bool ok,) = to.call{value: amount}("");
         require(ok, "eth send");

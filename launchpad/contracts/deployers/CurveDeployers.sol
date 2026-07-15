@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {CurveToken} from "../CurveToken.sol";
 import {BondingCurve} from "../BondingCurve.sol";
+import {Bond} from "../Bond.sol";
 import {OtcVault} from "../OtcVault.sol";
 
 /// @notice Thin deployers so the big contracts' creation bytecode isn't inlined into CurveLaunchFactory
@@ -28,11 +29,25 @@ contract BondingCurveDeployer {
         uint256 curveSupply,
         uint256 gradTarget,
         uint32 antiSnipeSecs,
-        uint256 maxBuyWei
+        uint256 maxBuyWei,
+        address bondDeployer,
+        uint256 rampSupply
     ) external returns (address) {
         return address(
-            new BondingCurve(token, weth, v3Factory, platform, dev, virtEth, curveSupply, gradTarget, antiSnipeSecs, maxBuyWei)
+            new BondingCurve(
+                token, weth, v3Factory, platform, dev, virtEth, curveSupply, gradTarget, antiSnipeSecs, maxBuyWei,
+                bondDeployer, rampSupply
+            )
         );
+    }
+}
+
+contract BondDeployer {
+    function deploy(address token, address weth, address v3Factory, address platform, address curve)
+        external
+        returns (address)
+    {
+        return address(new Bond(token, weth, v3Factory, platform, curve));
     }
 }
 
