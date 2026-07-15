@@ -17,14 +17,15 @@
  *  "charter" theme via prefers-color-scheme + [data-theme].
  * ============================================================= */
 :root{
-  --bg:#0a0d0b; --bg-2:#0f130d; --bg-3:#151a12; --panel:#12160f;
-  --line:rgba(230,200,119,.16); --line-strong:rgba(230,200,119,.32);
-  --ink:#ece4d2; --ink-dim:#9aa48c; --ink-faint:#6f7865;
-  --gold:#e6c877; --gold-hi:#f7e6b0; --gold-deep:#b8912f;
-  --emerald:#3fbc74; --emerald-dim:#2b8a54;
-  --danger:#d9795f;
+  --bg:#0d0f07; --bg-2:#12150a; --bg-3:#181c0e; --panel:#15180d;
+  --line:rgba(204,255,0,.14); --line-strong:rgba(204,255,0,.30);
+  --ink:#f6f7f1; --ink-dim:#a7ad97; --ink-faint:#7f8570;
+  --gold:#ccff00; --gold-hi:#e4ff7a; --gold-deep:#9ac400;              /* accent = signature acid lime */
+  --treasure:#f5c542; --treasure-hi:#ffdd7a; --treasure-deep:#d99a1a; /* the Moat's gold */
+  --emerald:#ccff00; --emerald-dim:#9ac400;
+  --danger:#e08a5a;
   --seal:#9a2f28;
-  --shadow:0 24px 60px -24px rgba(0,0,0,.7);
+  --shadow:0 24px 60px -24px rgba(0,0,0,.72);
   --maxw:1120px;
   --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -32,32 +33,35 @@
 }
 @media (prefers-color-scheme: light){
   :root{
-    --bg:#efe7d4; --bg-2:#eae0ca; --bg-3:#f5efe0; --panel:#f6f0e1;
-    --line:rgba(122,90,18,.24); --line-strong:rgba(122,90,18,.42);
-    --ink:#241d12; --ink-dim:#6a5e46; --ink-faint:#8a7c60;
-    --gold:#8a6712; --gold-hi:#b98f2c; --gold-deep:#6d4f0e;
-    --emerald:#1c7a45; --emerald-dim:#166238;
+    --bg:#f1ecdb; --bg-2:#e9e2cc; --bg-3:#f6f1e2; --panel:#f6f1e2;
+    --line:rgba(90,110,0,.24); --line-strong:rgba(90,110,0,.42);
+    --ink:#1c2010; --ink-dim:#5c6047; --ink-faint:#818566;
+    --gold:#5c7a00; --gold-hi:#7a9e10; --gold-deep:#455c00;
+    --treasure:#8a6712; --treasure-hi:#a67c1e; --treasure-deep:#6d4f0e;
+    --emerald:#3a7a12; --emerald-dim:#2c5c0e;
     --danger:#a5432b; --seal:#8f2a23;
-    --shadow:0 24px 60px -30px rgba(80,60,20,.4);
+    --shadow:0 24px 60px -30px rgba(70,80,20,.4);
   }
 }
 :root[data-theme="light"]{
-  --bg:#efe7d4; --bg-2:#eae0ca; --bg-3:#f5efe0; --panel:#f6f0e1;
-  --line:rgba(122,90,18,.24); --line-strong:rgba(122,90,18,.42);
-  --ink:#241d12; --ink-dim:#6a5e46; --ink-faint:#8a7c60;
-  --gold:#8a6712; --gold-hi:#b98f2c; --gold-deep:#6d4f0e;
-  --emerald:#1c7a45; --emerald-dim:#166238;
+  --bg:#f1ecdb; --bg-2:#e9e2cc; --bg-3:#f6f1e2; --panel:#f6f1e2;
+  --line:rgba(90,110,0,.24); --line-strong:rgba(90,110,0,.42);
+  --ink:#1c2010; --ink-dim:#5c6047; --ink-faint:#818566;
+  --gold:#5c7a00; --gold-hi:#7a9e10; --gold-deep:#455c00;
+  --treasure:#8a6712; --treasure-hi:#a67c1e; --treasure-deep:#6d4f0e;
+  --emerald:#3a7a12; --emerald-dim:#2c5c0e;
   --danger:#a5432b; --seal:#8f2a23;
-  --shadow:0 24px 60px -30px rgba(80,60,20,.4);
+  --shadow:0 24px 60px -30px rgba(70,80,20,.4);
 }
 :root[data-theme="dark"]{
-  --bg:#0a0d0b; --bg-2:#0f130d; --bg-3:#151a12; --panel:#12160f;
-  --line:rgba(230,200,119,.16); --line-strong:rgba(230,200,119,.32);
-  --ink:#ece4d2; --ink-dim:#9aa48c; --ink-faint:#6f7865;
-  --gold:#e6c877; --gold-hi:#f7e6b0; --gold-deep:#b8912f;
-  --emerald:#3fbc74; --emerald-dim:#2b8a54;
-  --danger:#d9795f; --seal:#9a2f28;
-  --shadow:0 24px 60px -24px rgba(0,0,0,.7);
+  --bg:#0d0f07; --bg-2:#12150a; --bg-3:#181c0e; --panel:#15180d;
+  --line:rgba(204,255,0,.14); --line-strong:rgba(204,255,0,.30);
+  --ink:#f6f7f1; --ink-dim:#a7ad97; --ink-faint:#7f8570;
+  --gold:#ccff00; --gold-hi:#e4ff7a; --gold-deep:#9ac400;
+  --treasure:#f5c542; --treasure-hi:#ffdd7a; --treasure-deep:#d99a1a;
+  --emerald:#ccff00; --emerald-dim:#9ac400;
+  --danger:#e08a5a; --seal:#9a2f28;
+  --shadow:0 24px 60px -24px rgba(0,0,0,.72);
 }
 
 *{box-sizing:border-box}
@@ -507,9 +511,9 @@ h1,h2,h3{font-family:var(--serif); font-weight:600; letter-spacing:-.01em; text-
   var W,H; resize(); addEventListener('resize',resize,{passive:true});
 
   function draw(){
-    var gold=css('--gold')||'#e6c877', goldHi=css('--gold-hi')||'#f7e6b0',
-        emerald=css('--emerald')||'#3fbc74', line=css('--line-strong')||'rgba(230,200,119,.32)',
-        dim=css('--ink-dim')||'#9aa48c';
+    var gold=css('--treasure')||'#f5c542', goldHi=css('--treasure-hi')||'#ffdd7a',
+        emerald=css('--gold')||'#ccff00', line=css('--line-strong')||'rgba(204,255,0,.30)',
+        dim=css('--ink-dim')||'#a7ad97';
     ctx.clearRect(0,0,W,H);
     var padY=26, gh=H-padY*2;
     var X=function(i){return (i/(N-1))*W;};
