@@ -173,11 +173,15 @@ protecting projects costs the platform *nothing* — it's the trust wedge that w
 for profit, so only real accumulators use it). Every use is a permanent **$SHERIFF burn sink** → $SHERIFF
 becomes the crest/index of the whole chain's activity. Tribute ETH can route to the Moat or the platform.
 
-**Build status.** Curve + graduation + fee model are built, tested (29 passing) and audited. The Bond's v3
-range-order machinery (Moat/Ramparts/Recycle/keeper) is **design-locked and economically validated in
-`sim/bond-sim.mjs`**; the on-chain implementation needs a Uniswap-v3 **fork test** (concentrated range-order
-fills can't be exercised against the flat-price mock) and is the next build phase. The earlier `OtcVault`
-(fixed-price $SHERIFF-burn OTC) remains in the repo but is superseded by the Bond.
+**Build status.** Curve + graduation + fee model are built, tested (29 passing) and audited — and now
+**fork-verified against the REAL Uniswap v3 on Robinhood Chain** (`test/fork/graduation.fork.test.js`, run
+with `FORK_RPC=<rpc>`; chainId 4663, verified factory `0x1f7d…2efa`, WETH `0x0Bd7…aD73`). The fork test
+proves what the flat-price mock couldn't: the constructor **creates + initializes the real pool** at the
+committed price, graduation **mints a real full-range LP** (our `±887200` tick-snapping matches the 1% tier's
+spacing) and **locks it**, the **TWAP arms** and `observe()` works, and a **real swap trades** against the
+graduated pool. The Bond's v3 range-order machinery (Moat/Ramparts/Recycle/keeper) is **design-locked and
+economically validated in `sim/bond-sim.mjs`**; the on-chain implementation is the next build phase and will
+be fork-tested the same way before mainnet. The earlier `OtcVault` remains in the repo but is superseded.
 
 **Curve-launchpad audit (2 lenses) — findings fixed:**
 - **Graduation brick via pool pre-init (HIGH):** the curve **creates + initializes its Uniswap pool at
