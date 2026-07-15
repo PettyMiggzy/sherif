@@ -117,66 +117,80 @@ asserts the deployed bytecode equals the model op-for-op. Latest run:
 - **Anti-snipe is weak (LOW, documented):** the per-tx `maxBuyWei` cap is easily split across txs/wallets on
   an FCFS chain — it is NOT strong sniper protection. The strong path is the **atomic `LaunchpadFactory`**.
 
-## Curve launchpad tokenomics (`CurveLaunchFactory` + `OtcVault`)
-The productized bonding-curve flow the platform launches other tokens through.
+## The Sheriff's Bond — the launchpad's killer feature (`CurveLaunchFactory` + the Bond)
+The productized bonding-curve flow the platform launches other tokens through. Context: **NOXA** — the
+Robinhood-Chain launchpad that did **~$12–14.5M in fees in one week** (beat Pump.fun's daily fees for 5
+straight days, ~60k tokens, flagship CASHCAT → $226M MC) — then **went dark and left holders hanging** (Jul
+2026). The demand is proven and the throne is empty. The wedge is the thing NOXA never had: **every token
+launched through the Sheriff gets a protocol-owned floor it cannot be rugged below. "The Sheriff posts a
+Bond on your token."** Take from the outlaws robbing the chart, give it back to the townsfolk — on the
+*Robinhood* chain, the meme and the mechanism are the same thing.
 
 **Fixed, oracle-free pad terms (identical for every launch — projects only pick name / ticker / dev):**
 | Term | Value |
 |---|---|
 | Total supply | **1,000,000,000** (fixed) |
-| Split | **80% bonding curve · 20% OTC vault** |
-| Start price | `VIRT_ETH = 0.8 ETH` → **start MC = 1 ETH (~$3k)**, no oracle |
-| Graduation | when the curve collects **4 ETH** |
+| Split | **75% bonding curve · 25% Ramparts** (the Bond's sell-into-green engine) |
+| Start price | `VIRT_ETH = 0.8 ETH` → **start MC ≈ $1,880** (1 ETH), no oracle |
+| Graduation | when the curve collects **4 ETH (~$7.5k)** → grad FDV **36 ETH (~$68k)** |
 | Anti-snipe | 0.1-ETH per-buy cap for the first 5 min |
-| OTC price | fixed at **~$10k MC** (`otcPrice = 3.33e9` WETH-wei / 1e18 token), oracle-free |
-| OTC access | **burn $SHERIFF** → per-wallet cap = `burned × 100` tokens |
+| Starting LP | **$10k+ combined** ($5k ETH / $5k tokens), buy-side-weighted |
+| Platform take | **full 1%** every trade (curve buys + LP swap fees) + Tribute ETH — **not** the floor's funding |
 
-Trajectory (assume ETH=$3k): launch $3k → graduates at 4 ETH raised. `CurveLaunchFactory.launch({name,
-symbol, dev})` is the whole interface.
+`CurveLaunchFactory.launch({name, symbol, dev})` is the whole interface. (ETH assumed ~$1,880.)
 
-**Per launch, the supply splits:** **20% → `OtcVault`** (platform OTC desk) · **80% → `BondingCurve`**.
-The curve trades + charts day one and **graduates** to a locked Uniswap pool (see above). The 80% is
-sold along the curve / seeded into the LP; the 20% is the platform's OTC allocation.
+**The Bond — a protocol-owned market maker, posted at graduation, locked forever:**
+- 🏰 **Moat** — a wall of ETH buy orders *below* price (a v3 concentrated range, a *falling ladder* not a
+  single peg). It buys the dip. Seeded buy-side-weighted from the raise so a real floor stands **from second
+  one** — protection is strongest exactly when a launch is weakest (snipers, early flippers).
+- 🏹 **Ramparts** — the **25%** as sell orders placed *high* above price (3×–25×, thinning with height). They
+  only fill into a real pump, in tiny slices — never a dump. The ETH they earn drops into the Moat.
+- 🛡️ **Keep** — the baseline locked LP so it trades + charts day one.
+- ♻️ **Recycle** — tokens the Moat catches on a dip get re-posted higher on the Ramparts. **A sniper dumping
+  at the open funds the very floor that protects everyone else** — no sell-tax token needed (that would be a
+  honeypot flag; the recycle loop achieves it clean).
+- A permissionless **keeper `poke()`** collects filled orders, ratchets the Moat up, and redeploys — with a
+  **never-all-in** rule (bounded slice per rung, always dry powder deeper down).
 
-**`OtcVault` — burn-$SHERIFF-for-access OTC desk (activates after graduation):**
-- Holds the 20%. After graduation, `activate()` (permissionless) binds the curve's own graduated pool.
-- The window **opens** once the pool's **30-min TWAP price** reaches the fixed OTC price (~$10k MC) — a
-  tick-space check, so **no oracle / no price feed**. Once open, buyers get the token **at that fixed $10k
-  price no matter how high the market has actually run** — a real discount when the token has mooned.
-- **Access is earned by burning $SHERIFF.** `buyOtc(sheriffBurn, tokenAmount)` sends `sheriffBurn` $SHERIFF
-  to `0x…dEaD` and unlocks a per-wallet allowance of `burned × burnRatio` tokens (`burnRatio = 100` tokens
-  per $SHERIFF, tunable). Bigger burn → bigger cap. The buyer pays `tokenAmount × otcPrice` in ETH; **100%
-  of that ETH goes straight to the platform wallet**; overpay is refunded.
-- **Two jobs at once:** a discretionary platform revenue stream *and* a permanent **$SHERIFF burn sink** that
-  every OTC buyer is forced through — deflationary for $SHERIFF, which benefits every holder.
-- **Anti-rug:** no path to withdraw the 20% token allocation for ETH into an EOA other than the OTC sale
-  itself, and OTC ETH is hard-wired to the platform wallet. No owner drain / setter.
+**Why it cannot go broke** (`sim/bond-sim.mjs`, 12,000 Monte-Carlo paths, **0 broke events**):
+- The Moat only ever bids **real ETH it already holds** — no peg, no leverage, **no liability**, so nothing
+  to default on / bank-run. Free-ETH balance is `≥ 0` by construction across every path.
+- **Buy-below / sell-above is net-ETH-positive over volatility** — a choppy token *grows* its own floor
+  (+3.9 ETH chop, +45 runner, +101 moonshot in sim).
+- Worst case (token pumps then dies forever) = the Moat holds cheap bags, a **capped loss of the seed**
+  (~2.5 ETH), hurting nobody — the platform's 1% was already banked.
 
-**Economics (`sim/otc-sim.mjs`):** full sell-out of the 20% at the $10k OTC price = **0.666 ETH/project
-(~$2k)** to the platform. Across a portfolio (grad ~55%, of those ~70% open, partial clear) it averages
-**~0.16 ETH/launch** — e.g. **~159 ETH (~$476k) over 1,000 launches**, plus ~0.5B $SHERIFF burned. OTC is
-the *upside* stream; the steady revenue is the **1% buy fee** (0.9% streamed live) **+ LP swap fees**, which
-scale with volume on every launch, graduated or not.
+**Sim floor outcomes (real ETH @ ~$1,880):** sideways **~$12k** · runner (~8×) **~$89k** · moonshot (~40×)
+**~$193k** · **sniper-dump-at-open → ~$29k floor built from the dump itself**. The floor scales with success
+and is funded by the token, never by the platform's fee and never by a trader tax.
+
+**Platform economics.** Keeps the **full 1%** on every trade in both phases — the same model that printed
+NOXA $12M/week. At even **10% of NOXA's peak volume ≈ $1.1–1.35M/week**; matching it ≈ **~$13.5M/week**. The
+Moat/Ramparts are funded entirely by the **25% allocation + the recycle loop + optional Tribute ETH**, so
+protecting projects costs the platform *nothing* — it's the trust wedge that wins the volume.
+
+**Tribute (optional).** Burn $SHERIFF → buy a project ~15% under the live TWAP (self-limiting: can't flip
+for profit, so only real accumulators use it). Every use is a permanent **$SHERIFF burn sink** → $SHERIFF
+becomes the crest/index of the whole chain's activity. Tribute ETH can route to the Moat or the platform.
+
+**Build status.** Curve + graduation + fee model are built, tested (29 passing) and audited. The Bond's v3
+range-order machinery (Moat/Ramparts/Recycle/keeper) is **design-locked and economically validated in
+`sim/bond-sim.mjs`**; the on-chain implementation needs a Uniswap-v3 **fork test** (concentrated range-order
+fills can't be exercised against the flat-price mock) and is the next build phase. The earlier `OtcVault`
+(fixed-price $SHERIFF-burn OTC) remains in the repo but is superseded by the Bond.
 
 **Curve-launchpad audit (2 lenses) — findings fixed:**
-- **Graduation brick via pool pre-init (HIGH):** the curve now **creates + initializes its Uniswap pool at
+- **Graduation brick via pool pre-init (HIGH):** the curve **creates + initializes its Uniswap pool at
   launch** (at the deterministic graduation price), so no third party can pre-initialize it during the
   bonding phase to brick graduation. A griefer can't `createPool` (it exists) or re-`initialize` it.
 - **Graduation price continuity (kept 100%):** the graduating buy is **capped to land exactly on
   `GRAD_TARGET`** (excess refunded), so graduation seeds the pool at exactly the committed price — sim
-  confirms **100% continuous** (median/best/worst). The TWAP is armed (`increaseObservationCardinalityNext`)
-  at graduation, which the OtcVault's open-trigger reads.
-- **`OtcVault.activate()` binding (MEDIUM):** closed by the above — the pool bound is always the curve's own
-  correctly-priced graduated pool (validated: exists + initialized). Activating before graduation reverts
-  (`NoPool`); the window itself only opens once the TWAP clears the OTC price.
-- **OTC open-trigger manipulation (defended):** the open gate is a **30-min TWAP** tick check
-  (`PoolMath.twapPriceWethPerToken`), not spot — a flash pump can't force the window open at the fixed price.
-- **Fixed-price ETH accounting:** `cost = tokenAmount × otcPrice / 1e18` (OZ `mulDiv`), ETH pushed to the
-  platform via `.call` with an overpay refund; `nonReentrant` on `buyOtc`; per-wallet allowance is
-  monotonic (`purchased` only grows) so the burn→allowance→buy path can't be replayed for free.
-- Confirmed sound: allowance math (`burned × burnRatio − purchased`, no underflow), $SHERIFF burn is a real
-  transfer to `0x…dEaD`, no path to withdraw the 20% token allocation except the OTC sale, OTC ETH is
-  hard-wired to the platform wallet, `tokenIsToken0` direction correct both orderings.
+  confirms **100% continuous**. The TWAP is armed (`increaseObservationCardinalityNext`) at graduation.
+- **No sell-tax token (anti-honeypot):** the "snipers fund the floor" outcome is achieved by the **recycle
+  loop**, not a transfer tax — the token stays clean (`no transfer tax ✅`), never flagged by DexScreener.
+- **Floor solvency (proven):** `sim/bond-sim.mjs` shows the Moat can never overspend (free ETH `≥ 0`), nets
+  positive over volatility, and caps its worst-case loss at the seed. To port on-chain: a fork test must
+  re-verify the same invariants against real v3 tick math before mainnet.
 
 ## Internal adversarial review (not a substitute for a professional audit)
 A 5-lens adversarial audit (reentrancy/callbacks, oracle/economics, access-control/rug, v3-integration,
