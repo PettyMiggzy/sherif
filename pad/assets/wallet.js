@@ -247,10 +247,12 @@ async function quoteMinOut({ pool, tokenIn, tokenOut, amountIn, slippagePct }) {
     // expected out at spot (ignores curve depth) then a wide safety haircut
     let out = inIs0 ? (amountIn * price1per0) / (10n ** 18n) : (amountIn * (10n ** 18n)) / price1per0;
     const bufferPct = BigInt(Math.round((slippagePct + 6) * 100)); // + curve buffer
-    return (out * (10000n - bufferPct)) / 10000n;
-  } catch {
-    // last resort: let the user's wallet enforce nothing, simulation still guards
-    return 0n;
+    const minOut = (out * (10000n - bufferPct)) / 10000n;
+    if (minOut <= 0n) throw new Error("couldn't price this trade");
+    return minOut;
+  } catch (e) {
+    // Never trade with a 0 slippage floor — that invites a sandwich. Fail loudly instead.
+    throw new Error("Couldn't compute a safe price for this trade — try again in a moment.");
   }
 }
 

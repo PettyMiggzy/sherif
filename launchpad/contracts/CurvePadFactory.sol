@@ -51,6 +51,7 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
 
     address public platform;
     bool private _swapping; // guards the swap callback (WETH is only ever transient, mid-launch)
+    address private _activePool; // the pool we're mid-swap with (callback authenticity check)
 
     // ---- fixed terms ----
     uint256 public constant TOTAL_SUPPLY = 1_000_000_000 ether;
@@ -171,7 +172,9 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
 
         IWETH9(WETH).deposit{value: msg.value}();
         _swapping = true;
+        _activePool = pool;
         IUniswapV3Pool(pool).swap(address(this), zeroForOne, int256(msg.value), sqrtLimit, "");
+        _activePool = address(0);
         _swapping = false;
 
         // deliver bought tokens to the dev; enforce the 2% cap; refund any unused ETH
@@ -187,7 +190,7 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
     }
 
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata) external override {
-        require(_swapping, "no swap");
+        require(_swapping && msg.sender == _activePool, "no swap");
         uint256 owed = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
         IERC20(WETH).safeTransfer(msg.sender, owed); // msg.sender is the pool mid-swap
     }

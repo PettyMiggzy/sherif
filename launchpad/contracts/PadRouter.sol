@@ -63,6 +63,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     mapping(address => uint256) public burnEscrow;
 
     bool private _swapping;
+    address private _activePool; // the pool we're mid-swap with (callback authenticity check)
 
     error Unknown();
     error OnlyFactory();
@@ -172,18 +173,21 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         uint160 limit = zeroForOne ? PoolMath.MIN_SQRT_RATIO + 1 : PoolMath.MAX_SQRT_RATIO - 1;
 
         _swapping = true;
+        _activePool = pool;
         (int256 a0, int256 a1) =
             IUniswapV3Pool(pool).swap(recipient, zeroForOne, int256(amountIn), limit, abi.encode(tokenIn));
+        _activePool = address(0);
         _swapping = false;
         // the negative delta is what the pool sent OUT (to recipient)
         out = a0 < 0 ? uint256(-a0) : uint256(-a1);
     }
 
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external override {
-        require(_swapping, "no swap");
+        // only reachable during one of our own swaps, and only from THAT pool
+        require(_swapping && msg.sender == _activePool, "no swap");
         address tokenIn = abi.decode(data, (address));
         uint256 owed = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
-        IERC20(tokenIn).safeTransfer(msg.sender, owed); // msg.sender is the pool mid-swap
+        IERC20(tokenIn).safeTransfer(msg.sender, owed);
     }
 
     function _distribute(address token, uint256 fee) internal {
@@ -210,7 +214,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         if (b != address(0)) bondOf[token] = b;
     }
 
-    function withdrawPlatform() external {
+    function withdrawPlatform() external nonReentrant {
         uint256 amt = platformEscrow;
         platformEscrow = 0;
         (bool ok,) = owner().call{value: amt}("");
@@ -250,5 +254,12 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         IWETH9(WETH).deposit{value: amt}();
         uint256 bought = _swap(token, c.pool, WETH, amt, address(this));
         IERC20(token).safeTransfer(DEAD, bought);
+        // if the swap couldn't consume all of it, re-credit the residual (never leave stray WETH in the
+        // router, or a later buy's refund would hand it to an unrelated buyer)
+        uint256 left = IERC20(WETH).balanceOf(address(this));
+        if (left > 0) {
+            IWETH9(WETH).withdraw(left);
+            burnEscrow[token] += left;
+        }
     }
 }
