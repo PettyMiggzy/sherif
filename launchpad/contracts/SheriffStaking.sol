@@ -16,6 +16,7 @@ contract SheriffStaking is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 private constant ACC = 1e18; // fixed-point scaler for accRewardPerShare
+    uint256 public constant UNSTAKE_DELAY = 1 days; // min hold after (re)staking — deters just-in-time reward capture
 
     IERC20 public immutable sheriff; // the $SHERIFF token
 
@@ -26,9 +27,11 @@ contract SheriffStaking is ReentrancyGuard {
     mapping(address => uint256) public staked;
     mapping(address => uint256) public rewardDebt; // staked*acc/ACC at last settle
     mapping(address => uint256) public accrued; // settled-but-unclaimed ETH
+    mapping(address => uint256) public stakedAt; // last (re)stake time; gates unstake by UNSTAKE_DELAY
 
     error Zero();
     error Insufficient();
+    error Locked();
 
     event Staked(address indexed user, uint256 amount);
     event Unstaked(address indexed user, uint256 amount);
@@ -58,6 +61,7 @@ contract SheriffStaking is ReentrancyGuard {
         sheriff.safeTransferFrom(msg.sender, address(this), amount);
         staked[msg.sender] += amount;
         totalStaked += amount;
+        stakedAt[msg.sender] = block.timestamp;
         rewardDebt[msg.sender] = staked[msg.sender] * accRewardPerShare / ACC;
         emit Staked(msg.sender, amount);
     }
@@ -65,6 +69,7 @@ contract SheriffStaking is ReentrancyGuard {
     function unstake(uint256 amount) external nonReentrant {
         if (amount == 0) revert Zero();
         if (staked[msg.sender] < amount) revert Insufficient();
+        if (block.timestamp < stakedAt[msg.sender] + UNSTAKE_DELAY) revert Locked();
         _settle(msg.sender);
         staked[msg.sender] -= amount;
         totalStaked -= amount;

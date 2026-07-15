@@ -33,7 +33,10 @@ describe("SheriffStaking", () => {
     expect(await ethers.provider.getBalance(s.a.address)).to.equal(before + 3n * ONE - gas);
     expect(await s.staking.pending(s.a.address)).to.equal(0n);
 
-    // unstake returns the staked SHERIFF
+    // unstake is locked for UNSTAKE_DELAY (anti-JIT), then returns the staked SHERIFF
+    await expect(s.staking.connect(s.b).unstake(10_000n * ONE)).to.be.revertedWithCustomError(s.staking, "Locked");
+    await network.provider.send("evm_increaseTime", [24 * 3600 + 1]);
+    await network.provider.send("evm_mine");
     await s.staking.connect(s.b).unstake(10_000n * ONE);
     expect(await s.SHERIFF.balanceOf(s.b.address)).to.equal(100_000n * ONE);
   });

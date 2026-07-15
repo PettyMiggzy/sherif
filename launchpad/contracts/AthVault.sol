@@ -32,9 +32,9 @@ contract AthVault is IUniswapV3SwapCallback, ReentrancyGuard {
     // ladder tuning
     uint16 public constant TRANCHE_BPS = 150; // sell 1.5% of remaining vault per ATH
     int24 public constant ATH_GAP_TICKS = 488; // ~5% price gap between triggering highs
-    int24 public constant MAX_SPOT_DEVIATION_TICKS = 500; // spot must track TWAP (anti-manipulation)
+    int24 public constant MAX_SPOT_DEVIATION_TICKS = 100; // spot must track TWAP within ~1% (anti-sandwich)
     uint32 public constant COOLDOWN = 1 hours;
-    uint16 public constant SLIPPAGE_BPS = 300;
+    uint16 public constant SLIPPAGE_BPS = 100; // 1% — bounds any within-band sandwich to ~2%
     uint256 internal constant SQRT_FLOOR_X96 = 73044756656988588048856075193; // sqrt(0.85)*2^96
     uint256 internal constant SQRT_CEIL_X96 = 84962738866485953687210797629; // sqrt(1.15)*2^96
 
@@ -57,6 +57,7 @@ contract AthVault is IUniswapV3SwapCallback, ReentrancyGuard {
     int256 public hwm; // highest price-level that has triggered a sale
     uint256 public lastSaleTime;
     uint256 public devReserveWeth; // WETH held for the dev to burn or withdraw
+    uint256 public pendingStakeEth; // ETH that failed to reach staking; anyone can retry via flushStaking()
 
     error NotActive();
     error AlreadyActive();
@@ -140,6 +141,9 @@ contract AthVault is IUniswapV3SwapCallback, ReentrancyGuard {
         hwm = level;
         lastSaleTime = block.timestamp;
 
+        // min-out from spot, which the tight deviation guard proves is within ~1% of the TWAP. (For an
+        // even stricter floor, PoolMath.twapPriceWethPerToken(mean, tokenIsToken0) prices the TWAP tick
+        // directly — recommended production hardening; see SPEC.)
         uint256 spotPrice = PoolMath.quoteWethPerToken(spot, tokenIsToken0);
         uint256 minOut = Math.mulDiv(Math.mulDiv(amountIn, spotPrice, 1e18), 10_000 - SLIPPAGE_BPS, 10_000);
         wethOut = _sellExactToken(amountIn, spot, minOut);
@@ -157,9 +161,22 @@ contract AthVault is IUniswapV3SwapCallback, ReentrancyGuard {
         if (toPlatform > 0) weth.safeTransfer(platform, toPlatform);
         if (toStake > 0) {
             IWETH9(address(weth)).withdraw(toStake);
-            staking.notifyReward{value: toStake}();
+            // a reverting staking contract must never brick an ATH sale; hold + retry via flushStaking()
+            try staking.notifyReward{value: toStake}() {} catch {
+                pendingStakeEth += toStake;
+            }
         }
         emit Split(toDev, toStake, toPlatform);
+    }
+
+    /// @notice Retry pushing any ETH that previously failed to reach the staking contract.
+    function flushStaking() external nonReentrant {
+        uint256 amt = pendingStakeEth;
+        if (amt == 0) return;
+        pendingStakeEth = 0;
+        try staking.notifyReward{value: amt}() {} catch {
+            pendingStakeEth = amt;
+        }
     }
 
     // --------------------------------------------------------------- dev: burn OR withdraw the 40%

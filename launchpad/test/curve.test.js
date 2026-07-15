@@ -10,7 +10,9 @@ class Ref {
   constructor(virt, supply, grad) { this.VIRT = virt; this.K = virt * supply; this.GRAD = grad; this.RE = virt; this.RT = supply; this.grad = false; }
   raised() { return this.RE - this.VIRT; }
   buy(eth) {
-    const fee = (eth * FEE_BPS) / BPS, net = eth - fee;
+    let fee = (eth * FEE_BPS) / BPS, net = eth - fee;
+    const room = this.GRAD - this.raised();
+    if (net > room) { let g = ceilDiv(room * BPS, BPS - FEE_BPS); if (g > eth) g = eth; fee = g - room; net = room; }
     const nRE = this.RE + net, nRT = this.K / nRE, out = this.RT - nRT;
     this.RE = nRE; this.RT = nRT; if (this.raised() >= this.GRAD) this.grad = true; return out;
   }
@@ -104,23 +106,24 @@ describe("BondingCurve", () => {
     expect(burned).to.be.greaterThan(0n);
   });
 
-  it("refuses to graduate into a pool pre-initialized at a wrong price (no theft); funds stay exitable", async () => {
+  it("claims + initializes its pool at launch, so a griefer cannot pre-initialize it", async () => {
     const s = await setup();
-    // griefer pre-creates + initializes the (token, WETH) pool at an arbitrary price
-    await s.V3.createPool(await s.TOK.getAddress(), await s.WETH.getAddress(), 10000);
-    const pre = await s.V3.getPool(await s.TOK.getAddress(), await s.WETH.getAddress(), 10000);
-    const predPool = await ethers.getContractAt("MockUniswapV3Pool", pre);
-    await predPool.initialize(79228162514264337593543950336n); // sqrtPrice = 2^96, not our grad price
+    // the curve already created + initialized the (token, WETH) pool in its constructor
+    const p = await s.curve.pool();
+    expect(p).to.not.equal(ethers.ZeroAddress);
+    expect(p).to.equal(await s.V3.getPool(await s.TOK.getAddress(), await s.WETH.getAddress(), 10000));
+    const pool = await ethers.getContractAt("MockUniswapV3Pool", p);
+    const [sqrtP] = await pool.slot0();
+    expect(sqrtP).to.equal(await s.curve.gradSqrtPriceX96()); // priced at the committed graduation price
 
-    await s.curve.connect(s.traders[0]).buy(0, { value: 3n * ONE }); // below target: fine
-    // the buy that would cross the target reverts rather than mint into a manipulated pool
-    await expect(s.curve.connect(s.traders[1]).buy(0, { value: 3n * ONE })).to.be.reverted;
-    expect(await s.curve.graduated()).to.equal(false);
+    // a griefer can no longer create OR re-initialize the pool
+    await expect(s.V3.createPool(await s.TOK.getAddress(), await s.WETH.getAddress(), 10000)).to.be.revertedWith("exists");
+    await expect(pool.initialize(79228162514264337593543950336n)).to.be.revertedWith("init");
 
-    // crucially, holders can still exit — no funds are trapped
-    const bal = await s.TOK.balanceOf(s.traders[0].address);
-    await s.TOK.connect(s.traders[0]).approve(await s.curve.getAddress(), bal);
-    await s.curve.connect(s.traders[0]).sell(bal, 0); // succeeds
+    // and graduation proceeds normally into the pool it owns
+    await s.curve.connect(s.traders[0]).buy(0, { value: 3n * ONE });
+    await s.curve.connect(s.traders[1]).buy(0, { value: 3n * ONE });
+    expect(await s.curve.graduated()).to.equal(true);
   });
 
   it("a round trip (buy then sell) never returns a profit", async () => {

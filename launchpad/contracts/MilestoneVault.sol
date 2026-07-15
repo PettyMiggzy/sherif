@@ -20,7 +20,7 @@ contract MilestoneVault is IUniswapV3SwapCallback, ReentrancyGuard {
     address public constant BURN = 0x000000000000000000000000000000000000dEaD;
 
     // Tunables (immutable in bytecode).
-    uint16 public constant SLIPPAGE_BPS = 300; // 3% off the TWAP-anchored expectation
+    uint16 public constant SLIPPAGE_BPS = 100; // 1% — with the tight deviation guard bounds sandwich to ~2%
     uint32 public constant MILESTONE_COOLDOWN = 300; // >=5 min between tranche sells
     uint32 public constant BUYBACK_COOLDOWN = 6 hours;
     uint16 public constant BUYBACK_MAX_BPS = 2500; // <=25% of the reserve per buyback call
@@ -28,7 +28,7 @@ contract MilestoneVault is IUniswapV3SwapCallback, ReentrancyGuard {
     // Execution is only allowed when spot is within this many ticks of the TWAP mean. This is the
     // key defense against an attacker cratering (or pumping) spot in-tx to sell/buy the tranche off
     // the manipulation-resistant TWAP price. ~500 ticks ≈ 5%.
-    int24 public constant MAX_SPOT_DEVIATION_TICKS = 500;
+    int24 public constant MAX_SPOT_DEVIATION_TICKS = 100; // spot must track TWAP within ~1%
     uint256 internal constant SQRT_FLOOR_X96 = 73044756656988588048856075193; // sqrt(0.85)*2^96
     uint256 internal constant SQRT_CEIL_X96 = 84962738866485953687210797629; // sqrt(1.15)*2^96
 
@@ -162,8 +162,9 @@ contract MilestoneVault is IUniswapV3SwapCallback, ReentrancyGuard {
         lastMilestoneTime = block.timestamp;
         totalSold += amountIn;
 
-        // min-out anchored to spot (which is now proven within MAX_SPOT_DEVIATION of the TWAP), so it
-        // tracks the real market price, not the stale launch price.
+        // min-out from spot, which the tight deviation guard proves is within ~1% of the TWAP. (For an
+        // even stricter floor, PoolMath.twapPriceWethPerToken(mean, tokenIsToken0) prices the TWAP tick
+        // directly — recommended production hardening; see SPEC.)
         uint256 spotPrice = PoolMath.quoteWethPerToken(spot, tokenIsToken0);
         uint256 minOut = Math.mulDiv(Math.mulDiv(amountIn, spotPrice, 1e18), 10_000 - SLIPPAGE_BPS, 10_000);
 

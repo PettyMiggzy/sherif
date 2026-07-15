@@ -28,6 +28,7 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
 
     uint24 public constant POOL_FEE = 10000;
     uint16 public constant FEE_BPS = 100; // 1% platform fee on buys and sells
+    uint16 public constant CARDINALITY = 200; // TWAP observation slots armed at graduation (for the AthVault)
 
     // immutables
     IERC20 public immutable token;
@@ -41,6 +42,7 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
     uint256 public immutable CURVE_SUPPLY; // tokens for sale on the curve (must be funded to this contract)
     uint256 public immutable K; // = VIRT_ETH * CURVE_SUPPLY (constant product)
     uint256 public immutable GRAD_TARGET; // real ETH (net of fees) that triggers graduation
+    uint160 public immutable gradSqrtPriceX96; // pool price committed + initialized at launch
 
     // anti-snipe (first window: cap the net ETH per buy; auto-expires)
     uint64 public immutable startTime;
@@ -103,6 +105,20 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
 
         reserveEth = virtEth_;
         reserveToken = curveSupply_;
+
+        // Claim + initialize the Uniswap pool NOW, at the deterministic graduation price (the price when
+        // raised == GRAD_TARGET). This closes the pre-initialization DoS: since we own+price the pool from
+        // launch, no third party can initialize it off-price during the bonding phase to brick graduation.
+        // (Deploy token+curve atomically — as CurveLaunchFactory does — so there's no gap before this runs.)
+        uint256 gradRE = virtEth_ + gradTarget_;
+        uint256 gradRT = K / gradRE;
+        (,, uint256 ga0, uint256 ga1) = _orderedAddr(token_, weth_, gradRT, gradRE);
+        uint160 sp = PoolMath.sqrtPriceX96FromAmounts(ga0, ga1);
+        gradSqrtPriceX96 = sp;
+        address p = IUniswapV3Factory(v3Factory_).getPool(token_, weth_, POOL_FEE);
+        if (p == address(0)) p = IUniswapV3Factory(v3Factory_).createPool(token_, weth_, POOL_FEE);
+        IUniswapV3Pool(p).initialize(sp);
+        pool = p;
     }
 
     /// @notice Real ETH raised so far (net of fees) = what's held for graduation.
@@ -130,6 +146,21 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
         if (netEth == 0) revert NothingOut();
         if (block.timestamp < uint256(startTime) + antiSnipeSecs && netEth > maxBuyWei) revert SnipeCap();
 
+        // Cap the graduating buy so `raised()` lands EXACTLY on GRAD_TARGET and refund the excess. This
+        // makes graduation happen at the price the pool was initialized to at launch (price-continuous),
+        // and removes any overshoot the last buyer would otherwise eat.
+        uint256 refundEth;
+        {
+            uint256 room = GRAD_TARGET - raised(); // > 0 (not graduated)
+            if (netEth > room) {
+                uint256 acceptGross = Math.ceilDiv(room * 10_000, 10_000 - FEE_BPS);
+                if (acceptGross > msg.value) acceptGross = msg.value;
+                refundEth = msg.value - acceptGross;
+                fee = acceptGross - room;
+                netEth = room;
+            }
+        }
+
         // constant product: new token reserve = K / new eth reserve
         uint256 newReserveEth = reserveEth + netEth;
         // buy rounding is generous by <1 token-wei; safety comes from the sell-side ceilDiv + the
@@ -144,7 +175,8 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
         feesEth += fee; // accrued, not pushed (a reverting platform must not brick buys)
 
         token.safeTransfer(msg.sender, tokensOut);
-        emit Buy(msg.sender, msg.value, fee, tokensOut, reserveEth, reserveToken);
+        if (refundEth > 0) _sendEth(msg.sender, refundEth); // return the overshoot (guarded by nonReentrant)
+        emit Buy(msg.sender, msg.value - refundEth, fee, tokensOut, reserveEth, reserveToken);
 
         if (raised() >= GRAD_TARGET) _graduate();
     }
@@ -194,13 +226,15 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
     function _graduate() internal {
         graduated = true;
         uint256 ethToLp = raised(); // real ETH raised for LP (accrued fees stay claimable, not deposited)
-        // Seed the pool at the curve's EXACT final marginal price (reserveEth/reserveToken) so there is
-        // no price step at graduation: choose tokensToLp so ethToLp/tokensToLp == reserveEth/reserveToken.
-        // The unsold remainder is burned (deflationary), instead of dumping it into the pool below price.
-        // clamp (belt-and-suspenders): ethToLp==raised()<reserveEth so this is already < reserveToken,
-        // but guard against any balance/accounting drift so the burnTokens subtraction can't underflow.
-        uint256 tokensToLp = Math.min(reserveToken, Math.mulDiv(ethToLp, reserveToken, reserveEth));
-        require(ethToLp > 0 && tokensToLp > 0, "empty grad");
+        require(ethToLp > 0, "empty grad");
+
+        // Seed the pool at the price it was committed to at launch (gradSqrtPriceX96). Choose tokensToLp so
+        // ethToLp/tokensToLp matches that price; burn the unsold remainder (deflationary, no below-price dump).
+        address p = pool; // created + initialized at launch
+        uint256 quote = PoolMath.quoteWethPerToken(gradSqrtPriceX96, address(token) < WETH); // WETH-wei per 1e18 token
+        require(quote > 0, "bad price");
+        uint256 tokensToLp = Math.min(reserveToken, Math.mulDiv(ethToLp, 1e18, quote));
+        require(tokensToLp > 0, "empty grad");
         uint256 burnTokens = reserveToken - tokensToLp;
         if (burnTokens > 0) token.safeTransfer(0x000000000000000000000000000000000000dEaD, burnTokens);
 
@@ -208,25 +242,15 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
 
         (address token0, address token1, uint256 amt0, uint256 amt1) =
             _orderedAddr(address(token), WETH, tokensToLp, ethToLp);
-        uint160 sqrtPriceX96 = PoolMath.sqrtPriceX96FromAmounts(amt0, amt1);
 
-        address p = v3Factory.getPool(address(token), WETH, POOL_FEE);
-        if (p == address(0)) p = v3Factory.createPool(address(token), WETH, POOL_FEE);
-        pool = p;
-        // Anyone can pre-create + initialize this pool. If it's uninitialized we set our price; if it's
-        // already initialized we require it to match OUR price and never mint into a pool at some other
-        // price (which a griefer could set to have the fresh LP arbed out — theft). A wrong-price
-        // pre-init instead bricks graduation (griefing DoS; raised ETH stays exitable via sell()).
-        // Production deploys token+curve atomically so the token address — and thus the pool — is fresh
-        // and cannot be pre-initialized. See SPEC "graduation".
+        // The pool is ours from launch, so it should still be at gradSqrtPriceX96. Requiring this refuses to
+        // mint into a pool whose price a griefer moved (they'd need to add real liquidity + swap — costly, no
+        // profit, and defeated by the private mempool); that reverts graduation (no theft, ETH exitable).
         (uint160 existing,,,,,,) = IUniswapV3Pool(p).slot0();
-        if (existing == 0) {
-            IUniswapV3Pool(p).initialize(sqrtPriceX96);
-        } else {
-            require(existing == sqrtPriceX96, "pool pre-initialized off-price");
-        }
+        require(existing == gradSqrtPriceX96, "pool price moved");
+        IUniswapV3Pool(p).increaseObservationCardinalityNext(CARDINALITY); // arm the TWAP for the AthVault
 
-        uint128 L = PoolMath.fullRangeLiquidity(sqrtPriceX96, amt0, amt1);
+        uint128 L = PoolMath.fullRangeLiquidity(gradSqrtPriceX96, amt0, amt1);
         IUniswapV3Pool(p).mint(address(locker), PoolMath.MIN_TICK, PoolMath.MAX_TICK, L, abi.encode(token0, token1));
         locker.register(p, dev);
 
@@ -236,7 +260,7 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
         uint256 wethDust = IERC20(WETH).balanceOf(address(this));
         if (wethDust > 0) IERC20(WETH).safeTransfer(dev, wethDust);
 
-        emit Graduated(p, ethToLp, tokensToLp, sqrtPriceX96);
+        emit Graduated(p, ethToLp, tokensToLp, gradSqrtPriceX96);
     }
 
     function uniswapV3MintCallback(uint256 amount0Owed, uint256 amount1Owed, bytes calldata data) external override {

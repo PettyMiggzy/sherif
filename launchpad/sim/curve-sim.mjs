@@ -39,10 +39,13 @@ class Curve {
   raised() { return this.RE - this.VIRT; }
   buy(ethIn) {
     if (this.graduated) return { err: "graduated" };
-    const fee = (ethIn * FEE_BPS) / BPS;
-    const net = ethIn - fee;
+    let fee = (ethIn * FEE_BPS) / BPS;
+    let net = ethIn - fee;
     if (net === 0n) return { err: "dust" };
     if (this.antiSnipe && net > this.maxBuyWei) return { err: "snipe" };
+    // cap the graduating buy to land exactly on GRAD_TARGET (refund the rest) -> price-continuous grad
+    const room = this.GRAD - this.raised();
+    if (net > room) { let g = ceilDiv(room * BPS, BPS - FEE_BPS); if (g > ethIn) g = ethIn; fee = g - room; net = room; }
     const newRE = this.RE + net;
     const newRT = this.K / newRE; // floor
     const out = this.RT - newRT;
@@ -67,9 +70,14 @@ class Curve {
   _graduate() {
     this.graduated = true;
     this.gradEth = this.balance; // all real ETH to LP
-    // price-continuous seeding: tokensToLp = ethToLp * RT / RE (floor); burn the remainder
-    this.gradTokens = (this.gradEth * this.RT) / this.RE;
+    // Contract seeds at the COMMITTED graduation price (set at launch): gradRE=VIRT+GRAD, gradRT=K/gradRE.
+    // tokensToLp = ethToLp * gradRT / gradRE  so pool price == gradRE/gradRT.
+    const gradRE = this.VIRT + this.GRAD;
+    const gradRT = this.K / gradRE;
+    let t = (this.gradEth * gradRT) / gradRE;
+    this.gradTokens = t < this.RT ? t : this.RT; // min clamp
     this.burnTokens = this.RT - this.gradTokens;
+    this.committedPriceNum = gradRE; this.committedPriceDen = gradRT; // for the step measurement
   }
 }
 
@@ -167,9 +175,10 @@ function graduationStats(rng, viol, n) {
     if (c.gradEth <= 0n || c.gradTokens <= 0n) viol.push(`GRAD empty`);
     // raised must have reached the target
     if (c.raised() < c.GRAD) viol.push(`GRAD below target`);
-    // price continuity: pool seed price (gradEth/gradTokens) vs curve final marginal price (RE/RT).
-    // ratio = gradEth*RT / (gradTokens*RE); 1e6 ppm == perfectly continuous.
-    const stepPpm = Number((c.gradEth * c.RT * 1_000_000n) / (c.gradTokens * c.RE));
+    // price continuity: pool seed price (committedPriceNum/Den == gradEth/gradTokens) vs the curve's
+    // actual final marginal price (RE/RT). ratio = poolPrice/curvePrice in ppm; 1e6 == continuous.
+    // The only gap is the last buy's overshoot beyond GRAD_TARGET (pool opens slightly BELOW final price).
+    const stepPpm = Number((c.committedPriceNum * c.RT * 1_000_000n) / (c.committedPriceDen * c.RE));
     steps.push(stepPpm);
     if (stepPpm > 1_000_100) viol.push(`GRAD pool price ABOVE curve (${stepPpm})`); // must never open higher
   }

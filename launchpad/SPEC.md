@@ -144,6 +144,25 @@ staked is queued and distributed on the next reward. `stake` / `unstake` / `clai
 (supply conserved, split exact 40/20/40, never over-sells, HWM monotonic, ladders on new highs only).
 Decay: 10 ATHs→14% sold · 50→53% · 100→78% · 250→98%.
 
+**Curve-launchpad audit (2 lenses) — findings fixed:**
+- **Graduation brick via pool pre-init (HIGH):** the curve now **creates + initializes its Uniswap pool at
+  launch** (at the deterministic graduation price), so no third party can pre-initialize it during the
+  bonding phase to brick graduation. A griefer can't `createPool` (it exists) or re-`initialize` it.
+- **Graduation price continuity (kept 100%):** the graduating buy is **capped to land exactly on
+  `GRAD_TARGET`** (excess refunded), so graduation seeds the pool at exactly the committed price — sim
+  confirms **100% continuous** (median/best/worst). The TWAP is armed (`increaseObservationCardinalityNext`)
+  at graduation for the AthVault.
+- **`AthVault.activate()` binding (MEDIUM):** closed by the above — the pool is always the curve's own
+  correctly-priced pool; activating before graduation is harmless (poke needs liquidity + TWAP history).
+- **Sale sandwich band (M-1):** deviation guard tightened to **~1%** and slippage to **1%**, bounding any
+  within-band sandwich of a tranche sale to ~2% (down from ~8%). `PoolMath.twapPriceWethPerToken` (TickMath
+  ported) is available to anchor min-out to the TWAP tick directly — recommended production hardening.
+- **JIT staking (M-2):** `SheriffStaking` adds a **1-day unstake lock** to deter just-in-time reward capture.
+- **Staking-call DoS (LOW):** `AthVault` wraps `notifyReward` in try/catch with a `flushStaking()` retry, so
+  a reverting staking contract can never brick an ATH sale.
+- Confirmed sound: staking accumulator (no double-claim/insolvency), 40/20/40 always exact, `_level`
+  direction correct both orderings, HWM monotonic, no path to withdraw the 10% allocation, funding math exact.
+
 ## Internal adversarial review (not a substitute for a professional audit)
 A 5-lens adversarial audit (reentrancy/callbacks, oracle/economics, access-control/rug, v3-integration,
 arithmetic) was run against this code. The **core anti-rug guarantees were confirmed to hold** (no drain
