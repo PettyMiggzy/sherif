@@ -117,6 +117,33 @@ asserts the deployed bytecode equals the model op-for-op. Latest run:
 - **Anti-snipe is weak (LOW, documented):** the per-tx `maxBuyWei` cap is easily split across txs/wallets on
   an FCFS chain — it is NOT strong sniper protection. The strong path is the **atomic `LaunchpadFactory`**.
 
+## Curve launchpad tokenomics (`CurveLaunchFactory` + `AthVault` + `SheriffStaking`)
+The productized bonding-curve flow the platform launches other tokens through.
+
+**Per launch, the supply splits:** **10% → `AthVault`** (platform treasury) · **90% → `BondingCurve`**.
+The curve trades + charts day one and **graduates** to a locked Uniswap pool (see above). The 90% is
+sold along the curve / seeded into the LP; the 10% is the platform's ATH treasury.
+
+**`AthVault` — ATH ladder seller (activates after graduation):**
+- Trims **1.5% of the *remaining* vault** each time price prints a **new TWAP all-time-high** — gated by a
+  `startLevel` (~$5k MC, expressed as a tick level so **no oracle** is needed), a **≥5% gap** between
+  triggering highs, a **1h cooldown**, and a **spot-vs-TWAP deviation guard** (can't be triggered at a
+  manipulated price). Geometric decay: ~50 new ATHs to sell half the vault → a slow trickle, never a dump.
+- Each sale's ETH splits **40% dev · 20% $SHERIFF staking · 40% platform**.
+  - **40% dev:** held as a reserve the project dev can **`devBurn`** (buy-and-burn) **or `devWithdraw`** (take ETH) — dev's choice.
+  - **20% staking:** unwrapped to ETH and pushed to `SheriffStaking.notifyReward()`.
+  - **40% platform:** sent to the platform wallet.
+- **Anti-rug:** there is **no path to withdraw the 10% token allocation** — it can only be laddered out on
+  new highs or bought-and-burned. `poke()` is permissionless (keeper-safe).
+
+**`SheriffStaking` — stake $SHERIFF, earn ETH.** Every launch's 20% cut flows here and is distributed
+pro-rata to stakers via an `accRewardPerShare` accumulator (O(1), no loops). ETH received while nobody is
+staked is queued and distributed on the next reward. `stake` / `unstake` / `claim`.
+
+**Simulations:** `sim/ath-sim.mjs` — 5,000 random price paths, ~380k ATH sales, **0 invariant violations**
+(supply conserved, split exact 40/20/40, never over-sells, HWM monotonic, ladders on new highs only).
+Decay: 10 ATHs→14% sold · 50→53% · 100→78% · 250→98%.
+
 ## Internal adversarial review (not a substitute for a professional audit)
 A 5-lens adversarial audit (reentrancy/callbacks, oracle/economics, access-control/rug, v3-integration,
 arithmetic) was run against this code. The **core anti-rug guarantees were confirmed to hold** (no drain
