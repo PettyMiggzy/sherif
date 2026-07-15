@@ -3,155 +3,565 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Launchpad — $SHERIFF | Fair launches on Robinhood Chain</title>
-<meta name="description" content="The Sheriff's Launchpad — fair-launch any token on Robinhood Chain. Tradeable on Uniswap + charted day one, liquidity locked, a rule-bound treasury with auto buy-and-burn, 1% flat, and anti-snipe. Coming soon." />
-<meta property="og:title" content="$SHERIFF Launchpad — Coming Soon" />
-<meta property="og:description" content="Fair launches on Robinhood Chain. Locked liquidity, milestone buy-and-burn, anti-snipe. The taxman's blessing." />
-<meta property="og:image" content="assets/brand/sheriff-arrow.webp" />
+<title>The Sheriff's Bond — Launchpad on Robinhood Chain | $SHERIFF</title>
+<meta name="description" content="A launchpad that posts a Bond on every token — a protocol-owned floor it can't be rugged below. Deep locked liquidity, a rising Moat that buys every dip, and a clean, tax-free token. Coming soon to Robinhood Chain." />
+<meta property="og:title" content="The Sheriff's Bond — Launch with a floor no one can pull" />
+<meta property="og:description" content="Every token gets a Bond: a protocol-owned floor, funded by the launch, locked forever. When the chart dips, the town's gold buys it back." />
 <meta property="og:type" content="website" />
 <meta name="twitter:card" content="summary_large_image" />
-<link rel="icon" href="assets/brand/sheriff-pfp.webp" type="image/webp" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2l3.2 6.6 7.3 1-5.3 5.1 1.3 7.2L16 24.5 9.2 22l1.3-7.2L5.2 9.7l7.3-1z' fill='%23e6c877'/%3E%3C/svg%3E" />
+<style>
+/* ============================================================= *
+ *  The Sheriff's Bond — self-contained premium launchpad page
+ *  Palette + type via tokens; dark "treasury" default, light
+ *  "charter" theme via prefers-color-scheme + [data-theme].
+ * ============================================================= */
+:root{
+  --bg:#0a0d0b; --bg-2:#0f130d; --bg-3:#151a12; --panel:#12160f;
+  --line:rgba(230,200,119,.16); --line-strong:rgba(230,200,119,.32);
+  --ink:#ece4d2; --ink-dim:#9aa48c; --ink-faint:#6f7865;
+  --gold:#e6c877; --gold-hi:#f7e6b0; --gold-deep:#b8912f;
+  --emerald:#3fbc74; --emerald-dim:#2b8a54;
+  --danger:#d9795f;
+  --seal:#9a2f28;
+  --shadow:0 24px 60px -24px rgba(0,0,0,.7);
+  --maxw:1120px;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#efe7d4; --bg-2:#eae0ca; --bg-3:#f5efe0; --panel:#f6f0e1;
+    --line:rgba(122,90,18,.24); --line-strong:rgba(122,90,18,.42);
+    --ink:#241d12; --ink-dim:#6a5e46; --ink-faint:#8a7c60;
+    --gold:#8a6712; --gold-hi:#b98f2c; --gold-deep:#6d4f0e;
+    --emerald:#1c7a45; --emerald-dim:#166238;
+    --danger:#a5432b; --seal:#8f2a23;
+    --shadow:0 24px 60px -30px rgba(80,60,20,.4);
+  }
+}
+:root[data-theme="light"]{
+  --bg:#efe7d4; --bg-2:#eae0ca; --bg-3:#f5efe0; --panel:#f6f0e1;
+  --line:rgba(122,90,18,.24); --line-strong:rgba(122,90,18,.42);
+  --ink:#241d12; --ink-dim:#6a5e46; --ink-faint:#8a7c60;
+  --gold:#8a6712; --gold-hi:#b98f2c; --gold-deep:#6d4f0e;
+  --emerald:#1c7a45; --emerald-dim:#166238;
+  --danger:#a5432b; --seal:#8f2a23;
+  --shadow:0 24px 60px -30px rgba(80,60,20,.4);
+}
+:root[data-theme="dark"]{
+  --bg:#0a0d0b; --bg-2:#0f130d; --bg-3:#151a12; --panel:#12160f;
+  --line:rgba(230,200,119,.16); --line-strong:rgba(230,200,119,.32);
+  --ink:#ece4d2; --ink-dim:#9aa48c; --ink-faint:#6f7865;
+  --gold:#e6c877; --gold-hi:#f7e6b0; --gold-deep:#b8912f;
+  --emerald:#3fbc74; --emerald-dim:#2b8a54;
+  --danger:#d9795f; --seal:#9a2f28;
+  --shadow:0 24px 60px -24px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--sans); font-size:17px; line-height:1.65;
+  -webkit-font-smoothing:antialiased; overflow-x:hidden;
+}
+/* faint grain + vignette for depth */
+body::before{
+  content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(120% 80% at 50% -10%, color-mix(in oklab, var(--gold) 10%, transparent), transparent 60%),
+    radial-gradient(90% 60% at 100% 0%, color-mix(in oklab, var(--emerald) 8%, transparent), transparent 55%);
+  opacity:.9;
+}
+body::after{
+  content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.035;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+main,header,footer{position:relative; z-index:1}
+
+a{color:inherit; text-decoration:none}
+img,svg{display:block}
+:focus-visible{outline:2px solid var(--gold); outline-offset:3px; border-radius:3px}
+
+.wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+
+/* ---- type ---- */
+h1,h2,h3{font-family:var(--serif); font-weight:600; letter-spacing:-.01em; text-wrap:balance; margin:0}
+.foil{
+  background:linear-gradient(96deg,var(--gold-deep),var(--gold-hi) 42%,var(--gold) 70%,var(--gold-deep));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.eyebrow{
+  font-family:var(--mono); font-size:.74rem; letter-spacing:.28em; text-transform:uppercase;
+  color:var(--gold); display:inline-flex; align-items:center; gap:.6em;
+}
+.eyebrow::before{content:""; width:26px; height:1px; background:var(--line-strong)}
+.lead{color:var(--ink-dim); max-width:60ch}
+
+/* ---- nav ---- */
+.nav{
+  position:sticky; top:0; z-index:50; display:flex; align-items:center; justify-content:space-between;
+  gap:16px; padding:14px 24px; max-width:var(--maxw); margin:0 auto;
+  transition:padding .3s ease;
+}
+.nav.scrolled{
+  background:color-mix(in oklab, var(--bg) 82%, transparent); backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line); padding:10px 24px;
+}
+.brand{display:flex; align-items:center; gap:11px; font-family:var(--serif); font-size:1.15rem; letter-spacing:.02em}
+.brand .crest{width:34px; height:34px; flex:none}
+.brand b{font-weight:600}
+.brand .tag{color:var(--gold); font-weight:600}
+.nav-links{display:flex; align-items:center; gap:6px}
+.nav-links a{
+  font-size:.92rem; color:var(--ink-dim); padding:8px 12px; border-radius:8px; transition:color .2s, background .2s;
+}
+.nav-links a:hover{color:var(--ink)}
+.nav-links a.active{color:var(--gold)}
+.icon-btn{background:none; border:1px solid var(--line); color:var(--ink-dim); width:38px; height:38px;
+  border-radius:9px; cursor:pointer; font-size:1rem; display:grid; place-items:center; transition:.2s}
+.icon-btn:hover{border-color:var(--line-strong); color:var(--gold)}
+.btn{
+  display:inline-flex; align-items:center; gap:.5em; font-family:var(--sans); font-weight:600; font-size:.95rem;
+  padding:12px 22px; border-radius:11px; cursor:pointer; border:1px solid transparent; transition:.22s ease;
+  white-space:nowrap;
+}
+.btn-gold{
+  background:linear-gradient(180deg,var(--gold-hi),var(--gold) 55%,var(--gold-deep)); color:#241a06;
+  box-shadow:0 8px 24px -8px color-mix(in oklab,var(--gold) 60%, transparent);
+}
+.btn-gold:hover{transform:translateY(-2px); box-shadow:0 12px 30px -8px color-mix(in oklab,var(--gold) 70%, transparent)}
+.btn-gold[disabled]{opacity:.9; cursor:not-allowed}
+.btn-ghost{border-color:var(--line-strong); color:var(--ink)}
+.btn-ghost:hover{background:var(--bg-3); border-color:var(--gold)}
+.btn .soon{font-family:var(--mono); font-size:.62rem; letter-spacing:.12em; text-transform:uppercase;
+  padding:2px 7px; border-radius:20px; background:rgba(0,0,0,.18)}
+.nav-toggle{display:none}
+
+/* ---- hero ---- */
+.hero{padding:64px 0 40px; text-align:center}
+.badge-soon{
+  display:inline-flex; align-items:center; gap:.55em; font-family:var(--mono); font-size:.72rem;
+  letter-spacing:.2em; text-transform:uppercase; color:var(--emerald);
+  border:1px solid color-mix(in oklab,var(--emerald) 40%, transparent); border-radius:20px; padding:6px 14px;
+  background:color-mix(in oklab,var(--emerald) 10%, transparent);
+}
+.badge-soon .pulse{width:7px; height:7px; border-radius:50%; background:var(--emerald);
+  box-shadow:0 0 0 0 color-mix(in oklab,var(--emerald) 70%,transparent); animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in oklab,var(--emerald) 55%,transparent)}70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.hero .crest-lg{width:76px; height:76px; margin:26px auto 20px; filter:drop-shadow(0 6px 18px rgba(0,0,0,.35))}
+.hero h1{font-size:clamp(2.6rem,6.4vw,4.7rem); line-height:1.02; margin:0 auto; max-width:15ch}
+.hero .lead{margin:22px auto 0; font-size:1.16rem}
+.hero-cta{display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-top:34px}
+.rule{width:100%; max-width:340px; height:1px; margin:38px auto 0;
+  background:linear-gradient(90deg,transparent,var(--line-strong),transparent)}
+
+/* ---- floor visual (the thesis) ---- */
+.floor-stage{padding:26px 0 8px}
+.floor-card{
+  position:relative; border:1px solid var(--line); border-radius:20px; overflow:hidden;
+  background:linear-gradient(180deg,var(--bg-2),var(--bg)); box-shadow:var(--shadow);
+}
+.floor-card .frame-label{
+  position:absolute; top:16px; left:20px; z-index:3; font-family:var(--mono); font-size:.7rem;
+  letter-spacing:.22em; text-transform:uppercase; color:var(--gold);
+}
+.floor-card .frame-note{
+  position:absolute; top:16px; right:20px; z-index:3; font-family:var(--mono); font-size:.7rem;
+  letter-spacing:.1em; color:var(--ink-dim);
+}
+#floorCanvas{display:block; width:100%; height:340px; background:transparent}
+.floor-caption{color:var(--ink-dim); text-align:center; margin:16px auto 0; max-width:52ch; font-size:.98rem}
+.floor-caption b{color:var(--ink)}
+
+/* ---- generic section ---- */
+.section{padding:74px 0}
+.section-head{max-width:62ch; margin-bottom:44px}
+.section-head h2{font-size:clamp(1.9rem,3.6vw,2.9rem); margin-top:16px; line-height:1.08}
+.section-head .lead{margin-top:16px}
+
+/* ---- the Bond: four charters ---- */
+.charter-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:18px}
+.charter{
+  position:relative; border:1px solid var(--line); border-radius:16px; padding:26px 26px 24px;
+  background:var(--panel); transition:transform .28s ease, border-color .28s ease, box-shadow .28s ease;
+}
+.charter:hover{transform:translateY(-4px); border-color:var(--line-strong); box-shadow:var(--shadow)}
+.charter .sigil{width:46px; height:46px; border-radius:12px; display:grid; place-items:center; font-size:1.4rem;
+  border:1px solid var(--line-strong); background:linear-gradient(180deg,var(--bg-3),transparent); margin-bottom:16px}
+.charter h3{font-size:1.4rem; margin-bottom:8px}
+.charter h3 .en{font-family:var(--mono); font-size:.64rem; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--gold); display:block; margin-bottom:6px}
+.charter p{color:var(--ink-dim); margin:0; font-size:.98rem}
+
+/* ---- stat band ---- */
+.stats{border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--bg-2)}
+.stats-grid{display:grid; grid-template-columns:repeat(4,1fr)}
+.stat{padding:40px 24px; text-align:center; border-right:1px solid var(--line)}
+.stat:last-child{border-right:none}
+.stat .n{font-family:var(--serif); font-size:clamp(1.8rem,3.4vw,2.6rem); font-variant-numeric:tabular-nums; line-height:1}
+.stat .l{font-family:var(--mono); font-size:.7rem; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--ink-dim); margin-top:12px}
+
+/* ---- ledger / trust ---- */
+.ledger{display:grid; grid-template-columns:repeat(2,1fr); gap:0 40px}
+.ledger .row{display:flex; align-items:flex-start; gap:14px; padding:18px 0; border-bottom:1px solid var(--line)}
+.ledger .mark{color:var(--emerald); flex:none; font-size:1.05rem; margin-top:1px}
+.ledger .row b{font-weight:600}
+.ledger .row span{color:var(--ink-dim); font-size:.95rem}
+
+/* ---- watch band (NOXA counter-position) ---- */
+.watch{
+  border:1px solid var(--line); border-radius:18px; padding:38px; background:
+  linear-gradient(180deg,var(--bg-2),var(--bg)); position:relative; overflow:hidden;
+}
+.watch .q{font-family:var(--serif); font-size:clamp(1.4rem,2.8vw,2rem); line-height:1.25; max-width:26ch; text-wrap:balance}
+.watch .attrib{font-family:var(--mono); font-size:.72rem; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--gold); margin-top:20px}
+
+/* ---- steps ---- */
+.steps{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; counter-reset:s}
+.step{border:1px solid var(--line); border-radius:14px; padding:24px; background:var(--panel)}
+.step .n{font-family:var(--mono); font-size:.78rem; letter-spacing:.1em; color:var(--gold);
+  width:34px; height:34px; border:1px solid var(--line-strong); border-radius:50%; display:grid; place-items:center; margin-bottom:16px}
+.step h3{font-size:1.15rem; margin-bottom:7px}
+.step p{color:var(--ink-dim); font-size:.94rem; margin:0}
+
+/* ---- final CTA / seal ---- */
+.finale{text-align:center; padding:84px 0}
+.finale h2{font-size:clamp(2rem,4.2vw,3.2rem); max-width:18ch; margin:0 auto}
+.finale .lead{margin:20px auto 0}
+.wax{width:92px; height:92px; margin:30px auto 6px; position:relative}
+.wax .seal-txt{position:absolute; inset:0; display:grid; place-items:center; font-family:var(--serif);
+  font-size:.62rem; letter-spacing:.14em; text-transform:uppercase; color:#f4d9c9; text-align:center; line-height:1.3}
+
+/* ---- footer ---- */
+.footer{border-top:1px solid var(--line); margin-top:40px; padding:44px 0 60px}
+.footer-links{display:flex; flex-wrap:wrap; gap:18px; justify-content:center; margin-bottom:26px}
+.footer-links a{color:var(--ink-dim); font-size:.92rem}
+.footer-links a:hover{color:var(--gold)}
+.disclaimer{max-width:74ch; margin:0 auto; color:var(--ink-faint); font-size:.8rem; line-height:1.6; text-align:center}
+.copyright{text-align:center; color:var(--ink-faint); font-family:var(--mono); font-size:.72rem; letter-spacing:.1em; margin-top:22px}
+
+/* ---- reveal ---- */
+.js .reveal{opacity:0; transform:translateY(22px); transition:opacity .7s ease, transform .7s ease}
+.js .reveal.in{opacity:1; transform:none}
+
+/* ---- responsive ---- */
+@media (max-width:860px){
+  .nav-links{position:fixed; inset:64px 12px auto 12px; flex-direction:column; align-items:stretch; gap:4px;
+    background:var(--bg-2); border:1px solid var(--line); border-radius:14px; padding:12px; display:none; box-shadow:var(--shadow)}
+  .nav-links.open{display:flex}
+  .nav-links a{padding:12px}
+  .nav-toggle{display:grid}
+  .charter-grid{grid-template-columns:1fr}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .stat:nth-child(2){border-right:none}
+  .stat{border-bottom:1px solid var(--line)}
+  .ledger{grid-template-columns:1fr}
+  .steps{grid-template-columns:1fr 1fr}
+}
+@media (max-width:520px){
+  .steps{grid-template-columns:1fr}
+  .stats-grid{grid-template-columns:1fr}
+  .stat{border-right:none}
+}
+/* reveal marker set by inline head script */
+@media (prefers-reduced-motion:reduce){
+  *{animation:none !important; scroll-behavior:auto !important}
+  .js .reveal{opacity:1 !important; transform:none !important; transition:none}
+}
+</style>
+<script>document.documentElement.className+=' js';</script>
 </head>
 <body>
 
-<div class="bg-grid"></div>
-<div class="bg-glow"></div>
-<div class="bg-glow-2"></div>
-
-<!-- NAV -->
+<!-- ===== NAV ===== -->
 <header class="nav" id="nav">
-  <a class="brand" href="index.html#top">
-    <img src="assets/brand/sheriff-pfp.webp" alt="" class="brand-mark" />
-    <span class="brand-text"><b>$SHERIFF</b></span>
+  <a class="brand" href="index.html#top" aria-label="$SHERIFF home">
+    <svg class="crest" viewBox="0 0 40 40" aria-hidden="true">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#f7e6b0"/><stop offset=".55" stop-color="#e6c877"/><stop offset="1" stop-color="#b8912f"/>
+      </linearGradient></defs>
+      <path d="M20 2c5 3 10 4 15 4 0 12-2 24-15 32C7 30 5 18 5 6c5 0 10-1 15-4z" fill="none" stroke="url(#g)" stroke-width="1.6"/>
+      <path d="M20 9l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L8.8 14.3l5-.7z" fill="url(#g)"/>
+    </svg>
+    <span><b>$SHERIFF</b> <span class="tag">Bond</span></span>
   </a>
   <nav class="nav-links" id="navLinks">
     <a href="index.html#legend">The Legend</a>
     <a href="index.html#tokenomics">Tokenomics</a>
-    <a href="index.html#chart">📈 Chart</a>
-    <a href="memes.html">😹 Memes</a>
-    <a href="launchpad.html" class="active">🚀 Launchpad</a>
-    <a href="game/">🏹 Play</a>
-    <a href="https://x.com/hoodedsheriff" target="_blank" rel="noopener" aria-label="Twitter / X">𝕏</a>
-    <a href="https://t.me/hoodedsheriff" target="_blank" rel="noopener" aria-label="Telegram">✈️</a>
-    <a class="btn btn-sm" href="https://ape.store/robinhood/0x01d8d7995d0e656315715ef0ed3b81d92171b3cc" target="_blank" rel="noopener">Buy $SHERIFF</a>
+    <a href="index.html#chart">Chart</a>
+    <a href="memes.html">Memes</a>
+    <a href="launchpad.html" class="active">Launchpad</a>
+    <a href="game/">Play</a>
+    <button class="icon-btn" id="themeToggle" aria-label="Toggle light / dark">◐</button>
+    <a class="btn btn-gold" href="https://ape.store/robinhood/0x01d8d7995d0e656315715ef0ed3b81d92171b3cc" target="_blank" rel="noopener">Buy $SHERIFF</a>
   </nav>
-  <button class="nav-toggle" id="navToggle" aria-label="Menu">☰</button>
+  <button class="icon-btn nav-toggle" id="navToggle" aria-label="Menu">☰</button>
 </header>
 
-<!-- HERO -->
-<section class="section lp-hero" id="top">
-  <div class="head reveal">
-    <span class="badge badge-soon"><span class="dot"></span> Coming Soon</span>
-    <span class="eyebrow">The Sheriff's Launchpad</span>
-    <h1 class="lp-title">Launch on <span class="text-lime">Robinhood Chain</span><br>with the taxman's blessing</h1>
-    <p>Fair-launch any token in one transaction — <b>tradeable on Uniswap &amp; charted on DexScreener day one</b>, liquidity <b>locked forever</b>, a rule-bound treasury that <b>buys back &amp; burns</b>, a flat <b>1%</b>, and <b>anti-snipe</b> baked in. No presale. No team unlocks. No rug.</p>
-    <div class="accent-line"></div>
-    <div class="lp-cta">
-      <button class="btn btn-lg" disabled>🚀 Launch a token <span class="soon">soon</span></button>
-      <a class="btn btn-ghost btn-lg" href="https://t.me/hoodedsheriff" target="_blank" rel="noopener">Get notified in Telegram</a>
+<main>
+
+<!-- ===== HERO ===== -->
+<section class="hero wrap" id="top">
+  <div class="reveal">
+    <span class="badge-soon"><span class="pulse"></span> Coming soon · Robinhood Chain</span>
+    <svg class="crest-lg" viewBox="0 0 40 40" aria-hidden="true">
+      <defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#f7e6b0"/><stop offset=".55" stop-color="#e6c877"/><stop offset="1" stop-color="#b8912f"/>
+      </linearGradient></defs>
+      <path d="M20 2c5 3 10 4 15 4 0 12-2 24-15 32C7 30 5 18 5 6c5 0 10-1 15-4z" fill="none" stroke="url(#g2)" stroke-width="1.4"/>
+      <path d="M20 9l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L8.8 14.3l5-.7z" fill="url(#g2)"/>
+    </svg>
+    <h1>The Sheriff posts a <span class="foil">Bond</span> on every launch.</h1>
+    <p class="lead">A protocol-owned floor stands under your token from the first block — funded by the launch itself, locked forever. When the chart dips, the town's gold buys it back. <b style="color:var(--ink)">Your token can't be rugged to zero.</b></p>
+    <div class="hero-cta">
+      <button class="btn btn-gold" disabled>Post your Bond <span class="soon">Soon</span></button>
+      <a class="btn btn-ghost" href="#floor">See how the floor works</a>
+    </div>
+    <div class="rule"></div>
+  </div>
+</section>
+
+<!-- ===== FLOOR VISUAL ===== -->
+<section class="floor-stage wrap" id="floor">
+  <div class="floor-card reveal">
+    <span class="frame-label">The Moat · live</span>
+    <span class="frame-note" id="floorReadout">floor —</span>
+    <canvas id="floorCanvas" width="1100" height="340" role="img"
+      aria-label="A price line riding above a rising gold floor that catches every dip."></canvas>
+  </div>
+  <p class="floor-caption">The gold is the <b>Moat</b> — a wall of the town's ETH standing under the price. It only ever
+    <b>rises</b>. Every dip it catches makes it <b>deeper</b>. The price can bounce; it can't fall through.</p>
+</section>
+
+<!-- ===== THE BOND ===== -->
+<section class="section wrap">
+  <div class="section-head reveal">
+    <span class="eyebrow">The Sheriff's Bond</span>
+    <h2>Four locked charters that <span class="foil">guard your chart</span>.</h2>
+    <p class="lead">Posted the moment your token graduates, owned by the protocol, and impossible to withdraw. Together they make a market maker that buys your dips and sells your euphoria — on your side, by design.</p>
+  </div>
+  <div class="charter-grid reveal">
+    <article class="charter">
+      <div class="sigil">🏰</div>
+      <h3><span class="en">The Moat</span>Buys every dip</h3>
+      <p>A wall of ETH parked below the price as a falling ladder of bids. It catches sell-offs, and it only ratchets up — never down. This is the floor no one can pull.</p>
+    </article>
+    <article class="charter">
+      <div class="sigil">🏹</div>
+      <h3><span class="en">The Ramparts</span>Sells only strength</h3>
+      <p>A quarter of supply posted high above market — 3× to 25×. It fills only into a real pump, in thin slices, never a dump. Every coin it earns drops straight into the Moat.</p>
+    </article>
+    <article class="charter">
+      <div class="sigil">🛡️</div>
+      <h3><span class="en">The Keep</span>Liquidity, locked</h3>
+      <p>Deep baseline liquidity minted into an immutable locker with no withdraw path. Charts on DexScreener from block one. The LP can never be rugged — only fees are claimable.</p>
+    </article>
+    <article class="charter">
+      <div class="sigil">♻️</div>
+      <h3><span class="en">The Recycle</span>Turns dumps to armor</h3>
+      <p>Tokens the Moat catches cheap get re-posted high and sold into the next pump. A sniper dumping at your open ends up <b style="color:var(--ink)">funding the very floor</b> that protects everyone who stayed.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ===== STATS ===== -->
+<section class="stats">
+  <div class="stats-grid wrap reveal">
+    <div class="stat"><div class="n foil">0<span style="font-size:.5em; color:var(--ink-dim)"> / 12,000</span></div><div class="l">Broke events in simulation</div></div>
+    <div class="stat"><div class="n foil">$12k→$193k</div><div class="l">Floor grows with the token</div></div>
+    <div class="stat"><div class="n foil">1%</div><div class="l">Flat fee · never touches the floor</div></div>
+    <div class="stat"><div class="n foil">$0</div><div class="l">What the floor costs you</div></div>
+  </div>
+</section>
+
+<!-- ===== WATCH BAND ===== -->
+<section class="section wrap">
+  <div class="watch reveal">
+    <div class="eyebrow" style="margin-bottom:18px">Why now</div>
+    <p class="q">The last launchpad on this chain made millions in a week — then went dark and left its holders in the cold.</p>
+    <p class="lead" style="margin-top:16px">Meme launchpads take your fees and vanish. The Sheriff does the opposite: he posts a Bond, locks it, and stands at his post. Protecting your launch isn't a favor — it's the whole business.</p>
+    <div class="attrib">— The Sheriff doesn't leave his post</div>
+  </div>
+</section>
+
+<!-- ===== LEDGER ===== -->
+<section class="section wrap">
+  <div class="section-head reveal">
+    <span class="eyebrow">On the record</span>
+    <h2>Everything a founder checks — <span class="foil">already true</span>.</h2>
+  </div>
+  <div class="ledger reveal">
+    <div class="row"><span class="mark">✦</span><span><b>Liquidity locked forever.</b> Minted into an immutable locker with no withdraw path.</span></div>
+    <div class="row"><span class="mark">✦</span><span><b>Clean, tax-free token.</b> No transfer tax, no blacklist, no hooks — never flagged as a honeypot.</span></div>
+    <div class="row"><span class="mark">✦</span><span><b>Oracle-free.</b> No external price feed to manipulate or break. Fixed, transparent terms.</span></div>
+    <div class="row"><span class="mark">✦</span><span><b>The floor is funded by the launch, not you.</b> The 25% allocation feeds it — your fee stays yours.</span></div>
+    <div class="row"><span class="mark">✦</span><span><b>Anti-snipe on by default.</b> First-minutes buy caps that expire to a totally normal token.</span></div>
+    <div class="row"><span class="mark">✦</span><span><b>Audited before mainnet.</b> Economics proven across 12,000 simulated price paths, code reviewed.</span></div>
+  </div>
+</section>
+
+<!-- ===== STEPS ===== -->
+<section class="section wrap">
+  <div class="section-head reveal">
+    <span class="eyebrow">From mint to floor</span>
+    <h2>One form. Then the Sheriff <span class="foil">takes the watch</span>.</h2>
+  </div>
+  <div class="steps reveal">
+    <div class="step"><div class="n">I</div><h3>Launch</h3><p>Pick a name and ticker. 1B supply, a fair bonding curve, anti-snipe armed. It starts around $1.9k and trades instantly.</p></div>
+    <div class="step"><div class="n">II</div><h3>Trade &amp; chart</h3><p>A real Uniswap pool, indexed by DexScreener from the first block. Live chart, DEX-paid, no waiting.</p></div>
+    <div class="step"><div class="n">III</div><h3>Graduate</h3><p>At 4 ETH raised the Bond is posted: deep locked liquidity, the Moat floor, and the Ramparts high above.</p></div>
+    <div class="step"><div class="n">IV</div><h3>The floor rises</h3><p>Every pump and every recycled dip deepens the Moat. Your token earns a floor that grows right along with it.</p></div>
+  </div>
+</section>
+
+<!-- ===== FINALE ===== -->
+<section class="finale wrap">
+  <div class="reveal">
+    <h2>Launch where someone <span class="foil">has your back</span>.</h2>
+    <p class="lead">The launchpad is in security review — contracts published in our official channels before anything goes live. Get the call when the gate opens.</p>
+    <div class="wax" aria-hidden="true">
+      <svg viewBox="0 0 92 92"><circle cx="46" cy="46" r="42" fill="var(--seal)"/>
+        <circle cx="46" cy="46" r="42" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="1"/>
+        <circle cx="46" cy="46" r="34" fill="none" stroke="rgba(0,0,0,.2)" stroke-width="1" stroke-dasharray="2 3"/></svg>
+      <div class="seal-txt">Sealed by<br>the Sheriff</div>
+    </div>
+    <div class="hero-cta">
+      <a class="btn btn-gold" href="https://t.me/hoodedsheriff" target="_blank" rel="noopener">Get notified in Telegram</a>
+      <a class="btn btn-ghost" href="https://x.com/hoodedsheriff" target="_blank" rel="noopener">Follow on X</a>
     </div>
   </div>
 </section>
 
-<!-- WHY -->
-<section class="band">
-  <section class="section" id="why">
-    <div class="head reveal">
-      <span class="eyebrow">Why launch here</span>
-      <h2>Built so the <span class="text-lime">peasants</span> keep the gold</h2>
-      <div class="accent-line"></div>
-    </div>
-    <div class="lp-grid reveal">
-      <div class="lp-card"><div class="ic">📈</div><h3>DEX &amp; chart, day one</h3><p>Every launch seeds a real Uniswap pool and is indexed by DexScreener from the first block — a live chart and "DEX Paid" badge out of the gate.</p></div>
-      <div class="lp-card"><div class="ic">🔒</div><h3>Liquidity locked forever</h3><p>The LP is minted straight into an immutable locker with no withdraw path. It can never be pulled — only trading fees are ever claimable.</p></div>
-      <div class="lp-card"><div class="ic">🎯</div><h3>Milestone treasury</h3><p>A rule-bound vault holds a treasury slice and trickle-sells tiny tranches at price targets (2×, 3×, 4×…), gated by a manipulation-resistant TWAP.</p></div>
-      <div class="lp-card"><div class="ic">🔥</div><h3>Auto buy-and-burn</h3><p>Half of every treasury sale funds a buyback reserve whose only exit is buying the token and sending it to the burn address. Supply only shrinks.</p></div>
-      <div class="lp-card"><div class="ic">🛡️</div><h3>Anti-snipe, auto-expiring</h3><p>Atomic launch plus first-minutes buy caps and a cooldown stop snipers — then it expires to a totally normal token. Sells are never blocked.</p></div>
-      <div class="lp-card"><div class="ic">🧾</div><h3>Flat 1%. No hidden tax.</h3><p>A single 1% platform fee on swaps — immutable, can never be raised. The token itself is tax-free and hookless, so it just works everywhere.</p></div>
-    </div>
-  </section>
-</section>
+</main>
 
-<!-- LAUNCH FORM MOCKUP -->
-<section class="section" id="create">
-  <div class="head reveal">
-    <span class="eyebrow">Launch console</span>
-    <h2>One form. One <span class="text-lime">transaction.</span></h2>
-    <p>This is the launch console — going live once the contracts are deployed and audited. Here's what minting a fair launch will look like.</p>
-    <div class="accent-line"></div>
-  </div>
-  <div class="lp-form-wrap reveal">
-    <div class="lp-form" aria-hidden="true">
-      <div class="lp-ribbon">Coming Soon</div>
-      <div class="lp-field"><label>Token name</label><div class="lp-input">Sheriff of Nottingham</div></div>
-      <div class="lp-row">
-        <div class="lp-field"><label>Ticker</label><div class="lp-input">$SHERIFF</div></div>
-        <div class="lp-field"><label>Total supply</label><div class="lp-input">1,000,000,000</div></div>
-      </div>
-      <div class="lp-row">
-        <div class="lp-field"><label>Seed liquidity</label><div class="lp-input">1.0 ETH</div></div>
-        <div class="lp-field"><label>Treasury (fixed)</label><div class="lp-input">30%</div></div>
-      </div>
-      <div class="lp-field"><label>Milestone targets</label>
-        <div class="lp-chips"><span>2×</span><span>3×</span><span>4×</span><span>5×</span><span>10×</span></div>
-      </div>
-      <div class="lp-row">
-        <div class="lp-field"><label>Anti-snipe window</label><div class="lp-input">5 min</div></div>
-        <div class="lp-field"><label>Platform fee</label><div class="lp-input">1% flat</div></div>
-      </div>
-      <button class="btn btn-lg lp-submit" disabled>Launch 🚀</button>
-      <div class="lp-checks">
-        <span>✅ LP locked</span><span>✅ Mint renounced</span><span>✅ No blacklist</span><span>✅ No transfer tax</span>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- HOW IT WORKS -->
-<section class="band">
-  <section class="section" id="how">
-    <div class="head reveal">
-      <span class="eyebrow">How a launch works</span>
-      <h2>Atomic. Fair. <span class="text-lime">Locked.</span></h2>
-      <div class="accent-line"></div>
-    </div>
-    <div class="steps reveal">
-      <div class="step"><div class="n">1</div><h3>Mint &amp; seed</h3><p>One transaction deploys the token, creates the Uniswap pool at your price, and adds liquidity — no window for a sniper to get in first.</p></div>
-      <div class="step"><div class="n">2</div><h3>Lock &amp; trade</h3><p>The LP is locked forever and trading opens instantly. DexScreener indexes the pair — live chart from block one.</p></div>
-      <div class="step"><div class="n">3</div><h3>Hit targets</h3><p>As the TWAP price crosses 2×, 3×, 4×…, the treasury sells a tiny tranche — half to the project, half to the buyback reserve.</p></div>
-      <div class="step"><div class="n">4</div><h3>Buy &amp; burn</h3><p>The reserve buys the token back and burns it. Liquidity stays locked, supply keeps shrinking, holders keep the gold.</p></div>
-    </div>
-    <p class="disclaimer">⚠️ The launchpad is in development and undergoing security review. Nothing here is live yet, and none of this is financial advice. Contract addresses will be published in our official channels before launch — verify everything.</p>
-  </section>
-</section>
-
-<!-- FOOTER -->
+<!-- ===== FOOTER ===== -->
 <footer class="footer">
-  <div class="footer-links">
-    <a href="index.html#legend">The Legend</a><a href="index.html#tokenomics">Tokenomics</a><a href="memes.html">Memes</a><a href="launchpad.html">Launchpad</a><a href="game/">Play</a><a href="https://x.com/hoodedsheriff" target="_blank" rel="noopener">Twitter / X</a><a href="https://t.me/hoodedsheriff" target="_blank" rel="noopener">Telegram</a>
+  <div class="wrap">
+    <nav class="footer-links">
+      <a href="index.html#legend">The Legend</a><a href="index.html#tokenomics">Tokenomics</a>
+      <a href="memes.html">Memes</a><a href="launchpad.html">Launchpad</a><a href="game/">Play</a>
+      <a href="https://x.com/hoodedsheriff" target="_blank" rel="noopener">X</a>
+      <a href="https://t.me/hoodedsheriff" target="_blank" rel="noopener">Telegram</a>
+    </nav>
+    <p class="disclaimer">$SHERIFF is a community meme project for entertainment only. The launchpad is unreleased software under active development and security review — it is not deployed and no tokens can be launched yet. Floor, Moat and simulation figures describe intended, sim-validated mechanics, not guaranteed returns. Nothing here is financial advice; crypto is volatile and risky. Not affiliated with Robinhood Markets, Inc., Uniswap, DexScreener, or The Walt Disney Company.</p>
+    <p class="copyright">© 2026 Sheriff of Nottingham · Sealed on Robinhood Chain</p>
   </div>
-  <div class="legal">
-    <img src="assets/brand/sheriff-pfp.webp" alt="" />
-    <p>$SHERIFF is a community meme project for entertainment only. The launchpad is unreleased software under active development and security review — it is not deployed and no tokens can be launched yet. Nothing here is financial advice; crypto is volatile and risky. Not affiliated with Robinhood Markets, Inc., Uniswap, DexScreener, or The Walt Disney Company.</p>
-  </div>
-  <p class="sources">© 2026 Sheriff of Nottingham.</p>
 </footer>
 
 <script>
-// mobile nav + scroll + reveal (self-contained; no copy/contract logic on this page)
-const toggle = document.getElementById('navToggle');
-const links = document.getElementById('navLinks');
-toggle.addEventListener('click', () => links.classList.toggle('open'));
-links.addEventListener('click', (e) => { if (e.target.tagName === 'A') links.classList.remove('open'); });
-const nav = document.getElementById('nav');
-const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 40);
-onScroll(); addEventListener('scroll', onScroll, { passive: true });
-const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: 0.12 });
-document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+(function(){
+  "use strict";
+  /* nav: mobile + scroll state */
+  var toggle=document.getElementById('navToggle'), links=document.getElementById('navLinks'), nav=document.getElementById('nav');
+  toggle.addEventListener('click',function(){links.classList.toggle('open')});
+  links.addEventListener('click',function(e){if(e.target.closest('a'))links.classList.remove('open')});
+  var onScroll=function(){nav.classList.toggle('scrolled',window.scrollY>36)};
+  onScroll(); addEventListener('scroll',onScroll,{passive:true});
+
+  /* theme toggle (host may also stamp data-theme; this lets the standalone page toggle too) */
+  var tt=document.getElementById('themeToggle');
+  tt.addEventListener('click',function(){
+    var cur=document.documentElement.getAttribute('data-theme');
+    if(!cur){cur=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}
+    document.documentElement.setAttribute('data-theme',cur==='dark'?'light':'dark');
+  });
+
+  /* reveal on scroll */
+  var reveals=document.querySelectorAll('.reveal');
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}})},{threshold:.08, rootMargin:'0px 0px -8% 0px'});
+  reveals.forEach(function(el){io.observe(el)});
+  /* fail-safe: nothing may ever stay invisible if the observer misses (no scroll, bg tab, etc.) */
+  setTimeout(function(){reveals.forEach(function(el){el.classList.add('in');});},2000);
+
+  /* ---- the Moat: a price line riding above a rising, dip-catching floor ---- */
+  var cv=document.getElementById('floorCanvas'), ctx=cv.getContext('2d');
+  var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var readout=document.getElementById('floorReadout');
+  var css=function(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();};
+
+  var N=170, price=[], floor=[], t=0;
+  // seed a series: price oscillates above a slowly-rising floor, occasionally dipping to test it.
+  var f=0.28, p=0.5;
+  for(var i=0;i<N;i++){ stepSeries(); price.push(p); floor.push(f); }
+  function stepSeries(){
+    t+=1;
+    // floor rises in gentle steps, never falls
+    f=Math.min(0.82, f + Math.max(0, 0.0016 + 0.004*Math.sin(t*0.017)) );
+    // price: wave + noise, dips toward floor then bounces, always stays above it
+    var wave=0.16*Math.sin(t*0.05)+0.09*Math.sin(t*0.13+1)+0.06*(Math.random()-0.5);
+    p=f+0.12+Math.abs(wave)*1.1;
+    if(p>0.98)p=0.98;
+    if(p<f+0.02)p=f+0.02; // the Moat catches it
+  }
+
+  function resize(){
+    var r=cv.getBoundingClientRect(), dpr=Math.min(2,window.devicePixelRatio||1);
+    cv.width=r.width*dpr; cv.height=r.height*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+    W=r.width; H=r.height;
+  }
+  var W,H; resize(); addEventListener('resize',resize,{passive:true});
+
+  function draw(){
+    var gold=css('--gold')||'#e6c877', goldHi=css('--gold-hi')||'#f7e6b0',
+        emerald=css('--emerald')||'#3fbc74', line=css('--line-strong')||'rgba(230,200,119,.32)',
+        dim=css('--ink-dim')||'#9aa48c';
+    ctx.clearRect(0,0,W,H);
+    var padY=26, gh=H-padY*2;
+    var X=function(i){return (i/(N-1))*W;};
+    var Y=function(v){return padY+(1-v)*gh;};
+
+    // faint grid
+    ctx.strokeStyle=line; ctx.globalAlpha=.35; ctx.lineWidth=1;
+    for(var g=1;g<4;g++){var yy=padY+gh*g/4; ctx.beginPath(); ctx.moveTo(0,yy); ctx.lineTo(W,yy); ctx.stroke();}
+    ctx.globalAlpha=1;
+
+    // Moat = filled area under the floor line
+    var grad=ctx.createLinearGradient(0,Y(0.85),0,H);
+    grad.addColorStop(0,hexA(gold,.42)); grad.addColorStop(1,hexA(gold,.04));
+    ctx.beginPath(); ctx.moveTo(0,H);
+    for(var i=0;i<N;i++) ctx.lineTo(X(i),Y(floor[i]));
+    ctx.lineTo(W,H); ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
+
+    // floor edge (gold)
+    ctx.beginPath();
+    for(i=0;i<N;i++){ var x=X(i),y=Y(floor[i]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+    ctx.strokeStyle=goldHi; ctx.lineWidth=2; ctx.shadowColor=hexA(gold,.6); ctx.shadowBlur=8; ctx.stroke(); ctx.shadowBlur=0;
+
+    // price line (parchment/emerald)
+    ctx.beginPath();
+    for(i=0;i<N;i++){ var px=X(i),py=Y(price[i]); i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+    ctx.strokeStyle=emerald; ctx.lineWidth=1.8; ctx.stroke();
+
+    // endpoint dot
+    var ex=X(N-1),ey=Y(price[N-1]);
+    ctx.beginPath(); ctx.arc(ex,ey,4,0,7); ctx.fillStyle=emerald; ctx.fill();
+    ctx.beginPath(); ctx.arc(ex,ey,8,0,7); ctx.strokeStyle=hexA(emerald,.4); ctx.stroke();
+
+    if(readout) readout.textContent='floor '+Math.round(floor[N-1]*100)+'%  ·  price '+Math.round(price[N-1]*100)+'%';
+  }
+  function hexA(c,a){ // accept hex or rgb() and apply alpha
+    if(c.charAt(0)==='#'){var n=parseInt(c.slice(1),16),r=(n>>16)&255,g=(n>>8)&255,b=n&255;return 'rgba('+r+','+g+','+b+','+a+')';}
+    return c; // already rgba-ish; used for stroke only
+  }
+
+  if(reduce){ draw(); }
+  else{
+    var last=0;
+    (function loop(ts){
+      if(ts-last>60){ last=ts; price.shift(); floor.shift(); stepSeries(); price.push(p); floor.push(f);
+        // when the floor nears the top, ease it back down slowly so the loop breathes (visual only)
+        if(f>0.8){ for(var k=0;k<N;k++){floor[k]*=0.9985;} f*=0.9985; }
+        draw();
+      }
+      requestAnimationFrame(loop);
+    })(0);
+  }
+})();
 </script>
 </body>
 </html>
