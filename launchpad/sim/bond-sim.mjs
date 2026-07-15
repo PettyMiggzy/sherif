@@ -1,17 +1,17 @@
 // The Sheriff's Bond — economic simulation of the protocol-owned floor.
 //
 // Proves the three claims the design rests on:
-//   1. It CANNOT go broke — the Moat only ever bids real ETH it holds (no peg, no leverage,
+//   1. It CANNOT go broke — the Bounty only ever bids real ETH it holds (no peg, no leverage,
 //      no liability), so its ETH balance is >= 0 by construction. Worst case it converts gold
 //      to cheap bags of a dead token — a capped loss of the seed, never a debt.
 //   2. Buy-dip / sell-green is net-ETH-positive over volatility — a choppy token GROWS the floor.
 //   3. Snipers fund the floor — an immediate post-grad dump gets caught cheap, recycled to the
-//      Ramparts, and sold higher: the dump becomes ammunition, no sell-tax required.
+//      Ambush, and sold higher: the dump becomes ammunition, no sell-tax required.
 //
-// Model: a protocol-owned market maker over a geometric price ladder. Moat = ETH in buy rungs
-// BELOW price (a falling range, not a single peg). Ramparts = 25% of supply in sell rungs ABOVE
-// price (3x-25x). Price crossings fill rungs. ETH from green sales redeploys as deeper Moat
-// (ratchet up); tokens caught on dips recycle into the Ramparts (sell higher). Never-all-in:
+// Model: a protocol-owned market maker over a geometric price ladder. Bounty = ETH in buy rungs
+// BELOW price (a falling range, not a single peg). Ambush = 25% of supply in sell rungs ABOVE
+// price (3x-25x). Price crossings fill rungs. ETH from green sales redeploys as deeper Bounty
+// (ratchet up); tokens caught on dips recycle into the Ambush (sell higher). Never-all-in:
 // each rung risks a bounded slice, always keeping dry powder further down.
 
 const SUPPLY = 1e9;
@@ -37,12 +37,12 @@ class Bond {
     this.eth = MOAT_SEED_ETH;          // uncommitted gold
     this.buyRungs = new Map();         // rung -> ETH parked to buy at that price
     this.sellRungs = new Map();        // rung -> tokens parked to sell at that price
-    this.tokensHeld = 0;               // tokens caught on dips, awaiting recycle to Ramparts
+    this.tokensHeld = 0;               // tokens caught on dips, awaiting recycle to Ambush
     this.spentBuying = 0;              // lifetime ETH spent catching dips
     this.earnedSelling = 0;            // lifetime ETH earned selling green
     this.minEth = MOAT_SEED_ETH;       // worst-case uncommitted balance (broke check)
 
-    // Post the Ramparts: 25% of supply as sell orders from 3x up to 25x, thinning with height.
+    // Post the Ambush: 25% of supply as sell orders from 3x up to 25x, thinning with height.
     let ramparts = SUPPLY * RAMPARTS_FRAC;
     const lo = off(3), hi = off(25);
     let wsum = 0; for (let i = lo; i <= hi; i++) wsum += 1 / (i - lo + 1);
@@ -86,7 +86,7 @@ class Bond {
     if (this.eth < this.minEth) this.minEth = this.eth;
   }
 
-  // Recycle: tokens the Moat caught get re-listed as Ramparts ABOVE the current price.
+  // Recycle: tokens the Bounty caught get re-listed as Ambush ABOVE the current price.
   _recycle(centerRung) {
     if (this.tokensHeld < 1) return;
     const lo = centerRung + off(2), hi = centerRung + off(8);
@@ -128,7 +128,7 @@ function runPath(arche, idx) {
 }
 
 console.log("=== The Sheriff's Bond — 2,000 paths per archetype (real ETH terms) ===");
-console.log(`seed Moat ${MOAT_SEED_ETH} ETH (~$${Math.round(MOAT_SEED_ETH*ETH_USD)}), Ramparts ${RAMPARTS_FRAC*100}% of supply, grad FDV ${GRAD_FDV_ETH} ETH\n`);
+console.log(`seed Bounty ${MOAT_SEED_ETH} ETH (~$${Math.round(MOAT_SEED_ETH*ETH_USD)}), Ambush ${RAMPARTS_FRAC*100}% of supply, grad FDV ${GRAD_FDV_ETH} ETH\n`);
 console.log("archetype                 | end mult | min free ETH | floor (ETH / $) | net trade P&L | treasury value");
 console.log("--------------------------|----------|--------------|-----------------|---------------|----------------");
 let brokeCount = 0;
@@ -154,8 +154,8 @@ console.log("");
 console.log(`BROKE EVENTS (free ETH < 0) across ${2000*ARCHES.length} paths: ${brokeCount}`);
 console.log("");
 console.log("Reading it:");
-console.log(" - 'min free ETH' never < 0  -> the Moat literally cannot overspend. No debt, no peg to break, no bank-run.");
+console.log(" - 'min free ETH' never < 0  -> the Bounty literally cannot overspend. No debt, no peg to break, no bank-run.");
 console.log(" - 'net trade P&L' > 0 on anything that moves -> buy-dip/sell-green nets ETH; chop GROWS the floor.");
 console.log(" - dead token: net ~ -seed, treasury -> ~0 (capped loss = the seed), and it STILL never went broke.");
-console.log(" - sniper dump at open: Moat catches it cheap, recycles to Ramparts -> the floor rebuilds FROM the dump.");
+console.log(" - sniper dump at open: Bounty catches it cheap, recycles to Ambush -> the floor rebuilds FROM the dump.");
 console.log(" - floor scales with success: the harder it runs, the deeper the protocol-owned floor under it.");

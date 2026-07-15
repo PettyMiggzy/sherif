@@ -130,7 +130,7 @@ Bond on your token."** Take from the outlaws robbing the chart, give it back to 
 | Term | Value |
 |---|---|
 | Total supply | **1,000,000,000** (fixed) |
-| Split | **75% bonding curve · 25% Ramparts** (the Bond's sell-into-green engine) |
+| Split | **75% bonding curve · 25% Ambush** (the Bond's sell-into-green engine) |
 | Start price | `VIRT_ETH = 0.8 ETH` → **start MC ≈ $1,880** (1 ETH), no oracle |
 | Graduation | when the curve collects **4 ETH (~$7.5k)** → grad FDV **36 ETH (~$68k)** |
 | Anti-snipe | 0.1-ETH per-buy cap for the first 5 min |
@@ -139,25 +139,27 @@ Bond on your token."** Take from the outlaws robbing the chart, give it back to 
 
 `CurveLaunchFactory.launch({name, symbol, dev})` is the whole interface. (ETH assumed ~$1,880.)
 
-**The Bond — a protocol-owned market maker, posted at graduation, locked forever:**
-- 🏰 **Moat** — a wall of ETH buy orders *below* price (a v3 concentrated range, a *falling ladder* not a
-  single peg). It buys the dip. Seeded buy-side-weighted from the raise so a real floor stands **from second
-  one** — protection is strongest exactly when a launch is weakest (snipers, early flippers).
-- 🏹 **Ramparts** — the **25%** as sell orders placed *high* above price (3×–25×, thinning with height). They
-  only fill into a real pump, in tiny slices — never a dump. The ETH they earn drops into the Moat.
-- 🛡️ **Keep** — the baseline locked LP so it trades + charts day one.
-- ♻️ **Recycle** — tokens the Moat catches on a dip get re-posted higher on the Ramparts. **A sniper dumping
+**The Bond — a protocol-owned market maker, posted at graduation, locked forever.** (Robin Hood brand names;
+the `Bond.sol` identifiers use the engine names in parentheses.)
+- 🪙 **Bounty** (`moat*`) — a wall of ETH buy orders *below* price (a v3 concentrated range, a *falling ladder*
+  not a single peg). It buys the dip. Seeded buy-side-weighted from the raise so a real floor stands **from
+  second one** — protection is strongest exactly when a launch is weakest (snipers, early flippers).
+- 🏹 **Ambush** (`ramp*`) — the **25%** as sell orders placed *high* above price (3×–25×, thinning with
+  height). They only fill into a real pump, in tiny slices — never a dump, robbing the whales buying the top
+  and handing the gold to the Bounty.
+- 🌲 **Sherwood** (`keep*`) — the baseline locked LP so it trades + charts day one.
+- ♻️ **The Haul** — tokens the Bounty catches on a dip get re-posted higher on the Ambush. **A sniper dumping
   at the open funds the very floor that protects everyone else** — no sell-tax token needed (that would be a
   honeypot flag; the recycle loop achieves it clean).
-- A permissionless **keeper `poke()`** collects filled orders, ratchets the Moat up, and redeploys — with a
+- A permissionless **keeper `poke()`** collects filled orders, ratchets the Bounty up, and redeploys — with a
   **never-all-in** rule (bounded slice per rung, always dry powder deeper down).
 
 **Why it cannot go broke** (`sim/bond-sim.mjs`, 12,000 Monte-Carlo paths, **0 broke events**):
-- The Moat only ever bids **real ETH it already holds** — no peg, no leverage, **no liability**, so nothing
+- The Bounty only ever bids **real ETH it already holds** — no peg, no leverage, **no liability**, so nothing
   to default on / bank-run. Free-ETH balance is `≥ 0` by construction across every path.
 - **Buy-below / sell-above is net-ETH-positive over volatility** — a choppy token *grows* its own floor
   (+3.9 ETH chop, +45 runner, +101 moonshot in sim).
-- Worst case (token pumps then dies forever) = the Moat holds cheap bags, a **capped loss of the seed**
+- Worst case (token pumps then dies forever) = the Bounty holds cheap bags, a **capped loss of the seed**
   (~2.5 ETH), hurting nobody — the platform's 1% was already banked.
 
 **Sim floor outcomes (real ETH @ ~$1,880):** sideways **~$12k** · runner (~8×) **~$89k** · moonshot (~40×)
@@ -166,12 +168,12 @@ and is funded by the token, never by the platform's fee and never by a trader ta
 
 **Platform economics.** Keeps the **full 1%** on every trade in both phases — the same model that printed
 NOXA $12M/week. At even **10% of NOXA's peak volume ≈ $1.1–1.35M/week**; matching it ≈ **~$13.5M/week**. The
-Moat/Ramparts are funded entirely by the **25% allocation + the recycle loop + optional Tribute ETH**, so
+Bounty/Ambush are funded entirely by the **25% allocation + the recycle loop + optional Tribute ETH**, so
 protecting projects costs the platform *nothing* — it's the trust wedge that wins the volume.
 
 **Tribute (optional).** Burn $SHERIFF → buy a project ~15% under the live TWAP (self-limiting: can't flip
 for profit, so only real accumulators use it). Every use is a permanent **$SHERIFF burn sink** → $SHERIFF
-becomes the crest/index of the whole chain's activity. Tribute ETH can route to the Moat or the platform.
+becomes the crest/index of the whole chain's activity. Tribute ETH can route to the Bounty or the platform.
 
 **Build status.** Curve + graduation + fee model are built, tested (29 passing) and audited — and now
 **fork-verified against the REAL Uniswap v3 on Robinhood Chain** (`test/fork/graduation.fork.test.js`, run
@@ -179,12 +181,12 @@ with `FORK_RPC=<rpc>`; chainId 4663, verified factory `0x1f7d…2efa`, WETH `0x0
 proves what the flat-price mock couldn't: the constructor **creates + initializes the real pool** at the
 committed price, graduation **mints a real full-range LP** (our `±887200` tick-snapping matches the 1% tier's
 spacing) and **locks it**, the **TWAP arms** and `observe()` works, and a **real swap trades** against the
-graduated pool. The Bond's v3 range-order machinery (`Bond.sol`: Keep/Moat/Ramparts + the recentering
+graduated pool. The Bond's v3 range-order machinery (`Bond.sol`: Sherwood/Bounty/Ambush + the recentering
 `poke()` keeper) is **built, economically validated in `sim/bond-sim.mjs`, and fork-verified end-to-end**:
 `CurveLaunchFactory.launch` → curve → graduation now **deploys + funds + `post()`s the Bond** (75% curve /
-25% Ramparts; the raise splits 60% Keep LP / 40% Moat floor). `test/fork/graduation.fork.test.js` runs the
+25% Ambush; the raise splits 60% Sherwood LP / 40% Bounty floor). `test/fork/graduation.fork.test.js` runs the
 whole creation→trade→graduate→Bond→tradeable-pool→poke flow on real Uniswap v3, and `test/fork/bond.fork.test.js`
-proves the Moat catches a dip, `poke()` recenters, and Keep fees stream to the platform. The earlier
+proves the Bounty catches a dip, `poke()` recenters, and Sherwood fees stream to the platform. The earlier
 `OtcVault`/`AthVault`/`SheriffStaking` remain in the repo but are superseded by the Bond.
 
 **Curve-launchpad audit (2 lenses) — findings fixed:**
@@ -196,7 +198,7 @@ proves the Moat catches a dip, `poke()` recenters, and Keep fees stream to the p
   confirms **100% continuous**. The TWAP is armed (`increaseObservationCardinalityNext`) at graduation.
 - **No sell-tax token (anti-honeypot):** the "snipers fund the floor" outcome is achieved by the **recycle
   loop**, not a transfer tax — the token stays clean (`no transfer tax ✅`), never flagged by DexScreener.
-- **Floor solvency (proven):** `sim/bond-sim.mjs` shows the Moat can never overspend (free ETH `≥ 0`), nets
+- **Floor solvency (proven):** `sim/bond-sim.mjs` shows the Bounty can never overspend (free ETH `≥ 0`), nets
   positive over volatility, and caps its worst-case loss at the seed. To port on-chain: a fork test must
   re-verify the same invariants against real v3 tick math before mainnet.
 
