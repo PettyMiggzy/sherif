@@ -19,15 +19,19 @@ import {LiquidityLocker} from "./LiquidityLocker.sol";
 ///   INV-J:   reserveEth <= ceilDiv(K, reserveToken) after every op (buy floors, sell ceils). This is the
 ///            load-bearing property: it makes round-trip/sequence profit impossible and keeps the curve
 ///            solvent (reserveEth >= VIRT_ETH always).
-///   INV-BAL: (reserveEth - VIRT_ETH) == real ETH backing the reserve (== raised()); accrued fees are held
-///            separately in feesEth. The curve can only ever pay out ETH it actually took in.
+///   INV-BAL: address(this).balance == raised() + platformBuffer + devSellReserve. The curve can only ever
+///            pay out ETH it actually took in; graduation deposits exactly raised() into the LP.
 ///   INV-GRAD: graduation happens at most once, only when raised >= GRAD_TARGET, seeds the pool at the
 ///            curve's EXACT final price (continuous), burns the unsold remainder, and locks the LP.
 contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint24 public constant POOL_FEE = 10000;
-    uint16 public constant FEE_BPS = 100; // 1% platform fee on buys and sells
+    // Fees: BUY 1% -> platform (streamed live, minus a 0.1% buffer swept to platform at graduation).
+    //       SELL 1% -> the project dev, who can burn-and-collect it. LP swap fees -> platform.
+    uint16 public constant BUY_FEE_BPS = 100; // 1% on buys
+    uint16 public constant BUY_BUFFER_BPS = 10; // 0.1% of a buy kept in-curve as a buffer, sent to platform at grad
+    uint16 public constant SELL_FEE_BPS = 100; // 1% on sells -> project dev
     uint16 public constant CARDINALITY = 200; // TWAP observation slots armed at graduation (for the AthVault)
 
     // immutables
@@ -35,8 +39,8 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
     address public immutable WETH;
     IUniswapV3Factory public immutable v3Factory;
     LiquidityLocker public immutable locker;
-    address public immutable platform; // 1% fee recipient
-    address public immutable dev; // LP swap-fee beneficiary after graduation
+    address public immutable platform; // buy fee + LP fee recipient
+    address public immutable dev; // project dev — receives sell fees (burn or collect)
 
     uint256 public immutable VIRT_ETH; // virtual ETH reserve (sets the starting price)
     uint256 public immutable CURVE_SUPPLY; // tokens for sale on the curve (must be funded to this contract)
@@ -52,7 +56,8 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
     // state
     uint256 public reserveEth; // virtual + real
     uint256 public reserveToken; // tokens still in the curve
-    uint256 public feesEth; // accrued platform fees (pull-over-push, so a bad platform can't brick trading)
+    uint256 public platformBuffer; // accrued 0.1% buy buffer, swept to platform at graduation
+    uint256 public devSellReserve; // accrued 1% sell fees, for the project dev to burn or collect
     bool public graduated;
     address public pool;
 
@@ -63,10 +68,14 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
     error NothingOut();
     error NotPool();
     error TargetNotReached();
+    error NotDev();
+    error BadAmount();
 
     event Buy(address indexed buyer, uint256 ethIn, uint256 fee, uint256 tokensOut, uint256 reserveEth, uint256 reserveToken);
     event Sell(address indexed seller, uint256 tokensIn, uint256 ethOut, uint256 fee, uint256 reserveEth, uint256 reserveToken);
     event Graduated(address indexed pool, uint256 ethToLp, uint256 tokensToLp, uint160 sqrtPriceX96);
+    event DevCollect(uint256 amount);
+    event DevBurn(uint256 ethSpent, uint256 tokensBurned);
 
     constructor(
         address token_,
@@ -138,22 +147,22 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
     }
 
     // --------------------------------------------------------------- buy
-    /// @notice Buy tokens with ETH along the curve. 1% fee to platform; anti-snipe cap in the first window.
+    /// @notice Buy tokens with ETH along the curve. 1% buy fee: 0.9% streamed to the platform wallet in
+    /// real time, 0.1% held in-curve as a buffer and swept to the platform at graduation.
     function buy(uint256 minTokensOut) external payable nonReentrant returns (uint256 tokensOut) {
         if (graduated) revert AlreadyGraduated();
-        uint256 fee = (msg.value * FEE_BPS) / 10_000;
+        uint256 fee = (msg.value * BUY_FEE_BPS) / 10_000;
         uint256 netEth = msg.value - fee;
         if (netEth == 0) revert NothingOut();
         if (block.timestamp < uint256(startTime) + antiSnipeSecs && netEth > maxBuyWei) revert SnipeCap();
 
-        // Cap the graduating buy so `raised()` lands EXACTLY on GRAD_TARGET and refund the excess. This
-        // makes graduation happen at the price the pool was initialized to at launch (price-continuous),
-        // and removes any overshoot the last buyer would otherwise eat.
+        // Cap the graduating buy so `raised()` lands EXACTLY on GRAD_TARGET and refund the excess (keeps
+        // graduation at the price the pool was initialized to at launch — price-continuous).
         uint256 refundEth;
         {
             uint256 room = GRAD_TARGET - raised(); // > 0 (not graduated)
             if (netEth > room) {
-                uint256 acceptGross = Math.ceilDiv(room * 10_000, 10_000 - FEE_BPS);
+                uint256 acceptGross = Math.ceilDiv(room * 10_000, 10_000 - BUY_FEE_BPS);
                 if (acceptGross > msg.value) acceptGross = msg.value;
                 refundEth = msg.value - acceptGross;
                 fee = acceptGross - room;
@@ -172,17 +181,22 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
 
         reserveEth = newReserveEth;
         reserveToken = newReserveToken;
-        feesEth += fee; // accrued, not pushed (a reverting platform must not brick buys)
+
+        // split the buy fee: 0.1% buffer stays, the rest streams to the platform wallet now
+        uint256 buffer = (fee * BUY_BUFFER_BPS) / BUY_FEE_BPS; // 0.1% of the buy (= 10% of the fee)
+        platformBuffer += buffer;
+        uint256 stream = fee - buffer;
 
         token.safeTransfer(msg.sender, tokensOut);
-        if (refundEth > 0) _sendEth(msg.sender, refundEth); // return the overshoot (guarded by nonReentrant)
+        if (stream > 0) _sendEth(platform, stream); // real-time to the platform wallet (a fixed EOA)
+        if (refundEth > 0) _sendEth(msg.sender, refundEth);
         emit Buy(msg.sender, msg.value - refundEth, fee, tokensOut, reserveEth, reserveToken);
 
         if (raised() >= GRAD_TARGET) _graduate();
     }
 
     // --------------------------------------------------------------- sell
-    /// @notice Sell tokens back to the curve for ETH. 1% fee to platform.
+    /// @notice Sell tokens back to the curve for ETH. 1% fee accrues to the project dev (burn or collect).
     function sell(uint256 tokensIn, uint256 minEthOut) external nonReentrant returns (uint256 ethOut) {
         if (graduated) revert AlreadyGraduated();
         require(tokensIn > 0, "zero");
@@ -198,21 +212,47 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
         reserveToken = newReserveToken;
         reserveEth = newReserveEth;
 
-        uint256 fee = (grossOut * FEE_BPS) / 10_000;
+        uint256 fee = (grossOut * SELL_FEE_BPS) / 10_000;
         ethOut = grossOut - fee;
         if (ethOut < minEthOut) revert Slippage();
-        feesEth += fee; // accrued, not pushed
+        devSellReserve += fee; // accrues to the project dev — burn or collect
 
         _sendEth(msg.sender, ethOut);
         emit Sell(msg.sender, tokensIn, ethOut, fee, reserveEth, reserveToken);
     }
 
-    /// @notice Send accrued platform fees to the fixed platform address. Permissionless; if the platform
-    /// reverts on receipt only this call fails — trading is never affected.
-    function withdrawFees() external nonReentrant {
-        uint256 f = feesEth;
-        feesEth = 0;
-        if (f > 0) _sendEth(platform, f);
+    // --------------------------------------------------------------- project dev: sell fees (burn or collect)
+    /// @notice The project dev withdraws accrued sell fees as ETH.
+    function devCollect(uint256 amount) external nonReentrant {
+        if (msg.sender != dev) revert NotDev();
+        if (amount == 0 || amount > devSellReserve) revert BadAmount();
+        devSellReserve -= amount;
+        _sendEth(dev, amount);
+        emit DevCollect(amount);
+    }
+
+    /// @notice The project dev spends accrued sell fees to buy tokens on the curve and burn them
+    /// (deflationary + adds ETH toward graduation). Pre-graduation only; afterwards use devCollect.
+    function devBurn(uint256 amount, uint256 minTokensOut) external nonReentrant returns (uint256 burned) {
+        if (msg.sender != dev) revert NotDev();
+        if (graduated) revert AlreadyGraduated();
+        if (amount == 0 || amount > devSellReserve) revert BadAmount();
+
+        uint256 room = GRAD_TARGET - raised();
+        uint256 spend = amount > room ? room : amount; // don't overshoot graduation
+        devSellReserve -= spend;
+
+        uint256 newReserveEth = reserveEth + spend;
+        uint256 newReserveToken = K / newReserveEth;
+        burned = reserveToken - newReserveToken;
+        if (burned < minTokensOut) revert Slippage();
+        reserveEth = newReserveEth;
+        reserveToken = newReserveToken;
+
+        token.safeTransfer(0x000000000000000000000000000000000000dEaD, burned);
+        emit DevBurn(spend, burned);
+
+        if (raised() >= GRAD_TARGET) _graduate();
     }
 
     // --------------------------------------------------------------- graduation
@@ -252,13 +292,18 @@ contract BondingCurve is IUniswapV3MintCallback, ReentrancyGuard {
 
         uint128 L = PoolMath.fullRangeLiquidity(gradSqrtPriceX96, amt0, amt1);
         IUniswapV3Pool(p).mint(address(locker), PoolMath.MIN_TICK, PoolMath.MAX_TICK, L, abi.encode(token0, token1));
-        locker.register(p, dev);
+        locker.register(p, platform); // LP swap fees go to the platform
 
-        // sweep any token/WETH dust left by rounding to the burn/dev
+        // sweep the accrued buy-fee buffer to the platform (the devSellReserve stays for the dev)
+        uint256 buf = platformBuffer;
+        platformBuffer = 0;
+        if (buf > 0) _sendEth(platform, buf);
+
+        // sweep any token/WETH dust left by rounding
         uint256 tokDust = token.balanceOf(address(this));
         if (tokDust > 0) token.safeTransfer(0x000000000000000000000000000000000000dEaD, tokDust);
         uint256 wethDust = IERC20(WETH).balanceOf(address(this));
-        if (wethDust > 0) IERC20(WETH).safeTransfer(dev, wethDust);
+        if (wethDust > 0) IERC20(WETH).safeTransfer(platform, wethDust);
 
         emit Graduated(p, ethToLp, tokensToLp, gradSqrtPriceX96);
     }

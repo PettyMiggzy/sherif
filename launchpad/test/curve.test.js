@@ -81,20 +81,15 @@ describe("BondingCurve", () => {
     const pool = await s.curve.pool();
     expect(pool).to.not.equal(ethers.ZeroAddress);
 
-    // LP is owned by the curve's locker (locked); pool holds the seeded tokens + WETH
+    // LP is owned by the curve's locker (locked); LP swap fees go to the platform
     const locker = await s.curve.locker();
     const lk = await ethers.getContractAt("LiquidityLocker", locker);
-    expect(await lk.beneficiaryOf(pool)).to.equal(s.dev.address);
+    expect(await lk.beneficiaryOf(pool)).to.equal(s.platform.address);
 
-    // pool got WETH == raised at graduation, and some tokens; only accrued fees remain in the curve
+    // pool got WETH == raised; no sells happened so no dev reserve, and the buy buffer was swept to platform
     const poolWeth = await s.WETH.balanceOf(pool);
     expect(poolWeth).to.be.greaterThan(0n);
-    const feesEth = await s.curve.feesEth();
-    expect(await ethers.provider.getBalance(await s.curve.getAddress())).to.equal(feesEth);
-    // fees are claimable to the platform (pull-over-push)
-    const pBefore = await ethers.provider.getBalance(s.platform.address);
-    await s.curve.withdrawFees();
-    expect(await ethers.provider.getBalance(s.platform.address)).to.equal(pBefore + feesEth);
+    expect(await s.curve.devSellReserve()).to.equal(0n);
     expect(await ethers.provider.getBalance(await s.curve.getAddress())).to.equal(0n);
 
     // trading is closed on the curve after graduation
@@ -124,6 +119,37 @@ describe("BondingCurve", () => {
     await s.curve.connect(s.traders[0]).buy(0, { value: 3n * ONE });
     await s.curve.connect(s.traders[1]).buy(0, { value: 3n * ONE });
     expect(await s.curve.graduated()).to.equal(true);
+  });
+
+  it("fee model: buy streams 0.9% to platform + keeps 0.1% buffer; sell fee to dev (collect or burn)", async () => {
+    const s = await setup();
+    const platBefore = await ethers.provider.getBalance(s.platform.address);
+    await s.curve.connect(s.traders[0]).buy(0, { value: ONE }); // 1 ETH buy, fee 0.01 ETH
+    // 0.9% (0.009 ETH) streamed to platform now, 0.1% (0.001 ETH) held as buffer
+    expect((await ethers.provider.getBalance(s.platform.address)) - platBefore).to.equal(9n * 10n ** 15n);
+    expect(await s.curve.platformBuffer()).to.equal(1n * 10n ** 15n);
+
+    // trader sells -> 1% of the ETH out accrues to the dev
+    const bag = await s.TOK.balanceOf(s.traders[0].address);
+    await s.TOK.connect(s.traders[0]).approve(await s.curve.getAddress(), bag);
+    await s.curve.connect(s.traders[0]).sell(bag, 0);
+    const devRes = await s.curve.devSellReserve();
+    expect(devRes).to.be.greaterThan(0n);
+
+    // non-dev can't touch it
+    await expect(s.curve.connect(s.traders[1]).devCollect(1)).to.be.revertedWithCustomError(s.curve, "NotDev");
+
+    // dev collects half as ETH
+    const half = devRes / 2n;
+    const devWethBefore = await ethers.provider.getBalance(s.dev.address);
+    const rc = await (await s.curve.connect(s.dev).devCollect(half)).wait();
+    expect(await ethers.provider.getBalance(s.dev.address)).to.equal(devWethBefore + half - rc.gasUsed * rc.gasPrice);
+
+    // dev burns the rest -> buys on the curve and sends tokens to dead
+    const burnBefore = await s.TOK.balanceOf("0x000000000000000000000000000000000000dEaD");
+    await s.curve.connect(s.dev).devBurn(await s.curve.devSellReserve(), 0);
+    expect(await s.TOK.balanceOf("0x000000000000000000000000000000000000dEaD")).to.be.greaterThan(burnBefore);
+    expect(await s.curve.devSellReserve()).to.equal(0n);
   });
 
   it("a round trip (buy then sell) never returns a profit", async () => {
