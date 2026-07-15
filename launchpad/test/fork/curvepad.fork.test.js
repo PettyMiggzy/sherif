@@ -81,4 +81,41 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     await (await buy(ONE / 2n)).wait();
     expect(await TOK.balanceOf(buyer.address)).to.be.greaterThan(t1);
   });
+
+  it("launch() with ETH -> executes the dev's own buy (<=2%) atomically, before anyone else can trade", async () => {
+    const [dep, platform, dev] = await ethers.getSigners();
+
+    const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
+    const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
+      WETH, FACTORY, platform.address, dep.address, await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress()
+    );
+
+    // dev funds their own opening buy in the SAME launch tx
+    const spend = ONE / 100n; // 0.01 ETH
+    const before = await ethers.provider.getBalance(dev.address);
+    const rc = await (await factory.connect(dev).launch(
+      { name: "Sheriff Dev", symbol: "SDEV", dev: dev.address }, { value: spend }
+    )).wait();
+    const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
+      .find((e) => e && e.name === "Launched");
+    const { token, devBought } = ev.args;
+    const TOK = await ethers.getContractAt("LaunchToken", token);
+
+    // the dev received real tokens, atomically, ahead of the field — and never more than 2%
+    const cap = (1_000_000_000n * ONE * 200n) / 10_000n; // 2% of supply
+    expect(devBought).to.be.greaterThan(0n);
+    expect(devBought).to.be.at.most(cap);
+    expect(await TOK.balanceOf(dev.address)).to.equal(devBought);
+
+    // dev spent no more than they sent (unused ETH is refunded), minus gas
+    const after = await ethers.provider.getBalance(dev.address);
+    const gas = rc.gasUsed * rc.gasPrice;
+    expect(before - after - gas).to.be.at.most(spend);
+    // factory holds no leftover ETH/WETH/token dust
+    const weth = await ethers.getContractAt(["function balanceOf(address) view returns (uint256)"], WETH);
+    expect(await weth.balanceOf(await factory.getAddress())).to.equal(0n);
+    expect(await TOK.balanceOf(await factory.getAddress())).to.equal(0n);
+  });
 });
