@@ -9,7 +9,7 @@
 <meta property="og:description" content="Every token gets a Bond: a protocol-owned floor, funded by the launch, locked forever. When the chart dips, the town's gold buys it back." />
 <meta property="og:type" content="website" />
 <meta name="twitter:card" content="summary_large_image" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2l3.2 6.6 7.3 1-5.3 5.1 1.3 7.2L16 24.5 9.2 22l1.3-7.2L5.2 9.7l7.3-1z' fill='%23e6c877'/%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2l3.2 6.6 7.3 1-5.3 5.1 1.3 7.2L16 24.5 9.2 22l1.3-7.2L5.2 9.7l7.3-1z' fill='%23ccff00'/%3E%3C/svg%3E" />
 <style>
 /* ============================================================= *
  *  The Sheriff's Bond — self-contained premium launchpad page
@@ -21,7 +21,7 @@
   --line:rgba(204,255,0,.14); --line-strong:rgba(204,255,0,.30);
   --ink:#f6f7f1; --ink-dim:#a7ad97; --ink-faint:#7f8570;
   --gold:#ccff00; --gold-hi:#e4ff7a; --gold-deep:#9ac400;              /* accent = signature acid lime */
-  --treasure:#f5c542; --treasure-hi:#ffdd7a; --treasure-deep:#d99a1a; /* the Bounty's gold */
+  --treasure:#8fdc00; --treasure-hi:#c6ff5a; --treasure-deep:#5c8a00; /* the Bounty (green) */
   --emerald:#ccff00; --emerald-dim:#9ac400;
   --danger:#e08a5a;
   --seal:#9a2f28;
@@ -37,7 +37,7 @@
     --line:rgba(90,110,0,.24); --line-strong:rgba(90,110,0,.42);
     --ink:#1c2010; --ink-dim:#5c6047; --ink-faint:#818566;
     --gold:#5c7a00; --gold-hi:#7a9e10; --gold-deep:#455c00;
-    --treasure:#8a6712; --treasure-hi:#a67c1e; --treasure-deep:#6d4f0e;
+    --treasure:#4c7a00; --treasure-hi:#6b9e10; --treasure-deep:#3a5c00;
     --emerald:#3a7a12; --emerald-dim:#2c5c0e;
     --danger:#a5432b; --seal:#8f2a23;
     --shadow:0 24px 60px -30px rgba(70,80,20,.4);
@@ -48,7 +48,7 @@
   --line:rgba(90,110,0,.24); --line-strong:rgba(90,110,0,.42);
   --ink:#1c2010; --ink-dim:#5c6047; --ink-faint:#818566;
   --gold:#5c7a00; --gold-hi:#7a9e10; --gold-deep:#455c00;
-  --treasure:#8a6712; --treasure-hi:#a67c1e; --treasure-deep:#6d4f0e;
+  --treasure:#4c7a00; --treasure-hi:#6b9e10; --treasure-deep:#3a5c00;
   --emerald:#3a7a12; --emerald-dim:#2c5c0e;
   --danger:#a5432b; --seal:#8f2a23;
   --shadow:0 24px 60px -30px rgba(70,80,20,.4);
@@ -58,7 +58,7 @@
   --line:rgba(204,255,0,.14); --line-strong:rgba(204,255,0,.30);
   --ink:#f6f7f1; --ink-dim:#a7ad97; --ink-faint:#7f8570;
   --gold:#ccff00; --gold-hi:#e4ff7a; --gold-deep:#9ac400;
-  --treasure:#f5c542; --treasure-hi:#ffdd7a; --treasure-deep:#d99a1a;
+  --treasure:#8fdc00; --treasure-hi:#c6ff5a; --treasure-deep:#5c8a00;
   --emerald:#ccff00; --emerald-dim:#9ac400;
   --danger:#e08a5a; --seal:#9a2f28;
   --shadow:0 24px 60px -24px rgba(0,0,0,.72);
@@ -287,7 +287,7 @@ h1,h2,h3{font-family:var(--serif); font-weight:600; letter-spacing:-.01em; text-
   <a class="brand" href="index.html#top" aria-label="$SHERIFF home">
     <svg class="crest" viewBox="0 0 40 40" aria-hidden="true">
       <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#f7e6b0"/><stop offset=".55" stop-color="#e6c877"/><stop offset="1" stop-color="#b8912f"/>
+        <stop offset="0" stop-color="#e4ff7a"/><stop offset=".55" stop-color="#ccff00"/><stop offset="1" stop-color="#9ac400"/>
       </linearGradient></defs>
       <path d="M20 2c5 3 10 4 15 4 0 12-2 24-15 32C7 30 5 18 5 6c5 0 10-1 15-4z" fill="none" stroke="url(#g)" stroke-width="1.6"/>
       <path d="M20 9l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L8.8 14.3l5-.7z" fill="url(#g)"/>
@@ -315,7 +315,7 @@ h1,h2,h3{font-family:var(--serif); font-weight:600; letter-spacing:-.01em; text-
     <span class="badge-soon"><span class="pulse"></span> Coming soon · Robinhood Chain</span>
     <svg class="crest-lg" viewBox="0 0 40 40" aria-hidden="true">
       <defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#f7e6b0"/><stop offset=".55" stop-color="#e6c877"/><stop offset="1" stop-color="#b8912f"/>
+        <stop offset="0" stop-color="#e4ff7a"/><stop offset=".55" stop-color="#ccff00"/><stop offset="1" stop-color="#9ac400"/>
       </linearGradient></defs>
       <path d="M20 2c5 3 10 4 15 4 0 12-2 24-15 32C7 30 5 18 5 6c5 0 10-1 15-4z" fill="none" stroke="url(#g2)" stroke-width="1.4"/>
       <path d="M20 9l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L8.8 14.3l5-.7z" fill="url(#g2)"/>
@@ -511,7 +511,7 @@ h1,h2,h3{font-family:var(--serif); font-weight:600; letter-spacing:-.01em; text-
   var W,H; resize(); addEventListener('resize',resize,{passive:true});
 
   function draw(){
-    var gold=css('--treasure')||'#f5c542', goldHi=css('--treasure-hi')||'#ffdd7a',
+    var gold=css('--treasure')||'#8fdc00', goldHi=css('--treasure-hi')||'#c6ff5a',
         emerald=css('--gold')||'#ccff00', line=css('--line-strong')||'rgba(204,255,0,.30)',
         dim=css('--ink-dim')||'#a7ad97';
     ctx.clearRect(0,0,W,H);

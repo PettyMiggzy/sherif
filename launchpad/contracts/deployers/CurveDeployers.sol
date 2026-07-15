@@ -31,12 +31,12 @@ contract BondingCurveDeployer {
         uint32 antiSnipeSecs,
         uint256 maxBuyWei,
         address bondDeployer,
-        uint256 rampSupply
+        uint256 ambushSupply
     ) external returns (address) {
         return address(
             new BondingCurve(
                 token, weth, v3Factory, platform, dev, virtEth, curveSupply, gradTarget, antiSnipeSecs, maxBuyWei,
-                bondDeployer, rampSupply
+                bondDeployer, ambushSupply
             )
         );
     }

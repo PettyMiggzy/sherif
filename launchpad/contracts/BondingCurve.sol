@@ -15,7 +15,7 @@ interface IBondDeployer {
 }
 
 interface IBond {
-    function post(uint256 keepWeth, uint256 keepTokens, uint256 moatWeth, uint256 rampTokens) external;
+    function post(uint256 sherwoodWeth, uint256 sherwoodTokens, uint256 bountyWeth, uint256 ambushTokens) external;
 }
 
 /// @title BondingCurve
@@ -42,15 +42,15 @@ contract BondingCurve is ReentrancyGuard {
     uint16 public constant BUY_BUFFER_BPS = 10; // 0.1% of a buy kept in-curve as a buffer, sent to platform at grad
     uint16 public constant SELL_FEE_BPS = 100; // 1% on sells -> project dev
     uint16 public constant CARDINALITY = 200; // TWAP observation slots armed at graduation (for the Bond)
-    uint16 public constant KEEP_WETH_BPS = 6000; // 60% of the raise seeds the Keep LP; 40% seeds the Moat floor
+    uint16 public constant SHERWOOD_WETH_BPS = 6000; // 60% of the raise seeds the Sherwood LP; 40% seeds the Bounty floor
 
     // immutables
     IERC20 public immutable token;
     address public immutable WETH;
     IUniswapV3Factory public immutable v3Factory;
     address public immutable bondDeployer; // deploys the per-launch Bond at graduation
-    uint256 public immutable rampSupply; // tokens (held by this curve) handed to the Bond's Ramparts at grad
-    address public immutable platform; // buy fee + LP (Keep) fee recipient
+    uint256 public immutable ambushSupply; // tokens (held by this curve) handed to the Bond's Ambush at grad
+    address public immutable platform; // buy fee + LP (Sherwood) fee recipient
     address public immutable dev; // project dev — receives sell fees (burn or collect)
 
     uint256 public immutable VIRT_ETH; // virtual ETH reserve (sets the starting price)
@@ -71,7 +71,7 @@ contract BondingCurve is ReentrancyGuard {
     uint256 public devSellReserve; // accrued 1% sell fees, for the project dev to burn or collect
     bool public graduated;
     address public pool;
-    address public bond; // the Bond posted at graduation (Keep + Moat + Ramparts)
+    address public bond; // the Bond posted at graduation (Sherwood + Bounty + Ambush)
 
     error AlreadyGraduated();
     error NotGraduated();
@@ -101,7 +101,7 @@ contract BondingCurve is ReentrancyGuard {
         uint32 antiSnipeSecs_,
         uint256 maxBuyWei_,
         address bondDeployer_,
-        uint256 rampSupply_
+        uint256 ambushSupply_
     ) {
         require(
             token_ != address(0) && weth_ != address(0) && v3Factory_ != address(0)
@@ -116,7 +116,7 @@ contract BondingCurve is ReentrancyGuard {
         WETH = weth_;
         v3Factory = IUniswapV3Factory(v3Factory_);
         bondDeployer = bondDeployer_;
-        rampSupply = rampSupply_;
+        ambushSupply = ambushSupply_;
         platform = platform_;
         dev = dev_;
         VIRT_ETH = virtEth_;
@@ -291,26 +291,26 @@ contract BondingCurve is ReentrancyGuard {
         require(existing == gradSqrtPriceX96, "pool price moved");
         IUniswapV3Pool(p).increaseObservationCardinalityNext(CARDINALITY); // arm the TWAP for the Bond's poke guard
 
-        // Split the raise: KEEP_WETH_BPS seeds the Keep LP, the rest seeds the Moat floor.
-        uint256 keepWeth = (ethToLp * KEEP_WETH_BPS) / 10_000;
-        uint256 moatWeth = ethToLp - keepWeth;
+        // Split the raise: SHERWOOD_WETH_BPS seeds the Sherwood LP, the rest seeds the Bounty floor.
+        uint256 sherwoodWeth = (ethToLp * SHERWOOD_WETH_BPS) / 10_000;
+        uint256 bountyWeth = ethToLp - sherwoodWeth;
 
-        // Keep tokens: pair `keepWeth` at the committed graduation price; burn the unsold curve remainder
-        // (NOT the ramp reserve, which is handed to the Bond's Ramparts).
+        // Sherwood tokens: pair `sherwoodWeth` at the committed graduation price; burn the unsold curve remainder
+        // (NOT the ambush reserve, which is handed to the Bond's Ambush).
         uint256 quote = PoolMath.quoteWethPerToken(gradSqrtPriceX96, address(token) < WETH); // WETH-wei per 1e18 token
         require(quote > 0, "bad price");
-        uint256 keepTokens = Math.min(reserveToken, Math.mulDiv(keepWeth, 1e18, quote));
-        require(keepTokens > 0, "empty grad");
-        uint256 burnTokens = reserveToken - keepTokens;
+        uint256 sherwoodTokens = Math.min(reserveToken, Math.mulDiv(sherwoodWeth, 1e18, quote));
+        require(sherwoodTokens > 0, "empty grad");
+        uint256 burnTokens = reserveToken - sherwoodTokens;
         if (burnTokens > 0) token.safeTransfer(0x000000000000000000000000000000000000dEaD, burnTokens);
 
-        // Deploy the Bond, fund it (all raised ETH as WETH + Keep tokens + the Ramparts reserve), and post.
+        // Deploy the Bond, fund it (all raised ETH as WETH + Sherwood tokens + the Ambush reserve), and post.
         IWETH9(WETH).deposit{value: ethToLp}();
         address b = IBondDeployer(bondDeployer).deploy(address(token), WETH, address(v3Factory), platform, address(this));
         bond = b;
         IERC20(WETH).safeTransfer(b, ethToLp);
-        IERC20(token).safeTransfer(b, keepTokens + rampSupply);
-        IBond(b).post(keepWeth, keepTokens, moatWeth, rampSupply);
+        IERC20(token).safeTransfer(b, sherwoodTokens + ambushSupply);
+        IBond(b).post(sherwoodWeth, sherwoodTokens, bountyWeth, ambushSupply);
 
         // sweep the accrued buy-fee buffer to the platform (the devSellReserve stays for the dev)
         uint256 buf = platformBuffer;
@@ -323,7 +323,7 @@ contract BondingCurve is ReentrancyGuard {
         uint256 wethDust = IERC20(WETH).balanceOf(address(this));
         if (wethDust > 0) IERC20(WETH).safeTransfer(platform, wethDust);
 
-        emit Graduated(p, ethToLp, keepTokens, gradSqrtPriceX96);
+        emit Graduated(p, ethToLp, sherwoodTokens, gradSqrtPriceX96);
     }
 
     // --------------------------------------------------------------- helpers

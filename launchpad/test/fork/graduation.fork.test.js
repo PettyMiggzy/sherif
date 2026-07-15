@@ -12,7 +12,7 @@ const suite = process.env.FORK_RPC ? describe : describe.skip;
 suite("CurveLaunchFactory end-to-end on a Robinhood Chain fork (real Uniswap v3)", function () {
   this.timeout(240000);
 
-  it("launch -> trade -> graduate -> posts the Bond (Keep+Moat+Ramparts) into a real, tradeable pool", async () => {
+  it("launch -> trade -> graduate -> posts the Bond (Sherwood+Bounty+Ambush) into a real, tradeable pool", async () => {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
 
     // deploy the pad: deployers + factory (fixed oracle-free terms live in the factory)
@@ -33,7 +33,7 @@ suite("CurveLaunchFactory end-to-end on a Robinhood Chain fork (real Uniswap v3)
 
     const SUPPLY = 1_000_000_000n * ONE;
     expect(await TOK.totalSupply()).to.equal(SUPPLY);
-    expect(await TOK.balanceOf(curve)).to.equal(SUPPLY); // curve holds all of it (75% trades, 25% ramp reserve)
+    expect(await TOK.balanceOf(curve)).to.equal(SUPPLY); // curve holds all of it (75% trades, 25% ambush reserve)
     const poolAddr = await c.pool();
     const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
     expect((await pool.slot0()).sqrtPriceX96).to.equal(await c.gradSqrtPriceX96()); // priced at launch
@@ -45,21 +45,21 @@ suite("CurveLaunchFactory end-to-end on a Robinhood Chain fork (real Uniswap v3)
     await (await c.connect(buyer).buy(0, { value: 5n * ONE })).wait(); // caps at 4 ETH, refunds the rest
     expect(await c.graduated()).to.equal(true);
 
-    // (3) THE BOND — graduation deployed + posted it (Keep + Moat + Ramparts) into the real pool
+    // (3) THE BOND — graduation deployed + posted it (Sherwood + Bounty + Ambush) into the real pool
     const bondAddr = await c.bond();
     expect(bondAddr).to.not.equal(ethers.ZeroAddress);
     const bond = await ethers.getContractAt("Bond", bondAddr);
     expect(await bond.posted()).to.equal(true);
-    expect(await bond.keepL()).to.be.greaterThan(0n);  // full-range locked baseline LP
-    expect(await bond.moatL()).to.be.greaterThan(0n);  // ETH floor below price
-    expect(await bond.rampL()).to.be.greaterThan(0n);  // 25% sold high above price
+    expect(await bond.sherwoodL()).to.be.greaterThan(0n);  // full-range locked baseline LP
+    expect(await bond.bountyL()).to.be.greaterThan(0n);  // ETH floor below price
+    expect(await bond.ambushL()).to.be.greaterThan(0n);  // 25% sold high above price
     expect(await pool.slot0()).to.not.be.undefined;
     expect((await pool.slot0()).sqrtPriceX96).to.equal(await c.gradSqrtPriceX96()); // still price-continuous
 
     // real liquidity + WETH now live in the pool
     expect(await pool.liquidity()).to.be.greaterThan(0n);
     const weth = await ethers.getContractAt("IERC20", WETH);
-    expect(await weth.balanceOf(poolAddr)).to.be.greaterThan(2n * ONE); // Keep + Moat WETH seeded
+    expect(await weth.balanceOf(poolAddr)).to.be.greaterThan(2n * ONE); // Sherwood + Bounty WETH seeded
 
     // curve trading is closed
     await expect(c.connect(buyer).buy(0, { value: ONE })).to.be.revertedWithCustomError(c, "AlreadyGraduated");
@@ -78,7 +78,7 @@ suite("CurveLaunchFactory end-to-end on a Robinhood Chain fork (real Uniswap v3)
     await ethers.provider.send("evm_increaseTime", [1000]);
     await ethers.provider.send("evm_mine", []);
     await (await bond.poke()).wait();
-    expect(await bond.moatL()).to.be.greaterThan(0n);
-    expect(await bond.rampL()).to.be.greaterThan(0n);
+    expect(await bond.bountyL()).to.be.greaterThan(0n);
+    expect(await bond.ambushL()).to.be.greaterThan(0n);
   });
 });

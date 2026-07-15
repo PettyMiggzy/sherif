@@ -1,7 +1,7 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-// Fork test for the Bond (Moat / Ramparts / Keep) against the REAL Uniswap v3 on Robinhood Chain.
+// Fork test for the Bond (Bounty / Ambush / Sherwood) against the REAL Uniswap v3 on Robinhood Chain.
 // Run: FORK_RPC=<rpc> npx hardhat test test/fork/bond.fork.test.js
 const ONE = 10n ** 18n;
 const FACTORY = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
@@ -23,7 +23,7 @@ const suite = process.env.FORK_RPC ? describe : describe.skip;
 suite("Bond on a Robinhood Chain fork (real Uniswap v3 range orders)", function () {
   this.timeout(240000);
 
-  it("posts Keep+Moat+Ramparts, catches a dip in the Moat, recenters on poke, streams Keep fees to platform", async () => {
+  it("posts Sherwood+Bounty+Ambush, catches a dip in the Bounty, recenters on poke, streams Sherwood fees to platform", async () => {
     const [dep, platform, curveSigner, trader] = await ethers.getSigners();
 
     // token + a real, initialized pool at a cheap-meme price (1 WETH ~ 50M token)
@@ -42,7 +42,7 @@ suite("Bond on a Robinhood Chain fork (real Uniswap v3 range orders)", function 
     const bond = await (await ethers.getContractFactory("Bond")).deploy(tokAddr, WETH, FACTORY, platform.address, curveSigner.address);
     const bondAddr = await bond.getAddress();
 
-    // fund the Bond exactly as graduation would: WETH for Keep+Moat, tokens for Keep+Ramparts
+    // fund the Bond exactly as graduation would: WETH for Sherwood+Bounty, tokens for Sherwood+Ambush
     const wethW = await ethers.getContractAt(
       ["function deposit() payable", "function transfer(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"], WETH);
     const keepWeth = ONE / 2n, moatWeth = ONE / 2n;         // 1 WETH total
@@ -53,11 +53,11 @@ suite("Bond on a Robinhood Chain fork (real Uniswap v3 range orders)", function 
 
     // POST — mints the three real positions
     await (await bond.connect(curveSigner).post(keepWeth, keepTokens, moatWeth, rampTokens)).wait();
-    expect(await bond.keepL()).to.be.greaterThan(0n);
-    expect(await bond.moatL()).to.be.greaterThan(0n);
-    expect(await bond.rampL()).to.be.greaterThan(0n);
-    expect(await pool.liquidity()).to.be.greaterThan(0n); // Keep is in-range at the current price
-    const moatLo0 = await bond.moatLo(), rampL0 = await bond.rampL();
+    expect(await bond.sherwoodL()).to.be.greaterThan(0n);
+    expect(await bond.bountyL()).to.be.greaterThan(0n);
+    expect(await bond.ambushL()).to.be.greaterThan(0n);
+    expect(await pool.liquidity()).to.be.greaterThan(0n); // Sherwood is in-range at the current price
+    const moatLo0 = await bond.bountyLo(), rampL0 = await bond.ambushL();
 
     // helper: a real swap through the pool
     const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
@@ -73,28 +73,28 @@ suite("Bond on a Robinhood Chain fork (real Uniswap v3 range orders)", function 
     await (await TOK.connect(dep).transfer(trader.address, 400_000_000n * ONE)).wait();
     await (await wethW.connect(trader).deposit({ value: ONE })).wait();
 
-    // (A) a DUMP: sell a slug of token -> price runs into the Moat, which buys it with WETH.
-    // v3 takes the fee from the INPUT, so a token-in dump accrues Keep fees in TOKEN.
+    // (A) a DUMP: sell a slug of token -> price runs into the Bounty, which buys it with WETH.
+    // v3 takes the fee from the INPUT, so a token-in dump accrues Sherwood fees in TOKEN.
     const platTokBefore = await TOK.balanceOf(platform.address);
     await swap(trader, tokAddr, 10_000_000n * ONE);
     await warp(1000); // let the TWAP converge so the poke deviation-guard passes (keeper waits for calm)
 
-    // (B) poke: recenters Moat (all WETH) + Ramparts (all tokens), sweeps Keep fees to platform
+    // (B) poke: recenters Bounty (all WETH) + Ambush (all tokens), sweeps Sherwood fees to platform
     await (await bond.poke()).wait();
-    expect(await bond.moatLo()).to.not.equal(moatLo0);        // floor recentered to the new price
-    expect(await bond.moatL()).to.be.greaterThan(0n);
-    expect(await bond.rampL()).to.be.greaterThan(0n);
-    // Keep swap fees on the dump streamed to the platform (in token, since token was the input)
+    expect(await bond.bountyLo()).to.not.equal(moatLo0);        // floor recentered to the new price
+    expect(await bond.bountyL()).to.be.greaterThan(0n);
+    expect(await bond.ambushL()).to.be.greaterThan(0n);
+    // Sherwood swap fees on the dump streamed to the platform (in token, since token was the input)
     expect(await TOK.balanceOf(platform.address)).to.be.greaterThan(platTokBefore);
     rampL0; // (economics of the catch/recycle are proven in sim/bond-sim.mjs)
 
-    // (C) a PUMP then poke: buy token with WETH (WETH-in -> Keep fees now accrue in WETH), floor ratchets.
+    // (C) a PUMP then poke: buy token with WETH (WETH-in -> Sherwood fees now accrue in WETH), floor ratchets.
     const platWethBefore = await wethW.balanceOf(platform.address);
     await swap(trader, WETH, ONE / 2n);
     await warp(1000);
     await (await bond.poke()).wait();
-    expect(await bond.moatL()).to.be.greaterThan(0n);
-    expect(await bond.rampL()).to.be.greaterThan(0n);
+    expect(await bond.bountyL()).to.be.greaterThan(0n);
+    expect(await bond.ambushL()).to.be.greaterThan(0n);
     expect(await wethW.balanceOf(platform.address)).to.be.greaterThan(platWethBefore); // WETH fees to platform
 
     // (D) anti-rug: the Bond exposes no way to move WETH/tokens to an arbitrary address

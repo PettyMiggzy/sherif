@@ -10,17 +10,17 @@ import {PoolMath} from "./libraries/PoolMath.sol";
 /// @title Bond — "The Sheriff's Bond"
 /// @notice A protocol-owned market maker posted on a token at graduation and locked forever. It holds three
 /// Uniswap v3 positions and rebalances them so the pool has a floor it can't be rugged below:
-///   - Keep     : a full-range LP (baseline liquidity). Principal is NEVER withdrawn; only its swap fees are
+///   - Sherwood     : a full-range LP (baseline liquidity). Principal is NEVER withdrawn; only its swap fees are
 ///                collected, to the platform. This is the permanent locked liquidity.
-///   - Moat     : a single-sided WETH range order just BELOW the price (a falling ladder of bids). Buys dips.
-///   - Ramparts : a single-sided token range order HIGH above the price (~3x–25x). Sells only into strength;
-///                the WETH it earns funds the Moat.
-/// A permissionless `poke()` recenters the Moat (all held WETH) and Ramparts (all held tokens) around the
+///   - Bounty     : a single-sided WETH range order just BELOW the price (a falling ladder of bids). Buys dips.
+///   - Ambush : a single-sided token range order HIGH above the price (~3x–25x). Sells only into strength;
+///                the WETH it earns funds the Bounty.
+/// A permissionless `poke()` recenters the Bounty (all held WETH) and Ambush (all held tokens) around the
 /// current price — which both ratchets the floor up after a pump and recycles caught tokens after a dump.
 ///
-/// Anti-rug by construction: there is NO function that sends WETH or tokens to an arbitrary address. Keep
-/// principal is never burned; Moat/Ramparts funds only ever become pool positions or sit here awaiting the
-/// next poke; only Keep swap fees leave, and only to the fixed platform wallet. No owner, setter, or drain.
+/// Anti-rug by construction: there is NO function that sends WETH or tokens to an arbitrary address. Sherwood
+/// principal is never burned; Bounty/Ambush funds only ever become pool positions or sit here awaiting the
+/// next poke; only Sherwood swap fees leave, and only to the fixed platform wallet. No owner, setter, or drain.
 contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -30,10 +30,10 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     // Band geometry (ticks from the current price; all multiples of SPACING). 1 tick ≈ 1.0001x.
-    int24 public constant MOAT_NEAR = 200; //   ~+0%   : Moat starts one spacing off spot
-    int24 public constant MOAT_FAR = 6800; //   ~-49%  : ...down to roughly half price (a wide buy wall)
-    int24 public constant RAMP_NEAR = 11000; // ~3.0x  : Ramparts start ~3x
-    int24 public constant RAMP_FAR = 32000; //  ~24.5x : ...up to ~25x
+    int24 public constant BOUNTY_NEAR = 200; //   ~+0%   : Bounty starts one spacing off spot
+    int24 public constant BOUNTY_FAR = 6800; //   ~-49%  : ...down to roughly half price (a wide buy wall)
+    int24 public constant AMBUSH_NEAR = 11000; // ~3.0x  : Ambush start ~3x
+    int24 public constant AMBUSH_FAR = 32000; //  ~24.5x : ...up to ~25x
     int24 public constant MAX_DEV = 300; //     ~3%    : max spot-vs-TWAP deviation to allow a poke
     uint32 public constant TWAP_WINDOW = 900; //        15-min TWAP for the poke guard
 
@@ -42,21 +42,21 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     IUniswapV3Pool public immutable pool;
     address public immutable token0;
     address public immutable token1;
-    address public immutable platform; // receives Keep swap fees
+    address public immutable platform; // receives Sherwood swap fees
     address public immutable curve; // only the curve may post()
     bool public immutable tokenIsToken0;
-    bool public immutable moatBelow; // Moat (WETH) sits below price iff WETH is token1
+    bool public immutable bountyBelow; // Bounty (WETH) sits below price iff WETH is token1
 
     bool public posted;
-    int24 public keepLo;
-    int24 public keepHi;
-    uint128 public keepL;
-    int24 public moatLo;
-    int24 public moatHi;
-    uint128 public moatL;
-    int24 public rampLo;
-    int24 public rampHi;
-    uint128 public rampL;
+    int24 public sherwoodLo;
+    int24 public sherwoodHi;
+    uint128 public sherwoodL;
+    int24 public bountyLo;
+    int24 public bountyHi;
+    uint128 public bountyL;
+    int24 public ambushLo;
+    int24 public ambushHi;
+    uint128 public ambushL;
 
     bool private _minting;
 
@@ -67,8 +67,8 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     error NotPool();
     error Manipulated();
 
-    event Posted(uint128 keepL, uint128 moatL, uint128 rampL);
-    event Poked(int24 tick, uint128 moatL, uint128 rampL, uint256 keepFees0, uint256 keepFees1);
+    event Posted(uint128 sherwoodL, uint128 bountyL, uint128 ambushL);
+    event Poked(int24 tick, uint128 bountyL, uint128 ambushL, uint256 sherwoodFees0, uint256 sherwoodFees1);
 
     constructor(address token_, address weth_, address v3Factory_, address platform_, address curve_) {
         require(token_ != address(0) && weth_ != address(0) && platform_ != address(0) && curve_ != address(0), "zero");
@@ -83,13 +83,13 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         curve = curve_;
         bool tIs0 = token_ < weth_;
         tokenIsToken0 = tIs0;
-        moatBelow = tIs0; // WETH is token1 -> Moat (WETH) is the below-price band
+        bountyBelow = tIs0; // WETH is token1 -> Bounty (WETH) is the below-price band
         (token0, token1) = tIs0 ? (token_, weth_) : (weth_, token_);
     }
 
-    /// @notice Posted once by the curve at graduation. The Bond must already hold `keepWeth + moatWeth` WETH
-    /// and `keepTokens + rampTokens` of the token. Mints the three positions.
-    function post(uint256 keepWeth, uint256 keepTokens, uint256 moatWeth, uint256 rampTokens)
+    /// @notice Posted once by the curve at graduation. The Bond must already hold `sherwoodWeth + bountyWeth` WETH
+    /// and `sherwoodTokens + ambushTokens` of the token. Mints the three positions.
+    function post(uint256 sherwoodWeth, uint256 sherwoodTokens, uint256 bountyWeth, uint256 ambushTokens)
         external
         nonReentrant
     {
@@ -99,72 +99,72 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
 
         (uint160 sp, int24 tick,,,,,) = pool.slot0();
 
-        // 1) Keep — full-range baseline liquidity (locked; only fees ever leave)
-        (uint256 a0, uint256 a1) = tokenIsToken0 ? (keepTokens, keepWeth) : (keepWeth, keepTokens);
+        // 1) Sherwood — full-range baseline liquidity (locked; only fees ever leave)
+        (uint256 a0, uint256 a1) = tokenIsToken0 ? (sherwoodTokens, sherwoodWeth) : (sherwoodWeth, sherwoodTokens);
         uint128 kL = PoolMath.fullRangeLiquidity(sp, a0, a1);
-        keepLo = PoolMath.MIN_TICK;
-        keepHi = PoolMath.MAX_TICK;
-        keepL = kL;
-        _mint(keepLo, keepHi, kL);
+        sherwoodLo = PoolMath.MIN_TICK;
+        sherwoodHi = PoolMath.MAX_TICK;
+        sherwoodL = kL;
+        _mint(sherwoodLo, sherwoodHi, kL);
 
-        // 2) Moat (WETH) + 3) Ramparts (token) — single-sided range orders
-        _placeMoat(tick, moatWeth);
-        _placeRamparts(tick, rampTokens);
+        // 2) Bounty (WETH) + 3) Ambush (token) — single-sided range orders
+        _placeBounty(tick, bountyWeth);
+        _placeAmbush(tick, ambushTokens);
 
-        emit Posted(keepL, moatL, rampL);
+        emit Posted(sherwoodL, bountyL, ambushL);
     }
 
-    /// @notice Permissionless keeper. Sweeps Keep swap fees to the platform, then recenters the Moat (all held
-    /// WETH) and Ramparts (all held tokens) around the current price — ratcheting the floor and recycling
+    /// @notice Permissionless keeper. Sweeps Sherwood swap fees to the platform, then recenters the Bounty (all held
+    /// WETH) and Ambush (all held tokens) around the current price — ratcheting the floor and recycling
     /// caught supply. Guarded by a spot-vs-TWAP deviation check so it can't be poked at a manipulated price.
     function poke() external nonReentrant {
         if (!posted) revert NotPosted();
         (uint160 sp, int24 tick,,,,,) = pool.slot0();
         _requireUnmanipulated(tick);
 
-        // Keep: poke the position to realize fees, then collect ONLY fees (principal stays — locked)
-        pool.burn(keepLo, keepHi, 0);
-        (uint128 kf0, uint128 kf1) = pool.collect(platform, keepLo, keepHi, U128_MAX, U128_MAX);
+        // Sherwood: poke the position to realize fees, then collect ONLY fees (principal stays — locked)
+        pool.burn(sherwoodLo, sherwoodHi, 0);
+        (uint128 kf0, uint128 kf1) = pool.collect(platform, sherwoodLo, sherwoodHi, U128_MAX, U128_MAX);
 
-        // tear down Moat + Ramparts, pull everything back here
-        if (moatL > 0) {
-            pool.burn(moatLo, moatHi, moatL);
-            pool.collect(address(this), moatLo, moatHi, U128_MAX, U128_MAX);
-            moatL = 0;
+        // tear down Bounty + Ambush, pull everything back here
+        if (bountyL > 0) {
+            pool.burn(bountyLo, bountyHi, bountyL);
+            pool.collect(address(this), bountyLo, bountyHi, U128_MAX, U128_MAX);
+            bountyL = 0;
         }
-        if (rampL > 0) {
-            pool.burn(rampLo, rampHi, rampL);
-            pool.collect(address(this), rampLo, rampHi, U128_MAX, U128_MAX);
-            rampL = 0;
+        if (ambushL > 0) {
+            pool.burn(ambushLo, ambushHi, ambushL);
+            pool.collect(address(this), ambushLo, ambushHi, U128_MAX, U128_MAX);
+            ambushL = 0;
         }
 
-        // recenter around the current price: all WETH -> Moat, all tokens -> Ramparts
+        // recenter around the current price: all WETH -> Bounty, all tokens -> Ambush
         uint256 wbal = IERC20(WETH).balanceOf(address(this));
         uint256 tbal = token.balanceOf(address(this));
-        if (wbal > 0) _placeMoat(tick, wbal);
-        if (tbal > 0) _placeRamparts(tick, tbal);
+        if (wbal > 0) _placeBounty(tick, wbal);
+        if (tbal > 0) _placeAmbush(tick, tbal);
         sp; // silence unused
-        emit Poked(tick, moatL, rampL, kf0, kf1);
+        emit Poked(tick, bountyL, ambushL, kf0, kf1);
     }
 
     // --------------------------------------------------------------- internals
-    function _placeMoat(int24 tick, uint256 wethAmt) internal {
-        // Moat holds WETH, on the "token gets cheaper" side (below price iff WETH is token1).
-        (int24 lo, int24 hi, bool above) = _band(tick, moatBelow ? false : true, MOAT_NEAR, MOAT_FAR);
+    function _placeBounty(int24 tick, uint256 wethAmt) internal {
+        // Bounty holds WETH, on the "token gets cheaper" side (below price iff WETH is token1).
+        (int24 lo, int24 hi, bool above) = _band(tick, bountyBelow ? false : true, BOUNTY_NEAR, BOUNTY_FAR);
         uint128 L = PoolMath.singleSidedLiquidity(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), wethAmt, above);
-        moatLo = lo;
-        moatHi = hi;
-        moatL = L;
+        bountyLo = lo;
+        bountyHi = hi;
+        bountyL = L;
         _mint(lo, hi, L);
     }
 
-    function _placeRamparts(int24 tick, uint256 tokenAmt) internal {
-        // Ramparts hold the token, on the "token gets more expensive" side (opposite of the Moat).
-        (int24 lo, int24 hi, bool above) = _band(tick, moatBelow ? true : false, RAMP_NEAR, RAMP_FAR);
+    function _placeAmbush(int24 tick, uint256 tokenAmt) internal {
+        // Ambush hold the token, on the "token gets more expensive" side (opposite of the Bounty).
+        (int24 lo, int24 hi, bool above) = _band(tick, bountyBelow ? true : false, AMBUSH_NEAR, AMBUSH_FAR);
         uint128 L = PoolMath.singleSidedLiquidity(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), tokenAmt, above);
-        rampLo = lo;
-        rampHi = hi;
-        rampL = L;
+        ambushLo = lo;
+        ambushHi = hi;
+        ambushL = L;
         _mint(lo, hi, L);
     }
 
@@ -212,7 +212,7 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         if (amount1Owed > 0) IERC20(token1).safeTransfer(msg.sender, amount1Owed);
     }
 
-    /// @notice WETH currently standing under the price as the Moat floor (its principal side).
+    /// @notice WETH currently standing under the price as the Bounty floor (its principal side).
     function floorWeth() external view returns (uint256) {
         return IERC20(WETH).balanceOf(address(this)); // uncommitted; committed floor lives in the pool position
     }
