@@ -117,45 +117,46 @@ asserts the deployed bytecode equals the model op-for-op. Latest run:
 - **Anti-snipe is weak (LOW, documented):** the per-tx `maxBuyWei` cap is easily split across txs/wallets on
   an FCFS chain — it is NOT strong sniper protection. The strong path is the **atomic `LaunchpadFactory`**.
 
-## Curve launchpad tokenomics (`CurveLaunchFactory` + `AthVault` + `SheriffStaking`)
+## Curve launchpad tokenomics (`CurveLaunchFactory` + `OtcVault`)
 The productized bonding-curve flow the platform launches other tokens through.
 
 **Fixed, oracle-free pad terms (identical for every launch — projects only pick name / ticker / dev):**
 | Term | Value |
 |---|---|
 | Total supply | **1,000,000,000** (fixed) |
-| Split | **90% bonding curve · 10% ATH vault** |
-| Start price | `VIRT_ETH = 0.9 ETH` → **start MC = 1 ETH (~$3k)**, no oracle |
-| Graduation | when the curve collects **4 ETH** → grad MC ~30 ETH (~$89k) |
+| Split | **80% bonding curve · 20% OTC vault** |
+| Start price | `VIRT_ETH = 0.8 ETH` → **start MC = 1 ETH (~$3k)**, no oracle |
+| Graduation | when the curve collects **4 ETH** |
 | Anti-snipe | 0.1-ETH per-buy cap for the first 5 min |
+| OTC price | fixed at **~$10k MC** (`otcPrice = 3.33e9` WETH-wei / 1e18 token), oracle-free |
+| OTC access | **burn $SHERIFF** → per-wallet cap = `burned × 100` tokens |
 
-Trajectory (assume ETH=$3k): launch $3k → 0.5 ETH in $7.3k → 1 ETH in $13k → **4 ETH in → graduates ~$89k**
-(81.6% of the curve sold). At graduation the supply is ~73.5% circulating · 13.5% locked LP · 10% ATH vault
-· 3% burned. `CurveLaunchFactory.launch({name, symbol, dev})` is the whole interface.
+Trajectory (assume ETH=$3k): launch $3k → graduates at 4 ETH raised. `CurveLaunchFactory.launch({name,
+symbol, dev})` is the whole interface.
 
-**Per launch, the supply splits:** **10% → `AthVault`** (platform treasury) · **90% → `BondingCurve`**.
-The curve trades + charts day one and **graduates** to a locked Uniswap pool (see above). The 90% is
-sold along the curve / seeded into the LP; the 10% is the platform's ATH treasury.
+**Per launch, the supply splits:** **20% → `OtcVault`** (platform OTC desk) · **80% → `BondingCurve`**.
+The curve trades + charts day one and **graduates** to a locked Uniswap pool (see above). The 80% is
+sold along the curve / seeded into the LP; the 20% is the platform's OTC allocation.
 
-**`AthVault` — ATH ladder seller (activates after graduation):**
-- Trims **1.5% of the *remaining* vault** each time price prints a **new TWAP all-time-high** — gated by a
-  `startLevel` (~$5k MC, expressed as a tick level so **no oracle** is needed), a **≥5% gap** between
-  triggering highs, a **1h cooldown**, and a **spot-vs-TWAP deviation guard** (can't be triggered at a
-  manipulated price). Geometric decay: ~50 new ATHs to sell half the vault → a slow trickle, never a dump.
-- Each sale's ETH splits **40% dev · 20% $SHERIFF staking · 40% platform**.
-  - **40% dev:** held as a reserve the project dev can **`devBurn`** (buy-and-burn) **or `devWithdraw`** (take ETH) — dev's choice.
-  - **20% staking:** unwrapped to ETH and pushed to `SheriffStaking.notifyReward()`.
-  - **40% platform:** sent to the platform wallet.
-- **Anti-rug:** there is **no path to withdraw the 10% token allocation** — it can only be laddered out on
-  new highs or bought-and-burned. `poke()` is permissionless (keeper-safe).
+**`OtcVault` — burn-$SHERIFF-for-access OTC desk (activates after graduation):**
+- Holds the 20%. After graduation, `activate()` (permissionless) binds the curve's own graduated pool.
+- The window **opens** once the pool's **30-min TWAP price** reaches the fixed OTC price (~$10k MC) — a
+  tick-space check, so **no oracle / no price feed**. Once open, buyers get the token **at that fixed $10k
+  price no matter how high the market has actually run** — a real discount when the token has mooned.
+- **Access is earned by burning $SHERIFF.** `buyOtc(sheriffBurn, tokenAmount)` sends `sheriffBurn` $SHERIFF
+  to `0x…dEaD` and unlocks a per-wallet allowance of `burned × burnRatio` tokens (`burnRatio = 100` tokens
+  per $SHERIFF, tunable). Bigger burn → bigger cap. The buyer pays `tokenAmount × otcPrice` in ETH; **100%
+  of that ETH goes straight to the platform wallet**; overpay is refunded.
+- **Two jobs at once:** a discretionary platform revenue stream *and* a permanent **$SHERIFF burn sink** that
+  every OTC buyer is forced through — deflationary for $SHERIFF, which benefits every holder.
+- **Anti-rug:** no path to withdraw the 20% token allocation for ETH into an EOA other than the OTC sale
+  itself, and OTC ETH is hard-wired to the platform wallet. No owner drain / setter.
 
-**`SheriffStaking` — stake $SHERIFF, earn ETH.** Every launch's 20% cut flows here and is distributed
-pro-rata to stakers via an `accRewardPerShare` accumulator (O(1), no loops). ETH received while nobody is
-staked is queued and distributed on the next reward. `stake` / `unstake` / `claim`.
-
-**Simulations:** `sim/ath-sim.mjs` — 5,000 random price paths, ~380k ATH sales, **0 invariant violations**
-(supply conserved, split exact 40/20/40, never over-sells, HWM monotonic, ladders on new highs only).
-Decay: 10 ATHs→14% sold · 50→53% · 100→78% · 250→98%.
+**Economics (`sim/otc-sim.mjs`):** full sell-out of the 20% at the $10k OTC price = **0.666 ETH/project
+(~$2k)** to the platform. Across a portfolio (grad ~55%, of those ~70% open, partial clear) it averages
+**~0.16 ETH/launch** — e.g. **~159 ETH (~$476k) over 1,000 launches**, plus ~0.5B $SHERIFF burned. OTC is
+the *upside* stream; the steady revenue is the **1% buy fee** (0.9% streamed live) **+ LP swap fees**, which
+scale with volume on every launch, graduated or not.
 
 **Curve-launchpad audit (2 lenses) — findings fixed:**
 - **Graduation brick via pool pre-init (HIGH):** the curve now **creates + initializes its Uniswap pool at
@@ -164,17 +165,18 @@ Decay: 10 ATHs→14% sold · 50→53% · 100→78% · 250→98%.
 - **Graduation price continuity (kept 100%):** the graduating buy is **capped to land exactly on
   `GRAD_TARGET`** (excess refunded), so graduation seeds the pool at exactly the committed price — sim
   confirms **100% continuous** (median/best/worst). The TWAP is armed (`increaseObservationCardinalityNext`)
-  at graduation for the AthVault.
-- **`AthVault.activate()` binding (MEDIUM):** closed by the above — the pool is always the curve's own
-  correctly-priced pool; activating before graduation is harmless (poke needs liquidity + TWAP history).
-- **Sale sandwich band (M-1):** deviation guard tightened to **~1%** and slippage to **1%**, bounding any
-  within-band sandwich of a tranche sale to ~2% (down from ~8%). `PoolMath.twapPriceWethPerToken` (TickMath
-  ported) is available to anchor min-out to the TWAP tick directly — recommended production hardening.
-- **JIT staking (M-2):** `SheriffStaking` adds a **1-day unstake lock** to deter just-in-time reward capture.
-- **Staking-call DoS (LOW):** `AthVault` wraps `notifyReward` in try/catch with a `flushStaking()` retry, so
-  a reverting staking contract can never brick an ATH sale.
-- Confirmed sound: staking accumulator (no double-claim/insolvency), 40/20/40 always exact, `_level`
-  direction correct both orderings, HWM monotonic, no path to withdraw the 10% allocation, funding math exact.
+  at graduation, which the OtcVault's open-trigger reads.
+- **`OtcVault.activate()` binding (MEDIUM):** closed by the above — the pool bound is always the curve's own
+  correctly-priced graduated pool (validated: exists + initialized). Activating before graduation reverts
+  (`NoPool`); the window itself only opens once the TWAP clears the OTC price.
+- **OTC open-trigger manipulation (defended):** the open gate is a **30-min TWAP** tick check
+  (`PoolMath.twapPriceWethPerToken`), not spot — a flash pump can't force the window open at the fixed price.
+- **Fixed-price ETH accounting:** `cost = tokenAmount × otcPrice / 1e18` (OZ `mulDiv`), ETH pushed to the
+  platform via `.call` with an overpay refund; `nonReentrant` on `buyOtc`; per-wallet allowance is
+  monotonic (`purchased` only grows) so the burn→allowance→buy path can't be replayed for free.
+- Confirmed sound: allowance math (`burned × burnRatio − purchased`, no underflow), $SHERIFF burn is a real
+  transfer to `0x…dEaD`, no path to withdraw the 20% token allocation except the OTC sale, OTC ETH is
+  hard-wired to the platform wallet, `tokenIsToken0` direction correct both orderings.
 
 ## Internal adversarial review (not a substitute for a professional audit)
 A 5-lens adversarial audit (reentrancy/callbacks, oracle/economics, access-control/rug, v3-integration,

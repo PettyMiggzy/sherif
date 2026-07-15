@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {CurveToken} from "../CurveToken.sol";
 import {BondingCurve} from "../BondingCurve.sol";
-import {AthVault} from "../AthVault.sol";
+import {OtcVault} from "../OtcVault.sol";
 
 /// @notice Thin deployers so the big contracts' creation bytecode isn't inlined into CurveLaunchFactory
 /// (24KB contract-size limit). Each is deployed once and its address handed to the factory.
@@ -36,17 +36,17 @@ contract BondingCurveDeployer {
     }
 }
 
-contract AthVaultDeployer {
+contract OtcVaultDeployer {
     function deploy(
         address v3Factory,
         address token,
         address weth,
-        address dev,
+        address sheriff,
         address platform,
-        address staking,
         uint32 twapWindow,
-        int256 startLevel
+        uint256 otcPrice,
+        uint256 burnRatio
     ) external returns (address) {
-        return address(new AthVault(v3Factory, token, weth, dev, platform, staking, twapWindow, startLevel));
+        return address(new OtcVault(v3Factory, token, weth, sheriff, platform, twapWindow, otcPrice, burnRatio));
     }
 }
