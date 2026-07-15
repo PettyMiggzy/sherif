@@ -189,23 +189,30 @@ describe("CurveLaunchFactory integration", () => {
     );
 
     const SUPPLY = 1_000_000_000n * ONE;
-    const tx = await factory.launch({
-      name: "Meme", symbol: "MEME", totalSupply: SUPPLY, virtEth: ONE, gradTarget: 5n * ONE,
-      antiSnipeSecs: 0, maxBuyWei: 0, twapWindow: 1800, startLevel: -1000000, dev: dev.address,
-    });
+    // one-click launch — projects only pick name / ticker / dev
+    const tx = await factory.launch({ name: "Meme", symbol: "MEME", dev: dev.address });
     const rc = await tx.wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
     const { token, curve, vault } = ev.args;
 
     const TOK = await ethers.getContractAt("CurveToken", token);
+    expect(await TOK.totalSupply()).to.equal(SUPPLY); // fixed 1B
     expect(await TOK.balanceOf(vault)).to.equal(SUPPLY / 10n); // 10%
     expect(await TOK.balanceOf(curve)).to.equal(SUPPLY - SUPPLY / 10n); // 90%
 
-    // buy on the curve until it graduates
     const c = await ethers.getContractAt("BondingCurve", curve);
-    await c.connect(buyer).buy(0, { value: 3n * ONE });
-    await c.connect(buyer).buy(0, { value: 3n * ONE });
+    // fixed, oracle-free curve terms
+    expect(await c.VIRT_ETH()).to.equal(900000000000000000n); // 0.9 ETH
+    expect(await c.GRAD_TARGET()).to.equal(4n * ONE); // graduate at 4 ETH
+    // start MC = spotPrice * totalSupply == 1 ETH (~$3k)
+    const startMc = (await c.spotPriceE18()) * SUPPLY / ONE;
+    expect(startMc).to.equal(ONE);
+
+    // past the 5-min anti-snipe window, buy through to graduation (4 ETH)
+    await network.provider.send("evm_increaseTime", [400]);
+    await network.provider.send("evm_mine");
+    await c.connect(buyer).buy(0, { value: 5n * ONE }); // caps at 4 ETH raised + refunds the rest
     expect(await c.graduated()).to.equal(true);
 
     // now the vault can be switched on against the real graduated pool

@@ -24,16 +24,18 @@ contract CurveLaunchFactory is Ownable2Step {
 
     address public platform; // 1% curve fee + 40% ATH cut recipient
 
+    // ---- fixed, oracle-free curve terms — identical for every launch ----
+    uint256 public constant TOTAL_SUPPLY = 1_000_000_000 ether;   // 1B tokens (18 decimals)
+    uint256 public constant VIRT_ETH = 0.9 ether;                 // start MC = VIRT/0.9 = 1 ETH (~$3k)
+    uint256 public constant GRAD_TARGET = 4 ether;                // graduate when the curve collects 4 ETH
+    uint32  public constant ANTISNIPE_SECS = 300;                 // 5-min opening window
+    uint256 public constant MAX_BUY_WEI = 0.1 ether;              // per-buy cap during that window
+    uint32  public constant TWAP_WINDOW = 1800;                   // 30-min TWAP for the ATH vault
+    int256  public constant ATH_START_LEVEL = -887272;            // gate open (grad MC ~$89k is already >> $5k)
+
     struct LaunchParams {
         string name;
         string symbol;
-        uint256 totalSupply;
-        uint256 virtEth; // curve virtual ETH reserve (starting price)
-        uint256 gradTarget; // ETH raised to graduate
-        uint32 antiSnipeSecs; // curve anti-snipe window
-        uint256 maxBuyWei; // per-buy cap during the window
-        uint32 twapWindow; // ATH TWAP window (>=600)
-        int256 startLevel; // ATH start gate (~$5k MC as a price level; platform-computed off-chain)
         address dev; // project dev: gets 40% (burn/withdraw), LP fees
     }
 
@@ -77,20 +79,21 @@ contract CurveLaunchFactory is Ownable2Step {
         vaultDeployer = AthVaultDeployer(vaultDeployer_);
     }
 
+    /// @notice Launch a token on the pad's standard, oracle-free terms: 1B supply, 1-ETH start MC,
+    /// graduation at 4 ETH, 90% curve / 10% pad vault. Projects only pick name / ticker / dev.
     function launch(LaunchParams calldata p) external returns (address token, address curve, address vault) {
-        if (p.totalSupply == 0 || p.virtEth == 0 || p.gradTarget == 0 || p.dev == address(0)) revert BadValue();
+        if (p.dev == address(0)) revert BadValue();
 
-        uint256 vaultAmt = (p.totalSupply * VAULT_BPS) / 10_000;
-        uint256 curveAmt = p.totalSupply - vaultAmt;
-        require(vaultAmt > 0 && curveAmt > 0, "supply too small");
+        uint256 vaultAmt = (TOTAL_SUPPLY * VAULT_BPS) / 10_000; // 10%
+        uint256 curveAmt = TOTAL_SUPPLY - vaultAmt; // 90%
 
         // 1) token minted to this factory
-        token = tokenDeployer.deploy(p.name, p.symbol, p.totalSupply, address(this));
+        token = tokenDeployer.deploy(p.name, p.symbol, TOTAL_SUPPLY, address(this));
 
-        // 2) ATH vault (holds 10%) + bonding curve (holds 90%)
-        vault = vaultDeployer.deploy(v3Factory, token, WETH, p.dev, platform, staking, p.twapWindow, p.startLevel);
+        // 2) ATH vault (holds 10%) + bonding curve (holds 90%) — fixed terms
+        vault = vaultDeployer.deploy(v3Factory, token, WETH, p.dev, platform, staking, TWAP_WINDOW, ATH_START_LEVEL);
         curve = curveDeployer.deploy(
-            token, WETH, v3Factory, platform, p.dev, p.virtEth, curveAmt, p.gradTarget, p.antiSnipeSecs, p.maxBuyWei
+            token, WETH, v3Factory, platform, p.dev, VIRT_ETH, curveAmt, GRAD_TARGET, ANTISNIPE_SECS, MAX_BUY_WEI
         );
 
         // 3) fund them
@@ -99,7 +102,7 @@ contract CurveLaunchFactory is Ownable2Step {
 
         recordOf[token] = Record(token, curve, vault, p.dev, block.timestamp);
         allTokens.push(token);
-        emit Launched(token, curve, vault, p.dev, p.totalSupply);
+        emit Launched(token, curve, vault, p.dev, TOTAL_SUPPLY);
         // NOTE: after the curve graduates, anyone calls AthVault.activate() once to switch the vault on.
     }
 

@@ -120,6 +120,19 @@ asserts the deployed bytecode equals the model op-for-op. Latest run:
 ## Curve launchpad tokenomics (`CurveLaunchFactory` + `AthVault` + `SheriffStaking`)
 The productized bonding-curve flow the platform launches other tokens through.
 
+**Fixed, oracle-free pad terms (identical for every launch — projects only pick name / ticker / dev):**
+| Term | Value |
+|---|---|
+| Total supply | **1,000,000,000** (fixed) |
+| Split | **90% bonding curve · 10% ATH vault** |
+| Start price | `VIRT_ETH = 0.9 ETH` → **start MC = 1 ETH (~$3k)**, no oracle |
+| Graduation | when the curve collects **4 ETH** → grad MC ~30 ETH (~$89k) |
+| Anti-snipe | 0.1-ETH per-buy cap for the first 5 min |
+
+Trajectory (assume ETH=$3k): launch $3k → 0.5 ETH in $7.3k → 1 ETH in $13k → **4 ETH in → graduates ~$89k**
+(81.6% of the curve sold). At graduation the supply is ~73.5% circulating · 13.5% locked LP · 10% ATH vault
+· 3% burned. `CurveLaunchFactory.launch({name, symbol, dev})` is the whole interface.
+
 **Per launch, the supply splits:** **10% → `AthVault`** (platform treasury) · **90% → `BondingCurve`**.
 The curve trades + charts day one and **graduates** to a locked Uniswap pool (see above). The 90% is
 sold along the curve / seeded into the LP; the 10% is the platform's ATH treasury.
