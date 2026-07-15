@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Coin — The Sheriff's Pad</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2l3.2 6.6 7.3 1-5.3 5.1 1.3 7.2L16 24.5 9.2 22l1.3-7.2L5.2 9.7l7.3-1z' fill='%23ccff00'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+:root{--bg:#0d0f07;--bg-2:#12150a;--bg-3:#1a1e10;--panel:#15180d;--line:rgba(204,255,0,.14);--line-2:rgba(255,255,255,.08);
+  --line-strong:rgba(204,255,0,.34);--ink:#f6f7f1;--ink-dim:#a7ad97;--ink-faint:#7f8570;--lime:#ccff00;--lime-soft:#e4ff7a;--lime-deep:#a8d600;--green:#48d16a;--red:#ff5a52;--gold:#f5c542;
+  --disp:"Bebas Neue",Impact,sans-serif;--sans:"Plus Jakarta Sans",system-ui,sans-serif;--mono:ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}svg,img,iframe{display:block}
+h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transform:uppercase;margin:0;line-height:.95}
+.mono{font-family:var(--mono)}
+.wrap{max-width:1280px;margin:0 auto;padding:0 20px}
+.top{position:sticky;top:0;z-index:40;background:rgba(13,15,7,.86);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.top-in{display:flex;align-items:center;gap:16px;padding:12px 20px;max-width:1280px;margin:0 auto}
+.brand{display:flex;align-items:center;gap:9px;font-family:var(--disp);font-size:1.5rem;letter-spacing:1px}.brand .tag{color:var(--lime)}.brand svg{width:30px;height:30px}
+.spacer{flex:1}.nlink{color:var(--ink-dim);font-size:.9rem;padding:8px 6px}.nlink:hover{color:var(--ink)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;font-size:.92rem;border-radius:10px;padding:11px 18px;cursor:pointer;border:1px solid transparent}
+.btn-lime{background:var(--lime);color:#10140a}.btn-lime[disabled]{opacity:.6;cursor:not-allowed}
+.btn-ghost{border-color:var(--line-strong);color:var(--ink);background:none}
+
+/* banner + identity */
+.banner{height:180px;border-radius:0 0 16px 16px;margin-top:0;background:linear-gradient(120deg,#1a1e10,#0d0f07);position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
+.banner .art{position:absolute;inset:0;background:radial-gradient(circle at 30% 40%,rgba(204,255,0,.22),transparent 60%),radial-gradient(circle at 80% 60%,rgba(138,99,224,.18),transparent 55%)}
+.idbar{display:flex;gap:16px;align-items:flex-end;margin-top:-46px;position:relative;z-index:2}
+.idbar .pfp{width:92px;height:92px;border-radius:18px;border:3px solid var(--bg);flex:none;display:grid;place-items:center;font-size:2.6rem;font-weight:800;color:#10140a;background:linear-gradient(135deg,#ccff00,#8a63e0)}
+.idbar .who{padding-bottom:6px;flex:1;min-width:0}
+.idbar h1{font-size:2rem;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.idbar h1 .tk{color:var(--lime);font-size:1.2rem}
+.idbar .ca{display:inline-flex;align-items:center;gap:8px;margin-top:4px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:8px;padding:5px 8px;font-family:var(--mono);font-size:.74rem;color:var(--ink-dim)}
+.idbar .ca button{background:var(--lime);color:#10140a;border:none;border-radius:6px;padding:2px 7px;font-weight:700;cursor:pointer;font-size:.7rem}
+.socials{display:flex;gap:8px;padding-bottom:8px}
+.socials a{width:34px;height:34px;border-radius:9px;border:1px solid var(--line-2);display:grid;place-items:center;color:var(--ink-dim)}
+.socials a:hover{border-color:var(--line-strong);color:var(--lime)}
+
+.layout{display:grid;grid-template-columns:1fr 340px;gap:20px;margin:20px 0 70px}
+@media(max-width:900px){.layout{grid-template-columns:1fr}}
+.panel{border:1px solid var(--line-2);border-radius:14px;background:var(--panel)}
+.chart{border:1px solid var(--line-2);border-radius:14px;overflow:hidden;background:var(--bg-2)}
+.chart .hd{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line-2);font-size:.82rem;color:var(--ink-dim)}
+.chart .hd .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
+.chart iframe{width:100%;height:440px;border:0;background:var(--bg-2)}
+.chart .ph{height:440px;display:grid;place-items:center;text-align:center;color:var(--ink-faint);padding:20px}
+.chart .ph .big{font-family:var(--disp);font-size:2rem;color:var(--ink-dim)}
+
+.statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line-2);border-radius:12px;overflow:hidden;margin-top:16px;border:1px solid var(--line-2)}
+.statrow .s{background:var(--panel);padding:13px 14px}
+.statrow .k{font-size:.66rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint)}
+.statrow .v{font-family:var(--disp);font-size:1.4rem;margin-top:3px}
+.statrow .v.g{color:var(--green)}
+.sec{margin-top:16px;padding:16px}
+.sec h3{font-size:1.15rem;margin-bottom:8px}
+.sec p{color:var(--ink-dim);font-size:.9rem;margin:0}
+.holders .h{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line-2);font-size:.85rem}
+.holders .h:last-child{border-bottom:none}.holders .mono{color:var(--ink-dim)}
+
+/* right: trade + bond */
+.buybox{padding:16px}
+.toggle{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--bg-2);border-radius:11px;padding:5px;margin-bottom:14px}
+.toggle button{border:none;background:none;color:var(--ink-dim);font-weight:700;padding:9px;border-radius:8px;cursor:pointer;font-family:var(--sans)}
+.toggle button.on{background:var(--lime);color:#10140a}
+.toggle button.on.sell{background:var(--red);color:#fff}
+.amt{background:var(--bg-2);border:1px solid var(--line-2);border-radius:11px;padding:12px;display:flex;align-items:center;gap:10px}
+.amt input{flex:1;background:none;border:none;color:var(--ink);font-size:1.4rem;font-family:var(--disp);letter-spacing:.5px;outline:none}
+.amt .cur{color:var(--ink-dim);font-weight:700}
+.quick{display:flex;gap:6px;margin:10px 0 14px}
+.quick button{flex:1;background:var(--bg-2);border:1px solid var(--line-2);color:var(--ink-dim);border-radius:8px;padding:7px;font-size:.78rem;cursor:pointer;font-weight:600}
+.quick button:hover{border-color:var(--line-strong);color:var(--ink)}
+.bond{padding:16px;border-top:1px solid var(--line-2)}
+.bond .lbl{font-family:var(--mono);font-size:.68rem;letter-spacing:.18em;color:var(--lime);text-transform:uppercase}
+.bond h3{font-size:1.3rem;margin:4px 0 2px}
+.bond .sub{color:var(--ink-dim);font-size:.82rem}
+.bar{height:9px;border-radius:6px;background:var(--bg-3);overflow:hidden;margin:12px 0 6px}
+.bar .fill{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--lime-deep),var(--lime))}
+.bar-lab{display:flex;justify-content:space-between;font-size:.72rem;color:var(--ink-dim)}.bar-lab b{color:var(--lime)}
+.floorpill{margin-top:12px;background:rgba(204,255,0,.1);border:1px solid var(--line-strong);border-radius:10px;padding:10px 12px;font-size:.82rem}
+.floorpill b{color:var(--lime)}
+.soon{font-family:var(--mono);font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;background:rgba(0,0,0,.2);border-radius:20px;padding:2px 7px;margin-left:6px}
+.foot{border-top:1px solid var(--line);padding:20px 0 40px;color:var(--ink-faint);font-size:.76rem;text-align:center}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="brand" href="index.html"><svg viewBox="0 0 40 40"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e4ff7a"/><stop offset=".6" stop-color="#ccff00"/><stop offset="1" stop-color="#a8d600"/></linearGradient></defs><path d="M20 2c5 3 10 4 15 4 0 12-2 24-15 32C7 30 5 18 5 6c5 0 10-1 15-4z" fill="none" stroke="url(#g)" stroke-width="1.6"/><path d="M20 9l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L8.8 14.3l5-.7z" fill="url(#g)"/></svg><span>SHERIFF <span class="tag">PAD</span></span></a>
+  <div class="spacer"></div><a class="nlink" href="index.html">← All coins</a><a class="btn btn-ghost" href="#">Connect wallet</a>
+</div></header>
+
+<div class="banner"><div class="art"></div></div>
+<main class="wrap">
+  <div class="idbar">
+    <div class="pfp" id="pfp">🐺</div>
+    <div class="who">
+      <h1 id="nm">Hooded Wolf <span class="tk" id="tk">$HOOD</span></h1>
+      <span class="ca">0x01d8…b3cc <button onclick="navigator.clipboard&&navigator.clipboard.writeText('0x01d8d7995d0e656315715ef0ed3b81d92171b3cc')">Copy</button></span>
+    </div>
+    <div class="socials"><a href="#" title="X">𝕏</a><a href="#" title="Telegram">✈</a><a href="#" title="Website">🌐</a></div>
+  </div>
+
+  <div class="layout">
+    <!-- left: chart + info -->
+    <div>
+      <div class="chart">
+        <div class="hd"><span class="dot"></span> DexScreener · live chart <span style="margin-left:auto" class="mono">Uniswap v3 · 1%</span></div>
+        <!-- On the live site this iframe shows the real DexScreener chart for the coin's pair.
+             (In this offline preview the external frame is blocked, so a placeholder shows instead.) -->
+        <iframe id="dex" title="DexScreener chart" loading="lazy"
+          src="https://dexscreener.com/robinhood/0x0fcf42384b686e221895b2e4b5067994a5ea65d828a6e948bd9dea19daeb935f?embed=1&theme=dark&info=0&trades=0"></iframe>
+        <div class="ph" id="chartPh" style="display:none"><div><div class="big">📈 DexScreener chart</div><div>Loads here from block one — the coin is a real Uniswap v3 pair.</div></div></div>
+      </div>
+
+      <div class="statrow">
+        <div class="s"><div class="k">Market cap</div><div class="v">$41.2k</div></div>
+        <div class="s"><div class="k">Price</div><div class="v">$0.0000412</div></div>
+        <div class="s"><div class="k">24h</div><div class="v g">+38%</div></div>
+        <div class="s"><div class="k">Holders</div><div class="v">312</div></div>
+      </div>
+
+      <div class="panel sec"><h3>The story</h3><p id="desc">The Sheriff himself — takes from the poor, feeds his greed. Ridden onto Robinhood Chain with the town's bags in hand. Launched on the Sheriff's Pad, so it's on Uniswap + DexScreener from block one and graduates into a floor it can't be rugged below.</p></div>
+
+      <div class="panel sec holders"><h3>Top holders</h3>
+        <div class="h"><span class="mono">🏰 Sherwood (locked LP)</span><b>13.2%</b></div>
+        <div class="h"><span class="mono">🏹 Ambush (Bond reserve)</span><b>25.0%</b></div>
+        <div class="h"><span class="mono">0x4f2a…9c1</span><b>3.1%</b></div>
+        <div class="h"><span class="mono">0x88be…44d</span><b>2.4%</b></div>
+        <div class="h"><span class="mono">0xa170…3e9</span><b>1.9%</b></div>
+      </div>
+    </div>
+
+    <!-- right: trade + bond -->
+    <div>
+      <div class="panel">
+        <div class="buybox">
+          <div class="toggle"><button class="on" id="tBuy" onclick="side('buy')">Buy</button><button id="tSell" onclick="side('sell')">Sell</button></div>
+          <div class="amt"><input placeholder="0.0" value="0.1" /><span class="cur" id="cur">ETH</span></div>
+          <div class="quick"><button onclick="q(0.05)">0.05</button><button onclick="q(0.1)">0.1</button><button onclick="q(0.5)">0.5</button><button onclick="q(1)">1 ETH</button></div>
+          <button class="btn btn-lime" style="width:100%" disabled id="trade">Buy $HOOD <span class="soon">Soon</span></button>
+        </div>
+        <div class="bond">
+          <div class="lbl">🪙 The Bond</div>
+          <h3>Floor: live</h3>
+          <div class="sub">Graduated — a protocol-owned floor now stands under this coin.</div>
+          <div class="bar"><div class="fill" style="width:100%"></div></div>
+          <div class="bar-lab"><b>Bond posted</b><span>can't rug to zero</span></div>
+          <div class="floorpill">🏰 <b>Bounty floor ≈ $31k</b> · rises with every trade, funded by the launch. Sherwood LP locked, Ambush selling only into strength.</div>
+        </div>
+      </div>
+      <div class="panel sec" style="margin-top:16px"><h3>Coin info</h3>
+        <div class="holders">
+          <div class="h"><span>Supply</span><b>1,000,000,000</b></div>
+          <div class="h"><span>Chain</span><b>Robinhood</b></div>
+          <div class="h"><span>Tax</span><b>0 / 0</b></div>
+          <div class="h"><span>LP</span><b>Locked forever</b></div>
+          <div class="h"><span>Launched</span><b>2d ago</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+<div class="foot">Illustrative preview — the Sheriff's Pad is in security review and nothing here is live. Not financial advice. Chart via DexScreener. Not affiliated with Robinhood Markets, Uniswap, or DexScreener.</div>
+
+<script>
+// hydrate from ?c=TICKER (placeholder demo data from the grid)
+const DB={HOOD:{n:"Hooded Wolf",e:"🐺"},GOLD:{n:"Nottingham Gold",e:"🪙"},TAX:{n:"The Taxman",e:"🧾"},SHERWD:{n:"Sherwood Doge",e:"🌲"},BOUNTY:{n:"Bounty Hunter",e:"🎯"},STAR:{n:"Sheriff's Star",e:"⭐"},MARIAN:{n:"Maid Marian",e:"🌹"}};
+const t=new URLSearchParams(location.search).get('c');
+if(t&&DB[t]){document.getElementById('nm').firstChild.textContent=DB[t].n+' ';document.getElementById('tk').textContent='$'+t;
+  document.getElementById('pfp').textContent=DB[t].e;document.getElementById('trade').firstChild.textContent='Buy $'+t+' ';document.title=DB[t].n+' — Sheriff Pad';}
+// buy/sell toggle
+function side(s){const b=document.getElementById('tBuy'),se=document.getElementById('tSell'),tr=document.getElementById('trade'),c=document.getElementById('cur');
+  if(s==='buy'){b.classList.add('on');se.classList.remove('on');c.textContent='ETH';tr.classList.remove('btn-ghost');tr.classList.add('btn-lime');}
+  else{se.classList.add('on');b.classList.remove('on');c.textContent='%';tr.classList.add('btn-ghost');tr.classList.remove('btn-lime');}}
+function q(v){document.querySelector('.amt input').value=v;}
+// if the DexScreener iframe can't load (offline preview / CSP), show the placeholder
+const ifr=document.getElementById('dex');
+ifr.addEventListener('error',()=>{ifr.style.display='none';document.getElementById('chartPh').style.display='grid';});
+setTimeout(()=>{try{if(!ifr.contentWindow||ifr.clientHeight<50){}}catch(e){}},1500);
+</script>
+</body>
+</html>
