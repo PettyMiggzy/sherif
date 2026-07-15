@@ -9,8 +9,9 @@ Method: manual review + an adversarial test suite that tries to break each path
 (`test/padrouter.adversarial.test.js`), plus the exact-math unit tests
 (`test/padrouter.test.js`) and the on-fork end-to-end tests (`test/fork/*`).
 
-Status: **35 tests passing** (28 unit + adversarial, run locally) + 7 fork tests
-(gated on a real archive RPC). All findings below are resolved.
+Status: all findings below resolved. Unit + adversarial + fuzz suites pass
+locally; 7 fork tests gated on a real archive RPC. The `SIMS=300` randomized
+battery (below) passes clean.
 
 ## Findings & resolutions
 
@@ -30,6 +31,28 @@ Status: **35 tests passing** (28 unit + adversarial, run locally) + 7 fork tests
 - **Degenerate inputs** — 0-value buy reverts (`Dust`); a fee that rounds to 0 still trades; a sell without approval reverts; an unknown token reverts (`Unknown`).
 - **Payouts are safe** — flushers are no-ops when empty, can't double-spend, and the floor share stays escrowed (never lost) until the coin graduates and a Bond exists.
 - **The tax is not dodgeable / not weaponizable** — the 4% cap and the platform's 25% are constants with no setter; a project can't crank or re-route the tax after launch.
+
+## Randomized simulation battery (`test/padrouter.fuzz.test.js`)
+
+A seeded, reproducible fuzzer hammers the swap desk + tax from many directions —
+random tax rates (0–4%), random allocation splits, random pool prices, trade
+sizes from **1 wei to a whole ETH**, random op ordering, interleaved flushers,
+and **many coins live at once** — checking the master invariants after **every**
+operation.
+
+**Canonical run — `SIMS=300` — passed clean:**
+- 300 trade simulations over **175 distinct coins**, **1,592 operations** (790
+  buys, 426 sells, 200 flushes, 176 withdraws), **0 unexpected reverts**.
+- Plus **400 registration-fuzz cases** (204 valid accepted, 196 correctly
+  rejected on cap / allocation violations).
+- Invariants asserted continuously:
+  - **INV-1 conservation** — router ETH balance == `platformEscrow + Σ(dev+floor+burn)`, after all 1,592 ops. No wei ever created, leaked, or stranded.
+  - **INV-2 exact split** — every trade's `fee == platform+dev+floor+burn` to the wei (from the contract's own events).
+  - **INV-3 isolation** — a trade on one coin never moves another coin's escrows.
+  - **INV-4 caps** — registration reverts iff tax > 4% or allocation ≠ 100%.
+
+The suite defaults to a light `SIMS=50` for routine runs; the full 300-run is
+`SIMS=300 npx hardhat test test/padrouter.fuzz.test.js`.
 
 ## Standing invariants (by construction, not just tests)
 
