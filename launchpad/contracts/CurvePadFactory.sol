@@ -14,6 +14,20 @@ interface ICurvePool {
     function seed() external;
 }
 
+interface IPadRouter {
+    function register(
+        address token,
+        address pool,
+        address curve,
+        address projectWallet,
+        uint16 buyBps,
+        uint16 sellBps,
+        uint16 walletBps,
+        uint16 floorBps,
+        uint16 burnBps
+    ) external;
+}
+
 /// @title CurvePadFactory — DEX-day-one launchpad (the NOXA-style model, plus the Bond)
 /// @notice One `launch()` call: deploys a clean anti-snipe token, creates a REAL Uniswap v3 pool, seeds the
 /// token as a single-sided "curve" position, enables trading, and (optionally) executes the creator's own
@@ -30,6 +44,7 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
 
     address public immutable WETH;
     address public immutable v3Factory;
+    address public immutable router; // PadRouter — the swap desk + project tax
     LaunchTokenDeployer public immutable tokenDeployer;
     CurvePoolDeployer public immutable curveDeployer;
     address public immutable bondDeployer;
@@ -42,10 +57,23 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
     int24 public constant START_TICK_MAG = 207200; // ~1e-9 WETH/token start; sign set by ordering
     int24 public constant CURVE_WIDTH = 35800; // ~36x span to graduation
 
+    /// @notice A project's self-chosen tax. Both rates are hard-capped at 4% by the router; the platform
+    /// always takes 25% of whatever is collected. The three allocation splits are of the PROJECT'S 75% share
+    /// and must sum to 100% (10000 bps): to the project wallet, to deepening the Bond floor, and to auto-burn.
+    struct TaxParams {
+        uint16 buyBps; // ≤ 400
+        uint16 sellBps; // ≤ 400
+        uint16 walletBps; // project-share split \_
+        uint16 floorBps; //                       > sum to 10000
+        uint16 burnBps; //                      _/
+        address projectWallet; // 0 => the dev
+    }
+
     struct LaunchParams {
         string name;
         string symbol;
         address dev;
+        TaxParams tax;
     }
 
     struct Record {
@@ -68,18 +96,20 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
         address v3Factory_,
         address platform_,
         address owner_,
+        address router_,
         address tokenDeployer_,
         address curveDeployer_,
         address bondDeployer_
     ) Ownable(owner_) {
         require(
-            weth_ != address(0) && v3Factory_ != address(0) && platform_ != address(0) && tokenDeployer_ != address(0)
-                && curveDeployer_ != address(0) && bondDeployer_ != address(0),
+            weth_ != address(0) && v3Factory_ != address(0) && platform_ != address(0) && router_ != address(0)
+                && tokenDeployer_ != address(0) && curveDeployer_ != address(0) && bondDeployer_ != address(0),
             "zero"
         );
         WETH = weth_;
         v3Factory = v3Factory_;
         platform = platform_;
+        router = router_;
         tokenDeployer = LaunchTokenDeployer(tokenDeployer_);
         curveDeployer = CurvePoolDeployer(curveDeployer_);
         bondDeployer = bondDeployer_;
@@ -116,6 +146,12 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
         IERC20(token).safeTransfer(curve, TOTAL_SUPPLY);
         LaunchToken(token).enableTrading(pool, curve, uint64(block.timestamp));
         ICurvePool(curve).seed();
+
+        // register the project's tax with the swap desk (router enforces the 4% caps + 100% allocation)
+        address projWallet = p.tax.projectWallet == address(0) ? p.dev : p.tax.projectWallet;
+        IPadRouter(router).register(
+            token, pool, curve, projWallet, p.tax.buyBps, p.tax.sellBps, p.tax.walletBps, p.tax.floorBps, p.tax.burnBps
+        );
 
         // optional dev buy (≤2%), atomic and ahead of the field
         uint256 devBought;

@@ -26,8 +26,9 @@ The classic drainer signature. On EVM the equivalents are `approve`,
   AMM. So this is the single, isolated approval in the whole app — and we keep it
   the safe form Blowfish does **not** flag:
   - **exact amount**, never `MaxUint256` / infinite;
-  - to the **canonical, explorer-verified** SwapRouter only (never to us, never
-    to an unknown contract);
+  - to **our own explorer-verified `PadRouter`** only (never an unknown
+    contract). Robinhood Chain has no canonical Uniswap periphery, so PadRouter
+    *is* the swap desk every trade goes through;
   - **simulated first**, and only sent if allowance is short.
   We never use `permit` (a gasless approval is still an approval and reads as one
   to scanners).
@@ -38,11 +39,25 @@ The classic drainer signature. On EVM the equivalents are `approve`,
   (platform vs. creator, fee routing) happens **in-protocol or off-chain**, never
   as extra transfer calls in the user's tx.
 
+### Project tax — same swap-desk mechanism, not a token transfer tax
+A project can set its **own** buy/sell tax, but it is **not** a fee-on-transfer
+token (that would break Uniswap v3 and flag as a honeypot). It's a **swap-desk
+fee taken by `PadRouter`** — the EVM equivalent of Jupiter's `platformFee`:
+- **Hard-capped at 4% per side**, enforced on-chain at registration.
+- The **platform always takes 25%** of whatever is collected; the project keeps
+  75%, split across its wallet / deepening the Bond floor / auto-burn.
+- The split is computed **inside the router** and paid out by separate,
+  permissionless escrow flushers — **never** as extra transfers inside the user's
+  signed trade. So a bad project wallet or paused Bond can't revert a trade, and
+  the signed tx is still one call to one router (Rules 2 & 4 hold).
+- The token itself stays **clean and tradeable** (no transfer tax, no blacklist).
+
 ### Rule 3 — Fees ride the protocol's native fee, not a side transfer
 - Solana: Jupiter `platformFee` → referral account.
-- EVM: our 1% is the **Uniswap 1% LP fee tier** (`POOL_FEE = 10000`), collected
-  in-protocol by the pool. There is **never** an extra fee-transfer instruction
-  bolted onto a user's swap. If a fee path is ever unavailable, trading still
+- EVM: the platform's own 1% and every project tax are taken **at the swap desk**
+  (`PadRouter`), collected as escrow and paid out separately. There is **never**
+  an extra fee-transfer instruction bolted onto a user's swap. If a fee path is
+  ever unavailable, trading still
   falls back to a plain swap — it never hard-fails.
 
 ### Rule 4 — Swaps are the standard single-signer shape
@@ -84,8 +99,10 @@ different mechanism.
 - ❌ No `approve` / `delegate` / `setApprovalForAll` / `permit` on launch or buy
 - ⚠️ Sell = the one approval: **exact amount, verified router, simulated** (EVM
   has no approval-free AMM sell)
-- ❌ No multi-recipient transfer inside a signed tx (splits are in-protocol)
-- ✅ Fee = Uniswap LP fee tier, never a side transfer
+- ❌ No multi-recipient transfer inside a signed tx (splits are escrowed in the
+  router, paid out separately)
+- ✅ Fee = swap-desk fee (platform 1% + project tax ≤4%/side, platform's 25% cut),
+  never a side transfer bolted onto the trade
 - ✅ `signMessage` for ownership, separate from payment
 
 ---
@@ -95,23 +112,25 @@ different mechanism.
 Buys/sells and launch are **gated** until these are set — the UI honestly says
 "opens at launch" and no tx can go to a zero/wrong address (`isDeployed()`).
 
-1. Deploy `CurvePadFactory` (+ deployers) to Robinhood Chain. **Verify on the
-   explorer.** Set `CONTRACTS.padFactory`.
-2. Confirm the canonical Uniswap **SwapRouter02** address on Robinhood Chain,
-   verify it, and set `CONTRACTS.swapRouter`. Confirm its `exactInputSingle`
-   selector and the `unwrapWETH9` / `ADDRESS_THIS` (`0x…02`) sentinel used in
-   `sell()` match the actual deployment.
-3. (Recommended) Deploy/point `CONTRACTS.quoter` at a **QuoterV2** so `minOut`
-   is exact instead of the spot-price estimate fallback.
-4. Re-run the fork tests (`FORK_RPC=<archive rpc>`), including the dev-buy test,
-   against the deployed addresses.
-5. Independent review of `wallet.js` against this doc (the 7 tags above).
-6. Test on Robinhood Chain with a real wallet: launch (no dev buy), launch (with
-   dev buy), buy, sell, and the Telegram signature — confirm none trip Blowfish.
+1. Deploy `PadRouter` (the swap desk + tax) and `CurvePadFactory` (+ deployers)
+   to Robinhood Chain. Wire them: `router.setFactory(factory)`. **Verify both on
+   the explorer.** Set `CONTRACTS.padRouter` and `CONTRACTS.padFactory`.
+2. (Recommended) Point the min-out estimate at a real quoter if one is deployed;
+   otherwise the spot-price fallback (with a slippage buffer) applies.
+3. Re-run the fork tests (`FORK_RPC=<archive rpc>`): the dev-buy test and the
+   `PadRouter` tax test, plus the `padrouter` mock unit test, against the
+   deployed addresses.
+4. Independent review of `wallet.js` + `PadRouter.sol` against this doc.
+5. Test on Robinhood Chain with a real wallet: launch (no dev buy), launch (with
+   dev buy + a tax), buy, sell, and the Telegram signature — confirm none trip
+   Blowfish, and that the tax split lands in the escrows as expected.
 
 ## Trust surface
 
-- **`assets/wallet.js`** — ~250 lines, all in the open. The whole safety story.
+- **`assets/wallet.js`** — all in the open. The whole client-side safety story.
+- **`launchpad/contracts/PadRouter.sol`** — the swap desk + project tax. Its tax
+  math is verified to the wei in `launchpad/test/padrouter.test.js` (and on a real
+  fork in `test/fork/padrouter.fork.test.js`).
 - **`assets/config.js`** — addresses + ABIs, no secrets.
 - **`assets/ethers.min.js`** — ethers **v6.13.4**, vendored (no runtime CDN), so
   the app is self-contained and pinned. Verify its hash against npm if desired.

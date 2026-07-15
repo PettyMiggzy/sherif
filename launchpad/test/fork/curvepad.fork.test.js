@@ -18,12 +18,17 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
     const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
-      WETH, FACTORY, platform.address, dep.address, await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress()
+      WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress()
     );
+    await (await router.setFactory(await factory.getAddress())).wait();
+    // zero tax here (allocation must still sum to 100% — all to wallet); the tax split is covered in padrouter.fork.test.js
+    const NOTAX = { buyBps: 0, sellBps: 0, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
     // ===== ONE CALL: token + real pool + seeded curve + trading on =====
-    const rc = await (await factory.launch({ name: "Sheriff Meme", symbol: "MEME", dev: dev.address })).wait();
+    const rc = await (await factory.launch({ name: "Sheriff Meme", symbol: "MEME", dev: dev.address, tax: NOTAX })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = ev.args;
@@ -88,15 +93,20 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
     const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
-      WETH, FACTORY, platform.address, dep.address, await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress()
+      WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress()
     );
+    await (await router.setFactory(await factory.getAddress())).wait();
+    // zero tax here (allocation must still sum to 100% — all to wallet); the tax split is covered in padrouter.fork.test.js
+    const NOTAX = { buyBps: 0, sellBps: 0, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
     // dev funds their own opening buy in the SAME launch tx
     const spend = ONE / 100n; // 0.01 ETH
     const before = await ethers.provider.getBalance(dev.address);
     const rc = await (await factory.connect(dev).launch(
-      { name: "Sheriff Dev", symbol: "SDEV", dev: dev.address }, { value: spend }
+      { name: "Sheriff Dev", symbol: "SDEV", dev: dev.address, tax: NOTAX }, { value: spend }
     )).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");

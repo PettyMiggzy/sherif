@@ -30,14 +30,10 @@ export const CONTRACTS = {
   // DEPLOY: our CurvePadFactory (one-call launch). Filled after deploy+verify.
   padFactory: "",
 
-  // DEPLOY: the canonical Uniswap v3 SwapRouter02 on Robinhood Chain, used for
-  // buys (native ETH in) and sells. Must be VERIFIED on the explorer before we
-  // set it here — buys/sells stay gated until it is.
-  swapRouter: "",
-
-  // DEPLOY (optional): QuoterV2, for exact-out quotes. If empty we fall back to
-  // a spot-price estimate from the pool's slot0 (documented in wallet.js).
-  quoter: "",
+  // DEPLOY: our PadRouter — the swap desk + project tax. Robinhood Chain has no
+  // canonical Uniswap periphery, so THIS is the router every trade goes through.
+  // Buys/sells stay gated until it's set.
+  padRouter: "",
 };
 
 // 1% pool tier — the fee is collected as Uniswap LP fees IN-PROTOCOL. There is
@@ -46,6 +42,8 @@ export const POOL_FEE = 10000;
 
 export const TOTAL_SUPPLY = 1_000_000_000n; // whole tokens (18 decimals added on-chain)
 export const MAX_DEVBUY_BPS = 200n; // contract-enforced 2% cap on the dev's opening buy
+export const MAX_TAX_BPS = 400; // contract-enforced 4% cap per side on a project's tax
+export const PLATFORM_TAX_BPS = 2500; // platform's fixed 25% cut of any tax collected
 
 // Gas headroom we require ON TOP of a tx's value before we ever ask a wallet to
 // sign, so the wallet never shows its red "insufficient funds / blocked" screen
@@ -56,18 +54,17 @@ export const GAS_BUFFER_WEI = 800_000_000_000_000n; // 0.0008 ETH
 // surface tiny and readable instead of pasting giant JSON blobs.
 export const ABIS = {
   // Our launch entrypoint. Payable: any ETH sent is the dev's OWN opening buy
-  // (≤2%), executed atomically before trading opens. One call, one recipient.
+  // (≤2%), executed atomically before trading opens. Carries the project's tax.
   padFactory: [
-    "function launch((string name, string symbol, address dev) p) payable returns (address token, address curve, address pool)",
+    "function launch((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax) p) payable returns (address token, address curve, address pool)",
     "event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought)",
   ],
-  // Uniswap v3 SwapRouter02 (no deadline in the struct). Buys send native ETH as
-  // msg.value with tokenIn=WETH → no ERC20 approval needed on the buy path.
-  swapRouter: [
-    "function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)",
-    "function unwrapWETH9(uint256 amountMinimum, address recipient) payable",
-    "function refundETH() payable",
-    "function multicall(bytes[] data) payable returns (bytes[] results)",
+  // Our PadRouter. Buys send native ETH (no approval); sells need one exact-amount
+  // approval to the router. The tax split happens inside — no side transfers.
+  padRouter: [
+    "function buy(address token, uint256 minOut) payable returns (uint256 tokensOut)",
+    "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256 ethOut)",
+    "function configOf(address token) view returns ((address pool, address curve, address projectWallet, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, bool set))",
   ],
   erc20: [
     "function balanceOf(address) view returns (uint256)",

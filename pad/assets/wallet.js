@@ -28,7 +28,7 @@
 // dependency, so the whole app is self-contained and auditable offline.
 import { ethers } from "./ethers.min.js";
 import {
-  CHAIN, CONTRACTS, ABIS, POOL_FEE, TOTAL_SUPPLY, MAX_DEVBUY_BPS,
+  CHAIN, CONTRACTS, ABIS, TOTAL_SUPPLY, MAX_DEVBUY_BPS,
   GAS_BUFFER_WEI, isDeployed,
 } from "./config.js";
 
@@ -157,64 +157,78 @@ async function guardedSend(contract, method, args, valueWei, label) {
 // ── LAUNCH — one call, one recipient, optional dev buy, approval-free [Rule 1] ─
 // devBuyEth: string ETH amount to spend on the creator's OWN opening buy (≤2%,
 // enforced + excess-refunded by the contract). "0" = no dev buy.
-export async function launch({ name, symbol, dev, devBuyEth = "0" }) {
+// tax: {buyBps, sellBps, walletBps, floorBps, burnBps, projectWallet} — the
+// project's self-set tax (≤4%/side; splits sum to 100%). Omit for a no-tax coin.
+export async function launch({ name, symbol, dev, devBuyEth = "0", tax }) {
   if (!_signer) await connect();
   if (!isDeployed("padFactory"))
     throw new Error("The launch contract isn't live yet — the Pad is in pre-deploy audit.");
   const value = devBuyEth && Number(devBuyEth) > 0 ? ethers.parseEther(String(devBuyEth)) : 0n;
   const factory = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _signer);
-  const params = { name, symbol, dev: dev || _account };
+  const t = normalizeTax(tax, dev || _account);
+  const params = { name, symbol, dev: dev || _account, tax: t };
   const tx = await guardedSend(factory, "launch", [params], value, "Launch");
   return tx; // await tx.wait() then read the Launched event for {token, curve, pool}
 }
 
+// Fill in a valid tax tuple. No tax => 0/0, but the allocation still must sum to
+// 100% (the contract requires it), so default it all to the wallet bucket.
+function normalizeTax(tax, devAddr) {
+  const t = tax || {};
+  const buyBps = clampBps(t.buyBps), sellBps = clampBps(t.sellBps);
+  let walletBps = +t.walletBps || 0, floorBps = +t.floorBps || 0, burnBps = +t.burnBps || 0;
+  if (walletBps + floorBps + burnBps !== 10000) { walletBps = 10000; floorBps = 0; burnBps = 0; }
+  const projectWallet = t.projectWallet && /^0x[0-9a-fA-F]{40}$/.test(t.projectWallet) ? t.projectWallet : devAddr;
+  return { buyBps, sellBps, walletBps, floorBps, burnBps, projectWallet };
+}
+const clampBps = (v) => Math.max(0, Math.min(400, Math.round(+v || 0)));
+
+function routerRead() { return new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _read); }
+
+/// Read a coin's on-chain tax so the UI can show it before trading.
+export async function getTax(token) {
+  const c = await routerRead().configOf(token);
+  return {
+    pool: c.pool, projectWallet: c.projectWallet,
+    buyBps: Number(c.buyBps), sellBps: Number(c.sellBps),
+    walletBps: Number(c.walletBps), floorBps: Number(c.floorBps), burnBps: Number(c.burnBps),
+  };
+}
+
 // ── BUY — native ETH in, no ERC20 approval, tokens straight to the buyer [Rule 1]
-export async function buy({ pool, token, ethAmount, slippagePct = 8 }) {
+// The PadRouter takes the project's buy tax from msg.value, then swaps the rest.
+export async function buy({ token, ethAmount, slippagePct = 8 }) {
   if (!_signer) await connect();
   requireRouter();
   const value = ethers.parseEther(String(ethAmount));
-  const minOut = await quoteMinOut({ pool, tokenIn: CONTRACTS.weth, tokenOut: token, amountIn: value, slippagePct });
-  const router = new ethers.Contract(CONTRACTS.swapRouter, ABIS.swapRouter, _signer);
-  const p = {
-    tokenIn: CONTRACTS.weth, tokenOut: token, fee: POOL_FEE, recipient: _account,
-    amountIn: value, amountOutMinimum: minOut, sqrtPriceLimitX96: 0n,
-  };
-  // exactInputSingle is payable; tokenIn=WETH + msg.value ⇒ router wraps for us.
-  return guardedSend(router, "exactInputSingle", [p], value, "Buy");
+  const c = await getTax(token);
+  const net = (value * BigInt(10000 - c.buyBps)) / 10000n; // what actually hits the pool
+  const minOut = await quoteMinOut({ pool: c.pool, tokenIn: CONTRACTS.weth, tokenOut: token, amountIn: net, slippagePct });
+  const router = new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _signer);
+  return guardedSend(router, "buy", [token, minOut], value, "Buy");
 }
 
-// ── SELL — the single, isolated, EXACT-amount approval to the verified router ──
-// EVM has no approval-free way to sell a standard ERC20 through an AMM. So this
-// is the ONE approval in the app, and we keep it the safe kind Blowfish does not
-// flag: exact amount (never MaxUint), to the canonical verified router only,
-// simulated first. Everything else stays approval-free.
-export async function sell({ pool, token, tokenAmount, slippagePct = 8 }) {
+// ── SELL — the single, isolated, EXACT-amount approval to OUR verified router ──
+// EVM has no approval-free way to sell a standard ERC20 through an AMM, so this
+// is the ONE approval in the app: exact amount (never MaxUint), to our own
+// PadRouter only, simulated first. The sell tax comes off the ETH out.
+export async function sell({ token, tokenAmount, slippagePct = 8 }) {
   if (!_signer) await connect();
   requireRouter();
   const erc = new ethers.Contract(token, ABIS.erc20, _signer);
   const amountIn = ethers.parseUnits(String(tokenAmount), 18);
 
-  const allowance = await erc.allowance(_account, CONTRACTS.swapRouter);
+  const allowance = await erc.allowance(_account, CONTRACTS.padRouter);
   if (allowance < amountIn) {
-    // EXACT amount, verified spender. Not infinite, not to a random contract.
-    const atx = await erc.approve(CONTRACTS.swapRouter, amountIn);
+    const atx = await erc.approve(CONTRACTS.padRouter, amountIn); // exact amount, our router
     await atx.wait();
   }
 
-  const minOut = await quoteMinOut({ pool, tokenIn: token, tokenOut: CONTRACTS.weth, amountIn, slippagePct });
-  const router = new ethers.Contract(CONTRACTS.swapRouter, ABIS.swapRouter, _signer);
-  // Swap token→WETH into the router, then unwrap to native ETH to the user, in
-  // one multicall. recipient=ADDRESS_THIS (router sentinel 0x…02) then unwrap.
-  // NOTE (deploy): verify SwapRouter02 sentinel + selectors against the actual
-  // Robinhood Chain deployment before enabling — this path is gated on swapRouter.
-  const ADDRESS_THIS = "0x0000000000000000000000000000000000000002";
-  const p = {
-    tokenIn: token, tokenOut: CONTRACTS.weth, fee: POOL_FEE, recipient: ADDRESS_THIS,
-    amountIn, amountOutMinimum: minOut, sqrtPriceLimitX96: 0n,
-  };
-  const swapData = router.interface.encodeFunctionData("exactInputSingle", [p]);
-  const unwrapData = router.interface.encodeFunctionData("unwrapWETH9", [minOut, _account]);
-  return guardedSend(router, "multicall", [[swapData, unwrapData]], 0n, "Sell");
+  const c = await getTax(token);
+  const gross = await quoteMinOut({ pool: c.pool, tokenIn: token, tokenOut: CONTRACTS.weth, amountIn, slippagePct });
+  const minOutEth = (gross * BigInt(10000 - c.sellBps)) / 10000n; // guard on the post-tax ETH
+  const router = new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _signer);
+  return guardedSend(router, "sell", [token, amountIn, minOutEth], 0n, "Sell");
 }
 
 // ── quoting ───────────────────────────────────────────────────────────────────
@@ -241,7 +255,7 @@ async function quoteMinOut({ pool, tokenIn, tokenOut, amountIn, slippagePct }) {
 }
 
 function requireRouter() {
-  if (!isDeployed("swapRouter"))
+  if (!isDeployed("padRouter"))
     throw new Error("Trading opens when the Pad goes live — the router isn't set yet (pre-deploy audit).");
 }
 
@@ -263,7 +277,7 @@ export function estimateDevBuyEth(pct) {
 // expose a tiny global for the plain-HTML pages (no bundler)
 if (typeof window !== "undefined") {
   window.SheriffPad = {
-    connect, account, short, linkTelegram, launch, buy, sell,
+    connect, account, short, linkTelegram, launch, buy, sell, getTax,
     estimateDevBuyEth, isDeployed,
   };
   window.dispatchEvent(new Event("sheriffpad:ready"));

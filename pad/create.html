@@ -53,6 +53,9 @@ textarea.inp{resize:vertical;min-height:88px}
 input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
 .devbuy .sc{display:flex;justify-content:space-between;color:var(--ink-faint);font-size:.72rem}
 .devbuy p{color:var(--ink-dim);font-size:.8rem;margin:8px 0 0}
+.alloc-row{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:.82rem}
+.alloc-row span{flex:0 0 168px}.alloc-row input[type=range]{flex:1;margin:0}.alloc-row b{flex:0 0 42px;text-align:right;color:var(--lime)}
+.tax-tot.bad{color:var(--red)}.tax-tot.ok{color:var(--green)}
 /* summary card */
 .summary{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,var(--bg-2),var(--bg));padding:18px;position:sticky;top:80px;align-self:start}
 .summary h3{font-size:1.3rem;margin-bottom:2px}
@@ -119,6 +122,29 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
         </div>
       </div>
 
+      <div class="field">
+        <label>Project tax <span class="hint">optional · max 4% each side · platform takes 25%, you keep 75%</span></label>
+        <div class="devbuy">
+          <div class="row2">
+            <div><div class="hd"><span style="font-weight:700">Buy tax</span><span class="amt" id="btAmt">0%</span></div>
+              <input type="range" id="buyTax" min="0" max="4" step="0.5" value="0" oninput="taxSync()" />
+              <div class="sc"><span>0%</span><span>4% max</span></div></div>
+            <div><div class="hd"><span style="font-weight:700">Sell tax</span><span class="amt" id="stAmt">0%</span></div>
+              <input type="range" id="sellTax" min="0" max="4" step="0.5" value="0" oninput="taxSync()" />
+              <div class="sc"><span>0%</span><span>4% max</span></div></div>
+          </div>
+          <div id="allocWrap" style="display:none;margin-top:14px;border-top:1px solid var(--line-2);padding-top:12px">
+            <div class="hint" style="margin-bottom:4px">Where your 75% goes — must total <b class="tax-tot ok" id="allocTot">100%</b></div>
+            <div class="alloc-row"><span>💰 Project wallet</span><input type="range" id="aw" min="0" max="100" step="5" value="100" oninput="taxSync()" /><b id="awV">100%</b></div>
+            <div class="alloc-row"><span>🪙 Deepen the Bond floor</span><input type="range" id="af" min="0" max="100" step="5" value="0" oninput="taxSync()" /><b id="afV">0%</b></div>
+            <div class="alloc-row"><span>🔥 Auto-burn</span><input type="range" id="ab" min="0" max="100" step="5" value="0" oninput="taxSync()" /><b id="abV">0%</b></div>
+            <div class="field" style="margin:10px 0 0"><label style="font-size:.8rem">Payout wallet <span class="hint">where your share lands · defaults to your connected wallet</span></label>
+              <input class="inp" id="pw" placeholder="0x… (optional)" /></div>
+          </div>
+          <p id="taxNote">No tax — your coin trades clean, 0/0. Slide to add a fee; you keep 75% of everything it collects.</p>
+        </div>
+      </div>
+
       <button class="btn btn-lime" id="launchBtn" type="button">🚀 Launch coin</button>
       <p class="note" id="launchNote">Free to launch — you only pay network gas. One transaction: no token approval, no authority grant. The dev buy (if any) rides in the same tx and is capped at 2% on-chain.</p>
     </form>
@@ -159,6 +185,25 @@ function dbSync(){
     : `≈ ${toks} $${t} at launch price. Paid in ETH in the same transaction, before trading opens — so you're never sniped on your own coin.`;
 }
 dbSync();
+function taxSync(){
+  const bt=parseFloat(document.getElementById('buyTax').value);
+  const st=parseFloat(document.getElementById('sellTax').value);
+  document.getElementById('btAmt').textContent=bt+'%';
+  document.getElementById('stAmt').textContent=st+'%';
+  const on=bt>0||st>0;
+  document.getElementById('allocWrap').style.display=on?'block':'none';
+  const w=+document.getElementById('aw').value,f=+document.getElementById('af').value,b=+document.getElementById('ab').value;
+  document.getElementById('awV').textContent=w+'%';
+  document.getElementById('afV').textContent=f+'%';
+  document.getElementById('abV').textContent=b+'%';
+  const tot=w+f+b, tEl=document.getElementById('allocTot');
+  tEl.textContent=tot+'%'; tEl.className='tax-tot '+(tot===100?'ok':'bad');
+  const note=document.getElementById('taxNote');
+  if(!on){note.textContent='No tax — your coin trades clean, 0/0. Slide to add a fee; you keep 75% of everything it collects.';return;}
+  const keep=(x)=>((x*0.75).toFixed(2).replace(/\.00$/,''));
+  note.textContent=`Buyers pay ${bt}% on buys, ${st}% on sells. Platform takes 25%; you keep 75% (≈ ${keep(bt)}% buy / ${keep(st)}% sell), split as set above.`;
+}
+taxSync();
 </script>
 
 <script type="module">
@@ -199,13 +244,24 @@ $('launchBtn').addEventListener('click', async () => {
   const pct = parseFloat($('db').value) || 0;
   if (!name || !symbol) return setNote('Give your coin a name and a ticker first.', 'err');
 
+  // gather the project's tax (optional)
+  const bt = parseFloat($('buyTax').value) || 0, st = parseFloat($('sellTax').value) || 0;
+  let tax;
+  if (bt > 0 || st > 0) {
+    const w = +$('aw').value, f = +$('af').value, b = +$('ab').value;
+    if (w + f + b !== 100) return setNote('Your tax allocation must total 100%.', 'err');
+    tax = { buyBps: Math.round(bt * 100), sellBps: Math.round(st * 100),
+            walletBps: w * 100, floorBps: f * 100, burnBps: b * 100,
+            projectWallet: ($('pw').value || '').trim() || Pad.account() };
+  }
+
   const devBuyEth = Pad.estimateDevBuyEth(pct);
   try {
     if (!Pad.account()) { await Pad.connect(); await refreshConnect(); }
     setNote(pct > 0
       ? `Launching + buying ${pct.toFixed(1)}% (≈ ${devBuyEth} ETH) in one tx — confirm in your wallet…`
       : 'Launching — confirm in your wallet…');
-    const tx = await Pad.launch({ name, symbol, dev: Pad.account(), devBuyEth: pct > 0 ? devBuyEth : '0' });
+    const tx = await Pad.launch({ name, symbol, dev: Pad.account(), devBuyEth: pct > 0 ? devBuyEth : '0', tax });
     setNote('Sent — waiting for confirmation…');
     const rc = await tx.wait();
     setNote('Launched ✓ tx ' + rc.hash.slice(0, 10) + '… — your coin is live on Uniswap + DexScreener.', 'ok');
