@@ -175,6 +175,22 @@ protecting projects costs the platform *nothing* — it's the trust wedge that w
 for profit, so only real accumulators use it). Every use is a permanent **$SHERIFF burn sink** → $SHERIFF
 becomes the crest/index of the whole chain's activity. Tribute ETH can route to the Bounty or the platform.
 
+**DEX day one (the default model) — `CurvePool` + `CurvePadFactory`.** Researched + confirmed: **NOXA Fun
+launches directly into a real Uniswap V3 pool** — "single-sided liquidity is added to a Uniswap V3 pool using
+the 1% fee tier… immediately tradeable… on DexScreener from the moment they are created" (docs.noxa.fi,
+bitcoinfoundation.org). That's what `CurvePool` does: the launch **is** a real v3 pool, the "curve" is a
+single-sided token position spanning [start, grad], and DexScreener indexes it **natively** (no custom
+integration, unlike pump.fun's math-curve which aggregators had to special-case). `CurvePadFactory.launch()`
+is one tx: deploy a clean anti-snipe `LaunchToken`, create + price the pool, seed the single-sided curve,
+enable trading. Buyers walk the price up; at the top `graduate()` collects the raise, pairs Sherwood LP tokens
+from the 25% Ambush reserve at the grad price, and posts the Bond — **the floor NOXA never had** (which is why
+NOXA holders were left exposed when it went dark). **Platform funds nothing** — the token seeds its own
+liquidity; buyers bring the ETH. Opening guard: `LaunchToken` (auto-expiring, buy-side-only, sells never
+blocked, honeypot-safe). Fork-verified end to end: `test/fork/curvepad.fork.test.js` (one-call launch →
+live+tradeable pool → oversized-buy reverts on the guard → buy out → graduate → Bond) and
+`test/fork/curvepool.fork.test.js`, both green on real Uniswap v3 (chainId 4663). The earlier math-curve
+(`BondingCurve`) graduates-to-DEX model stays in the repo as the alternative.
+
 **Build status.** Curve + graduation + fee model are built, tested (29 passing) and audited — and now
 **fork-verified against the REAL Uniswap v3 on Robinhood Chain** (`test/fork/graduation.fork.test.js`, run
 with `FORK_RPC=<rpc>`; chainId 4663, verified factory `0x1f7d…2efa`, WETH `0x0Bd7…aD73`). The fork test
