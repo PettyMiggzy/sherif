@@ -149,8 +149,12 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 </header>
 
 <main class="wrap">
-  <!-- promo banner -->
-  <img class="promo" src="assets/promo.jpg" alt="$SHERIFF Launchpad on Robinhood Chain — build, launch, take over Robinhood" />
+  <!-- promo banner (animated hero; poster + static image fallback) -->
+  <video class="promo" autoplay muted loop playsinline preload="auto" poster="assets/promo.jpg"
+    aria-label="$SHERIFF Launchpad on Robinhood Chain — build, launch, take over Robinhood">
+    <source src="assets/promo.mp4" type="video/mp4" />
+    <img class="promo" src="assets/promo.jpg" alt="$SHERIFF Launchpad on Robinhood Chain — build, launch, take over Robinhood" />
+  </video>
 
   <!-- what makes us different (our real edge, not generic chips) -->
   <section class="diff">
