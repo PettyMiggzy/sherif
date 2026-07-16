@@ -28,12 +28,12 @@ interface IBondPoke {
 ///
 ///   • The DEFAULT 1% is the platform's — collected as **0.9% immediately** and **0.1% held until the coin
 ///     graduates**, then released to the platform.
-///   • Anything a project stacks ABOVE the 1% default is split: **25% is the platform's $SHERIFF cut**
-///     (accrued separately and paid out to the platform, which buys/burns $SHERIFF off-chain) and **75% is
+///   • Anything a project stacks ABOVE the 1% default is split: **25% is the platform buy-back cut**
+///     (accrued separately and paid out to the platform, which buys/burns the platform token off-chain) and **75% is
 ///     the project's** — across its own wallet, deepening that coin's Bond floor, and auto-burning supply.
 ///
 /// So a coin on the plain 1% just pays the house; a coin that runs a spicier fee sends the platform a bigger
-/// slice earmarked for $SHERIFF. The fee is a swap-desk fee, NOT a token transfer tax (which would break
+/// slice earmarked for the platform buy-back. The fee is a swap-desk fee, NOT a token transfer tax (which would break
 /// Uniswap v3 and flag as a honeypot), so the token stays clean and tradeable.
 ///
 /// Design note: fee shares accumulate as ESCROW and are paid out by separate, permissionless flush/withdraw
@@ -46,7 +46,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     uint16 public constant DEFAULT_FEE_BPS = 100; // the baseline 1% every coin pays; also the floor
     uint16 public constant PLATFORM_IMMEDIATE_BPS = 90; // of the default 1%: 0.9% to platform now
     uint16 public constant PLATFORM_DEFERRED_BPS = 10; // ...and 0.1% held until graduation
-    uint16 public constant EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee -> platform ($SHERIFF cut)
+    uint16 public constant EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee -> platform (platform buy-back cut)
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     address public immutable WETH;
@@ -69,7 +69,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
 
     // escrowed fee shares (all in native ETH), paid out by permissionless flushers
     uint256 public platformEscrow; // the 0.9% immediate cut (+ deferred once claimed)
-    uint256 public sheriffCutEscrow; // 25% of every above-default fee -> paid to the platform for $SHERIFF
+    uint256 public platformCutEscrow; // 25% of every above-default fee -> paid to the platform buy-back
     mapping(address => uint256) public deferredEscrow; // the 0.1% held per coin until it graduates
     mapping(address => uint256) public devEscrow;
     mapping(address => uint256) public floorEscrow;
@@ -90,7 +90,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     event Registered(address indexed token, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps);
     event Bought(address indexed token, address indexed buyer, uint256 ethIn, uint256 fee, uint256 tokensOut);
     event Sold(address indexed token, address indexed seller, uint256 tokensIn, uint256 fee, uint256 ethOut);
-    event FeeSplit(address indexed token, uint256 platform, uint256 deferred, uint256 sheriffCut, uint256 dev, uint256 floor, uint256 burn);
+    event FeeSplit(address indexed token, uint256 platform, uint256 deferred, uint256 platformCut, uint256 dev, uint256 floor, uint256 burn);
 
     constructor(address weth_, address owner_) Ownable(owner_) {
         require(weth_ != address(0), "zero");
@@ -104,7 +104,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         factory = f;
     }
 
-    /// @notice Ownership is load-bearing — the platform's immediate cut, deferred 0.1% and $SHERIFF cut all
+    /// @notice Ownership is load-bearing — the platform's immediate cut, deferred 0.1% and platform buy-back cut all
     /// pay out to owner(). Renouncing would strand those escrows forever, so it is permanently disabled.
     /// (Ownership can still be transferred via Ownable2Step's two-step transferOwnership/acceptOwnership.)
     function renounceOwnership() public pure override {
@@ -155,12 +155,14 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         // instead of running the price into the empty space beyond it (which would brick graduation)
         uint160 cap;
         if (c.curve != address(0) && !ICurveState(c.curve).graduated()) cap = ICurveState(c.curve).gradSqrtPriceX96();
-        tokensOut = _swap(token, c.pool, WETH, netMax, msg.sender, cap);
+        uint256 consumed;
+        (tokensOut, consumed) = _swap(token, c.pool, WETH, netMax, msg.sender, cap);
         if (tokensOut < minOut) revert Slippage();
 
-        // How much WETH the pool actually took. On a normal buy this is all of netMax; on a buy that hits the
-        // graduation cap (or otherwise can't be fully absorbed) the pool takes less and leaves a remainder.
-        uint256 leftover = IERC20(WETH).balanceOf(address(this));
+        // How much WETH the pool actually took, straight from the swap (NOT balanceOf — a donor could inflate
+        // that to evade the fee). On a normal buy consumed == netMax; on a buy that hits the graduation cap the
+        // pool takes less and leaves a remainder.
+        uint256 leftover = netMax - consumed;
         uint256 fee;
         uint256 spent;
         if (leftover == 0) {
@@ -172,7 +174,6 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             // Partial fill (buy overshot the curve): charge the fee only on what was actually consumed and
             // refund the rest — fee included — so a buyer whose order can't be fully absorbed is never taxed
             // on ETH that never entered the trade.
-            uint256 consumed = netMax - leftover;
             IWETH9(WETH).withdraw(leftover);
             fee = (consumed * c.buyBps) / 10_000;
             spent = consumed + fee;
@@ -193,7 +194,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         if (!c.set) revert Unknown();
         IERC20(token).safeTransferFrom(msg.sender, address(this), amountIn);
 
-        uint256 wethOut = _swap(token, c.pool, token, amountIn, address(this), 0);
+        (uint256 wethOut,) = _swap(token, c.pool, token, amountIn, address(this), 0);
         IWETH9(WETH).withdraw(wethOut);
 
         uint256 fee = (wethOut * c.sellBps) / 10_000;
@@ -213,7 +214,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     /// pre-graduation buy exactly at the graduation price so it can't overshoot the curve into empty space.
     function _swap(address token, address pool, address tokenIn, uint256 amountIn, address recipient, uint160 capLimit)
         internal
-        returns (uint256 out)
+        returns (uint256 out, uint256 consumedIn)
     {
         bool tokenIsToken0 = token < WETH;
         bool tokenInIsToken0 = tokenIn == WETH ? !tokenIsToken0 : tokenIsToken0;
@@ -226,8 +227,10 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             IUniswapV3Pool(pool).swap(recipient, zeroForOne, int256(amountIn), limit, abi.encode(tokenIn));
         _activePool = address(0);
         _swapping = false;
-        // the negative delta is what the pool sent OUT (to recipient)
-        out = a0 < 0 ? uint256(-a0) : uint256(-a1);
+        // The pool reports both sides: the POSITIVE delta is the input it actually took, the NEGATIVE delta is
+        // the output it sent. We drive fee/refund accounting off `consumedIn` (never off balanceOf, which a
+        // donor could inflate to evade the fee).
+        (consumedIn, out) = zeroForOne ? (uint256(a0), uint256(-a1)) : (uint256(a1), uint256(-a0));
     }
 
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external override {
@@ -241,7 +244,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     /// @dev Split the fee for one trade. `value` is the ETH the fee is charged on (msg.value on a buy, the
     /// WETH-out on a sell); `feeBps` is that side's rate; `sellSide` is true for a sell. The default 1% base
     /// goes to the PLATFORM on a buy (0.9% now, 0.1% deferred to graduation) and to the CREATOR on a sell
-    /// (paid to the project wallet). Anything above 1% splits 25% to the $SHERIFF buy-burn and 75% to the
+    /// (paid to the project wallet). Anything above 1% splits 25% to the platform buy-back and 75% to the
     /// project on both sides.
     function _distribute(address token, uint256 value, uint256 feeBps, bool sellSide) internal {
         // the exact fee charged to the trader (buy/sell computed it the same way); accrue it to the wei
@@ -268,15 +271,15 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             deferredEscrow[token] += deferred;
         }
 
-        uint256 sheriffCut;
+        uint256 platformCut;
         uint256 dev;
         uint256 floor;
         uint256 burn;
         if (excess > 0) {
-            // 25% -> the platform's $SHERIFF cut; 75% -> the project's buckets (floor absorbs rounding)
-            sheriffCut = (excess * EXCESS_PLATFORM_BPS) / 10_000;
-            sheriffCutEscrow += sheriffCut;
-            uint256 proj = excess - sheriffCut;
+            // 25% -> the platform buy-back cut; 75% -> the project's buckets (floor absorbs rounding)
+            platformCut = (excess * EXCESS_PLATFORM_BPS) / 10_000;
+            platformCutEscrow += platformCut;
+            uint256 proj = excess - platformCut;
             Cfg storage c = _cfg[token];
             dev = (proj * c.walletBps) / 10_000;
             burn = (proj * c.burnBps) / 10_000;
@@ -286,7 +289,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             floorEscrow[token] += floor;
         }
         // `dev` field = everything credited to the project wallet this trade (the sell base + its excess share)
-        emit FeeSplit(token, platformImmediate, deferred, sheriffCut, creatorBase + dev, floor, burn);
+        emit FeeSplit(token, platformImmediate, deferred, platformCut, creatorBase + dev, floor, burn);
     }
 
     // ─────────────────────────────────────────── permissionless payouts ──
@@ -327,10 +330,11 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         IWETH9(WETH).deposit{value: amt}();
         uint160 cap;
         if (c.curve != address(0) && !ICurveState(c.curve).graduated()) cap = ICurveState(c.curve).gradSqrtPriceX96();
-        uint256 bought = _swap(token, c.pool, WETH, amt, address(this), cap);
+        (uint256 bought, uint256 consumed) = _swap(token, c.pool, WETH, amt, address(this), cap);
         IERC20(token).safeTransfer(DEAD, bought);
-        // re-credit any WETH the swap couldn't spend (e.g. a burn-buy that hit the graduation cap)
-        uint256 left = IERC20(WETH).balanceOf(address(this));
+        // re-credit any WETH the swap couldn't spend (e.g. a burn-buy that hit the graduation cap). Uses the
+        // swap's own consumed amount, not balanceOf, so a stray WETH donation can't be scooped into escrow.
+        uint256 left = amt - consumed;
         if (left > 0) {
             IWETH9(WETH).withdraw(left);
             devEscrow[token] += left;
@@ -363,12 +367,12 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         platformEscrow += amt;
     }
 
-    /// @notice Pay the accrued $SHERIFF cut (25% of every above-default fee) to the platform, which buys and
-    /// burns $SHERIFF off-chain. Permissionless; the funds only ever go to the platform (owner).
-    function withdrawSheriffCut() external nonReentrant {
-        uint256 amt = sheriffCutEscrow;
+    /// @notice Pay the accrued platform buy-back cut (25% of every above-default fee) to the platform, which buys and
+    /// burns the platform token off-chain. Permissionless; the funds only ever go to the platform (owner).
+    function withdrawPlatformCut() external nonReentrant {
+        uint256 amt = platformCutEscrow;
         if (amt == 0) return;
-        sheriffCutEscrow = 0;
+        platformCutEscrow = 0;
         (bool ok,) = owner().call{value: amt}("");
         require(ok, "pay");
     }
@@ -384,11 +388,11 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         // space and brick graduation (same guard the user-facing buy() uses)
         uint160 cap;
         if (c.curve != address(0) && !ICurveState(c.curve).graduated()) cap = ICurveState(c.curve).gradSqrtPriceX96();
-        uint256 bought = _swap(token, c.pool, WETH, amt, address(this), cap);
+        (uint256 bought, uint256 consumed) = _swap(token, c.pool, WETH, amt, address(this), cap);
         IERC20(token).safeTransfer(DEAD, bought);
-        // if the swap couldn't consume all of it, re-credit the residual (never leave stray WETH in the
-        // router, or a later buy's refund would hand it to an unrelated buyer)
-        uint256 left = IERC20(WETH).balanceOf(address(this));
+        // if the swap couldn't consume all of it, re-credit the residual — using the swap's own consumed
+        // amount, not balanceOf, so stray donated WETH can't be swept in
+        uint256 left = amt - consumed;
         if (left > 0) {
             IWETH9(WETH).withdraw(left);
             burnEscrow[token] += left;

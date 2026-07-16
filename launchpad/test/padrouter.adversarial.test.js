@@ -74,7 +74,7 @@ describe("PadRouter — adversarial simulations", function () {
       feeTotal += await feeFromEvents(router.connect(mallory).sell(tokAddr, a, 0));
     }
     // not a single wei is created or destroyed: the four escrows sum to exactly the tax charged
-    const sum = (await router.platformEscrow()) + (await router.sheriffCutEscrow())
+    const sum = (await router.platformEscrow()) + (await router.platformCutEscrow())
       + (await router.deferredEscrow(tokAddr))
       + (await router.devEscrow(tokAddr)) + (await router.floorEscrow(tokAddr)) + (await router.burnEscrow(tokAddr));
     expect(sum).to.equal(feeTotal);
@@ -133,7 +133,7 @@ describe("PadRouter — adversarial simulations", function () {
   it("conservation: the router's ETH balance always equals the sum of what it owes (escrows)", async () => {
     const { token, tokAddr, router, buyer, mallory } = await fixture({ buy: 300, sell: 200, w: 6000, f: 3000, b: 1000 });
     const routerAddr = await router.getAddress();
-    const owed = async () => (await router.platformEscrow()) + (await router.sheriffCutEscrow())
+    const owed = async () => (await router.platformEscrow()) + (await router.platformCutEscrow())
       + (await router.deferredEscrow(tokAddr))
       + (await router.devEscrow(tokAddr)) + (await router.floorEscrow(tokAddr)) + (await router.burnEscrow(tokAddr));
 
@@ -155,7 +155,7 @@ describe("PadRouter — adversarial simulations", function () {
     const { router } = await fixture();
     expect(await router.DEFAULT_FEE_BPS()).to.equal(100); // 1% floor
     expect(await router.MAX_TAX_BPS()).to.equal(400); // 4% cap
-    expect(await router.EXCESS_PLATFORM_BPS()).to.equal(2500); // 25% of the above-default fee -> $SHERIFF burn
+    expect(await router.EXCESS_PLATFORM_BPS()).to.equal(2500); // 25% of the above-default fee -> platform buy-back
     expect(await router.PLATFORM_IMMEDIATE_BPS()).to.equal(90);
     expect(await router.PLATFORM_DEFERRED_BPS()).to.equal(10);
     // these are constants with no setter (only setFactory exists, owner-only + one-time)

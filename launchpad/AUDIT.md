@@ -1,4 +1,40 @@
-# Sheriff's Pad — internal security audit
+# Robin Labs Pad — internal security audit
+
+## Third pass (pre-mainnet, "let it ride" + creator economics)
+
+A 5-auditor adversarial fleet + simulation batteries over the whole new stack
+(let-it-ride graduation, split-by-side fees, LP-fee compounding, dev reward,
+burnDev, auto-graduate). **The core held**: the floor-drain was attacked hard and
+proven impossible, conservation is exact to the wei, floor-monotonicity and Bond
+solvency verified, anti-rug intact. Fixed + regression-tested:
+
+| # | Sev | Finding | Resolution |
+|---|-----|---------|------------|
+| R-1 | **High** | `buy()` inferred the consumed amount from `balanceOf(WETH)`, so anyone could donate WETH to the router and buy **fee-free** (donation read as "unconsumed", zeroing the fee). | `_swap` now returns the pool's own consumed-input delta; `buy`/`burnDev`/`flushBurn` drive fee + re-credit off that, never `balanceOf`. Regression: `a WETH donation can't evade the buy fee`. |
+| R-2 | Low | A few wei of token dust (seed-mint rounding) stranded in the curve after graduation. | `graduate()` sends the curve's **actual full token balance** to the Bond. Caught by the graduation battery (conservation now exact). |
+| R-3 | Low | Latent brick/lock at extreme (mis-configured) params: `ambushSupply==0`, or `quote==0`. Not reachable via the factory. | `require(ambushSupply_ > 0)` in the constructor; `require(quote > 0)` in `graduate()` (fail-fast). |
+
+**Accepted / not reachable (documented):** Bond `maxLiquidityPerTick` overflow —
+not reachable at the fixed 1B supply (the battery mints the worst-case rolled
+Ambush across 15+ random graduations without hitting it); graduating up to
+`GRAD_MAX_DEV` above the ceiling — not economically drainable (floor ≤ 0.75·raise
+regardless); spot-vs-TWAP split sizing — only cosmetic layout skew, `poke()`
+re-centers, no value leak.
+
+**Economic tradeoffs (design decisions, not bugs):** (a) router fees are *not
+mandatory* — the token is a real public Uniswap pool, so sophisticated actors can
+trade it directly and skip the fee (inherent to "real DEX from block one"); (b) a
+minimum-graduation posts a heavy Ambush wall + a thin concentrated floor, and the
+default `gradTarget` is the minimum; (c) a dev can set the auto-graduate target to
+the ceiling and abandon it (funds safe — buyers can always sell back — but the floor
+never posts). These are flagged for a product decision, not fixed in code.
+
+**Simulations:** 300-run fee fuzz (175 coins, 1,592 ops, 0 unexpected reverts,
+conservation to the wei) + a graduation battery (15 coins graduated at random
+"let it ride" points: Bond always posts, floor monotonic, conservation exact, dev
+reward exact). All green.
+
+---
 
 Self-audit of the launch + trade + tax contracts before deploy. Scope: the money
 paths a user's funds actually flow through — `PadRouter` (swap desk + project

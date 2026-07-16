@@ -7,7 +7,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IUniswapV3Factory, IUniswapV3Pool, IUniswapV3MintCallback} from "./interfaces/IUniswapV3.sol";
 import {PoolMath} from "./libraries/PoolMath.sol";
 
-/// @title Bond — "The Sheriff's Bond"
+/// @title Bond — "The Bond"
 /// @notice A protocol-owned market maker posted on a token at graduation and locked forever. It holds three
 /// Uniswap v3 positions and rebalances them so the pool has a floor it can't be rugged below:
 ///   - Sherwood     : a full-range LP (baseline liquidity). Principal is NEVER withdrawn; its swap fees are

@@ -3,7 +3,7 @@ const { ethers } = require("hardhat");
 
 // Exact-math unit tests of the PadRouter fee model on a mock Uniswap v3 pool (no fork needed).
 // Model: default 1%/side is the platform's (0.9% immediate + 0.1% deferred to graduation); anything
-// stacked ABOVE 1% splits 25% -> the platform's $SHERIFF cut and 75% -> the project (wallet/floor/burn).
+// stacked ABOVE 1% splits 25% -> the platform buy-back cut and 75% -> the project (wallet/floor/burn).
 const ONE = 10n ** 18n;
 const DEAD = "0x000000000000000000000000000000000000dEaD";
 
@@ -57,6 +57,23 @@ describe("PadRouter — fee model (mock pool)", function () {
     await expect(router.connect(dep).renounceOwnership()).to.be.reverted;
   });
 
+  it("a WETH donation can't evade the buy fee — consumed comes from the swap, not balanceOf", async () => {
+    const { dep, dev, buyer, weth, token, tokAddr, poolAddr, router } = await deploy();
+    await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 100, 100, 10000, 0, 0)).wait();
+    // attacker plants stray WETH in the router (under balanceOf-based accounting this would zero/shrink the fee)
+    const donation = ONE / 2n;
+    await (await weth.connect(dep).deposit({ value: donation })).wait();
+    await (await weth.connect(dep).transfer(await router.getAddress(), donation)).wait();
+
+    const v = ONE;
+    await (await router.connect(buyer).buy(tokAddr, 0, { value: v })).wait();
+    // the fee is STILL charged on the full trade (0.9% + 0.1%), not evaded by the donation
+    expect(await router.platformEscrow()).to.equal((v * 90n) / 10_000n);
+    expect(await router.deferredEscrow(tokAddr)).to.equal((v * 10n) / 10_000n);
+    // and the buyer received tokens for the full net (donation didn't reduce what they paid in fee)
+    expect(await token.balanceOf(buyer.address)).to.equal(v - (v * 100n) / 10_000n);
+  });
+
   it("a plain 1% coin: platform gets 0.9% now + 0.1% deferred; nothing else moves", async () => {
     const { dep, platform, dev, buyer, token, tokAddr, poolAddr, router } = await deploy();
     await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 100, 100, 10000, 0, 0)).wait();
@@ -66,7 +83,7 @@ describe("PadRouter — fee model (mock pool)", function () {
     expect(await router.platformEscrow()).to.equal((v * 90n) / 10_000n); // 0.9%
     expect(await router.deferredEscrow(tokAddr)).to.equal((v * 10n) / 10_000n); // 0.1%
     // no above-default fee => these stay empty
-    expect(await router.sheriffCutEscrow()).to.equal(0n);
+    expect(await router.platformCutEscrow()).to.equal(0n);
     expect(await router.devEscrow(tokAddr)).to.equal(0n);
     expect(await router.floorEscrow(tokAddr)).to.equal(0n);
     expect(await router.burnEscrow(tokAddr)).to.equal(0n);
@@ -74,7 +91,7 @@ describe("PadRouter — fee model (mock pool)", function () {
     expect(await token.balanceOf(buyer.address)).to.equal(v - (v * 100n) / 10_000n);
   });
 
-  it("a 4% coin: 0.9%+0.1% platform, then 25% of the extra 3% is the $SHERIFF cut, 75% to the project", async () => {
+  it("a 4% coin: 0.9%+0.1% platform, then 25% of the extra 3% is the platform buy-back cut, 75% to the project", async () => {
     const { dep, platform, dev, buyer, token, tokAddr, poolAddr, router } = await deploy();
     // 4% buy; project split 50% wallet / 30% floor / 20% burn
     await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 400, 400, 5000, 3000, 2000)).wait();
@@ -83,8 +100,8 @@ describe("PadRouter — fee model (mock pool)", function () {
     const immediate = (v * 90n) / 10_000n; // 0.9%
     const deferred = (v * 10n) / 10_000n; // 0.1%
     const excess = (v * 300n) / 10_000n; // 3%
-    const sheriffCut = (excess * 2500n) / 10_000n; // 25% of the excess
-    const proj = excess - sheriffCut; // 75%
+    const platformCut = (excess * 2500n) / 10_000n; // 25% of the excess
+    const proj = excess - platformCut; // 75%
     const devCut = (proj * 5000n) / 10_000n;
     const burnCut = (proj * 2000n) / 10_000n;
     const floorCut = proj - devCut - burnCut;
@@ -92,12 +109,12 @@ describe("PadRouter — fee model (mock pool)", function () {
     await (await router.connect(buyer).buy(tokAddr, 0, { value: v })).wait();
     expect(await router.platformEscrow()).to.equal(immediate);
     expect(await router.deferredEscrow(tokAddr)).to.equal(deferred);
-    expect(await router.sheriffCutEscrow()).to.equal(sheriffCut);
+    expect(await router.platformCutEscrow()).to.equal(platformCut);
     expect(await router.devEscrow(tokAddr)).to.equal(devCut);
     expect(await router.floorEscrow(tokAddr)).to.equal(floorCut);
     expect(await router.burnEscrow(tokAddr)).to.equal(burnCut);
     // everything sums to the full 4% fee
-    const total = immediate + deferred + sheriffCut + devCut + floorCut + burnCut;
+    const total = immediate + deferred + platformCut + devCut + floorCut + burnCut;
     expect(total).to.equal((v * 400n) / 10_000n);
   });
 
@@ -120,20 +137,20 @@ describe("PadRouter — fee model (mock pool)", function () {
     expect(await router.platformEscrow()).to.equal(platBefore + deferred);
   });
 
-  it("the above-default 25% $SHERIFF cut accrues separately and pays out to the platform", async () => {
+  it("the above-default 25% platform buy-back cut accrues separately and pays out to the platform", async () => {
     const { dep, platform, dev, buyer, tokAddr, poolAddr, router } = await deploy();
     await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 400, 400, 10000, 0, 0)).wait();
 
-    // a 4% buy: the 25% of the 3% excess is earmarked as the $SHERIFF cut
+    // a 4% buy: the 25% of the 3% excess is earmarked as the platform buy-back cut
     await (await router.connect(buyer).buy(tokAddr, 0, { value: ONE })).wait();
     const excess = (ONE * 300n) / 10_000n;
     const cut = (excess * 2500n) / 10_000n;
-    expect(await router.sheriffCutEscrow()).to.equal(cut);
+    expect(await router.platformCutEscrow()).to.equal(cut);
 
-    // withdraw pays it to the platform (owner), who buys/burns $SHERIFF off-chain
+    // withdraw pays it to the platform (owner), who buys/burns the platform token off-chain
     const platBefore = await ethers.provider.getBalance(platform.address);
-    await (await router.connect(buyer).withdrawSheriffCut()).wait();
-    expect(await router.sheriffCutEscrow()).to.equal(0n);
+    await (await router.connect(buyer).withdrawPlatformCut()).wait();
+    expect(await router.platformCutEscrow()).to.equal(0n);
     expect(await ethers.provider.getBalance(platform.address)).to.equal(platBefore + cut);
   });
 
@@ -169,15 +186,15 @@ describe("PadRouter — fee model (mock pool)", function () {
     await (await router.connect(buyer).sell(tokAddr, amt, 0)).wait();
     // the sell-side default 1% is the creator's, accrued to the project wallet's escrow
     expect(await router.devEscrow(tokAddr)).to.equal((wethOut * 100n) / 10_000n);
-    // platform gets nothing off a plain sell — no immediate, no deferred, no $SHERIFF cut
+    // platform gets nothing off a plain sell — no immediate, no deferred, no platform buy-back cut
     expect(await router.platformEscrow()).to.equal(0n);
     expect(await router.deferredEscrow(tokAddr)).to.equal(0n);
-    expect(await router.sheriffCutEscrow()).to.equal(0n);
+    expect(await router.platformCutEscrow()).to.equal(0n);
     expect(await router.floorEscrow(tokAddr)).to.equal(0n);
     expect(await router.burnEscrow(tokAddr)).to.equal(0n);
   });
 
-  it("sell with a raised tax: creator gets the 1% base + wallet share; platform gets only the $SHERIFF cut", async () => {
+  it("sell with a raised tax: creator gets the 1% base + wallet share; platform gets only the platform buy-back cut", async () => {
     const { dep, dev, buyer, token, tokAddr, poolAddr, router } = await deploy();
     await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 100, 300, 4000, 4000, 2000)).wait();
     await (await token.transfer(buyer.address, 10n * ONE)).wait();
@@ -185,24 +202,24 @@ describe("PadRouter — fee model (mock pool)", function () {
     await (await token.connect(buyer).approve(await router.getAddress(), amt)).wait();
 
     const wethOut = amt; // 1:1
-    // 3% sell = 1% base -> creator, then 2% excess splits 25% $SHERIFF / 75% project (wallet/floor/burn)
+    // 3% sell = 1% base -> creator, then 2% excess splits 25% platform / 75% project (wallet/floor/burn)
     const base = (wethOut * 100n) / 10_000n;
     const excess = (wethOut * 200n) / 10_000n;
-    const sheriffCut = (excess * 2500n) / 10_000n;
-    const proj = excess - sheriffCut;
+    const platformCut = (excess * 2500n) / 10_000n;
+    const proj = excess - platformCut;
     const walletCut = (proj * 4000n) / 10_000n;
     const burnCut = (proj * 2000n) / 10_000n;
     const floorCut = proj - walletCut - burnCut;
 
     await (await router.connect(buyer).sell(tokAddr, amt, 0)).wait();
     expect(await router.devEscrow(tokAddr)).to.equal(base + walletCut); // creator: base + wallet share
-    expect(await router.sheriffCutEscrow()).to.equal(sheriffCut);       // platform's only cut on a sell
+    expect(await router.platformCutEscrow()).to.equal(platformCut);       // platform's only cut on a sell
     expect(await router.floorEscrow(tokAddr)).to.equal(floorCut);
     expect(await router.burnEscrow(tokAddr)).to.equal(burnCut);
     expect(await router.platformEscrow()).to.equal(0n);                 // no platform base off a sell
     expect(await router.deferredEscrow(tokAddr)).to.equal(0n);
     // conservation: every wei of the 3% fee is accounted for
-    const total = base + sheriffCut + walletCut + floorCut + burnCut;
+    const total = base + platformCut + walletCut + floorCut + burnCut;
     expect(total).to.equal((wethOut * 300n) / 10_000n);
   });
 });

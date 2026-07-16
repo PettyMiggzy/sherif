@@ -40,7 +40,7 @@ function mulberry32(a) {
 }
 
 describe("PadRouter — 300 randomized simulations", function () {
-  this.timeout(600000);
+  this.timeout(1800000); // 30 min headroom for large SIMS batteries
 
   let dep, platform, alice, bob, carol, traders;
   let weth, wethAddr, router, routerAddr;
@@ -98,7 +98,7 @@ describe("PadRouter — 300 randomized simulations", function () {
     if (!trade) return 0n;
     const fee = trade.args.fee;
     if (fee > 0n) {
-      const s = split.args.platform + split.args.deferred + split.args.sheriffCut
+      const s = split.args.platform + split.args.deferred + split.args.platformCut
         + split.args.dev + split.args.floor + split.args.burn;
       expect(s, "INV-2 fee split must equal fee to the wei").to.equal(fee);
     }
@@ -106,7 +106,7 @@ describe("PadRouter — 300 randomized simulations", function () {
   }
 
   async function totalOwed() {
-    let sum = (await router.platformEscrow()) + (await router.sheriffCutEscrow());
+    let sum = (await router.platformEscrow()) + (await router.platformCutEscrow());
     for (const c of coins) {
       sum += await router.deferredEscrow(c.tokAddr);
       sum += await router.devEscrow(c.tokAddr);

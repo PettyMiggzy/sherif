@@ -101,8 +101,9 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
             "zero"
         );
         require(
-            curveSupply_ > 0 && curveWidth_ > 0 && curveWidth_ % SPACING == 0 && startTick_ % SPACING == 0
-                && minGradWidth_ > 0 && minGradWidth_ % SPACING == 0 && minGradWidth_ < curveWidth_,
+            curveSupply_ > 0 && ambushSupply_ > 0 && curveWidth_ > 0 && curveWidth_ % SPACING == 0
+                && startTick_ % SPACING == 0 && minGradWidth_ > 0 && minGradWidth_ % SPACING == 0
+                && minGradWidth_ < curveWidth_,
             "params"
         );
         token = IERC20(token_);
@@ -236,8 +237,13 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         // thicker floor AND fewer unsold tokens => a lighter sell-wall.
         uint256 sherwoodWeth = (raisedWeth * SHERWOOD_WETH_BPS) / 10_000;
         uint256 bountyWeth = raisedWeth - sherwoodWeth;
-        uint256 tokenPool = ambushSupply + leftToken;
+        // The whole token balance goes to the Bond: the ambush reserve + the unsold curve tokens just
+        // collected + any rounding dust the seed mint left behind. Using the actual balance (rather than
+        // ambushSupply + leftToken) guarantees nothing is stranded in the curve. A stray token donation would
+        // only inflate the harmless Ambush wall — it can't be extracted.
+        uint256 tokenPool = token.balanceOf(address(this));
         uint256 quote = PoolMath.quoteWethPerToken(sp, tokenIsToken0);
+        require(quote > 0, "price"); // fail fast rather than divide-by-zero at an extreme (mis-configured) price
         uint256 sherwoodTokens = Math.min(tokenPool, Math.mulDiv(sherwoodWeth, 1e18, quote));
         uint256 ambushForBond = tokenPool - sherwoodTokens;
 

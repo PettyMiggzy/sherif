@@ -65,8 +65,8 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     const immediate = (spend * 90n) / 10_000n; // 0.9%
     const deferred = (spend * 10n) / 10_000n; // 0.1%
     const excess = (spend * 200n) / 10_000n; // 2% above the 1% default
-    const sheriffCut = (excess * 2500n) / 10_000n; // 25% -> the platform's $SHERIFF cut
-    const proj = excess - sheriffCut; // 75%
+    const platformCut = (excess * 2500n) / 10_000n; // 25% -> the platform buy-back cut
+    const proj = excess - platformCut; // 75%
     const devCut = (proj * 5000n) / 10_000n;
     const burnCut = (proj * 2000n) / 10_000n;
     const floorCut = proj - devCut - burnCut;
@@ -78,7 +78,7 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     // the fee split landed in escrow, to the exact bps
     expect(await router.platformEscrow()).to.equal(immediate);
     expect(await router.deferredEscrow(token)).to.equal(deferred);
-    expect(await router.sheriffCutEscrow()).to.equal(sheriffCut);
+    expect(await router.platformCutEscrow()).to.equal(platformCut);
     expect(await router.devEscrow(token)).to.equal(devCut);
     expect(await router.floorEscrow(token)).to.equal(floorCut);
     expect(await router.burnEscrow(token)).to.equal(burnCut);
@@ -174,7 +174,7 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     // Fee is charged on the consumed amount, so total escrow is WAY under 1% of the 20 ETH gross (0.2 ETH).
     const escrow = (await router.platformEscrow())
       + (await router.deferredEscrow(token))
-      + (await router.sheriffCutEscrow())
+      + (await router.platformCutEscrow())
       + (await router.devEscrow(token))
       + (await router.floorEscrow(token))
       + (await router.burnEscrow(token));

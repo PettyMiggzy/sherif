@@ -28,7 +28,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
     // ===== ONE CALL: token + real pool + seeded curve + trading on =====
-    const rc = await (await factory.launch({ name: "Sheriff Meme", symbol: "MEME", dev: dev.address, tax: NOTAX })).wait();
+    const rc = await (await factory.launch({ name: "Robin Meme", symbol: "MEME", dev: dev.address, tax: NOTAX })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = ev.args;
@@ -117,7 +117,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const spend = ONE / 100n; // 0.01 ETH
     const before = await ethers.provider.getBalance(dev.address);
     const rc = await (await factory.connect(dev).launch(
-      { name: "Sheriff Dev", symbol: "SDEV", dev: dev.address, tax: NOTAX }, { value: spend }
+      { name: "Robin Dev", symbol: "SDEV", dev: dev.address, tax: NOTAX }, { value: spend }
     )).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
