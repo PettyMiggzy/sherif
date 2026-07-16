@@ -41,9 +41,9 @@ async function main() {
   console.log(`  Bond posted=${await bond.posted()} sherwoodL=${await bond.sherwoodL()} bountyL=${await bond.bountyL()} ambushL=${await bond.ambushL()}`);
 
   // still trades after graduation (buy against the Bond's liquidity)
-  const b0 = await TOK.balanceOf(me.address);
+  const bg = await TOK.balanceOf(me.address);
   await (await router.buy(T, 0, { value: ethers.parseEther("0.0003") })).wait();
-  console.log("\n  post-graduation buy worked:", (await TOK.balanceOf(me.address)) > b0);
+  console.log("\n  post-graduation buy worked:", (await TOK.balanceOf(me.address)) > bg);
 
   // exercise the payouts (all permissionless). platform/sheriff -> owner(); dev -> projectWallet.
   console.log("\npayouts:");
