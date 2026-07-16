@@ -60,10 +60,13 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     expect(await TOK.antiSnipeActive()).to.equal(false);
 
     // ===== BUY through the router (native ETH, no approval) =====
+    // 3% fee: 0.9% immediate + 0.1% deferred (platform), then 2% above-default split 25%/75%
     const spend = ONE; // 1 ETH
-    const fee = (spend * 300n) / 10_000n; // 3%
-    const platCut = (fee * 2500n) / 10_000n; // 25% of the tax
-    const proj = fee - platCut;
+    const immediate = (spend * 90n) / 10_000n; // 0.9%
+    const deferred = (spend * 10n) / 10_000n; // 0.1%
+    const excess = (spend * 200n) / 10_000n; // 2% above the 1% default
+    const sheriffBurn = (excess * 2500n) / 10_000n; // 25% -> $SHERIFF burn
+    const proj = excess - sheriffBurn; // 75%
     const devCut = (proj * 5000n) / 10_000n;
     const burnCut = (proj * 2000n) / 10_000n;
     const floorCut = proj - devCut - burnCut;
@@ -73,7 +76,9 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     expect(await TOK.balanceOf(buyer.address)).to.be.greaterThan(t0); // got tokens
 
     // the fee split landed in escrow, to the exact bps
-    expect(await router.platformEscrow()).to.equal(platCut);
+    expect(await router.platformEscrow()).to.equal(immediate);
+    expect(await router.deferredEscrow(token)).to.equal(deferred);
+    expect(await router.sheriffBurnEscrow()).to.equal(sheriffBurn);
     expect(await router.devEscrow(token)).to.equal(devCut);
     expect(await router.floorEscrow(token)).to.equal(floorCut);
     expect(await router.burnEscrow(token)).to.equal(burnCut);
@@ -85,15 +90,11 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     expect(await ethers.provider.getBalance(dev.address)).to.equal(devBefore + devCut);
     expect(await router.devEscrow(token)).to.equal(0n);
 
-    // platform share -> the platform (owner)
-    const platBefore = await ethers.provider.getBalance(platform.address);
-    // owner() is dep, but withdrawPlatform sends to owner(); set platform as owner? owner is dep here.
-    // withdrawPlatform pays owner() == dep; just assert escrow clears and dep is paid.
+    // platform immediate share -> owner() (dep here). withdrawPlatform pays owner().
     const depBefore = await ethers.provider.getBalance(dep.address);
-    const wr = await (await router.connect(buyer).withdrawPlatform()).wait();
+    await (await router.connect(buyer).withdrawPlatform()).wait();
     expect(await router.platformEscrow()).to.equal(0n);
-    expect(await ethers.provider.getBalance(dep.address)).to.equal(depBefore + platCut);
-    platBefore; platCut; // (platform recipient is owner() by design)
+    expect(await ethers.provider.getBalance(dep.address)).to.equal(depBefore + immediate);
 
     // burn share -> buys the token and sends it to dead
     const deadBefore = await TOK.balanceOf("0x000000000000000000000000000000000000dEaD");

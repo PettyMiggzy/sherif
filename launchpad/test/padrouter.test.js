@@ -1,115 +1,145 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-// Executable unit test of the PROJECT TAX math on a mock Uniswap v3 pool (no fork needed).
-// Verifies: 4% caps, platform's fixed 25% cut, the project-share split (wallet/floor/burn), and payouts.
+// Exact-math unit tests of the PadRouter fee model on a mock Uniswap v3 pool (no fork needed).
+// Model: default 1%/side is the platform's (0.9% immediate + 0.1% deferred to graduation); anything
+// stacked ABOVE 1% splits 25% -> buy+burn $SHERIFF and 75% -> the project (wallet/floor/burn).
 const ONE = 10n ** 18n;
+const DEAD = "0x000000000000000000000000000000000000dEaD";
 
-describe("PadRouter — project tax split (mock pool)", function () {
-  async function deploy() {
-    const [dep, platform, dev, buyer] = await ethers.getSigners();
-    const weth = await (await ethers.getContractFactory("MockWETH9")).deploy();
-    const token = await (await ethers.getContractFactory("MockERC20")).deploy(1_000_000n * ONE);
+describe("PadRouter — fee model (mock pool)", function () {
+  async function mkCoin(dep, sharedWeth = null, supply = 1_000_000n * ONE, priceE = ONE) {
+    const weth = sharedWeth || (await (await ethers.getContractFactory("MockWETH9")).deploy());
     const wethAddr = await weth.getAddress();
+    const token = await (await ethers.getContractFactory("MockERC20")).deploy(supply);
     const tokAddr = await token.getAddress();
-
     const [t0, t1] = tokAddr.toLowerCase() < wethAddr.toLowerCase() ? [tokAddr, wethAddr] : [wethAddr, tokAddr];
     const pool = await (await ethers.getContractFactory("MockUniswapV3Pool")).deploy(t0, t1, 10000);
     await (await pool.setWeth(wethAddr)).wait();
-    await (await pool.setPrice(ONE)).wait(); // 1 token = 1 WETH, flat (no impact) for exact math
+    await (await pool.setPrice(priceE)).wait();
     const poolAddr = await pool.getAddress();
-
-    // fund the pool with both sides so swaps can pay out
-    await (await token.transfer(poolAddr, 500_000n * ONE)).wait();
+    await (await token.transfer(poolAddr, supply / 2n)).wait();
     await (await weth.deposit({ value: 100n * ONE })).wait();
     await (await weth.transfer(poolAddr, 100n * ONE)).wait();
-
-    const router = await (await ethers.getContractFactory("PadRouter")).deploy(wethAddr, platform.address);
-    await (await router.connect(platform).setFactory(dep.address)).wait(); // deployer acts as the factory for registration
-    return { dep, platform, dev, buyer, weth, token, tokAddr, pool, poolAddr, router };
+    return { weth, wethAddr, token, tokAddr, pool, poolAddr };
   }
 
-  it("enforces the 4% caps and a 100% allocation, and only the factory can register", async () => {
-    const { dep, dev, token, tokAddr, poolAddr, router } = await deploy();
-    const reg = (o) => router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address,
-      o.buy, o.sell, o.w, o.f, o.b);
-    await expect(reg({ buy: 401, sell: 0, w: 10000, f: 0, b: 0 })).to.be.revertedWithCustomError(router, "BadTax");
-    await expect(reg({ buy: 0, sell: 401, w: 10000, f: 0, b: 0 })).to.be.revertedWithCustomError(router, "BadTax");
-    await expect(reg({ buy: 100, sell: 100, w: 5000, f: 3000, b: 1000 })).to.be.revertedWithCustomError(router, "BadAlloc");
+  async function deploy() {
+    const [dep, platform, dev, buyer] = await ethers.getSigners();
+    const base = await mkCoin(dep);
+    const router = await (await ethers.getContractFactory("PadRouter")).deploy(base.wethAddr, platform.address);
+    await (await router.connect(platform).setFactory(dep.address)).wait();
+    const curve = await (await ethers.getContractFactory("MockCurve")).deploy();
+    return { dep, platform, dev, buyer, ...base, router, curve, curveAddr: await curve.getAddress() };
+  }
+
+  it("registration enforces the 1% floor, the 4% cap, 100% allocation, and factory-only", async () => {
+    const { dep, dev, tokAddr, poolAddr, router } = await deploy();
+    const reg = (buy, sell, w, f, b) =>
+      router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, buy, sell, w, f, b);
+    await expect(reg(99, 100, 10000, 0, 0)).to.be.revertedWithCustomError(router, "BadTax"); // below 1%
+    await expect(reg(100, 401, 10000, 0, 0)).to.be.revertedWithCustomError(router, "BadTax"); // above 4%
+    await expect(reg(200, 200, 5000, 3000, 1000)).to.be.revertedWithCustomError(router, "BadAlloc");
     await expect(router.connect(dev).register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 100, 100, 10000, 0, 0))
       .to.be.revertedWithCustomError(router, "OnlyFactory");
-    // valid at exactly the cap
-    await expect(reg({ buy: 400, sell: 400, w: 5000, f: 3000, b: 2000 })).to.not.be.reverted;
+    await expect(reg(100, 100, 10000, 0, 0)).to.not.be.reverted; // plain default 1%
+    await expect(reg(400, 400, 5000, 3000, 2000)).to.not.be.reverted; // max, re-register same token ok
   });
 
-  it("buy: platform gets 25%, project 75% split to wallet/floor/burn — to the exact wei", async () => {
+  it("a plain 1% coin: platform gets 0.9% now + 0.1% deferred; nothing else moves", async () => {
     const { dep, platform, dev, buyer, token, tokAddr, poolAddr, router } = await deploy();
-    // 4% buy tax; project split 50% wallet / 30% floor / 20% burn
+    await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 100, 100, 10000, 0, 0)).wait();
+
+    const v = ONE;
+    await (await router.connect(buyer).buy(tokAddr, 0, { value: v })).wait();
+    expect(await router.platformEscrow()).to.equal((v * 90n) / 10_000n); // 0.9%
+    expect(await router.deferredEscrow(tokAddr)).to.equal((v * 10n) / 10_000n); // 0.1%
+    // no above-default fee => these stay empty
+    expect(await router.sheriffBurnEscrow()).to.equal(0n);
+    expect(await router.devEscrow(tokAddr)).to.equal(0n);
+    expect(await router.floorEscrow(tokAddr)).to.equal(0n);
+    expect(await router.burnEscrow(tokAddr)).to.equal(0n);
+    // trader received net of the full 1%
+    expect(await token.balanceOf(buyer.address)).to.equal(v - (v * 100n) / 10_000n);
+  });
+
+  it("a 4% coin: 0.9%+0.1% platform, then 25% of the extra 3% burns $SHERIFF, 75% to the project", async () => {
+    const { dep, platform, dev, buyer, token, tokAddr, poolAddr, router } = await deploy();
+    // 4% buy; project split 50% wallet / 30% floor / 20% burn
     await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 400, 400, 5000, 3000, 2000)).wait();
 
-    const spend = ONE; // 1 ETH
-    const fee = (spend * 400n) / 10_000n; // 0.04
-    const plat = (fee * 2500n) / 10_000n; // 0.01  (25% of the tax)
-    const proj = fee - plat; // 0.03
-    const devCut = (proj * 5000n) / 10_000n; // 0.015
-    const burnCut = (proj * 2000n) / 10_000n; // 0.006
-    const floorCut = proj - devCut - burnCut; // 0.009
+    const v = ONE;
+    const immediate = (v * 90n) / 10_000n; // 0.9%
+    const deferred = (v * 10n) / 10_000n; // 0.1%
+    const excess = (v * 300n) / 10_000n; // 3%
+    const sheriffBurn = (excess * 2500n) / 10_000n; // 25% of the excess
+    const proj = excess - sheriffBurn; // 75%
+    const devCut = (proj * 5000n) / 10_000n;
+    const burnCut = (proj * 2000n) / 10_000n;
+    const floorCut = proj - devCut - burnCut;
 
-    const out = await router.connect(buyer).buy.staticCall(tokAddr, 0, { value: spend });
-    await (await router.connect(buyer).buy(tokAddr, 0, { value: spend })).wait();
-    // net (0.96 ETH) bought at 1:1 => 0.96 tokens
-    expect(out).to.equal(spend - fee);
-    expect(await token.balanceOf(buyer.address)).to.equal(spend - fee);
-
-    expect(await router.platformEscrow()).to.equal(plat);
+    await (await router.connect(buyer).buy(tokAddr, 0, { value: v })).wait();
+    expect(await router.platformEscrow()).to.equal(immediate);
+    expect(await router.deferredEscrow(tokAddr)).to.equal(deferred);
+    expect(await router.sheriffBurnEscrow()).to.equal(sheriffBurn);
     expect(await router.devEscrow(tokAddr)).to.equal(devCut);
     expect(await router.floorEscrow(tokAddr)).to.equal(floorCut);
     expect(await router.burnEscrow(tokAddr)).to.equal(burnCut);
-
-    // ── payouts ──
-    // platform share -> platform (the router owner)
-    const pBefore = await ethers.provider.getBalance(platform.address);
-    await (await router.connect(buyer).withdrawPlatform()).wait();
-    expect(await ethers.provider.getBalance(platform.address)).to.equal(pBefore + plat);
-    expect(await router.platformEscrow()).to.equal(0n);
-
-    // dev share -> the configured project wallet
-    const dBefore = await ethers.provider.getBalance(dev.address);
-    await (await router.connect(buyer).withdrawDev(tokAddr)).wait();
-    expect(await ethers.provider.getBalance(dev.address)).to.equal(dBefore + devCut);
-
-    // burn share -> buys token, sends to dead
-    const dead = "0x000000000000000000000000000000000000dEaD";
-    await (await router.connect(buyer).flushBurn(tokAddr)).wait();
-    expect(await router.burnEscrow(tokAddr)).to.equal(0n);
-    expect(await token.balanceOf(dead)).to.equal(burnCut); // burnCut ETH -> burnCut tokens at 1:1
+    // everything sums to the full 4% fee
+    const total = immediate + deferred + sheriffBurn + devCut + floorCut + burnCut;
+    expect(total).to.equal((v * 400n) / 10_000n);
   });
 
-  it("sell: seller gets ETH net of the sell tax, and the tax feeds the same escrows", async () => {
-    const { dev, buyer, token, tokAddr, poolAddr, router } = await deploy();
-    await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 0, 400, 5000, 3000, 2000)).wait();
+  it("the deferred 0.1% is held until graduation, then releases to the platform", async () => {
+    const { dep, platform, dev, buyer, tokAddr, poolAddr, router, curve, curveAddr } = await deploy();
+    await (await router.register(tokAddr, poolAddr, curveAddr, dev.address, 100, 100, 10000, 0, 0)).wait();
+    await (await router.connect(buyer).buy(tokAddr, 0, { value: ONE })).wait();
+    const deferred = await router.deferredEscrow(tokAddr);
+    expect(deferred).to.be.greaterThan(0n);
 
-    // give the seller tokens to sell
+    // before graduation: claim is a no-op
+    await (await router.claimDeferred(tokAddr)).wait();
+    expect(await router.deferredEscrow(tokAddr)).to.equal(deferred);
+
+    // graduate the coin (bond appears) -> claim moves the deferred 0.1% into platform escrow
+    await (await curve.setBond(dev.address)).wait();
+    const platBefore = await router.platformEscrow();
+    await (await router.claimDeferred(tokAddr)).wait();
+    expect(await router.deferredEscrow(tokAddr)).to.equal(0n);
+    expect(await router.platformEscrow()).to.equal(platBefore + deferred);
+  });
+
+  it("buyBurnSheriff buys $SHERIFF on its pool and burns it", async () => {
+    const { dep, platform, dev, buyer, tokAddr, poolAddr, router } = await deploy();
+    await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 400, 400, 10000, 0, 0)).wait();
+    // stand up a "$SHERIFF" token + pool (sharing the router's WETH) and point the router at it
+    const routerWeth = await ethers.getContractAt("MockWETH9", await router.WETH());
+    const s = await mkCoin(dep, routerWeth);
+    await (await router.connect(platform).setSheriff(s.tokAddr, s.poolAddr)).wait();
+
+    // generate some above-default fee -> sheriffBurnEscrow
+    await (await router.connect(buyer).buy(tokAddr, 0, { value: ONE })).wait();
+    const escrow = await router.sheriffBurnEscrow();
+    expect(escrow).to.be.greaterThan(0n);
+
+    const deadBefore = await s.token.balanceOf(DEAD);
+    await (await router.buyBurnSheriff()).wait();
+    expect(await router.sheriffBurnEscrow()).to.equal(0n);
+    expect(await s.token.balanceOf(DEAD)).to.be.greaterThan(deadBefore); // $SHERIFF burned
+  });
+
+  it("sell mirrors the model: fee comes off the ETH out, split the same way", async () => {
+    const { dep, dev, buyer, token, tokAddr, poolAddr, router } = await deploy();
+    await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 100, 300, 4000, 4000, 2000)).wait();
     await (await token.transfer(buyer.address, 10n * ONE)).wait();
-    const sellAmt = 10n * ONE;
-    await (await token.connect(buyer).approve(await router.getAddress(), sellAmt)).wait();
+    const amt = 10n * ONE;
+    await (await token.connect(buyer).approve(await router.getAddress(), amt)).wait();
 
-    const wethOut = sellAmt; // 1:1
-    const fee = (wethOut * 400n) / 10_000n;
-    const ethOut = wethOut - fee;
-
-    const got = await router.connect(buyer).sell.staticCall(tokAddr, sellAmt, 0);
-    expect(got).to.equal(ethOut);
-    await (await router.connect(buyer).sell(tokAddr, sellAmt, 0)).wait();
-
-    // sell tax split into escrows (platform 25%, project 75%)
-    expect(await router.platformEscrow()).to.equal((fee * 2500n) / 10_000n);
-    const proj = fee - (fee * 2500n) / 10_000n;
-    expect(await router.devEscrow(tokAddr)).to.equal((proj * 5000n) / 10_000n);
-
-    // slippage guard: asking more than the net reverts
-    await (await token.transfer(buyer.address, ONE)).wait();
-    await (await token.connect(buyer).approve(await router.getAddress(), ONE)).wait();
-    await expect(router.connect(buyer).sell(tokAddr, ONE, ONE)).to.be.revertedWithCustomError(router, "Slippage");
+    const wethOut = amt; // 1:1
+    await (await router.connect(buyer).sell(tokAddr, amt, 0)).wait();
+    // sell fee is 3%: 0.9% immediate + 0.1% deferred + 2% excess (25% burn / 75% project)
+    expect(await router.platformEscrow()).to.equal((wethOut * 90n) / 10_000n);
+    expect(await router.deferredEscrow(tokAddr)).to.equal((wethOut * 10n) / 10_000n);
+    expect(await router.sheriffBurnEscrow()).to.equal(((wethOut * 200n) / 10_000n * 2500n) / 10_000n);
   });
 });

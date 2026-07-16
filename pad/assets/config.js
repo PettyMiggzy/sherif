@@ -30,10 +30,15 @@ export const CONTRACTS = {
   // DEPLOY: our CurvePadFactory (one-call launch). Filled after deploy+verify.
   padFactory: "",
 
-  // DEPLOY: our PadRouter — the swap desk + project tax. Robinhood Chain has no
+  // DEPLOY: our PadRouter — the swap desk + project fee. Robinhood Chain has no
   // canonical Uniswap periphery, so THIS is the router every trade goes through.
   // Buys/sells stay gated until it's set.
   padRouter: "",
+
+  // The live $SHERIFF token + its WETH pool. The above-default fee's 25% cut buys
+  // and burns $SHERIFF here (set on the router via setSheriff at deploy).
+  sheriffToken: "0x01d8D7995d0E656315715eF0ED3b81d92171b3Cc",
+  sheriffPool: "0x37F84F3A789FD1C5046F73f5D082c94F4D86b0fE",
 };
 
 // 1% pool tier — the fee is collected as Uniswap LP fees IN-PROTOCOL. There is
@@ -42,8 +47,9 @@ export const POOL_FEE = 10000;
 
 export const TOTAL_SUPPLY = 1_000_000_000n; // whole tokens (18 decimals added on-chain)
 export const MAX_DEVBUY_BPS = 200n; // contract-enforced 2% cap on the dev's opening buy
-export const MAX_TAX_BPS = 400; // contract-enforced 4% cap per side on a project's tax
-export const PLATFORM_TAX_BPS = 2500; // platform's fixed 25% cut of any tax collected
+export const DEFAULT_FEE_BPS = 100; // the baseline 1% every coin pays (also the floor)
+export const MAX_TAX_BPS = 400; // contract-enforced 4% cap per side
+export const EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee → buy+burn $SHERIFF
 
 // Gas headroom we require ON TOP of a tx's value before we ever ask a wallet to
 // sign, so the wallet never shows its red "insufficient funds / blocked" screen

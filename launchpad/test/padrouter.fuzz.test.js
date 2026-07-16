@@ -59,9 +59,9 @@ describe("PadRouter — 300 randomized simulations", function () {
   const rndInt = (rng, lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
   const rndBig = (rng, lo, hi) => lo + BigInt(Math.floor(rng() * Number(hi - lo)));
 
-  // a random VALID tax config (≤4% each; alloc sums to 100%)
+  // a random VALID fee config (1%–4% each; alloc sums to 100%)
   function randTax(rng) {
-    const buy = rndInt(rng, 0, 400), sell = rndInt(rng, 0, 400);
+    const buy = rndInt(rng, 100, 400), sell = rndInt(rng, 100, 400);
     const w = rndInt(rng, 0, 100), f = rndInt(rng, 0, 100 - w), b = 100 - w - f;
     return { buy, sell, w: w * 100, f: f * 100, b: b * 100 };
   }
@@ -98,15 +98,17 @@ describe("PadRouter — 300 randomized simulations", function () {
     if (!trade) return 0n;
     const fee = trade.args.fee;
     if (fee > 0n) {
-      const s = split.args.platform + split.args.dev + split.args.floor + split.args.burn;
+      const s = split.args.platform + split.args.deferred + split.args.sheriffBurn
+        + split.args.dev + split.args.floor + split.args.burn;
       expect(s, "INV-2 fee split must equal fee to the wei").to.equal(fee);
     }
     return fee;
   }
 
   async function totalOwed() {
-    let sum = await router.platformEscrow();
+    let sum = (await router.platformEscrow()) + (await router.sheriffBurnEscrow());
     for (const c of coins) {
+      sum += await router.deferredEscrow(c.tokAddr);
       sum += await router.devEscrow(c.tokAddr);
       sum += await router.floorEscrow(c.tokAddr);
       sum += await router.burnEscrow(c.tokAddr);
@@ -125,16 +127,16 @@ describe("PadRouter — 300 randomized simulations", function () {
     for (let i = 0; i < 400; i++) {
       let buy, sell, w, f, b;
       if (rng() < 0.5) {
-        // construct a GUARANTEED-VALID config (≤4% each; alloc sums to 100%)
-        buy = rndInt(rng, 0, 400); sell = rndInt(rng, 0, 400);
+        // construct a GUARANTEED-VALID config (1%–4% each; alloc sums to 100%)
+        buy = rndInt(rng, 100, 400); sell = rndInt(rng, 100, 400);
         w = rndInt(rng, 0, 100); f = rndInt(rng, 0, 100 - w); b = 100 - w - f;
       } else {
-        // construct a likely-INVALID config (over-cap and/or alloc ≠ 100%)
+        // construct a likely-INVALID config (below the 1% floor, over the 4% cap, and/or alloc ≠ 100%)
         buy = rndInt(rng, 0, 900); sell = rndInt(rng, 0, 900);
         w = rndInt(rng, 0, 130); f = rndInt(rng, 0, 130); b = rndInt(rng, 0, 130);
       }
       const wBps = w > 0 ? w * 100 : 0; // if walletBps>0, projectWallet must be nonzero (we pass dep, fine)
-      const valid = buy <= 400 && sell <= 400 && (w + f + b) === 100;
+      const valid = buy >= 100 && sell >= 100 && buy <= 400 && sell <= 400 && (w + f + b) === 100;
       const token = ethers.Wallet.createRandom().address;
       const call = router.register(token, token, ethers.ZeroAddress, dep.address, buy, sell, wBps, f * 100, b * 100);
       if (valid) { await expect(call).to.not.be.reverted; ok++; }

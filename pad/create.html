@@ -123,18 +123,18 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
       </div>
 
       <div class="field">
-        <label>Project tax <span class="hint">optional · max 4% each side · platform takes 25%, you keep 75%</span></label>
+        <label>Trading fee <span class="hint">1% default (the house) · raise up to 4% to fund your coin</span></label>
         <div class="devbuy">
           <div class="row2">
-            <div><div class="hd"><span style="font-weight:700">Buy tax</span><span class="amt" id="btAmt">0%</span></div>
-              <input type="range" id="buyTax" min="0" max="4" step="0.5" value="0" oninput="taxSync()" />
-              <div class="sc"><span>0%</span><span>4% max</span></div></div>
-            <div><div class="hd"><span style="font-weight:700">Sell tax</span><span class="amt" id="stAmt">0%</span></div>
-              <input type="range" id="sellTax" min="0" max="4" step="0.5" value="0" oninput="taxSync()" />
-              <div class="sc"><span>0%</span><span>4% max</span></div></div>
+            <div><div class="hd"><span style="font-weight:700">Buy fee</span><span class="amt" id="btAmt">1%</span></div>
+              <input type="range" id="buyTax" min="1" max="4" step="0.5" value="1" oninput="taxSync()" />
+              <div class="sc"><span>1% default</span><span>4% max</span></div></div>
+            <div><div class="hd"><span style="font-weight:700">Sell fee</span><span class="amt" id="stAmt">1%</span></div>
+              <input type="range" id="sellTax" min="1" max="4" step="0.5" value="1" oninput="taxSync()" />
+              <div class="sc"><span>1% default</span><span>4% max</span></div></div>
           </div>
           <div id="allocWrap" style="display:none;margin-top:14px;border-top:1px solid var(--line-2);padding-top:12px">
-            <div class="hint" style="margin-bottom:4px">Where your 75% goes — must total <b class="tax-tot ok" id="allocTot">100%</b></div>
+            <div class="hint" style="margin-bottom:4px">Where <b>your 75%</b> of the above-1% fee goes — must total <b class="tax-tot ok" id="allocTot">100%</b></div>
             <div class="alloc-row"><span>💰 Project wallet</span><input type="range" id="aw" min="0" max="100" step="5" value="100" oninput="taxSync()" /><b id="awV">100%</b></div>
             <div class="alloc-row"><span>🪙 Deepen the Bond floor</span><input type="range" id="af" min="0" max="100" step="5" value="0" oninput="taxSync()" /><b id="afV">0%</b></div>
             <div class="alloc-row"><span>🔥 Auto-burn</span><input type="range" id="ab" min="0" max="100" step="5" value="0" oninput="taxSync()" /><b id="abV">0%</b></div>
@@ -190,7 +190,7 @@ function taxSync(){
   const st=parseFloat(document.getElementById('sellTax').value);
   document.getElementById('btAmt').textContent=bt+'%';
   document.getElementById('stAmt').textContent=st+'%';
-  const on=bt>0||st>0;
+  const on=bt>1||st>1; // only an above-default portion gets split/allocated
   document.getElementById('allocWrap').style.display=on?'block':'none';
   const w=+document.getElementById('aw').value,f=+document.getElementById('af').value,b=+document.getElementById('ab').value;
   document.getElementById('awV').textContent=w+'%';
@@ -199,9 +199,9 @@ function taxSync(){
   const tot=w+f+b, tEl=document.getElementById('allocTot');
   tEl.textContent=tot+'%'; tEl.className='tax-tot '+(tot===100?'ok':'bad');
   const note=document.getElementById('taxNote');
-  if(!on){note.textContent='No tax — your coin trades clean, 0/0. Slide to add a fee; you keep 75% of everything it collects.';return;}
-  const keep=(x)=>((x*0.75).toFixed(2).replace(/\.00$/,''));
-  note.textContent=`Buyers pay ${bt}% on buys, ${st}% on sells. Platform takes 25%; you keep 75% (≈ ${keep(bt)}% buy / ${keep(st)}% sell), split as set above.`;
+  if(!on){note.textContent='Just the default 1% — the platform’s (0.9% now, 0.1% at graduation). Raise the fee to fund your coin; 25% of anything above 1% buys & burns $SHERIFF, you keep 75%.';return;}
+  const keep=(x)=>(((x-1)*0.75).toFixed(2).replace(/\.?0+$/,''));
+  note.textContent=`Buyers pay ${bt}% buy / ${st}% sell. The first 1% is the platform’s; of the extra, 25% buys & burns $SHERIFF and you keep 75% (≈ ${keep(bt)}% buy / ${keep(st)}% sell) split below.`;
 }
 taxSync();
 </script>
@@ -244,16 +244,13 @@ $('launchBtn').addEventListener('click', async () => {
   const pct = parseFloat($('db').value) || 0;
   if (!name || !symbol) return setNote('Give your coin a name and a ticker first.', 'err');
 
-  // gather the project's tax (optional)
-  const bt = parseFloat($('buyTax').value) || 0, st = parseFloat($('sellTax').value) || 0;
-  let tax;
-  if (bt > 0 || st > 0) {
-    const w = +$('aw').value, f = +$('af').value, b = +$('ab').value;
-    if (w + f + b !== 100) return setNote('Your tax allocation must total 100%.', 'err');
-    tax = { buyBps: Math.round(bt * 100), sellBps: Math.round(st * 100),
-            walletBps: w * 100, floorBps: f * 100, burnBps: b * 100,
-            projectWallet: ($('pw').value || '').trim() || Pad.account() };
-  }
+  // gather the trading fee (min 1% each side; only the above-1% part is allocated)
+  const bt = parseFloat($('buyTax').value) || 1, st = parseFloat($('sellTax').value) || 1;
+  const w = +$('aw').value, f = +$('af').value, b = +$('ab').value;
+  if ((bt > 1 || st > 1) && w + f + b !== 100) return setNote('Your allocation must total 100%.', 'err');
+  const tax = { buyBps: Math.round(bt * 100), sellBps: Math.round(st * 100),
+                walletBps: w * 100, floorBps: f * 100, burnBps: b * 100,
+                projectWallet: ($('pw').value || '').trim() || Pad.account() };
 
   const devBuyEth = Pad.estimateDevBuyEth(pct);
   try {

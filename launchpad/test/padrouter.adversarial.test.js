@@ -74,11 +74,10 @@ describe("PadRouter — adversarial simulations", function () {
       feeTotal += await feeFromEvents(router.connect(mallory).sell(tokAddr, a, 0));
     }
     // not a single wei is created or destroyed: the four escrows sum to exactly the tax charged
-    const sum = (await router.platformEscrow())
+    const sum = (await router.platformEscrow()) + (await router.sheriffBurnEscrow())
+      + (await router.deferredEscrow(tokAddr))
       + (await router.devEscrow(tokAddr)) + (await router.floorEscrow(tokAddr)) + (await router.burnEscrow(tokAddr));
     expect(sum).to.equal(feeTotal);
-    // the platform can never end up with MORE than a 25%-rounded share of the total
-    expect(await router.platformEscrow()).to.be.at.most((feeTotal * 2500n) / 10_000n);
   });
 
   it("dust & degenerate inputs are handled, never stuck", async () => {
@@ -119,7 +118,7 @@ describe("PadRouter — adversarial simulations", function () {
   });
 
   it("burn flush actually removes supply, and re-credits any residual instead of stranding WETH", async () => {
-    const { token, tokAddr, router, buyer } = await fixture({ buy: 400, sell: 0, w: 0, f: 0, b: 10000 });
+    const { token, tokAddr, router, buyer } = await fixture({ buy: 400, sell: 100, w: 0, f: 0, b: 10000 });
     await (await router.connect(buyer).buy(tokAddr, 0, { value: ONE })).wait();
     const burnEsc = await router.burnEscrow(tokAddr);
     expect(burnEsc).to.be.greaterThan(0n);
@@ -134,7 +133,8 @@ describe("PadRouter — adversarial simulations", function () {
   it("conservation: the router's ETH balance always equals the sum of what it owes (escrows)", async () => {
     const { token, tokAddr, router, buyer, mallory } = await fixture({ buy: 300, sell: 200, w: 6000, f: 3000, b: 1000 });
     const routerAddr = await router.getAddress();
-    const owed = async () => (await router.platformEscrow())
+    const owed = async () => (await router.platformEscrow()) + (await router.sheriffBurnEscrow())
+      + (await router.deferredEscrow(tokAddr))
       + (await router.devEscrow(tokAddr)) + (await router.floorEscrow(tokAddr)) + (await router.burnEscrow(tokAddr));
 
     await (await router.connect(buyer).buy(tokAddr, 0, { value: 2n * ONE })).wait();
@@ -151,13 +151,15 @@ describe("PadRouter — adversarial simulations", function () {
     expect(await ethers.provider.getBalance(routerAddr)).to.equal(await owed());
   });
 
-  it("the platform's 25% cut is immutable — no setter, no way for a project to dodge it", async () => {
+  it("the fee constants are immutable — no setter to weaponize the split", async () => {
     const { router } = await fixture();
-    expect(await router.PLATFORM_BPS()).to.equal(2500);
-    expect(await router.MAX_TAX_BPS()).to.equal(400);
-    // there is no function to change PLATFORM_BPS (it's a constant); assert the ABI has no such setter
+    expect(await router.DEFAULT_FEE_BPS()).to.equal(100); // 1% floor
+    expect(await router.MAX_TAX_BPS()).to.equal(400); // 4% cap
+    expect(await router.EXCESS_PLATFORM_BPS()).to.equal(2500); // 25% of the above-default fee -> $SHERIFF burn
+    expect(await router.PLATFORM_IMMEDIATE_BPS()).to.equal(90);
+    expect(await router.PLATFORM_DEFERRED_BPS()).to.equal(10);
+    // these are constants with no setter (only setSheriff/setFactory exist, both owner-only + benign)
     const names = router.interface.fragments.filter((f) => f.type === "function").map((f) => f.name);
-    expect(names).to.not.include("setPlatformBps");
-    expect(names).to.not.include("setTax");
+    for (const bad of ["setPlatformBps", "setTax", "setDefaultFee", "setExcessBps"]) expect(names).to.not.include(bad);
   });
 });

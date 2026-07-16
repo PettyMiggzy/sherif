@@ -181,7 +181,8 @@ function normalizeTax(tax, devAddr) {
   const projectWallet = t.projectWallet && /^0x[0-9a-fA-F]{40}$/.test(t.projectWallet) ? t.projectWallet : devAddr;
   return { buyBps, sellBps, walletBps, floorBps, burnBps, projectWallet };
 }
-const clampBps = (v) => Math.max(0, Math.min(400, Math.round(+v || 0)));
+// every coin pays at least the default 1% (100 bps); the contract enforces the same floor
+const clampBps = (v) => Math.max(100, Math.min(400, Math.round(+v || 100)));
 
 function routerRead() { return new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _read); }
 

@@ -39,18 +39,19 @@ The classic drainer signature. On EVM the equivalents are `approve`,
   (platform vs. creator, fee routing) happens **in-protocol or off-chain**, never
   as extra transfer calls in the user's tx.
 
-### Project tax — same swap-desk mechanism, not a token transfer tax
-A project can set its **own** buy/sell tax, but it is **not** a fee-on-transfer
-token (that would break Uniswap v3 and flag as a honeypot). It's a **swap-desk
-fee taken by `PadRouter`** — the EVM equivalent of Jupiter's `platformFee`:
-- **Hard-capped at 4% per side**, enforced on-chain at registration.
-- The **platform always takes 25%** of whatever is collected; the project keeps
-  75%, split across its wallet / deepening the Bond floor / auto-burn.
-- The split is computed **inside the router** and paid out by separate,
+### Trading fee — a swap-desk fee, not a token transfer tax
+Every coin pays a **swap-desk fee taken by `PadRouter`** (the EVM equivalent of
+Jupiter's `platformFee`) — **not** a fee-on-transfer token (that would break
+Uniswap v3 and flag as a honeypot). The token itself stays clean and tradeable.
+- **1% floor, 4% cap per side**, enforced on-chain at registration.
+- The **default 1% is the platform's** — 0.9% immediate, 0.1% held until the coin
+  graduates.
+- Anything **above 1%** splits **25% → buy-and-burn $SHERIFF**, **75% → the
+  project** (wallet / Bond floor / auto-burn).
+- Every share is computed **inside the router** and paid out by separate,
   permissionless escrow flushers — **never** as extra transfers inside the user's
   signed trade. So a bad project wallet or paused Bond can't revert a trade, and
   the signed tx is still one call to one router (Rules 2 & 4 hold).
-- The token itself stays **clean and tradeable** (no transfer tax, no blacklist).
 
 ### Rule 3 — Fees ride the protocol's native fee, not a side transfer
 - Solana: Jupiter `platformFee` → referral account.

@@ -24,8 +24,8 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress()
     );
     await (await router.setFactory(await factory.getAddress())).wait();
-    // zero tax here (allocation must still sum to 100% — all to wallet); the tax split is covered in padrouter.fork.test.js
-    const NOTAX = { buyBps: 0, sellBps: 0, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    // plain default 1% here (the above-default split is covered in padrouter.fork.test.js)
+    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
     // ===== ONE CALL: token + real pool + seeded curve + trading on =====
     const rc = await (await factory.launch({ name: "Sheriff Meme", symbol: "MEME", dev: dev.address, tax: NOTAX })).wait();
@@ -99,8 +99,8 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress()
     );
     await (await router.setFactory(await factory.getAddress())).wait();
-    // zero tax here (allocation must still sum to 100% — all to wallet); the tax split is covered in padrouter.fork.test.js
-    const NOTAX = { buyBps: 0, sellBps: 0, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    // plain default 1% here (the above-default split is covered in padrouter.fork.test.js)
+    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
     // dev funds their own opening buy in the SAME launch tx
     const spend = ONE / 100n; // 0.01 ETH

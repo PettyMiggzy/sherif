@@ -46,13 +46,29 @@ operation.
 - Plus **400 registration-fuzz cases** (204 valid accepted, 196 correctly
   rejected on cap / allocation violations).
 - Invariants asserted continuously:
-  - **INV-1 conservation** — router ETH balance == `platformEscrow + Σ(dev+floor+burn)`, after all 1,592 ops. No wei ever created, leaked, or stranded.
+  - **INV-1 conservation** — router ETH balance == `platformEscrow + sheriffBurnEscrow + Σ(deferred+dev+floor+burn)`, after all 1,592 ops. No wei ever created, leaked, or stranded.
   - **INV-2 exact split** — every trade's `fee == platform+dev+floor+burn` to the wei (from the contract's own events).
   - **INV-3 isolation** — a trade on one coin never moves another coin's escrows.
   - **INV-4 caps** — registration reverts iff tax > 4% or allocation ≠ 100%.
 
 The suite defaults to a light `SIMS=50` for routine runs; the full 300-run is
 `SIMS=300 npx hardhat test test/padrouter.fuzz.test.js`.
+
+## Fee model (as of the $SHERIFF flywheel update)
+
+Every coin pays a swap-desk fee of **1%–4% per side** (1% floor, 4% cap, enforced
+at registration):
+- The **default 1%** is the platform's — **0.9% immediate**, **0.1% held until the
+  coin graduates** then released to the platform (`claimDeferred`).
+- Anything **above 1%** splits **25% → buy-and-burn $SHERIFF** (the platform token,
+  via `buyBurnSheriff` against its live pool) and **75% → the project** (wallet /
+  Bond floor / auto-burn).
+
+Rounding is exact: the platform's immediate cut absorbs the remainder, so the
+pieces sum to the fee **to the wei** (verified in the unit + 300-sim tests). All
+shares still accrue as escrow and pay out via separate permissionless flushers,
+so the split can never revert a trade. Re-audited: unit + adversarial + the
+`SIMS=300` battery all pass under the new model.
 
 ## Standing invariants (by construction, not just tests)
 
