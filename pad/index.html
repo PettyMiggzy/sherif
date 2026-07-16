@@ -238,7 +238,8 @@ function render(){
   if (filter === "new") list = list.filter(c => c.state === "new");
   else if (filter === "grad") list = list.filter(c => c.state === "grad");
   else if (filter === "done") list = list.filter(c => c.state === "done");
-  else list.sort((a,b) => b.mc - a.mc);
+  // trending: real 24h volume (from the indexer) when we have it, else mcap
+  else list.sort((a,b) => (b.vol - a.vol) || (b.mc - a.mc));
   if (filter !== "trending") {
     if (sort === "mc") list.sort((a,b) => b.mc - a.mc);
     else if (sort === "age") list.sort((a,b) => b.at - a.at);
@@ -256,16 +257,25 @@ function render(){
 
 async function load(){
   grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--ink-dim);padding:50px">Loading live coins…</div>`;
+  // One request via the indexer when configured (name/symbol/volume/graduated
+  // all in the payload); otherwise it falls back to reading the chain directly.
   let recs = [];
-  try { recs = await Pad.listCoins(40); } catch (e) { recs = []; }
+  try { recs = (await Pad.feed({ sort: "new", limit: 40 })).coins; } catch (e) { recs = []; }
   COINS = await Promise.all(recs.map(async (r, i) => {
-    let meta = { name: "Token", symbol: "?" }, info = null;
-    try { meta = await Pad.tokenMeta(r.token); } catch {}
+    let name = r.name, symbol = r.symbol, info = null;
+    if (!name) { try { const m = await Pad.tokenMeta(r.token); name = m.name; symbol = m.symbol; } catch {} }
+    // Live curve progress still comes from the pool tick (the indexer tracks
+    // launches/trades/graduation, not the moment-to-moment curve position).
     try { info = await Pad.curveInfo(r.curve, r.token); } catch {}
     const mc = info ? info.mcapEth * ETH_USD : 0;
     const prog = info ? Math.round(info.progress * 100) : 0;
-    const state = info ? (info.graduated ? "done" : info.ready ? "grad" : "new") : "new";
-    return { ...r, name: meta.name, symbol: meta.symbol, mc, prog, state, i };
+    const graduated = r.graduated || (info && info.graduated);
+    const state = graduated ? "done" : (info && info.ready ? "grad" : "new");
+    return {
+      token: r.token, curve: r.curve, dev: r.dev, at: r.launchTs || r.at || 0,
+      name: name || "Token", symbol: symbol || "?", mc, prog, state,
+      vol: r.vol24hEth || 0, i,
+    };
   }));
   renderHero(); renderTicker(); render();
 }

@@ -29,7 +29,7 @@
 import { ethers } from "./ethers.min.js";
 import {
   CHAIN, CONTRACTS, ABIS, TOTAL_SUPPLY, MAX_DEVBUY_BPS,
-  GAS_BUFFER_WEI, isDeployed,
+  GAS_BUFFER_WEI, isDeployed, API_BASE, hasApi,
 } from "./config.js";
 
 let _provider = null; // ethers BrowserProvider
@@ -336,7 +336,9 @@ export async function burnDev(token) {
   return guardedSend(new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _signer), "burnDev", [token], 0n, "Burn fees");
 }
 
-/// Newest-first list of every coin launched on the pad, for the browse feed.
+/// Newest-first list of every coin launched on the pad, straight from the chain.
+/// This is the always-available fallback; prefer feed() which uses the indexer
+/// API (name/symbol/volume/sorting in one call) when one is configured.
 export async function listCoins(max = 60) {
   const f = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _read);
   const n = Number(await f.tokenCount());
@@ -345,6 +347,52 @@ export async function listCoins(max = 60) {
   const tokens = await Promise.all(idxs.map((i) => f.allTokens(i)));
   const recs = await Promise.all(tokens.map((t) => f.recordOf(t)));
   return recs.map((r) => ({ token: r.token, curve: r.curve, dev: r.dev, at: Number(r.at) }));
+}
+
+// ── indexer API client (optional; graceful fallback to direct RPC) ──────────
+async function apiGet(path) {
+  if (!hasApi()) throw new Error("no api");
+  const res = await fetch(`${API_BASE.replace(/\/+$/, "")}${path}`, { headers: { accept: "application/json" } });
+  if (!res.ok) throw new Error(`api ${res.status}`);
+  return res.json();
+}
+
+/// The browse feed. Uses the indexer when configured (fast, sorted, searchable);
+/// otherwise reads the factory directly and enriches each card with name/symbol.
+/// sort: new | trending | top | graduated · filter: all | live | graduated
+export async function feed({ sort = "new", filter = "all", q = "", limit = 60 } = {}) {
+  if (hasApi()) {
+    const params = new URLSearchParams({ sort, filter, limit: String(limit) });
+    if (q) params.set("q", q);
+    const { coins } = await apiGet(`/api/coins?${params}`);
+    return { source: "api", coins };
+  }
+  // Fallback: raw factory list + on-chain name/symbol. No volume/sorting beyond
+  // newest-first, but the feed still works with zero backend.
+  const base = await listCoins(limit);
+  const metas = await Promise.all(base.map((c) => tokenMeta(c.token).catch(() => ({ name: "Token", symbol: "?" }))));
+  let coins = base.map((c, i) => ({
+    token: c.token, curve: c.curve, dev: c.dev,
+    name: metas[i].name, symbol: metas[i].symbol,
+    launchTs: c.at, graduated: false,
+  }));
+  if (q) {
+    const s = q.toLowerCase();
+    coins = coins.filter((c) => c.name?.toLowerCase().includes(s) || c.symbol?.toLowerCase().includes(s) || c.token.includes(s));
+  }
+  return { source: "rpc", coins };
+}
+
+/// Platform-wide totals for a stats strip (indexer only; null without one).
+export async function stats() {
+  try { return await apiGet("/api/stats"); } catch { return null; }
+}
+
+/// Recent trades for a coin (indexer only; empty without one — the chart still
+/// comes from DexScreener regardless).
+export async function recentTrades(token, limit = 50) {
+  try { const { trades } = await apiGet(`/api/trades/${token}?limit=${limit}`); return trades; }
+  catch { return []; }
 }
 
 /// Token metadata (name / symbol) for a card or the trade header.
@@ -360,6 +408,7 @@ if (typeof window !== "undefined") {
     connect, account, short, linkTelegram, launch, buy, sell, getTax,
     estimateDevBuyEth, isDeployed,
     curveInfo, devEscrow, graduate, setGradTarget, withdrawDev, burnDev, listCoins, tokenMeta,
+    feed, stats, recentTrades, hasApi,
   };
   window.SheriffPad = window.RobinPad; // back-compat alias for existing pages
   window.dispatchEvent(new Event("robinpad:ready"));
