@@ -17,7 +17,7 @@ async function stack(dep, platform) {
   const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
   const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
     WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress()
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800
   );
   await (await router.setFactory(await factory.getAddress())).wait();
   return { router, factory };

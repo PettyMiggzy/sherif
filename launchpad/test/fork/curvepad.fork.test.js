@@ -21,7 +21,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress()
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     // plain default 1% here (the above-default split is covered in padrouter.fork.test.js)
@@ -96,7 +96,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress()
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     // plain default 1% here (the above-default split is covered in padrouter.fork.test.js)

@@ -1,51 +1,58 @@
 /* eslint-disable no-console */
+// Deploys the current Pad stack (CurvePad + PadRouter + Bond) to Robinhood Chain, or estimates on a fork.
+//   Fork estimate (free):  npx hardhat run scripts/deploy.js                       (FORK_RPC in .env)
+//   Real deploy:           npx hardhat run scripts/deploy.js --network robinhood    (PRIVATE_KEY in .env)
 const { ethers, network } = require("hardhat");
 
-// Confirmed Robinhood Chain addresses (verify before mainnet):
+// Confirmed Robinhood Chain infra (same addresses the fork tests run against):
 const WETH = process.env.WETH || "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 const V3_FACTORY = process.env.V3_FACTORY || "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
+const ETH_USD = Number(process.env.ETH_USD || 1920);
+// Curve geometry. Production = ~4 ETH graduation. For a cheap TEST factory set e.g.
+// START_TICK_MAG=207200 CURVE_WIDTH=4000 (graduates after a few $). Both must be multiples of 200.
+const START_TICK_MAG = Number(process.env.START_TICK_MAG || 207200);
+const CURVE_WIDTH = Number(process.env.CURVE_WIDTH || 35800);
 
 async function main() {
   const [deployer] = await ethers.getSigners();
-  const owner = process.env.OWNER || deployer.address; // should be a multisig / timelock
-  const feeRecipient = process.env.FEE_RECIPIENT || deployer.address; // platform fee sink (multisig)
+  const owner = process.env.OWNER || deployer.address; // admin + platform fee sink (use a multisig for prod)
+  const platform = process.env.PLATFORM || owner; // Sherwood LP fees + graduation sweep
 
-  console.log("Network:", network.name);
-  console.log("Deployer:", deployer.address);
-  console.log("WETH:", WETH, "\nV3 Factory:", V3_FACTORY);
-  console.log("Owner:", owner, "\nFee recipient:", feeRecipient);
+  console.log(`network=${network.name}  deployer=${deployer.address}`);
+  console.log(`owner=${owner}\nplatform=${platform}\n`);
 
-  const tokenDeployer = await (await ethers.getContractFactory("TokenDeployer")).deploy();
-  await tokenDeployer.waitForDeployment();
-  const vaultDeployer = await (await ethers.getContractFactory("VaultDeployer")).deploy();
-  await vaultDeployer.waitForDeployment();
+  let totalGas = 0n;
+  const track = async (name, contract) => {
+    const rc = await contract.deploymentTransaction().wait();
+    totalGas += rc.gasUsed;
+    console.log(`  ${name.padEnd(20)} ${await contract.getAddress()}  (gas ${rc.gasUsed})`);
+    return contract;
+  };
 
-  const Factory = await ethers.getContractFactory("LaunchpadFactory");
-  const factory = await Factory.deploy(
-    WETH,
-    V3_FACTORY,
-    feeRecipient,
-    owner,
-    await tokenDeployer.getAddress(),
-    await vaultDeployer.getAddress()
-  );
-  await factory.waitForDeployment();
-  const factoryAddr = await factory.getAddress();
-  const lockerAddr = await factory.locker();
+  console.log("deploying:");
+  const ltd = await track("LaunchTokenDeployer", await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy());
+  const cpd = await track("CurvePoolDeployer", await (await ethers.getContractFactory("CurvePoolDeployer")).deploy());
+  const bd = await track("BondDeployer", await (await ethers.getContractFactory("BondDeployer")).deploy());
+  const router = await track("PadRouter", await (await ethers.getContractFactory("PadRouter")).deploy(WETH, owner));
+  const factory = await track("CurvePadFactory", await (await ethers.getContractFactory("CurvePadFactory")).deploy(
+    WETH, V3_FACTORY, platform, owner, await router.getAddress(),
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(),
+    START_TICK_MAG, CURVE_WIDTH
+  ));
+  console.log(`  (curve: startTickMag=${START_TICK_MAG} width=${CURVE_WIDTH})`);
+  const wire = await (await router.setFactory(await factory.getAddress())).wait();
+  totalGas += wire.gasUsed;
+  console.log(`  router.setFactory       (gas ${wire.gasUsed})\n`);
 
-  const FeeRouter = await ethers.getContractFactory("FeeRouter");
-  const router = await FeeRouter.deploy(WETH, V3_FACTORY, feeRecipient, owner);
-  await router.waitForDeployment();
-  const routerAddr = await router.getAddress();
-
-  console.log("\n=== Deployed ===");
-  console.log("LaunchpadFactory:", factoryAddr);
-  console.log("LiquidityLocker :", lockerAddr);
-  console.log("FeeRouter       :", routerAddr);
-  console.log("\nNext: verify contracts, transfer owner to a multisig/timelock, and run launch().");
+  const gp = (await ethers.provider.getFeeData()).gasPrice ?? 0n;
+  const cost = totalGas * gp;
+  const costEth = Number(ethers.formatEther(cost));
+  console.log(`TOTAL deploy gas: ${totalGas}`);
+  console.log(`gas price:        ${ethers.formatUnits(gp, "gwei")} gwei`);
+  console.log(`est. cost:        ${costEth.toFixed(6)} ETH  (~$${(costEth * ETH_USD).toFixed(2)} @ $${ETH_USD}/ETH)`);
+  console.log(`\n=== paste into pad/assets/config.js CONTRACTS ===`);
+  console.log(`  padRouter:  "${await router.getAddress()}",`);
+  console.log(`  padFactory: "${await factory.getAddress()}",`);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main().catch((e) => { console.error(e); process.exit(1); });
