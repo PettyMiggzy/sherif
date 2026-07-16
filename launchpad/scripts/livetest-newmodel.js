@@ -31,13 +31,15 @@ async function main() {
 
   // ---- launch a coin ----
   const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: me.address };
-  const rc = await (await factory.launch({ name: "Sheriff Test", symbol: "STEST", dev: me.address, tax }, g(15_000_000))).wait();
+  const rc = await (await factory.launch({ name: "Robin Test", symbol: "RBNT", dev: me.address, tax }, g(15_000_000))).wait();
   const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
   const { token, curve, pool: poolAddr } = ev.args;
   const curveC = await ethers.getContractAt("CurvePool", curve);
   const TOK = await ethers.getContractAt("LaunchToken", token);
   console.log("launched token:", token, " curve:", curve, " pool:", poolAddr);
   console.log("DexScreener: https://dexscreener.com/robinhood/" + poolAddr.toLowerCase());
+  await (await curveC.setGradTarget(await curveC.minGradTick())).wait();
+  console.log("dev set gradTarget to the minimum (testing the min-graduation / roll-unsold path)");
 
   // ---- wait out the anti-snipe window ----
   process.stdout.write("waiting for anti-snipe window to close");
@@ -66,6 +68,6 @@ async function main() {
     " ambushL:", (await bond.ambushL()).toString());
   console.log("dev graduation reward (WETH):", ethers.formatEther((await wethW.balanceOf(me.address)) - devWethBefore));
   console.log("pool liquidity after grad:", (await pool.liquidity()).toString(), " tick:", (await pool.slot0()).tick.toString());
-  console.log("\n✅ live new-model test complete.");
+  console.log("\n✅ live Robin Labs new-model test complete.");
 }
 main().catch((e) => { console.error(e.shortMessage || e.message); process.exit(1); });

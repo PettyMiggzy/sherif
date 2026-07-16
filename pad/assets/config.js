@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// The Sheriff's Pad — on-chain config (audit this file first)
+// Robin Labs Pad — on-chain config (audit this file first)
 //
 // Everything the front-end needs to talk to the chain lives here, in the open.
 // No secrets: RPC keys stay server-side; this file only holds public addresses.
@@ -27,19 +27,18 @@ export const CONTRACTS = {
   weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
   v3Factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
 
-  // DEPLOY: our CurvePadFactory (one-call launch). Filled after deploy+verify.
-  padFactory: "",
+  // Our CurvePadFactory (one-call launch) — LIVE on Robinhood Chain.
+  padFactory: "0xc208e393990B6f2BC8D0d330E0be38C6eCA1e25B",
 
-  // DEPLOY: our PadRouter — the swap desk + project fee. Robinhood Chain has no
-  // canonical Uniswap periphery, so THIS is the router every trade goes through.
-  // Buys/sells stay gated until it's set.
-  padRouter: "",
+  // Our PadRouter — the swap desk + project fee. Robinhood Chain has no canonical
+  // Uniswap periphery, so THIS is the router every trade goes through — LIVE.
+  padRouter: "0x1988dEFfE3799Fb56F949ffb20C65D20c1547570",
 
-  // The live $SHERIFF token + its WETH pool (for links / a future buy widget).
-  // The above-default fee's 25% cut is paid to the platform, which buys+burns
-  // $SHERIFF off-chain — the router does not swap it on-chain.
-  sheriffToken: "0x01d8D7995d0E656315715eF0ED3b81d92171b3Cc",
-  sheriffPool: "0x37F84F3A789FD1C5046F73f5D082c94F4D86b0fE",
+  // The platform's buy-back token + its WETH pool (for links / a future buy widget).
+  // The above-default fee's 25% cut is paid to the platform, which buys+burns the
+  // platform token off-chain — the router does not swap it on-chain. TBD for Robin Labs.
+  platformToken: "",
+  platformPool: "",
 };
 
 // 1% pool tier — the fee is collected as Uniswap LP fees IN-PROTOCOL. There is
@@ -50,7 +49,7 @@ export const TOTAL_SUPPLY = 1_000_000_000n; // whole tokens (18 decimals added o
 export const MAX_DEVBUY_BPS = 200n; // contract-enforced 2% cap on the dev's opening buy
 export const DEFAULT_FEE_BPS = 100; // the baseline 1% every coin pays (also the floor)
 export const MAX_TAX_BPS = 400; // contract-enforced 4% cap per side
-export const EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee → buy+burn $SHERIFF
+export const EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee → platform buy-back
 
 // Gas headroom we require ON TOP of a tx's value before we ever ask a wallet to
 // sign, so the wallet never shows its red "insufficient funds / blocked" screen
