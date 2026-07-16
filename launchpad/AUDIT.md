@@ -116,16 +116,43 @@ stranded. Nothing ever leaves the Bond to any wallet — the anti-rug property i
 strengthened, not weakened. Fork-tested: `sherwoodL` strictly increases after
 two-sided volume + a poke, and the platform's balances are provably unchanged.
 
-## Curve geometry (production)
+## Graduation — "let it ride" + creator payouts
 
-Calibrated on the fork to graduate at **~$30k FDV** for a **~3 ETH raise** (start
-FDV ~$1.9k): `START_TICK_MAG = 207200`, `CURVE_WIDTH = 27400`. Both remain
-deploy-time configurable so a cheap TEST factory can graduate for a few dollars.
+Graduation is no longer a fixed point — the curve spans start → a **ceiling**, with
+a **minimum** graduation price partway up. `graduate()` is permissionless and
+unlocks once price reaches the dev's target (default = the minimum); the later it
+graduates, the **bigger the raise and thicker the floor**. At graduation the
+still-unsold curve tokens are **rolled into the Bond** (Sherwood pairing + Ambush
+sell-wall) rather than burned, and the Bond is posted around the **current** price.
+
+Calibrated on the fork (`START_TICK_MAG = 196200`, `CURVE_WIDTH = 25800`,
+`MIN_GRAD_WIDTH = 16400`): **minimum** graduation ≈ **$30k FDV / ~4 ETH raise**;
+**ceiling** ≈ **$76k FDV / ~8.3 ETH raise** — so the floor is ~3 ETH at the minimum
+and up to ~6 ETH if fully ridden. All three widths are deploy-time configurable.
+
+- **Auto-graduate target** — `setGradTarget` lets the **dev** pick the graduation
+  price in `[minimum, ceiling]`; a keeper/frontend fires the permissionless
+  `graduate()` when price reaches it. A sniper can never graduate before the dev's
+  mark; the dev can lower it (never below the minimum) to graduate sooner.
+- **Creator reward** — 25% of the raise is paid to the dev at graduation (WETH),
+  on top of the ongoing sell-tax.
+- **Anti-manipulation (CP-1, evolved)** — instead of pinning graduation to a fixed
+  tick, `graduate()` now refuses to post **above the ceiling** (the only unbacked
+  zone). Inside the curve range, pushing price up costs real WETH that *joins* the
+  floor, so a "high" graduation price is one the attacker funded and cannot drain.
+  Fork-tested: shoving spot past the ceiling still reverts `NotReady`.
+
+## Creator fee model + payouts (split by side)
+
+- **Buy 1% → platform**; **Sell 1% → creator** (accrues to the project wallet).
+- **Above-1% excess** → 25% platform ($SHERIFF cut) / 75% project (wallet/floor/burn).
+- The creator can **collect** their escrow (`withdrawDev`, permissionless) **or burn
+  it** (`burnDev`, creator-only — buys the coin and sends it to dead).
 
 ## Standing invariants (by construction, not just tests)
 
 - **Token stays clean** — no transfer tax, no mint, no blacklist over sells, no pause, no owner. The anti-snipe guard is buy-side-only, auto-expiring, and immutable (`LaunchToken`).
-- **The Bond can't be rugged** — no function sends its WETH/tokens to an arbitrary address; Sherwood principal is never withdrawn; only Sherwood fees leave, to the fixed platform (`Bond`).
+- **The Bond can't be rugged** — no function sends its WETH/tokens to any address. Sherwood principal is never withdrawn and its fees are compounded back in; **nothing ever leaves the Bond to a wallet** (`Bond`).
 - **Tax is a swap-desk fee, not a fee-on-transfer token** — so it can't break Uniswap v3 or read as a honeypot, and the split happens as escrow, never as extra transfers inside the signed trade.
 
 ## Deploy-time notes (not code bugs, but must be set right)
