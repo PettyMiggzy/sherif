@@ -47,7 +47,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
     const probeAddr = await probe.getAddress();
     const wethW = await ethers.getContractAt(
-      ["function deposit() payable", "function approve(address,uint256) returns (bool)"], WETH);
+      ["function deposit() payable", "function approve(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"], WETH);
     await (await wethW.connect(buyer).deposit({ value: 60n * ONE })).wait();
     await (await wethW.connect(buyer).approve(probeAddr, 60n * ONE)).wait();
     const buy = (amt, limit) =>
@@ -73,13 +73,24 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect(await curveC.ready()).to.equal(true);
 
     // ===== graduate into the Bond =====
-    await (await curveC.graduate()).wait();
+    const devWethBefore = await wethW.balanceOf(dev.address);
+    const gradRc = await (await curveC.graduate()).wait();
     expect(await curveC.graduated()).to.equal(true);
     const bond = await ethers.getContractAt("Bond", await curveC.bond());
     expect(await bond.posted()).to.equal(true);
     expect(await bond.sherwoodL()).to.be.greaterThan(0n);
     expect(await bond.bountyL()).to.be.greaterThan(0n);
     expect(await bond.ambushL()).to.be.greaterThan(0n);
+
+    // creator's graduation reward: the dev received 25% of the raise as WETH (the launch incentive), and the
+    // Bond was still funded with the remaining 75% (asserted by the nonzero Sherwood/Bounty above)
+    const devGain = (await wethW.balanceOf(dev.address)) - devWethBefore;
+    expect(devGain).to.be.greaterThan(0n);
+    const gradEv = gradRc.logs.map((l) => { try { return curveC.interface.parseLog(l); } catch { return null; } })
+      .find((e) => e && e.name === "Graduated");
+    const bondRaise = gradEv.args.raisedWeth; // post-reward (the 75% the Bond got)
+    // dev's 25% ≈ one-third of the Bond's 75% — allow a small rounding tolerance
+    expect(devGain).to.be.closeTo(bondRaise / 3n, bondRaise / 1000n + 1n);
 
     // still trades after graduation
     const t1 = await TOK.balanceOf(buyer.address);
@@ -152,7 +163,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
     const probeAddr = await probe.getAddress();
     const wethW = await ethers.getContractAt(
-      ["function deposit() payable", "function approve(address,uint256) returns (bool)"], WETH);
+      ["function deposit() payable", "function approve(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"], WETH);
     await (await wethW.connect(buyer).deposit({ value: 60n * ONE })).wait();
     await (await wethW.connect(buyer).approve(probeAddr, 60n * ONE)).wait();
 

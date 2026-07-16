@@ -50,6 +50,7 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
     int24 public immutable gradTick; // price when the curve is bought out (graduation)
 
     uint16 public constant SHERWOOD_WETH_BPS = 6000; // 60% of the raise -> Sherwood LP, 40% -> Bounty floor
+    uint16 public constant DEV_GRAD_BPS = 2500; // 25% of the raise -> the creator at graduation (launch incentive)
     int24 public constant GRAD_MAX_DEV = 50; // graduation price must be within ~0.5% of gradTick (anti-manipulation)
 
     bool public seeded;
@@ -177,6 +178,16 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         (uint256 raisedWeth, uint256 leftToken) = tokenIsToken0 ? (c1, c0) : (c0, c1);
         require(raisedWeth > 0, "empty");
         if (leftToken > 0) token.safeTransfer(DEAD, leftToken); // burn any tiny unsold curve remainder
+
+        // Creator's graduation reward: a fixed cut of the raise paid to the dev as WETH (a launch incentive
+        // on top of the ongoing sell-tax). Taken as a fraction so it can never exceed the raise or leave the
+        // Bond unfunded — the remaining ≥75% funds the floor. WETH transfer can't reenter (nonReentrant + no
+        // callback), and dev is guaranteed non-zero at construction.
+        uint256 devReward = (raisedWeth * DEV_GRAD_BPS) / 10_000;
+        if (devReward > 0) {
+            raisedWeth -= devReward;
+            IERC20(WETH).safeTransfer(dev, devReward);
+        }
 
         // Split the raise (Sherwood LP / Bounty floor). The Sherwood LP needs tokens too — the curve sold all
         // of its own, so pair them from the 25% Ambush reserve at the graduation price; the rest is the Ambush.

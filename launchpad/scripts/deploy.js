@@ -8,11 +8,12 @@ const { ethers, network } = require("hardhat");
 const WETH = process.env.WETH || "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 const V3_FACTORY = process.env.V3_FACTORY || "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
 const ETH_USD = Number(process.env.ETH_USD || 1920);
-// Curve geometry. Production = ~$30k graduation FDV / ~3 ETH raise (calibrated on the fork: startMag 207200
-// + width 27400 -> raise ≈ 3.0 ETH, grad FDV ≈ $30k, start FDV ≈ $1.9k). For a cheap TEST factory set e.g.
-// START_TICK_MAG=207200 CURVE_WIDTH=4000 (graduates after a few $). Both must be multiples of 200.
-const START_TICK_MAG = Number(process.env.START_TICK_MAG || 207200);
-const CURVE_WIDTH = Number(process.env.CURVE_WIDTH || 27400);
+// Curve geometry. Production = ~$30k graduation FDV / ~4 ETH raise (calibrated on the fork: startMag 201600
+// + width 21800 -> raise ≈ 3.96 ETH, grad FDV ≈ $30k, start FDV ≈ $4k). At graduation the creator receives
+// 25% of the raise (~1 ETH) as a launch incentive; the remaining ~3 ETH funds the Bond floor. For a cheap
+// TEST factory set e.g. START_TICK_MAG=207200 CURVE_WIDTH=4000 (graduates after a few $). Multiples of 200.
+const START_TICK_MAG = Number(process.env.START_TICK_MAG || 201600);
+const CURVE_WIDTH = Number(process.env.CURVE_WIDTH || 21800);
 
 async function main() {
   const [deployer] = await ethers.getSigners();

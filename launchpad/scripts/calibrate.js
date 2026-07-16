@@ -9,11 +9,12 @@ const ONE = 10n ** 18n;
 const ETH_USD = 1920;
 // Targeting graduation FDV ~$30k with a ~3 ETH raise. grad FDV = startFDV * 1.0001^width, so a smaller
 // startMag (higher start price) + a narrower width both pull grad mcap down from the old ~$69k.
+// Targeting a ~4 ETH raise at ~$30k grad FDV. All keep gradTick ≈ -179800 (so grad mcap stays ~$30k); a
+// smaller startMag = higher start price = bigger raise. width = startMag - 179800.
 const CANDIDATES = [
-  { startMag: 207200, width: 27400 }, // start ~$1.9k, grad ~$30k
-  { startMag: 203000, width: 24000 }, // start ~$3k,   grad ~$30k
-  { startMag: 199800, width: 20000 }, // start ~$4k,   grad ~$30k
-  { startMag: 207200, width: 24000 }, // start ~$1.9k, grad ~$21k (bracket low)
+  { startMag: 202400, width: 22600 }, // est ~3.85 ETH
+  { startMag: 201600, width: 21800 }, // est ~4.0 ETH
+  { startMag: 200800, width: 21000 }, // est ~4.15 ETH
 ];
 
 async function measure(startMag, width) {
