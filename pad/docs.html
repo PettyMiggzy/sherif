@@ -410,7 +410,7 @@ GET /api/coins?sort=trending&filter=live&q=wood&limit=60
     <li><strong>Anti-snipe.</strong> The creator's opening buy runs atomically inside the launch tx; a CREATE2 salt with per-launch entropy blocks pre-init pool DoS.</li>
     <li><strong>Fees in-protocol.</strong> The 1% is the Uniswap LP fee tier, not a side transfer — no extra instruction is ever attached to a user's transaction.</li>
   </ul>
-  <div class="note"><span class="lbl">Audit</span>Three internal audit passes (manual, deep pre-prod, and a multi-agent adversarial fleet) plus a live mainnet lifecycle validation. Findings and resolutions live in <span class="m">launchpad/AUDIT.md</span>; contract source in <span class="m">launchpad/contracts/</span>.</div>
+  <div class="note"><span class="lbl">Audit</span>Three internal audit passes (manual, deep pre-production, and a dedicated adversarial pass) plus a live mainnet lifecycle validation. Findings and resolutions live in <span class="m">launchpad/AUDIT.md</span>; contract source in <span class="m">launchpad/contracts/</span>.</div>
 
   <footer>
     <span>Robin Labs · Built on Robinhood Chain</span>

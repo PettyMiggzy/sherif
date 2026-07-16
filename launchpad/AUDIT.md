@@ -2,7 +2,7 @@
 
 ## Third pass (pre-mainnet, "let it ride" + creator economics)
 
-A 5-auditor adversarial fleet + simulation batteries over the whole new stack
+A dedicated adversarial audit pass + simulation batteries over the whole new stack
 (let-it-ride graduation, split-by-side fees, LP-fee compounding, dev reward,
 burnDev, auto-graduate). **The core held**: the floor-drain was attacked hard and
 proven impossible, conservation is exact to the wei, floor-monotonicity and Bond
@@ -63,7 +63,7 @@ not just mocks. The `SIMS=300` randomized battery (below) passes clean.
 
 ## Deep pre-production audit (second pass)
 
-A second, adversarial pass (5 parallel reviewers over each money path) before the
+A second, adversarial pass reviewing each money path in isolation before the
 production deploy. Every finding below is **fixed and regression-tested**; the
 full unit + adversarial + `SIMS=300` + all fork tests pass green after the fixes.
 
