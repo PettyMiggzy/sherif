@@ -137,6 +137,27 @@ describe("PadRouter — fee model (mock pool)", function () {
     expect(await ethers.provider.getBalance(platform.address)).to.equal(platBefore + cut);
   });
 
+  it("the creator can BURN their sell-fee escrow instead of collecting it — and only they can", async () => {
+    const { dep, dev, buyer, token, tokAddr, poolAddr, router, curveAddr } = await deploy();
+    await (await router.register(tokAddr, poolAddr, curveAddr, dev.address, 100, 100, 10000, 0, 0)).wait();
+    // accrue a sell-fee escrow for the creator
+    await (await token.transfer(buyer.address, 10n * ONE)).wait();
+    await (await token.connect(buyer).approve(await router.getAddress(), 10n * ONE)).wait();
+    await (await router.connect(buyer).sell(tokAddr, 10n * ONE, 0)).wait();
+    const esc = await router.devEscrow(tokAddr);
+    expect(esc).to.be.greaterThan(0n);
+
+    // a random caller cannot torch the creator's money
+    await expect(router.connect(buyer).burnDev(tokAddr)).to.be.revertedWithCustomError(router, "NotCreator");
+
+    // the creator chooses to burn: escrow buys the token and sends it to dead
+    const deadBefore = await token.balanceOf(DEAD);
+    await (await router.connect(dev).burnDev(tokAddr)).wait();
+    expect(await token.balanceOf(DEAD)).to.be.greaterThan(deadBefore);
+    // escrow is spent (mock pool fully fills, so no residual re-credit)
+    expect(await router.devEscrow(tokAddr)).to.equal(0n);
+  });
+
   it("a plain 1% sell: the CREATOR gets the whole 1%, the platform gets nothing", async () => {
     const { dep, dev, buyer, token, tokAddr, poolAddr, router } = await deploy();
     await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 100, 100, 10000, 0, 0)).wait();

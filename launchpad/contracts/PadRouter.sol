@@ -80,6 +80,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
 
     error Unknown();
     error OnlyFactory();
+    error NotCreator();
     error AlreadySet();
     error BadTax();
     error BadAlloc();
@@ -304,14 +305,36 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         require(ok, "pay");
     }
 
-    /// @notice Pay the project's accrued wallet share to its configured wallet. Anyone can trigger it; the
-    /// funds only ever go to the wallet the project set at launch.
+    /// @notice Collect the creator's accrued sell-fee + wallet share to the project wallet. Anyone can trigger
+    /// it (e.g. from a public dashboard); the funds only ever go to the wallet the project set at launch.
     function withdrawDev(address token) external nonReentrant {
         uint256 amt = devEscrow[token];
         if (amt == 0) return;
         devEscrow[token] = 0;
         (bool ok,) = _cfg[token].projectWallet.call{value: amt}("");
         require(ok, "pay");
+    }
+
+    /// @notice The creator's alternative to collecting: spend their accrued escrow buying the coin and burning
+    /// it. Only the project wallet may choose to burn its OWN money (a random caller can't torch it); the plain
+    /// collect above stays public. Pre-graduation the buy is capped at the graduation price (no curve overshoot).
+    function burnDev(address token) external nonReentrant {
+        Cfg storage c = _cfg[token];
+        if (msg.sender != c.projectWallet) revert NotCreator();
+        uint256 amt = devEscrow[token];
+        if (amt == 0) return;
+        devEscrow[token] = 0;
+        IWETH9(WETH).deposit{value: amt}();
+        uint160 cap;
+        if (c.curve != address(0) && !ICurveState(c.curve).graduated()) cap = ICurveState(c.curve).gradSqrtPriceX96();
+        uint256 bought = _swap(token, c.pool, WETH, amt, address(this), cap);
+        IERC20(token).safeTransfer(DEAD, bought);
+        // re-credit any WETH the swap couldn't spend (e.g. a burn-buy that hit the graduation cap)
+        uint256 left = IERC20(WETH).balanceOf(address(this));
+        if (left > 0) {
+            IWETH9(WETH).withdraw(left);
+            devEscrow[token] += left;
+        }
     }
 
     /// @notice Push the accrued floor share into the coin's Bond as fresh WETH, then poke it so it becomes
