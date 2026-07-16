@@ -165,6 +165,8 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
       const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
       const { curve, pool: poolAddr } = ev.args;
       const curveC = await ethers.getContractAt("CurvePool", curve);
+      // allow graduation from the minimum so the "min" run can graduate there (default target is 40% up)
+      await (await curveC.connect(dev).setGradTarget(await curveC.minGradTick())).wait();
       await ethers.provider.send("evm_increaseTime", [400]);
       await ethers.provider.send("evm_mine", []);
       const cap = toCeiling ? await curveC.gradSqrtPriceX96() : await curveC.minGradSqrtPriceX96();
@@ -201,6 +203,13 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const { curve, pool: poolAddr } = ev.args;
     const curveC = await ethers.getContractAt("CurvePool", curve);
 
+    // the hands-off DEFAULT target sits strictly between the minimum and the ceiling (Rec #2: healthier default)
+    {
+      const mn = await curveC.minGradTick(), cl = await curveC.gradTick(), tg = await curveC.gradTarget();
+      const between = mn < cl ? (tg > mn && tg < cl) : (tg < mn && tg > cl);
+      expect(between, "default target between min and ceiling").to.equal(true);
+    }
+
     // access control + bounds
     await expect(curveC.connect(mallory).setGradTarget(await curveC.gradTick())).to.be.revertedWithCustomError(curveC, "NotDev");
     await expect(curveC.connect(dev).setGradTarget(0)).to.be.revertedWithCustomError(curveC, "BadTarget"); // outside [min, ceiling]
@@ -215,16 +224,21 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     await ethers.provider.send("evm_increaseTime", [400]);
     await ethers.provider.send("evm_mine", []);
 
+    // the default target sits ABOVE the minimum (healthier hands-off structure), and the dev raised it to the ceiling
+    expect(await curveC.gradTarget()).to.equal(await curveC.gradTick());
+
     // buy only up to the $30k MINIMUM — past the old graduation point but below the dev's target
     await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 30n * ONE, await curveC.minGradSqrtPriceX96())).wait();
     // ready() is FALSE and graduate() reverts: a sniper can't graduate before the dev's mark
     expect(await curveC.ready()).to.equal(false);
     await expect(curveC.graduate()).to.be.revertedWithCustomError(curveC, "NotReady");
 
-    // ride the rest of the way to the target (ceiling) -> now it graduates
-    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 30n * ONE, await curveC.gradSqrtPriceX96())).wait();
+    // ABANDON-PROOF: after the 7-day timeout, anyone can graduate at the minimum even though the dev set the
+    // target to the ceiling and never moved it — the floor can be delayed but never denied.
+    await ethers.provider.send("evm_increaseTime", [7 * 24 * 3600 + 1]);
+    await ethers.provider.send("evm_mine", []);
     expect(await curveC.ready()).to.equal(true);
-    await (await curveC.graduate()).wait();
+    await (await curveC.connect(buyer).graduate()).wait(); // buyer (not the dev) can graduate now
     expect(await curveC.graduated()).to.equal(true);
   });
 

@@ -53,9 +53,14 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
     uint16 public constant SHERWOOD_WETH_BPS = 6000; // 60% of the raise -> Sherwood LP, 40% -> Bounty floor
     uint16 public constant DEV_GRAD_BPS = 2500; // 25% of the raise -> the creator at graduation (launch incentive)
     int24 public constant GRAD_MAX_DEV = 50; // graduation can't post above the ceiling by more than this (anti-manipulation)
+    uint16 public constant DEFAULT_GRAD_FRAC = 40; // default gradTarget sits 40% up the [min, ceiling] tick range
+        // (≈+50% mcap over the bare minimum) so a hands-off launch graduates with a healthier floor / lighter wall
+    uint256 public constant GRAD_TIMEOUT = 7 days; // abandon-proof: after this, anyone may graduate at the MINIMUM
+        // even if the dev set a higher target and walked away — the floor can be delayed but never denied
 
     bool public seeded;
     bool public graduated;
+    uint64 public seedTime; // when the curve was seeded — starts the graduation timeout clock
     address public bond;
     int24 public curveLo;
     int24 public curveHi;
@@ -123,7 +128,12 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         // tick); token1 => the token is on the BELOW-price side (price rises as tick falls).
         gradTick = tIs0 ? startTick_ + curveWidth_ : startTick_ - curveWidth_;
         minGradTick = tIs0 ? startTick_ + minGradWidth_ : startTick_ - minGradWidth_;
-        gradTarget = minGradTick; // default: graduatable from the minimum; the dev may raise it to let it ride
+        // Default graduation target sits 40% of the way up the [min, ceiling] tick range — a healthier
+        // hands-off structure than the bare minimum. The dev can move it anywhere in [min, ceiling] via
+        // setGradTarget (down to the minimum to graduate sooner, up to the ceiling to ride).
+        int24 gspan = tIs0 ? gradTick - minGradTick : minGradTick - gradTick; // positive tick distance
+        int24 goff = int24((int256(gspan) * int256(uint256(DEFAULT_GRAD_FRAC))) / 100);
+        gradTarget = tIs0 ? minGradTick + goff : minGradTick - goff;
 
         // Claim + initialize the pool at the start price (DEX + DexScreener live from here).
         address p = IUniswapV3Factory(v3Factory_).getPool(token_, weth_, POOL_FEE);
@@ -137,6 +147,7 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
     function seed() external nonReentrant {
         if (seeded) revert AlreadySeeded();
         seeded = true;
+        seedTime = uint64(block.timestamp); // start the abandon-proof graduation timeout
         // Curve range: token0 => [start, grad] above; token1 => [grad, start] below.
         (int24 lo, int24 hi) = tokenIsToken0 ? (startTick, gradTick) : (gradTick, startTick);
         curveLo = lo;
@@ -189,13 +200,15 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         emit GradTargetSet(targetTick);
     }
 
-    /// @notice Progress: has price reached the dev's graduation target (defaults to the $30k minimum)? From
-    /// here `graduate()` may be called by anyone — or the dev can raise the target to ride higher for a
-    /// bigger raise / thicker floor.
+    /// @notice Progress: is the coin graduatable? Normally price must reach the dev's target (default 40% up
+    /// the curve). Abandon-proof fallback: once GRAD_TIMEOUT has passed since seeding, reaching the MINIMUM is
+    /// enough — so a dev who sets a high target and walks away can delay the floor but never deny it.
     function ready() public view returns (bool) {
         if (!seeded || graduated) return false;
         (, int24 tick,,,,,) = pool.slot0();
-        return tokenIsToken0 ? tick >= gradTarget : tick <= gradTarget;
+        bool atTarget = tokenIsToken0 ? tick >= gradTarget : tick <= gradTarget;
+        bool atMin = tokenIsToken0 ? tick >= minGradTick : tick <= minGradTick;
+        return atTarget || (atMin && block.timestamp >= uint256(seedTime) + GRAD_TIMEOUT);
     }
 
     /// @notice Graduate — collect the raised WETH + unsold token from the curve and post the Bond. Permissionless.

@@ -49,6 +49,8 @@ suite("Graduation battery — random 'let it ride' points, invariants hold every
       const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
       const TOK = await ethers.getContractAt(tokAbi, token);
 
+      // dev opts to allow graduation from the minimum, so the battery can graduate at ANY random point
+      await (await curveC.connect(dev).setGradTarget(await curveC.minGradTick())).wait();
       await ethers.provider.send("evm_increaseTime", [400]);
       await ethers.provider.send("evm_mine", []);
 
