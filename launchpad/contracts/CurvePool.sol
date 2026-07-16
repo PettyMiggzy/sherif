@@ -45,13 +45,14 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
     bool public immutable tokenIsToken0;
 
     uint256 public immutable curveSupply; // seeded as the single-sided curve
-    uint256 public immutable ambushSupply; // handed to the Bond's Ambush at graduation
+    uint256 public immutable ambushSupply; // paired into the Bond + rolled with any unsold curve tokens
     int24 public immutable startTick; // price at launch (curve bottom)
-    int24 public immutable gradTick; // price when the curve is bought out (graduation)
+    int24 public immutable gradTick; // the curve's CEILING — buys can climb up to here, never past it
+    int24 public immutable minGradTick; // graduation becomes eligible here ("let it ride" up to gradTick)
 
     uint16 public constant SHERWOOD_WETH_BPS = 6000; // 60% of the raise -> Sherwood LP, 40% -> Bounty floor
     uint16 public constant DEV_GRAD_BPS = 2500; // 25% of the raise -> the creator at graduation (launch incentive)
-    int24 public constant GRAD_MAX_DEV = 50; // graduation price must be within ~0.5% of gradTick (anti-manipulation)
+    int24 public constant GRAD_MAX_DEV = 50; // graduation can't post above the ceiling by more than this (anti-manipulation)
 
     bool public seeded;
     bool public graduated;
@@ -59,6 +60,9 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
     int24 public curveLo;
     int24 public curveHi;
     uint128 public curveL;
+    int24 public gradTarget; // dev-set auto-graduation target: graduate() unlocks once price reaches here.
+        // Defaults to minGradTick (graduatable at the $30k minimum); the dev may raise it toward the ceiling
+        // to "let it ride" for a thicker floor, or lower it (never below the minimum) to graduate sooner.
 
     bool private _minting;
 
@@ -67,11 +71,17 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
     error AlreadyGraduated();
     error NotReady();
     error NotPool();
+    error NotDev();
+    error BadTarget();
 
     event Seeded(int24 curveLo, int24 curveHi, uint128 liquidity);
     event Graduated(address indexed bond, uint256 raisedWeth, uint256 leftoverToken);
+    event GradTargetSet(int24 targetTick);
 
-    /// @param curveWidth_ tick span of the curve (start->grad), a positive multiple of SPACING.
+    /// @param curveWidth_ tick span from start to the curve CEILING (a positive multiple of SPACING).
+    /// @param minGradWidth_ tick span from start to the MINIMUM graduation price (< curveWidth_). Graduation
+    /// is eligible from there up to the ceiling — "let it ride": the later it graduates, the bigger the raise
+    /// and the thicker the floor.
     constructor(
         address token_,
         address weth_,
@@ -82,14 +92,19 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         uint256 curveSupply_,
         uint256 ambushSupply_,
         int24 startTick_,
-        int24 curveWidth_
+        int24 curveWidth_,
+        int24 minGradWidth_
     ) {
         require(
             token_ != address(0) && weth_ != address(0) && v3Factory_ != address(0) && platform_ != address(0)
                 && dev_ != address(0) && bondDeployer_ != address(0),
             "zero"
         );
-        require(curveSupply_ > 0 && curveWidth_ > 0 && curveWidth_ % SPACING == 0 && startTick_ % SPACING == 0, "params");
+        require(
+            curveSupply_ > 0 && curveWidth_ > 0 && curveWidth_ % SPACING == 0 && startTick_ % SPACING == 0
+                && minGradWidth_ > 0 && minGradWidth_ % SPACING == 0 && minGradWidth_ < curveWidth_,
+            "params"
+        );
         token = IERC20(token_);
         WETH = weth_;
         v3Factory = IUniswapV3Factory(v3Factory_);
@@ -106,6 +121,8 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         // The curve holds only the TOKEN. token0 => the token is on the ABOVE-price side (price rises with
         // tick); token1 => the token is on the BELOW-price side (price rises as tick falls).
         gradTick = tIs0 ? startTick_ + curveWidth_ : startTick_ - curveWidth_;
+        minGradTick = tIs0 ? startTick_ + minGradWidth_ : startTick_ - minGradWidth_;
+        gradTarget = minGradTick; // default: graduatable from the minimum; the dev may raise it to let it ride
 
         // Claim + initialize the pool at the start price (DEX + DexScreener live from here).
         address p = IUniswapV3Factory(v3Factory_).getPool(token_, weth_, POOL_FEE);
@@ -144,16 +161,40 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         pool.increaseObservationCardinalityNext(target);
     }
 
-    /// @notice The pool price at graduation (the curve's top). Buyers/routers cap the buyout swap here.
+    /// @notice The pool price at the curve's CEILING. Buyers/routers cap the buy swap here so price can climb
+    /// the whole curve (up to the ceiling) but never run past it into empty space.
     function gradSqrtPriceX96() external view returns (uint160) {
         return PoolMath.getSqrtRatioAtTick(gradTick);
     }
 
-    /// @notice Progress: has price reached the graduation end (curve bought out)?
+    /// @notice The pool price at the MINIMUM graduation point (where the graduate button first lights up).
+    function minGradSqrtPriceX96() external view returns (uint160) {
+        return PoolMath.getSqrtRatioAtTick(minGradTick);
+    }
+
+    /// @notice Auto-graduate: the dev sets the target price the coin graduates at. Must sit between the $30k
+    /// minimum and the ceiling. `graduate()` (permissionless — a keeper/frontend fires it) unlocks once price
+    /// reaches this. The dev can move it any time before graduation: raise it to ride for a thicker floor, or
+    /// lower it (never below the minimum) to graduate sooner. Never lets a sniper graduate before the dev's mark.
+    function setGradTarget(int24 targetTick) external {
+        if (msg.sender != dev) revert NotDev();
+        if (graduated) revert AlreadyGraduated();
+        // target must be a real price in [minimum, ceiling], respecting token/WETH ordering
+        bool ok = tokenIsToken0
+            ? (targetTick >= minGradTick && targetTick <= gradTick)
+            : (targetTick <= minGradTick && targetTick >= gradTick);
+        if (!ok) revert BadTarget();
+        gradTarget = targetTick;
+        emit GradTargetSet(targetTick);
+    }
+
+    /// @notice Progress: has price reached the dev's graduation target (defaults to the $30k minimum)? From
+    /// here `graduate()` may be called by anyone — or the dev can raise the target to ride higher for a
+    /// bigger raise / thicker floor.
     function ready() public view returns (bool) {
         if (!seeded || graduated) return false;
         (, int24 tick,,,,,) = pool.slot0();
-        return tokenIsToken0 ? tick >= gradTick : tick <= gradTick;
+        return tokenIsToken0 ? tick >= gradTarget : tick <= gradTarget;
     }
 
     /// @notice Graduate — collect the raised WETH + unsold token from the curve and post the Bond. Permissionless.
@@ -162,22 +203,22 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         if (graduated) revert AlreadyGraduated();
         if (!ready()) revert NotReady();
 
-        // Anti-manipulation: after the curve is bought out there is NO liquidity past gradTick, so spot can be
-        // shoved arbitrarily far past it for ~free. If we posted the Bond around that spot, an attacker could
-        // place the floor at an inflated price and drain it. Require the price to sit essentially AT gradTick
-        // (an honest capped buy-out lands within ~1 tick) before posting. Burn/collect below don't move price,
-        // so post() reads this same, verified price.
-        (, int24 tickNow,,,,,) = pool.slot0();
-        int24 dgrad = tickNow > gradTick ? tickNow - gradTick : gradTick - tickNow;
-        if (dgrad > GRAD_MAX_DEV) revert NotReady();
+        // Anti-manipulation: the Bond is posted around the CURRENT price, so that price must be honest. Inside
+        // the curve range [minGradTick, gradTick] it always is — to move spot UP a buyer must consume curve
+        // liquidity, i.e. pay real WETH that JOINS the raise/floor, so a "high" spot is one the attacker funded
+        // and the floor sits below it: nothing can be drained. The ONLY unbacked zone is ABOVE the ceiling
+        // (no liquidity past gradTick, so spot is free to shove there), so we simply refuse to graduate above
+        // the ceiling. That closes the floor-drain vector while allowing "let it ride" anywhere below it.
+        (uint160 sp, int24 tickNow,,,,,) = pool.slot0();
+        bool aboveCeil = tokenIsToken0 ? tickNow > gradTick + GRAD_MAX_DEV : tickNow < gradTick - GRAD_MAX_DEV;
+        if (aboveCeil) revert NotReady();
         graduated = true;
 
-        // pull the whole curve position back here (raised WETH + any unsold token)
+        // pull the whole curve position back here (raised WETH + the still-unsold curve tokens)
         pool.burn(curveLo, curveHi, curveL);
         (uint256 c0, uint256 c1) = pool.collect(address(this), curveLo, curveHi, U128_MAX, U128_MAX);
         (uint256 raisedWeth, uint256 leftToken) = tokenIsToken0 ? (c1, c0) : (c0, c1);
         require(raisedWeth > 0, "empty");
-        if (leftToken > 0) token.safeTransfer(DEAD, leftToken); // burn any tiny unsold curve remainder
 
         // Creator's graduation reward: a fixed cut of the raise paid to the dev as WETH (a launch incentive
         // on top of the ongoing sell-tax). Taken as a fraction so it can never exceed the raise or leave the
@@ -189,18 +230,21 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
             IERC20(WETH).safeTransfer(dev, devReward);
         }
 
-        // Split the raise (Sherwood LP / Bounty floor). The Sherwood LP needs tokens too — the curve sold all
-        // of its own, so pair them from the 25% Ambush reserve at the graduation price; the rest is the Ambush.
+        // Post the Bond around the CURRENT price. The Sherwood LP needs tokens; pair them from the Ambush
+        // reserve PLUS any still-unsold curve tokens (rolled in here rather than burned), and the remainder
+        // becomes the Ambush sell-wall whose earnings deepen the floor. Graduating later => bigger raise =>
+        // thicker floor AND fewer unsold tokens => a lighter sell-wall.
         uint256 sherwoodWeth = (raisedWeth * SHERWOOD_WETH_BPS) / 10_000;
         uint256 bountyWeth = raisedWeth - sherwoodWeth;
-        uint256 quote = PoolMath.quoteWethPerToken(PoolMath.getSqrtRatioAtTick(gradTick), tokenIsToken0);
-        uint256 sherwoodTokens = Math.min(ambushSupply, Math.mulDiv(sherwoodWeth, 1e18, quote));
-        uint256 ambushForBond = ambushSupply - sherwoodTokens;
+        uint256 tokenPool = ambushSupply + leftToken;
+        uint256 quote = PoolMath.quoteWethPerToken(sp, tokenIsToken0);
+        uint256 sherwoodTokens = Math.min(tokenPool, Math.mulDiv(sherwoodWeth, 1e18, quote));
+        uint256 ambushForBond = tokenPool - sherwoodTokens;
 
         address b = ICurveBondDeployer(bondDeployer).deploy(address(token), WETH, address(v3Factory), platform, address(this));
         bond = b;
         IERC20(WETH).safeTransfer(b, raisedWeth);
-        IERC20(token).safeTransfer(b, ambushSupply); // = sherwoodTokens + ambushForBond
+        IERC20(token).safeTransfer(b, tokenPool); // = sherwoodTokens + ambushForBond
         ICurveBond(b).post(sherwoodWeth, sherwoodTokens, bountyWeth, ambushForBond);
 
         // sweep any WETH dust

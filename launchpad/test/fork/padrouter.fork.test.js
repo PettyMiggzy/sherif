@@ -10,14 +10,14 @@ const SUPPLY = 1_000_000_000n * ONE;
 
 const suite = process.env.FORK_RPC ? describe : describe.skip;
 
-async function stack(dep, platform, startMag = 207200, width = 35800) {
+async function stack(dep, platform, startMag = 207200, width = 35800, minGradWidth = 19800) {
   const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
   const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
   const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
   const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
   const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
     WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), startMag, width
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), startMag, width, minGradWidth
   );
   await (await router.setFactory(await factory.getAddress())).wait();
   return { router, factory };
@@ -189,7 +189,7 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     const [dep, platform, dev, buyer] = await ethers.getSigners();
     // the cheap TEST curve: graduates after a few $ of buys — so little WETH that Sherwood takes ALL the
     // ambush token supply, leaving 0 for the Ambush band. The Bond must post Sherwood+Bounty and skip Ambush.
-    const { router, factory } = await stack(dep, platform, 259400, 4000);
+    const { router, factory } = await stack(dep, platform, 259400, 4000, 2000);
     const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const rc = await (await factory.launch({ name: "Tiny", symbol: "TINY", dev: dev.address, tax })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");

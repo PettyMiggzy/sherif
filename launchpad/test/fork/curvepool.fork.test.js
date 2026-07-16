@@ -23,11 +23,11 @@ suite("CurvePool on a Robinhood Chain fork — DEX day one", function () {
     // start price = ~1e-9 WETH/token (start MC ~1 ETH); tick sign depends on token/WETH ordering. width ~= 36x.
     const tokenIsToken0 = BigInt(tokAddr) < BigInt(WETH);
     const startTick = tokenIsToken0 ? -207200 : 207200;
-    const width = 35800;
+    const width = 35800, minGradWidth = 19800;
 
     const curve = await (await ethers.getContractFactory("CurvePool")).deploy(
       tokAddr, WETH, FACTORY, platform.address, dev.address, await bd.getAddress(),
-      CURVE, AMBUSH, startTick, width
+      CURVE, AMBUSH, startTick, width, minGradWidth
     );
     const curveAddr = await curve.getAddress();
     await (await TOK.connect(dep).transfer(curveAddr, CURVE + AMBUSH)).wait(); // token seeds itself — no ETH from us

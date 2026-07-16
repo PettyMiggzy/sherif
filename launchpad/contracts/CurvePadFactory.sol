@@ -57,8 +57,9 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
     uint256 public constant TOTAL_SUPPLY = 1_000_000_000 ether;
     // Curve geometry is set at deploy so we can run a cheap TEST factory (small width -> graduates after a
     // few $ of buys) next to the real PRODUCTION factory, sharing the same audited code + router.
-    int24 public immutable START_TICK_MAG; // e.g. 207200 -> ~1e-9 WETH/token start; sign set by ordering
-    int24 public immutable CURVE_WIDTH; // e.g. 35800 -> ~36x span to graduation (~4 ETH raise)
+    int24 public immutable START_TICK_MAG; // e.g. 201600 -> ~$4k start FDV; sign set by ordering
+    int24 public immutable CURVE_WIDTH; // span to the curve CEILING (buys can climb here, never past)
+    int24 public immutable MIN_GRAD_WIDTH; // span to the MINIMUM graduation price (< CURVE_WIDTH); "let it ride" above
 
     /// @notice A project's self-chosen tax. Both rates are hard-capped at 4% by the router; the platform
     /// always takes 25% of whatever is collected. The three allocation splits are of the PROJECT'S 75% share
@@ -104,14 +105,19 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
         address curveDeployer_,
         address bondDeployer_,
         int24 startTickMag_,
-        int24 curveWidth_
+        int24 curveWidth_,
+        int24 minGradWidth_
     ) Ownable(owner_) {
         require(
             weth_ != address(0) && v3Factory_ != address(0) && platform_ != address(0) && router_ != address(0)
                 && tokenDeployer_ != address(0) && curveDeployer_ != address(0) && bondDeployer_ != address(0),
             "zero"
         );
-        require(startTickMag_ > 0 && curveWidth_ > 0 && startTickMag_ % 200 == 0 && curveWidth_ % 200 == 0, "curve");
+        require(
+            startTickMag_ > 0 && curveWidth_ > 0 && startTickMag_ % 200 == 0 && curveWidth_ % 200 == 0
+                && minGradWidth_ > 0 && minGradWidth_ % 200 == 0 && minGradWidth_ < curveWidth_,
+            "curve"
+        );
         WETH = weth_;
         v3Factory = v3Factory_;
         platform = platform_;
@@ -121,6 +127,7 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
         bondDeployer = bondDeployer_;
         START_TICK_MAG = startTickMag_;
         CURVE_WIDTH = curveWidth_;
+        MIN_GRAD_WIDTH = minGradWidth_;
     }
 
     receive() external payable {} // for WETH.withdraw refunds during a dev buy
@@ -154,7 +161,7 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
 
         int24 startTick = token < WETH ? -START_TICK_MAG : START_TICK_MAG;
         curve = curveDeployer.deploy(
-            token, WETH, v3Factory, platform, p.dev, bondDeployer, curveAmt, ambushAmt, startTick, CURVE_WIDTH
+            token, WETH, v3Factory, platform, p.dev, bondDeployer, curveAmt, ambushAmt, startTick, CURVE_WIDTH, MIN_GRAD_WIDTH
         );
         pool = ICurvePool(curve).pool();
 

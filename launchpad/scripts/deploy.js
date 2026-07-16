@@ -8,12 +8,15 @@ const { ethers, network } = require("hardhat");
 const WETH = process.env.WETH || "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 const V3_FACTORY = process.env.V3_FACTORY || "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
 const ETH_USD = Number(process.env.ETH_USD || 1920);
-// Curve geometry. Production = ~$30k graduation FDV / ~4 ETH raise (calibrated on the fork: startMag 201600
-// + width 21800 -> raise ≈ 3.96 ETH, grad FDV ≈ $30k, start FDV ≈ $4k). At graduation the creator receives
-// 25% of the raise (~1 ETH) as a launch incentive; the remaining ~3 ETH funds the Bond floor. For a cheap
-// TEST factory set e.g. START_TICK_MAG=207200 CURVE_WIDTH=4000 (graduates after a few $). Multiples of 200.
-const START_TICK_MAG = Number(process.env.START_TICK_MAG || 201600);
-const CURVE_WIDTH = Number(process.env.CURVE_WIDTH || 21800);
+// Curve geometry ("let it ride"). MIN_GRAD_WIDTH = start -> the MINIMUM graduation price (~$30k, ~4 ETH
+// raise). CURVE_WIDTH = start -> the CEILING (how far price can ride above $30k for a thicker floor). Graduation
+// is eligible anywhere in between; the later it's clicked, the bigger the raise/floor. Values below are
+// calibrated on the fork. For a cheap TEST factory set small widths. All multiples of 200; MIN_GRAD_WIDTH < CURVE_WIDTH.
+// Calibrated on the fork: MIN grad ~$30k mcap / ~4 ETH raise; CEILING ~$76k mcap / ~8.3 ETH raise. So the
+// floor is ~3 ETH if graduated at the $30k minimum and up to ~6 ETH if left to ride to the ceiling.
+const START_TICK_MAG = Number(process.env.START_TICK_MAG || 196200);
+const CURVE_WIDTH = Number(process.env.CURVE_WIDTH || 25800);
+const MIN_GRAD_WIDTH = Number(process.env.MIN_GRAD_WIDTH || 16400);
 
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -44,9 +47,9 @@ async function main() {
   const factory = await track("CurvePadFactory", await (await ethers.getContractFactory("CurvePadFactory")).deploy(
     WETH, V3_FACTORY, platform, owner, await router.getAddress(),
     await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(),
-    START_TICK_MAG, CURVE_WIDTH
+    START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH
   ));
-  console.log(`  (curve: startTickMag=${START_TICK_MAG} width=${CURVE_WIDTH})`);
+  console.log(`  (curve: startTickMag=${START_TICK_MAG} ceilWidth=${CURVE_WIDTH} minGradWidth=${MIN_GRAD_WIDTH})`);
   const wire = await (await router.setFactory(await factory.getAddress())).wait();
   totalGas += wire.gasUsed;
   console.log(`  router.setFactory       (gas ${wire.gasUsed})\n`);

@@ -21,7 +21,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800, 19800
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     // plain default 1% here (the above-default split is covered in padrouter.fork.test.js)
@@ -107,7 +107,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800, 19800
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     // plain default 1% here (the above-default split is covered in padrouter.fork.test.js)
@@ -140,6 +140,50 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect(await TOK.balanceOf(await factory.getAddress())).to.equal(0n);
   });
 
+  it("LET IT RIDE: graduating higher up the curve posts a thicker floor", async () => {
+    const [dep, platform, dev, buyer] = await ethers.getSigners();
+    const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
+    const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
+    // production "let it ride" geometry: min grad ~$30k, ceiling ~$76k
+    const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
+      WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 196200, 25800, 16400
+    );
+    await (await router.setFactory(await factory.getAddress())).wait();
+    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
+    const wethW = await ethers.getContractAt(
+      ["function deposit() payable", "function approve(address,uint256) returns (bool)"], WETH);
+    await (await wethW.connect(buyer).deposit({ value: 40n * ONE })).wait();
+    await (await wethW.connect(buyer).approve(await probe.getAddress(), 40n * ONE)).wait();
+
+    // launch a coin, buy up to `cap` (min-grad price or the ceiling), graduate, return the Bond's floor funding
+    async function run(name, toCeiling) {
+      const rc = await (await factory.launch({ name, symbol: name, dev: dev.address, tax: NOTAX })).wait();
+      const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
+      const { curve, pool: poolAddr } = ev.args;
+      const curveC = await ethers.getContractAt("CurvePool", curve);
+      await ethers.provider.send("evm_increaseTime", [400]);
+      await ethers.provider.send("evm_mine", []);
+      const cap = toCeiling ? await curveC.gradSqrtPriceX96() : await curveC.minGradSqrtPriceX96();
+      await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 20n * ONE, cap)).wait();
+      expect(await curveC.ready()).to.equal(true);
+      const gradRc = await (await curveC.graduate()).wait();
+      const gev = gradRc.logs.map((l) => { try { return curveC.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Graduated");
+      const bond = await ethers.getContractAt("Bond", await curveC.bond());
+      expect(await bond.posted()).to.equal(true);
+      return { raise: gev.args.raisedWeth, bountyL: await bond.bountyL() };
+    }
+
+    const atMin = await run("MIN", false); // graduate at the $30k minimum
+    const rode = await run("RIDE", true);  // let it ride to the ceiling, then graduate
+    // riding up the curve raised strictly more WETH -> a strictly thicker floor
+    expect(rode.raise).to.be.greaterThan(atMin.raise);
+    expect(rode.bountyL).to.be.greaterThan(atMin.bountyL); // a deeper buy-wall
+  });
+
   it("graduate() refuses a MANIPULATED post-buyout price — the floor-drain vector is closed (CP-1)", async () => {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
 
@@ -149,7 +193,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800, 19800
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
