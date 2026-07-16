@@ -12,6 +12,11 @@ interface ICurveForBond {
     function bond() external view returns (address);
 }
 
+interface ICurveState {
+    function graduated() external view returns (bool);
+    function gradSqrtPriceX96() external view returns (uint160);
+}
+
 interface IBondPoke {
     function poke() external;
 }
@@ -135,7 +140,11 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         if (net == 0) revert Dust();
 
         IWETH9(WETH).deposit{value: net}();
-        tokensOut = _swap(token, c.pool, WETH, net, msg.sender);
+        // pre-graduation, cap the buy at the graduation price so a big buy stops exactly at the curve top
+        // instead of running the price into the empty space beyond it (which would brick graduation)
+        uint160 cap;
+        if (c.curve != address(0) && !ICurveState(c.curve).graduated()) cap = ICurveState(c.curve).gradSqrtPriceX96();
+        tokensOut = _swap(token, c.pool, WETH, net, msg.sender, cap);
         if (tokensOut < minOut) revert Slippage();
 
         // refund any WETH the swap couldn't consume (e.g. a buy larger than the curve can absorb),
@@ -158,7 +167,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         if (!c.set) revert Unknown();
         IERC20(token).safeTransferFrom(msg.sender, address(this), amountIn);
 
-        uint256 wethOut = _swap(token, c.pool, token, amountIn, address(this));
+        uint256 wethOut = _swap(token, c.pool, token, amountIn, address(this), 0);
         IWETH9(WETH).withdraw(wethOut);
 
         uint256 fee = (wethOut * c.sellBps) / 10_000;
@@ -174,14 +183,16 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     /// @dev Swap `amountIn` of `tokenIn` through the pool to `recipient`; returns the output amount.
     /// The router already holds `amountIn` of `tokenIn` (wrapped WETH for a buy, pulled token for a sell);
     /// the callback pays it. Swaps as far as the pool allows (slippage is checked by the caller).
-    function _swap(address token, address pool, address tokenIn, uint256 amountIn, address recipient)
+    /// @param capLimit optional sqrtPriceX96 cap (0 = swap as far as the pool allows). Used to stop a
+    /// pre-graduation buy exactly at the graduation price so it can't overshoot the curve into empty space.
+    function _swap(address token, address pool, address tokenIn, uint256 amountIn, address recipient, uint160 capLimit)
         internal
         returns (uint256 out)
     {
         bool tokenIsToken0 = token < WETH;
         bool tokenInIsToken0 = tokenIn == WETH ? !tokenIsToken0 : tokenIsToken0;
         bool zeroForOne = tokenInIsToken0;
-        uint160 limit = zeroForOne ? PoolMath.MIN_SQRT_RATIO + 1 : PoolMath.MAX_SQRT_RATIO - 1;
+        uint160 limit = capLimit != 0 ? capLimit : (zeroForOne ? PoolMath.MIN_SQRT_RATIO + 1 : PoolMath.MAX_SQRT_RATIO - 1);
 
         _swapping = true;
         _activePool = pool;
@@ -306,7 +317,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         Cfg storage c = _cfg[token];
         burnEscrow[token] = 0;
         IWETH9(WETH).deposit{value: amt}();
-        uint256 bought = _swap(token, c.pool, WETH, amt, address(this));
+        uint256 bought = _swap(token, c.pool, WETH, amt, address(this), 0);
         IERC20(token).safeTransfer(DEAD, bought);
         // if the swap couldn't consume all of it, re-credit the residual (never leave stray WETH in the
         // router, or a later buy's refund would hand it to an unrelated buyer)

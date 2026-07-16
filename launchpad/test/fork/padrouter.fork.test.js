@@ -114,4 +114,37 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     expect(await ethers.provider.getBalance(buyer.address)).to.be.greaterThan(ethBefore - gas);
     expect(await router.floorEscrow(token)).to.be.greaterThan(floorBefore); // sell fee added to the floor share
   });
+
+  it("a full buy-out THROUGH THE ROUTER caps at the graduation price (no overshoot) and graduates cleanly", async () => {
+    const [dep, platform, dev, buyer] = await ethers.getSigners();
+    const { router, factory } = await stack(dep, platform);
+    const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const rc = await (await factory.launch({ name: "Grad", symbol: "GRAD", dev: dev.address, tax })).wait();
+    const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
+    const { token, curve, pool: poolAddr } = ev.args;
+    const curveC = await ethers.getContractAt("CurvePool", curve);
+    const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
+
+    await ethers.provider.send("evm_increaseTime", [400]);
+    await ethers.provider.send("evm_mine", []);
+
+    // buy out with FAR more ETH than the curve needs — the router's cap must stop the price at the curve
+    // top (graduation tick), NOT run it into the empty space beyond (which crashed the live pool to MIN_TICK)
+    await (await router.connect(buyer).buy(token, 0, { value: 20n * ONE })).wait();
+    const tick = (await pool.slot0()).tick;
+    const gradTick = await curveC.gradTick();
+    expect(await curveC.ready()).to.equal(true);
+    expect(tick).to.not.equal(-887272); // did NOT crash to MIN_TICK
+    // the price is parked right at the graduation tick (within one spacing), so the Bond can post there
+    const diff = tick > gradTick ? tick - gradTick : gradTick - tick;
+    expect(diff).to.be.at.most(200n);
+
+    // graduate cleanly (this is exactly what reverted on the live overshoot)
+    await (await curveC.graduate()).wait();
+    const bond = await ethers.getContractAt("Bond", await curveC.bond());
+    expect(await bond.posted()).to.equal(true);
+    expect(await bond.sherwoodL()).to.be.greaterThan(0n);
+    expect(await bond.bountyL()).to.be.greaterThan(0n);
+    expect(await bond.ambushL()).to.be.greaterThan(0n);
+  });
 });

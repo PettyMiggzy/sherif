@@ -30,9 +30,14 @@ async function main() {
   };
 
   console.log("deploying:");
-  const ltd = await track("LaunchTokenDeployer", await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy());
-  const cpd = await track("CurvePoolDeployer", await (await ethers.getContractFactory("CurvePoolDeployer")).deploy());
-  const bd = await track("BondDeployer", await (await ethers.getContractFactory("BondDeployer")).deploy());
+  // stateless deployers can be REUSED across factories (pass their addresses to save gas)
+  const reuse = async (name, addr, factoryName) => {
+    if (addr) { console.log(`  ${name.padEnd(20)} ${addr}  (reused)`); return await ethers.getContractAt(factoryName, addr); }
+    return await track(name, await (await ethers.getContractFactory(factoryName)).deploy());
+  };
+  const ltd = await reuse("LaunchTokenDeployer", process.env.LTD, "LaunchTokenDeployer");
+  const cpd = await reuse("CurvePoolDeployer", process.env.CPD, "CurvePoolDeployer");
+  const bd = await reuse("BondDeployer", process.env.BD, "BondDeployer");
   const router = await track("PadRouter", await (await ethers.getContractFactory("PadRouter")).deploy(WETH, owner));
   const factory = await track("CurvePadFactory", await (await ethers.getContractFactory("CurvePadFactory")).deploy(
     WETH, V3_FACTORY, platform, owner, await router.getAddress(),
