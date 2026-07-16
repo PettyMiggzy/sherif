@@ -261,16 +261,32 @@ async function load(){
   // all in the payload); otherwise it falls back to reading the chain directly.
   let recs = [];
   try { recs = (await Pad.feed({ sort: "new", limit: 40 })).coins; } catch (e) { recs = []; }
+  const usingApi = Pad.hasApi();
   COINS = await Promise.all(recs.map(async (r, i) => {
-    let name = r.name, symbol = r.symbol, info = null;
-    if (!name) { try { const m = await Pad.tokenMeta(r.token); name = m.name; symbol = m.symbol; } catch {} }
-    // Live curve progress still comes from the pool tick (the indexer tracks
-    // launches/trades/graduation, not the moment-to-moment curve position).
-    try { info = await Pad.curveInfo(r.curve, r.token); } catch {}
-    const mc = info ? info.mcapEth * ETH_USD : 0;
-    const prog = info ? Math.round(info.progress * 100) : 0;
-    const graduated = r.graduated || (info && info.graduated);
-    const state = graduated ? "done" : (info && info.ready ? "grad" : "new");
+    let name = r.name, symbol = r.symbol;
+    let mc, prog, graduated, ready = false;
+    if (usingApi && r.progress != null) {
+      // Everything the card needs is already in the payload — ZERO chain reads.
+      // This is what lets the feed stay fast when 10k coins are live at once.
+      mc = (r.mcapEth || 0) * ETH_USD;
+      prog = Math.round((r.progress || 0) * 100);
+      graduated = !!r.graduated;
+      // "ready" = past the minimum-graduation tick (eligible to graduate now),
+      // derived from the geometry the indexer stored — still no chain read.
+      const span = Math.abs((r.gradTick || 0) - (r.startTick || 0)) || 1;
+      const minFrac = Math.abs((r.minGradTick || 0) - (r.startTick || 0)) / span;
+      ready = !graduated && (r.progress || 0) >= minFrac;
+    } else {
+      // Fallback (no API, or a coin the indexer hasn't snapshotted yet): read
+      // the curve directly. Costs one round-trip per coin — fine at small scale.
+      if (!name) { try { const m = await Pad.tokenMeta(r.token); name = m.name; symbol = m.symbol; } catch {} }
+      let info = null; try { info = await Pad.curveInfo(r.curve, r.token); } catch {}
+      mc = info ? info.mcapEth * ETH_USD : 0;
+      prog = info ? Math.round(info.progress * 100) : 0;
+      graduated = r.graduated || (info && info.graduated);
+      ready = info && info.ready;
+    }
+    const state = graduated ? "done" : (ready ? "grad" : "new");
     return {
       token: r.token, curve: r.curve, dev: r.dev, at: r.launchTs || r.at || 0,
       name: name || "Token", symbol: symbol || "?", mc, prog, state,

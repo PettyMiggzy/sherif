@@ -48,6 +48,10 @@ const shapeCoin = (r) => ({
   tradesAll: r.trades_all, trades24h: r.trades_24h,
   volAllEth: r.vol_all, vol24hEth: r.vol_24h,
   lastTradeTs: r.last_trade_ts, lastPriceEth: r.last_price,
+  // live curve snapshot — lets the pad render the progress bar + mcap with no
+  // per-coin chain read (the whole point of the indexer at scale).
+  progress: r.progress, mcapEth: r.mcap_eth, lastTick: r.last_tick, snapTs: r.snap_ts,
+  startTick: r.start_tick, minGradTick: r.min_grad_tick, gradTick: r.grad_tick, gradTarget: r.grad_target,
 });
 
 const statsStmt = db.prepare(`
