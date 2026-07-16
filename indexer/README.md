@@ -38,12 +38,77 @@ Then point the pad at it — in `pad/assets/config.js`:
 export const API_BASE = "https://your-indexer-host";   // "" = direct-RPC fallback
 ```
 
-### Docker
+### Docker (indexer only)
 
 ```bash
 docker build -t robinlabs-indexer .
 docker run -p 8787:8787 -v $PWD/data:/app/data --env-file .env robinlabs-indexer
 ```
+
+### Docker Compose — the whole stack, one command
+
+Serves the static pad **and** the API on one domain with automatic HTTPS
+(Caddy). Same origin → no CORS, one certificate.
+
+```bash
+cd indexer
+cp .env.example .env
+#  → set RPC_URL (Alchemy/QuickNode), START_BLOCK, and SITE_DOMAIN=pad.robinlabs.io
+docker compose up -d
+```
+
+Point your domain's A record at the box first. Then set, in
+`pad/assets/config.js`:
+
+```js
+export const API_BASE = "https://pad.robinlabs.io";   // your SITE_DOMAIN
+```
+
+That's it — `https://pad.robinlabs.io` now serves the pad, and
+`…/api/coins` is the live feed.
+
+## Scaling to a launch-day crowd (10k concurrent)
+
+The users' **launches and trades never touch this backend** — those go straight
+to the factory/router on-chain via each user's own wallet RPC. This backend only
+serves **reads** (the browse feed, charts data, search). Three things keep it fast:
+
+1. **Precomputed snapshots.** Progress and market cap are refreshed whenever a
+   coin trades and stored on the row, so listing thousands of live coins is
+   **one query, zero per-coin RPC**. The old path did a chain read per card;
+   this one doesn't.
+2. **A private RPC for the indexer.** Point `RPC_URL` at Alchemy or QuickNode.
+   The public Blockscout endpoint is rate-limited and will lag under a flood of
+   launch-day events; a private endpoint keeps the indexer caught up and lets
+   you raise `CHUNK` for faster catch-up.
+3. **A CDN in front.** Every API response sends `cache-control: max-age=5`.
+   Put Cloudflare (orange-cloud) on the domain and 10k readers are served from
+   the edge — only ~1 request per route per 5s reaches the box. This is the
+   single biggest lever; do it before launch.
+
+Other knobs:
+
+- **SQLite is fine here.** Writes are single-threaded from one indexer; reads are
+  WAL-concurrent and CDN-cached. If you ever outgrow it, run `--no-index` API
+  replicas against a read-only copy, or swap the store — the query layer is
+  isolated in `src/api.js` / `src/db.js`.
+- **Tune `POLL_MS`** down (e.g. 3000) during launch for faster feed freshness,
+  back up afterward to spare the RPC.
+- **`CONFIRMATIONS`** trades latency for reorg-safety; 3 is a good default.
+
+### Deploy on a DigitalOcean droplet (what you have)
+
+```bash
+# on a fresh Ubuntu droplet with Docker installed:
+git clone <your repo> && cd <repo>/indexer
+cp .env.example .env && nano .env          # RPC_URL, START_BLOCK, SITE_DOMAIN
+docker compose up -d                        # site + API live with HTTPS
+docker compose logs -f indexer              # watch it catch up
+```
+
+Open firewall ports 80 + 443. Put the domain behind Cloudflare for the CDN
+cache. Done — one $6–12/mo droplet comfortably serves a launch-day crowd behind
+the CDN.
 
 ### Scripts
 
