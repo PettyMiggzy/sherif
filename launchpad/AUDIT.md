@@ -10,8 +10,11 @@ Method: manual review + an adversarial test suite that tries to break each path
 (`test/padrouter.test.js`) and the on-fork end-to-end tests (`test/fork/*`).
 
 Status: all findings below resolved. Unit + adversarial + fuzz suites pass
-locally; 7 fork tests gated on a real archive RPC. The `SIMS=300` randomized
-battery (below) passes clean.
+locally, and **all 7 fork tests now pass against real Uniswap v3 on Robinhood
+Chain mainnet** (archive RPC in the gitignored `.env`) — the swap desk (buy +
+sell), the one-call launch + dev-buy, the curve, graduation, and the Bond
+(Sherwood/Bounty/Ambush + poke) are all verified end-to-end on the live chain,
+not just mocks. The `SIMS=300` randomized battery (below) passes clean.
 
 ## Findings & resolutions
 

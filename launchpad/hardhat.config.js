@@ -1,4 +1,5 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("dotenv").config(); // loads FORK_RPC / ROBINHOOD_RPC / PRIVATE_KEY from .env (gitignored)
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
