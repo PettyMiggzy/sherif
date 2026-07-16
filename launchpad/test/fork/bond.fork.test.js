@@ -23,7 +23,7 @@ const suite = process.env.FORK_RPC ? describe : describe.skip;
 suite("Bond on a Robinhood Chain fork (real Uniswap v3 range orders)", function () {
   this.timeout(240000);
 
-  it("posts Sherwood+Bounty+Ambush, catches a dip in the Bounty, recenters on poke, streams Sherwood fees to platform", async () => {
+  it("posts Sherwood+Bounty+Ambush, catches a dip in the Bounty, recenters on poke, compounds Sherwood fees back into the LP", async () => {
     const [dep, platform, curveSigner, trader] = await ethers.getSigners();
 
     // token + a real, initialized pool at a cheap-meme price (1 WETH ~ 50M token)
@@ -73,31 +73,30 @@ suite("Bond on a Robinhood Chain fork (real Uniswap v3 range orders)", function 
     await (await TOK.connect(dep).transfer(trader.address, 400_000_000n * ONE)).wait();
     await (await wethW.connect(trader).deposit({ value: ONE })).wait();
 
-    // (A) a DUMP: sell a slug of token -> price runs into the Bounty, which buys it with WETH.
-    // v3 takes the fee from the INPUT, so a token-in dump accrues Sherwood fees in TOKEN.
+    // (A) generate TWO-SIDED Sherwood fees: a DUMP (token-in) so the price runs into the Bounty which buys
+    // it, then a PUMP (WETH-in). v3 takes the fee from the INPUT, so trading both directions leaves Sherwood
+    // holding fees in BOTH token and WETH — which is what the full-range compound needs.
+    const sherLBefore = await bond.sherwoodL();
     const platTokBefore = await TOK.balanceOf(platform.address);
-    await swap(trader, tokAddr, 10_000_000n * ONE);
+    const platWethBefore = await wethW.balanceOf(platform.address);
+    await swap(trader, tokAddr, 10_000_000n * ONE); // dump -> token fees, price into the Bounty
+    await swap(trader, WETH, ONE / 2n);             // pump -> WETH fees
     await warp(1000); // let the TWAP converge so the poke deviation-guard passes (keeper waits for calm)
 
-    // (B) poke: recenters Bounty (all WETH) + Ambush (all tokens), sweeps Sherwood fees to platform
+    // (B) poke: COMPOUNDS Sherwood's two-sided fees straight back into the locked full-range LP (grows the
+    // permanent liquidity forever) and recenters the Bounty (all WETH) + Ambush (all tokens).
     await (await bond.poke()).wait();
     expect(await bond.bountyLo()).to.not.equal(moatLo0);        // floor recentered to the new price
     expect(await bond.bountyL()).to.be.greaterThan(0n);
     expect(await bond.ambushL()).to.be.greaterThan(0n);
-    // Sherwood swap fees on the dump streamed to the platform (in token, since token was the input)
-    expect(await TOK.balanceOf(platform.address)).to.be.greaterThan(platTokBefore);
+    // the locked Sherwood liquidity GREW from its own trading fees — the "floor grows forever" mechanic
+    expect(await bond.sherwoodL()).to.be.greaterThan(sherLBefore);
+    // and NOTHING leaked out to the platform — the Bond no longer pays fees to any wallet
+    expect(await TOK.balanceOf(platform.address)).to.equal(platTokBefore);
+    expect(await wethW.balanceOf(platform.address)).to.equal(platWethBefore);
     rampL0; // (economics of the catch/recycle are proven in sim/bond-sim.mjs)
 
-    // (C) a PUMP then poke: buy token with WETH (WETH-in -> Sherwood fees now accrue in WETH), floor ratchets.
-    const platWethBefore = await wethW.balanceOf(platform.address);
-    await swap(trader, WETH, ONE / 2n);
-    await warp(1000);
-    await (await bond.poke()).wait();
-    expect(await bond.bountyL()).to.be.greaterThan(0n);
-    expect(await bond.ambushL()).to.be.greaterThan(0n);
-    expect(await wethW.balanceOf(platform.address)).to.be.greaterThan(platWethBefore); // WETH fees to platform
-
-    // (D) anti-rug: the Bond exposes no way to move WETH/tokens to an arbitrary address
+    // (C) anti-rug: the Bond exposes no way to move WETH/tokens to an arbitrary address
     const bad = bond.interface.fragments.find(
       (f) => f.type === "function" && /withdraw|sweep|rescue|drain|transfer|send|collectTo|setOwner|owner/i.test(f.name));
     expect(bad, bad && bad.name).to.equal(undefined);

@@ -10,8 +10,9 @@ import {PoolMath} from "./libraries/PoolMath.sol";
 /// @title Bond — "The Sheriff's Bond"
 /// @notice A protocol-owned market maker posted on a token at graduation and locked forever. It holds three
 /// Uniswap v3 positions and rebalances them so the pool has a floor it can't be rugged below:
-///   - Sherwood     : a full-range LP (baseline liquidity). Principal is NEVER withdrawn; only its swap fees are
-///                collected, to the platform. This is the permanent locked liquidity.
+///   - Sherwood     : a full-range LP (baseline liquidity). Principal is NEVER withdrawn; its swap fees are
+///                compounded straight back INTO the position on every poke, so the permanent locked liquidity
+///                only ever grows — forever. Nothing is collected out to any wallet.
 ///   - Bounty     : a single-sided WETH range order just BELOW the price (a falling ladder of bids). Buys dips.
 ///   - Ambush : a single-sided token range order HIGH above the price (~3x–25x). Sells only into strength;
 ///                the WETH it earns funds the Bounty.
@@ -20,7 +21,8 @@ import {PoolMath} from "./libraries/PoolMath.sol";
 ///
 /// Anti-rug by construction: there is NO function that sends WETH or tokens to an arbitrary address. Sherwood
 /// principal is never burned; Bounty/Ambush funds only ever become pool positions or sit here awaiting the
-/// next poke; only Sherwood swap fees leave, and only to the fixed platform wallet. No owner, setter, or drain.
+/// next poke; Sherwood fees are compounded back into the locked position rather than paid out. NOTHING ever
+/// leaves the Bond to any wallet — there is no owner, setter, or drain.
 contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -52,7 +54,7 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     IUniswapV3Pool public immutable pool;
     address public immutable token0;
     address public immutable token1;
-    address public immutable platform; // receives Sherwood swap fees
+    address public immutable platform; // retained for deploy-interface stability; no longer a fee sink
     address public immutable curve; // only the curve may post()
     bool public immutable tokenIsToken0;
     bool public immutable bountyBelow; // Bounty (WETH) sits below price iff WETH is token1
@@ -124,7 +126,7 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         emit Posted(sherwoodL, bountyL, ambushL);
     }
 
-    /// @notice Permissionless keeper. Sweeps Sherwood swap fees to the platform, then recenters the Bounty (all held
+    /// @notice Permissionless keeper. Compounds Sherwood swap fees back into the locked LP, then recenters the Bounty (all held
     /// WETH) and Ambush (all held tokens) around the current price — ratcheting the floor and recycling
     /// caught supply. Guarded by a spot-vs-TWAP deviation check so it can't be poked at a manipulated price.
     function poke() external nonReentrant {
@@ -132,9 +134,18 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         (uint160 sp, int24 tick,,,,,) = pool.slot0();
         _requireUnmanipulated(tick);
 
-        // Sherwood: poke the position to realize fees, then collect ONLY fees (principal stays — locked)
+        // Sherwood: poke the position to realize fees, collect them HERE, and compound them straight back
+        // into the locked full-range position. The permanent, never-withdrawable liquidity therefore GROWS
+        // with every trade — forever — instead of the fees leaving. Any side left over after the balanced
+        // full-range mint (fees are rarely perfectly balanced) falls through to the Bounty/Ambush recenter
+        // below, so nothing is ever stranded.
         pool.burn(sherwoodLo, sherwoodHi, 0);
-        (uint128 kf0, uint128 kf1) = pool.collect(platform, sherwoodLo, sherwoodHi, U128_MAX, U128_MAX);
+        (uint128 kf0, uint128 kf1) = pool.collect(address(this), sherwoodLo, sherwoodHi, U128_MAX, U128_MAX);
+        uint128 addL = PoolMath.fullRangeLiquidityOrZero(sp, kf0, kf1);
+        if (addL > 0) {
+            sherwoodL += addL;
+            _mint(sherwoodLo, sherwoodHi, addL);
+        }
 
         // tear down Bounty + Ambush, pull everything back here
         if (bountyL > 0) {
@@ -153,7 +164,6 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         uint256 tbal = token.balanceOf(address(this));
         if (wbal > 0) _placeBounty(tick, wbal);
         if (tbal > 0) _placeAmbush(tick, tbal);
-        sp; // silence unused
         emit Poked(tick, bountyL, ambushL, kf0, kf1);
     }
 

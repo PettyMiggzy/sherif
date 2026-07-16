@@ -134,7 +134,8 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             revert BadTax();
         }
         if (uint256(walletBps) + floorBps + burnBps != 10_000) revert BadAlloc();
-        if (walletBps > 0 && projectWallet == address(0)) revert BadAlloc();
+        // the project wallet always receives money now (the sell-side 1% base), so it can never be zero
+        if (projectWallet == address(0)) revert BadAlloc();
         _cfg[token] = Cfg(pool, curve, projectWallet, buyBps, sellBps, walletBps, floorBps, burnBps, true);
         emit Registered(token, buyBps, sellBps, walletBps, floorBps, burnBps);
     }
@@ -165,7 +166,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             // fully consumed — charge the fee on the gross, exactly as configured
             fee = feeMax;
             spent = msg.value;
-            _distribute(token, msg.value, c.buyBps);
+            _distribute(token, msg.value, c.buyBps, false);
         } else {
             // Partial fill (buy overshot the curve): charge the fee only on what was actually consumed and
             // refund the rest — fee included — so a buyer whose order can't be fully absorbed is never taxed
@@ -179,7 +180,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
                 (bool r,) = msg.sender.call{value: refund}("");
                 require(r, "refund");
             }
-            _distribute(token, consumed, c.buyBps);
+            _distribute(token, consumed, c.buyBps, false);
         }
         emit Bought(token, msg.sender, spent, fee, tokensOut);
     }
@@ -198,7 +199,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         ethOut = wethOut - fee;
         if (ethOut < minOutEth) revert Slippage();
 
-        _distribute(token, wethOut, c.sellBps);
+        _distribute(token, wethOut, c.sellBps, true);
         (bool ok,) = msg.sender.call{value: ethOut}("");
         require(ok, "pay");
         emit Sold(token, msg.sender, amountIn, fee, ethOut);
@@ -237,20 +238,34 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     }
 
     /// @dev Split the fee for one trade. `value` is the ETH the fee is charged on (msg.value on a buy, the
-    /// WETH-out on a sell); `feeBps` is that side's rate. The default 1% is the platform's (0.9% now, 0.1%
-    /// deferred to graduation); anything above 1% splits 25% to the $SHERIFF buy-burn and 75% to the project.
-    function _distribute(address token, uint256 value, uint256 feeBps) internal {
+    /// WETH-out on a sell); `feeBps` is that side's rate; `sellSide` is true for a sell. The default 1% base
+    /// goes to the PLATFORM on a buy (0.9% now, 0.1% deferred to graduation) and to the CREATOR on a sell
+    /// (paid to the project wallet). Anything above 1% splits 25% to the $SHERIFF buy-burn and 75% to the
+    /// project on both sides.
+    function _distribute(address token, uint256 value, uint256 feeBps, bool sellSide) internal {
         // the exact fee charged to the trader (buy/sell computed it the same way); accrue it to the wei
         uint256 fee = (value * feeBps) / 10_000;
         if (fee == 0) return;
 
-        // deferred 0.1% (held until graduation) and the above-default excess are the "clean" pieces;
-        // the platform's immediate cut takes the remainder, so the parts sum to `fee` exactly (no dust).
-        uint256 deferred = (value * PLATFORM_DEFERRED_BPS) / 10_000;
+        // The above-default excess is the "clean" piece; the default-1% base takes the remainder, so the
+        // parts sum to `fee` exactly (no dust).
         uint256 excess = feeBps > DEFAULT_FEE_BPS ? (value * (feeBps - DEFAULT_FEE_BPS)) / 10_000 : 0;
-        uint256 immediate = fee - deferred - excess; // ≥ 0 (sum of floors ≤ floor of sum), absorbs rounding
-        platformEscrow += immediate;
-        deferredEscrow[token] += deferred;
+        uint256 base = fee - excess; // the default 1% (absorbs rounding)
+
+        uint256 platformImmediate;
+        uint256 deferred;
+        uint256 creatorBase;
+        if (sellSide) {
+            // sell-side default 1% is the CREATOR's — accrues to the project wallet's escrow
+            creatorBase = base;
+            devEscrow[token] += base;
+        } else {
+            // buy-side default 1% is the platform's: 0.9% now + 0.1% held until the coin graduates
+            deferred = (value * PLATFORM_DEFERRED_BPS) / 10_000;
+            platformImmediate = base - deferred;
+            platformEscrow += platformImmediate;
+            deferredEscrow[token] += deferred;
+        }
 
         uint256 sheriffCut;
         uint256 dev;
@@ -269,7 +284,8 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             burnEscrow[token] += burn;
             floorEscrow[token] += floor;
         }
-        emit FeeSplit(token, immediate, deferred, sheriffCut, dev, floor, burn);
+        // `dev` field = everything credited to the project wallet this trade (the sell base + its excess share)
+        emit FeeSplit(token, platformImmediate, deferred, sheriffCut, creatorBase + dev, floor, burn);
     }
 
     // ─────────────────────────────────────────── permissionless payouts ──

@@ -6,9 +6,14 @@ const WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 const V3 = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
 const ONE = 10n ** 18n;
 
+const ETH_USD = 1920;
+// Targeting graduation FDV ~$30k with a ~3 ETH raise. grad FDV = startFDV * 1.0001^width, so a smaller
+// startMag (higher start price) + a narrower width both pull grad mcap down from the old ~$69k.
 const CANDIDATES = [
-  { startMag: 252400, width: 4000 },
-  { startMag: 246000, width: 4000 },
+  { startMag: 207200, width: 27400 }, // start ~$1.9k, grad ~$30k
+  { startMag: 203000, width: 24000 }, // start ~$3k,   grad ~$30k
+  { startMag: 199800, width: 20000 }, // start ~$4k,   grad ~$30k
+  { startMag: 207200, width: 24000 }, // start ~$1.9k, grad ~$21k (bracket low)
 ];
 
 async function measure(startMag, width) {
@@ -39,13 +44,27 @@ async function measure(startMag, width) {
   await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 20n * ONE, await curveC.gradSqrtPriceX96())).wait();
   const spent = before - (await wethW.balanceOf(buyer.address));
   const ready = await curveC.ready();
-  return { spent, ready };
+
+  // graduation FDV: read the spot price at the curve top and value the full 1e9 supply
+  const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
+  const sqrtP = (await pool.slot0()).sqrtPriceX96;
+  const tokenIsToken0 = BigInt(token) < BigInt(WETH);
+  // price(token1/token0) = (sqrtP/2^96)^2, computed in floating point (calibration only)
+  const s = Number(sqrtP) / 2 ** 96;
+  const p01 = s * s;
+  const wethPerToken = tokenIsToken0 ? p01 : 1 / p01; // WETH per 1 token
+  const gradFdvEth = wethPerToken * 1e9; // 1e9 whole tokens
+  return { spent, ready, gradFdvEth };
 }
 
 async function main() {
   for (const c of CANDIDATES) {
-    const { spent, ready } = await measure(c.startMag, c.width);
-    console.log(`startMag=${c.startMag} width=${c.width} -> graduation raise ≈ ${ethers.formatEther(spent)} ETH  (~$${(Number(ethers.formatEther(spent)) * 1920).toFixed(2)}), ready=${ready}`);
+    const { spent, ready, gradFdvEth } = await measure(c.startMag, c.width);
+    const raiseEth = Number(ethers.formatEther(spent));
+    console.log(
+      `startMag=${c.startMag} width=${c.width} -> raise ≈ ${raiseEth.toFixed(3)} ETH (~$${(raiseEth * ETH_USD).toFixed(0)}), ` +
+      `grad FDV ≈ ${gradFdvEth.toFixed(2)} ETH (~$${(gradFdvEth * ETH_USD / 1000).toFixed(1)}k), ready=${ready}`
+    );
   }
 }
 main().catch((e) => { console.error(e.shortMessage || e.message); process.exit(1); });

@@ -84,22 +84,43 @@ operation.
 The suite defaults to a light `SIMS=50` for routine runs; the full 300-run is
 `SIMS=300 npx hardhat test test/padrouter.fuzz.test.js`.
 
-## Fee model (as of the $SHERIFF flywheel update)
+## Fee model (as of the creator-economics update)
 
 Every coin pays a swap-desk fee of **1%–4% per side** (1% floor, 4% cap, enforced
-at registration):
-- The **default 1%** is the platform's — **0.9% immediate**, **0.1% held until the
-  coin graduates** then released to the platform (`claimDeferred`).
-- Anything **above 1%** splits **25% → the platform's $SHERIFF cut** (accrued
-  separately in `sheriffCutEscrow`, paid to the platform via `withdrawSheriffCut`,
-  which buys/burns $SHERIFF off-chain) and **75% → the project** (wallet / Bond
-  floor / auto-burn).
+at registration). The **default 1% base** is split by side:
+- **Buy 1% → the platform** — **0.9% immediate**, **0.1% held until the coin
+  graduates** then released to the platform (`claimDeferred`).
+- **Sell 1% → the creator** — accrues to the project wallet's escrow and pays out
+  via `withdrawDev`. (This is why registration now requires a non-zero project
+  wallet on every coin — it always receives money.)
+- Anything **above 1%** (either side) splits **25% → the platform's $SHERIFF cut**
+  (accrued in `sheriffCutEscrow`, paid via `withdrawSheriffCut`, buy/burned
+  off-chain) and **75% → the project** (wallet / Bond floor / auto-burn).
 
-Rounding is exact: the platform's immediate cut absorbs the remainder, so the
-pieces sum to the fee **to the wei** (verified in the unit + 300-sim tests). All
-shares still accrue as escrow and pay out via separate permissionless flushers,
-so the split can never revert a trade. Re-audited: unit + adversarial + the
-`SIMS=300` battery all pass under the new model.
+Rounding is exact: the default-1% base absorbs the remainder, so the pieces sum to
+the fee **to the wei**. All shares accrue as escrow and pay out via separate
+permissionless flushers, so the split can never revert a trade. Conservation
+(`router ETH balance == Σ escrows`) holds after every op. Re-audited: unit +
+adversarial + fuzz all pass under the split-by-side model.
+
+## Perpetual liquidity — Sherwood fees compound forever
+
+The Bond's Sherwood position is full-range locked LP. Its Uniswap **pool fees**
+(the 1% fee tier it earns on every trade) are no longer swept out to the platform —
+`poke()` now collects them into the Bond and **re-mints them straight back into the
+Sherwood position**. The permanent, never-withdrawable liquidity therefore **grows
+with every trade, forever**. Fees are usually two-sided (v3 takes the fee from the
+input token, so buys and sells accrue opposite sides); any side left over after the
+balanced full-range mint falls through to the Bounty/Ambush recenter, so nothing is
+stranded. Nothing ever leaves the Bond to any wallet — the anti-rug property is
+strengthened, not weakened. Fork-tested: `sherwoodL` strictly increases after
+two-sided volume + a poke, and the platform's balances are provably unchanged.
+
+## Curve geometry (production)
+
+Calibrated on the fork to graduate at **~$30k FDV** for a **~3 ETH raise** (start
+FDV ~$1.9k): `START_TICK_MAG = 207200`, `CURVE_WIDTH = 27400`. Both remain
+deploy-time configurable so a cheap TEST factory can graduate for a few dollars.
 
 ## Standing invariants (by construction, not just tests)
 

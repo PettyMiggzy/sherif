@@ -54,6 +54,21 @@ library PoolMath {
         liquidity = uint128(l);
     }
 
+    /// @notice Like fullRangeLiquidity but returns 0 instead of reverting when the fees are one-sided or too
+    /// small to mint any liquidity. Lets the Bond compound Sherwood fees back in and skip gracefully on dust.
+    function fullRangeLiquidityOrZero(uint160 sqrtP, uint256 amount0, uint256 amount1)
+        internal
+        pure
+        returns (uint128)
+    {
+        if (amount0 == 0 || amount1 == 0) return 0;
+        uint256 l0 = _liquidityForAmount0(sqrtP, SQRT_RATIO_AT_MAX_TICK, amount0);
+        uint256 l1 = _liquidityForAmount1(SQRT_RATIO_AT_MIN_TICK, sqrtP, amount1);
+        uint256 l = l0 < l1 ? l0 : l1;
+        if (l == 0 || l > type(uint128).max) return 0;
+        return uint128(l);
+    }
+
     function _liquidityForAmount0(uint160 sqrtLower, uint160 sqrtUpper, uint256 amount0)
         private
         pure
