@@ -54,11 +54,19 @@ contract BondDeployer {
 }
 
 contract LaunchTokenDeployer {
-    function deploy(string calldata name, string calldata symbol, uint256 supply, address factory, LaunchToken.GuardConfig calldata g)
-        external
-        returns (address)
-    {
-        return address(new LaunchToken(name, symbol, supply, factory, g));
+    /// @dev CREATE2 with a caller-supplied salt so the token (and therefore its Uniswap pool) address is not
+    /// a predictable function of this deployer's nonce. That closes a launch-DoS where an attacker precreates
+    /// AND initializes the token's WETH pool at the next predictable address, making CurvePool's own
+    /// initialize() revert and permanently bricking every launch that reuses that address.
+    function deploy(
+        string calldata name,
+        string calldata symbol,
+        uint256 supply,
+        address factory,
+        LaunchToken.GuardConfig calldata g,
+        bytes32 salt
+    ) external returns (address) {
+        return address(new LaunchToken{salt: salt}(name, symbol, supply, factory, g));
     }
 }
 

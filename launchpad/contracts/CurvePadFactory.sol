@@ -40,7 +40,7 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
     uint16 public constant AMBUSH_BPS = 2500; // 25% -> the Bond's Ambush; 75% is the curve
     uint24 public constant POOL_FEE = 10000;
     uint16 public constant MAX_DEVBUY_BPS = 200; // dev buy capped at 2% of supply
-    int24 public constant DEVBUY_SPAN = 600; // price-limit span (~2%) so a dev buy can't run the curve
+    int24 public constant DEVBUY_SPAN = 600; // price-limit span (~6%) so a dev buy can't run the curve far
 
     address public immutable WETH;
     address public immutable v3Factory;
@@ -143,7 +143,14 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
             maxWalletBps2: 200,
             cooldownSecs: 2
         });
-        token = tokenDeployer.deploy(p.name, p.symbol, TOTAL_SUPPLY, address(this), g);
+        // CREATE2 salt with per-launch entropy (incl. block.number) so the token — and thus its Uniswap pool
+        // address — can't be predicted from the deployer's nonce. An attacker who precreates+initializes the
+        // pool to brick a launch would have to win the race for THIS exact block; a retry lands a fresh
+        // address, so the DoS can't be made permanent.
+        bytes32 salt = keccak256(
+            abi.encodePacked(address(this), p.dev, p.name, p.symbol, block.number, block.timestamp, allTokens.length)
+        );
+        token = tokenDeployer.deploy(p.name, p.symbol, TOTAL_SUPPLY, address(this), g, salt);
 
         int24 startTick = token < WETH ? -START_TICK_MAG : START_TICK_MAG;
         curve = curveDeployer.deploy(
@@ -206,6 +213,13 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
         require(p_ != address(0), "zero");
         platform = p_;
         emit PlatformChanged(p_);
+    }
+
+    /// @notice Owner-only pass-through so the platform can seed a coin's buy-side sniper blocklist during its
+    /// anti-snipe window (the token only accepts seedBlocklist from its factory). It is add-only and the token
+    /// auto-freezes it when the window ends, so it can never be used to block a normal holder's sell.
+    function seedBlocklist(address token, address[] calldata bots) external onlyOwner {
+        LaunchToken(token).seedBlocklist(bots);
     }
 
     function tokenCount() external view returns (uint256) {

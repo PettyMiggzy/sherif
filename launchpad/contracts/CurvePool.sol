@@ -50,6 +50,7 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
     int24 public immutable gradTick; // price when the curve is bought out (graduation)
 
     uint16 public constant SHERWOOD_WETH_BPS = 6000; // 60% of the raise -> Sherwood LP, 40% -> Bounty floor
+    int24 public constant GRAD_MAX_DEV = 50; // graduation price must be within ~0.5% of gradTick (anti-manipulation)
 
     bool public seeded;
     bool public graduated;
@@ -125,8 +126,21 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
             PoolMath.singleSidedLiquidity(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), curveSupply, tokenIsToken0);
         curveL = L;
         _mint(lo, hi, L);
-        pool.increaseObservationCardinalityNext(200); // arm the TWAP now (for the Bond's poke guard later)
+        // Arm the TWAP oracle for the Bond's poke() guard. Robinhood Chain runs ~0.1s blocks and stores ≤1
+        // observation per active block, so the ring buffer must hold enough slots to span the Bond's TWAP
+        // window. 200 slots cover ~20s of continuous every-block trading (> the Bond's 15s window). We cannot
+        // ask for more here: Robinhood Chain caps a single tx at 2**24 (~16.7M) gas, and pre-initializing the
+        // observation slots is ~20k gas each, so a bigger bump would push launch() over the per-tx cap. Coins
+        // that want a wider TWAP margin ramp the buffer up post-launch via growOracle() (many cheap txs).
+        pool.increaseObservationCardinalityNext(200);
         emit Seeded(lo, hi, L);
+    }
+
+    /// @notice Permissionless: grow the pool's TWAP observation buffer toward `target`. Split across as many
+    /// calls as needed so each stays under Robinhood Chain's per-tx gas cap. Only ever increases the buffer
+    /// (Uniswap ignores a target ≤ the current one), so it can't shrink or grieve the oracle.
+    function growOracle(uint16 target) external {
+        pool.increaseObservationCardinalityNext(target);
     }
 
     /// @notice The pool price at graduation (the curve's top). Buyers/routers cap the buyout swap here.
@@ -146,6 +160,15 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         if (!seeded) revert NotSeeded();
         if (graduated) revert AlreadyGraduated();
         if (!ready()) revert NotReady();
+
+        // Anti-manipulation: after the curve is bought out there is NO liquidity past gradTick, so spot can be
+        // shoved arbitrarily far past it for ~free. If we posted the Bond around that spot, an attacker could
+        // place the floor at an inflated price and drain it. Require the price to sit essentially AT gradTick
+        // (an honest capped buy-out lands within ~1 tick) before posting. Burn/collect below don't move price,
+        // so post() reads this same, verified price.
+        (, int24 tickNow,,,,,) = pool.slot0();
+        int24 dgrad = tickNow > gradTick ? tickNow - gradTick : gradTick - tickNow;
+        if (dgrad > GRAD_MAX_DEV) revert NotReady();
         graduated = true;
 
         // pull the whole curve position back here (raised WETH + any unsold token)

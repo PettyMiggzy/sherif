@@ -35,7 +35,17 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     int24 public constant AMBUSH_NEAR = 11000; // ~3.0x  : Ambush start ~3x
     int24 public constant AMBUSH_FAR = 32000; //  ~24.5x : ...up to ~25x
     int24 public constant MAX_DEV = 300; //     ~3%    : max spot-vs-TWAP deviation to allow a poke
-    uint32 public constant TWAP_WINDOW = 900; //        15-min TWAP for the poke guard
+    // 15s TWAP for the poke guard. On Robinhood Chain (~0.1s blocks, ≤1 oracle obs/active block) the curve
+    // seeds the pool with cardinality 200 (~20s of buffer) — the most a single launch tx can afford under the
+    // chain's 2**24 (~16.7M) per-tx gas cap — so observe(15) has ~5s of headroom and never reverts "OLD" even
+    // under an every-block pump. (Coins can grow the buffer further post-launch via CurvePool.growOracle for a
+    // wider margin, but 15s is covered without it.) A short recent window also keeps spot close to the mean, so
+    // poke() succeeds during pumps (when recentering matters) while still bounding manipulation to MAX_DEV.
+    // Bands are placed relative to spot (never straddling it); the residual within-band spot manipulation is
+    // marginal (1% fee tier, bounded to the small recycled balance) — the floor-draining graduation vector is
+    // closed in CurvePool.
+    uint32 public constant TWAP_WINDOW = 15;
+    int24 internal constant TICK_BOUND = 887200; // clamp band ticks to the valid (spacing-snapped) range
 
     IERC20 public immutable token;
     address public immutable WETH;
@@ -149,10 +159,12 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
 
     // --------------------------------------------------------------- internals
     function _placeBounty(int24 tick, uint256 wethAmt) internal {
-        if (wethAmt == 0) return; // nothing to place (e.g. the whole raise went to Sherwood) — skip, don't revert
         // Bounty holds WETH, on the "token gets cheaper" side (below price iff WETH is token1).
         (int24 lo, int24 hi, bool above) = _band(tick, bountyBelow ? false : true, BOUNTY_NEAR, BOUNTY_FAR);
-        uint128 L = PoolMath.singleSidedLiquidity(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), wethAmt, above);
+        // OrZero: skip (don't revert) if the amount is 0 or too small to make any liquidity — the WETH just
+        // stays here for the next poke instead of bricking this one.
+        uint128 L = PoolMath.singleSidedLiquidityOrZero(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), wethAmt, above);
+        if (L == 0) return;
         bountyLo = lo;
         bountyHi = hi;
         bountyL = L;
@@ -160,10 +172,10 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     }
 
     function _placeAmbush(int24 tick, uint256 tokenAmt) internal {
-        if (tokenAmt == 0) return; // no tokens left for an Ambush (small raise) — skip, don't revert
         // Ambush hold the token, on the "token gets more expensive" side (opposite of the Bounty).
         (int24 lo, int24 hi, bool above) = _band(tick, bountyBelow ? true : false, AMBUSH_NEAR, AMBUSH_FAR);
-        uint128 L = PoolMath.singleSidedLiquidity(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), tokenAmt, above);
+        uint128 L = PoolMath.singleSidedLiquidityOrZero(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), tokenAmt, above);
+        if (L == 0) return;
         ambushLo = lo;
         ambushHi = hi;
         ambushL = L;
@@ -172,16 +184,24 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
 
     /// @dev A single-sided band `near..far` ticks away from the current price, on the ABOVE or BELOW side.
     /// `above` selects the side; token0Side == above (a band above the current tick holds only token0).
+    /// Band ticks are clamped to the valid range so an extreme price can never push a bound past ±887200
+    /// (which would revert getSqrtRatioAtTick / mint and brick poke).
     function _band(int24 tick, bool above, int24 near, int24 far) internal pure returns (int24 lo, int24 hi, bool isAbove) {
         int24 base = _snapDown(tick);
         if (above) {
-            lo = base + near;
-            hi = base + far;
+            lo = _clamp(base + near);
+            hi = _clamp(base + far);
         } else {
-            lo = base - far;
-            hi = base - near;
+            lo = _clamp(base - far);
+            hi = _clamp(base - near);
         }
         return (lo, hi, above);
+    }
+
+    function _clamp(int24 t) internal pure returns (int24) {
+        if (t > TICK_BOUND) return TICK_BOUND;
+        if (t < -TICK_BOUND) return -TICK_BOUND;
+        return t;
     }
 
     function _snapDown(int24 t) internal pure returns (int24) {

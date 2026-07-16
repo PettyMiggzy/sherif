@@ -43,7 +43,18 @@ describe("PadRouter — fee model (mock pool)", function () {
     await expect(router.connect(dev).register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 100, 100, 10000, 0, 0))
       .to.be.revertedWithCustomError(router, "OnlyFactory");
     await expect(reg(100, 100, 10000, 0, 0)).to.not.be.reverted; // plain default 1%
-    await expect(reg(400, 400, 5000, 3000, 2000)).to.not.be.reverted; // max, re-register same token ok
+    // register-once: a coin's config can never be overwritten, even by the factory (PR-6)
+    await expect(reg(400, 400, 5000, 3000, 2000)).to.be.revertedWithCustomError(router, "AlreadySet");
+  });
+
+  it("register is one-shot per token, and renounceOwnership is permanently disabled (PR-6, PR-7)", async () => {
+    const { dep, dev, tokAddr, poolAddr, router } = await deploy();
+    await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 100, 100, 10000, 0, 0)).wait();
+    // a second register for the same token reverts, so a coin's fee config is immutable after launch
+    await expect(router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 400, 400, 10000, 0, 0))
+      .to.be.revertedWithCustomError(router, "AlreadySet");
+    // ownership is load-bearing (all platform payouts route to owner()); renouncing is blocked forever
+    await expect(router.connect(dep).renounceOwnership()).to.be.reverted;
   });
 
   it("a plain 1% coin: platform gets 0.9% now + 0.1% deferred; nothing else moves", async () => {

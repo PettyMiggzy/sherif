@@ -128,4 +128,53 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect(await weth.balanceOf(await factory.getAddress())).to.equal(0n);
     expect(await TOK.balanceOf(await factory.getAddress())).to.equal(0n);
   });
+
+  it("graduate() refuses a MANIPULATED post-buyout price — the floor-drain vector is closed (CP-1)", async () => {
+    const [dep, platform, dev, buyer] = await ethers.getSigners();
+
+    const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
+    const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
+    const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
+      WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800
+    );
+    await (await router.setFactory(await factory.getAddress())).wait();
+    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+
+    const rc = await (await factory.launch({ name: "Manip", symbol: "MNP", dev: dev.address, tax: NOTAX })).wait();
+    const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
+    const { token, curve, pool: poolAddr } = ev.args;
+    const curveC = await ethers.getContractAt("CurvePool", curve);
+    const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
+
+    const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
+    const probeAddr = await probe.getAddress();
+    const wethW = await ethers.getContractAt(
+      ["function deposit() payable", "function approve(address,uint256) returns (bool)"], WETH);
+    await (await wethW.connect(buyer).deposit({ value: 60n * ONE })).wait();
+    await (await wethW.connect(buyer).approve(probeAddr, 60n * ONE)).wait();
+
+    await ethers.provider.send("evm_increaseTime", [400]); // clear the anti-snipe window
+    await ethers.provider.send("evm_mine", []);
+
+    // buy out the curve with the graduation-price cap -> price parked AT gradTick, curve is ready
+    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 55n * ONE, await curveC.gradSqrtPriceX96())).wait();
+    expect(await curveC.ready()).to.equal(true);
+    const gradTick = await curveC.gradTick();
+    const atGrad = (await pool.slot0()).tick;
+    expect(atGrad > gradTick ? atGrad - gradTick : gradTick - atGrad).to.be.at.most(50n); // within tolerance
+
+    // ATTACK: shove spot far past gradTick into the empty region beyond the curve (free — no liquidity there).
+    // Direction depends on token ordering; measure the ABSOLUTE deviation (what graduate() actually gates on).
+    await (await probe.connect(buyer).swapExactIn(poolAddr, WETH, ONE / 1000n)).wait();
+    const shoved = (await pool.slot0()).tick;
+    const dev0 = shoved > gradTick ? shoved - gradTick : gradTick - shoved;
+    expect(dev0).to.be.greaterThan(50n); // price is now well past the graduation tick (beyond the tolerance)
+
+    // graduate() must REFUSE to post the Bond around this manipulated price (was the floor-drain vector)
+    await expect(curveC.graduate()).to.be.revertedWithCustomError(curveC, "NotReady");
+    expect(await curveC.graduated()).to.equal(false);
+  });
 });

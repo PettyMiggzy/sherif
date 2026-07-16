@@ -89,6 +89,19 @@ library PoolMath {
         return uint128(l);
     }
 
+    /// @notice Like singleSidedLiquidity but returns 0 instead of reverting when the band is empty or the
+    /// amount is too small to make any liquidity. Lets a caller (the Bond) skip a placement gracefully.
+    function singleSidedLiquidityOrZero(uint160 sqrtLo, uint160 sqrtHi, uint256 amount, bool token0Side)
+        internal
+        pure
+        returns (uint128)
+    {
+        if (amount == 0 || sqrtHi <= sqrtLo) return 0;
+        uint256 l = token0Side ? _liquidityForAmount0(sqrtLo, sqrtHi, amount) : _liquidityForAmount1(sqrtLo, sqrtHi, amount);
+        if (l == 0 || l > type(uint128).max) return 0;
+        return uint128(l);
+    }
+
     /// @notice Canonical Uniswap v3 TickMath.getSqrtRatioAtTick — sqrt(1.0001^tick) * 2^96.
     /// Used to price the TWAP mean tick for manipulation-resistant slippage floors (relies on unchecked
     /// overflow exactly as Uniswap's original does).

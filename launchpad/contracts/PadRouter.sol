@@ -80,6 +80,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
 
     error Unknown();
     error OnlyFactory();
+    error AlreadySet();
     error BadTax();
     error BadAlloc();
     error Slippage();
@@ -102,6 +103,13 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         factory = f;
     }
 
+    /// @notice Ownership is load-bearing — the platform's immediate cut, deferred 0.1% and $SHERIFF cut all
+    /// pay out to owner(). Renouncing would strand those escrows forever, so it is permanently disabled.
+    /// (Ownership can still be transferred via Ownable2Step's two-step transferOwnership/acceptOwnership.)
+    function renounceOwnership() public pure override {
+        revert("disabled");
+    }
+
     function configOf(address token) external view returns (Cfg memory) {
         return _cfg[token];
     }
@@ -120,6 +128,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         uint16 burnBps
     ) external {
         if (msg.sender != factory) revert OnlyFactory();
+        if (_cfg[token].set) revert AlreadySet(); // register-once: a coin's config can never be overwritten
         // every coin pays at least the default 1%, up to the 4% cap, per side
         if (buyBps < DEFAULT_FEE_BPS || sellBps < DEFAULT_FEE_BPS || buyBps > MAX_TAX_BPS || sellBps > MAX_TAX_BPS) {
             revert BadTax();
@@ -135,29 +144,44 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     function buy(address token, uint256 minOut) external payable nonReentrant returns (uint256 tokensOut) {
         Cfg storage c = _cfg[token];
         if (!c.set) revert Unknown();
-        uint256 fee = (msg.value * c.buyBps) / 10_000;
-        uint256 net = msg.value - fee;
-        if (net == 0) revert Dust();
+        uint256 feeMax = (msg.value * c.buyBps) / 10_000;
+        uint256 netMax = msg.value - feeMax;
+        if (netMax == 0) revert Dust();
 
-        IWETH9(WETH).deposit{value: net}();
+        IWETH9(WETH).deposit{value: netMax}();
         // pre-graduation, cap the buy at the graduation price so a big buy stops exactly at the curve top
         // instead of running the price into the empty space beyond it (which would brick graduation)
         uint160 cap;
         if (c.curve != address(0) && !ICurveState(c.curve).graduated()) cap = ICurveState(c.curve).gradSqrtPriceX96();
-        tokensOut = _swap(token, c.pool, WETH, net, msg.sender, cap);
+        tokensOut = _swap(token, c.pool, WETH, netMax, msg.sender, cap);
         if (tokensOut < minOut) revert Slippage();
 
-        // refund any WETH the swap couldn't consume (e.g. a buy larger than the curve can absorb),
-        // so a buyer's funds can never get stranded in the router
+        // How much WETH the pool actually took. On a normal buy this is all of netMax; on a buy that hits the
+        // graduation cap (or otherwise can't be fully absorbed) the pool takes less and leaves a remainder.
         uint256 leftover = IERC20(WETH).balanceOf(address(this));
-        if (leftover > 0) {
+        uint256 fee;
+        uint256 spent;
+        if (leftover == 0) {
+            // fully consumed — charge the fee on the gross, exactly as configured
+            fee = feeMax;
+            spent = msg.value;
+            _distribute(token, msg.value, c.buyBps);
+        } else {
+            // Partial fill (buy overshot the curve): charge the fee only on what was actually consumed and
+            // refund the rest — fee included — so a buyer whose order can't be fully absorbed is never taxed
+            // on ETH that never entered the trade.
+            uint256 consumed = netMax - leftover;
             IWETH9(WETH).withdraw(leftover);
-            (bool r,) = msg.sender.call{value: leftover}("");
-            require(r, "refund");
+            fee = (consumed * c.buyBps) / 10_000;
+            spent = consumed + fee;
+            uint256 refund = msg.value - spent; // = feeMax + leftover - fee, always ≥ 0
+            if (refund > 0) {
+                (bool r,) = msg.sender.call{value: refund}("");
+                require(r, "refund");
+            }
+            _distribute(token, consumed, c.buyBps);
         }
-
-        _distribute(token, msg.value, c.buyBps);
-        emit Bought(token, msg.sender, msg.value, fee, tokensOut);
+        emit Bought(token, msg.sender, spent, fee, tokensOut);
     }
 
     /// @notice Sell `amountIn` of `token` for native ETH. Requires an exact-amount approval to THIS router
@@ -290,7 +314,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
 
     /// @notice Release a coin's deferred 0.1% to the platform, once it has graduated. No-op before then.
     /// Permissionless; the funds only ever move to the platform escrow.
-    function claimDeferred(address token) external {
+    function claimDeferred(address token) external nonReentrant {
         uint256 amt = deferredEscrow[token];
         if (amt == 0) return;
         address b = bondOf[token];
@@ -317,7 +341,11 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         Cfg storage c = _cfg[token];
         burnEscrow[token] = 0;
         IWETH9(WETH).deposit{value: amt}();
-        uint256 bought = _swap(token, c.pool, WETH, amt, address(this), 0);
+        // pre-graduation, cap at the graduation price so a burn-buy can't overshoot the curve into empty
+        // space and brick graduation (same guard the user-facing buy() uses)
+        uint160 cap;
+        if (c.curve != address(0) && !ICurveState(c.curve).graduated()) cap = ICurveState(c.curve).gradSqrtPriceX96();
+        uint256 bought = _swap(token, c.pool, WETH, amt, address(this), cap);
         IERC20(token).safeTransfer(DEAD, bought);
         // if the swap couldn't consume all of it, re-credit the residual (never leave stray WETH in the
         // router, or a later buy's refund would hand it to an unrelated buyer)

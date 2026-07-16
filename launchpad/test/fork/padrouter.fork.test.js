@@ -148,6 +148,43 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     expect(await bond.ambushL()).to.be.greaterThan(0n);
   });
 
+  it("an overshoot buy is taxed only on what the curve actually absorbed, not the gross sent (PR-3)", async () => {
+    const [dep, platform, dev, buyer] = await ethers.getSigners();
+    const { router, factory } = await stack(dep, platform);
+    // plain 1% coin so the whole fee lands in platform escrow (immediate + deferred) — easy to total
+    const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const rc = await (await factory.launch({ name: "Over", symbol: "OVER", dev: dev.address, tax })).wait();
+    const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
+    const { token } = ev.args;
+    const routerAddr = await router.getAddress();
+
+    await ethers.provider.send("evm_increaseTime", [400]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Fire 20 ETH at a curve that only needs a few — the swap caps at the graduation tick and refunds the rest.
+    const before = await ethers.provider.getBalance(buyer.address);
+    const r = await (await router.connect(buyer).buy(token, 0, { value: 20n * ONE })).wait();
+    const spentOnGas = r.gasUsed * r.gasPrice;
+    const after = await ethers.provider.getBalance(buyer.address);
+    const netSpent = before - after - spentOnGas; // ETH the buyer actually parted with (consumed + fee)
+
+    // The buyer paid far less than the 20 ETH sent — the unconsumed remainder (fee included) was refunded.
+    expect(netSpent).to.be.lessThan(10n * ONE);
+
+    // Fee is charged on the consumed amount, so total escrow is WAY under 1% of the 20 ETH gross (0.2 ETH).
+    const escrow = (await router.platformEscrow())
+      + (await router.deferredEscrow(token))
+      + (await router.sheriffCutEscrow())
+      + (await router.devEscrow(token))
+      + (await router.floorEscrow(token))
+      + (await router.burnEscrow(token));
+    expect(escrow).to.be.lessThan((20n * ONE * 100n) / 10_000n); // < 1% of gross -> not taxed on gross
+
+    // Conservation: the router holds exactly the escrowed fee as native ETH, nothing stranded.
+    expect(await ethers.provider.getBalance(routerAddr)).to.equal(escrow);
+    expect(await ethers.provider.getBalance(routerAddr)).to.be.greaterThan(0n);
+  });
+
   it("a tiny-raise curve graduates cleanly even when Sherwood absorbs all the Ambush supply (ambush=0)", async () => {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
     // the cheap TEST curve: graduates after a few $ of buys — so little WETH that Sherwood takes ALL the

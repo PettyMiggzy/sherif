@@ -25,6 +25,33 @@ not just mocks. The `SIMS=300` randomized battery (below) passes clean.
 | F3 | Low | Front-end `quoteMinOut` returned `0` on any read failure → a buy/sell could go out with **no slippage floor** (sandwich bait). | It now throws a friendly "couldn't price this trade" instead of ever returning 0. A trade never signs without a real min-out. |
 | F4 | Info | `withdrawPlatform` was the one state-changer without `nonReentrant`; a seller's payout hook could re-enter it. Harmless (CEI, funds only ever go to `owner()`), but it broke the clean "any re-entry reverts" invariant. | Added `nonReentrant`. Now every fund-moving entrypoint is guarded. Test: `reentrancy … cannot double-dip` (mode 2). |
 
+## Deep pre-production audit (second pass)
+
+A second, adversarial pass (5 parallel reviewers over each money path) before the
+production deploy. Every finding below is **fixed and regression-tested**; the
+full unit + adversarial + `SIMS=300` + all fork tests pass green after the fixes.
+
+| # | Sev | Finding | Resolution |
+|---|-----|---------|------------|
+| CP-1 | **Critical** | After the curve is bought out there is **no liquidity past `gradTick`**, so spot can be shoved arbitrarily far past it for ~free. `graduate()` posted the Bond around that spot — an attacker could place the floor at an inflated price and drain it. | `graduate()` now requires spot to sit within `GRAD_MAX_DEV = 50` ticks (~0.5%) of `gradTick` before posting (`CurvePool`). An honest capped buy-out lands within one spacing; a manipulated price reverts `NotReady`. Regression: `graduate() refuses a MANIPULATED post-buyout price (CP-1)` (fork). |
+| F-1 | High | The launch token was deployed with plain `CREATE` (nonce-predictable). An attacker could pre-create **and initialize** the token's WETH pool at the next predictable address, making `CurvePool`'s own `initialize()` revert and **permanently bricking** every launch that reuses that address. | Token now deploys via `CREATE2` with a per-launch salt that folds in `block.number`/`block.timestamp`/dev/name/symbol (`LaunchTokenDeployer` + `CurvePadFactory`). The address — and thus the pool — is unpredictable; a griefer would have to win the race for one exact block, and a retry lands a fresh address, so the DoS can't be made permanent. |
+| PR-1 | High | `flushBurn`'s buy-and-burn swapped with **no price cap**. Run pre-graduation it could push price past `gradTick` into the empty region and brick graduation — the same overshoot that crashed the live pool. | `flushBurn` now caps the buy at `gradSqrtPriceX96()` while the coin is pre-graduation, exactly like the user-facing `buy()` (`PadRouter`). |
+| B-1 | High | The Bond's `poke()` reads a TWAP over `observe(window)`. On Robinhood Chain (~0.1s blocks, ≤1 obs/active block) the pool's observation buffer was too small to span the window, so a busy coin's `poke()` reverts `OLD` under a pump. The naive fix (cardinality 600) **blew Robinhood Chain's 2²⁴ (~16.7M) per-tx gas cap** and bricked `launch()`. | Seed a cap-safe **cardinality 200** (~20s buffer) in `seed()`, size the poke TWAP to **15s** (5s headroom), and expose a permissionless `CurvePool.growOracle(uint16)` passthrough so coins can ramp the buffer higher post-launch in many cheap txs. `launch()` stays comfortably under the per-tx gas cap. |
+| PR-3 | Med | A buy that overshot the curve refunded the unconsumed WETH but still charged the swap fee on the **gross** `msg.value`, over-taxing the buyer on ETH that never entered the trade. | The fee is now charged on the **consumed** amount (fee-inclusive refund of the rest) whenever the buy partially fills; a fully-consumed buy is unchanged. Conservation still exact. Regression: `an overshoot buy is taxed only on what the curve absorbed (PR-3)` (fork). |
+| B-6 | Med | At an extreme price a Bond band bound could exceed ±887200, reverting `getSqrtRatioAtTick`/`mint` and bricking `poke()`. | Band ticks are clamped to ±887200 via `_clamp` before use (`Bond`). |
+| B-7 | Med | An empty/too-small Bounty or Ambush band reverted `"bad L"`, bricking the whole `poke()`. | `PoolMath.singleSidedLiquidityOrZero` returns 0 instead of reverting; `poke()` skips that placement and leaves the funds for the next one (`Bond` / `PoolMath`). |
+| PR-6 | Med | `register` could be called again for a token that had already launched, silently overwriting its fee config. | `register` now reverts `AlreadySet` on a second call for the same token (`PadRouter`). Regression: unit test (PR-6). |
+| PR-4 | Low | `claimDeferred` lacked `nonReentrant` (it does an external `curve.bond()` read before crediting escrow). Harmless under CEI but broke the "every entrypoint guarded" invariant. | Added `nonReentrant` (`PadRouter`). |
+| PR-7 | Low | Ownership is load-bearing — the platform's immediate cut, the deferred 0.1%, and the $SHERIFF cut all pay out to `owner()`. `renounceOwnership()` would strand them forever. | `renounceOwnership()` is overridden to always revert; `Ownable2Step` transfer is still available (`PadRouter`). Regression: unit test (PR-7). |
+| F-4 | Low | `LaunchToken.seedBlocklist` was `onlyFactory`, but `CurvePadFactory` exposed **no** way to call it — the anti-snipe sniper blocklist was dead code. | Added owner-only `CurvePadFactory.seedBlocklist(token, bots)` pass-through. Still add-only and auto-frozen when the window ends (can never block a normal holder's sell). |
+| F-8 | Info | `DEVBUY_SPAN` comment said "~2%" but 600 ticks is ~6%. | Comment corrected (`CurvePadFactory`). |
+| B-3 | Accepted | `poke()` centers bands on **spot** (not the TWAP mean), leaving a marginal within-band spot-manipulation surface. | Accepted and documented: bands never straddle spot, the effect is bounded to the small recycled balance at the 1% fee tier, and the floor-**draining** vector is fully closed by CP-1. Switching to mean-centering would risk band/price straddle given `MAX_DEV > BOUNTY_NEAR`. |
+
+**Chain constraint discovered:** Robinhood Chain enforces a **per-transaction gas
+cap of 2²⁴ = 16,777,216**. `launch()` does token + pool + curve seed + register in
+one tx, so it must stay under this — the B-1 fix keeps the one-time oracle warm-up
+(cardinality) small enough to fit, with `growOracle()` for anything beyond.
+
 ## Properties verified by the adversarial suite
 
 - **No spoofed callback** — `uniswapV3SwapCallback` reverts unless mid-swap with the exact pool.
