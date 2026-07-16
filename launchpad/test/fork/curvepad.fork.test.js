@@ -184,6 +184,50 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect(rode.bountyL).to.be.greaterThan(atMin.bountyL); // a deeper buy-wall
   });
 
+  it("auto-graduate: the dev sets the target; nobody can graduate before the dev's mark", async () => {
+    const [dep, platform, dev, buyer, mallory] = await ethers.getSigners();
+    const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
+    const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
+    const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
+      WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 196200, 25800, 16400
+    );
+    await (await router.setFactory(await factory.getAddress())).wait();
+    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const rc = await (await factory.launch({ name: "Auto", symbol: "AUTO", dev: dev.address, tax: NOTAX })).wait();
+    const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
+    const { curve, pool: poolAddr } = ev.args;
+    const curveC = await ethers.getContractAt("CurvePool", curve);
+
+    // access control + bounds
+    await expect(curveC.connect(mallory).setGradTarget(await curveC.gradTick())).to.be.revertedWithCustomError(curveC, "NotDev");
+    await expect(curveC.connect(dev).setGradTarget(0)).to.be.revertedWithCustomError(curveC, "BadTarget"); // outside [min, ceiling]
+
+    // the dev chooses to ride all the way: target = the ceiling
+    await (await curveC.connect(dev).setGradTarget(await curveC.gradTick())).wait();
+
+    const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
+    const wethW = await ethers.getContractAt(["function deposit() payable", "function approve(address,uint256) returns (bool)"], WETH);
+    await (await wethW.connect(buyer).deposit({ value: 30n * ONE })).wait();
+    await (await wethW.connect(buyer).approve(await probe.getAddress(), 30n * ONE)).wait();
+    await ethers.provider.send("evm_increaseTime", [400]);
+    await ethers.provider.send("evm_mine", []);
+
+    // buy only up to the $30k MINIMUM — past the old graduation point but below the dev's target
+    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 30n * ONE, await curveC.minGradSqrtPriceX96())).wait();
+    // ready() is FALSE and graduate() reverts: a sniper can't graduate before the dev's mark
+    expect(await curveC.ready()).to.equal(false);
+    await expect(curveC.graduate()).to.be.revertedWithCustomError(curveC, "NotReady");
+
+    // ride the rest of the way to the target (ceiling) -> now it graduates
+    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 30n * ONE, await curveC.gradSqrtPriceX96())).wait();
+    expect(await curveC.ready()).to.equal(true);
+    await (await curveC.graduate()).wait();
+    expect(await curveC.graduated()).to.equal(true);
+  });
+
   it("graduate() refuses a MANIPULATED post-buyout price — the floor-drain vector is closed (CP-1)", async () => {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
 
