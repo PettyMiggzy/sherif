@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>The Sheriff's Pad — Launch on Robinhood Chain</title>
+<title>Robin Labs Pad — Launch on Robinhood Chain</title>
 <meta name="description" content="Launch a coin on Robinhood Chain — DEX + DexScreener day one, with a protocol-owned floor (the Bond). Trending, new, and graduating coins. Free to launch, just pay gas." />
 <link rel="icon" href="assets/favicon.ico" sizes="any" />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
@@ -138,7 +138,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
   <div class="top-in">
     <a class="brand" href="../index.html">
       <img src="assets/logo-mark.png" alt="" style="height:30px;width:auto" />
-      <span>SHERIFF <span class="tag">PAD</span></span>
+      <span>ROBIN <span class="tag">LABS</span></span>
     </a>
     <div class="search"><span class="ic">⌕</span><input placeholder="Search coins, tickers, address…" /></div>
     <div class="spacer"></div>
@@ -151,14 +151,14 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 <main class="wrap">
   <!-- promo banner (animated hero; poster + static image fallback) -->
   <video class="promo" autoplay muted loop playsinline preload="auto" poster="assets/promo.jpg"
-    aria-label="$SHERIFF Launchpad on Robinhood Chain — build, launch, take over Robinhood">
+    aria-label="Robin Labs Launchpad on Robinhood Chain">
     <source src="assets/promo.mp4" type="video/mp4" />
-    <img class="promo" src="assets/promo.jpg" alt="$SHERIFF Launchpad on Robinhood Chain — build, launch, take over Robinhood" />
+    <img class="promo" src="assets/promo.jpg" alt="Robin Labs Launchpad on Robinhood Chain" />
   </video>
 
   <!-- what makes us different (our real edge, not generic chips) -->
   <section class="diff">
-    <h2>Why launch on the <span>Sheriff's Pad</span></h2>
+    <h2>Why launch on <span>Robin Labs</span></h2>
     <div class="diff-grid">
       <div class="dcard hero"><div class="ic">🪙</div><h3>Every coin gets a floor</h3><p>It graduates into the Bond — a protocol-owned floor it <b style="color:var(--ink)">can't be rugged below</b>. No other pad does this.</p></div>
       <div class="dcard"><div class="ic">🟢</div><h3>DEX day one</h3><p>A real Uniswap v3 pool + DexScreener from block one. No waiting to migrate.</p></div>
@@ -186,93 +186,112 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
   <div class="grid" id="grid"></div>
 </main>
 
-<div class="foot">The Sheriff's Pad is unreleased software in security review — nothing here is live yet and the coins shown are illustrative placeholders. Not financial advice. Not affiliated with Robinhood Markets, Uniswap, DexScreener, or Disney.</div>
+<div class="foot">Robin Labs Pad on Robinhood Chain — contracts live and audited. Trade at your own risk; not financial advice. Not affiliated with Robinhood Markets, Uniswap, DexScreener, or Disney.</div>
 
-<script>
-// ---- placeholder coin data (Sheriff/Nottingham meme flavor) ----
-const PALETTE=["#ccff00","#48d16a","#f5c542","#8a63e0","#ff8a3d","#3dd6ff","#ff5a90","#a8e063"];
-const COINS=[
-  {n:"Hooded Wolf",t:"HOOD",e:"🐺",d:"The Sheriff himself. Takes from the poor, feeds his greed.",mc:41200,ch:38,prog:100,age:"2d",floor:31000,tag:"grad",trend:9},
-  {n:"Nottingham Gold",t:"GOLD",e:"🪙",d:"The town's treasury, on-chain. Diamond hands only.",mc:28800,ch:12,prog:72,age:"11h",floor:0,tag:"grad",trend:8},
-  {n:"Sherwood Doge",t:"SHERWD",e:"🌲",d:"Robin's dog ran into the greenwood and never left.",mc:9400,ch:-6,prog:24,age:"3h",floor:0,tag:"new",trend:6},
-  {n:"The Taxman",t:"TAX",e:"🧾",d:"0/0 tax because he already took it. Classic.",mc:67500,ch:120,prog:100,age:"5d",floor:52000,tag:"done",trend:10},
-  {n:"Little John",t:"JOHN",e:"🪵",d:"Big fella, bigger bags. Quarterstaff to the moon.",mc:5200,ch:4,prog:13,age:"48m",floor:0,tag:"new",trend:4},
-  {n:"Bounty Hunter",t:"BOUNTY",e:"🎯",d:"Posts a reward on every dip. The floor that buys back.",mc:19100,ch:22,prog:54,age:"6h",floor:0,tag:"grad",trend:7},
-  {n:"Friar Cat",t:"FRIAR",e:"😼",d:"Blesses your bags. Purrs at green candles.",mc:3100,ch:-2,prog:8,age:"22m",floor:0,tag:"new",trend:3},
-  {n:"Lincoln Green",t:"LINC",e:"🟢",d:"The color of Robin's cloak and your PnL.",mc:14600,ch:31,prog:41,age:"4h",floor:0,tag:"grad",trend:6},
-  {n:"Maid Marian",t:"MARIAN",e:"🌹",d:"Too good for the Sheriff, too rich for you.",mc:88200,ch:9,prog:100,age:"8d",floor:61000,tag:"done",trend:8},
-  {n:"The Portcullis",t:"GATE",e:"🏰",d:"Snipers get caught at the gate. Anti-bot native.",mc:2100,ch:1,prog:5,age:"9m",floor:0,tag:"new",trend:2},
-  {n:"Arrow Split",t:"ARROW",e:"🏹",d:"Splits the other arrow. Splits your seed money too.",mc:23700,ch:-11,prog:63,age:"14h",floor:0,tag:"grad",trend:5},
-  {n:"Sheriff's Star",t:"STAR",e:"⭐",d:"The badge. Pin it, don't sell it.",mc:52900,ch:44,prog:100,age:"3d",floor:38000,tag:"done",trend:9}
-];
-const fmt=n=>n>=1000?"$"+(n/1000).toFixed(n>=10000?0:1)+"k":"$"+n;
-function color(i){return PALETTE[i%PALETTE.length]}
-function card(c,i){
-  const b = c.tag==="done" ? `<span class="badge grad">Graduated</span>`
-         : c.floor>0 ? `<span class="badge floor">Floor ${fmt(c.floor)}</span>`
-         : c.trend>=7 ? `<span class="badge hot">🔥 Hot</span>` : "";
-  const progLbl = c.tag==="done" ? `<b>Bond posted</b><span>floor live</span>` :
-    `<span>Road to the Bond</span><b>${c.prog}%</b>`;
-  return `<a class="card" href="token.html?c=${encodeURIComponent(c.t)}">
-    ${b}
+<script type="module">
+import * as Pad from './assets/wallet.js';
+
+const ETH_USD = 1920; // display-only rate; market caps are computed from the on-chain ETH price
+const PALETTE = ["#ccff00","#48d16a","#f5c542","#8a63e0","#ff8a3d","#3dd6ff","#ff5a90","#a8e063"];
+const color = (i) => PALETTE[((i % PALETTE.length) + PALETTE.length) % PALETTE.length];
+const fmt = (n) => n >= 1000 ? "$" + (n/1000).toFixed(n >= 10000 ? 0 : 1) + "k" : "$" + Math.max(0, Math.round(n));
+const ago = (ts) => { const s = Math.max(0, Math.floor(Date.now()/1000) - ts); return s < 3600 ? Math.floor(s/60)+"m" : s < 86400 ? Math.floor(s/3600)+"h" : Math.floor(s/86400)+"d"; };
+const esc = (x) => String(x).replace(/[<>&"]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+// ── wallet connect ──
+const btn = document.getElementById('connectBtn');
+const refreshBtn = () => { const a = Pad.account(); btn.textContent = a ? Pad.short(a) : 'Connect wallet'; };
+btn.addEventListener('click', async () => { try { await Pad.connect(); refreshBtn(); } catch (e) { alert(e.message); } });
+window.addEventListener('robinpad:ready', refreshBtn); refreshBtn();
+
+const grid = document.getElementById('grid');
+let COINS = [], filter = "trending", sort = "mc";
+
+function card(c){
+  const badge = c.state === "done" ? '<span class="badge grad">Graduated</span>'
+    : c.state === "grad" ? '<span class="badge floor">Graduate ready</span>'
+    : c.prog >= 60 ? '<span class="badge hot">🔥 Close</span>' : "";
+  const progLbl = c.state === "done" ? '<b>Bond posted</b><span>floor live</span>'
+    : `<span>Road to the Bond</span><b>${c.prog}%</b>`;
+  const initials = esc((c.symbol || "?").slice(0, 3));
+  return `<a class="card" href="token.html?c=${encodeURIComponent(c.token)}">
+    ${badge}
     <div class="top-row">
-      <div class="pfp" style="background:linear-gradient(135deg,${color(i)},${color(i+3)})">${c.e}</div>
+      <div class="pfp" style="background:linear-gradient(135deg,${color(c.i)},${color(c.i+3)});font-size:1.1rem">${initials}</div>
       <div class="meta">
-        <div class="nm">${c.n} <span class="tk">$${c.t}</span></div>
-        <div class="by mono">by 0x${(4919+i*7).toString(16)}…${(1160+i).toString(16)}</div>
-        <p class="desc">${c.d}</p>
+        <div class="nm">${esc(c.name)} <span class="tk">$${esc(c.symbol)}</span></div>
+        <div class="by mono">by ${Pad.short(c.dev)} · ${ago(c.at)}</div>
+        <p class="desc">Graduates into the Bond — a protocol-owned floor it can't be rugged below.</p>
       </div>
     </div>
     <div class="stats">
       <div><div class="k">MC</div><div class="v">${fmt(c.mc)}</div></div>
-      <div><div class="k">24h</div><div class="v ${c.ch>=0?'up':'down'}">${c.ch>=0?'+':''}${c.ch}%</div></div>
-      <div><div class="k">Age</div><div class="v">${c.age}</div></div>
+      <div><div class="k">Status</div><div class="v ${c.state==='done'?'up':''}">${c.state==='done'?'Graduated':c.state==='grad'?'Ready':'Bonding'}</div></div>
     </div>
     <div class="prog"><div class="bar"><div class="fill" style="width:${c.prog}%"></div></div>
       <div class="lab">${progLbl}</div></div>
   </a>`;
 }
-let filter="trending", sort="mc";
-function render(){
-  let list=[...COINS];
-  if(filter==="new") list=list.filter(c=>c.tag==="new");
-  else if(filter==="grad") list=list.filter(c=>c.tag==="grad");
-  else if(filter==="done") list=list.filter(c=>c.tag==="done");
-  else list.sort((a,b)=>b.trend-a.trend); // trending
-  if(filter!=="trending"){
-    if(sort==="mc")list.sort((a,b)=>b.mc-a.mc);
-    else if(sort==="age")list.sort((a,b)=>a.age.localeCompare(b.age));
-    else if(sort==="floor")list.sort((a,b)=>b.floor-a.floor);
-  }
-  document.getElementById('grid').innerHTML=list.map((c,i)=>card(c,COINS.indexOf(c))).join("");
-}
-// most wanted = top trending
-(function(){
-  const w=[...COINS].sort((a,b)=>b.trend-a.trend)[0], i=COINS.indexOf(w);
-  document.getElementById('wanted').innerHTML=`<div class="lbl">★ Most Wanted</div>
-    <div class="row"><div class="pfp" style="background:linear-gradient(135deg,${color(i)},${color(i+3)})">${w.e}</div>
-    <div><h3>${w.n} <span style="color:var(--lime);font-size:1rem">$${w.t}</span></h3>
-    <div class="sub">${fmt(w.mc)} MC · <span style="color:var(--green)">+${w.ch}%</span> · floor ${fmt(w.floor)}</div></div></div>
-    <div class="prog" style="margin-top:14px"><div class="bar"><div class="fill" style="width:100%"></div></div>
-    <div class="lab"><b>Bond posted — floor live</b><span>can't rug to zero</span></div></div>`;
-})();
-// ticker
-document.getElementById('run').innerHTML=(()=>{const s=COINS.map(c=>`<b>$${c.t} ${c.ch>=0?'▲':'▼'}${Math.abs(c.ch)}%</b>`).join("");return s+s;})();
-// tabs
-document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');filter=t.dataset.f;render();
-}));
-document.getElementById('sort').addEventListener('change',e=>{sort=e.target.value;render();});
-render();
-</script>
 
-<script type="module">
-import * as Pad from './assets/wallet.js';
-const btn = document.getElementById('connectBtn');
-const refresh = () => { const a = Pad.account(); btn.textContent = a ? Pad.short(a) : 'Connect wallet'; };
-btn.addEventListener('click', async () => { try { await Pad.connect(); refresh(); } catch (e) { btn.textContent = 'Connect wallet'; alert(e.message); } });
-window.addEventListener('sheriffpad:ready', refresh);
-refresh();
+function render(){
+  let list = [...COINS];
+  if (filter === "new") list = list.filter(c => c.state === "new");
+  else if (filter === "grad") list = list.filter(c => c.state === "grad");
+  else if (filter === "done") list = list.filter(c => c.state === "done");
+  else list.sort((a,b) => b.mc - a.mc);
+  if (filter !== "trending") {
+    if (sort === "mc") list.sort((a,b) => b.mc - a.mc);
+    else if (sort === "age") list.sort((a,b) => b.at - a.at);
+    else if (sort === "floor") list.sort((a,b) => b.prog - a.prog);
+  }
+  if (!list.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--ink-dim)">
+      <div style="font-family:var(--disp);font-size:2rem;color:var(--ink)">No coins here yet</div>
+      <p style="margin:8px 0 18px">Be the first to launch on Robin Labs.</p>
+      <a class="btn btn-lime" href="create.html">+ Start a coin</a></div>`;
+    return;
+  }
+  grid.innerHTML = list.map(card).join("");
+}
+
+async function load(){
+  grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--ink-dim);padding:50px">Loading live coins…</div>`;
+  let recs = [];
+  try { recs = await Pad.listCoins(40); } catch (e) { recs = []; }
+  COINS = await Promise.all(recs.map(async (r, i) => {
+    let meta = { name: "Token", symbol: "?" }, info = null;
+    try { meta = await Pad.tokenMeta(r.token); } catch {}
+    try { info = await Pad.curveInfo(r.curve, r.token); } catch {}
+    const mc = info ? info.mcapEth * ETH_USD : 0;
+    const prog = info ? Math.round(info.progress * 100) : 0;
+    const state = info ? (info.graduated ? "done" : info.ready ? "grad" : "new") : "new";
+    return { ...r, name: meta.name, symbol: meta.symbol, mc, prog, state, i };
+  }));
+  renderHero(); renderTicker(); render();
+}
+
+function renderHero(){
+  const w = [...COINS].sort((a,b) => b.mc - a.mc)[0];
+  const el = document.getElementById('wanted');
+  if (!w) { el.innerHTML = `<div class="lbl">★ Most Wanted</div><div class="sub" style="margin-top:10px">No launches yet — <a href="create.html" style="color:var(--lime)">start the first coin →</a></div>`; return; }
+  el.innerHTML = `<div class="lbl">★ Most Wanted</div>
+    <div class="row"><div class="pfp" style="background:linear-gradient(135deg,${color(w.i)},${color(w.i+3)});font-size:1.2rem">${esc((w.symbol||"?").slice(0,3))}</div>
+    <div><h3>${esc(w.name)} <span style="color:var(--lime);font-size:1rem">$${esc(w.symbol)}</span></h3>
+    <div class="sub">${fmt(w.mc)} MC · ${w.state === "done" ? "floor live" : w.prog + "% to the Bond"}</div></div></div>
+    <a class="btn btn-lime" style="width:100%;justify-content:center;margin-top:14px" href="token.html?c=${encodeURIComponent(w.token)}">Trade $${esc(w.symbol)}</a>`;
+}
+function renderTicker(){
+  const run = document.getElementById('run');
+  if (!COINS.length) { run.innerHTML = '<b>ROBIN LABS · launch on Robinhood Chain · every coin gets a floor</b>'; return; }
+  const s = COINS.map(c => `<b>$${esc(c.symbol)} ${fmt(c.mc)}</b>`).join("");
+  run.innerHTML = s + s;
+}
+
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on')); t.classList.add('on'); filter = t.dataset.f; render();
+}));
+document.getElementById('sort').addEventListener('change', e => { sort = e.target.value; render(); });
+load();
 </script>
 </body>
 </html>

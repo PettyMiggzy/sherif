@@ -63,6 +63,9 @@ export const ABIS = {
   // (≤2%), executed atomically before trading opens. Carries the project's tax.
   padFactory: [
     "function launch((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax) p) payable returns (address token, address curve, address pool)",
+    "function tokenCount() view returns (uint256)",
+    "function allTokens(uint256) view returns (address)",
+    "function recordOf(address) view returns (address token, address curve, address dev, uint256 at)",
     "event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought)",
   ],
   // Our PadRouter. Buys send native ETH (no approval); sells need one exact-amount
@@ -71,6 +74,27 @@ export const ABIS = {
     "function buy(address token, uint256 minOut) payable returns (uint256 tokensOut)",
     "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256 ethOut)",
     "function configOf(address token) view returns ((address pool, address curve, address projectWallet, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, bool set))",
+    "function devEscrow(address) view returns (uint256)",
+    "function bondOf(address) view returns (address)",
+    "function withdrawDev(address token)",
+    "function burnDev(address token)",
+  ],
+  // The CurvePool — the bonding curve + graduation. Read progress, drive the
+  // graduate button + the dev's auto-graduate target.
+  curve: [
+    "function pool() view returns (address)",
+    "function dev() view returns (address)",
+    "function bond() view returns (address)",
+    "function seeded() view returns (bool)",
+    "function graduated() view returns (bool)",
+    "function ready() view returns (bool)",
+    "function seedTime() view returns (uint64)",
+    "function startTick() view returns (int24)",
+    "function minGradTick() view returns (int24)",
+    "function gradTick() view returns (int24)",
+    "function gradTarget() view returns (int24)",
+    "function setGradTarget(int24 targetTick)",
+    "function graduate()",
   ],
   erc20: [
     "function balanceOf(address) view returns (uint256)",
@@ -78,6 +102,8 @@ export const ABIS = {
     "function approve(address spender, uint256 value) returns (bool)",
     "function decimals() view returns (uint8)",
     "function symbol() view returns (string)",
+    "function name() view returns (string)",
+    "function totalSupply() view returns (uint256)",
   ],
   pool: [
     "function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 obsIdx, uint16 obsCard, uint16 obsCardNext, uint8 feeProtocol, bool unlocked)",

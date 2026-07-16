@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// The Sheriff's Pad — wallet + signing layer  (audit target)
+// Robin Labs Pad — wallet + signing layer  (audit target)
 //
 // This is the EVM translation of our Phantom/Blowfish "stay-unflagged" rulebook.
 // Robinhood Chain is an EVM L2, so the primitives differ (no SystemProgram /
@@ -113,7 +113,7 @@ export async function linkTelegram(handle) {
   if (!_signer) await connect();
   const nonce = ethers.hexlify(ethers.randomBytes(8));
   const message =
-    `Sheriff's Pad — link this wallet to Telegram\n` +
+    `Robin Labs Pad — link this wallet to Telegram\n` +
     `Telegram: ${handle}\n` +
     `Wallet: ${_account}\n` +
     `Nonce: ${nonce}\n` +
@@ -190,7 +190,7 @@ function routerRead() { return new ethers.Contract(CONTRACTS.padRouter, ABIS.pad
 export async function getTax(token) {
   const c = await routerRead().configOf(token);
   return {
-    pool: c.pool, projectWallet: c.projectWallet,
+    pool: c.pool, curve: c.curve, projectWallet: c.projectWallet, set: c.set,
     buyBps: Number(c.buyBps), sellBps: Number(c.sellBps),
     walletBps: Number(c.walletBps), floorBps: Number(c.floorBps), burnBps: Number(c.burnBps),
   };
@@ -277,11 +277,91 @@ export function estimateDevBuyEth(pct) {
   return (tokens * avgPrice).toFixed(6);
 }
 
+// ── curve state: graduation progress, mcap, the dev's target ──────────────────
+const WETH_LC = CONTRACTS.weth.toLowerCase();
+// WETH per token from a pool's sqrtPriceX96, respecting token/WETH ordering.
+function priceFromSqrt(sqrt, token) {
+  const Q96 = 2n ** 96n;
+  const p1per0 = Number((sqrt * sqrt * 10n ** 18n) / (Q96 * Q96)) / 1e18; // token1 per token0
+  return token.toLowerCase() < WETH_LC ? p1per0 : (p1per0 > 0 ? 1 / p1per0 : 0); // WETH per token
+}
+
+/// Read a coin's live graduation state for the trade page + browse cards.
+export async function curveInfo(curve, token) {
+  const c = new ethers.Contract(curve, ABIS.curve, _read);
+  const [graduated, ready, startTick, minGradTick, gradTick, gradTarget, poolAddr, bond, dev, seedTime] =
+    await Promise.all([
+      c.graduated(), c.ready(), c.startTick(), c.minGradTick(), c.gradTick(),
+      c.gradTarget(), c.pool(), c.bond(), c.dev(), c.seedTime(),
+    ]);
+  const p = new ethers.Contract(poolAddr, ABIS.pool, _read);
+  const slot0 = await p.slot0();
+  const tick = Number(slot0.tick);
+  const st = Number(startTick), mn = Number(minGradTick), cl = Number(gradTick), tg = Number(gradTarget);
+  const span = Math.abs(cl - st) || 1;
+  const frac = (t) => Math.max(0, Math.min(1, Math.abs(t - st) / span)); // 0 at start … 1 at ceiling
+  const wethPerToken = priceFromSqrt(slot0.sqrtPriceX96, token);
+  return {
+    graduated, ready, bond, dev, seedTime: Number(seedTime), pool: poolAddr, tick,
+    mcapEth: wethPerToken * 1e9, wethPerToken,
+    progress: frac(tick), minFrac: frac(mn), targetFrac: frac(tg), // positions along the curve (0..1)
+    minGradTick: mn, gradTick: cl, gradTarget: tg, startTick: st,
+  };
+}
+
+/// A dev's uncollected sell-fee escrow (native ETH), for the "collect / burn" panel.
+export async function devEscrow(token) {
+  return new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _read).devEscrow(token);
+}
+
+// ── graduate() — the permissionless "graduate" button (anyone can fire it) ─────
+export async function graduate(curve) {
+  if (!_signer) await connect();
+  return guardedSend(new ethers.Contract(curve, ABIS.curve, _signer), "graduate", [], 0n, "Graduate");
+}
+
+// ── setGradTarget — the dev picks the auto-graduate price (a tick in [min, ceiling]) ─
+export async function setGradTarget(curve, tick) {
+  if (!_signer) await connect();
+  return guardedSend(new ethers.Contract(curve, ABIS.curve, _signer), "setGradTarget", [Math.round(tick)], 0n, "Set graduation target");
+}
+
+// ── creator fee controls — collect to the wallet, or buy+burn ─────────────────
+export async function withdrawDev(token) {
+  if (!_signer) await connect();
+  return guardedSend(new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _signer), "withdrawDev", [token], 0n, "Collect fees");
+}
+export async function burnDev(token) {
+  if (!_signer) await connect();
+  return guardedSend(new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _signer), "burnDev", [token], 0n, "Burn fees");
+}
+
+/// Newest-first list of every coin launched on the pad, for the browse feed.
+export async function listCoins(max = 60) {
+  const f = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _read);
+  const n = Number(await f.tokenCount());
+  const idxs = [];
+  for (let i = n - 1; i >= Math.max(0, n - max); i--) idxs.push(i);
+  const tokens = await Promise.all(idxs.map((i) => f.allTokens(i)));
+  const recs = await Promise.all(tokens.map((t) => f.recordOf(t)));
+  return recs.map((r) => ({ token: r.token, curve: r.curve, dev: r.dev, at: Number(r.at) }));
+}
+
+/// Token metadata (name / symbol) for a card or the trade header.
+export async function tokenMeta(token) {
+  const t = new ethers.Contract(token, ABIS.erc20, _read);
+  const [name, symbol] = await Promise.all([t.name().catch(() => "Token"), t.symbol().catch(() => "?")]);
+  return { name, symbol };
+}
+
 // expose a tiny global for the plain-HTML pages (no bundler)
 if (typeof window !== "undefined") {
-  window.SheriffPad = {
+  window.RobinPad = {
     connect, account, short, linkTelegram, launch, buy, sell, getTax,
     estimateDevBuyEth, isDeployed,
+    curveInfo, devEscrow, graduate, setGradTarget, withdrawDev, burnDev, listCoins, tokenMeta,
   };
+  window.SheriffPad = window.RobinPad; // back-compat alias for existing pages
+  window.dispatchEvent(new Event("robinpad:ready"));
   window.dispatchEvent(new Event("sheriffpad:ready"));
 }
