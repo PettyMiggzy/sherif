@@ -10,14 +10,14 @@ const SUPPLY = 1_000_000_000n * ONE;
 
 const suite = process.env.FORK_RPC ? describe : describe.skip;
 
-async function stack(dep, platform) {
+async function stack(dep, platform, startMag = 207200, width = 35800) {
   const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
   const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
   const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
   const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
   const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
     WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), startMag, width
   );
   await (await router.setFactory(await factory.getAddress())).wait();
   return { router, factory };
@@ -146,5 +146,28 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     expect(await bond.sherwoodL()).to.be.greaterThan(0n);
     expect(await bond.bountyL()).to.be.greaterThan(0n);
     expect(await bond.ambushL()).to.be.greaterThan(0n);
+  });
+
+  it("a tiny-raise curve graduates cleanly even when Sherwood absorbs all the Ambush supply (ambush=0)", async () => {
+    const [dep, platform, dev, buyer] = await ethers.getSigners();
+    // the cheap TEST curve: graduates after a few $ of buys — so little WETH that Sherwood takes ALL the
+    // ambush token supply, leaving 0 for the Ambush band. The Bond must post Sherwood+Bounty and skip Ambush.
+    const { router, factory } = await stack(dep, platform, 259400, 4000);
+    const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const rc = await (await factory.launch({ name: "Tiny", symbol: "TINY", dev: dev.address, tax })).wait();
+    const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
+    const { token, curve } = ev.args;
+    const curveC = await ethers.getContractAt("CurvePool", curve);
+
+    await ethers.provider.send("evm_increaseTime", [400]);
+    await ethers.provider.send("evm_mine", []);
+    await (await router.connect(buyer).buy(token, 0, { value: ONE })).wait(); // 1 ETH, capped at gradTick
+    expect(await curveC.ready()).to.equal(true);
+
+    await (await curveC.graduate()).wait(); // used to revert "bad L"; now skips the empty Ambush
+    const bond = await ethers.getContractAt("Bond", await curveC.bond());
+    expect(await bond.posted()).to.equal(true);
+    expect(await bond.sherwoodL()).to.be.greaterThan(0n); // the floor's locked LP still posts
+    // ambushL may be 0 here (all supply went to Sherwood) — that's allowed, not a revert
   });
 });

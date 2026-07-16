@@ -149,6 +149,7 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
 
     // --------------------------------------------------------------- internals
     function _placeBounty(int24 tick, uint256 wethAmt) internal {
+        if (wethAmt == 0) return; // nothing to place (e.g. the whole raise went to Sherwood) — skip, don't revert
         // Bounty holds WETH, on the "token gets cheaper" side (below price iff WETH is token1).
         (int24 lo, int24 hi, bool above) = _band(tick, bountyBelow ? false : true, BOUNTY_NEAR, BOUNTY_FAR);
         uint128 L = PoolMath.singleSidedLiquidity(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), wethAmt, above);
@@ -159,6 +160,7 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     }
 
     function _placeAmbush(int24 tick, uint256 tokenAmt) internal {
+        if (tokenAmt == 0) return; // no tokens left for an Ambush (small raise) — skip, don't revert
         // Ambush hold the token, on the "token gets more expensive" side (opposite of the Bounty).
         (int24 lo, int24 hi, bool above) = _band(tick, bountyBelow ? true : false, AMBUSH_NEAR, AMBUSH_FAR);
         uint128 L = PoolMath.singleSidedLiquidity(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), tokenAmt, above);
