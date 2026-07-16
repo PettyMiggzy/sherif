@@ -26,22 +26,7 @@ async function main() {
   const slot0 = await p.slot0();
   console.log(`\n  pool live: sqrtPriceX96=${slot0.sqrtPriceX96} tick=${slot0.tick}`);
   console.log(`  tradingEnabled=${await TOK.tradingEnabled()} antiSnipeActive=${await TOK.antiSnipeActive()} windowEndsAt=${await TOK.windowEndsAt()}`);
-
-  // a small BUY through the router (native ETH, no approval). Tiny, to stay under the 1% opening wallet cap.
-  const spend = ethers.parseEther("0.00004");
-  console.log(`\n  buying with ${ethers.formatEther(spend)} ETH …`);
-  await (await router.buy(token, 0, { value: spend })).wait();
-  const bal = await TOK.balanceOf(me.address);
-  console.log(`  got ${ethers.formatUnits(bal, 18)} TEST`);
-  console.log(`  escrows -> platform=${await router.platformEscrow()} deferred=${await router.deferredEscrow(token)} sheriffCut=${await router.sheriffCutEscrow()} dev=${await router.devEscrow(token)}`);
-
-  // a SELL back through the router (one exact-amount approval)
-  const sellAmt = bal / 4n;
-  await (await TOK.approve(R, sellAmt)).wait();
-  const before = await ethers.provider.getBalance(me.address);
-  const sr = await (await router.sell(token, sellAmt, 0)).wait();
-  const after = await ethers.provider.getBalance(me.address);
-  console.log(`\n  sold ${ethers.formatUnits(sellAmt, 18)} TEST -> net ETH change (incl gas) ${ethers.formatEther(after - before)}`);
+  router; // (all trading happens post-window in step 2 to avoid the opening-guard dead window)
 
   console.log(`\n=== for step 2 (after the window at ${await TOK.windowEndsAt()} unix) ===`);
   console.log(`  TEST_TOKEN=${token} TEST_CURVE=${curve} TEST_POOL=${pool}`);

@@ -27,9 +27,9 @@ async function main() {
   await (await router.sell(T, sellAmt, 0)).wait();
   console.log(`  sold ${ethers.formatUnits(sellAmt, 18)} TEST, net ETH change incl gas ${ethers.formatEther((await ethers.provider.getBalance(me.address)) - eb)}\n`);
 
-  // buy out the curve via the router (excess auto-refunds). ~0.0101 ETH graduates it.
-  console.log("buying out the curve (0.013 ETH, excess refunds) …");
-  await (await router.buy(T, 0, { value: ethers.parseEther("0.013") })).wait();
+  // buy out the curve via the router (now price-capped at gradTick; excess auto-refunds).
+  console.log("buying out the curve (0.008 ETH, capped at gradTick, excess refunds) …");
+  await (await router.buy(T, 0, { value: ethers.parseEther("0.008") })).wait();
   console.log("  curve.ready():", await curve.ready());
 
   // graduate -> posts the Bond into the same pool
