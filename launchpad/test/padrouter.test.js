@@ -3,7 +3,7 @@ const { ethers } = require("hardhat");
 
 // Exact-math unit tests of the PadRouter fee model on a mock Uniswap v3 pool (no fork needed).
 // Model: default 1%/side is the platform's (0.9% immediate + 0.1% deferred to graduation); anything
-// stacked ABOVE 1% splits 25% -> buy+burn $SHERIFF and 75% -> the project (wallet/floor/burn).
+// stacked ABOVE 1% splits 25% -> the platform's $SHERIFF cut and 75% -> the project (wallet/floor/burn).
 const ONE = 10n ** 18n;
 const DEAD = "0x000000000000000000000000000000000000dEaD";
 
@@ -55,7 +55,7 @@ describe("PadRouter — fee model (mock pool)", function () {
     expect(await router.platformEscrow()).to.equal((v * 90n) / 10_000n); // 0.9%
     expect(await router.deferredEscrow(tokAddr)).to.equal((v * 10n) / 10_000n); // 0.1%
     // no above-default fee => these stay empty
-    expect(await router.sheriffBurnEscrow()).to.equal(0n);
+    expect(await router.sheriffCutEscrow()).to.equal(0n);
     expect(await router.devEscrow(tokAddr)).to.equal(0n);
     expect(await router.floorEscrow(tokAddr)).to.equal(0n);
     expect(await router.burnEscrow(tokAddr)).to.equal(0n);
@@ -63,7 +63,7 @@ describe("PadRouter — fee model (mock pool)", function () {
     expect(await token.balanceOf(buyer.address)).to.equal(v - (v * 100n) / 10_000n);
   });
 
-  it("a 4% coin: 0.9%+0.1% platform, then 25% of the extra 3% burns $SHERIFF, 75% to the project", async () => {
+  it("a 4% coin: 0.9%+0.1% platform, then 25% of the extra 3% is the $SHERIFF cut, 75% to the project", async () => {
     const { dep, platform, dev, buyer, token, tokAddr, poolAddr, router } = await deploy();
     // 4% buy; project split 50% wallet / 30% floor / 20% burn
     await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 400, 400, 5000, 3000, 2000)).wait();
@@ -72,8 +72,8 @@ describe("PadRouter — fee model (mock pool)", function () {
     const immediate = (v * 90n) / 10_000n; // 0.9%
     const deferred = (v * 10n) / 10_000n; // 0.1%
     const excess = (v * 300n) / 10_000n; // 3%
-    const sheriffBurn = (excess * 2500n) / 10_000n; // 25% of the excess
-    const proj = excess - sheriffBurn; // 75%
+    const sheriffCut = (excess * 2500n) / 10_000n; // 25% of the excess
+    const proj = excess - sheriffCut; // 75%
     const devCut = (proj * 5000n) / 10_000n;
     const burnCut = (proj * 2000n) / 10_000n;
     const floorCut = proj - devCut - burnCut;
@@ -81,12 +81,12 @@ describe("PadRouter — fee model (mock pool)", function () {
     await (await router.connect(buyer).buy(tokAddr, 0, { value: v })).wait();
     expect(await router.platformEscrow()).to.equal(immediate);
     expect(await router.deferredEscrow(tokAddr)).to.equal(deferred);
-    expect(await router.sheriffBurnEscrow()).to.equal(sheriffBurn);
+    expect(await router.sheriffCutEscrow()).to.equal(sheriffCut);
     expect(await router.devEscrow(tokAddr)).to.equal(devCut);
     expect(await router.floorEscrow(tokAddr)).to.equal(floorCut);
     expect(await router.burnEscrow(tokAddr)).to.equal(burnCut);
     // everything sums to the full 4% fee
-    const total = immediate + deferred + sheriffBurn + devCut + floorCut + burnCut;
+    const total = immediate + deferred + sheriffCut + devCut + floorCut + burnCut;
     expect(total).to.equal((v * 400n) / 10_000n);
   });
 
@@ -109,23 +109,21 @@ describe("PadRouter — fee model (mock pool)", function () {
     expect(await router.platformEscrow()).to.equal(platBefore + deferred);
   });
 
-  it("buyBurnSheriff buys $SHERIFF on its pool and burns it", async () => {
+  it("the above-default 25% $SHERIFF cut accrues separately and pays out to the platform", async () => {
     const { dep, platform, dev, buyer, tokAddr, poolAddr, router } = await deploy();
     await (await router.register(tokAddr, poolAddr, ethers.ZeroAddress, dev.address, 400, 400, 10000, 0, 0)).wait();
-    // stand up a "$SHERIFF" token + pool (sharing the router's WETH) and point the router at it
-    const routerWeth = await ethers.getContractAt("MockWETH9", await router.WETH());
-    const s = await mkCoin(dep, routerWeth);
-    await (await router.connect(platform).setSheriff(s.tokAddr, s.poolAddr)).wait();
 
-    // generate some above-default fee -> sheriffBurnEscrow
+    // a 4% buy: the 25% of the 3% excess is earmarked as the $SHERIFF cut
     await (await router.connect(buyer).buy(tokAddr, 0, { value: ONE })).wait();
-    const escrow = await router.sheriffBurnEscrow();
-    expect(escrow).to.be.greaterThan(0n);
+    const excess = (ONE * 300n) / 10_000n;
+    const cut = (excess * 2500n) / 10_000n;
+    expect(await router.sheriffCutEscrow()).to.equal(cut);
 
-    const deadBefore = await s.token.balanceOf(DEAD);
-    await (await router.buyBurnSheriff()).wait();
-    expect(await router.sheriffBurnEscrow()).to.equal(0n);
-    expect(await s.token.balanceOf(DEAD)).to.be.greaterThan(deadBefore); // $SHERIFF burned
+    // withdraw pays it to the platform (owner), who buys/burns $SHERIFF off-chain
+    const platBefore = await ethers.provider.getBalance(platform.address);
+    await (await router.connect(buyer).withdrawSheriffCut()).wait();
+    expect(await router.sheriffCutEscrow()).to.equal(0n);
+    expect(await ethers.provider.getBalance(platform.address)).to.equal(platBefore + cut);
   });
 
   it("sell mirrors the model: fee comes off the ETH out, split the same way", async () => {
@@ -140,6 +138,6 @@ describe("PadRouter — fee model (mock pool)", function () {
     // sell fee is 3%: 0.9% immediate + 0.1% deferred + 2% excess (25% burn / 75% project)
     expect(await router.platformEscrow()).to.equal((wethOut * 90n) / 10_000n);
     expect(await router.deferredEscrow(tokAddr)).to.equal((wethOut * 10n) / 10_000n);
-    expect(await router.sheriffBurnEscrow()).to.equal(((wethOut * 200n) / 10_000n * 2500n) / 10_000n);
+    expect(await router.sheriffCutEscrow()).to.equal(((wethOut * 200n) / 10_000n * 2500n) / 10_000n);
   });
 });

@@ -23,13 +23,13 @@ interface IBondPoke {
 ///
 ///   • The DEFAULT 1% is the platform's — collected as **0.9% immediately** and **0.1% held until the coin
 ///     graduates**, then released to the platform.
-///   • Anything a project stacks ABOVE the 1% default is split: **25% buys and burns $SHERIFF** (the
-///     platform token) and **75% is the project's** — across its own wallet, deepening that coin's Bond
-///     floor, and auto-burning its own supply.
+///   • Anything a project stacks ABOVE the 1% default is split: **25% is the platform's $SHERIFF cut**
+///     (accrued separately and paid out to the platform, which buys/burns $SHERIFF off-chain) and **75% is
+///     the project's** — across its own wallet, deepening that coin's Bond floor, and auto-burning supply.
 ///
-/// So a coin on the plain 1% just pays the house; a coin that runs a spicier fee funds $SHERIFF burns with
-/// the platform's slice of the extra. The fee is a swap-desk fee, NOT a token transfer tax (which would
-/// break Uniswap v3 and flag as a honeypot), so the token stays clean and tradeable.
+/// So a coin on the plain 1% just pays the house; a coin that runs a spicier fee sends the platform a bigger
+/// slice earmarked for $SHERIFF. The fee is a swap-desk fee, NOT a token transfer tax (which would break
+/// Uniswap v3 and flag as a honeypot), so the token stays clean and tradeable.
 ///
 /// Design note: fee shares accumulate as ESCROW and are paid out by separate, permissionless flush/withdraw
 /// calls — never inside the user's trade. So a bad project wallet, a paused Bond, or a burn swap can never
@@ -41,7 +41,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     uint16 public constant DEFAULT_FEE_BPS = 100; // the baseline 1% every coin pays; also the floor
     uint16 public constant PLATFORM_IMMEDIATE_BPS = 90; // of the default 1%: 0.9% to platform now
     uint16 public constant PLATFORM_DEFERRED_BPS = 10; // ...and 0.1% held until graduation
-    uint16 public constant EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee -> buy+burn $SHERIFF
+    uint16 public constant EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee -> platform ($SHERIFF cut)
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     address public immutable WETH;
@@ -62,13 +62,9 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     mapping(address => Cfg) internal _cfg;
     mapping(address => address) public bondOf; // token -> its Bond (once graduated)
 
-    // $SHERIFF (the platform token) + its pool, for the buy-and-burn of the above-default cut
-    address public sheriffToken;
-    address public sheriffPool;
-
     // escrowed fee shares (all in native ETH), paid out by permissionless flushers
     uint256 public platformEscrow; // the 0.9% immediate cut (+ deferred once claimed)
-    uint256 public sheriffBurnEscrow; // 25% of every above-default fee -> buy+burn $SHERIFF
+    uint256 public sheriffCutEscrow; // 25% of every above-default fee -> paid to the platform for $SHERIFF
     mapping(address => uint256) public deferredEscrow; // the 0.1% held per coin until it graduates
     mapping(address => uint256) public devEscrow;
     mapping(address => uint256) public floorEscrow;
@@ -87,8 +83,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     event Registered(address indexed token, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps);
     event Bought(address indexed token, address indexed buyer, uint256 ethIn, uint256 fee, uint256 tokensOut);
     event Sold(address indexed token, address indexed seller, uint256 tokensIn, uint256 fee, uint256 ethOut);
-    event FeeSplit(address indexed token, uint256 platform, uint256 deferred, uint256 sheriffBurn, uint256 dev, uint256 floor, uint256 burn);
-    event SheriffSet(address token, address pool);
+    event FeeSplit(address indexed token, uint256 platform, uint256 deferred, uint256 sheriffCut, uint256 dev, uint256 floor, uint256 burn);
 
     constructor(address weth_, address owner_) Ownable(owner_) {
         require(weth_ != address(0), "zero");
@@ -100,14 +95,6 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     function setFactory(address f) external onlyOwner {
         require(factory == address(0) && f != address(0), "set");
         factory = f;
-    }
-
-    /// @notice Point the buy-and-burn at the live $SHERIFF token + its WETH pool. Owner-only; can be
-    /// updated if $SHERIFF ever migrates pools. Until set, the $SHERIFF burn share simply escrows.
-    function setSheriff(address token, address pool) external onlyOwner {
-        sheriffToken = token;
-        sheriffPool = pool;
-        emit SheriffSet(token, pool);
     }
 
     function configOf(address token) external view returns (Cfg memory) {
@@ -230,15 +217,15 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         platformEscrow += immediate;
         deferredEscrow[token] += deferred;
 
-        uint256 sheriffBurn;
+        uint256 sheriffCut;
         uint256 dev;
         uint256 floor;
         uint256 burn;
         if (excess > 0) {
-            // 25% -> buy+burn $SHERIFF; 75% -> the project's buckets (floor absorbs the split rounding)
-            sheriffBurn = (excess * EXCESS_PLATFORM_BPS) / 10_000;
-            sheriffBurnEscrow += sheriffBurn;
-            uint256 proj = excess - sheriffBurn;
+            // 25% -> the platform's $SHERIFF cut; 75% -> the project's buckets (floor absorbs rounding)
+            sheriffCut = (excess * EXCESS_PLATFORM_BPS) / 10_000;
+            sheriffCutEscrow += sheriffCut;
+            uint256 proj = excess - sheriffCut;
             Cfg storage c = _cfg[token];
             dev = (proj * c.walletBps) / 10_000;
             burn = (proj * c.burnBps) / 10_000;
@@ -247,7 +234,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             burnEscrow[token] += burn;
             floorEscrow[token] += floor;
         }
-        emit FeeSplit(token, immediate, deferred, sheriffBurn, dev, floor, burn);
+        emit FeeSplit(token, immediate, deferred, sheriffCut, dev, floor, burn);
     }
 
     // ─────────────────────────────────────────── permissionless payouts ──
@@ -302,20 +289,14 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         platformEscrow += amt;
     }
 
-    /// @notice Spend the accrued $SHERIFF-burn escrow buying $SHERIFF on its pool and sending it to dead.
-    /// Permissionless. No-op until `setSheriff` is configured. Any WETH the swap can't consume is re-credited.
-    function buyBurnSheriff() external nonReentrant {
-        uint256 amt = sheriffBurnEscrow;
-        if (amt == 0 || sheriffPool == address(0)) return;
-        sheriffBurnEscrow = 0;
-        IWETH9(WETH).deposit{value: amt}();
-        uint256 bought = _swap(sheriffToken, sheriffPool, WETH, amt, address(this));
-        IERC20(sheriffToken).safeTransfer(DEAD, bought);
-        uint256 left = IERC20(WETH).balanceOf(address(this));
-        if (left > 0) {
-            IWETH9(WETH).withdraw(left);
-            sheriffBurnEscrow += left;
-        }
+    /// @notice Pay the accrued $SHERIFF cut (25% of every above-default fee) to the platform, which buys and
+    /// burns $SHERIFF off-chain. Permissionless; the funds only ever go to the platform (owner).
+    function withdrawSheriffCut() external nonReentrant {
+        uint256 amt = sheriffCutEscrow;
+        if (amt == 0) return;
+        sheriffCutEscrow = 0;
+        (bool ok,) = owner().call{value: amt}("");
+        require(ok, "pay");
     }
 
     /// @notice Spend the accrued burn share buying the token and sending it to the dead address.

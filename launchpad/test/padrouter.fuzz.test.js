@@ -98,7 +98,7 @@ describe("PadRouter — 300 randomized simulations", function () {
     if (!trade) return 0n;
     const fee = trade.args.fee;
     if (fee > 0n) {
-      const s = split.args.platform + split.args.deferred + split.args.sheriffBurn
+      const s = split.args.platform + split.args.deferred + split.args.sheriffCut
         + split.args.dev + split.args.floor + split.args.burn;
       expect(s, "INV-2 fee split must equal fee to the wei").to.equal(fee);
     }
@@ -106,7 +106,7 @@ describe("PadRouter — 300 randomized simulations", function () {
   }
 
   async function totalOwed() {
-    let sum = (await router.platformEscrow()) + (await router.sheriffBurnEscrow());
+    let sum = (await router.platformEscrow()) + (await router.sheriffCutEscrow());
     for (const c of coins) {
       sum += await router.deferredEscrow(c.tokAddr);
       sum += await router.devEscrow(c.tokAddr);

@@ -199,9 +199,9 @@ function taxSync(){
   const tot=w+f+b, tEl=document.getElementById('allocTot');
   tEl.textContent=tot+'%'; tEl.className='tax-tot '+(tot===100?'ok':'bad');
   const note=document.getElementById('taxNote');
-  if(!on){note.textContent='Just the default 1% — the platform’s (0.9% now, 0.1% at graduation). Raise the fee to fund your coin; 25% of anything above 1% buys & burns $SHERIFF, you keep 75%.';return;}
+  if(!on){note.textContent='Just the default 1% — the platform’s (0.9% now, 0.1% at graduation). Raise the fee to fund your coin; 25% of anything above 1% funds the $SHERIFF buyback, you keep 75%.';return;}
   const keep=(x)=>(((x-1)*0.75).toFixed(2).replace(/\.?0+$/,''));
-  note.textContent=`Buyers pay ${bt}% buy / ${st}% sell. The first 1% is the platform’s; of the extra, 25% buys & burns $SHERIFF and you keep 75% (≈ ${keep(bt)}% buy / ${keep(st)}% sell) split below.`;
+  note.textContent=`Buyers pay ${bt}% buy / ${st}% sell. The first 1% is the platform’s; of the extra, 25% funds the $SHERIFF buyback and you keep 75% (≈ ${keep(bt)}% buy / ${keep(st)}% sell) split below.`;
 }
 taxSync();
 </script>

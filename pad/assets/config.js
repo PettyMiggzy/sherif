@@ -35,8 +35,9 @@ export const CONTRACTS = {
   // Buys/sells stay gated until it's set.
   padRouter: "",
 
-  // The live $SHERIFF token + its WETH pool. The above-default fee's 25% cut buys
-  // and burns $SHERIFF here (set on the router via setSheriff at deploy).
+  // The live $SHERIFF token + its WETH pool (for links / a future buy widget).
+  // The above-default fee's 25% cut is paid to the platform, which buys+burns
+  // $SHERIFF off-chain — the router does not swap it on-chain.
   sheriffToken: "0x01d8D7995d0E656315715eF0ED3b81d92171b3Cc",
   sheriffPool: "0x37F84F3A789FD1C5046F73f5D082c94F4D86b0fE",
 };

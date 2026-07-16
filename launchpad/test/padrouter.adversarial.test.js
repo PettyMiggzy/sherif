@@ -74,7 +74,7 @@ describe("PadRouter — adversarial simulations", function () {
       feeTotal += await feeFromEvents(router.connect(mallory).sell(tokAddr, a, 0));
     }
     // not a single wei is created or destroyed: the four escrows sum to exactly the tax charged
-    const sum = (await router.platformEscrow()) + (await router.sheriffBurnEscrow())
+    const sum = (await router.platformEscrow()) + (await router.sheriffCutEscrow())
       + (await router.deferredEscrow(tokAddr))
       + (await router.devEscrow(tokAddr)) + (await router.floorEscrow(tokAddr)) + (await router.burnEscrow(tokAddr));
     expect(sum).to.equal(feeTotal);
@@ -133,7 +133,7 @@ describe("PadRouter — adversarial simulations", function () {
   it("conservation: the router's ETH balance always equals the sum of what it owes (escrows)", async () => {
     const { token, tokAddr, router, buyer, mallory } = await fixture({ buy: 300, sell: 200, w: 6000, f: 3000, b: 1000 });
     const routerAddr = await router.getAddress();
-    const owed = async () => (await router.platformEscrow()) + (await router.sheriffBurnEscrow())
+    const owed = async () => (await router.platformEscrow()) + (await router.sheriffCutEscrow())
       + (await router.deferredEscrow(tokAddr))
       + (await router.devEscrow(tokAddr)) + (await router.floorEscrow(tokAddr)) + (await router.burnEscrow(tokAddr));
 
@@ -158,7 +158,7 @@ describe("PadRouter — adversarial simulations", function () {
     expect(await router.EXCESS_PLATFORM_BPS()).to.equal(2500); // 25% of the above-default fee -> $SHERIFF burn
     expect(await router.PLATFORM_IMMEDIATE_BPS()).to.equal(90);
     expect(await router.PLATFORM_DEFERRED_BPS()).to.equal(10);
-    // these are constants with no setter (only setSheriff/setFactory exist, both owner-only + benign)
+    // these are constants with no setter (only setFactory exists, owner-only + one-time)
     const names = router.interface.fragments.filter((f) => f.type === "function").map((f) => f.name);
     for (const bad of ["setPlatformBps", "setTax", "setDefaultFee", "setExcessBps"]) expect(names).to.not.include(bad);
   });

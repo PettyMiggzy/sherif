@@ -46,8 +46,9 @@ Uniswap v3 and flag as a honeypot). The token itself stays clean and tradeable.
 - **1% floor, 4% cap per side**, enforced on-chain at registration.
 - The **default 1% is the platform's** — 0.9% immediate, 0.1% held until the coin
   graduates.
-- Anything **above 1%** splits **25% → buy-and-burn $SHERIFF**, **75% → the
-  project** (wallet / Bond floor / auto-burn).
+- Anything **above 1%** splits **25% → the platform's $SHERIFF cut** (paid to the
+  platform, which buys/burns $SHERIFF off-chain), **75% → the project** (wallet /
+  Bond floor / auto-burn).
 - Every share is computed **inside the router** and paid out by separate,
   permissionless escrow flushers — **never** as extra transfers inside the user's
   signed trade. So a bad project wallet or paused Bond can't revert a trade, and

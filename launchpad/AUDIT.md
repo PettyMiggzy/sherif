@@ -60,9 +60,10 @@ Every coin pays a swap-desk fee of **1%–4% per side** (1% floor, 4% cap, enfor
 at registration):
 - The **default 1%** is the platform's — **0.9% immediate**, **0.1% held until the
   coin graduates** then released to the platform (`claimDeferred`).
-- Anything **above 1%** splits **25% → buy-and-burn $SHERIFF** (the platform token,
-  via `buyBurnSheriff` against its live pool) and **75% → the project** (wallet /
-  Bond floor / auto-burn).
+- Anything **above 1%** splits **25% → the platform's $SHERIFF cut** (accrued
+  separately in `sheriffCutEscrow`, paid to the platform via `withdrawSheriffCut`,
+  which buys/burns $SHERIFF off-chain) and **75% → the project** (wallet / Bond
+  floor / auto-burn).
 
 Rounding is exact: the platform's immediate cut absorbs the remainder, so the
 pieces sum to the fee **to the wei** (verified in the unit + 300-sim tests). All
