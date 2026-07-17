@@ -131,6 +131,10 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .tabs .sp{flex:1}
 .sort{color:var(--ink-dim);font-size:.82rem}
 .sort select{background:var(--bg-2);border:1px solid var(--line-2);color:var(--ink);border-radius:8px;padding:8px 10px;font-family:var(--sans)}
+/* premium icons in place of emoji */
+.tab img{width:17px;height:17px;object-fit:contain;vertical-align:-3px;margin-right:1px}
+.dcard .ic img{width:36px;height:36px;object-fit:contain}
+.badge img{width:12px;height:12px;object-fit:contain;vertical-align:-2px;margin-right:1px}
 
 /* coin grid */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;padding-bottom:60px}
@@ -214,10 +218,10 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
   <section class="diff">
     <h2>Why launch on <span>Robin Labs</span></h2>
     <div class="diff-grid">
-      <div class="dcard hero"><div class="ic">🪙</div><h3>Every coin gets a floor</h3><p>It graduates into the Bond — a protocol-owned floor it <b style="color:var(--ink)">can't be rugged below</b>. No other pad does this.</p></div>
-      <div class="dcard"><div class="ic">🟢</div><h3>DEX day one</h3><p>A real Uniswap v3 pool + DexScreener from block one. No waiting to migrate.</p></div>
-      <div class="dcard"><div class="ic">📈</div><h3>Floor rises with volume</h3><p>The Bounty deepens on every trade — funded by the launch, never your pocket.</p></div>
-      <div class="dcard"><div class="ic">🆓</div><h3>Free to launch</h3><p>Just pay gas. Clean token, no tax, LP locked forever, anti-snipe baked in.</p></div>
+      <div class="dcard hero"><div class="ic"><img src="assets/icons/safety.png" alt="" /></div><h3>Every coin gets a floor</h3><p>It graduates into the Bond — a protocol-owned floor it <b style="color:var(--ink)">can't be rugged below</b>. No other pad does this.</p></div>
+      <div class="dcard"><div class="ic"><img src="assets/icons/launch.png" alt="" /></div><h3>DEX day one</h3><p>A real Uniswap v3 pool + DexScreener from block one. No waiting to migrate.</p></div>
+      <div class="dcard"><div class="ic"><img src="assets/icons/growth.png" alt="" /></div><h3>Floor rises with volume</h3><p>The Bounty deepens on every trade — funded by the launch, never your pocket.</p></div>
+      <div class="dcard"><div class="ic"><img src="assets/icons/reward.png" alt="" /></div><h3>Free to launch</h3><p>Just pay gas. Clean token, no tax, LP locked forever, anti-snipe baked in.</p></div>
     </div>
   </section>
 
@@ -228,10 +232,10 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 
   <!-- filter tabs -->
   <div class="tabs" id="feed">
-    <button class="tab on" data-f="trending">🔥 Trending</button>
-    <button class="tab" data-f="new">🌱 New</button>
-    <button class="tab" data-f="grad">🎓 Graduating</button>
-    <button class="tab" data-f="done">🏆 Graduated</button>
+    <button class="tab on" data-f="trending"><img src="assets/icons/trending.png" alt="" />Trending</button>
+    <button class="tab" data-f="new"><img src="assets/icons/new.png" alt="" />New</button>
+    <button class="tab" data-f="grad"><img src="assets/icons/boost.png" alt="" />Graduating</button>
+    <button class="tab" data-f="done"><img src="assets/icons/graduated.png" alt="" />Graduated</button>
     <span class="sp"></span>
     <span class="sort">Sort <select id="sort"><option value="mc">Market cap</option><option value="age">Newest</option><option value="floor">Floor depth</option></select></span>
   </div>
@@ -265,7 +269,7 @@ let COINS = [], filter = "trending", sort = "mc";
 function card(c){
   const badge = c.state === "done" ? '<span class="badge grad">Graduated</span>'
     : c.state === "grad" ? '<span class="badge floor">Graduate ready</span>'
-    : c.prog >= 60 ? '<span class="badge hot">🔥 Close</span>' : "";
+    : c.prog >= 60 ? '<span class="badge hot"><img src="assets/icons/hot.png" alt="" />Close</span>' : "";
   const progLbl = c.state === "done" ? '<b>Bond posted</b><span>floor live</span>'
     : `<span>Road to the Bond</span><b>${c.prog}%</b>`;
   const initials = esc((c.symbol || "?").slice(0, 3));
