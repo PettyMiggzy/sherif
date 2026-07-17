@@ -100,19 +100,19 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .coinwrap.has-render .coin3d,.coinwrap.has-render .minicoin{display:none}
 @media(prefers-reduced-motion:reduce){.coin3d,.minicoin,.hero-render{animation:none}}
 @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
-/* mobile: compact coin above the headline so the value prop stays in view */
+/* desktop shows the glossy coin; mobile shows the illustrated fox banner instead */
+.herobanner-m{display:none}
 @media(max-width:860px){
-  .hero{grid-template-columns:1fr;text-align:center;padding-top:22px}
+  .hero{grid-template-columns:1fr;text-align:center;padding-top:20px}
   .hero p{margin-inline:auto}.hero .cta{justify-content:center}
-  .coinwrap{min-height:210px;order:-1;margin-bottom:2px}
-  .coin3d{width:172px}
-  .coin3d .ctext{font-size:.6rem;bottom:20%;letter-spacing:.16em}
-  .coin3d .rmark{margin-bottom:10px}
-  .coinwrap .glow{width:190px;height:190px;top:0}
-  .coinwrap .rings{width:212px;bottom:16px}
-  .minicoin{display:none}
+  .coinwrap{display:none}
+  .herobanner-m{display:block;position:relative;order:-1;border-radius:16px;overflow:hidden;
+    aspect-ratio:1/1;max-height:360px;border:1px solid var(--line-2);box-shadow:0 16px 44px rgba(0,0,0,.5)}
+  .herobanner-m img{width:100%;height:100%;object-fit:cover;object-position:65% 42%;display:block}
+  .herobanner-m::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(90deg,#060803,#060803 7%,rgba(6,8,3,0) 20%,rgba(6,8,3,0) 92%,#060803)}
 }
-@media(max-width:420px){.coin3d{width:150px}.coin3d .ctext{font-size:.52rem}.coinwrap{min-height:186px}.coinwrap .rings{width:184px}}
+@media(max-width:420px){.herobanner-m{max-height:320px}}
 
 /* stats bar */
 .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:0;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,var(--panel-2),var(--panel));overflow:hidden;margin:6px 0 36px}
@@ -130,6 +130,22 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .sec-h h2{font-size:1.5rem;display:flex;align-items:center;gap:9px}
 .sec-h h2 img{width:22px;height:22px}
 .sec-h .more{color:var(--lime);font-size:.85rem;font-weight:700}
+
+/* filter bar */
+.filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.ftabs{display:flex;gap:6px;flex-wrap:wrap}
+.ftab{display:inline-flex;align-items:center;gap:6px;padding:9px 15px;border-radius:11px;border:1px solid var(--line-2);
+  background:var(--bg-2);color:var(--dim);font-weight:700;font-size:.85rem;cursor:pointer;transition:.15s;font-family:inherit}
+.ftab img{width:15px;height:15px;opacity:.8}
+.ftab:hover{border-color:var(--line-strong);color:var(--ink)}
+.ftab.on{background:var(--lime);color:#0a0e05;border-color:var(--lime)}
+.ftab.on img{opacity:1;filter:brightness(0)}
+.fsearch{margin-left:auto;position:relative;flex:1;min-width:180px;max-width:280px}
+.fsearch input{width:100%;padding:10px 14px 10px 34px;border-radius:11px;border:1px solid var(--line-2);
+  background:var(--bg-2);color:var(--ink);font-size:.88rem;font-family:inherit;outline:none}
+.fsearch input:focus{border-color:var(--lime)}
+.fsearch svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--dim)}
+@media(max-width:560px){.fsearch{margin-left:0;max-width:none;order:-1;width:100%}.ftabs{width:100%}}
 
 /* trending cards */
 .tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
@@ -287,6 +303,9 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
            onload="this.style.display='block';document.getElementById('coinwrap').classList.add('has-render')"
            onerror="this.remove()" />
     </div>
+    <a class="herobanner-m" href="create.html" aria-label="Robin Labs — the only launchpad that pays successful creators">
+      <img src="assets/hero-banner.jpg" alt="Robin Labs — the only launchpad that pays successful creators." />
+    </a>
   </section>
 
   <!-- STATS -->
@@ -298,9 +317,21 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
     <div class="s"><img class="ic" src="assets/icons/buy-robin.png" alt="" /><div><div class="v" id="stVol">—</div><div class="k">Total Volume</div></div></div>
   </section>
 
-  <!-- TRENDING -->
+  <!-- EXPLORE (filterable) -->
   <section class="sec" id="trending">
-    <div class="sec-h"><h2><img src="assets/icons/hot.png" alt="" />Trending Projects</h2><a class="more" href="#trending">View All Projects ›</a></div>
+    <div class="sec-h"><h2><img src="assets/icons/hot.png" alt="" />Explore Projects</h2><span class="more" id="fcount"></span></div>
+    <div class="filters">
+      <div class="ftabs" id="ftabs">
+        <button class="ftab on" data-sort="trending"><img src="assets/icons/trending.png" alt="" />Trending</button>
+        <button class="ftab" data-sort="new"><img src="assets/icons/new.png" alt="" />New</button>
+        <button class="ftab" data-sort="top"><img src="assets/icons/top-project.png" alt="" />Top</button>
+        <button class="ftab" data-sort="graduated"><img src="assets/icons/graduated.png" alt="" />Graduated</button>
+      </div>
+      <label class="fsearch">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="fq" type="search" placeholder="Search name or ticker…" autocomplete="off" />
+      </label>
+    </div>
     <div class="tgrid" id="tgrid"><div class="empty">Loading projects…</div></div>
   </section>
 
@@ -453,20 +484,46 @@ function grow(c){
     <div class="r"><div class="k">MC Achieved</div><div class="v">${fmtUsd(mc)}</div></div></a>`;
 }
 
+// ── filterable explore feed ─────────────────────────────────────────────────
+let ALL = [];          // full coin set (demo or live)
+let SORT = 'trending'; // active filter tab
+
+const nz = (...v) => { for (const x of v){ const n = +x; if (x != null && !Number.isNaN(n)) return n; } return 0; };
+const cVol  = (c) => c.volUsd != null ? c.volUsd : (c.vol != null ? c.vol : nz(c.vol24hEth) * ETH_USD);
+const cMc   = (c) => c.mcUsd  != null ? c.mcUsd  : (c.mcapEth ? c.mcapEth * ETH_USD : nz(c.mc));
+const cNew  = (c) => nz(c.at, c.launchTs);
+const cGrad = (c) => c.state === 'done' || c.graduated === true;
+
+function applyFilter(){
+  const q = ($('fq').value || '').trim().toLowerCase();
+  let list = ALL.slice();
+  if (SORT === 'graduated') list = list.filter(cGrad);
+  if (q) list = list.filter(c => (c.name||'').toLowerCase().includes(q) || (c.symbol||'').toLowerCase().includes(q));
+  if (SORT === 'new') list.sort((a,b)=>cNew(b)-cNew(a));
+  else if (SORT === 'top' || SORT === 'graduated') list.sort((a,b)=>cMc(b)-cMc(a));
+  else list.sort((a,b)=>cVol(b)-cVol(a)); // trending
+  const show = list.slice(0, 12);
+  $('tgrid').innerHTML = show.length ? show.map(tcard).join('')
+    : `<div class="empty">${q ? 'No matches' : 'No projects yet'} — <a class="lime" href="create.html">launch one ›</a></div>`;
+  $('fcount').textContent = list.length ? `${list.length} project${list.length>1?'s':''} ›` : '';
+}
+
 async function loadFeed(){
-  let coins = [];
-  if (DEMO) coins = DEMO_COINS.map((c) => ({ ...c, mcUsd: c.mc, volUsd: c.vol }));
-  else { try { coins = (await Pad.feed({ sort:'trending', limit:12 })).coins; } catch {} }
-  // trending = top 4
-  const trend = [...coins].sort((a,b)=>(b.volUsd||b.vol24hEth||0)-(a.volUsd||a.vol24hEth||0)).slice(0,4);
-  $('tgrid').innerHTML = trend.length ? trend.map(tcard).join('')
-    : `<div class="empty">No projects yet — <a class="lime" href="create.html">launch the first ›</a></div>`;
-  // graduates
-  const grads = coins.filter(c => c.state==='done' || c.graduated).slice(0,3);
+  if (DEMO) ALL = DEMO_COINS.map((c) => ({ ...c, mcUsd: c.mc, volUsd: c.vol }));
+  else { try { ALL = (await Pad.feed({ sort:'new', limit:60 })).coins || []; } catch { ALL = []; } }
+  applyFilter();
+  // graduates rail + announcement
+  const grads = ALL.filter(cGrad).slice(0,3);
   $('glist').innerHTML = grads.length ? grads.map(grow).join('') : `<div class="empty" style="padding:14px">None yet</div>`;
-  // announcement — newest graduate
   if (grads.length){ $('anName').textContent = '$'+grads[0].symbol; $('anView').href = `token.html?c=${encodeURIComponent(grads[0].token)}${DEMO?'&demo=1':''}`; $('announce').style.display='block'; }
 }
+
+$('ftabs').addEventListener('click', (e) => {
+  const b = e.target.closest('.ftab'); if (!b) return;
+  [...$('ftabs').children].forEach(x => x.classList.remove('on')); b.classList.add('on');
+  SORT = b.dataset.sort; applyFilter();
+});
+let _qt; $('fq').addEventListener('input', () => { clearTimeout(_qt); _qt = setTimeout(applyFilter, 120); });
 
 async function loadStats(){
   if (DEMO){
