@@ -33,25 +33,26 @@ const hex = (seed) => {
   return "0x" + s;
 };
 
-// [name, symbol, marketCapUSD, progress%, state]
+// [name, symbol, marketCapUSD, progress%, state, emoji] — emoji stands in for a
+// real uploaded coin image so the preview looks populated.
 const SEED = [
-  ["Sherwood", "WOOD", 74000, 92, "grad"],
-  ["Golden Arrow", "ARROW", 41000, 61, "new"],
-  ["Little John", "JOHN", 128000, 100, "done"],
-  ["Maid Marian", "MAID", 22000, 33, "new"],
-  ["Nottingham", "NOTT", 68000, 88, "grad"],
-  ["Quiver", "QVR", 9500, 14, "new"],
-  ["Friar Tuck", "TUCK", 305000, 100, "done"],
-  ["Longbow", "BOW", 51000, 72, "new"],
-  ["Merry Men", "MERRY", 17000, 26, "new"],
-  ["Loxley", "LOX", 89000, 100, "done"],
-  ["Bullseye", "BULL", 33000, 47, "new"],
-  ["Steal Rich", "GIVE", 12500, 19, "new"],
+  ["Sherwood", "WOOD", 74000, 92, "grad", "🌲"],
+  ["Golden Arrow", "ARROW", 41000, 61, "new", "🏹"],
+  ["Little John", "JOHN", 128000, 100, "done", "🪓"],
+  ["Maid Marian", "MAID", 22000, 33, "new", "🌹"],
+  ["Nottingham", "NOTT", 68000, 88, "grad", "🏰"],
+  ["Quiver", "QVR", 9500, 14, "new", "🎯"],
+  ["Friar Tuck", "TUCK", 305000, 100, "done", "🍺"],
+  ["Longbow", "BOW", 51000, 72, "new", "🪵"],
+  ["Merry Men", "MERRY", 17000, 26, "new", "🎭"],
+  ["Loxley", "LOX", 89000, 100, "done", "🦊"],
+  ["Bullseye", "BULL", 33000, 47, "new", "💥"],
+  ["Steal Rich", "GIVE", 12500, 19, "new", "💰"],
 ];
 
 export const DEMO_COINS = SEED.map((c, i) => ({
   token: hex(i + 3), curve: hex(i + 70), pool: hex(i + 130), dev: hex(i + 200),
-  name: c[0], symbol: c[1], mc: c[2], prog: c[3], state: c[4],
+  name: c[0], symbol: c[1], mc: c[2], prog: c[3], state: c[4], emoji: c[5],
   vol: Math.round(c[2] * (0.18 + (i % 5) * 0.16)),
   at: Math.floor((typeof Date !== "undefined" ? Date.now() : 0) / 1000) - (i + 1) * 2600 * (1 + (i % 6)),
   i,

@@ -340,7 +340,9 @@ function renderDemoCoin(){
   COIN = { token: c.token, curve: c.curve, pool: c.pool, dev: c.dev, symbol: c.symbol, name: c.name,
     minGradTick: -196200, gradTick: -170400, bond: c.state === 'done' ? c.pool : null };
   $('nm').textContent = c.name; $('tk').textContent = '$' + c.symbol;
-  $('pfp').textContent = (c.symbol || '?').slice(0, 3);
+  if (c.image) $('pfp').innerHTML = `<img src="${c.image}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" />`;
+  else if (c.emoji) { $('pfp').textContent = c.emoji; $('pfp').style.fontSize = '2.6rem'; }
+  else $('pfp').textContent = (c.symbol || '?').slice(0, 3);
   $('ca').textContent = Pad.short(c.token);
   document.title = c.name + ' — Robin Labs Pad';
   $('infoTax').textContent = '1% / 1%';

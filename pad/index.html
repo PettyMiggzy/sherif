@@ -269,10 +269,12 @@ function card(c){
   const progLbl = c.state === "done" ? '<b>Bond posted</b><span>floor live</span>'
     : `<span>Road to the Bond</span><b>${c.prog}%</b>`;
   const initials = esc((c.symbol || "?").slice(0, 3));
+  const face = c.image ? `<img src="${esc(c.image)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" />`
+    : c.emoji ? `<span style="font-size:1.9rem">${c.emoji}</span>` : `<span style="font-size:1.1rem">${initials}</span>`;
   return `<a class="card" href="token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}">
     ${badge}
     <div class="top-row">
-      <div class="pfp" style="background:linear-gradient(135deg,${color(c.i)},${color(c.i+3)});font-size:1.1rem">${initials}</div>
+      <div class="pfp" style="background:linear-gradient(135deg,${color(c.i)},${color(c.i+3)})">${face}</div>
       <div class="meta">
         <div class="nm">${esc(c.name)} <span class="tk">$${esc(c.symbol)}</span></div>
         <div class="by mono">by ${Pad.short(c.dev)} · ${ago(c.at)}</div>
@@ -390,7 +392,7 @@ function renderHero(){
   const el = document.getElementById('wanted');
   if (!w) { el.innerHTML = `<div class="lbl">★ Most Wanted</div><div class="sub" style="margin-top:10px">No launches yet — <a href="create.html" style="color:var(--lime)">start the first coin →</a></div>`; return; }
   el.innerHTML = `<div class="lbl">★ Most Wanted</div>
-    <div class="row"><div class="pfp" style="background:linear-gradient(135deg,${color(w.i)},${color(w.i+3)});font-size:1.2rem">${esc((w.symbol||"?").slice(0,3))}</div>
+    <div class="row"><div class="pfp" style="background:linear-gradient(135deg,${color(w.i)},${color(w.i+3)});font-size:${w.emoji?'1.9rem':'1.2rem'}">${w.emoji ? w.emoji : esc((w.symbol||"?").slice(0,3))}</div>
     <div><h3>${esc(w.name)} <span style="color:var(--lime);font-size:1rem">$${esc(w.symbol)}</span></h3>
     <div class="sub">${fmt(w.mc)} MC · ${w.state === "done" ? "floor live" : w.prog + "% to the Bond"}</div></div></div>
     <a class="btn btn-lime" style="width:100%;justify-content:center;margin-top:14px" href="token.html?c=${encodeURIComponent(w.token)}">Trade $${esc(w.symbol)}</a>`;
