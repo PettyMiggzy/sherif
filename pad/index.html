@@ -70,14 +70,35 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .hero p{color:var(--dim);font-size:1.1rem;max-width:42ch;margin:18px 0 26px;line-height:1.55}
 .hero p b{color:var(--lime)}
 .hero .cta{display:flex;gap:12px;flex-wrap:wrap}
-.coinwrap{position:relative;display:grid;place-items:center;min-height:380px}
-.coinwrap .glow{position:absolute;width:360px;height:360px;border-radius:50%;background:radial-gradient(circle,rgba(220,233,5,.28),transparent 62%);filter:blur(10px)}
-.coin{position:relative;width:min(74%,300px);aspect-ratio:1;border-radius:50%;z-index:2;display:grid;place-items:center;
-  background:radial-gradient(circle at 38% 30%,#eaf65e,#dce905 45%,#9bab00 100%);
-  box-shadow:0 0 60px rgba(220,233,5,.5),inset 0 -14px 30px rgba(0,0,0,.35),inset 0 10px 24px rgba(255,255,255,.35);
-  border:6px solid #b6c700;animation:bob 5s ease-in-out infinite}
-.coin img{width:62%;height:62%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.3))}
-.coinwrap .podium{position:absolute;bottom:26px;width:min(72%,290px);height:54px;border-radius:50%;background:radial-gradient(ellipse,rgba(220,233,5,.35),transparent 70%);z-index:1}
+.coinwrap{position:relative;display:grid;place-items:center;min-height:420px}
+.coinwrap .glow{position:absolute;top:6%;width:340px;height:340px;border-radius:50%;background:radial-gradient(circle,rgba(220,233,5,.30),transparent 60%);filter:blur(16px);z-index:0}
+/* glowing platform rings beneath the coin */
+.coinwrap .rings{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);width:360px;max-width:94%;z-index:1;filter:drop-shadow(0 0 14px rgba(220,233,5,.55))}
+/* the coin — glossy 3D */
+.coin3d{position:relative;width:min(76%,306px);aspect-ratio:1;z-index:3;animation:bob 5.5s ease-in-out infinite}
+.coin3d .edge{position:absolute;inset:0;border-radius:50%;background:linear-gradient(#818f00,#525b08);transform:translateY(15px) scale(.985)}
+.coin3d .face{position:absolute;inset:0;border-radius:50%;display:grid;place-items:center;overflow:hidden;
+  background:radial-gradient(circle at 36% 26%,#f3fb7e 0%,#e4f110 34%,#c6d800 62%,#8fa000 100%);border:7px solid #aec000;
+  box-shadow:inset 0 -18px 34px rgba(0,0,0,.34),inset 0 12px 26px rgba(255,255,255,.5),inset 0 0 0 11px rgba(255,255,255,.06),0 22px 52px rgba(0,0,0,.5),0 0 70px rgba(220,233,5,.42)}
+.coin3d .face::before{content:"";position:absolute;inset:8.5%;border-radius:50%;border:2px dashed rgba(0,0,0,.13)}
+.coin3d .rmark{width:50%;height:50%;object-fit:contain;margin-bottom:14px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.26));z-index:2}
+.coin3d .ctext{position:absolute;bottom:19%;font-family:var(--disp);letter-spacing:.2em;font-size:1.02rem;color:#26300a;opacity:.82;z-index:2}
+.coin3d .sheen{position:absolute;top:5%;left:11%;width:64%;height:40%;border-radius:50%;z-index:1;pointer-events:none;
+  background:linear-gradient(158deg,rgba(255,255,255,.62),rgba(255,255,255,0) 68%);filter:blur(3px)}
+/* floating mini coins */
+.minicoin{position:absolute;border-radius:50%;display:grid;place-items:center;z-index:2;
+  background:radial-gradient(circle at 36% 28%,#eff97a,#dce905 45%,#93a300 100%);border:2px solid #aec000;
+  box-shadow:0 8px 18px rgba(0,0,0,.4),inset 0 -4px 8px rgba(0,0,0,.3),inset 0 3px 6px rgba(255,255,255,.5);animation:bob 4.4s ease-in-out infinite}
+.minicoin img{width:58%;height:58%;object-fit:contain;opacity:.82}
+.minicoin.mc1{width:58px;height:58px;top:9%;right:5%;animation-duration:4s}
+.minicoin.mc2{width:40px;height:40px;top:40%;right:-1%;animation-duration:4.7s;animation-delay:.6s}
+.minicoin.mc3{width:50px;height:50px;bottom:19%;left:2%;animation-duration:5.2s;animation-delay:.3s}
+.minicoin.mc4{width:32px;height:32px;top:15%;left:9%;animation-duration:4.3s;animation-delay:.9s}
+/* optional: drop assets/hero-coin.png (a rendered coin) to override the CSS coin */
+.coinwrap .hero-render{position:absolute;inset:0;margin:auto;width:min(94%,384px);height:auto;z-index:5;
+  filter:drop-shadow(0 22px 52px rgba(0,0,0,.5)) drop-shadow(0 0 60px rgba(220,233,5,.4));animation:bob 5.5s ease-in-out infinite}
+.coinwrap.has-render .coin3d,.coinwrap.has-render .minicoin{display:none}
+@media(prefers-reduced-motion:reduce){.coin3d,.minicoin,.hero-render{animation:none}}
 @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
 @media(max-width:860px){.hero{grid-template-columns:1fr;text-align:center}.hero p{margin-inline:auto}.hero .cta{justify-content:center}.coinwrap{min-height:300px;order:-1}}
 
@@ -226,14 +247,33 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
       <h1>Build.<br />Launch.<br /><span class="g">Graduate.</span></h1>
       <p>The only launchpad that rewards successful creators with up to <b>0.5 ETH</b>. Fair launch, locked liquidity, a floor that can't be rugged.</p>
       <div class="cta">
-        <a class="btn btn-lime" href="create.html">🚀 Launch a Project</a>
+        <a class="btn btn-lime" href="create.html"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="margin-right:2px"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>Launch a Project</a>
         <a class="btn btn-ghost" href="#trending">Explore Projects →</a>
       </div>
     </div>
-    <div class="coinwrap">
+    <div class="coinwrap" id="coinwrap">
       <div class="glow"></div>
-      <div class="coin"><img src="assets/logo-mark.png" alt="Robin Labs" onerror="this.style.display='none'" /></div>
-      <div class="podium"></div>
+      <svg class="rings" viewBox="0 0 360 120" fill="none" aria-hidden="true">
+        <ellipse cx="180" cy="62" rx="152" ry="40" stroke="rgba(220,233,5,.5)" stroke-width="1.5"/>
+        <ellipse cx="180" cy="62" rx="112" ry="29" stroke="rgba(220,233,5,.38)" stroke-width="1.5"/>
+        <ellipse cx="180" cy="62" rx="70" ry="17" stroke="rgba(220,233,5,.62)" stroke-width="1.5"/>
+        <ellipse cx="180" cy="62" rx="22" ry="6" fill="rgba(220,233,5,.85)"/>
+      </svg>
+      <span class="minicoin mc1"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" /></span>
+      <span class="minicoin mc2"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" /></span>
+      <span class="minicoin mc3"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" /></span>
+      <span class="minicoin mc4"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" /></span>
+      <div class="coin3d">
+        <div class="edge"></div>
+        <div class="face">
+          <img class="rmark" src="assets/logo-mark.png" alt="Robin Labs" onerror="this.style.display='none'" />
+          <span class="ctext">ROBIN LABS</span>
+          <span class="sheen"></span>
+        </div>
+      </div>
+      <img class="hero-render" src="assets/hero-coin.png" alt="Robin Labs" style="display:none"
+           onload="this.style.display='block';document.getElementById('coinwrap').classList.add('has-render')"
+           onerror="this.remove()" />
     </div>
   </section>
 
@@ -281,7 +321,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
         <div class="eth"></div>
         <h3>Build something people <span class="lime">believe in.</span></h3>
         <p>If your project graduates, Robin Labs rewards you with up to <b class="lime">0.5 ETH</b>.</p>
-        <a class="btn btn-lime" href="create.html" style="align-self:flex-start">🚀 Launch Now</a>
+        <a class="btn btn-lime" href="create.html" style="align-self:flex-start"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="margin-right:2px"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>Launch Now</a>
       </div>
     </div>
   </section>
@@ -329,7 +369,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
       <button class="btn btn-lime" type="submit">Subscribe</button>
     </form>
     <div class="soc">
-      <a href="#" aria-label="X">𝕏</a><a href="#" aria-label="Telegram">✈</a><a href="#" aria-label="Discord">◈</a><a href="docs.html" aria-label="Docs">❮❯</a>
+      <a href="https://x.com/robinlabzz" target="_blank" rel="noopener" aria-label="X (Twitter)"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a><a href="https://t.me/RobinLabs" target="_blank" rel="noopener" aria-label="Telegram"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.329-.913.489-1.302.481-.428-.009-1.252-.242-1.865-.44-.752-.244-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg></a><a href="docs.html" aria-label="Docs">❮❯</a>
     </div>
   </section>
 
