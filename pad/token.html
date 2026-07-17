@@ -201,6 +201,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
+import { DEMO, DEMO_COINS, demoTrades, demoHolders } from './assets/demo.js';
 const $ = (id) => document.getElementById(id);
 const ETH_USD = 1920;
 const q = new URLSearchParams(location.search);
@@ -295,6 +296,7 @@ async function maybeShowDev(){
 
 // ── load the coin ──
 async function loadCoin(){
+  if (DEMO){ renderDemoCoin(); return; }
   if (!/^0x[0-9a-fA-F]{40}$/.test(TOKEN)){ $('nm').textContent = 'Unknown coin'; setNote('No coin address in the link.', 'err'); return; }
   let meta, tax, info;
   try { [meta, tax] = await Promise.all([Pad.tokenMeta(TOKEN), Pad.getTax(TOKEN)]); }
@@ -332,11 +334,33 @@ async function loadCoin(){
   loadTrades(); loadHolders();
 }
 
+// ── demo preview (?demo=1) — render a sample coin, no chain reads ──
+function renderDemoCoin(){
+  const c = DEMO_COINS.find((x) => x.token === TOKEN) || DEMO_COINS[0];
+  COIN = { token: c.token, curve: c.curve, pool: c.pool, dev: c.dev, symbol: c.symbol, name: c.name,
+    minGradTick: -196200, gradTick: -170400, bond: c.state === 'done' ? c.pool : null };
+  $('nm').textContent = c.name; $('tk').textContent = '$' + c.symbol;
+  $('pfp').textContent = (c.symbol || '?').slice(0, 3);
+  $('ca').textContent = Pad.short(c.token);
+  document.title = c.name + ' — Robin Labs Pad';
+  $('infoTax').textContent = '1% / 1%';
+  $('stMc').textContent = fmt(c.mc);
+  $('stPx').textContent = '$' + (c.mc / 1e9).toPrecision(2);
+  $('stStage').textContent = c.state === 'done' ? 'Graduated' : c.state === 'grad' ? 'Ready' : 'Bonding';
+  $('stStage').className = 'v' + (c.state === 'done' ? ' g' : '');
+  // chart: show the placeholder (no real DexScreener pair in demo)
+  $('dex').style.display = 'none'; $('chartPh').style.display = 'grid';
+  renderBond({ graduated: c.state === 'done', ready: c.state === 'grad', progress: c.prog / 100,
+    targetFrac: 0.4, minGradTick: -196200, gradTick: -170400 });
+  loadTrades(); loadHolders();
+}
+
 // ── live trades feed (green buys / red sells) ──
 async function loadTrades(){
   const body = $('tradesBody');
   let rows = [];
-  try { rows = await Pad.trades(TOKEN, 30); } catch {}
+  if (DEMO) rows = demoTrades(18);
+  else { try { rows = await Pad.trades(TOKEN, 30); } catch {} }
   if (!rows || !rows.length){ body.innerHTML = '<div class="empty">No trades yet — be the first to buy 🟢</div>'; return; }
   body.innerHTML = rows.map((t) => `<div class="tr">
     <span class="ty ${t.side}">${t.side === 'buy' ? 'BUY' : 'SELL'}</span>
@@ -348,7 +372,9 @@ async function loadTrades(){
 // ── holders (from the chain explorer), protocol addresses labelled ──
 async function loadHolders(){
   const body = $('holdersBody');
-  let h; try { h = await Pad.holders(TOKEN, 12); } catch { h = null; }
+  let h;
+  if (DEMO) h = demoHolders(COIN);
+  else { try { h = await Pad.holders(TOKEN, 12); } catch { h = null; } }
   if (!h){ body.innerHTML = '<div class="empty">Holders appear once there\'s activity.</div>'; return; }
   if (h.count != null) $('holderCount').textContent = h.count.toLocaleString() + ' holders';
   const label = {};

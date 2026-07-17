@@ -244,6 +244,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
+import { DEMO, DEMO_COINS, DEMO_STATS } from './assets/demo.js';
 
 const ETH_USD = 1920; // display-only rate; market caps are computed from the on-chain ETH price
 const PALETTE = ["#dce905","#48d16a","#f5c542","#8a63e0","#ff8a3d","#3dd6ff","#ff5a90","#a8e063"];
@@ -268,7 +269,7 @@ function card(c){
   const progLbl = c.state === "done" ? '<b>Bond posted</b><span>floor live</span>'
     : `<span>Road to the Bond</span><b>${c.prog}%</b>`;
   const initials = esc((c.symbol || "?").slice(0, 3));
-  return `<a class="card" href="token.html?c=${encodeURIComponent(c.token)}">
+  return `<a class="card" href="token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}">
     ${badge}
     <div class="top-row">
       <div class="pfp" style="background:linear-gradient(135deg,${color(c.i)},${color(c.i+3)});font-size:1.1rem">${initials}</div>
@@ -310,6 +311,12 @@ function render(){
 }
 
 async function load(){
+  // Demo preview (?demo=1) — populate the board with sample coins, no chain reads.
+  if (DEMO){
+    COINS = DEMO_COINS.map((c) => ({ ...c }));
+    renderHero(); renderTicker(); render(); renderStats();
+    return;
+  }
   grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--ink-dim);padding:50px">Loading live coins…</div>`;
   // One request via the indexer when configured (name/symbol/volume/graduated
   // all in the payload); otherwise it falls back to reading the chain directly.
@@ -359,11 +366,16 @@ async function renderStats(){
   if (!el) return;
   let projects = COINS.length, graduated = COINS.filter(c => c.state === "done").length;
   let totalVol = null, dayVol = null;
-  try {
-    const s = await Pad.stats(); // indexer /api/stats
-    if (s) { projects = s.coins ?? projects; graduated = s.graduated ?? graduated;
-      totalVol = (s.volAllEth || 0) * ETH_USD; dayVol = (s.vol24hEth || 0) * ETH_USD; }
-  } catch {}
+  if (DEMO){
+    projects = DEMO_STATS.coins; graduated = DEMO_STATS.graduated;
+    totalVol = DEMO_STATS.volAllEth * ETH_USD; dayVol = DEMO_STATS.vol24hEth * ETH_USD;
+  } else {
+    try {
+      const s = await Pad.stats(); // indexer /api/stats
+      if (s) { projects = s.coins ?? projects; graduated = s.graduated ?? graduated;
+        totalVol = (s.volAllEth || 0) * ETH_USD; dayVol = (s.vol24hEth || 0) * ETH_USD; }
+    } catch {}
+  }
   const tiles = [
     [projects, "Projects Launched"],
     [graduated, "Graduated"],
