@@ -427,6 +427,12 @@ export async function stats() {
   try { return await apiGet("/api/stats"); } catch { return null; }
 }
 
+/// Daily time-series (volume / launches / graduations) for the analytics page.
+/// Indexer only; null without one — the page then falls back to demo series.
+export async function series(days = 30) {
+  try { return await apiGet(`/api/series?days=${days}`); } catch { return null; }
+}
+
 /// Recent trades for a coin (indexer only; empty without one — the chart still
 /// comes from DexScreener regardless).
 export async function recentTrades(token, limit = 50) {

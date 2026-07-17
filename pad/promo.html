@@ -52,6 +52,12 @@
   .hero h1 .w{color:var(--ink)} .hero h1 .g{color:var(--lime);text-shadow:0 0 40px rgba(220,233,5,.45)}
   .hero .tag{font-family:var(--disp);font-size:clamp(1rem,2.6vw,1.5rem);letter-spacing:.14em;margin-top:14px;color:var(--dim)}
   .hero .tag b{color:var(--lime)}
+  /* the main bullish hook — the 0.5 ETH graduation payday */
+  .payday{display:inline-flex;align-items:center;gap:12px;margin:22px auto 0;padding:12px 22px;border:1.5px solid var(--lime);border-radius:999px;
+    background:radial-gradient(circle at 50% 130%,rgba(220,233,5,.22),rgba(220,233,5,.04));box-shadow:0 0 34px rgba(220,233,5,.22)}
+  .payday .amt{font-family:var(--disp);font-size:clamp(1.6rem,5vw,2.4rem);color:var(--lime);line-height:1;text-shadow:0 0 26px rgba(220,233,5,.5)}
+  .payday .lbl{font-family:var(--sans);font-weight:700;font-size:.9rem;color:var(--ink);text-align:left;line-height:1.2;letter-spacing:0;text-transform:none}
+  .payday .lbl small{display:block;color:var(--dim);font-weight:500;font-size:.82em}
   .hero .sub{max-width:56ch;margin:22px auto 0;color:#cfd6c4;font-size:1.12rem;line-height:1.55}
   .hero .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:30px}
   .rule{height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent);margin:8px 0 0}
@@ -119,9 +125,14 @@
     <div class="eyebrow">Launch on Robinhood Chain</div>
     <h1><span class="w">The Journey.</span><br /><span class="g">The Future.</span></h1>
     <div class="tag">One platform. Every step. <b>Real results.</b></div>
-    <p class="sub">Deploy in one transaction. Trade from block one. Graduate into a floor that <b style="color:var(--ink)">can't be rugged</b> and <b style="color:var(--ink)">buys every dip</b> — funded by the launch, deeper with every trade. Every great coin starts here.</p>
+    <div class="payday">
+      <span class="amt">0.5 ETH</span>
+      <span class="lbl">paid to you when your coin graduates<small>a payday the chain guarantees — not a promise, code</small></span>
+    </div>
+    <p class="sub">Deploy in one transaction. Trade from block one. Hit your target and the protocol pays the creator <b style="color:var(--ink)">0.5 ETH</b> on the spot — then locks a floor that <b style="color:var(--ink)">can't be rugged</b> and <b style="color:var(--ink)">buys every dip</b>, funded by the launch and deeper with every trade. Every great coin starts here.</p>
     <div class="cta">
       <a class="btn btn-lime" href="create.html">🚀 Launch your coin</a>
+      <a class="btn btn-ghost" href="stats.html">📊 See the numbers</a>
       <a class="btn btn-ghost" href="index.html">Browse live coins</a>
     </div>
   </section>
@@ -185,9 +196,9 @@
       <div class="jnum">6</div>
       <div class="jcard">
         <span class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="13" width="3" height="7"/><rect x="10.5" y="9" width="3" height="11"/><rect x="17" y="4" width="3" height="16"/></svg></span>
-        <div><h3>Grow</h3><p>You earn <em>real ETH</em> as your coin runs — plus a graduation payday.</p></div>
+        <div><h3>Grow</h3><p>Earn <em>real ETH</em> from every trade — then a <em>0.5 ETH</em> payday the moment you graduate.</p></div>
       </div>
-      <div class="jfeat"><span class="fi"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6zM18 6l1 2 2 .3-1.5 1.5.4 2.2-1.9-1-1.9 1 .4-2.2L15 8.3 17 8z"/></svg></span><div><div class="ft">Creator Rewards</div><div class="fd">Real ETH, every step of the way.</div></div></div>
+      <div class="jfeat"><span class="fi"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6zM18 6l1 2 2 .3-1.5 1.5.4 2.2-1.9-1-1.9 1 .4-2.2L15 8.3 17 8z"/></svg></span><div><div class="ft">0.5 ETH Payday</div><div class="fd">Paid to the creator on graduation.</div></div></div>
     </div>
   </section>
 

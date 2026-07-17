@@ -68,6 +68,30 @@ export const DEMO_STATS = {
   mcapCreatedUsd: 84e6, totalVolumeUsd: 212e6,
 };
 
+// Daily analytics series for the stats page (demo values). Deterministic — a
+// gentle upward trend with a mid-window viral spike, so the preview charts look
+// like a launchpad finding traction. The live pad draws the real series.
+export function demoSeries(days = 30) {
+  const now = Math.floor((typeof Date !== "undefined" ? Date.now() : 0) / 1000);
+  const out = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const day = days - i;                     // 1..days, oldest→newest
+    const ramp = day / days;                  // 0→1 growth
+    const wobble = 0.6 + 0.4 * Math.abs(Math.sin(day * 1.3));
+    const spike = Math.abs(day - Math.round(days * 0.62)) < 2 ? 3.1 : 1; // a viral day
+    const volEth = +(2.2 + 34 * ramp * ramp * wobble * spike).toFixed(2);
+    const trades = Math.round(18 + 190 * ramp * wobble * spike);
+    const t = new Date((now - i * 86400) * 1000).toISOString().slice(0, 10);
+    out.push({
+      d: t, volEth, trades,
+      buys: Math.round(trades * 0.57), sells: trades - Math.round(trades * 0.57),
+      launched: Math.round(1 + 9 * ramp * wobble * spike),
+      graduated: (day % 3 === 0 || spike > 1) ? Math.round(1 + 2 * ramp * spike) : 0,
+    });
+  }
+  return out;
+}
+
 // A recent buy/sell tape for the coin page.
 export function demoTrades(n = 18) {
   const now = Math.floor((typeof Date !== "undefined" ? Date.now() : 0) / 1000);

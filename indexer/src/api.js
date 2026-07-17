@@ -64,6 +64,23 @@ const statsStmt = db.prepare(`
     (SELECT COALESCE(SUM(CAST(eth AS REAL)),0)/1e18 FROM trades WHERE ts>=@since) AS vol_24h
 `);
 
+// Daily buckets for the analytics dashboard. One row per UTC day inside the
+// window, so the pad can draw real volume / launch / graduation charts straight
+// from our own index — no third-party analytics dependency.
+const seriesVolStmt = db.prepare(`
+  SELECT strftime('%Y-%m-%d', ts, 'unixepoch') AS d,
+         SUM(CAST(eth AS REAL))/1e18 AS vol,
+         COUNT(*) AS trades,
+         SUM(CASE WHEN side='buy'  THEN 1 ELSE 0 END) AS buys,
+         SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) AS sells
+  FROM trades WHERE ts >= @since GROUP BY d`);
+const seriesLaunchStmt = db.prepare(`
+  SELECT strftime('%Y-%m-%d', launch_ts, 'unixepoch') AS d, COUNT(*) AS n
+  FROM coins WHERE launch_ts >= @since GROUP BY d`);
+const seriesGradStmt = db.prepare(`
+  SELECT strftime('%Y-%m-%d', grad_ts, 'unixepoch') AS d, COUNT(*) AS n
+  FROM coins WHERE graduated=1 AND grad_ts >= @since GROUP BY d`);
+
 const oneCoinStmt = db.prepare(`
   SELECT c.*,
     (SELECT COUNT(*) FROM trades t WHERE t.token=c.token) AS trades_all,
@@ -114,6 +131,24 @@ export function startApi() {
           tradesAll: s.trades_all, trades24h: s.trades_24h,
           volAllEth: s.vol_all, vol24hEth: s.vol_24h,
         }, origin);
+      }
+
+      if (path === "/api/series") {
+        const days = Math.min(Math.max(Number(url.searchParams.get("days") || 30), 1), 180);
+        const from = now - days * DAY;
+        // Bucket by UTC day, then fill gaps so the chart has a point per day.
+        const byDay = new Map();
+        const touch = (d) => byDay.get(d) || byDay.set(d, { d, volEth: 0, trades: 0, buys: 0, sells: 0, launched: 0, graduated: 0 }).get(d);
+        for (const r of seriesVolStmt.all({ since: from })) { const o = touch(r.d); o.volEth = r.vol || 0; o.trades = r.trades || 0; o.buys = r.buys || 0; o.sells = r.sells || 0; }
+        for (const r of seriesLaunchStmt.all({ since: from })) touch(r.d).launched = r.n || 0;
+        for (const r of seriesGradStmt.all({ since: from })) touch(r.d).graduated = r.n || 0;
+        // Dense series oldest→newest (zero-filled days included).
+        const out = [];
+        for (let i = days - 1; i >= 0; i--) {
+          const t = new Date((now - i * DAY) * 1000).toISOString().slice(0, 10);
+          out.push(byDay.get(t) || { d: t, volEth: 0, trades: 0, buys: 0, sells: 0, launched: 0, graduated: 0 });
+        }
+        return send(res, 200, { days, series: out }, origin);
       }
 
       if (path === "/api/coins") {
