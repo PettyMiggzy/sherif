@@ -28,11 +28,11 @@ export const CONTRACTS = {
   v3Factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
 
   // Our CurvePadFactory (one-call launch) — LIVE on Robinhood Chain.
-  padFactory: "0xc208e393990B6f2BC8D0d330E0be38C6eCA1e25B",
+  padFactory: "0x44855d49E73Ad103Df51871A072FEe8709E6A2d6",
 
   // Our PadRouter — the swap desk + project fee. Robinhood Chain has no canonical
   // Uniswap periphery, so THIS is the router every trade goes through — LIVE.
-  padRouter: "0x1988dEFfE3799Fb56F949ffb20C65D20c1547570",
+  padRouter: "0xAEFE708e04D3E2e9609e6bC987903b31818C2a46",
 
   // The platform's buy-back token + its WETH pool (for links / a future buy widget).
   // The above-default fee's 25% cut is paid to the platform, which buys+burns the

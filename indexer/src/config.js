@@ -26,8 +26,8 @@ const num = (k, d) => {
 
 export const CFG = {
   rpcUrl: process.env.RPC_URL || "https://robinhoodchain.blockscout.com/api/eth-rpc",
-  factory: (process.env.FACTORY || "0xc208e393990B6f2BC8D0d330E0be38C6eCA1e25B").toLowerCase(),
-  router: (process.env.ROUTER || "0x1988dEFfE3799Fb56F949ffb20C65D20c1547570").toLowerCase(),
+  factory: (process.env.FACTORY || "0x44855d49E73Ad103Df51871A072FEe8709E6A2d6").toLowerCase(),
+  router: (process.env.ROUTER || "0xAEFE708e04D3E2e9609e6bC987903b31818C2a46").toLowerCase(),
   startBlock: num("START_BLOCK", 0),
   port: num("PORT", 8787),
   pollMs: num("POLL_MS", 6000),

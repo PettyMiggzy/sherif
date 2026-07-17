@@ -32,14 +32,14 @@ docs/          GitBook- + Mintlify-ready docs generated from docs/src/*.md
 
 | Contract | Address |
 |----------|---------|
-| CurvePadFactory | `0xc208e393990B6f2BC8D0d330E0be38C6eCA1e25B` |
-| PadRouter | `0x1988dEFfE3799Fb56F949ffb20C65D20c1547570` |
+| CurvePadFactory | `0x44855d49E73Ad103Df51871A072FEe8709E6A2d6` |
+| PadRouter | `0xAEFE708e04D3E2e9609e6bC987903b31818C2a46` |
 | WETH | `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` |
 | UniswapV3Factory | `0x1f7d7550b1b028f7571e69a784071f0205fd2efa` |
 
 - RPC (public): `https://robinhoodchain.blockscout.com/api/eth-rpc`
 - Explorer: `https://robinhoodchain.blockscout.com`
-- Factory deploy block (for the indexer `START_BLOCK`): **11556704**
+- Factory deploy block (for the indexer `START_BLOCK`): **12237606**
 - Contract owner (both): platform wallet `0xCD04919a51bc0866BbA48c300465425d8fF83160`
   (two-step transfer — pending accept via `pad/admin.html`; may already be done)
 
@@ -77,7 +77,7 @@ docs/          GitBook- + Mintlify-ready docs generated from docs/src/*.md
 
 - Frontend: `cd pad && python3 -m http.server 8080` → open a page. Works on the
   public RPC with zero backend (the indexer only speeds up the feed).
-- Indexer: `cd indexer && cp .env.example .env` (set `START_BLOCK=11556704`,
+- Indexer: `cd indexer && cp .env.example .env` (set `START_BLOCK=12237606`,
   `RPC_URL`, `SITE_DOMAIN`) → `docker compose up -d`.
 - Docs: edit `docs/src/*.md`, run `node docs/build.mjs`, connect the output
   folder to GitBook or Mintlify.

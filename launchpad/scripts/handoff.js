@@ -3,8 +3,8 @@
 // platform must call acceptOwnership() to complete). Run:  npx hardhat run scripts/handoff.js --network robinhood
 const { ethers } = require("hardhat");
 const PLATFORM = "0xcd04919a51bc0866bba48c300465425d8ff83160";
-const ROUTER = "0x1988dEFfE3799Fb56F949ffb20C65D20c1547570";
-const FACTORY = "0xc208e393990B6f2BC8D0d330E0be38C6eCA1e25B";
+const ROUTER = "0xAEFE708e04D3E2e9609e6bC987903b31818C2a46";
+const FACTORY = "0x44855d49E73Ad103Df51871A072FEe8709E6A2d6";
 const OWN = [
   "function transferOwnership(address) external",
   "function owner() view returns (address)",

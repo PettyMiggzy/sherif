@@ -9,7 +9,7 @@ One transaction. Send ETH with the call to make the creator's opening buy (≤2%
 ```js
 import { ethers } from "ethers";
 
-const FACTORY = "0xc208e393990B6f2BC8D0d330E0be38C6eCA1e25B";
+const FACTORY = "0x44855d49E73Ad103Df51871A072FEe8709E6A2d6";
 const abi = [
   "function launch((string name,string symbol,address dev,(uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,address projectWallet) tax) p) payable returns (address token,address curve,address pool)",
 ];
@@ -39,7 +39,7 @@ console.log("launched", token);
 ## Buy & sell
 
 ```js
-const ROUTER = "0x1988dEFfE3799Fb56F949ffb20C65D20c1547570";
+const ROUTER = "0xAEFE708e04D3E2e9609e6bC987903b31818C2a46";
 const rAbi = [
   "function buy(address token,uint256 minOut) payable returns (uint256)",
   "function sell(address token,uint256 amountIn,uint256 minOutEth) returns (uint256)",

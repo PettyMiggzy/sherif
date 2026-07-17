@@ -171,8 +171,8 @@
   <h4>Contract addresses (live)</h4>
   <div class="tw"><table>
     <tr><th>Contract</th><th>Address</th><th>Role</th></tr>
-    <tr><td><span class="m">CurvePadFactory</span></td><td class="addr">0xc208e393990B6f2BC8D0d330E0be38C6eCA1e25B</td><td>One-call launch entrypoint</td></tr>
-    <tr><td><span class="m">PadRouter</span></td><td class="addr">0x1988dEFfE3799Fb56F949ffb20C65D20c1547570</td><td>The swap desk — every buy/sell goes through it</td></tr>
+    <tr><td><span class="m">CurvePadFactory</span></td><td class="addr">0x44855d49E73Ad103Df51871A072FEe8709E6A2d6</td><td>One-call launch entrypoint</td></tr>
+    <tr><td><span class="m">PadRouter</span></td><td class="addr">0xAEFE708e04D3E2e9609e6bC987903b31818C2a46</td><td>The swap desk — every buy/sell goes through it</td></tr>
     <tr><td><span class="m">WETH</span></td><td class="addr">0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73</td><td>Canonical wrapped ETH</td></tr>
     <tr><td><span class="m">UniswapV3Factory</span></td><td class="addr">0x1f7d7550b1b028f7571e69a784071f0205fd2efa</td><td>The real v3 factory each pool is created on</td></tr>
   </table></div>
@@ -296,7 +296,7 @@ factory.on(<span class="s">"Launched"</span>, (token, curve, pool, dev) => {
   <p>One transaction. Send ETH with the call to make the creator's opening buy (≤2%), or send <span class="m">0</span> for a clean launch. All snippets use <strong>ethers v6</strong>.</p>
   <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">import</span> { ethers } <span class="k">from</span> <span class="s">"ethers"</span>;
 
-<span class="k">const</span> FACTORY = <span class="s">"0xc208e393990B6f2BC8D0d330E0be38C6eCA1e25B"</span>;
+<span class="k">const</span> FACTORY = <span class="s">"0x44855d49E73Ad103Df51871A072FEe8709E6A2d6"</span>;
 <span class="k">const</span> abi = [
   <span class="s">"function launch((string name,string symbol,address dev,(uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,address projectWallet) tax) p) payable returns (address token,address curve,address pool)"</span>,
 ];
@@ -322,7 +322,7 @@ console.log(<span class="s">"launched"</span>, token);</pre></div>
   <div class="note warn"><span class="lbl">Opening buy = anti-snipe, not a fee</span>The ETH you send is <em>your own buy</em>, executed inside the launch tx before anyone else can trade — it isn't a platform charge. Capped at 2% of supply.</div>
 
   <h2 id="trade"><span class="sec">03 · Integrate</span>Buy &amp; sell</h2>
-  <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">const</span> ROUTER = <span class="s">"0x1988dEFfE3799Fb56F949ffb20C65D20c1547570"</span>;
+  <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">const</span> ROUTER = <span class="s">"0xAEFE708e04D3E2e9609e6bC987903b31818C2a46"</span>;
 <span class="k">const</span> rAbi = [
   <span class="s">"function buy(address token,uint256 minOut) payable returns (uint256)"</span>,
   <span class="s">"function sell(address token,uint256 amountIn,uint256 minOutEth) returns (uint256)"</span>,
