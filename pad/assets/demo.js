@@ -54,12 +54,19 @@ const SEED = [
 export const DEMO_COINS = SEED.map((c, i) => ({
   token: hex(i + 3), curve: hex(i + 70), pool: hex(i + 130), dev: hex(i + 200),
   name: c[0], symbol: c[1], mc: c[2], prog: c[3], state: c[4],
+  image: "assets/coins/" + c[1].toLowerCase() + ".png",
   vol: Math.round(c[2] * (0.18 + (i % 5) * 0.16)),
+  holders: Math.max(80, Math.round(c[2] / (28 + (i % 7) * 6))),
   at: Math.floor((typeof Date !== "undefined" ? Date.now() : 0) / 1000) - (i + 1) * 2600 * (1 + (i % 6)),
   i,
 }));
 
-export const DEMO_STATS = { coins: 47, graduated: 12, volAllEth: 210.4, vol24hEth: 38.7 };
+// Headline stats for the landing page (demo values; the live pad computes real).
+export const DEMO_STATS = {
+  coins: 47, graduated: 12, volAllEth: 210.4, vol24hEth: 38.7,
+  projectsLaunched: 1248, graduatedTotal: 312, rewardsPaidEth: 158,
+  mcapCreatedUsd: 84e6, totalVolumeUsd: 212e6,
+};
 
 // A recent buy/sell tape for the coin page.
 export function demoTrades(n = 18) {
