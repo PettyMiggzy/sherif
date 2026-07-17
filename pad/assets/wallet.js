@@ -65,10 +65,49 @@ function friendly(err, label) {
   return new Error(label ? `${label} failed: ${raw || "unknown error"}` : (raw || "Transaction failed."));
 }
 
+// ── mobile: no wallet is injected in a normal mobile browser — a wallet only
+// injects window.ethereum inside its OWN in-app browser. So on mobile we offer
+// to reopen the dapp inside the user's wallet app via a deep link. ──────────────
+function isMobile() {
+  return typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+}
+function walletDeepLinks() {
+  const url = location.href, hostPath = location.host + location.pathname + location.search;
+  return [
+    { name: "Phantom", href: `https://phantom.app/ul/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(location.origin)}` },
+    { name: "MetaMask", href: `https://metamask.app.link/dapp/${hostPath}` },
+    { name: "Coinbase Wallet", href: `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(url)}` },
+  ];
+}
+function showMobileWalletPrompt() {
+  if (typeof document === "undefined" || document.getElementById("rl-wallet-modal")) return;
+  const links = walletDeepLinks();
+  const wrap = document.createElement("div");
+  wrap.id = "rl-wallet-modal";
+  wrap.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px)";
+  wrap.innerHTML = `<div style="background:#0c1107;border:1px solid rgba(220,233,5,.3);border-radius:18px 18px 0 0;max-width:460px;width:100%;padding:22px 20px 30px;font-family:system-ui,-apple-system,sans-serif;color:#f4f7ee;box-shadow:0 -10px 40px rgba(0,0,0,.5)">
+      <div style="font-weight:800;font-size:1.12rem;margin-bottom:4px">Open in your wallet</div>
+      <div style="color:#93a382;font-size:.9rem;line-height:1.45;margin-bottom:16px">A mobile browser can't connect a wallet directly. Tap your wallet to open Robin Labs inside its built-in browser, then hit Connect there.</div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        ${links.map((l) => `<a href="${l.href}" style="display:block;text-align:center;background:#dce905;color:#0a0e05;font-weight:800;padding:14px;border-radius:12px;text-decoration:none">Open in ${l.name}</a>`).join("")}
+      </div>
+      <button id="rl-wallet-close" style="width:100%;margin-top:12px;background:none;border:1px solid rgba(255,255,255,.15);color:#93a382;padding:11px;border-radius:12px;font-weight:600;cursor:pointer">Cancel</button>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+  wrap.querySelector("#rl-wallet-close").addEventListener("click", close);
+}
+
 // ── connect + chain guard ───────────────────────────────────────────────────
 export async function connect() {
   const eip = injected();
-  if (!eip) throw new Error("No wallet found. Install Phantom or another EVM wallet, then reload.");
+  if (!eip) {
+    // Mobile browser with no injected wallet → guide them into the wallet app
+    // instead of a dead-end error. Returns null (no throw) so the UI stays calm.
+    if (isMobile()) { showMobileWalletPrompt(); return null; }
+    throw new Error("No wallet found. Install Phantom or another EVM wallet, then reload.");
+  }
 
   await eip.request({ method: "eth_requestAccounts" });
   await ensureChain(eip);
