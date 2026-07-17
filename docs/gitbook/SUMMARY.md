@@ -9,6 +9,7 @@
 
 ## Integrate
 
+* [Build a Bot](bots.md)
 * [Integration Guide](integration.md)
 
 ## Economics

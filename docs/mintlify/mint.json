@@ -24,6 +24,7 @@
     {
       "group": "Integrate",
       "pages": [
+        "bots",
         "integration"
       ]
     },

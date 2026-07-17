@@ -118,6 +118,7 @@
     <a href="#bond">Bond</a>
     <a href="#events">Events reference</a>
     <div class="grp">Integrate</div>
+    <a href="#bots">Build a bot</a>
     <a href="#launch">Launch a coin</a>
     <a href="#trade">Buy &amp; sell</a>
     <a href="#read">Read curve state</a>
@@ -270,6 +271,27 @@ event Poked(int24 tick, uint128 bountyL, uint128 ambushL, uint256 sherwoodFees0,
   </table></div>
 
   <!-- ─────────── INTEGRATE ─────────── -->
+  <h2 id="bots"><span class="sec">03 · Integrate</span>Build a bot</h2>
+  <p>Everything here is <strong>permissionless and public</strong> — no API key, no allow-list, no sign-up. If you can send a transaction, you can integrate. Three calls get you a working trade bot: watch launches, buy, sell.</p>
+  <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="c">// 1) WATCH new launches — one event on the factory</span>
+<span class="k">const</span> factory = <span class="k">new</span> ethers.Contract(FACTORY, [
+  <span class="s">"event Launched(address indexed token,address indexed curve,address indexed pool,address dev,uint256 devBought)"</span>,
+], provider);
+factory.on(<span class="s">"Launched"</span>, (token, curve, pool, dev) => {
+  <span class="c">// ...decide whether to snipe it, inside the same block the dev opens</span>
+});
+
+<span class="c">// 2) BUY — native ETH in, no approval</span>
+<span class="k">const</span> value = ethers.parseEther(<span class="s">"0.1"</span>);
+<span class="k">const</span> q = <span class="k">await</span> router.buy.staticCall(token, <span class="s">0n</span>, { value });
+<span class="k">await</span> (<span class="k">await</span> router.buy(token, q * <span class="s">99n</span> / <span class="s">100n</span>, { value })).wait();
+
+<span class="c">// 3) SELL — one exact-amount approval, then sell</span>
+<span class="k">await</span> (<span class="k">await</span> erc20.approve(ROUTER, amountIn)).wait();
+<span class="k">await</span> (<span class="k">await</span> router.sell(token, amountIn, minOutEth)).wait();</pre></div>
+  <div class="note"><span class="lbl">Skip the RPC crawl</span>For discovery, don't poll the chain — hit the <a href="#api">indexer API</a>: <span class="m">GET /api/coins?sort=new</span> for a snipe feed, <span class="m">?sort=trending</span> for what's hot, <span class="m">/api/trades/{token}</span> for a coin's flow. Every coin comes back with progress, mcap, price and 24h volume — no per-coin reads.</div>
+  <p><strong>Ideas that print:</strong> snipe bot (buy on <span class="m">Launched</span>) · buy-alert / trending bot (poll the API → Telegram/X) · keeper (<span class="m">graduate()</span> is permissionless — fire it when <span class="m">ready()</span> flips) · copy-trade (mirror a wallet's <span class="m">Bought</span>/<span class="m">Sold</span>). Nothing to request, no rate limit on-chain — and every trade your bot routes still pays the coin's fee in-protocol, so the floor and the whole ecosystem grow with your volume. <em>Bring the bots.</em></p>
+
   <h2 id="launch"><span class="sec">03 · Integrate</span>Launch a coin</h2>
   <p>One transaction. Send ETH with the call to make the creator's opening buy (≤2%), or send <span class="m">0</span> for a clean launch. All snippets use <strong>ethers v6</strong>.</p>
   <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">import</span> { ethers } <span class="k">from</span> <span class="s">"ethers"</span>;

@@ -18,6 +18,7 @@
     {
       "group": "Integrate",
       "pages": [
+        { "slug": "bots",        "src": "bots.md",        "title": "Build a Bot",          "description": "The permissionless fast path for bot devs — watch launches, buy, sell, and discover coins via the API." },
         { "slug": "integration", "src": "integration.md", "title": "Integration Guide",    "description": "Copy-paste ethers v6: launch, buy/sell, read curve state, graduate and dev controls." }
       ]
     },
