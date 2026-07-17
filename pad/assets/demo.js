@@ -33,26 +33,28 @@ const hex = (seed) => {
   return "0x" + s;
 };
 
-// [name, symbol, marketCapUSD, progress%, state, emoji] — emoji stands in for a
-// real uploaded coin image so the preview looks populated.
+// [name, symbol, marketCapUSD, progress%, state, icon] — premium on-brand Robin
+// Labs icons (vendored in assets/icons/), so the preview is fully branded — no
+// third-party/stock logos. Market caps stay at Robin-Labs launch scale.
+const IMG = "assets/icons/";
 const SEED = [
-  ["Sherwood", "WOOD", 74000, 92, "grad", "🌲"],
-  ["Golden Arrow", "ARROW", 41000, 61, "new", "🏹"],
-  ["Little John", "JOHN", 128000, 100, "done", "🪓"],
-  ["Maid Marian", "MAID", 22000, 33, "new", "🌹"],
-  ["Nottingham", "NOTT", 68000, 88, "grad", "🏰"],
-  ["Quiver", "QVR", 9500, 14, "new", "🎯"],
-  ["Friar Tuck", "TUCK", 305000, 100, "done", "🍺"],
-  ["Longbow", "BOW", 51000, 72, "new", "🪵"],
-  ["Merry Men", "MERRY", 17000, 26, "new", "🎭"],
-  ["Loxley", "LOX", 89000, 100, "done", "🦊"],
-  ["Bullseye", "BULL", 33000, 47, "new", "💥"],
-  ["Steal Rich", "GIVE", 12500, 19, "new", "💰"],
+  ["Sherwood", "WOOD", 74000, 92, "grad", IMG + "launch.png"],
+  ["Golden Arrow", "ARROW", 41000, 61, "new", IMG + "focus.png"],
+  ["Little John", "JOHN", 128000, 100, "done", IMG + "top-project.png"],
+  ["Maid Marian", "MAID", 22000, 33, "new", IMG + "featured.png"],
+  ["Nottingham", "NOTT", 68000, 88, "grad", IMG + "safety.png"],
+  ["Quiver", "QVR", 9500, 14, "new", IMG + "boost.png"],
+  ["Friar Tuck", "TUCK", 305000, 100, "done", IMG + "verified.png"],
+  ["Longbow", "BOW", 51000, 72, "new", IMG + "growth.png"],
+  ["Merry Men", "MERRY", 17000, 26, "new", IMG + "community.png"],
+  ["Loxley", "LOX", 89000, 100, "done", IMG + "ecosystem.png"],
+  ["Bullseye", "BULL", 33000, 47, "new", IMG + "hot.png"],
+  ["Steal Rich", "GIVE", 12500, 19, "new", IMG + "airdrop.png"],
 ];
 
 export const DEMO_COINS = SEED.map((c, i) => ({
   token: hex(i + 3), curve: hex(i + 70), pool: hex(i + 130), dev: hex(i + 200),
-  name: c[0], symbol: c[1], mc: c[2], prog: c[3], state: c[4], emoji: c[5],
+  name: c[0], symbol: c[1], mc: c[2], prog: c[3], state: c[4], image: c[5],
   vol: Math.round(c[2] * (0.18 + (i % 5) * 0.16)),
   at: Math.floor((typeof Date !== "undefined" ? Date.now() : 0) / 1000) - (i + 1) * 2600 * (1 + (i % 6)),
   i,
