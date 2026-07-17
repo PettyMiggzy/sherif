@@ -54,7 +54,15 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .nav-links a{color:var(--dim);font-size:.9rem;font-weight:600}
 .nav-links a:hover{color:var(--ink)}
 .nav-cta{margin-left:auto;display:flex;gap:10px;align-items:center}
-@media(max-width:900px){.nav-links{display:none}}
+/* mobile menu */
+.navtoggle{display:none;background:transparent;border:1px solid var(--line-2);border-radius:9px;width:40px;height:40px;color:var(--ink);cursor:pointer;align-items:center;justify-content:center;flex:none}
+.navtoggle svg{width:20px;height:20px}
+.mobile-menu{display:none;flex-direction:column;padding:6px 20px 14px;border-top:1px solid var(--line-2);background:rgba(6,8,3,.97);max-width:1140px;margin:0 auto}
+.mobile-menu a{padding:13px 4px;color:var(--ink);font-weight:600;border-bottom:1px solid var(--line-2)}
+.mobile-menu a.go{color:#0a0e05;margin-top:10px;border:none}
+.mobile-menu.open{display:flex}
+@media(max-width:900px){.nav-links{display:none}.navtoggle{display:inline-flex}.nav-cta .nav-launch{display:none}}
+@media(max-width:400px){.nav-cta #connectBtn{font-size:.82rem;padding:9px 12px}}
 
 /* announcement */
 .announce{max-width:1140px;margin:14px auto 0;padding:0 20px}
@@ -250,9 +258,17 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   </nav>
   <div class="nav-cta">
     <button class="btn btn-dark" id="connectBtn" type="button">Connect Wallet</button>
-    <a class="btn btn-lime" href="create.html">Launch Token</a>
+    <a class="btn btn-lime nav-launch" href="create.html">Launch Token</a>
+    <button class="navtoggle" id="navToggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="mobileMenu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
   </div>
-</div></header>
+</div>
+<nav class="mobile-menu" id="mobileMenu">
+  <a href="#trending">Launchpad</a><a href="#trending">Explore</a><a href="#graduates">Graduated</a>
+  <a href="#robin">Rewards</a><a href="#robin">$ROBIN</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
+  <a class="btn btn-lime go" href="create.html">Launch Token</a>
+</nav></header>
 
 <!-- ANNOUNCEMENT -->
 <div class="announce" id="announce" style="display:none"><div class="in">
@@ -427,6 +443,16 @@ import { DEMO, DEMO_COINS, DEMO_STATS } from './assets/demo.js';
 
 const $ = (id) => document.getElementById(id);
 const ETH_USD = 1920;
+
+// mobile menu toggle
+(() => {
+  const t = $('navToggle'), m = $('mobileMenu'); if (!t || !m) return;
+  const set = (open) => { m.classList.toggle('open', open); t.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+  t.addEventListener('click', (e) => { e.stopPropagation(); set(!m.classList.contains('open')); });
+  m.addEventListener('click', (e) => { if (e.target.closest('a')) set(false); });
+  document.addEventListener('click', (e) => { if (!m.contains(e.target) && e.target !== t) set(false); });
+  addEventListener('resize', () => { if (innerWidth > 900) set(false); });
+})();
 const esc = (x) => String(x).replace(/[<>&"]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 const fmtUsd = (n) => n >= 1e6 ? "$" + (n/1e6).toFixed(n>=1e7?0:2) + "M" : n >= 1e3 ? "$" + (n/1e3).toFixed(0) + "K" : "$" + Math.round(n||0);
 const fmtNum = (n) => n >= 1e3 ? (n/1e3).toFixed(n>=1e4?0:1) + "K" : String(n||0);

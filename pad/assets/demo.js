@@ -17,8 +17,9 @@ if (DEMO && typeof document !== "undefined") {
     if (document.getElementById("demo-banner")) return;
     const el = document.createElement("div");
     el.id = "demo-banner";
-    el.style.cssText = "position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:9998;background:#dce905;color:#0a0e05;font-family:system-ui,-apple-system,sans-serif;font-weight:800;font-size:.78rem;letter-spacing:.02em;padding:8px 16px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.45);white-space:nowrap";
-    el.textContent = "👁 PREVIEW — sample coins, not live data";
+    // corner pill + tap-through, so it never covers or blocks the CTA buttons
+    el.style.cssText = "position:fixed;bottom:12px;right:12px;left:auto;z-index:9998;pointer-events:none;background:#dce905;color:#0a0e05;font-family:system-ui,-apple-system,sans-serif;font-weight:800;font-size:.72rem;letter-spacing:.02em;padding:7px 13px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.45);white-space:nowrap;opacity:.94";
+    el.textContent = "👁 PREVIEW — sample data";
     document.body.appendChild(el);
   };
   if (document.body) mount(); else addEventListener("DOMContentLoaded", mount);
