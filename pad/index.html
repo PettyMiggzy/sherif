@@ -122,6 +122,28 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .fsearch svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--dim)}
 @media(max-width:560px){.fsearch{margin-left:0;max-width:none;order:-1;width:100%}.ftabs{width:100%}}
 
+/* trending ticker — auto-scrolling marquee, feels live */
+.ticker{display:flex;align-items:stretch;border:1px solid var(--line-2);border-radius:12px;background:var(--bg-2);overflow:hidden;margin-bottom:16px}
+.ticker .lbl{flex:none;display:flex;align-items:center;gap:8px;padding:0 15px;font-weight:800;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--lime);border-right:1px solid var(--line-2);background:rgba(220,233,5,.06)}
+.ticker .lbl .dot{width:8px;height:8px;border-radius:50%;background:#8bea3c;box-shadow:0 0 8px #8bea3c;animation:tpulse 1.4s infinite}
+@keyframes tpulse{0%,100%{opacity:1}50%{opacity:.28}}
+.ticker .vp{position:relative;overflow:hidden;flex:1}
+.ticker .vp::before,.ticker .vp::after{content:"";position:absolute;top:0;bottom:0;width:40px;z-index:2;pointer-events:none}
+.ticker .vp::before{left:0;background:linear-gradient(90deg,var(--bg-2),transparent)}
+.ticker .vp::after{right:0;background:linear-gradient(270deg,var(--bg-2),transparent)}
+.ticker .track{display:inline-flex;align-items:center;white-space:nowrap;will-change:transform;animation:tscroll 26s linear infinite}
+.ticker:hover .track{animation-play-state:paused}
+@keyframes tscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.tpill{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-right:1px solid var(--line-2);transition:background .15s}
+.tpill:hover{background:rgba(220,233,5,.05)}
+.tpill img,.tpill .ti{width:24px;height:24px;border-radius:50%;object-fit:cover;flex:none;background:var(--bg);border:1px solid var(--line-2);font-size:.55rem}
+.tpill .s{font-weight:800;font-size:.9rem}
+.tpill .v{color:var(--dim);font-size:.8rem}
+.tpill .c{font-size:.8rem;font-weight:700}
+.tpill .c.up{color:#8bea3c}.tpill .c.dn{color:#ff6b57}
+@media(prefers-reduced-motion:reduce){.ticker .track{animation:none}}
+@media(max-width:560px){.ticker .lbl .t{display:none}}
+
 /* trending cards */
 .tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
 @media(max-width:1000px){.tgrid{grid-template-columns:repeat(2,1fr)}}
@@ -277,6 +299,10 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <!-- EXPLORE (filterable) -->
   <section class="sec" id="trending">
     <div class="sec-h"><h2><img src="assets/icons/hot.png" alt="" />Explore Projects</h2><span class="more" id="fcount"></span></div>
+    <div class="ticker" id="tickerbar" aria-label="Trending by volume">
+      <div class="lbl"><span class="dot"></span><span class="t">Trending</span></div>
+      <div class="vp"><div class="track" id="ticker"></div></div>
+    </div>
     <div class="filters">
       <div class="ftabs" id="ftabs">
         <button class="ftab on" data-sort="trending"><img src="assets/icons/trending.png" alt="" />Trending</button>
@@ -465,9 +491,24 @@ function applyFilter(){
   $('fcount').textContent = list.length ? `${list.length} project${list.length>1?'s':''} ›` : '';
 }
 
+// trending ticker — top by volume, scrolling; duplicated for a seamless loop
+function renderTicker(){
+  const list = ALL.slice().sort((a,b)=>cVol(b)-cVol(a)).slice(0,12);
+  const bar = $('tickerbar');
+  if (!list.length){ if (bar) bar.style.display='none'; return; }
+  const pill = (c) => {
+    const ch = c.chg;
+    const chg = ch == null ? '' : `<span class="c ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
+    return `<a class="tpill" href="token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}">${avatar(c,'ti')}<span class="s">$${esc(c.symbol||'?')}</span><span class="v">${fmtUsd(cVol(c))}</span>${chg}</a>`;
+  };
+  const html = list.map(pill).join('');
+  $('ticker').innerHTML = html + html; // two copies → -50% loop is seamless
+}
+
 async function loadFeed(){
   if (DEMO) ALL = DEMO_COINS.map((c) => ({ ...c, mcUsd: c.mc, volUsd: c.vol }));
   else { try { ALL = (await Pad.feed({ sort:'new', limit:60 })).coins || []; } catch { ALL = []; } }
+  renderTicker();
   applyFilter();
   // graduates rail + announcement
   const grads = ALL.filter(cGrad).slice(0,3);

@@ -52,12 +52,16 @@ const SEED = [
   ["dogwifhat", "WIF", 6800, 100, "done"],
 ];
 
+// 24h change per coin (deterministic) — gives the trending ticker green/red life.
+const CHG = [128.4, 42.1, 18.7, 9.3, 64.2, -12.5, 27.8, -6.4, 33.1, 5.2, -9.8, 88.6];
+
 export const DEMO_COINS = SEED.map((c, i) => ({
   token: hex(i + 3), curve: hex(i + 70), pool: hex(i + 130), dev: hex(i + 200),
   name: c[0], symbol: c[1], mc: c[2], prog: c[3], state: c[4],
   image: "assets/coins/" + c[1].toLowerCase() + ".png",
   vol: Math.round(c[2] * (0.18 + (i % 5) * 0.16)),
   holders: Math.max(80, Math.round(c[2] / (28 + (i % 7) * 6))),
+  chg: CHG[i % CHG.length],
   at: Math.floor((typeof Date !== "undefined" ? Date.now() : 0) / 1000) - (i + 1) * 2600 * (1 + (i % 6)),
   i,
 }));
