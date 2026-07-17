@@ -51,7 +51,11 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
     int24 public immutable minGradTick; // graduation becomes eligible here ("let it ride" up to gradTick)
 
     uint16 public constant SHERWOOD_WETH_BPS = 6000; // 60% of the raise -> Sherwood LP, 40% -> Bounty floor
-    uint16 public constant DEV_GRAD_BPS = 2500; // 25% of the raise -> the creator at graduation (launch incentive)
+    // Graduation reward paid to BOTH the creator and the platform at graduation, in WETH. Capped at raise/4
+    // each (below) so the Bond floor always keeps >=50% of the raise: at the ~4 ETH min-grad raise that's 0.5
+    // to each + a ~3 ETH floor; on a bigger "let it ride" raise the fixed cap means the floor keeps everything
+    // above 1 WETH (so riding longer thickens the floor, not the payouts).
+    uint256 public constant GRAD_REWARD = 0.5 ether;
     int24 public constant GRAD_MAX_DEV = 50; // graduation can't post above the ceiling by more than this (anti-manipulation)
     uint16 public constant DEFAULT_GRAD_FRAC = 40; // default gradTarget sits 40% up the [min, ceiling] tick range
         // (≈+50% mcap over the bare minimum) so a hands-off launch graduates with a healthier floor / lighter wall
@@ -234,14 +238,15 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         (uint256 raisedWeth, uint256 leftToken) = tokenIsToken0 ? (c1, c0) : (c0, c1);
         require(raisedWeth > 0, "empty");
 
-        // Creator's graduation reward: a fixed cut of the raise paid to the dev as WETH (a launch incentive
-        // on top of the ongoing sell-tax). Taken as a fraction so it can never exceed the raise or leave the
-        // Bond unfunded — the remaining ≥75% funds the floor. WETH transfer can't reenter (nonReentrant + no
-        // callback), and dev is guaranteed non-zero at construction.
-        uint256 devReward = (raisedWeth * DEV_GRAD_BPS) / 10_000;
-        if (devReward > 0) {
-            raisedWeth -= devReward;
-            IERC20(WETH).safeTransfer(dev, devReward);
+        // Creator + platform graduation reward: a FIXED 0.5 WETH each (a launch incentive on top of the ongoing
+        // fees). Capped at raise/4 apiece so the two payouts can never exceed half the raise — the Bond floor
+        // always keeps >=50% (and keeps everything above 1 WETH on a bigger "let it ride" raise). WETH transfers
+        // can't reenter (nonReentrant + no callback); dev and platform are both non-zero at construction.
+        uint256 reward = Math.min(GRAD_REWARD, raisedWeth / 4);
+        if (reward > 0) {
+            raisedWeth -= 2 * reward;
+            IERC20(WETH).safeTransfer(dev, reward);      // creator
+            IERC20(WETH).safeTransfer(platform, reward); // platform
         }
 
         // Post the Bond around the CURRENT price. The Sherwood LP needs tokens; pair them from the Ambush

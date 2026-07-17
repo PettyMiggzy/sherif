@@ -170,8 +170,9 @@ and up to ~6 ETH if fully ridden. All three widths are deploy-time configurable.
   price in `[minimum, ceiling]`; a keeper/frontend fires the permissionless
   `graduate()` when price reaches it. A sniper can never graduate before the dev's
   mark; the dev can lower it (never below the minimum) to graduate sooner.
-- **Creator reward** — 25% of the raise is paid to the dev at graduation (WETH),
-  on top of the ongoing sell-tax.
+- **Creator + platform reward** — a fixed 0.5 WETH is paid to the dev AND 0.5 WETH
+  to the platform at graduation, each capped at a quarter of the raise so the Bond
+  floor always keeps ≥50% (and keeps everything above 1 WETH on bigger raises).
 - **Anti-manipulation (CP-1, evolved)** — instead of pinning graduation to a fixed
   tick, `graduate()` now refuses to post **above the ceiling** (the only unbacked
   zone). Inside the curve range, pushing price up costs real WETH that *joins* the

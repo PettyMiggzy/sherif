@@ -385,10 +385,10 @@ console.log(<span class="s">"launched"</span>, token);</pre></div>
     <tr><td>Buy 1% base</td><td><strong>Platform</strong></td><td>0.9% immediately, 0.1% released at graduation</td></tr>
     <tr><td>Sell 1% base</td><td><strong>Creator</strong></td><td>Escrowed; collect to wallet or buy+burn</td></tr>
     <tr><td>Above-1% (raised)</td><td>25% platform / 75% project</td><td>Project 75% splits by <span class="m">walletBps/floorBps/burnBps</span></td></tr>
-    <tr><td>Graduation reward</td><td><strong>Creator</strong></td><td><strong>25% of the raise</strong> paid at graduation</td></tr>
+    <tr><td>Graduation reward</td><td><strong>Creator + Platform</strong></td><td><strong>0.5 ETH each</strong> at graduation; the rest funds the floor</td></tr>
     <tr><td>Sherwood LP fees</td><td><strong>The floor</strong></td><td>Compound back into the locked Bond via <span class="m">poke()</span></td></tr>
   </table></div>
-  <div class="note"><span class="lbl">Creator income</span>1% sell tax + 25% graduation reward + any project share of raised tax. Every share is escrowed and paid by separate permissionless flushers, so a trade can never revert on a payout. Accounting is exact to the wei.</div>
+  <div class="note"><span class="lbl">Creator income</span>1% sell tax + a 0.5 ETH graduation reward + any project share of raised tax. Every share is escrowed and paid by separate permissionless flushers, so a trade can never revert on a payout. Accounting is exact to the wei.</div>
 
   <h2 id="gradmodel"><span class="sec">04 · Economics</span>Graduation — “let it ride”</h2>
   <p>Graduation is a <strong>window</strong>, not a line. It becomes eligible at the minimum (~$30k mcap) and can fire anywhere up to the ceiling (~$76k). The longer a coin rides, the bigger the raise and the thicker the floor.</p>
@@ -399,7 +399,7 @@ console.log(<span class="s">"launched"</span>, token);</pre></div>
     <tr><td><span class="m">gradTick</span></td><td>Ceiling (~$76k). Buys can't push past it</td><td>Fixed at launch</td></tr>
     <tr><td>Timeout</td><td>After 7 days, anyone may graduate at the minimum</td><td>Permissionless fallback</td></tr>
   </table></div>
-  <p>On graduation the curve collects the raised WETH + unsold tokens, pays the <strong>creator 25% of the raise</strong>, and posts the rest as the Bond: the Sherwood full-range LP, the Bounty WETH floor, and the Ambush token wall.</p>
+  <p>On graduation the curve collects the raised WETH + unsold tokens, pays the <strong>creator 0.5 ETH and the platform 0.5 ETH</strong> (each capped at a quarter of the raise), and posts the rest as the Bond: the Sherwood full-range LP, the Bounty WETH floor, and the Ambush token wall.</p>
 
   <!-- ─────────── API ─────────── -->
   <h2 id="api"><span class="sec">05 · Build on it</span>Indexer API</h2>

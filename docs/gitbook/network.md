@@ -31,4 +31,4 @@
 | Base fee | `100` bps | Mandatory 1% per side |
 | Max fee per side | `400` bps | A creator may raise a side up to 4% |
 | Max opening dev buy | `200` bps | 2% of supply, anti-snipe |
-| Graduation reward | `2500` bps | 25% of the raise, paid to the creator |
+| Graduation reward | `0.5 ETH` | paid to the creator AND the platform at graduation (capped at raise/4 each) |

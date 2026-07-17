@@ -82,15 +82,11 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect(await bond.bountyL()).to.be.greaterThan(0n);
     expect(await bond.ambushL()).to.be.greaterThan(0n);
 
-    // creator's graduation reward: the dev received 25% of the raise as WETH (the launch incentive), and the
-    // Bond was still funded with the remaining 75% (asserted by the nonzero Sherwood/Bounty above)
+    // creator's graduation reward: the dev received a FIXED 0.5 WETH (the launch incentive), and the Bond was
+    // still funded with the rest (asserted by the nonzero Sherwood/Bounty above). At a ~4 ETH raise the reward
+    // is exactly 0.5 (capped at raise/4 for smaller raises).
     const devGain = (await wethW.balanceOf(dev.address)) - devWethBefore;
-    expect(devGain).to.be.greaterThan(0n);
-    const gradEv = gradRc.logs.map((l) => { try { return curveC.interface.parseLog(l); } catch { return null; } })
-      .find((e) => e && e.name === "Graduated");
-    const bondRaise = gradEv.args.raisedWeth; // post-reward (the 75% the Bond got)
-    // dev's 25% ≈ one-third of the Bond's 75% — allow a small rounding tolerance
-    expect(devGain).to.be.closeTo(bondRaise / 3n, bondRaise / 1000n + 1n);
+    expect(devGain).to.equal(ethers.parseEther("0.5"));
 
     // still trades after graduation
     const t1 = await TOK.balanceOf(buyer.address);

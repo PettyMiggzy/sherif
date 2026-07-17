@@ -48,7 +48,7 @@ docs/          GitBook- + Mintlify-ready docs generated from docs/src/*.md
 - Total supply per coin: 1,000,000,000. Base fee: 1% per side (100 bps), max 4%.
 - **Buy 1% → platform.** **Sell 1% → creator** (escrowed; collect or buy+burn).
 - Above-1% "raised" fee splits 25% platform / 75% project.
-- **Graduation reward: 25% of the raise → creator.** Sherwood LP fees compound
+- **Graduation reward: 0.5 ETH → creator + 0.5 ETH → platform** (each capped at raise/4; rest funds the floor). Sherwood LP fees compound
   back into the Bond via `poke()`.
 - Graduation "let it ride": eligible ~$30k mcap, ceiling ~$76k, dev-settable
   target (default 40% up), 7-day abandon-proof timeout.

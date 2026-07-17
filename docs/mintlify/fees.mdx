@@ -12,10 +12,10 @@ Every coin pays a mandatory **1% per side**. A creator may set a side higher (up
 | Buy 1% base | **Platform** | 0.9% immediately, 0.1% released at graduation |
 | Sell 1% base | **Creator** | Escrowed; collect to wallet or buy+burn |
 | Above-1% (raised) | 25% platform / 75% project | Project 75% splits by `walletBps` / `floorBps` / `burnBps` |
-| Graduation reward | **Creator** | **25% of the raise** paid at graduation |
+| Graduation reward | **Creator + Platform** | **0.5 ETH each** at graduation (capped at a quarter of the raise); the rest funds the floor |
 | Sherwood LP fees | **The floor** | Compound back into the locked Bond via `poke()` |
 
-> **Creator income** = the 1% sell tax + the 25% graduation reward + any project share of raised tax. Every share is escrowed and paid by separate permissionless flushers, so a trade can never revert on a payout. Accounting is exact to the wei.
+> **Creator income** = the 1% sell tax + a 0.5 ETH graduation reward + any project share of raised tax. Every share is escrowed and paid by separate permissionless flushers, so a trade can never revert on a payout. Accounting is exact to the wei.
 
 ## Why fees ride the protocol
 

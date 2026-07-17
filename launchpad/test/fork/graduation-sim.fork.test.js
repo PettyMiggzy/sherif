@@ -63,9 +63,11 @@ suite("Graduation battery — random 'let it ride' points, invariants hold every
       expect(await curveC.ready(), `#${i} ready`).to.equal(true);
 
       const devBefore = await wethW.balanceOf(dev.address);
+      const platformAddr = await curveC.platform();
+      const platBefore = await wethW.balanceOf(platformAddr);
       const gradRc = await (await curveC.graduate()).wait();
       const gev = gradRc.logs.map((l) => { try { return curveC.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Graduated");
-      const bondRaise = gev.args.raisedWeth; // the 75% the Bond got (post dev reward)
+      const bondRaise = gev.args.raisedWeth; // what the Bond got (post the 0.5+0.5 rewards)
       const bond = await ethers.getContractAt("Bond", await curveC.bond());
 
       // INV-1: the Bond always posts a real floor
@@ -73,9 +75,13 @@ suite("Graduation battery — random 'let it ride' points, invariants hold every
       expect(await bond.sherwoodL(), `#${i} sherwoodL`).to.be.greaterThan(0n);
       expect(await bond.bountyL(), `#${i} bountyL`).to.be.greaterThan(0n);
 
-      // INV-2: dev reward ~= 25% of the total raise == one third of the Bond's 75%
+      // INV-2: creator + platform each get a FIXED 0.5 WETH (capped at raise/4). At these raises (>=4 ETH)
+      // that's exactly 0.5 each; the platform also sweeps a tiny WETH dust on top.
+      const HALF = ethers.parseEther("0.5");
       const devGain = (await wethW.balanceOf(dev.address)) - devBefore;
-      expect(devGain, `#${i} dev reward`).to.be.closeTo(bondRaise / 3n, bondRaise / 500n + 1n);
+      const platGain = (await wethW.balanceOf(platformAddr)) - platBefore;
+      expect(devGain, `#${i} dev reward`).to.equal(HALF);
+      expect(platGain, `#${i} platform reward`).to.be.closeTo(HALF, ethers.parseEther("0.002"));
 
       // INV-3: the curve is fully drained — no WETH or token stranded in it
       expect(await wethW.balanceOf(curve), `#${i} curve weth`).to.equal(0n);
@@ -88,7 +94,7 @@ suite("Graduation battery — random 'let it ride' points, invariants hold every
       const tick = (await pool.slot0()).tick;
       const startAbs = 196200n; // |startTick|
       const priceDist = tick < 0n ? startAbs + tick + startAbs : (tick > 0n ? tick : 0n); // rough distance up the curve
-      const totalRaise = (bondRaise * 4n) / 3n; // undo the 25% dev cut -> the gross raise
+      const totalRaise = bondRaise + ethers.parseEther("1"); // undo the 0.5+0.5 payout -> the gross raise
       pts.push({ frac, raise: totalRaise });
     }
 

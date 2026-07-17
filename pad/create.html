@@ -200,7 +200,7 @@ function taxSync(){
   const tot=w+f+b, tEl=document.getElementById('allocTot');
   tEl.textContent=tot+'%'; tEl.className='tax-tot '+(tot===100?'ok':'bad');
   const note=document.getElementById('taxNote');
-  if(!on){note.textContent='Default 1% each side: the BUY 1% is the platform’s, and the SELL 1% is YOURS (the creator’s) — plus you get 25% of the raise at graduation. Raise the fee to fund your coin further; 25% of anything above 1% funds the platform buyback, you keep 75%.';return;}
+  if(!on){note.textContent='Default 1% each side: the BUY 1% is the platform’s, and the SELL 1% is YOURS (the creator’s) — plus you earn 0.5 ETH when your coin graduates. Raise the fee to fund your coin further; 25% of anything above 1% funds the platform buyback, you keep 75%.';return;}
   const keep=(x)=>(((x-1)*0.75).toFixed(2).replace(/\.?0+$/,''));
   note.textContent=`Buyers pay ${bt}% buy / sellers pay ${st}% sell. The buy 1% → platform; the sell 1% → you. Of anything above 1%, 25% funds the platform buyback and you keep 75% (≈ ${keep(bt)}% buy / ${keep(st)}% sell) split below.`;
 }
