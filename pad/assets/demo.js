@@ -34,21 +34,22 @@ const hex = (seed) => {
 };
 
 // [name, symbol, marketCapUSD, progress%, state] — sample coins for the preview.
-// No coin images here: real coins carry the creator's uploaded logo; demo coins
-// show a clean gradient + ticker tile as the placeholder.
+// Images are real, recognizable project logos (assets/coins/<symbol>.png, pulled
+// once from CoinGecko) so the preview board looks varied and populated for demos.
+// These are sample/PREVIEW data only — real coins carry the creator's own logo.
 const SEED = [
-  ["Sherwood", "WOOD", 74000, 92, "grad"],
-  ["Golden Arrow", "ARROW", 41000, 61, "new"],
-  ["Little John", "JOHN", 128000, 100, "done"],
-  ["Maid Marian", "MAID", 22000, 33, "new"],
-  ["Nottingham", "NOTT", 68000, 88, "grad"],
-  ["Quiver", "QVR", 9500, 14, "new"],
-  ["Friar Tuck", "TUCK", 305000, 100, "done"],
-  ["Longbow", "BOW", 51000, 72, "new"],
-  ["Merry Men", "MERRY", 17000, 26, "new"],
-  ["Loxley", "LOX", 89000, 100, "done"],
-  ["Bullseye", "BULL", 33000, 47, "new"],
-  ["Steal Rich", "GIVE", 12500, 19, "new"],
+  ["Dogecoin", "DOGE", 980000, 100, "done"],
+  ["Shiba Inu", "SHIB", 412000, 100, "done"],
+  ["Pepe", "PEPE", 205000, 100, "done"],
+  ["Pump.fun", "PUMP", 128000, 100, "done"],
+  ["Pudgy Penguins", "PENGU", 74000, 92, "grad"],
+  ["SPX6900", "SPX", 51000, 72, "new"],
+  ["Bonk", "BONK", 33000, 47, "new"],
+  ["Peanut", "PEANUT", 22000, 33, "new"],
+  ["FLOKI", "FLOKI", 17000, 26, "new"],
+  ["Ape and Pepe", "APEPE", 12500, 19, "new"],
+  ["coco", "COCO", 9500, 14, "new"],
+  ["dogwifhat", "WIF", 6800, 100, "done"],
 ];
 
 export const DEMO_COINS = SEED.map((c, i) => ({
