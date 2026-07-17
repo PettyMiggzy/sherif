@@ -4,8 +4,25 @@
 // feed otherwise, so real visitors still see the honest (empty) board.
 //   Preview:  robinlabs.io/?demo=1   ·   robinlabs.io/token.html?c=<any>&demo=1
 // ─────────────────────────────────────────────────────────────────────────────
+// TEMPORARY: demo is ON by default so the populated pad is visible for review.
+// Add ?live=1 to see the real (empty) board. Flip this back to opt-in
+// (has("demo")) before launching real coins — otherwise real coin pages render
+// the sample coin instead of the live one.
 export const DEMO = typeof location !== "undefined" &&
-  (new URLSearchParams(location.search).has("demo") || location.hash === "#demo");
+  !new URLSearchParams(location.search).has("live");
+
+// Floating "PREVIEW" badge so sample data is never mistaken for real numbers.
+if (DEMO && typeof document !== "undefined") {
+  const mount = () => {
+    if (document.getElementById("demo-banner")) return;
+    const el = document.createElement("div");
+    el.id = "demo-banner";
+    el.style.cssText = "position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:9998;background:#dce905;color:#0a0e05;font-family:system-ui,-apple-system,sans-serif;font-weight:800;font-size:.78rem;letter-spacing:.02em;padding:8px 16px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.45);white-space:nowrap";
+    el.textContent = "👁 PREVIEW — sample coins, not live data";
+    document.body.appendChild(el);
+  };
+  if (document.body) mount(); else addEventListener("DOMContentLoaded", mount);
+}
 
 // deterministic fake 0x-address (valid shape, obviously not real). An LCG keyed
 // by the seed so different seeds never collide (a simple seed*k+i mod 16 would
