@@ -94,7 +94,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect(await TOK.balanceOf(buyer.address)).to.be.greaterThan(t1);
   });
 
-  it("launch() with ETH -> executes the dev's own buy (<=2%) atomically, before anyone else can trade", async () => {
+  it("launch() with ETH -> executes the dev's own uncapped buy atomically, before anyone else can trade", async () => {
     const [dep, platform, dev] = await ethers.getSigners();
 
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
@@ -109,8 +109,8 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     // plain default 1% here (the above-default split is covered in padrouter.fork.test.js)
     const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
-    // dev funds their own opening buy in the SAME launch tx
-    const spend = ONE / 100n; // 0.01 ETH
+    // dev funds a LARGE opening buy in the SAME launch tx — big enough to blow past the old 2% cap
+    const spend = ONE / 2n; // 0.5 ETH
     const before = await ethers.provider.getBalance(dev.address);
     const rc = await (await factory.connect(dev).launch(
       { name: "Robin Dev", symbol: "SDEV", dev: dev.address, tax: NOTAX }, { value: spend }
@@ -120,10 +120,10 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const { token, devBought } = ev.args;
     const TOK = await ethers.getContractAt("LaunchToken", token);
 
-    // the dev received real tokens, atomically, ahead of the field — and never more than 2%
-    const cap = (1_000_000_000n * ONE * 200n) / 10_000n; // 2% of supply
-    expect(devBought).to.be.greaterThan(0n);
-    expect(devBought).to.be.at.most(cap);
+    // the dev received real tokens, atomically, ahead of the field — with NO 2% cap now:
+    // 0.5 ETH buys well over 2% of supply, and it's delivered in full.
+    const oldCap = (1_000_000_000n * ONE * 200n) / 10_000n; // 2% of supply
+    expect(devBought).to.be.greaterThan(oldCap); // cap is gone — dev got more than the old 2% limit
     expect(await TOK.balanceOf(dev.address)).to.equal(devBought);
 
     // dev spent no more than they sent (unused ETH is refunded), minus gas

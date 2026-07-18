@@ -31,16 +31,17 @@ interface IPadRouter {
 /// @title CurvePadFactory — DEX-day-one launchpad (the NOXA-style model, plus the Bond)
 /// @notice One `launch()` call: deploys a clean anti-snipe token, creates a REAL Uniswap v3 pool, seeds the
 /// token as a single-sided "curve" position, enables trading, and (optionally) executes the creator's own
-/// **dev buy** of up to 2% in the same transaction — before anyone else can trade — so the dev is never
-/// sniped on their own coin. Token is on Uniswap + DexScreener from block one. Free to launch; the platform
+/// **dev buy** in the same transaction — before anyone else can trade — so the dev is never sniped on their
+/// own coin. The dev buy is uncapped by supply (bounded only by the curve ceiling + the ETH sent). Token is
+/// on Uniswap + DexScreener from block one. Free to launch; the platform
 /// funds nothing (the token seeds its own liquidity); the dev buy is optional and paid by the dev.
 contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
     using SafeERC20 for IERC20;
 
     uint16 public constant AMBUSH_BPS = 2500; // 25% -> the Bond's Ambush; 75% is the curve
     uint24 public constant POOL_FEE = 10000;
-    uint16 public constant MAX_DEVBUY_BPS = 200; // dev buy capped at 2% of supply
-    int24 public constant DEVBUY_SPAN = 600; // price-limit span (~6%) so a dev buy can't run the curve far
+    // The dev's atomic opening buy is uncapped by supply — it's bounded only by the curve itself
+    // (it can climb to the graduation ceiling, never past) and by how much ETH the dev sends.
 
     address public immutable WETH;
     address public immutable v3Factory;
@@ -175,7 +176,7 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
             token, pool, curve, projWallet, p.tax.buyBps, p.tax.sellBps, p.tax.walletBps, p.tax.floorBps, p.tax.burnBps
         );
 
-        // optional dev buy (≤2%), atomic and ahead of the field
+        // optional dev buy (uncapped by supply), atomic and ahead of the field
         uint256 devBought;
         if (msg.value > 0) devBought = _devBuy(token, pool, startTick, p.dev);
 
@@ -187,8 +188,9 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
     function _devBuy(address token, address pool, int24 startTick, address dev) internal returns (uint256 bought) {
         bool tokenIsToken0 = token < WETH;
         bool zeroForOne = !tokenIsToken0; // buying the token: WETH-in. WETH is token0 iff !tokenIsToken0.
-        // cap the price move to ~2% into the curve so a big dev buy can't run the whole thing (excess refunded)
-        int24 capTick = tokenIsToken0 ? startTick + DEVBUY_SPAN : startTick - DEVBUY_SPAN;
+        // no supply cap on the dev buy: let it climb the whole curve up to the graduation ceiling
+        // (buys can never go past it). Any ETH beyond what fills the curve is refunded.
+        int24 capTick = tokenIsToken0 ? startTick + CURVE_WIDTH : startTick - CURVE_WIDTH;
         uint160 sqrtLimit = PoolMath.getSqrtRatioAtTick(capTick);
 
         IWETH9(WETH).deposit{value: msg.value}();
@@ -198,9 +200,8 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
         _activePool = address(0);
         _swapping = false;
 
-        // deliver bought tokens to the dev; enforce the 2% cap; refund any unused ETH
+        // deliver bought tokens to the dev; refund any unused ETH (no supply cap on the dev buy)
         bought = IERC20(token).balanceOf(address(this));
-        require(bought <= (TOTAL_SUPPLY * MAX_DEVBUY_BPS) / 10_000, "dev>2%");
         if (bought > 0) IERC20(token).safeTransfer(dev, bought);
         uint256 leftWeth = IERC20(WETH).balanceOf(address(this));
         if (leftWeth > 0) {
