@@ -8,15 +8,15 @@ const { ethers, network } = require("hardhat");
 const WETH = process.env.WETH || "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 const V3_FACTORY = process.env.V3_FACTORY || "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
 const ETH_USD = Number(process.env.ETH_USD || 1920);
-// Curve geometry ("let it ride"). MIN_GRAD_WIDTH = start -> the MINIMUM graduation price (~$30k, ~4 ETH
-// raise). CURVE_WIDTH = start -> the CEILING (how far price can ride above $30k for a thicker floor). Graduation
-// is eligible anywhere in between; the later it's clicked, the bigger the raise/floor. Values below are
-// calibrated on the fork. For a cheap TEST factory set small widths. All multiples of 200; MIN_GRAD_WIDTH < CURVE_WIDTH.
-// Calibrated on the fork: MIN grad ~$30k mcap / ~4 ETH raise; CEILING ~$76k mcap / ~8.3 ETH raise. So the
-// floor is ~3 ETH if graduated at the $30k minimum and up to ~6 ETH if left to ride to the ceiling.
-const START_TICK_MAG = Number(process.env.START_TICK_MAG || 196200);
-const CURVE_WIDTH = Number(process.env.CURVE_WIDTH || 25800);
-const MIN_GRAD_WIDTH = Number(process.env.MIN_GRAD_WIDTH || 16400);
+// Curve geometry ("let it ride"). MIN_GRAD_WIDTH = start -> the MINIMUM graduation price. CURVE_WIDTH = start
+// -> the CEILING (how far price can ride above the minimum for a thicker floor). Graduation is eligible
+// anywhere in between; the later it's clicked, the bigger the raise/floor. All multiples of 200;
+// MIN_GRAD_WIDTH < CURVE_WIDTH. For a cheap TEST factory set small widths.
+// Calibrated on the fork (scripts/calibrate-curve.js): START ~$2k mcap (buy 2% ≈ $40 to keep entry cheap),
+// MIN grad ~$28k mcap / ~2.5 ETH raise (full 0.5 ETH reward per side + ~1.5 ETH floor), CEILING ~$84k mcap.
+const START_TICK_MAG = Number(process.env.START_TICK_MAG || 207400);
+const CURVE_WIDTH = Number(process.env.CURVE_WIDTH || 38000);
+const MIN_GRAD_WIDTH = Number(process.env.MIN_GRAD_WIDTH || 27000);
 
 async function main() {
   const [deployer] = await ethers.getSigners();
