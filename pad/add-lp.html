@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Robin Labs — Open a locked LP position on any token</title>
+<meta name="description" content="Open a locked liquidity position on ANY token on Robinhood Chain — paste the contract address, choose your lock term, earn your share of every trade's fee. Not just pad coins." />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<meta name="theme-color" content="#060803" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#060803; --bg-2:#0a0e05; --bg-3:#0d1207; --ink:#f4f7ee; --dim:#93a382; --faint:#5f6b52;
+    --lime:#dce905; --lime-2:#a6e017; --lime-deep:#7fae00; --up:#8bea3c; --down:#ff6b57; --violet:#8a63e0;
+    --glow:0 0 22px rgba(220,233,5,.45); --line:rgba(220,233,5,.28); --line-2:rgba(220,233,5,.14); --line-strong:rgba(220,233,5,.4);
+    --disp:"Bebas Neue",Impact,sans-serif; --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif; --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden;
+    background-image:radial-gradient(circle at 50% -10%,rgba(220,233,5,.09),transparent 45%),linear-gradient(rgba(220,233,5,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(220,233,5,.03) 1px,transparent 1px);background-size:auto,42px 42px,42px 42px}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 22px}
+  h1,h2,h3,.disp{font-family:var(--disp);font-weight:400;text-transform:uppercase;letter-spacing:.01em;margin:0;line-height:.95}
+  a{color:inherit;text-decoration:none}.lime{color:var(--lime)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:800;font-size:.95rem;border-radius:12px;padding:12px 20px;cursor:pointer;border:1px solid transparent;transition:.16s;font-family:var(--sans)}
+  .btn-lime{background:var(--lime);color:#0a0e05;box-shadow:var(--glow)}
+  .btn-lime:hover{transform:translateY(-2px);box-shadow:0 0 30px rgba(220,233,5,.75)}
+  .btn-lime:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+  .btn-ghost{border-color:var(--line);color:var(--ink)}.btn-ghost:hover{background:rgba(220,233,5,.08);border-color:var(--lime)}
+  .mark{display:inline-flex;align-items:center;gap:12px}
+  .mark img{width:34px;height:34px;filter:drop-shadow(var(--glow))}
+  .mark .wm{font-family:var(--disp);font-size:1.35rem;letter-spacing:.2em;padding-left:.1em}
+  .mark .wm small{display:block;font-size:.5em;letter-spacing:.5em;color:var(--lime);margin-top:-4px}
+  header.nav{position:sticky;top:0;z-index:30;backdrop-filter:blur(10px);background:rgba(6,8,3,.72);border-bottom:1px solid var(--line-2)}
+  .nav-in{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;max-width:1120px;margin:0 auto}
+  .nav .links{display:flex;gap:20px;align-items:center;font-size:.9rem;color:var(--dim)}
+  .nav .links a:hover,.nav .links a.on{color:var(--lime)}
+  @media(max-width:760px){.nav .links a:not(.btn){display:none}}
+  .head{padding:40px 0 6px}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.32em;color:var(--lime);text-transform:uppercase}
+  .head h1{font-size:clamp(2.4rem,6.2vw,4rem);margin-top:12px}
+  .head h1 .g{color:var(--lime);text-shadow:0 0 34px rgba(220,233,5,.4)}
+  .head p{max-width:64ch;color:#cfd6c4;margin:14px 0 0;font-size:1.05rem;line-height:1.55}.head p b{color:var(--ink)}
+
+  /* opener card */
+  .opener{margin:26px 0 8px;border:1px solid var(--line-strong);border-radius:20px;
+    background:linear-gradient(180deg,rgba(220,233,5,.06),rgba(9,13,5,.75));padding:24px;box-shadow:0 0 60px -26px rgba(220,233,5,.5) inset}
+  .opener .lbl{font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 6px}
+  .field{display:flex;align-items:center;gap:10px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:12px;padding:4px 6px 4px 14px;margin-bottom:14px}
+  .field input{flex:1;background:none;border:none;color:var(--ink);font-family:var(--mono);font-size:1rem;padding:12px 0;outline:none}
+  .field .paste{border:1px solid var(--line-2);background:var(--bg-3);color:var(--dim);border-radius:9px;padding:8px 12px;font-weight:700;font-size:.8rem;cursor:pointer;font-family:var(--sans)}
+  .field .paste:hover{border-color:var(--line-strong);color:var(--ink)}
+  /* resolved token chip */
+  .tokchip{display:none;align-items:center;gap:12px;background:var(--bg-3);border:1px solid var(--line-2);border-radius:12px;padding:12px 14px;margin-bottom:14px}
+  .tokchip.show{display:flex}
+  .tokchip .av{width:40px;height:40px;border-radius:11px;flex:none;display:grid;place-items:center;font-weight:800;color:#0a0e05;background:linear-gradient(135deg,#dce905,#8a63e0);object-fit:cover}
+  .tokchip .nm{font-weight:700}.tokchip .tk{color:var(--lime);font-size:.82rem;font-weight:700}
+  .tokchip .pool{margin-left:auto;text-align:right;font-family:var(--mono);font-size:.7rem;color:var(--dim)}
+  .tokchip .pool b{display:block;color:var(--up);font-size:.82rem}
+  .tokchip.bad .av{background:linear-gradient(135deg,#ff6b57,#7a2a20)}
+  .tokchip.bad .pool b{color:var(--down)}
+  .row2{display:flex;gap:12px;flex-wrap:wrap}
+  .amtbox{flex:1 1 200px;display:flex;align-items:center;background:var(--bg-2);border:1px solid var(--line-2);border-radius:12px;padding:4px 14px}
+  .amtbox input{flex:1;background:none;border:none;color:var(--ink);font-family:var(--mono);font-size:1.15rem;padding:12px 0;outline:none}
+  .amtbox span{color:var(--dim);font-weight:700}
+  .termsel{flex:0 0 auto;background:var(--bg-2);border:1px solid var(--line-2);border-radius:12px;color:var(--ink);padding:0 14px;font-family:var(--sans);font-weight:700;font-size:.95rem;cursor:pointer}
+  .termsel option{background:var(--bg-2)}
+  .quick{display:flex;gap:6px;margin:12px 0 0}
+  .quick button{flex:1;background:var(--bg-2);border:1px solid var(--line-2);color:var(--dim);border-radius:9px;padding:8px;font-size:.8rem;cursor:pointer;font-weight:700;font-family:var(--sans)}
+  .quick button:hover{border-color:var(--line-strong);color:var(--ink)}
+  /* preview / breakdown */
+  .brk{margin:16px 0 0;border-top:1px dashed var(--line-2);padding-top:14px;display:none}
+  .brk.show{display:block}
+  .brk .r{display:flex;justify-content:space-between;padding:5px 0;font-size:.9rem;color:var(--dim)}
+  .brk .r b{color:var(--ink);font-family:var(--mono)}
+  .brk .r.fee b{color:var(--down)}
+  .brk .r.net b{color:var(--lime)}
+  .brk .sum{color:var(--lime-deep);font-size:.82rem;margin-top:10px;line-height:1.45}.brk .sum b{color:var(--lime)}
+  .opener .go{width:100%;margin-top:16px;padding:14px}
+  .note{color:var(--faint);font-size:.75rem;margin-top:10px;line-height:1.4}
+  #msg{margin-top:10px;font-size:.85rem;min-height:1.1em}
+  #msg.ok{color:var(--up)}#msg.err{color:var(--down)}
+
+  /* how it works */
+  .facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:30px 0 6px}
+  @media(max-width:760px){.facts{grid-template-columns:1fr}}
+  .fact{border:1px solid var(--line-2);border-radius:14px;background:linear-gradient(180deg,rgba(220,233,5,.05),transparent);padding:16px}
+  .fact h4{font-size:1.1rem;margin:0 0 4px}.fact p{color:var(--dim);font-size:.86rem;line-height:1.45;margin:0}
+  .risk{color:#8b9378;font-size:.78rem;line-height:1.5;margin:22px 0 8px;border-left:2px solid var(--line);padding-left:12px}
+  .risk b{color:var(--ink)}
+  footer{border-top:1px solid var(--line-2);margin-top:40px;padding:22px 0}
+  .foot-in{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;color:var(--dim);font-size:.85rem}
+  .foot-in .mid b{color:var(--lime)}
+</style>
+</head>
+<body>
+
+<header class="nav"><div class="nav-in">
+  <a class="mark" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" /><span class="wm">ROBIN<small>LABS</small></span></a>
+  <div class="links">
+    <a href="index.html">Coins</a>
+    <a href="rewards.html">Rewards</a>
+    <a href="liquidity.html">Liquidity</a>
+    <a href="add-lp.html" class="on">Add LP</a>
+    <a href="stats.html">Stats</a>
+    <a href="docs.html">Docs</a>
+    <a class="btn btn-lime" id="connectBtn" href="#">Connect Wallet</a>
+  </div>
+</div></header>
+
+<main class="wrap">
+  <section class="head">
+    <div class="eyebrow">Open a position · any token on the chain</div>
+    <h1>Lock into <span class="g">any token.</span></h1>
+    <p>Not just Robin Labs coins — paste <b>any token's contract address</b> on Robinhood Chain and open a locked liquidity position. You add to that coin's <b>real pool</b>, earn your <b>share of every trade's fee</b>, and it's <b>locked</b> so it can never be pulled out from under the coin.</p>
+  </section>
+
+  <!-- THE OPENER -->
+  <section class="opener">
+    <p class="lbl">Token contract address</p>
+    <div class="field">
+      <input id="addr" type="text" placeholder="0x… paste any token on Robinhood Chain" autocomplete="off" spellcheck="false" />
+      <button class="paste" id="pasteBtn" type="button">Paste</button>
+    </div>
+
+    <div class="tokchip" id="tokchip">
+      <div class="av" id="tokAv">?</div>
+      <div><div class="nm" id="tokNm">—</div><div class="tk" id="tokTk">—</div></div>
+      <div class="pool"><span>liquidity pool</span><b id="tokPool">—</b></div>
+    </div>
+
+    <p class="lbl">Amount &amp; lock term</p>
+    <div class="row2">
+      <div class="amtbox"><input id="amt" type="number" min="0" step="0.05" placeholder="0.0" value="0.5" /><span>ETH</span></div>
+      <select class="termsel" id="term" aria-label="Lock term"></select>
+    </div>
+    <div class="quick"><button type="button" data-a="0.1">0.1</button><button type="button" data-a="0.5">0.5</button><button type="button" data-a="1">1</button><button type="button" data-a="5">5</button></div>
+
+    <div class="brk" id="brk">
+      <div class="r"><span>You open with</span><b id="brkIn">—</b></div>
+      <div class="r fee"><span>Protocol fee (10%)</span><b id="brkFee">—</b></div>
+      <div class="r net"><span>Into the coin's liquidity</span><b id="brkNet">—</b></div>
+      <div class="sum" id="brkSum"></div>
+    </div>
+
+    <button class="btn btn-lime go" id="openBtn" type="button" disabled>Open position</button>
+    <div id="msg"></div>
+    <p class="note">A one-time <b>10% protocol fee</b> is taken from the ETH you open with; the rest goes into the coin's liquidity. Longer locks earn a bigger reward share. Withdrawing before your term ends costs a 15% early-exit penalty.</p>
+  </section>
+
+  <section class="facts">
+    <div class="fact"><h4>Works for any coin</h4><p>Any token with a liquidity pool on Robinhood Chain — whether it launched here or anywhere else on the chain. First one to back a coin spins up its vault; everyone after shares it.</p></div>
+    <div class="fact"><h4>Locked = rug-proof</h4><p>Your stake is locked for the term you choose, so it only ever deepens the coin's market — it can't be yanked out from under it. Longer locks earn up to 3×.</p></div>
+    <div class="fact"><h4>Earn real fees</h4><p>You collect your pro-rata share of every swap's fee for as long as it's locked, claimable as real ETH. Like any LP, price moves rebalance your position (impermanent loss).</p></div>
+  </section>
+
+  <p class="risk"><b>Risk, plainly:</b> this is real liquidity provision, not a savings account. A 10% protocol fee applies when you open. You earn a share of trade fees while locked, but the price moving rebalances your position (impermanent loss) with no guaranteed return, and early exit costs 15%. Only lock into coins you'd be happy holding.</p>
+</main>
+
+<footer><div class="wrap foot-in">
+  <span>robinlabs.io</span>
+  <span class="mid">Lock into any token. <b>Earn the fees.</b></span>
+  <span class="socs"><a href="https://x.com/robinlabzz" target="_blank" rel="noopener">@robinlabzz</a></span>
+</div></footer>
+
+<script type="module">
+import * as Pad from './assets/wallet.js';
+import { DEMO } from './assets/demo.js';
+const $ = (id) => document.getElementById(id);
+const esc = (x) => String(x==null?'':x).replace(/[<>&"]/g,(c)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+const eth = (n) => (Math.round((n||0)*1e5)/1e5) + ' ETH';
+
+const PROTO_FEE = 0.10; // 10% of the ETH you open with → protocol
+const LOCK_TERMS = [ {days:30,label:'Lock 30 days',boost:'1.0×'}, {days:60,label:'Lock 60 days',boost:'1.25×'}, {days:90,label:'Lock 90 days',boost:'1.5×'}, {days:365,label:'Lock 1 year',boost:'2×'}, {days:0,label:'Lock forever',boost:'3×'} ];
+const termOf = (d) => LOCK_TERMS.find(t => t.days === d) || LOCK_TERMS[2];
+const termLabel = (d) => d===0 ? 'forever' : (d>=365 ? '1 year' : d+' days');
+$('term').innerHTML = LOCK_TERMS.map(t => `<option value="${t.days}"${t.days===90?' selected':''}>${t.label} · ${t.boost}</option>`).join('');
+
+// wallet button
+const cbtn = $('connectBtn');
+const refreshBtn = () => { const a = Pad.account(); cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; };
+cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (DEMO){ alert('Preview build — connect your wallet on the live site.'); return; } try { await Pad.connect(); refreshBtn(); } catch(err){ alert(err.message); } });
+window.addEventListener('robinpad:ready', refreshBtn); refreshBtn();
+
+const isAddr = (s) => /^0x[a-fA-F0-9]{40}$/.test((s||'').trim());
+let resolved = null; // {token,name,symbol,image,hasPool}
+
+// paste helper
+$('pasteBtn').addEventListener('click', async () => {
+  try { const t = await navigator.clipboard.readText(); if (t){ $('addr').value = t.trim(); onAddr(); } }
+  catch { $('addr').focus(); }
+});
+
+// deterministic demo token from an address (so the preview is populated without a chain)
+function demoToken(addr){
+  const h = parseInt(addr.slice(2,10), 16) >>> 0;
+  const words = ['Turbo','Giga','Based','Moon','Astro','Degen','Neon','Cyber','Rogue','Noble'];
+  const w = words[h % words.length];
+  const sym = (w.slice(0,3) + addr.slice(-3)).toUpperCase();
+  return { token: addr, name: w + ' Coin', symbol: sym, image: '', hasPool: true, poolTxt: 'WETH · 1%' };
+}
+
+let _rt;
+$('addr').addEventListener('input', () => { clearTimeout(_rt); _rt = setTimeout(onAddr, 180); });
+
+async function onAddr(){
+  const a = $('addr').value.trim();
+  resolved = null; sync();
+  if (!isAddr(a)){ hideChip(); return; }
+  if (DEMO){ showChip(demoToken(a)); return; }
+  // live: resolve name/symbol + check a WETH pool exists for this token
+  try {
+    const meta = await Pad.tokenMeta(a).catch(() => ({ name:'Token', symbol:'?' }));
+    const info = await Pad.floorInfo(a, Pad.account()).catch(() => null); // resolves/reads the vault if any
+    const hasPool = await Pad.hasLpPool(a).catch(() => true); // pool check (falls back to allowing)
+    showChip({ token:a, name:meta.name, symbol:meta.symbol, image:'', hasPool, poolTxt: hasPool ? 'WETH pool ✓' : 'no WETH pool' });
+  } catch { showChip({ token:a, name:'Token', symbol:'?', image:'', hasPool:false, poolTxt:'lookup failed' }); }
+}
+
+function showChip(t){
+  resolved = t;
+  const chip = $('tokchip'); chip.classList.add('show'); chip.classList.toggle('bad', !t.hasPool);
+  $('tokAv').textContent = (t.symbol||'?').slice(0,2);
+  if (t.image){ $('tokAv').style.background = `center/cover url(${esc(t.image)})`; $('tokAv').textContent=''; }
+  $('tokNm').textContent = t.name || 'Token';
+  $('tokTk').textContent = '$' + (t.symbol || '?');
+  $('tokPool').textContent = t.poolTxt || (t.hasPool ? 'found' : 'none');
+  sync();
+}
+function hideChip(){ $('tokchip').classList.remove('show'); }
+
+function sync(){
+  const amt = parseFloat($('amt').value) || 0;
+  const days = +$('term').value;
+  const ok = resolved && resolved.hasPool && amt > 0;
+  $('openBtn').disabled = !ok;
+  const brk = $('brk');
+  if (amt > 0 && resolved){
+    brk.classList.add('show');
+    const fee = amt * PROTO_FEE, net = amt - fee;
+    $('brkIn').textContent = eth(amt);
+    $('brkFee').textContent = '− ' + eth(fee);
+    $('brkNet').textContent = eth(net);
+    const when = days===0 ? 'locked <b>forever</b>' : `locked <b>${termLabel(days)}</b> · unlocks <b>${new Date(Date.now()+days*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</b>`;
+    $('brkSum').innerHTML = `Opens a <b>$${esc(resolved.symbol||'?')}</b> position with <b>${eth(net)}</b>, ${when} (${termOf(days).boost} rewards). Earns your share of every trade's fee.`;
+  } else brk.classList.remove('show');
+}
+$('amt').addEventListener('input', sync);
+$('term').addEventListener('change', sync);
+document.querySelectorAll('.quick button').forEach(b => b.addEventListener('click', () => { $('amt').value = b.dataset.a; sync(); }));
+
+const setMsg = (t, cls='') => { const m = $('msg'); m.textContent = t; m.className = cls; };
+
+$('openBtn').addEventListener('click', async () => {
+  const amt = parseFloat($('amt').value) || 0;
+  const days = +$('term').value;
+  if (!resolved || amt <= 0) return;
+  const net = (amt * (1 - PROTO_FEE)).toFixed(4);
+  if (DEMO){
+    alert(`Preview — on the live site this opens a locked LP position in $${resolved.symbol}:\n\n• You open with ${amt} ETH\n• 10% protocol fee: ${(amt*PROTO_FEE).toFixed(4)} ETH\n• Into ${resolved.symbol} liquidity: ${net} ETH, locked ${termLabel(days)}\n\nYou then earn your share of every trade's fee.`);
+    return;
+  }
+  try {
+    if (!Pad.account()){ await Pad.connect(); refreshBtn(); }
+    setMsg('Opening position…');
+    await (await Pad.floorDeposit(resolved.token, amt, days)).wait();
+    setMsg('Position opened ✓ — you’re now earning fees.', 'ok');
+  } catch(e){ setMsg(e.message || 'Failed', 'err'); }
+});
+</script>
+</body>
+</html>

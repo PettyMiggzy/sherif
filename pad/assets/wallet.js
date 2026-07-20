@@ -597,6 +597,20 @@ function requireRewardVault() {
     throw new Error("Rewards open when the Pad goes live — the vault isn't set yet (pre-deploy audit).");
 }
 
+/// Does this arbitrary token have a WETH Uniswap v3 pool on the chain? Checks the standard fee tiers so
+/// the "open a position on any token" page can validate a pasted address. Optimistic-true if no factory
+/// is configured (the deposit itself reverts if there's truly no pool).
+const _V3FACTORY_ABI = ["function getPool(address,address,uint24) view returns (address)"];
+export async function hasLpPool(token) {
+  const fAddr = CONTRACTS.v3Factory, weth = CONTRACTS.weth;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(fAddr || "") || !/^0x[0-9a-fA-F]{40}$/.test(weth || "")) return true;
+  const f = new ethers.Contract(fAddr, _V3FACTORY_ABI, _read);
+  for (const fee of [10000, 3000, 500, 100]) {
+    try { const p = await f.getPool(token, weth, fee); if (p && !/^0x0+$/.test(p)) return true; } catch {}
+  }
+  return false;
+}
+
 // ── community floor vault (FloorCoop): add to the buy-wall, earn dip-buy fees ──
 async function coopFor(token) {
   const f = new ethers.Contract(CONTRACTS.floorCoopFactory, ABIS.floorCoopFactory, _read);
