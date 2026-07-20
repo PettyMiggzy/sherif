@@ -30,6 +30,26 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .btn-gold{background:var(--gold);color:#10140a}
 .banner{height:180px;border-radius:0 0 16px 16px;background:linear-gradient(120deg,#1a1e10,#0d0f07);position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
 .banner .art{position:absolute;inset:0;background:radial-gradient(circle at 30% 40%,rgba(220,233,5,.22),transparent 60%),radial-gradient(circle at 80% 60%,rgba(138,99,224,.18),transparent 55%)}
+.banner .bmore{position:absolute;top:14px;left:24px;font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--lime);z-index:2;opacity:.85}
+.banner .bwrap{position:absolute;left:0;right:0;top:52px;bottom:44px;display:flex;align-items:center;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+.banner .bmq{display:flex;gap:28px;align-items:center;padding-left:24px;white-space:nowrap;animation:bscroll 42s linear infinite}
+.banner .bt{display:inline-flex;align-items:center;gap:9px;flex:none;opacity:.92;transition:.14s}
+.banner .bt:hover{opacity:1;transform:translateY(-1px)}
+.banner .bt img{width:30px;height:30px;border-radius:8px;object-fit:cover;background:#141a0b}
+.banner .bt .s{font-weight:800;font-size:.9rem;color:var(--ink)}
+.banner .bt .c{font-family:var(--mono);font-size:.75rem}
+.banner .bt .c.up{color:var(--up)}.banner .bt .c.dn{color:var(--down)}
+@keyframes bscroll{to{transform:translateX(-50%)}}
+@media(prefers-reduced-motion:reduce){.banner .bmq{animation:none}}
+/* public fees & rewards */
+.feegrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fee{display:flex;align-items:center;gap:10px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:12px;padding:11px 12px}
+.fee img{width:32px;height:32px;border-radius:9px;flex:none;object-fit:cover}
+.fee .k{font-size:.71rem;color:var(--ink-dim)}
+.fee .v{font-weight:800;font-size:1.02rem;margin-top:2px}
+.fee .v small{font-size:.68rem;color:var(--ink-dim);font-weight:600}
+.feelink{display:inline-block;margin-top:12px;color:var(--lime);font-size:.82rem;font-weight:700}
+.feelink:hover{text-decoration:underline}
 .idbar{display:flex;gap:16px;align-items:flex-end;margin-top:-46px;position:relative;z-index:2}
 .idbar .pfp{width:92px;height:92px;border-radius:18px;border:3px solid var(--bg);flex:none;display:grid;place-items:center;font-size:2rem;font-weight:800;color:#10140a;background:linear-gradient(135deg,#dce905,#8a63e0)}
 .idbar .who{padding-bottom:6px;flex:1;min-width:0}
@@ -108,7 +128,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
   <div class="spacer"></div><a class="nlink" href="index.html">← All coins</a><button class="btn btn-ghost" id="connectBtn" type="button">Connect wallet</button>
 </div></header>
 
-<div class="banner"><div class="art"></div></div>
+<div class="banner"><div class="art"></div><div class="bmore">Trending on Robin Labs</div><div class="bwrap"><div class="bmq" id="bmq"></div></div></div>
 <main class="wrap">
   <div class="idbar">
     <div class="pfp" id="pfp">?</div>
@@ -185,11 +205,21 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           <div class="tiny" id="devTotal">Lifetime earned: —</div>
         </div>
       </div>
+      <!-- public fees & rewards: what the creator, traders and holders are earning on THIS coin -->
+      <div class="panel sec" style="margin-top:16px"><h3>Fees &amp; rewards <span class="meta">this coin · all-time</span></h3>
+        <div class="feegrid">
+          <div class="fee"><img src="assets/icons/dev.png" alt="" onerror="this.style.display='none'" /><div><div class="k">Creator earned</div><div class="v" id="feeDev">—</div></div></div>
+          <div class="fee"><img src="assets/icons/reward-trader.png" alt="" /><div><div class="k">Trader rewards</div><div class="v" id="feeTraders">—</div></div></div>
+          <div class="fee"><img src="assets/icons/reward-holder.png" alt="" /><div><div class="k">Holder rewards</div><div class="v" id="feeHolders">—</div></div></div>
+          <div class="fee"><img src="assets/icons/reward-floor.png" alt="" /><div><div class="k">Into the floor</div><div class="v" id="feeFloor">—</div></div></div>
+        </div>
+        <a class="feelink" href="rewards.html">How trader &amp; holder rewards work →</a>
+      </div>
       <div class="panel sec" style="margin-top:16px"><h3>Coin info</h3>
         <div class="holders">
-          <div class="h"><span>Buy / Sell tax</span><b id="infoTax">—</b></div>
-          <div class="h"><span>Buy tax</span><b>→ platform</b></div>
-          <div class="h"><span>Sell tax</span><b>→ creator</b></div>
+          <div class="h"><span>Buy fee</span><b id="infoBuy">—</b></div>
+          <div class="h"><span>Sell fee</span><b id="infoSell">—</b></div>
+          <div class="h"><span>Reward legs</span><b>+0.25% traders · +0.25% holders</b></div>
           <div class="h"><span>Chain</span><b>Robinhood</b></div>
           <div class="h"><span>LP at graduation</span><b>Locked forever</b></div>
         </div>
@@ -314,7 +344,8 @@ async function loadCoin(){
   $('ca').textContent = Pad.short(TOKEN);
   document.title = meta.name + ' — Robin Labs Pad';
   $('trade').textContent = (SIDE === 'buy' ? 'Buy $' : 'Sell $') + meta.symbol;
-  $('infoTax').textContent = (tax.buyBps / 100) + '% / ' + (tax.sellBps / 100) + '%';
+  $('infoBuy').textContent = (tax.buyBps / 100) + '% + 0.25%';
+  $('infoSell').textContent = (tax.sellBps / 100) + '% + 0.25%';
 
   // chart
   if (tax.pool){ $('dex').src = 'https://dexscreener.com/robinhood/' + tax.pool.toLowerCase() + '?embed=1&theme=dark&info=0&trades=0'; }
@@ -331,7 +362,7 @@ async function loadCoin(){
   // bond / graduation panel
   renderBond(info);
   await maybeShowDev();
-  loadTrades(); loadHolders();
+  loadTrades(); loadHolders(); renderBanner(); renderFees();
 }
 
 // ── demo preview (?demo=1) — render a sample coin, no chain reads ──
@@ -344,8 +375,9 @@ function renderDemoCoin(){
   else if (c.emoji) { $('pfp').textContent = c.emoji; $('pfp').style.fontSize = '2.6rem'; }
   else $('pfp').textContent = (c.symbol || '?').slice(0, 3);
   $('ca').textContent = Pad.short(c.token);
-  document.title = c.name + ' — Robin Labs Pad';
-  $('infoTax').textContent = '1% / 1%';
+  document.title = c.name + ' — Robin Labs';
+  $('infoBuy').textContent = '1% + 0.25%';
+  $('infoSell').textContent = '1% + 0.25%';
   $('stMc').textContent = fmt(c.mc);
   $('stPx').textContent = '$' + (c.mc / 1e9).toPrecision(2);
   $('stStage').textContent = c.state === 'done' ? 'Graduated' : c.state === 'grad' ? 'Ready' : 'Bonding';
@@ -354,7 +386,41 @@ function renderDemoCoin(){
   $('dex').style.display = 'none'; $('chartPh').style.display = 'grid';
   renderBond({ graduated: c.state === 'done', ready: c.state === 'grad', progress: c.prog / 100,
     targetFrac: 0.4, minGradTick: -196200, gradTick: -170400 });
-  loadTrades(); loadHolders();
+  loadTrades(); loadHolders(); renderBanner(); renderFees(c);
+}
+
+// ── trending-tokens marquee in the banner ──
+async function renderBanner(){
+  const el = $('bmq'); if (!el) return;
+  let list = [];
+  if (DEMO) list = DEMO_COINS.slice();
+  else { try { list = (await Pad.feed({ sort:'trending', limit:14 })).coins || []; } catch { list = []; } }
+  list = list.filter((c) => !COIN || c.token !== COIN.token).slice(0, 12);
+  if (!list.length){ const w = el.parentNode; if (w) w.style.display = 'none'; return; }
+  const pill = (c) => {
+    const img = c.image ? `<img src="${c.image}" alt="" onerror="this.style.visibility='hidden'" />` : `<img alt="" />`;
+    const ch = c.chg; const chg = ch == null ? '' : `<span class="c ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
+    return `<a class="bt" href="token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}">${img}<span class="s">$${c.symbol||'?'}</span>${chg}</a>`;
+  };
+  const html = list.map(pill).join('');
+  el.innerHTML = html + html; // duplicate → seamless -50% loop
+}
+
+// ── public fees & rewards for this coin (creator / traders / holders / floor) ──
+function setFee(id, eth){ const e = $(id); if (!e) return; const v = eth >= 1 ? eth.toFixed(3) : eth > 0 ? eth.toPrecision(2) : '0'; e.innerHTML = `${v} <small>ETH</small>`; }
+async function renderFees(demoCoin){
+  if (DEMO){
+    const c = demoCoin || DEMO_COINS.find((x) => x.token === (COIN && COIN.token)) || DEMO_COINS[0];
+    const volEth = (c.vol || c.mc * 0.4) / ETH_USD;              // this coin's traded volume in ETH
+    setFee('feeDev',     volEth * 0.5 * 0.01);                   // creator: 1% of sells
+    setFee('feeTraders', volEth * 0.5 * 0.0025);                 // 0.25% of buys → traders
+    setFee('feeHolders', volEth * 0.5 * 0.0025);                 // 0.25% of sells → holders
+    setFee('feeFloor',   volEth * 0.006);                        // fees compounded into the Bond floor
+    return;
+  }
+  // live: public on-chain reads (everyone can see the creator's take + the reward pools)
+  try { const f = await Pad.feeTotals(COIN.token); if (f){ setFee('feeDev', Number(f.dev||0)/1e18); if (f.floor!=null) setFee('feeFloor', Number(f.floor)/1e18); } } catch {}
+  try { const r = await Pad.rewards(COIN.token); if (r && r.coinTotals){ setFee('feeTraders', r.coinTotals.tradersEth||0); setFee('feeHolders', r.coinTotals.holdersEth||0); } } catch {}
 }
 
 // ── live trades feed (green buys / red sells) ──
