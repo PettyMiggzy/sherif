@@ -610,12 +610,13 @@ export async function floorInfo(token, who) {
   const coop = await coopFor(token);
   if (!coop || /^0x0+$/.test(coop)) return { tvlEth: 0, feesPaidEth: 0, mineEth: 0, earnedEth: 0, coop: null };
   const c = new ethers.Contract(coop, ABIS.floorCoop, _read);
-  const [weth, ts] = await Promise.all([c.WETH(), c.totalShares()]);
-  const wbal = await new ethers.Contract(weth, ABIS.erc20, _read).balanceOf(coop);
-  const out = { coop, tvlEth: Number(ethers.formatEther(wbal)), feesPaidEth: 0, mineEth: 0, earnedEth: 0 };
+  // NAV (band position + loose principal, valued at TWAP) — most of the vault's WETH lives in the
+  // pool band, not the contract's loose balance, so read totalNav() rather than balanceOf(WETH).
+  const [ts, nav] = await Promise.all([c.totalShares(), c.totalNav().catch(() => 0n)]);
+  const out = { coop, tvlEth: Number(ethers.formatEther(nav)), feesPaidEth: 0, mineEth: 0, earnedEth: 0 };
   if (who && ts > 0n) {
     const [sh, pend] = await Promise.all([c.shares(who), c.pending(who)]);
-    out.mineEth = Number(ethers.formatEther((wbal * sh) / ts));
+    out.mineEth = Number(ethers.formatEther((nav * sh) / ts));
     out.earnedEth = Number(ethers.formatEther(pend[0]));
   }
   return out;
@@ -629,7 +630,8 @@ export async function floorDeposit(token, ethAmount) {
   let coop = await fac.coopOf(token);
   if (/^0x0+$/.test(coop)) { await (await fac.createCoop(token)).wait(); coop = await fac.coopOf(token); }
   const c = new ethers.Contract(coop, ABIS.floorCoop, _signer);
-  return guardedSend(c, "deposit", [], ethers.parseEther(String(ethAmount)), "Add to floor");
+  // minSharesOut=0: the contract is still TWAP-guarded; the UI can tighten this from a NAV quote later.
+  return guardedSend(c, "deposit", [0n], ethers.parseEther(String(ethAmount)), "Add to floor");
 }
 
 export async function floorClaim(token) {
@@ -644,7 +646,8 @@ export async function floorWithdraw(token) {
   const coop = await coopFor(token);
   const c = new ethers.Contract(coop, ABIS.floorCoop, _signer);
   const sh = await c.shares(_account);
-  return guardedSend(c, "withdraw", [sh], 0n, "Withdraw from floor");
+  // minWethOut/minTokenOut=0 for now (TWAP-guarded on-chain); UI can tighten from a quote later.
+  return guardedSend(c, "withdraw", [sh, 0n, 0n], 0n, "Withdraw from floor");
 }
 
 function requireFloor() {
