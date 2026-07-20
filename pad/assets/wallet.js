@@ -394,30 +394,45 @@ async function apiGet(path) {
   return res.json();
 }
 
-/// The browse feed. Uses the indexer when configured (fast, sorted, searchable);
-/// otherwise reads the factory directly and enriches each card with name/symbol.
-/// sort: new | trending | top | graduated · filter: all | live | graduated
-export async function feed({ sort = "new", filter = "all", q = "", limit = 60 } = {}) {
+/// The browse feed — one server-sorted, offset-paginated page at a time, so the
+/// board scales to any number of coins (the client never loads them all).
+/// sort:   new | old | trending | top | progress
+/// filter: all | live | final | graduated
+/// Returns { coins, total }. `offset` advances pages; `limit` sizes each page.
+export async function feed({ sort = "new", filter = "all", q = "", limit = 24, offset = 0 } = {}) {
   if (hasApi()) {
-    const params = new URLSearchParams({ sort, filter, limit: String(limit) });
+    const params = new URLSearchParams({ sort, filter, limit: String(limit), offset: String(offset) });
     if (q) params.set("q", q);
-    const { coins } = await apiGet(`/api/coins?${params}`);
-    return { source: "api", coins };
+    const r = await apiGet(`/api/coins?${params}`);
+    return { source: "api", coins: r.coins || [], total: r.total ?? null };
   }
-  // Fallback: raw factory list + on-chain name/symbol. No volume/sorting beyond
-  // newest-first, but the feed still works with zero backend.
-  const base = await listCoins(limit);
-  const metas = await Promise.all(base.map((c) => tokenMeta(c.token).catch(() => ({ name: "Token", symbol: "?" }))));
-  let coins = base.map((c, i) => ({
-    token: c.token, curve: c.curve, dev: c.dev,
+  // Fallback with no indexer: page the factory list newest-first. Rich sorts
+  // (volume/trending/mcap) need the indexer, but new/old + paging work on-chain.
+  // Pull one page's worth from the correct end of the factory list.
+  const f = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _read);
+  const n = Number(await f.tokenCount());
+  const oldestFirst = sort === "old";
+  const idxs = [];
+  for (let k = 0; k < limit; k++) {
+    const i = oldestFirst ? offset + k : n - 1 - offset - k;
+    if (i < 0 || i >= n) break;
+    idxs.push(i);
+  }
+  const tokens = await Promise.all(idxs.map((i) => f.allTokens(i)));
+  const [recs, metas] = await Promise.all([
+    Promise.all(tokens.map((t) => f.recordOf(t))),
+    Promise.all(tokens.map((t) => tokenMeta(t).catch(() => ({ name: "Token", symbol: "?" })))),
+  ]);
+  let coins = recs.map((r, i) => ({
+    token: r.token, curve: r.curve, dev: r.dev,
     name: metas[i].name, symbol: metas[i].symbol,
-    launchTs: c.at, graduated: false,
+    launchTs: Number(r.at), graduated: false,
   }));
   if (q) {
     const s = q.toLowerCase();
     coins = coins.filter((c) => c.name?.toLowerCase().includes(s) || c.symbol?.toLowerCase().includes(s) || c.token.includes(s));
   }
-  return { source: "rpc", coins };
+  return { source: "rpc", coins, total: n };
 }
 
 /// Platform-wide totals for a stats strip (indexer only; null without one).

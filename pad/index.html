@@ -183,22 +183,29 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 @media(prefers-reduced-motion:reduce){.ticker .track{animation:none}}
 @media(max-width:560px){.ticker .lbl .t{display:none}}
 
-/* live board — pump.fun-style 3 columns */
-.bsearch{display:flex;align-items:center;gap:12px;margin:14px 0 12px;flex-wrap:wrap}
-.bsearch .fsearch{margin-left:0;flex:1;max-width:360px}
-.board{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-@media(max-width:900px){.board{grid-template-columns:1fr}}
-.board .col{background:var(--bg-2);border:1px solid var(--line-2);border-radius:16px;display:flex;flex-direction:column;overflow:hidden}
-.board .chead{display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--line-2)}
-.board .chead h3{font-size:1.12rem;margin:0;font-weight:800}
-.board .chead .cn{font-family:var(--mono);font-size:.76rem;color:var(--dim);background:rgba(220,233,5,.08);padding:2px 8px;border-radius:7px}
-.board .chead .cnote{margin-left:auto;font-size:.7rem;color:var(--faint);font-family:var(--mono)}
-.board .dot{width:9px;height:9px;border-radius:50%}
-.board .dot.new{background:var(--lime);box-shadow:0 0 8px var(--lime)}
-.board .dot.final{background:#ffb020;box-shadow:0 0 8px #ffb020;animation:tpulse 1.4s infinite}
-.board .dot.grad{background:#8bea3c;box-shadow:0 0 8px #8bea3c}
-.board .list{display:flex;flex-direction:column;gap:10px;padding:12px;max-height:1160px;overflow-y:auto}
-.bempty{color:var(--faint);font-size:.85rem;text-align:center;padding:22px 0;font-family:var(--mono)}
+/* live board — filter-tabbed, endlessly paginated grid (scales to any # of coins) */
+.bsearch{display:flex;align-items:center;gap:12px;margin:14px 0 6px;flex-wrap:wrap}
+.bsearch .fsearch{margin-left:auto;flex:0 1 300px;max-width:340px}
+.board{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:14px;margin-top:14px}
+@media(max-width:560px){.board{grid-template-columns:1fr}}
+/* skeleton shimmer while a page loads */
+.bskel{height:186px;border-radius:13px;border:1px solid var(--line-2);background:
+  linear-gradient(100deg,var(--bg) 30%,rgba(255,255,255,.05) 50%,var(--bg) 70%) 0/220% 100%;
+  animation:bshim 1.15s linear infinite}
+@keyframes bshim{to{background-position:-220% 0}}
+@media(prefers-reduced-motion:reduce){.bskel{animation:none}}
+.bempty{grid-column:1/-1;color:var(--faint);font-size:.9rem;text-align:center;padding:40px 0;font-family:var(--mono)}
+/* footer: sentinel (infinite scroll) + explicit Load-more fallback + running count */
+.bfoot{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:20px}
+.bmore{border:1px solid var(--line-strong);background:rgba(220,233,5,.06);color:var(--ink);font-weight:800;font-family:inherit;
+  font-size:.9rem;padding:11px 26px;border-radius:12px;cursor:pointer;transition:.15s}
+.bmore:hover{background:var(--lime);color:#0a0e05;box-shadow:0 0 22px rgba(220,233,5,.35)}
+.bmore[hidden]{display:none}
+.bspin{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--line-2);border-top-color:var(--lime);animation:bspin .7s linear infinite}
+.bspin[hidden]{display:none}
+@keyframes bspin{to{transform:rotate(360deg)}}
+.bend{color:var(--faint);font-family:var(--mono);font-size:.78rem}
+.bend[hidden]{display:none}
 .bcard{display:block;background:var(--bg);border:1px solid var(--line-2);border-radius:13px;padding:12px;transition:transform .14s,border-color .14s}
 .bcard:hover{transform:translateY(-2px);border-color:var(--line-strong)}
 .btop{display:flex;align-items:center;gap:10px}
@@ -387,24 +394,18 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
       <div class="vp"><div class="track" id="ticker"></div></div>
     </div>
     <div class="bsearch">
+      <div class="ftabs" id="ftabs" role="tablist"></div>
       <label class="fsearch">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="fq" type="search" placeholder="Search name or ticker…" autocomplete="off" />
       </label>
     </div>
-    <div class="board" id="board">
-      <section class="col">
-        <header class="chead"><span class="dot new"></span><h3>New</h3><span class="cn" id="cnNew">0</span><span class="cnote">just launched</span></header>
-        <div class="list" id="colNew"><div class="bempty">Loading…</div></div>
-      </section>
-      <section class="col">
-        <header class="chead"><span class="dot final"></span><h3>Final Stretch</h3><span class="cn" id="cnFinal">0</span><span class="cnote">about to graduate</span></header>
-        <div class="list" id="colFinal"><div class="bempty">Loading…</div></div>
-      </section>
-      <section class="col">
-        <header class="chead"><span class="dot grad"></span><h3>Graduated</h3><span class="cn" id="cnGrad">0</span><span class="cnote">live on DEX</span></header>
-        <div class="list" id="colGrad"><div class="bempty">Loading…</div></div>
-      </section>
+    <div class="board" id="board"></div>
+    <div class="bfoot">
+      <button class="bmore" id="bmore" type="button" hidden>Load more coins</button>
+      <div class="bspin" id="bspin" role="status" aria-label="Loading" hidden></div>
+      <div class="bend" id="bend" hidden>You've reached the end</div>
+      <div id="bsentinel" style="height:1px"></div>
     </div>
   </section>
 
@@ -597,10 +598,7 @@ function grow(c){
     <div class="r"><div class="k">MC Achieved</div><div class="v">${fmtUsd(mc)}</div></div></a>`;
 }
 
-// ── filterable explore feed ─────────────────────────────────────────────────
-let ALL = [];          // full coin set (demo or live)
-let SORT = 'trending'; // active filter tab
-
+// ── filterable explore feed (server-paginated; scales to any number of coins) ─
 const nz = (...v) => { for (const x of v){ const n = +x; if (x != null && !Number.isNaN(n)) return n; } return 0; };
 const cVol  = (c) => c.volUsd != null ? c.volUsd : (c.vol != null ? c.vol : nz(c.vol24hEth) * ETH_USD);
 const cMc   = (c) => c.mcUsd  != null ? c.mcUsd  : (c.mcapEth ? c.mcapEth * ETH_USD : nz(c.mc));
@@ -629,27 +627,136 @@ function bcard(c){
     <button class="bqbuy" type="button" onclick="event.preventDefault();event.stopPropagation();quickBuy('${esc(c.token)}')">${BOLT}<span>Quick Buy</span><span class="bamt">0.1 ETH</span></button>
   </a>`;
 }
-function renderBoard(){
-  const q = ($('fq').value || '').trim().toLowerCase();
-  let list = ALL.slice();
-  if (q) list = list.filter(c => (c.name||'').toLowerCase().includes(q) || (c.symbol||'').toLowerCase().includes(q));
-  const grad   = list.filter(cGrad).sort((a,b)=>cMc(b)-cMc(a));
-  const rest   = list.filter(c => !cGrad(c));
-  const finalS = rest.filter(c => cProg(c) >= 70).sort((a,b)=>cProg(b)-cProg(a));
-  const news   = rest.filter(c => cProg(c) <  70).sort((a,b)=>cNew(b)-cNew(a));
-  const fill = (id, arr, cn) => {
-    $(id).innerHTML = arr.length ? arr.slice(0,40).map(bcard).join('') : `<div class="bempty">Nothing here yet</div>`;
-    $(cn).textContent = arr.length;
-  };
-  fill('colNew', news, 'cnNew'); fill('colFinal', finalS, 'cnFinal'); fill('colGrad', grad, 'cnGrad');
-  $('fcount').textContent = list.length ? `${list.length} live` : '';
+// ── the endless board ────────────────────────────────────────────────────────
+// One server-sorted list per filter, fetched a page at a time by offset. Nothing
+// ever loads "all coins" — a thousand or a million, the client only holds what's
+// on screen. Each tab is an independent indexer query (sort + filter); search is
+// server-side across the whole set; infinite scroll appends the next page.
+const FILTERS = [
+  { key:'trending',  label:'Trending',      icon:'assets/icons/hot.png',       sort:'trending', filter:'all' },
+  { key:'new',       label:'New',           icon:'assets/icons/new.png',       sort:'new',      filter:'live' },
+  { key:'final',     label:'Final Stretch', icon:'assets/icons/growth.png',    sort:'progress', filter:'final' },
+  { key:'top',       label:'Market Cap',    icon:'assets/icons/buy-robin.png', sort:'top',      filter:'all' },
+  { key:'graduated', label:'Graduated',     icon:'assets/icons/graduated.png', sort:'top',      filter:'graduated' },
+  { key:'old',       label:'Oldest',        icon:'assets/icons/locked.png',    sort:'old',      filter:'all' },
+];
+const PAGE = 24;
+let curFilter = FILTERS[0], curQ = '';
+let session = 0, offset = 0, done = false, busy = false;
+
+// Demo universe: the 12 seed coins are real logos; fan them out deterministically
+// into a few hundred so the preview actually demonstrates endless scrolling. Live
+// mode never touches this — it pages the indexer instead.
+const UNIVERSE = (() => {
+  if (!DEMO) return [];
+  const base = DEMO_COINS.map((c) => ({ ...c, mcUsd: c.mc, volUsd: c.vol }));
+  const words = ['Turbo','Based','Moon','Giga','Hyper','Degen','Alpha','Sigma','Ultra','Mega','Astro','Cyber','Diamond','Rocket','Golden','Silver','Neon','Pixel','Quantum','Cosmic','Feral','Rogue','Noble','Wild'];
+  const out = base.slice();
+  const N = 480;
+  for (let i = base.length; i < N; i++) {
+    const b = base[i % base.length];
+    const h = (i * 2654435761) >>> 0;            // deterministic hash (no Math.random — keeps builds stable)
+    const prog = (i % 11 === 0) ? 100 : (4 + (h % 96));
+    const grad = prog >= 100;
+    const word = words[(h >>> 3) % words.length];
+    const mc = 4000 + (h % 1600000);
+    out.push({
+      ...b,
+      token: '0x' + (0x1000 + i).toString(16).padStart(40, '0'),
+      name: word + ' ' + b.name,
+      symbol: (word.slice(0,2) + b.symbol).toUpperCase().slice(0,6),
+      mc, mcUsd: mc, prog, state: grad ? 'done' : (prog >= 70 ? 'grad' : 'new'),
+      graduated: grad,
+      vol: Math.round(mc * (0.1 + (h % 90) / 100)), volUsd: Math.round(mc * (0.1 + (h % 90) / 100)),
+      holders: Math.max(40, Math.round(mc / (30 + (h % 40)))),
+      chg: ((h % 4000) / 10) - 120,
+      at: nz(b.at) - i * 3100,
+    });
+  }
+  return out;
+})();
+
+const SORTERS = {
+  trending: (a,b) => (nz(b.chg) - nz(a.chg)) || (cVol(b) - cVol(a)),
+  new:      (a,b) => cNew(b) - cNew(a),
+  old:      (a,b) => cNew(a) - cNew(b),
+  top:      (a,b) => cMc(b) - cMc(a),
+  progress: (a,b) => cProg(b) - cProg(a),
+};
+// Emulate the indexer over the demo universe: filter → sort → page slice.
+function demoQuery({ sort, filter, q, offset, limit }) {
+  let list = UNIVERSE.slice();
+  if (q) { const s = q.toLowerCase(); list = list.filter(c => (c.name||'').toLowerCase().includes(s) || (c.symbol||'').toLowerCase().includes(s)); }
+  if (filter === 'live') list = list.filter(c => !cGrad(c));
+  else if (filter === 'graduated') list = list.filter(cGrad);
+  else if (filter === 'final') list = list.filter(c => !cGrad(c) && cProg(c) >= 70);
+  list.sort(SORTERS[sort] || SORTERS.new);
+  return { coins: list.slice(offset, offset + limit), total: list.length };
+}
+async function boardQuery(args) {
+  if (DEMO) return demoQuery(args);
+  try { const r = await Pad.feed(args); return { coins: r.coins || [], total: r.total ?? null }; }
+  catch { return { coins: [], total: null }; }
 }
 
-// trending ticker — top by volume, scrolling; duplicated for a seamless loop
-function renderTicker(){
-  const list = ALL.slice().sort((a,b)=>cVol(b)-cVol(a)).slice(0,12);
+function buildTabs() {
+  $('ftabs').innerHTML = FILTERS.map(f =>
+    `<button class="ftab${f.key===curFilter.key?' on':''}" role="tab" data-key="${f.key}"><img src="${f.icon}" alt="" />${f.label}</button>`
+  ).join('');
+  $('ftabs').querySelectorAll('.ftab').forEach(btn => btn.addEventListener('click', () => {
+    const f = FILTERS.find(x => x.key === btn.dataset.key);
+    if (!f || f.key === curFilter.key) return;
+    curFilter = f;
+    $('ftabs').querySelectorAll('.ftab').forEach(b => b.classList.toggle('on', b === btn));
+    resetBoard();
+  }));
+}
+
+function syncFooter() {
+  $('bspin').hidden = !busy;
+  $('bmore').hidden = busy || done;
+  $('bend').hidden  = !done || busy;
+  const n = $('board').querySelectorAll('.bcard').length;
+  $('fcount').textContent = n ? (done ? `${n} shown` : `${n}+ shown`) : '';
+}
+
+function resetBoard() {
+  session++; offset = 0; done = false; busy = false;
+  $('board').innerHTML = Array.from({length:8}, () => '<div class="bskel"></div>').join('');
+  syncFooter();
+  loadNext();
+}
+
+async function loadNext() {
+  if (busy || done) return;
+  const my = session;
+  busy = true; syncFooter();
+  const { coins } = await boardQuery({ sort: curFilter.sort, filter: curFilter.filter, q: curQ, offset, limit: PAGE });
+  if (my !== session) return;                     // a newer reset superseded this page — drop it
+  if (offset === 0) $('board').innerHTML = '';    // clear skeleton on first page
+  if (!coins.length) {
+    if (offset === 0) $('board').innerHTML = `<div class="bempty">${curQ ? 'No coins match your search.' : 'No coins here yet.'}</div>`;
+    done = true; busy = false; syncFooter(); return;
+  }
+  $('board').insertAdjacentHTML('beforeend', coins.map(bcard).join(''));
+  offset += coins.length;
+  if (coins.length < PAGE) done = true;
+  busy = false; syncFooter();
+  fillViewport();                                 // top up if the page didn't reach the fold
+}
+
+// If the sentinel is still on screen after a render (tall monitor / short page),
+// keep pulling pages until it drops below the fold or we run out.
+function fillViewport() {
+  if (busy || done) return;
+  const r = $('bsentinel').getBoundingClientRect();
+  if (r.top < window.innerHeight + 200) loadNext();
+}
+
+// trending ticker — its own top-by-trending query, scrolling; duplicated for a seamless loop
+function renderTicker(list) {
   const bar = $('tickerbar');
-  if (!list.length){ if (bar) bar.style.display='none'; return; }
+  if (!list || !list.length){ if (bar) bar.style.display='none'; return; }
   const pill = (c) => {
     const ch = c.chg;
     const chg = ch == null ? '' : `<span class="c ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
@@ -659,18 +766,23 @@ function renderTicker(){
   $('ticker').innerHTML = html + html; // two copies → -50% loop is seamless
 }
 
-async function loadFeed(){
-  if (DEMO) ALL = DEMO_COINS.map((c) => ({ ...c, mcUsd: c.mc, volUsd: c.vol }));
-  else { try { ALL = (await Pad.feed({ sort:'new', limit:60 })).coins || []; } catch { ALL = []; } }
-  renderTicker();
-  renderBoard();
-  // graduates rail + announcement
-  const grads = ALL.filter(cGrad).slice(0,3);
-  $('glist').innerHTML = grads.length ? grads.map(grow).join('') : `<div class="empty" style="padding:14px">None yet</div>`;
-  if (grads.length){ $('anName').textContent = '$'+grads[0].symbol; $('anView').href = `token.html?c=${encodeURIComponent(grads[0].token)}${DEMO?'&demo=1':''}`; $('announce').style.display='block'; }
+async function initBoard() {
+  buildTabs();
+  // trending strip (top 14 by trending) + graduates rail (top 3 by mcap) — each a
+  // bounded query, independent of how many coins exist in total.
+  boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:14 }).then(r => renderTicker(r.coins));
+  boardQuery({ sort:'top', filter:'graduated', q:'', offset:0, limit:3 }).then(r => {
+    const grads = r.coins || [];
+    $('glist').innerHTML = grads.length ? grads.map(grow).join('') : `<div class="empty" style="padding:14px">None yet</div>`;
+    if (grads.length){ $('anName').textContent = '$'+grads[0].symbol; $('anView').href = `token.html?c=${encodeURIComponent(grads[0].token)}${DEMO?'&demo=1':''}`; $('announce').style.display='block'; }
+  });
+  resetBoard();
 }
 
-let _qt; $('fq').addEventListener('input', () => { clearTimeout(_qt); _qt = setTimeout(renderBoard, 120); });
+// infinite scroll: observe the sentinel; each time it enters view, pull the next page
+new IntersectionObserver((es) => { if (es.some(e => e.isIntersecting)) loadNext(); }, { rootMargin:'400px' }).observe($('bsentinel'));
+$('bmore').addEventListener('click', loadNext);
+let _qt; $('fq').addEventListener('input', () => { clearTimeout(_qt); _qt = setTimeout(() => { curQ = ($('fq').value||'').trim(); resetBoard(); }, 220); });
 
 async function loadStats(){
   if (DEMO){
@@ -693,7 +805,7 @@ async function loadStats(){
   } catch { ['stProj','stGrad','stRew','stMcap','stVol'].forEach(id=>$(id).textContent='—'); }
 }
 
-loadStats(); loadFeed();
+loadStats(); initBoard();
 </script>
 <script>
 /* premium motion: scroll-reveal + stat count-up (respects reduced-motion) */
