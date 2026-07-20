@@ -202,7 +202,7 @@
     <div class="rows" id="rows"></div>
 
     <div class="pending" id="pendingBox" style="display:none">
-      <div class="ph">⏳ Accruing this epoch — claimable once it closes</div>
+      <div class="ph">Accruing this epoch — claimable once it closes</div>
       <div id="pendingRows"></div>
     </div>
   </section>
@@ -214,8 +214,8 @@
       <div class="sub" style="color:var(--dim);font-size:.9rem;margin-top:4px">Per 1.25% side fee — additive, never a token transfer tax.</div>
       <div class="flowbars">
         <div class="fb"><div class="top"><span>Platform / creator</span><b>1.00%</b></div><div class="track"><div class="fill" style="width:80%;background:linear-gradient(90deg,#6f7a12,#a6e017)"></div></div></div>
-        <div class="fb"><div class="top"><span>🏹 Trader rewards <i style="color:var(--dim)">(buys)</i></span><b>0.25%</b></div><div class="track"><div class="fill" style="width:20%;background:var(--lime)"></div></div></div>
-        <div class="fb"><div class="top"><span>💎 Holder rewards <i style="color:var(--dim)">(sells)</i></span><b>0.25%</b></div><div class="track"><div class="fill" style="width:20%;background:var(--violet)"></div></div></div>
+        <div class="fb"><div class="top"><span>Trader rewards <i style="color:var(--dim)">(buys)</i></span><b>0.25%</b></div><div class="track"><div class="fill" style="width:20%;background:var(--lime)"></div></div></div>
+        <div class="fb"><div class="top"><span>Holder rewards <i style="color:var(--dim)">(sells)</i></span><b>0.25%</b></div><div class="track"><div class="fill" style="width:20%;background:var(--violet)"></div></div></div>
       </div>
       <p class="note" style="text-align:left;margin-top:16px">The token itself stays clean — no tax in <code style="font-family:var(--mono);color:var(--lime)">transfer()</code>, so it never trips a honeypot flag. The reward legs are carved at the swap desk and paid out separately.</p>
     </div>
@@ -228,7 +228,7 @@
 </main>
 
 <footer><div class="wrap foot-in">
-  <span>🌐 robinlabs.io</span>
+  <span>robinlabs.io</span>
   <span class="mid">Trade. Hold. <b>Get paid.</b></span>
   <span class="socs">
     <a href="https://x.com/robinlabzz" target="_blank" rel="noopener" aria-label="X (Twitter)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
@@ -260,15 +260,15 @@ function renderTotals(t){
   $('totcards').innerHTML = `
     <div class="tc"><div class="k">Real ETH paid</div><div class="v lime">${(t.paidEth||0).toFixed(1)}</div></div>
     <div class="tc"><div class="k">Claimants</div><div class="v">${(t.claimants||0).toLocaleString()}</div></div>
-    <div class="tc"><div class="k">🏹 To traders</div><div class="v">${(t.tradersEth||0).toFixed(1)}</div></div>
-    <div class="tc"><div class="k">💎 To holders</div><div class="v vio">${(t.holdersEth||0).toFixed(1)}</div></div>`;
+    <div class="tc"><div class="k">To traders</div><div class="v">${(t.tradersEth||0).toFixed(1)}</div></div>
+    <div class="tc"><div class="k">To holders</div><div class="v vio">${(t.holdersEth||0).toFixed(1)}</div></div>`;
 }
 
 let CLAIMABLE = []; // the current wallet's claimable rows (each carries the live claim descriptor)
 
 function claimRow(r, i){
   const sideCls = r.side === 'Holders' ? 'h' : 't';
-  const sideIco = r.side === 'Holders' ? '💎' : '🏹';
+  const sideIco = r.side === 'Holders' ? '' : '';
   return `<div class="rrow" data-eth="${r.eth}">
     ${av(r.sym)}
     <div><div class="nm">${esc(r.name)} <span style="color:var(--dim)">$${esc(r.sym)}</span></div>
@@ -301,7 +301,7 @@ function renderPending(list){
   if (!list || !list.length){ $('pendingBox').style.display='none'; return; }
   $('pendingBox').style.display = 'block';
   $('pendingRows').innerHTML = list.map(p =>
-    `<div class="prow"><span>${p.side==='Holders'?'💎':'🏹'} ${esc(p.name)} <span style="color:var(--dim)">$${esc(p.sym)}</span> · ${esc(p.side)}</span><span class="r">+${fmtEth(p.eth)}</span></div>`
+    `<div class="prow"><span>${p.side==='Holders'?'':''} ${esc(p.name)} <span style="color:var(--dim)">$${esc(p.sym)}</span> · ${esc(p.side)}</span><span class="r">+${fmtEth(p.eth)}</span></div>`
   ).join('');
 }
 
@@ -309,7 +309,7 @@ async function onClaim(e){
   const btn = e.currentTarget;
   if (DEMO){ alert('Preview — on the live site this sends a claim transaction (you pay gas) and the ETH lands in your wallet.'); return; }
   const c = CLAIMABLE[+btn.dataset.i];
-  try { btn.disabled = true; btn.textContent = 'Claiming…'; await Pad.claimReward(c); btn.textContent = '✔ Claimed'; }
+  try { btn.disabled = true; btn.textContent = 'Claiming…'; await Pad.claimReward(c); btn.textContent = '✓ Claimed'; }
   catch(err){ btn.disabled = false; btn.textContent = 'Claim'; alert(err.message || 'Claim failed'); }
 }
 async function onClaimAll(){

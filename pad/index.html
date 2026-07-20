@@ -594,7 +594,7 @@ function bcard(c){
   const chg = ch==null ? '' : `<span class="bchg ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
   const url = `token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}`;
   const foot = grad
-    ? `<div class="bgrad"><span class="bok">✔ Graduated · live on DEX</span></div>`
+    ? `<div class="bgrad"><span class="bok">✓ Graduated · live on DEX</span></div>`
     : `<div class="bprog"><div class="bptrack"><div class="bpfill${prog>=70?' hot':''}" style="width:${Math.min(100,prog)}%"></div></div><span class="bppct">${prog}%</span></div>`;
   return `<a class="bcard" href="${url}">
     <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btk">$${esc(c.symbol||'?')}</div></div>${chg}</div>

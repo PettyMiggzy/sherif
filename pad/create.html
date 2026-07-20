@@ -87,14 +87,14 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
 
       <div class="field">
         <label>Banner <span class="hint">1500×500, shown on the coin page</span></label>
-        <label class="banner-up" for="banner"><div><div class="up-ic">🖼️</div><div class="up-t">Click or drop a banner</div></div></label>
+        <label class="banner-up" for="banner"><div><div class="up-ic"></div><div class="up-t">Click or drop a banner</div></div></label>
         <input id="banner" type="file" accept="image/*" hidden onchange="prev(this,'banner')" />
       </div>
 
       <div class="field">
         <label>Coin image (pfp) <span class="hint">square, this is the token icon</span></label>
         <div class="pfp-wrap">
-          <label class="pfp-up" for="pfp" id="pfpBox"><div style="text-align:center"><div class="up-ic">📷</div><div class="up-t">Upload</div></div></label>
+          <label class="pfp-up" for="pfp" id="pfpBox"><div style="text-align:center"><div class="up-ic"></div><div class="up-t">Upload</div></div></label>
           <input id="pfp" type="file" accept="image/*" hidden onchange="prev(this,'pfp')" />
           <div class="txt">PNG / JPG / GIF.<br>This is what shows in the trending grid.</div>
         </div>
@@ -111,7 +111,7 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
         <div class="field"><label>Twitter / X <span class="hint">optional</span></label><input class="inp" placeholder="https://x.com/…" /></div>
         <div class="field"><label>Telegram <span class="hint">optional · link free</span></label>
           <input class="inp" id="tg" placeholder="https://t.me/…" />
-          <button type="button" id="linkTg" class="btn btn-ghost" style="margin-top:8px;font-size:.8rem;padding:8px 12px">🔗 Link with a free signature</button>
+          <button type="button" id="linkTg" class="btn btn-ghost" style="margin-top:8px;font-size:.8rem;padding:8px 12px">Link with a free signature</button>
         </div>
       </div>
 
@@ -145,9 +145,9 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
           </div>
           <div id="allocWrap" style="display:none;margin-top:14px;border-top:1px solid var(--line-2);padding-top:12px">
             <div class="hint" style="margin-bottom:4px">Where <b>your 75%</b> of the above-1% fee goes — must total <b class="tax-tot ok" id="allocTot">100%</b></div>
-            <div class="alloc-row"><span>💰 Project wallet</span><input type="range" id="aw" min="0" max="100" step="5" value="100" oninput="taxSync()" /><b id="awV">100%</b></div>
-            <div class="alloc-row"><span>🪙 Deepen the Bond floor</span><input type="range" id="af" min="0" max="100" step="5" value="0" oninput="taxSync()" /><b id="afV">0%</b></div>
-            <div class="alloc-row"><span>🔥 Auto-burn</span><input type="range" id="ab" min="0" max="100" step="5" value="0" oninput="taxSync()" /><b id="abV">0%</b></div>
+            <div class="alloc-row"><span>Project wallet</span><input type="range" id="aw" min="0" max="100" step="5" value="100" oninput="taxSync()" /><b id="awV">100%</b></div>
+            <div class="alloc-row"><span>Deepen the Bond floor</span><input type="range" id="af" min="0" max="100" step="5" value="0" oninput="taxSync()" /><b id="afV">0%</b></div>
+            <div class="alloc-row"><span>Auto-burn</span><input type="range" id="ab" min="0" max="100" step="5" value="0" oninput="taxSync()" /><b id="abV">0%</b></div>
             <div class="field" style="margin:10px 0 0"><label style="font-size:.8rem">Payout wallet <span class="hint">where your share lands · defaults to your connected wallet</span></label>
               <input class="inp" id="pw" placeholder="0x… (optional)" /></div>
           </div>
@@ -155,18 +155,18 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
         </div>
       </div>
 
-      <button class="btn btn-lime" id="launchBtn" type="button">🚀 Launch coin</button>
+      <button class="btn btn-lime" id="launchBtn" type="button">Launch coin</button>
       <p class="note" id="launchNote">Free to launch — you only pay network gas. One transaction: no token approval, no authority grant. The dev buy (if any) rides in the same tx, ahead of the field — no cap, and any ETH past the graduation ceiling is refunded.</p>
     </form>
 
     <aside class="summary">
       <h3 id="sName">Your coin</h3>
       <div class="s-sub" id="sTick">$TICKER · Robinhood Chain</div>
-      <div class="li"><span class="ic">✦</span><div><b>1,000,000,000</b> supply · fixed, no mint</div></div>
-      <div class="li"><span class="ic">✦</span><div><b>DEX + DexScreener day one</b> — real Uniswap v3 pool from block one</div></div>
-      <div class="li"><span class="ic">✦</span><div><b>The Bond</b> — graduates into a protocol-owned floor it can't be rugged below</div></div>
-      <div class="li"><span class="ic">✦</span><div><b>Clean token</b> — no tax, no blacklist, LP locked forever</div></div>
-      <div class="li"><span class="ic">✦</span><div><b>Anti-snipe</b> — auto-expiring opening guard, sells never blocked</div></div>
+      <div class="li"><span class="ic"></span><div><b>1,000,000,000</b> supply · fixed, no mint</div></div>
+      <div class="li"><span class="ic"></span><div><b>DEX + DexScreener day one</b> — real Uniswap v3 pool from block one</div></div>
+      <div class="li"><span class="ic"></span><div><b>The Bond</b> — graduates into a protocol-owned floor it can't be rugged below</div></div>
+      <div class="li"><span class="ic"></span><div><b>Clean token</b> — no tax, no blacklist, LP locked forever</div></div>
+      <div class="li"><span class="ic"></span><div><b>Anti-snipe</b> — auto-expiring opening guard, sells never blocked</div></div>
       <div class="free">✓ Free — just pay gas</div>
     </aside>
   </div>

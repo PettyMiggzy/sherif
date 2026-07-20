@@ -143,7 +143,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
       <div class="chart">
         <div class="hd"><span class="dot"></span> DexScreener · live chart <span style="margin-left:auto" class="mono">Uniswap v3 · 1%</span></div>
         <iframe id="dex" title="DexScreener chart" loading="lazy" src="about:blank"></iframe>
-        <div class="ph" id="chartPh" style="display:none"><div><div class="big">📈 DexScreener chart</div><div>Loads here from block one — the coin is a real Uniswap v3 pair.</div></div></div>
+        <div class="ph" id="chartPh" style="display:none"><div><div class="big">DexScreener chart</div><div>Loads here from block one — the coin is a real Uniswap v3 pair.</div></div></div>
       </div>
       <div class="statrow">
         <div class="s"><div class="k">Market cap</div><div class="v" id="stMc">—</div></div>
@@ -178,18 +178,18 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 
         <!-- Bond / graduation panel (JS fills it) -->
         <div class="bond" id="bondPanel">
-          <div class="lbl">🪙 The Bond</div>
+          <div class="lbl">The Bond</div>
           <h3 id="bondTitle">Loading…</h3>
           <div class="sub" id="bondSub"></div>
           <div class="bar"><div class="fill" id="bondFill" style="width:0%"></div><div class="mark" id="bondMark" style="left:0%;display:none"></div></div>
           <div class="bar-lab" id="bondLab"><span>Road to the Bond</span><b>—</b></div>
-          <button class="btn btn-lime" style="width:100%;margin-top:12px;display:none" id="gradBtn" type="button">🎓 Graduate now</button>
+          <button class="btn btn-lime" style="width:100%;margin-top:12px;display:none" id="gradBtn" type="button">Graduate now</button>
           <div class="floorpill" id="floorPill" style="display:none"></div>
         </div>
 
         <!-- Dev-only controls (shown when the connected wallet is the creator) -->
         <div class="devpanel" id="devPanel" style="display:none">
-          <div class="lbl">👑 Creator controls</div>
+          <div class="lbl">Creator controls</div>
           <h3>Set your graduation target</h3>
           <div class="sub">The later it graduates, the thicker the floor.</div>
           <div class="seg" id="targetSeg">
@@ -429,7 +429,7 @@ async function loadTrades(){
   let rows = [];
   if (DEMO) rows = demoTrades(18);
   else { try { rows = await Pad.trades(TOKEN, 30); } catch {} }
-  if (!rows || !rows.length){ body.innerHTML = '<div class="empty">No trades yet — be the first to buy 🟢</div>'; return; }
+  if (!rows || !rows.length){ body.innerHTML = '<div class="empty">No trades yet — be the first to buy </div>'; return; }
   body.innerHTML = rows.map((t) => `<div class="tr">
     <span class="ty ${t.side}">${t.side === 'buy' ? 'BUY' : 'SELL'}</span>
     <a class="who" href="${EXPL}/tx/${t.tx}" target="_blank" rel="noopener">${Pad.short(t.actor)}</a>
@@ -447,14 +447,14 @@ async function loadHolders(){
   if (h.count != null) $('holderCount').textContent = h.count.toLocaleString() + ' holders';
   const label = {};
   if (COIN){
-    if (COIN.curve) label[COIN.curve.toLowerCase()] = '🏹 Bonding curve';
-    if (COIN.pool) label[COIN.pool.toLowerCase()] = '🦄 Uniswap pool';
-    if (COIN.dev) label[COIN.dev.toLowerCase()] = '👑 Creator';
-    if (COIN.bond && /^0x[0-9a-f]{40}$/i.test(COIN.bond)) label[COIN.bond.toLowerCase()] = '🌲 The Bond (floor)';
+    if (COIN.curve) label[COIN.curve.toLowerCase()] = 'Bonding curve';
+    if (COIN.pool) label[COIN.pool.toLowerCase()] = 'Uniswap pool';
+    if (COIN.dev) label[COIN.dev.toLowerCase()] = 'Creator';
+    if (COIN.bond && /^0x[0-9a-f]{40}$/i.test(COIN.bond)) label[COIN.bond.toLowerCase()] = 'The Bond (floor)';
   }
   if (!h.top.length){ body.innerHTML = '<div class="empty">No holders yet.</div>'; return; }
   body.innerHTML = h.top.map((o) => {
-    const name = label[o.address] || (o.name ? '📄 ' + o.name : (o.isContract ? '📄 Contract' : Pad.short(o.address)));
+    const name = label[o.address] || (o.name ? '' + o.name : (o.isContract ? 'Contract' : Pad.short(o.address)));
     return `<div class="h"><a href="${EXPL}/address/${o.address}" target="_blank" rel="noopener">${name}</a><b>${o.pct.toFixed(o.pct >= 1 ? 1 : 2)}%</b></div>`;
   }).join('');
 }
@@ -473,7 +473,7 @@ function renderBond(info){
     lab.innerHTML = '<b>Bond posted</b><span>can’t rug to zero</span>';
     grad.style.display = 'none';
     pill.style.display = 'block';
-    pill.innerHTML = '🌲 <b>Bond posted</b> · Sherwood LP locked (fees compound in forever), Bounty floor below price, Ambush selling only into strength.';
+    pill.innerHTML = '<b>Bond posted</b> · Sherwood LP locked (fees compound in forever), Bounty floor below price, Ambush selling only into strength.';
     return;
   }
   const pct = Math.round(info.progress * 100);
