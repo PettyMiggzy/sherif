@@ -185,7 +185,16 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 
 /* live board — filter-tabbed, endlessly paginated grid (scales to any # of coins) */
 .bsearch{display:flex;align-items:center;gap:12px;margin:14px 0 6px;flex-wrap:wrap}
-.bsearch .fsearch{margin-left:auto;flex:0 1 300px;max-width:340px}
+.bsearch .bsort{margin-left:auto}
+.bsearch .fsearch{flex:0 1 260px;max-width:300px}
+/* sort dropdown — matches the dark filter chips */
+.bsort{position:relative;display:inline-flex;align-items:center;gap:8px;padding:9px 34px 9px 14px;border-radius:11px;border:1px solid var(--line-2);background:var(--bg-2);color:var(--dim);font-size:.86rem;font-weight:700;cursor:pointer}
+.bsort:hover{border-color:var(--line-strong);color:var(--ink)}
+.bsort>span{color:var(--faint);font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+.bsort select{appearance:none;-webkit-appearance:none;background:none;border:0;color:var(--ink);font:inherit;font-weight:700;cursor:pointer;padding:0;outline:none}
+.bsort select option{background:var(--bg-2);color:var(--ink)}
+.bsort>svg{position:absolute;right:12px;width:15px;height:15px;pointer-events:none;color:var(--dim)}
+@media(max-width:560px){.bsearch .bsort{margin-left:0}}
 .board{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:14px;margin-top:14px}
 @media(max-width:560px){.board{grid-template-columns:1fr}}
 /* skeleton shimmer while a page loads */
@@ -395,6 +404,11 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
     </div>
     <div class="bsearch">
       <div class="ftabs" id="ftabs" role="tablist"></div>
+      <label class="bsort">
+        <span>Sort</span>
+        <select id="fsort" aria-label="Sort coins"></select>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </label>
       <label class="fsearch">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="fq" type="search" placeholder="Search name or ticker…" autocomplete="off" />
@@ -632,16 +646,23 @@ function bcard(c){
 // ever loads "all coins" — a thousand or a million, the client only holds what's
 // on screen. Each tab is an independent indexer query (sort + filter); search is
 // server-side across the whole set; infinite scroll appends the next page.
+// Filters = WHICH coins (tabs); Sort = HOW they're ordered (dropdown). Independent, both server-side.
 const FILTERS = [
-  { key:'trending',  label:'Trending',      icon:'assets/icons/hot.png',       sort:'trending', filter:'all' },
-  { key:'new',       label:'New',           icon:'assets/icons/new.png',       sort:'new',      filter:'live' },
-  { key:'final',     label:'Final Stretch', icon:'assets/icons/growth.png',    sort:'progress', filter:'final' },
-  { key:'top',       label:'Market Cap',    icon:'assets/icons/buy-robin.png', sort:'top',      filter:'all' },
-  { key:'graduated', label:'Graduated',     icon:'assets/icons/graduated.png', sort:'top',      filter:'graduated' },
-  { key:'old',       label:'Oldest',        icon:'assets/icons/locked.png',    sort:'old',      filter:'all' },
+  { key:'all',       label:'All',           icon:'assets/icons/hot.png',       filter:'all' },
+  { key:'live',      label:'Live',          icon:'assets/icons/new.png',       filter:'live' },
+  { key:'final',     label:'Final Stretch', icon:'assets/icons/growth.png',    filter:'final' },
+  { key:'graduated', label:'Graduated',     icon:'assets/icons/graduated.png', filter:'graduated' },
+];
+const SORT_OPTS = [
+  { key:'trending', label:'Trending' },
+  { key:'top',      label:'Market cap' },
+  { key:'volume',   label:'Volume' },
+  { key:'new',      label:'Newest' },
+  { key:'old',      label:'Oldest' },
+  { key:'holders',  label:'Holders' },
 ];
 const PAGE = 24;
-let curFilter = FILTERS[0], curQ = '';
+let curFilter = FILTERS[0], curSort = 'trending', curQ = '';
 let session = 0, offset = 0, done = false, busy = false;
 
 // Demo universe: the 12 seed coins are real logos; fan them out deterministically
@@ -682,6 +703,8 @@ const SORTERS = {
   new:      (a,b) => cNew(b) - cNew(a),
   old:      (a,b) => cNew(a) - cNew(b),
   top:      (a,b) => cMc(b) - cMc(a),
+  volume:   (a,b) => cVol(b) - cVol(a),
+  holders:  (a,b) => nz(b.holders) - nz(a.holders),
   progress: (a,b) => cProg(b) - cProg(a),
 };
 // Trending score. Live: real momentum (chg) then volume. Demo: add a per-coin drift keyed to demoPulse
@@ -715,6 +738,9 @@ function buildTabs() {
     $('ftabs').querySelectorAll('.ftab').forEach(b => b.classList.toggle('on', b === btn));
     resetBoard();
   }));
+  // sort dropdown — independent of the filter tabs
+  $('fsort').innerHTML = SORT_OPTS.map(s => `<option value="${s.key}"${s.key===curSort?' selected':''}>${s.label}</option>`).join('');
+  $('fsort').addEventListener('change', () => { curSort = $('fsort').value; resetBoard(); });
 }
 
 function syncFooter() {
@@ -737,7 +763,7 @@ async function loadNext() {
   if (busy || done) return;
   const my = session;
   busy = true; syncFooter();
-  const { coins } = await boardQuery({ sort: curFilter.sort, filter: curFilter.filter, q: curQ, offset, limit: PAGE });
+  const { coins } = await boardQuery({ sort: curSort, filter: curFilter.filter, q: curQ, offset, limit: PAGE });
   if (my !== session) return;                     // a newer reset superseded this page — drop it
   if (offset === 0) $('board').innerHTML = '';    // clear skeleton on first page
   if (!coins.length) {
@@ -797,7 +823,7 @@ async function refreshTrending() {
   demoPulse++;
   const r = await boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:14 });
   renderTicker(r.coins);
-  if (curFilter.key === 'trending' && !curQ && !busy && window.scrollY < 240) resetBoard({ soft:true });
+  if (curSort === 'trending' && !curQ && !busy && window.scrollY < 240) resetBoard({ soft:true });
 }
 setInterval(refreshTrending, 20000);
 let _qt; $('fq').addEventListener('input', () => { clearTimeout(_qt); _qt = setTimeout(() => { curQ = ($('fq').value||'').trim(); resetBoard(); }, 220); });
