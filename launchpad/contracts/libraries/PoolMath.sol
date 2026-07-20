@@ -155,6 +155,35 @@ library PoolMath {
         return quoteWethPerToken(getSqrtRatioAtTick(tick), tokenIsToken0);
     }
 
+    // ── forward amount math (canonical Uniswap LiquidityAmounts) — value a position for NAV ──
+    function getAmount0ForLiquidity(uint160 sqrtA, uint160 sqrtB, uint128 liquidity) internal pure returns (uint256) {
+        if (sqrtA > sqrtB) (sqrtA, sqrtB) = (sqrtB, sqrtA);
+        return Math.mulDiv(uint256(liquidity) << 96, uint256(sqrtB) - uint256(sqrtA), uint256(sqrtB)) / uint256(sqrtA);
+    }
+
+    function getAmount1ForLiquidity(uint160 sqrtA, uint160 sqrtB, uint128 liquidity) internal pure returns (uint256) {
+        if (sqrtA > sqrtB) (sqrtA, sqrtB) = (sqrtB, sqrtA);
+        return Math.mulDiv(uint256(liquidity), uint256(sqrtB) - uint256(sqrtA), Q96);
+    }
+
+    /// @notice Token amounts a `liquidity` position at [sqrtA,sqrtB] holds at price `sqrtP` — canonical
+    /// Uniswap v3 getAmountsForLiquidity. Used to value a vault position (NAV), never for a gate.
+    function getAmountsForLiquidity(uint160 sqrtP, uint160 sqrtA, uint160 sqrtB, uint128 liquidity)
+        internal
+        pure
+        returns (uint256 amount0, uint256 amount1)
+    {
+        if (sqrtA > sqrtB) (sqrtA, sqrtB) = (sqrtB, sqrtA);
+        if (sqrtP <= sqrtA) {
+            amount0 = getAmount0ForLiquidity(sqrtA, sqrtB, liquidity);
+        } else if (sqrtP < sqrtB) {
+            amount0 = getAmount0ForLiquidity(sqrtP, sqrtB, liquidity);
+            amount1 = getAmount1ForLiquidity(sqrtA, sqrtP, liquidity);
+        } else {
+            amount1 = getAmount1ForLiquidity(sqrtA, sqrtB, liquidity);
+        }
+    }
+
     /// @notice Arithmetic-mean tick over `window` seconds from the pool's oracle cumulatives.
     function meanTick(int56 tickCumulativeStart, int56 tickCumulativeEnd, uint32 window)
         internal
