@@ -98,6 +98,10 @@ export const DEMO_REWARDS = {
   ],
 };
 
+// Community floor-vault (FloorCoop) demo data for the coin page. Users add ETH to a below-price buy-wall
+// and earn the dip-buy fees; withdrawable after a cooldown; can't hurt the coin (it sits under the price).
+export const DEMO_FLOOR = { tvlEth: 6.4, feesPaidEth: 1.82, mineEth: 0.25, earnedEth: 0.0074, backers: 38 };
+
 // Daily analytics series for the stats page (demo values). Deterministic — a
 // gentle upward trend with a mid-window viral spike, so the preview charts look
 // like a launchpad finding traction. The live pad draws the real series.

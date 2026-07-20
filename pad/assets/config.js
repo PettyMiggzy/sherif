@@ -39,6 +39,10 @@ export const CONTRACTS = {
   // ships alongside the next router deploy; the frontend stays inert until it's set.
   rewardVault: "",
 
+  // Our FloorCoopFactory — deploys a per-coin community floor vault (add to the buy-wall, earn dip-buy
+  // fees, withdrawable after a cooldown). Empty until it ships with the reward system's deploy.
+  floorCoopFactory: "",
+
   // The platform's buy-back token + its WETH pool (for links / a future buy widget).
   // The above-default fee's 25% cut is paid to the platform, which buys+burns the
   // platform token off-chain — the router does not swap it on-chain. TBD for Robin Labs.
@@ -92,6 +96,21 @@ export const ABIS = {
     "function currentEpoch() view returns (uint256)",
     "function EPOCH() view returns (uint256)",
     "event Claimed(uint256 indexed epoch, address indexed coin, address indexed user, uint8 side, uint256 amount)",
+  ],
+  // Community floor vault: add ETH to the below-price buy-wall, earn dip-buy fees, withdraw after cooldown.
+  floorCoopFactory: [
+    "function coopOf(address token) view returns (address)",
+    "function createCoop(address token) returns (address)",
+  ],
+  floorCoop: [
+    "function WETH() view returns (address)",
+    "function totalShares() view returns (uint256)",
+    "function shares(address) view returns (uint256)",
+    "function pending(address user) view returns (uint256 wethOwed, uint256 tokenOwed)",
+    "function deposit() payable returns (uint256)",
+    "function withdraw(uint256 shareAmt) returns (uint256 wethOut, uint256 tokenOut)",
+    "function claim()",
+    "function recenter()",
   ],
   // The CurvePool — the bonding curve + graduation. Read progress, drive the
   // graduate button + the dev's auto-graduate target.

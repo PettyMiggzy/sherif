@@ -50,6 +50,20 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .fee .v small{font-size:.68rem;color:var(--ink-dim);font-weight:600}
 .feelink{display:inline-block;margin-top:12px;color:var(--lime);font-size:.82rem;font-weight:700}
 .feelink:hover{text-decoration:underline}
+/* community floor vault */
+.floorcoop{border-color:var(--line-strong);background:linear-gradient(180deg,rgba(220,233,5,.05),var(--panel))}
+.fc-blurb{color:var(--ink-dim);font-size:.84rem;line-height:1.5;margin:0 0 12px}
+.fc-blurb b{color:var(--ink)}
+.fc-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.fc-stats > div{background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:9px 11px}
+.fc-stats .k{display:block;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint)}
+.fc-stats .v{display:block;font-family:var(--disp);font-size:1.35rem;margin-top:2px}
+.fc-amt{display:flex;align-items:center;background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:4px 12px;margin-bottom:8px}
+.fc-amt input{flex:1;background:none;border:none;color:var(--ink);font-size:1.1rem;font-family:var(--mono);padding:10px 0;outline:none}
+.fc-amt span{color:var(--ink-dim);font-weight:700;font-size:.9rem}
+.fc-btns{display:flex;gap:8px}.fc-btns .btn{flex:1;padding:11px}
+.fc-risk{color:var(--ink-faint);font-size:.72rem;line-height:1.45;margin:10px 0 0}
+.fc-risk b{color:var(--ink-dim)}
 .idbar{display:flex;gap:16px;align-items:flex-end;margin-top:-46px;position:relative;z-index:2}
 .idbar .pfp{width:92px;height:92px;border-radius:18px;border:3px solid var(--bg);flex:none;display:grid;place-items:center;font-size:2rem;font-weight:800;color:#10140a;background:linear-gradient(135deg,#dce905,#8a63e0)}
 .idbar .who{padding-bottom:6px;flex:1;min-width:0}
@@ -232,6 +246,22 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
         </div>
         <a class="feelink" href="rewards.html">How trader &amp; holder rewards work →</a>
       </div>
+
+      <!-- community floor vault: add liquidity to the buy-wall, earn dip-buy fees, can't hurt the coin -->
+      <div class="panel sec floorcoop" style="margin-top:16px"><h3>Back the floor <span class="meta">community LP · earn fees</span></h3>
+        <p class="fc-blurb">Add ETH to this coin's <b>buy-wall</b> and earn the trading fee on every dip that hits it. It sits <b>below price</b>, so pulling it can never dump the coin — and the core LP stays locked forever.</p>
+        <div class="fc-stats">
+          <div><span class="k">Floor pool</span><span class="v" id="fcTvl">—</span></div>
+          <div><span class="k">Fees paid out</span><span class="v" id="fcFees">—</span></div>
+          <div><span class="k">Your stake</span><span class="v" id="fcMine">—</span></div>
+          <div><span class="k">Your fees</span><span class="v" id="fcEarned">—</span></div>
+        </div>
+        <div class="fc-amt"><input id="fcInput" placeholder="0.0" value="0.25" inputmode="decimal" /><span>ETH</span></div>
+        <div class="fc-btns"><button class="btn btn-lime" id="fcAdd" type="button">Add to floor</button><button class="btn btn-ghost" id="fcClaim" type="button">Claim fees</button></div>
+        <button class="btn btn-ghost" id="fcWithdraw" type="button" style="width:100%;margin-top:8px">Withdraw</button>
+        <p class="fc-risk">Honest heads-up: you earn only when the coin <b>dips</b> into your wall, and if a dip fills it your ETH becomes the coin. It's a range order, not a fixed yield. 2-day withdrawal cooldown.</p>
+      </div>
+
       <div class="panel sec" style="margin-top:16px"><h3>Coin info</h3>
         <div class="holders">
           <div class="h"><span>Buy fee</span><b id="infoBuy">—</b></div>
@@ -248,7 +278,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
-import { DEMO, DEMO_COINS, demoTrades, demoHolders } from './assets/demo.js';
+import { DEMO, DEMO_COINS, demoTrades, demoHolders, DEMO_FLOOR } from './assets/demo.js';
 const $ = (id) => document.getElementById(id);
 const ETH_USD = 1920;
 const q = new URLSearchParams(location.search);
@@ -379,7 +409,7 @@ async function loadCoin(){
   // bond / graduation panel
   renderBond(info);
   await maybeShowDev();
-  loadTrades(); loadHolders(); renderBanner(); renderFees();
+  loadTrades(); loadHolders(); renderBanner(); renderFees(); renderFloor();
 }
 
 // ── demo preview (?demo=1) — render a sample coin, no chain reads ──
@@ -403,8 +433,41 @@ function renderDemoCoin(){
   $('dex').style.display = 'none'; $('chartPh').style.display = 'grid'; buildCandles();
   renderBond({ graduated: c.state === 'done', ready: c.state === 'grad', progress: c.prog / 100,
     targetFrac: 0.4, minGradTick: -196200, gradTick: -170400 });
-  loadTrades(); loadHolders(); renderBanner(); renderFees(c);
+  loadTrades(); loadHolders(); renderBanner(); renderFees(c); renderFloor();
 }
+
+// ── community floor vault: back the buy-wall, earn dip-buy fees ──
+function renderFloor(){
+  const eth = (n) => (Math.round((n||0)*1e4)/1e4) + ' ETH';
+  if (DEMO){
+    const f = DEMO_FLOOR;
+    $('fcTvl').textContent = eth(f.tvlEth);
+    $('fcFees').textContent = eth(f.feesPaidEth);
+    $('fcMine').textContent = eth(f.mineEth);
+    $('fcEarned').textContent = eth(f.earnedEth);
+  } else if (COIN){
+    ['fcTvl','fcFees','fcMine','fcEarned'].forEach(id=>$(id).textContent='—');
+    Pad.floorInfo(COIN.token, Pad.account()).then(f=>{ if(!f) return;
+      $('fcTvl').textContent = eth(f.tvlEth); $('fcFees').textContent = eth(f.feesPaidEth);
+      $('fcMine').textContent = eth(f.mineEth); $('fcEarned').textContent = eth(f.earnedEth);
+    }).catch(()=>{});
+  }
+}
+const _fcPreview = (msg) => alert(msg || 'Preview — this is live on the real site.');
+$('fcAdd').addEventListener('click', async () => {
+  const amt = parseFloat($('fcInput').value) || 0; if (amt<=0) return setNote('Enter an ETH amount.', 'err');
+  if (DEMO) return _fcPreview('Preview — on the live site this adds ' + amt + ' ETH to the buy-wall and starts earning dip-buy fees.');
+  try { if(!Pad.account()){await Pad.connect();refreshConnect();} setNote('Adding to the floor…'); await (await Pad.floorDeposit(COIN.token, amt)).wait(); setNote('Added to the floor ✓','ok'); renderFloor(); }
+  catch(e){ setNote(e.message,'err'); }
+});
+$('fcClaim').addEventListener('click', async () => {
+  if (DEMO) return _fcPreview('Preview — claims your accrued dip-buy fees (real ETH) to your wallet.');
+  try { setNote('Claiming floor fees…'); await (await Pad.floorClaim(COIN.token)).wait(); setNote('Claimed ✓','ok'); renderFloor(); } catch(e){ setNote(e.message,'err'); }
+});
+$('fcWithdraw').addEventListener('click', async () => {
+  if (DEMO) return _fcPreview('Preview — withdraws your stake after the 2-day cooldown. It sits below price, so it never dumps the coin.');
+  try { setNote('Withdrawing…'); await (await Pad.floorWithdraw(COIN.token)).wait(); setNote('Withdrawn ✓','ok'); renderFloor(); } catch(e){ setNote(e.message,'err'); }
+});
 
 // ── animated candlestick backdrop for the chart placeholder (deterministic) ──
 function buildCandles(){

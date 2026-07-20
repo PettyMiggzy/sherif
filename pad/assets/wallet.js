@@ -582,6 +582,61 @@ function requireRewardVault() {
     throw new Error("Rewards open when the Pad goes live — the vault isn't set yet (pre-deploy audit).");
 }
 
+// ── community floor vault (FloorCoop): add to the buy-wall, earn dip-buy fees ──
+async function coopFor(token) {
+  const f = new ethers.Contract(CONTRACTS.floorCoopFactory, ABIS.floorCoopFactory, _read);
+  let coop = await f.coopOf(token);
+  return coop; // 0x0 if none yet
+}
+
+/// Vault stats for the coin page: pool size, fees paid, and (if `who` set) their stake + claimable.
+export async function floorInfo(token, who) {
+  if (!isDeployed("floorCoopFactory")) return null;
+  const coop = await coopFor(token);
+  if (!coop || /^0x0+$/.test(coop)) return { tvlEth: 0, feesPaidEth: 0, mineEth: 0, earnedEth: 0, coop: null };
+  const c = new ethers.Contract(coop, ABIS.floorCoop, _read);
+  const [weth, ts] = await Promise.all([c.WETH(), c.totalShares()]);
+  const wbal = await new ethers.Contract(weth, ABIS.erc20, _read).balanceOf(coop);
+  const out = { coop, tvlEth: Number(ethers.formatEther(wbal)), feesPaidEth: 0, mineEth: 0, earnedEth: 0 };
+  if (who && ts > 0n) {
+    const [sh, pend] = await Promise.all([c.shares(who), c.pending(who)]);
+    out.mineEth = Number(ethers.formatEther((wbal * sh) / ts));
+    out.earnedEth = Number(ethers.formatEther(pend[0]));
+  }
+  return out;
+}
+
+/// Add ETH to a coin's floor buy-wall (creates the vault on first use).
+export async function floorDeposit(token, ethAmount) {
+  requireFloor();
+  if (!_signer) await connect();
+  const fac = new ethers.Contract(CONTRACTS.floorCoopFactory, ABIS.floorCoopFactory, _signer);
+  let coop = await fac.coopOf(token);
+  if (/^0x0+$/.test(coop)) { await (await fac.createCoop(token)).wait(); coop = await fac.coopOf(token); }
+  const c = new ethers.Contract(coop, ABIS.floorCoop, _signer);
+  return guardedSend(c, "deposit", [], ethers.parseEther(String(ethAmount)), "Add to floor");
+}
+
+export async function floorClaim(token) {
+  requireFloor();
+  const coop = await coopFor(token);
+  return guardedSend(new ethers.Contract(coop, ABIS.floorCoop, _signer), "claim", [], 0n, "Claim floor fees");
+}
+
+/// Withdraw the caller's whole stake (after the cooldown).
+export async function floorWithdraw(token) {
+  requireFloor();
+  const coop = await coopFor(token);
+  const c = new ethers.Contract(coop, ABIS.floorCoop, _signer);
+  const sh = await c.shares(_account);
+  return guardedSend(c, "withdraw", [sh], 0n, "Withdraw from floor");
+}
+
+function requireFloor() {
+  if (!isDeployed("floorCoopFactory"))
+    throw new Error("The community floor opens when the Pad goes live (pre-deploy audit).");
+}
+
 // expose a tiny global for the plain-HTML pages (no bundler)
 if (typeof window !== "undefined") {
   window.RobinPad = {
@@ -591,6 +646,7 @@ if (typeof window !== "undefined") {
     feed, stats, recentTrades, hasApi,
     holders, trades, chainTrades, feeTotals,
     rewards, rewardStats, claimReward, claimAllRewards,
+    floorInfo, floorDeposit, floorClaim, floorWithdraw,
   };
   window.SheriffPad = window.RobinPad; // back-compat alias for existing pages
   window.dispatchEvent(new Event("robinpad:ready"));
