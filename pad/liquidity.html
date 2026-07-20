@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Robin Labs — Liquidity</title>
-<meta name="description" content="Back any Robin Labs coin's floor: add ETH to its below-price buy-wall and earn the trading fees. It can't be rugged and pulling it can't dump the coin. Withdraw after a short cooldown." />
+<meta name="description" content="Lock ETH into any token's real liquidity on Robinhood Chain and earn your share of every trade's fee. Staking-style lock terms (30/60/90/365 days or forever); early exit costs 15%. Longer locks earn more." />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
@@ -85,6 +85,8 @@
   .addrow.open{display:block}
   .addbox{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .addbox input{flex:1;min-width:120px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;color:var(--ink);padding:11px 12px;font-family:var(--mono);font-size:1rem}
+  .addbox .termsel{background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;color:var(--ink);padding:11px 12px;font-family:var(--sans);font-weight:700;font-size:.9rem;cursor:pointer}
+  .addbox .termsel option{background:var(--bg-2);color:var(--ink)}
   .addbox .prev{flex-basis:100%;color:var(--lime-deep);font-size:.76rem;margin-top:2px}
   .addbox .prev b{color:var(--lime)}
   .risk{color:#8b9378;font-size:.78rem;line-height:1.5;margin:22px 0 8px;border-left:2px solid var(--line);padding-left:12px}
@@ -109,16 +111,16 @@
 
 <main class="wrap">
   <section class="head">
-    <div class="eyebrow">Community liquidity · earn fees · can't be rugged</div>
-    <h1>Back a coin's floor.<br /><span class="g">Earn the fees.</span></h1>
-    <p>Add ETH to any Robin Labs coin's <b>buy-wall</b> and collect the trading fee on every dip that hits it. Your liquidity sits <b>below the price</b>, so pulling it can never dump the coin — and the coin's core LP is locked forever. Withdraw your stake after a short cooldown.</p>
-    <div id="live" class="live"><span class="dot"></span><span id="liveTxt">Live floor pools</span></div>
+    <div class="eyebrow">Lock liquidity · earn fees · any token on the chain</div>
+    <h1>Lock into a coin's liquidity.<br /><span class="g">Earn the fees.</span></h1>
+    <p>Stake ETH into <b>any token's real liquidity</b> on Robinhood Chain and earn your <b>share of every trade's fee</b>. It's <b>locked</b> for the term you pick — 30, 60, 90, 365 days or forever — so it deepens the market and can't be yanked out from under the coin. The longer you lock, the bigger your reward share.</p>
+    <div id="live" class="live"><span class="dot"></span><span id="liveTxt">Live locked pools</span></div>
   </section>
 
   <section class="facts">
-    <div class="fact"><h4>You provide the dip bid</h4><p>Your ETH becomes a standing buy order just under the price. When someone panic-sells, you're the one buying — and you keep the 1% fee.</p></div>
-    <div class="fact"><h4>Pulling it can't hurt the coin</h4><p>A bid below the price can't dump the token when removed — it just thins the floor. Not a rug. The core LP can never be pulled by anyone.</p></div>
-    <div class="fact"><h4>Honest, not a fixed yield</h4><p>You earn only when the coin dips into your wall; if a dip fills it, your ETH becomes the coin. It's a range order. 2-day withdrawal cooldown.</p></div>
+    <div class="fact"><h4>Real liquidity, not a side bet</h4><p>Your ETH goes into the coin's actual pool, deepening the market everyone trades against. You earn your pro-rata cut of every swap's fee for as long as it's locked.</p></div>
+    <div class="fact"><h4>Locked = it can't be rugged</h4><p>Your stake is locked for your chosen term, so it can only ever help the coin's depth — never pulled out from under it. Longer locks earn a bigger share (up to 3× at forever).</p></div>
+    <div class="fact"><h4>Honest about the risk</h4><p>You earn a <b>share</b> of each fee, not all of it. Early exit costs a 15% penalty. Like any LP, if the price moves your position rebalances — impermanent loss is real.</p></div>
   </section>
 
   <!-- YOUR POSITIONS -->
@@ -126,16 +128,16 @@
   <div id="myPos" class="mypos"></div>
 
   <!-- ALL POOLS -->
-  <div class="sec-h"><h2>Floor pools</h2><span class="sub">Add liquidity to any coin below</span></div>
-  <div class="colhead"><span>Coin</span><span>Floor pool</span><span>Fees paid</span><span>Est. APR</span><span></span></div>
+  <div class="sec-h"><h2>Locked pools</h2><span class="sub">Stake into any coin below</span></div>
+  <div class="colhead"><span>Coin</span><span>Total locked</span><span>Fees paid</span><span>Est. APR</span><span></span></div>
   <div class="pools" id="pools"></div>
 
-  <p class="risk"><b>Risk, plainly:</b> providing floor liquidity is a single-sided range order, not a savings account. You earn fees only on dips into your band; if the price trades through it, your ETH converts to the coin at the floor. There's no guaranteed return and no impermanent-loss protection. Only back coins you'd be happy holding.</p>
+  <p class="risk"><b>Risk, plainly:</b> locking liquidity is real LPing, not a savings account. You earn a share of trade fees while locked, but the price moving rebalances your position (impermanent loss) and there's no guaranteed return. Withdrawing before your term ends costs a 15% penalty. Only lock into coins you'd be happy holding.</p>
 </main>
 
 <footer><div class="wrap foot-in">
   <span>robinlabs.io</span>
-  <span class="mid">Back the floor. <b>Earn the fees.</b></span>
+  <span class="mid">Lock liquidity. <b>Earn the fees.</b></span>
   <span class="socs"><a href="https://x.com/robinlabzz" target="_blank" rel="noopener">@robinlabzz</a></span>
 </div></footer>
 
@@ -146,6 +148,10 @@ const $ = (id) => document.getElementById(id);
 const eth = (n) => (Math.round((n||0)*1e4)/1e4).toLocaleString(undefined,{maximumFractionDigits:4}) + ' ETH';
 const esc = (x) => String(x==null?'':x).replace(/[<>&"]/g,(c)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 const imgTag = (p,cls) => `<img class="${cls}" src="${esc(p.image)}" alt="" onerror="this.style.visibility='hidden'" />`;
+// staking-style lock terms — longer lock earns a bigger reward share; forever = 0 days
+const LOCK_TERMS = [ {days:30,label:'30 days'}, {days:60,label:'60 days'}, {days:90,label:'90 days'}, {days:365,label:'1 year'}, {days:0,label:'Forever'} ];
+const termOptions = () => LOCK_TERMS.map(t => `<option value="${t.days}"${t.days===90?' selected':''}>${t.label}</option>`).join('');
+const termLabel = (d) => d===0 ? 'forever' : (d>=365 ? '1 year' : d+' days');
 
 if (DEMO){ $('liveTxt').textContent = 'Preview — sample pools'; }
 
@@ -157,18 +163,18 @@ window.addEventListener('robinpad:ready', refreshBtn); refreshBtn();
 
 function poolRow(p, i){
   const mine = (p.mineEth||0) > 0;
-  const unlock = new Date(Date.now() + 2*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'});
   return `<div class="pool" data-i="${i}">
-    <div class="coin">${imgTag(p,'')}<div><div class="nm">${esc(p.name)}</div><div class="tk">$${esc(p.sym)}${mine?` · <span class="mine">you back ${eth(p.mineEth)}</span>`:''}</div></div></div>
-    <div class="hidecol"><span class="k">Floor pool</span><span class="v">${eth(p.tvlEth)}</span></div>
+    <div class="coin">${imgTag(p,'')}<div><div class="nm">${esc(p.name)}</div><div class="tk">$${esc(p.sym)}${mine?` · <span class="mine">you locked ${eth(p.mineEth)}</span>`:''}</div></div></div>
+    <div class="hidecol"><span class="k">Total locked</span><span class="v">${eth(p.tvlEth)}</span></div>
     <div class="hidecol"><span class="k">Fees paid</span><span class="v">${eth(p.feesPaidEth)}</span></div>
     <div><span class="k">Est. APR</span><span class="v apr">${(p.aprPct||0).toFixed(1)}%</span></div>
-    <div class="act"><button class="btn btn-lime addbtn" type="button" data-i="${i}">${mine?'Add':'Provide'}</button></div>
+    <div class="act"><button class="btn btn-lime addbtn" type="button" data-i="${i}">${mine?'Add':'Lock'}</button></div>
     <div class="addrow" id="addrow-${i}">
       <div class="addbox">
         <input type="number" min="0" step="0.05" placeholder="0.0" value="0.25" data-i="${i}" oninput="prev(${i})" />
         <span style="color:var(--dim);font-weight:700">ETH</span>
-        <button class="btn btn-lime go" type="button" data-i="${i}">Create position</button>
+        <select class="termsel" data-i="${i}" onchange="prev(${i})" aria-label="Lock term">${termOptions()}</select>
+        <button class="btn btn-lime go" type="button" data-i="${i}">Lock liquidity</button>
         <div class="prev" id="prev-${i}"></div>
       </div>
     </div>
@@ -179,9 +185,10 @@ window.prev = function(i){
   const p = POOLS[i]; const el = $('prev-'+i); const inp = document.querySelector('#addrow-'+i+' input');
   const amt = parseFloat(inp.value)||0; if (!el) return;
   if (amt<=0){ el.textContent=''; return; }
+  const days = +(document.querySelector('#addrow-'+i+' .termsel')?.value ?? 90);
   const pct = (p.tvlEth+amt)>0 ? (amt/(p.tvlEth+amt))*100 : 0;
-  const unlock = new Date(Date.now()+2*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'});
-  el.innerHTML = `You'll create a <b>${amt} ETH</b> position · ~<b>${pct.toFixed(1)}%</b> of the pool · withdrawable <b>${unlock}</b>.`;
+  const when = days===0 ? 'locked <b>forever</b>' : `locked <b>${termLabel(days)}</b> · unlocks <b>${new Date(Date.now()+days*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</b>`;
+  el.innerHTML = `Stake <b>${amt} ETH</b> → ~<b>${pct.toFixed(1)}%</b> of the pool · ${when}. Earns your share of every trade's fee.`;
 };
 
 let POOLS = [];
@@ -195,22 +202,22 @@ function renderPools(){
 function renderMine(){
   const mine = POOLS.filter(p => (p.mineEth||0) > 0);
   $('posSub').textContent = mine.length ? `${mine.length} active` : '';
-  if (!mine.length){ $('myPos').innerHTML = `<div class="empty">No positions yet — add ETH to a pool below to start earning dip-buy fees.</div>`; return; }
-  const unlock = new Date(Date.now() + 1*86400*1000 + 4*3600*1000);
+  if (!mine.length){ $('myPos').innerHTML = `<div class="empty">No positions yet — lock ETH into a pool below to start earning your share of trade fees.</div>`; return; }
   $('myPos').innerHTML = mine.map(p => `<div class="pcard">
     <div class="top">${imgTag(p,'')}<div><div class="nm" style="font-weight:700">${esc(p.name)}</div><div class="tk" style="color:var(--dim);font-size:.8rem">$${esc(p.sym)}</div></div></div>
-    <div class="r"><span>Backing</span><b>${eth(p.mineEth)}</b></div>
+    <div class="r"><span>Staked</span><b>${eth(p.mineEth)}</b></div>
     <div class="r"><span>Pool share</span><b>${p.tvlEth?((p.mineEth/p.tvlEth)*100).toFixed(1):'—'}%</b></div>
     <div class="r"><span>Fees earned</span><b class="lime">${eth(p.earnedEth)}</b></div>
-    <div class="lock">Withdrawable in ~1d 4h</div>
+    <div class="lock">${p.lockTxt || 'Locked · unlocks in 74d'}</div>
   </div>`).join('');
 }
 
 async function onCreate(i){
   const inp = document.querySelector('#addrow-'+i+' input'); const amt = parseFloat(inp.value)||0;
+  const days = +(document.querySelector('#addrow-'+i+' .termsel')?.value ?? 90);
   if (amt<=0){ alert('Enter an ETH amount.'); return; }
-  if (DEMO){ alert('Preview — on the live site this creates a '+amt+' ETH floor position in $'+POOLS[i].sym+' and starts earning dip-buy fees.'); return; }
-  try { if(!Pad.account()){await Pad.connect();refreshBtn();} await (await Pad.floorDeposit(POOLS[i].token, amt)).wait(); load(); } catch(e){ alert(e.message); }
+  if (DEMO){ alert(`Preview — on the live site this stakes ${amt} ETH into $${POOLS[i].sym}'s real liquidity, locked ${termLabel(days)}, and starts earning your share of every trade's fee.`); return; }
+  try { if(!Pad.account()){await Pad.connect();refreshBtn();} await (await Pad.floorDeposit(POOLS[i].token, amt, days)).wait(); load(); } catch(e){ alert(e.message); }
 }
 
 async function load(){

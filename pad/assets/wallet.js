@@ -622,16 +622,17 @@ export async function floorInfo(token, who) {
   return out;
 }
 
-/// Add ETH to a coin's floor buy-wall (creates the vault on first use).
-export async function floorDeposit(token, ethAmount) {
+/// Stake ETH into a coin's real liquidity, locked for `lockDays` (0 = forever). Creates the vault on
+/// first use. The lock term feeds the reward-weight tier; early exit costs a 15% penalty on-chain.
+export async function floorDeposit(token, ethAmount, lockDays = 90) {
   requireFloor();
   if (!_signer) await connect();
   const fac = new ethers.Contract(CONTRACTS.floorCoopFactory, ABIS.floorCoopFactory, _signer);
   let coop = await fac.coopOf(token);
   if (/^0x0+$/.test(coop)) { await (await fac.createCoop(token)).wait(); coop = await fac.coopOf(token); }
   const c = new ethers.Contract(coop, ABIS.floorCoop, _signer);
-  // minSharesOut=0: the contract is still TWAP-guarded; the UI can tighten this from a NAV quote later.
-  return guardedSend(c, "deposit", [0n], ethers.parseEther(String(ethAmount)), "Add to floor");
+  // (lockDays, minSharesOut=0): TWAP-guarded on-chain; UI can tighten minShares from a NAV quote later.
+  return guardedSend(c, "deposit", [lockDays, 0n], ethers.parseEther(String(ethAmount)), "Lock liquidity");
 }
 
 export async function floorClaim(token) {

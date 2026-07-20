@@ -61,6 +61,14 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .fc-amt{display:flex;align-items:center;background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:4px 12px;margin-bottom:8px}
 .fc-amt input{flex:1;background:none;border:none;color:var(--ink);font-size:1.1rem;font-family:var(--mono);padding:10px 0;outline:none}
 .fc-amt span{color:var(--ink-dim);font-weight:700;font-size:.9rem}
+/* lock-term selector */
+.fc-terms{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.fc-term{flex:1 0 auto;position:relative;border:1px solid var(--line-2);background:var(--bg-2);color:var(--ink-dim);border-radius:9px;padding:8px 6px;cursor:pointer;text-align:center;font-family:var(--sans);transition:.14s}
+.fc-term:hover{border-color:var(--line-strong);color:var(--ink)}
+.fc-term.on{background:rgba(220,233,5,.12);border-color:var(--lime);color:var(--ink)}
+.fc-term .d{display:block;font-weight:800;font-size:.9rem}
+.fc-term .m{display:block;font-size:.62rem;color:var(--lime-deep);font-family:var(--mono);margin-top:1px}
+.fc-term.on .m{color:var(--lime)}
 .fc-btns{display:flex;gap:8px}.fc-btns .btn{flex:1;padding:11px}
 .fc-risk{color:var(--ink-faint);font-size:.72rem;line-height:1.45;margin:10px 0 0}
 .fc-risk b{color:var(--ink-dim)}
@@ -256,11 +264,11 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
         <a class="feelink" href="rewards.html">How trader &amp; holder rewards work →</a>
       </div>
 
-      <!-- community floor vault: add liquidity to the buy-wall, earn dip-buy fees, can't hurt the coin -->
-      <div class="panel sec floorcoop" style="margin-top:16px"><h3>Back the floor <span class="meta">community LP · earn fees</span></h3>
-        <p class="fc-blurb">Add ETH to this coin's <b>buy-wall</b> and earn the trading fee on every dip that hits it. It sits <b>below price</b>, so pulling it can never dump the coin — and the core LP stays locked forever.</p>
+      <!-- locked community LP: stake ETH into the coin's real liquidity, earn a share of every trade fee -->
+      <div class="panel sec floorcoop" style="margin-top:16px"><h3>Lock liquidity · earn fees <span class="meta">any token · locked</span></h3>
+        <p class="fc-blurb">Stake ETH into this coin's <b>real liquidity</b> and earn your <b>share of every trade's fee</b>. It's <b>locked</b> for the term you pick, so it deepens the market and can't be yanked out from under the coin. The longer you lock, the bigger your share.</p>
         <div class="fc-stats">
-          <div><span class="k">Floor pool</span><span class="v" id="fcTvl">—</span></div>
+          <div><span class="k">Total locked</span><span class="v" id="fcTvl">—</span></div>
           <div><span class="k">Fees paid out</span><span class="v" id="fcFees">—</span></div>
           <div><span class="k">Your stake</span><span class="v" id="fcMine">—</span></div>
           <div><span class="k">Your fees</span><span class="v" id="fcEarned">—</span></div>
@@ -268,13 +276,14 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
         <!-- your active position (shown once you have one) -->
         <div class="fc-pos" id="fcPos" style="display:none">
           <div class="fc-pos-h"><span>Your position</span><span class="fc-lock" id="fcLock"></span></div>
-          <div class="fc-pos-b"><div><span class="k">Backing</span><b id="fcPosAmt">—</b></div><div><span class="k">Pool share</span><b id="fcPosPct">—</b></div><div><span class="k">Fees earned</span><b id="fcPosFees">—</b></div></div>
+          <div class="fc-pos-b"><div><span class="k">Staked</span><b id="fcPosAmt">—</b></div><div><span class="k">Pool share</span><b id="fcPosPct">—</b></div><div><span class="k">Fees earned</span><b id="fcPosFees">—</b></div></div>
         </div>
         <div class="fc-amt"><input id="fcInput" placeholder="0.0" value="0.25" inputmode="decimal" oninput="fcPrev()" /><span>ETH</span></div>
+        <div class="fc-terms" id="fcTerms" role="radiogroup" aria-label="Lock term"></div>
         <div class="fc-preview" id="fcPreview"></div>
-        <div class="fc-btns"><button class="btn btn-lime" id="fcAdd" type="button">Create position</button><button class="btn btn-ghost" id="fcClaim" type="button">Claim fees</button></div>
-        <button class="btn btn-ghost" id="fcWithdraw" type="button" style="width:100%;margin-top:8px">Withdraw position</button>
-        <p class="fc-risk">Honest heads-up: you earn only when the coin <b>dips</b> into your wall, and if a dip fills it your ETH becomes the coin. It's a range order, not a fixed yield. 2-day withdrawal cooldown.</p>
+        <div class="fc-btns"><button class="btn btn-lime" id="fcAdd" type="button">Lock liquidity</button><button class="btn btn-ghost" id="fcClaim" type="button">Claim fees</button></div>
+        <button class="btn btn-ghost" id="fcWithdraw" type="button" style="width:100%;margin-top:8px">Withdraw</button>
+        <p class="fc-risk">You earn <b>your share</b> of each trade's fee — not all of it. Locked for your chosen term; withdrawing early costs a <b>15%</b> penalty. Like any LP, if the price moves your position rebalances (<b>impermanent loss</b>).</p>
       </div>
 
       <div class="panel sec" style="margin-top:16px"><h3>Coin info</h3>
@@ -451,8 +460,29 @@ function renderDemoCoin(){
   loadTrades(); loadHolders(); renderBanner(); renderFees(c); renderFloor();
 }
 
-// ── community floor vault: back the buy-wall, earn dip-buy fees ──
+// ── locked community LP: stake ETH into the coin's real liquidity, earn a share of every trade fee ──
+// Lock terms are staking-style: longer lock → bigger reward weight. Early exit costs a 15% penalty.
+const LOCK_TERMS = [
+  { days: 30,   label: '30d',  boost: '1.0×' },
+  { days: 60,   label: '60d',  boost: '1.25×' },
+  { days: 90,   label: '90d',  boost: '1.5×' },
+  { days: 365,  label: '1yr',  boost: '2×' },
+  { days: 0,    label: '∞',    boost: '3×' }, // forever
+];
+let fcTerm = LOCK_TERMS[2]; // default 90d
 let FLOOR = null; // last-known floor stats for the preview math
+const EARLY_TAX = 0.15;
+function buildTerms(){
+  const el = $('fcTerms'); if (!el) return;
+  el.innerHTML = LOCK_TERMS.map(t =>
+    `<button class="fc-term${t===fcTerm?' on':''}" type="button" role="radio" data-d="${t.days}"><span class="d">${t.label}</span><span class="m">${t.boost}</span></button>`
+  ).join('');
+  el.querySelectorAll('.fc-term').forEach(btn => btn.addEventListener('click', () => {
+    fcTerm = LOCK_TERMS.find(t => String(t.days) === btn.dataset.d) || fcTerm;
+    el.querySelectorAll('.fc-term').forEach(b => b.classList.toggle('on', b === btn));
+    fcPrev();
+  }));
+}
 function fcShowPos(f){
   const has = (f.mineEth || 0) > 0;
   $('fcPos').style.display = has ? 'block' : 'none';
@@ -461,17 +491,20 @@ function fcShowPos(f){
     $('fcPosPct').textContent = f.tvlEth ? ((f.mineEth/f.tvlEth)*100).toFixed(1)+'%' : '—';
     $('fcPosFees').textContent = (Math.round((f.earnedEth||0)*1e4)/1e4) + ' ETH';
     $('fcLock').textContent = f.unlockTxt || 'unlocked';
-    $('fcWithdraw').textContent = 'Withdraw position';
-    $('fcAdd').textContent = 'Add to position';
-  } else { $('fcAdd').textContent = 'Create position'; }
+    const locked = f.lockedTxt && !f.unlocked;
+    $('fcWithdraw').textContent = locked ? 'Withdraw early (15% penalty)' : 'Withdraw';
+    $('fcAdd').textContent = 'Add & re-lock';
+  } else { $('fcAdd').textContent = 'Lock liquidity'; }
 }
 window.fcPrev = function(){
   const amt = parseFloat($('fcInput').value) || 0;
   const el = $('fcPreview'); if (!el) return;
   if (amt <= 0 || !FLOOR){ el.textContent = ''; return; }
   const pct = (FLOOR.tvlEth + amt) > 0 ? (amt/(FLOOR.tvlEth + amt))*100 : 0;
-  const unlock = new Date(Date.now() + 2*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'});
-  el.innerHTML = `You'll create a <b>${amt} ETH</b> floor position · ~<b>${pct.toFixed(1)}%</b> of the pool · withdrawable <b>${unlock}</b>.`;
+  const term = fcTerm.days === 0
+    ? `locked <b>forever</b> (<b>${fcTerm.boost}</b> rewards)`
+    : `locked <b>${fcTerm.days}d</b> · unlocks <b>${new Date(Date.now() + fcTerm.days*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</b> (<b>${fcTerm.boost}</b>)`;
+  el.innerHTML = `Stake <b>${amt} ETH</b> → ~<b>${pct.toFixed(1)}%</b> of the pool · ${term}. Earns your share of every trade's fee.`;
 };
 function renderFloor(){
   const eth = (n) => (Math.round((n||0)*1e4)/1e4) + ' ETH';
@@ -482,7 +515,7 @@ function renderFloor(){
     $('fcFees').textContent = eth(f.feesPaidEth);
     $('fcMine').textContent = eth(f.mineEth);
     $('fcEarned').textContent = eth(f.earnedEth);
-    fcShowPos({ ...f, unlockTxt: 'unlocks in 1d 4h' });
+    fcShowPos({ ...f, unlockTxt: 'unlocks in 74d', lockedTxt: true, unlocked: false });
     fcPrev();
   } else if (COIN){
     ['fcTvl','fcFees','fcMine','fcEarned'].forEach(id=>$(id).textContent='—');
@@ -496,18 +529,20 @@ function renderFloor(){
 const _fcPreview = (msg) => alert(msg || 'Preview — this is live on the real site.');
 $('fcAdd').addEventListener('click', async () => {
   const amt = parseFloat($('fcInput').value) || 0; if (amt<=0) return setNote('Enter an ETH amount.', 'err');
-  if (DEMO) return _fcPreview('Preview — on the live site this adds ' + amt + ' ETH to the buy-wall and starts earning dip-buy fees.');
-  try { if(!Pad.account()){await Pad.connect();refreshConnect();} setNote('Adding to the floor…'); await (await Pad.floorDeposit(COIN.token, amt)).wait(); setNote('Added to the floor ✓','ok'); renderFloor(); }
+  const term = fcTerm.days === 0 ? 'forever' : fcTerm.days + ' days';
+  if (DEMO) return _fcPreview(`Preview — on the live site this stakes ${amt} ETH into the coin's real liquidity, locked for ${term}, and starts earning your share of every trade's fee.`);
+  try { if(!Pad.account()){await Pad.connect();refreshConnect();} setNote('Locking liquidity…'); await (await Pad.floorDeposit(COIN.token, amt, fcTerm.days)).wait(); setNote('Liquidity locked ✓','ok'); renderFloor(); }
   catch(e){ setNote(e.message,'err'); }
 });
 $('fcClaim').addEventListener('click', async () => {
-  if (DEMO) return _fcPreview('Preview — claims your accrued dip-buy fees (real ETH) to your wallet.');
-  try { setNote('Claiming floor fees…'); await (await Pad.floorClaim(COIN.token)).wait(); setNote('Claimed ✓','ok'); renderFloor(); } catch(e){ setNote(e.message,'err'); }
+  if (DEMO) return _fcPreview('Preview — claims your accrued trade-fee share (real ETH) to your wallet.');
+  try { setNote('Claiming fees…'); await (await Pad.floorClaim(COIN.token)).wait(); setNote('Claimed ✓','ok'); renderFloor(); } catch(e){ setNote(e.message,'err'); }
 });
 $('fcWithdraw').addEventListener('click', async () => {
-  if (DEMO) return _fcPreview('Preview — withdraws your stake after the 2-day cooldown. It sits below price, so it never dumps the coin.');
+  if (DEMO) return _fcPreview('Preview — after your lock ends you withdraw with no penalty. Before then, early exit returns your stake minus a 15% penalty.');
   try { setNote('Withdrawing…'); await (await Pad.floorWithdraw(COIN.token)).wait(); setNote('Withdrawn ✓','ok'); renderFloor(); } catch(e){ setNote(e.message,'err'); }
 });
+buildTerms();
 
 // ── animated candlestick backdrop for the chart placeholder (deterministic) ──
 function buildCandles(){
