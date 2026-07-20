@@ -65,7 +65,20 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .chart .hd .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
 .chart iframe{width:100%;height:440px;border:0;background:var(--bg-2)}
 .chart .ph{height:440px;display:grid;place-items:center;text-align:center;color:var(--ink-faint);padding:20px}
+.chart .ph{position:relative;overflow:hidden}
 .chart .ph .big{font-family:var(--disp);font-size:2rem;color:var(--ink-dim)}
+/* animated candlestick backdrop */
+.candles{position:absolute;inset:0;display:flex;align-items:stretch;justify-content:center;gap:7px;padding:26px 26px 34px;opacity:.55;pointer-events:none}
+.candle{position:relative;width:9px}
+.candle::before{content:"";position:absolute;left:50%;transform:translateX(-50%);width:2px;top:var(--wt);bottom:var(--wb);background:currentColor;opacity:.45}
+.candle .body{position:absolute;left:0;right:0;bottom:var(--b);height:var(--h);border-radius:2px;background:currentColor;box-shadow:0 0 9px currentColor;transform-origin:bottom;animation:candlegrow .8s cubic-bezier(.2,.7,.2,1) both}
+.candle.up{color:var(--green)}.candle.dn{color:var(--red)}
+@keyframes candlegrow{from{transform:scaleY(0);opacity:0}to{transform:scaleY(1);opacity:1}}
+.cline{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.cline path{fill:none;stroke:var(--lime);stroke-width:1.4;filter:drop-shadow(0 0 6px rgba(220,233,5,.6));stroke-dasharray:600;stroke-dashoffset:600;animation:cdraw 2.4s ease forwards .5s}
+@keyframes cdraw{to{stroke-dashoffset:0}}
+.ph-txt{position:relative;z-index:2;text-align:center;background:radial-gradient(ellipse 60% 60% at 50% 50%,rgba(13,15,7,.82),transparent 75%);padding:30px 40px;border-radius:20px}
+@media(prefers-reduced-motion:reduce){.candle .body{animation:none;transform:none}.cline path{animation:none;stroke-dashoffset:0}}
 .statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line-2);border-radius:12px;overflow:hidden;margin-top:16px;border:1px solid var(--line-2)}
 .statrow .s{background:var(--panel);padding:13px 14px}
 .statrow .k{font-size:.66rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint)}
@@ -143,7 +156,11 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
       <div class="chart">
         <div class="hd"><span class="dot"></span> DexScreener · live chart <span style="margin-left:auto" class="mono">Uniswap v3 · 1%</span></div>
         <iframe id="dex" title="DexScreener chart" loading="lazy" src="about:blank"></iframe>
-        <div class="ph" id="chartPh" style="display:none"><div><div class="big">DexScreener chart</div><div>Loads here from block one — the coin is a real Uniswap v3 pair.</div></div></div>
+        <div class="ph" id="chartPh" style="display:none">
+          <div class="candles" id="candles" aria-hidden="true"></div>
+          <svg class="cline" id="cline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path id="clinePath" d="" /></svg>
+          <div class="ph-txt"><div class="big">Live chart</div><div>Real Uniswap v3 pair — charts on DexScreener from block one.</div></div>
+        </div>
       </div>
       <div class="statrow">
         <div class="s"><div class="k">Market cap</div><div class="v" id="stMc">—</div></div>
@@ -383,10 +400,31 @@ function renderDemoCoin(){
   $('stStage').textContent = c.state === 'done' ? 'Graduated' : c.state === 'grad' ? 'Ready' : 'Bonding';
   $('stStage').className = 'v' + (c.state === 'done' ? ' g' : '');
   // chart: show the placeholder (no real DexScreener pair in demo)
-  $('dex').style.display = 'none'; $('chartPh').style.display = 'grid';
+  $('dex').style.display = 'none'; $('chartPh').style.display = 'grid'; buildCandles();
   renderBond({ graduated: c.state === 'done', ready: c.state === 'grad', progress: c.prog / 100,
     targetFrac: 0.4, minGradTick: -196200, gradTick: -170400 });
   loadTrades(); loadHolders(); renderBanner(); renderFees(c);
+}
+
+// ── animated candlestick backdrop for the chart placeholder (deterministic) ──
+function buildCandles(){
+  const wrap = $('candles'); if (!wrap || wrap.dataset.built) return; wrap.dataset.built = 1;
+  const N = 30; let price = 42, html = '', pts = [];
+  for (let i = 0; i < N; i++){
+    const open = price;
+    const drift = Math.sin(i * 0.55) * 3 + i * 0.5;               // gentle uptrend
+    const noise = ((i * 37) % 13) - 6;                            // deterministic wiggle
+    price = Math.max(10, Math.min(86, open + drift * 0.18 + noise));
+    const close = price, up = close >= open;
+    const bt = Math.max(open, close), bb = Math.min(open, close);
+    const hi = Math.min(94, bt + Math.abs(noise) * 0.7 + 3), lo = Math.max(6, bb - Math.abs(noise) * 0.7 - 3);
+    html += `<div class="candle ${up?'up':'dn'}" style="--b:${bb}%;--h:${Math.max(3,bt-bb)}%;--wt:${100-hi}%;--wb:${lo}%">`
+          + `<div class="body" style="animation-delay:${i*38}ms"></div></div>`;
+    pts.push([ (i/(N-1))*100, 100 - (open+close)/2 ]);            // price line in svg coords (y inverted)
+  }
+  wrap.innerHTML = html;
+  const path = $('clinePath');
+  if (path) path.setAttribute('d', 'M' + pts.map(p => p[0].toFixed(1)+','+p[1].toFixed(1)).join(' L'));
 }
 
 // ── trending-tokens marquee in the banner ──
