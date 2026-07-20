@@ -649,7 +649,7 @@ let session = 0, offset = 0, done = false, busy = false;
 // mode never touches this — it pages the indexer instead.
 const UNIVERSE = (() => {
   if (!DEMO) return [];
-  const base = DEMO_COINS.map((c) => ({ ...c, mcUsd: c.mc, volUsd: c.vol }));
+  const base = DEMO_COINS.map((c) => ({ ...c, mcUsd: c.mc, volUsd: c.vol, phase: c.i }));
   const words = ['Turbo','Based','Moon','Giga','Hyper','Degen','Alpha','Sigma','Ultra','Mega','Astro','Cyber','Diamond','Rocket','Golden','Silver','Neon','Pixel','Quantum','Cosmic','Feral','Rogue','Noble','Wild'];
   const out = base.slice();
   const N = 480;
@@ -671,18 +671,22 @@ const UNIVERSE = (() => {
       holders: Math.max(40, Math.round(mc / (30 + (h % 40)))),
       chg: ((h % 4000) / 10) - 120,
       at: nz(b.at) - i * 3100,
+      phase: i,
     });
   }
   return out;
 })();
 
+let demoPulse = 0; // advances each trending re-poll so the demo board visibly reshuffles like a live one
 const SORTERS = {
-  trending: (a,b) => (nz(b.chg) - nz(a.chg)) || (cVol(b) - cVol(a)),
   new:      (a,b) => cNew(b) - cNew(a),
   old:      (a,b) => cNew(a) - cNew(b),
   top:      (a,b) => cMc(b) - cMc(a),
   progress: (a,b) => cProg(b) - cProg(a),
 };
+// Trending score. Live: real momentum (chg) then volume. Demo: add a per-coin drift keyed to demoPulse
+// so re-polling actually moves the ranks — a stand-in for the volume changing between fetches.
+const trendScore = (c) => nz(c.chg) + (DEMO ? 9 * Math.sin(demoPulse * 0.6 + nz(c.phase) * 0.7) : 0);
 // Emulate the indexer over the demo universe: filter → sort → page slice.
 function demoQuery({ sort, filter, q, offset, limit }) {
   let list = UNIVERSE.slice();
@@ -690,7 +694,8 @@ function demoQuery({ sort, filter, q, offset, limit }) {
   if (filter === 'live') list = list.filter(c => !cGrad(c));
   else if (filter === 'graduated') list = list.filter(cGrad);
   else if (filter === 'final') list = list.filter(c => !cGrad(c) && cProg(c) >= 70);
-  list.sort(SORTERS[sort] || SORTERS.new);
+  if (sort === 'trending') list.sort((a,b) => trendScore(b) - trendScore(a) || cVol(b) - cVol(a));
+  else list.sort(SORTERS[sort] || SORTERS.new);
   return { coins: list.slice(offset, offset + limit), total: list.length };
 }
 async function boardQuery(args) {
@@ -720,9 +725,10 @@ function syncFooter() {
   $('fcount').textContent = n ? (done ? `${n} shown` : `${n}+ shown`) : '';
 }
 
-function resetBoard() {
+function resetBoard(opts) {
   session++; offset = 0; done = false; busy = false;
-  $('board').innerHTML = Array.from({length:8}, () => '<div class="bskel"></div>').join('');
+  // soft reset (a live re-poll) repaints in place with no skeleton flash; a hard reset (tab/search) shows it
+  if (!opts || !opts.soft) $('board').innerHTML = Array.from({length:8}, () => '<div class="bskel"></div>').join('');
   syncFooter();
   loadNext();
 }
@@ -782,6 +788,18 @@ async function initBoard() {
 // infinite scroll: observe the sentinel; each time it enters view, pull the next page
 new IntersectionObserver((es) => { if (es.some(e => e.isIntersecting)) loadNext(); }, { rootMargin:'400px' }).observe($('bsentinel'));
 $('bmore').addEventListener('click', loadNext);
+
+// live trending: re-poll the top strip so ranks shift as volume moves, like a real board. Also softly
+// refresh the grid — but ONLY when the user is idle at the top of the Trending tab with no search open,
+// so we never yank cards out from under an active scroll or a different filter.
+async function refreshTrending() {
+  if (document.hidden) return;
+  demoPulse++;
+  const r = await boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:14 });
+  renderTicker(r.coins);
+  if (curFilter.key === 'trending' && !curQ && !busy && window.scrollY < 240) resetBoard({ soft:true });
+}
+setInterval(refreshTrending, 20000);
 let _qt; $('fq').addEventListener('input', () => { clearTimeout(_qt); _qt = setTimeout(() => { curQ = ($('fq').value||'').trim(); resetBoard(); }, 220); });
 
 async function loadStats(){
