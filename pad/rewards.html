@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Robin Labs — Rewards</title>
+<meta name="description" content="Robin Labs pays you to trade and to hold. Every trade funds real-ETH rewards for net-volume traders and diamond-hand holders — and deepens a floor that buys every dip. Claim on-site; you keep the ETH." />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<meta name="theme-color" content="#060803" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#060803; --bg-2:#0a0e05; --ink:#f4f7ee; --dim:#93a382;
+    --lime:#dce905; --lime-2:#a6e017; --lime-deep:#7fae00;
+    --up:#8bea3c; --down:#ff6b57; --violet:#8a63e0;
+    --glow:0 0 22px rgba(220,233,5,.45);
+    --line:rgba(220,233,5,.28); --line-2:rgba(220,233,5,.14); --line-strong:rgba(220,233,5,.4);
+    --disp:"Bebas Neue",Oswald,Impact,sans-serif;
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto} *{animation:none!important;transition:none!important}}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden;
+    background-image:radial-gradient(circle at 50% -10%,rgba(220,233,5,.09),transparent 45%),
+      linear-gradient(rgba(220,233,5,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(220,233,5,.03) 1px,transparent 1px);
+    background-size:auto,42px 42px,42px 42px}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 22px}
+  h1,h2,h3,.disp{font-family:var(--disp);font-weight:400;text-transform:uppercase;letter-spacing:.01em;margin:0;line-height:.95}
+  a{color:inherit;text-decoration:none}
+  .lime{color:var(--lime)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:800;font-size:.95rem;border-radius:12px;padding:13px 22px;cursor:pointer;border:1px solid transparent;transition:.16s;font-family:var(--sans)}
+  .btn-lime{background:var(--lime);color:#0a0e05;box-shadow:var(--glow)}
+  .btn-lime:hover{transform:translateY(-2px);box-shadow:0 0 30px rgba(220,233,5,.75)}
+  .btn-ghost{border-color:var(--line);color:var(--ink)}
+  .btn-ghost:hover{background:rgba(220,233,5,.08);border-color:var(--lime)}
+  .btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+
+  .mark{display:inline-flex;align-items:center;gap:12px}
+  .mark img{width:34px;height:34px;filter:drop-shadow(var(--glow))}
+  .mark .wm{font-family:var(--disp);font-size:1.35rem;letter-spacing:.2em;padding-left:.1em}
+  .mark .wm small{display:block;font-size:.5em;letter-spacing:.5em;color:var(--lime);margin-top:-4px}
+  header.nav{position:sticky;top:0;z-index:30;backdrop-filter:blur(10px);background:rgba(6,8,3,.72);border-bottom:1px solid var(--line-2)}
+  .nav-in{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;max-width:1120px;margin:0 auto}
+  .nav .links{display:flex;gap:20px;align-items:center;font-size:.9rem;color:var(--dim)}
+  .nav .links a:hover{color:var(--lime)}
+  .nav .links a.on{color:var(--lime)}
+  @media(max-width:720px){.nav .links a:not(.btn){display:none}}
+
+  .head{padding:40px 0 6px}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.32em;color:var(--lime);text-transform:uppercase}
+  .head h1{font-size:clamp(2.5rem,6.6vw,4.3rem);margin-top:12px}
+  .head h1 .g{color:var(--lime);text-shadow:0 0 34px rgba(220,233,5,.4)}
+  .head p{max-width:62ch;color:#cfd6c4;margin:14px 0 0;font-size:1.06rem;line-height:1.55}
+  .head p b{color:var(--ink)}
+  .live{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;margin-top:16px;border:1px solid var(--line-2);border-radius:999px;padding:5px 12px}
+  .live .dot{width:8px;height:8px;border-radius:50%;background:var(--up);box-shadow:0 0 8px var(--up);animation:pulse 1.8s infinite}
+  .live.demo .dot{background:var(--lime);box-shadow:0 0 8px var(--lime)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* engine cards */
+  .engine{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:30px 0 8px}
+  @media(max-width:820px){.engine{grid-template-columns:1fr}}
+  .ecard{border:1.5px solid var(--line-2);border-radius:18px;background:linear-gradient(180deg,rgba(220,233,5,.05),rgba(220,233,5,.01));padding:22px;position:relative;overflow:hidden}
+  .ecard .ico{font-size:1.5rem;width:44px;height:44px;display:grid;place-items:center;border-radius:12px;background:rgba(220,233,5,.1);border:1px solid var(--line-2);margin-bottom:14px}
+  .ecard h3{font-size:1.5rem}
+  .ecard .pct{font-family:var(--mono);color:var(--lime);font-size:.8rem;letter-spacing:.12em;margin:4px 0 10px}
+  .ecard p{color:#c3ccb6;font-size:.95rem;line-height:1.5;margin:0}
+  .ecard .tag{display:inline-block;margin-top:12px;font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;color:var(--up);text-transform:uppercase;border:1px solid rgba(139,234,60,.3);border-radius:999px;padding:3px 9px}
+  .ecard.floor .ico{background:rgba(138,99,224,.14);border-color:rgba(138,99,224,.3)}
+  .ecard.floor .pct,.ecard.floor h3 .a{color:var(--violet)}
+
+  /* claim panel */
+  .panel{border:1.5px solid var(--line-2);border-radius:20px;background:rgba(9,13,5,.6);padding:22px;margin:20px 0}
+  .panel-h{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  .panel-h h2{font-size:1.9rem}
+  .panel-h .sub{color:var(--dim);font-size:.9rem;margin-top:4px}
+  .epoch{font-family:var(--mono);font-size:.74rem;letter-spacing:.1em;color:var(--dim);text-align:right}
+  .epoch b{color:var(--lime)}
+
+  .claimbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:linear-gradient(90deg,rgba(220,233,5,.09),rgba(138,99,224,.06));border:1px solid var(--line-strong);border-radius:16px;padding:18px 20px;margin:14px 0 18px}
+  .claimbar .tot{font-family:var(--disp);font-size:2.6rem;line-height:1;color:var(--lime);text-shadow:0 0 28px rgba(220,233,5,.35)}
+  .claimbar .lbl{font-family:var(--mono);font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+
+  .rows{display:flex;flex-direction:column;gap:8px}
+  .rrow{display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;align-items:center;border:1px solid var(--line-2);border-radius:14px;padding:12px 14px;background:rgba(220,233,5,.02)}
+  .rrow .av{width:38px;height:38px;border-radius:10px;object-fit:cover;background:#141a0b}
+  .rrow .nm{font-weight:700}
+  .rrow .meta{font-size:.8rem;color:var(--dim)}
+  .rrow .side{font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:999px;border:1px solid var(--line-2)}
+  .rrow .side.t{color:var(--lime);border-color:var(--line)}
+  .rrow .side.h{color:var(--violet);border-color:rgba(138,99,224,.4)}
+  .rrow .amt{font-family:var(--disp);font-size:1.5rem;color:var(--ink);text-align:right}
+  .rrow .amt small{display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;color:var(--dim)}
+  .rrow .claim{padding:9px 16px;font-size:.85rem;border-radius:10px}
+  @media(max-width:640px){.rrow{grid-template-columns:auto 1fr auto}.rrow .side{display:none}}
+
+  .pending{margin-top:16px;border-top:1px dashed var(--line-2);padding-top:14px}
+  .pending .ph{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .prow{display:flex;align-items:center;justify-content:space-between;padding:8px 4px;font-size:.92rem;border-bottom:1px solid var(--line-2)}
+  .prow:last-child{border-bottom:0}
+  .prow .r{color:var(--dim);font-family:var(--mono);font-size:.85rem}
+
+  .empty{text-align:center;padding:34px 16px;color:var(--dim)}
+  .empty .big{font-family:var(--disp);font-size:1.6rem;color:var(--ink);margin-bottom:6px}
+
+  /* fee flow */
+  .flow{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;margin:22px 0}
+  @media(max-width:820px){.flow{grid-template-columns:1fr}}
+  .flowbars{display:flex;flex-direction:column;gap:12px;margin-top:8px}
+  .fb{}
+  .fb .top{display:flex;justify-content:space-between;font-size:.86rem;margin-bottom:5px}
+  .fb .top b{font-family:var(--mono)}
+  .fb .track{height:12px;border-radius:999px;background:rgba(255,255,255,.05);overflow:hidden}
+  .fb .fill{height:100%;border-radius:999px}
+  .totcards{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .tc{border:1.5px solid var(--line-2);border-radius:14px;background:linear-gradient(180deg,rgba(220,233,5,.05),transparent);padding:14px}
+  .tc .k{font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .tc .v{font-family:var(--disp);font-size:2rem;margin-top:4px}
+  .tc .v.vio{color:var(--violet)}
+
+  .note{color:var(--dim);font-size:.84rem;text-align:center;margin:18px 0 8px}
+  .note b{color:var(--lime)}
+
+  footer{border-top:1px solid var(--line-2);margin-top:40px;padding:22px 0}
+  .foot-in{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;color:var(--dim);font-size:.85rem}
+  .foot-in .mid b{color:var(--lime)}
+  .socs{display:inline-flex;align-items:center;gap:12px}
+  .socs a:hover{color:var(--lime)}
+</style>
+</head>
+<body>
+
+<header class="nav"><div class="nav-in">
+  <a class="mark" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" /><span class="wm">ROBIN<small>LABS</small></span></a>
+  <div class="links">
+    <a href="index.html">Coins</a>
+    <a href="rewards.html" class="on">Rewards</a>
+    <a href="stats.html">Stats</a>
+    <a href="docs.html">Docs</a>
+    <a class="btn btn-lime" id="connectBtn" href="#">Connect Wallet</a>
+  </div>
+</div></header>
+
+<main class="wrap">
+  <section class="head">
+    <div class="eyebrow">Rewards · Real ETH · No lockups</div>
+    <h1>Get paid to trade.<br /><span class="g">Get paid to hold.</span></h1>
+    <p>Every trade on Robin Labs pays a little forward. <b>0.25% of each buy</b> goes to the coin's real, net-volume traders; <b>0.25% of each sell</b> goes to its diamond-hand holders — paid in <b>real ETH</b> you claim right here. Whatever nobody claims deepens a floor that <b>buys every dip, forever</b>.</p>
+    <div id="live" class="live"><span class="dot"></span><span id="liveTxt">Live reward index</span></div>
+  </section>
+
+  <!-- THE ENGINE -->
+  <section class="engine">
+    <div class="ecard">
+      <div class="ico">🏹</div>
+      <h3>Trader rewards</h3>
+      <div class="pct">+0.25% OF EVERY BUY</div>
+      <p>Split across everyone who actually <b>net-accumulated</b> the coin this epoch, by size. Buy-and-flip nets to zero, so wash trading earns nothing — only real conviction gets paid.</p>
+      <span class="tag">Wash-proof · net volume</span>
+    </div>
+    <div class="ecard">
+      <div class="ico">💎</div>
+      <h3>Holder rewards</h3>
+      <div class="pct">+0.25% OF EVERY SELL</div>
+      <p>Split by <b>size × time held</b> (balance-seconds). Hold bigger and longer, earn more. Flash-holding for a snapshot earns almost nothing — the reward is the whole epoch's integral.</p>
+      <span class="tag">Diamond hands win</span>
+    </div>
+    <div class="ecard floor">
+      <div class="ico">🌲</div>
+      <h3>Floor <span class="a">grows forever</span></h3>
+      <div class="pct">UNCLAIMED → BOND BOUNTY</div>
+      <p>Rewards nobody claims don't go to us — they top up that coin's <b>protocol-owned buy-wall</b>, a floor that can't be rugged and steps up with every trade. Dead rewards become permanent price support.</p>
+      <span class="tag">Can't be pulled</span>
+    </div>
+  </section>
+
+  <!-- YOUR REWARDS -->
+  <section class="panel">
+    <div class="panel-h">
+      <div>
+        <h2>Your rewards</h2>
+        <div class="sub" id="subTxt">Connect your wallet to see what you can claim.</div>
+      </div>
+      <div class="epoch" id="epochBox"></div>
+    </div>
+
+    <div class="claimbar" id="claimbar" style="display:none">
+      <div>
+        <div class="lbl">Claimable now</div>
+        <div class="tot" id="claimTot">0 ETH</div>
+      </div>
+      <button class="btn btn-lime" id="claimAll">Claim all →</button>
+    </div>
+
+    <div class="rows" id="rows"></div>
+
+    <div class="pending" id="pendingBox" style="display:none">
+      <div class="ph">⏳ Accruing this epoch — claimable once it closes</div>
+      <div id="pendingRows"></div>
+    </div>
+  </section>
+
+  <!-- FEE FLOW -->
+  <section class="flow">
+    <div class="panel" style="margin:0">
+      <h2 style="font-size:1.5rem">Where every trade goes</h2>
+      <div class="sub" style="color:var(--dim);font-size:.9rem;margin-top:4px">Per 1.25% side fee — additive, never a token transfer tax.</div>
+      <div class="flowbars">
+        <div class="fb"><div class="top"><span>Platform / creator</span><b>1.00%</b></div><div class="track"><div class="fill" style="width:80%;background:linear-gradient(90deg,#6f7a12,#a6e017)"></div></div></div>
+        <div class="fb"><div class="top"><span>🏹 Trader rewards <i style="color:var(--dim)">(buys)</i></span><b>0.25%</b></div><div class="track"><div class="fill" style="width:20%;background:var(--lime)"></div></div></div>
+        <div class="fb"><div class="top"><span>💎 Holder rewards <i style="color:var(--dim)">(sells)</i></span><b>0.25%</b></div><div class="track"><div class="fill" style="width:20%;background:var(--violet)"></div></div></div>
+      </div>
+      <p class="note" style="text-align:left;margin-top:16px">The token itself stays clean — no tax in <code style="font-family:var(--mono);color:var(--lime)">transfer()</code>, so it never trips a honeypot flag. The reward legs are carved at the swap desk and paid out separately.</p>
+    </div>
+    <div>
+      <div class="totcards" id="totcards"></div>
+    </div>
+  </section>
+
+  <p class="note" id="footNote"></p>
+</main>
+
+<footer><div class="wrap foot-in">
+  <span>🌐 robinlabs.io</span>
+  <span class="mid">Trade. Hold. <b>Get paid.</b></span>
+  <span class="socs">
+    <a href="https://x.com/robinlabzz" target="_blank" rel="noopener" aria-label="X (Twitter)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+    <a href="https://t.me/RobinLabs" target="_blank" rel="noopener" aria-label="Telegram"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.329-.913.489-1.302.481-.428-.009-1.252-.242-1.865-.44-.752-.244-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg></a>
+    <span>@robinlabzz</span>
+  </span>
+</div></footer>
+
+<script type="module">
+import * as Pad from './assets/wallet.js';
+import { DEMO, DEMO_REWARDS, DEMO_COINS } from './assets/demo.js';
+
+const $ = (id) => document.getElementById(id);
+const fmtEth = (n) => (Math.round((n||0)*1e4)/1e4).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:4}) + " ETH";
+const imgFor = (sym) => { const c = DEMO_COINS.find(x => x.symbol === sym); return c ? c.image : null; };
+const tokFor = (sym) => { const c = DEMO_COINS.find(x => x.symbol === sym); return c ? c.token : ''; };
+const esc = (x) => String(x==null?'':x).replace(/[<>&"]/g,(c)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+// demo banner + live pill
+if (DEMO) $('live').classList.add('demo'), $('liveTxt').textContent = 'Preview — sample rewards';
+
+const av = (sym) => { const s = imgFor(sym); return s
+  ? `<img class="av" src="${esc(s)}" alt="" onerror="this.style.visibility='hidden'" />`
+  : `<div class="av" style="display:grid;place-items:center;font-weight:800;color:#0a0e05;background:linear-gradient(135deg,#dce905,#8a63e0)">${esc(sym.slice(0,2))}</div>`; };
+
+function fmtCountdown(s){ s=Math.max(0,s|0); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60); return h+'h '+m+'m'; }
+
+function renderTotals(t){
+  $('totcards').innerHTML = `
+    <div class="tc"><div class="k">Real ETH paid</div><div class="v lime">${(t.paidEth||0).toFixed(1)}</div></div>
+    <div class="tc"><div class="k">Claimants</div><div class="v">${(t.claimants||0).toLocaleString()}</div></div>
+    <div class="tc"><div class="k">🏹 To traders</div><div class="v">${(t.tradersEth||0).toFixed(1)}</div></div>
+    <div class="tc"><div class="k">💎 To holders</div><div class="v vio">${(t.holdersEth||0).toFixed(1)}</div></div>`;
+}
+
+let CLAIMABLE = []; // the current wallet's claimable rows (each carries the live claim descriptor)
+
+function claimRow(r, i){
+  const sideCls = r.side === 'Holders' ? 'h' : 't';
+  const sideIco = r.side === 'Holders' ? '💎' : '🏹';
+  return `<div class="rrow" data-eth="${r.eth}">
+    ${av(r.sym)}
+    <div><div class="nm">${esc(r.name)} <span style="color:var(--dim)">$${esc(r.sym)}</span></div>
+      <div class="meta">Epoch ${r.epoch} · ${esc(r.reason||'')}</div></div>
+    <span class="side ${sideCls}">${sideIco} ${esc(r.side)}</span>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="amt">${fmtEth(r.eth)}<small>claimable</small></div>
+      <button class="btn btn-lime claim" data-i="${i}">Claim</button>
+    </div>
+  </div>`;
+}
+
+function renderClaimable(list){
+  CLAIMABLE = list || [];
+  const rows = $('rows');
+  if (!CLAIMABLE.length){
+    $('claimbar').style.display = 'none';
+    rows.innerHTML = `<div class="empty"><div class="big">Nothing to claim yet</div>Trade or hold a Robin Labs coin, and your rewards land here after each epoch closes.</div>`;
+    return;
+  }
+  const tot = CLAIMABLE.reduce((a,r)=>a+r.eth,0);
+  $('claimbar').style.display = 'flex';
+  $('claimTot').textContent = fmtEth(tot);
+  rows.innerHTML = CLAIMABLE.map(claimRow).join('');
+  rows.querySelectorAll('.claim').forEach(b => b.addEventListener('click', onClaim));
+  $('claimAll').onclick = onClaimAll;
+}
+
+function renderPending(list){
+  if (!list || !list.length){ $('pendingBox').style.display='none'; return; }
+  $('pendingBox').style.display = 'block';
+  $('pendingRows').innerHTML = list.map(p =>
+    `<div class="prow"><span>${p.side==='Holders'?'💎':'🏹'} ${esc(p.name)} <span style="color:var(--dim)">$${esc(p.sym)}</span> · ${esc(p.side)}</span><span class="r">+${fmtEth(p.eth)}</span></div>`
+  ).join('');
+}
+
+async function onClaim(e){
+  const btn = e.currentTarget;
+  if (DEMO){ alert('Preview — on the live site this sends a claim transaction (you pay gas) and the ETH lands in your wallet.'); return; }
+  const c = CLAIMABLE[+btn.dataset.i];
+  try { btn.disabled = true; btn.textContent = 'Claiming…'; await Pad.claimReward(c); btn.textContent = '✔ Claimed'; }
+  catch(err){ btn.disabled = false; btn.textContent = 'Claim'; alert(err.message || 'Claim failed'); }
+}
+async function onClaimAll(){
+  if (DEMO){ alert('Preview — on the live site this batches all your claims into one signature.'); return; }
+  try { await Pad.claimAllRewards(CLAIMABLE); location.reload(); } catch(err){ alert(err.message || 'Claim failed'); }
+}
+
+// wallet button
+const cbtn = $('connectBtn');
+const refreshBtn = () => { const a = Pad.account(); cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; };
+cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (DEMO){ alert('Preview build — connect your wallet on the live site.'); return; } try { await Pad.connect(); refreshBtn(); load(); } catch(err){ alert(err.message); } });
+window.addEventListener('robinpad:ready', refreshBtn); refreshBtn();
+
+async function load(){
+  if (DEMO){
+    const d = DEMO_REWARDS;
+    $('subTxt').innerHTML = 'Showing a sample wallet — <b style="color:var(--lime)">5 rewards</b> ready to claim.';
+    $('epochBox').innerHTML = `Epoch <b>${d.epoch}</b> · closes in <b>${fmtCountdown(d.epochEndsIn)}</b><br />claims open ${d.claimWindowH}h after each epoch ends`;
+    renderClaimable(d.claimable);
+    renderPending(d.pending);
+    renderTotals(d.totals);
+    $('footNote').innerHTML = 'Sample data. On the live pad, rewards are computed from the on-chain index each epoch and claimed with a single signature — <b>you keep 100% of the ETH</b> (minus the gas you pay to claim).';
+    return;
+  }
+  // live
+  const a = Pad.account();
+  if (!a){
+    $('subTxt').textContent = 'Connect your wallet to see what you can claim.';
+    renderClaimable([]); renderPending([]);
+    try { renderTotals(await Pad.rewardStats() || {}); } catch { renderTotals({}); }
+    return;
+  }
+  try {
+    const r = await Pad.rewards(a); // { claimable:[], pending:[], epoch, epochEndsIn, claimWindowH, totals }
+    $('subTxt').textContent = r.claimable && r.claimable.length ? 'Ready to claim.' : 'No rewards yet — trade or hold to earn.';
+    if (r.epoch) $('epochBox').innerHTML = `Epoch <b>${r.epoch}</b> · closes in <b>${fmtCountdown(r.epochEndsIn||0)}</b>`;
+    renderClaimable(r.claimable || []);
+    renderPending(r.pending || []);
+    renderTotals(r.totals || {});
+  } catch(err){
+    $('subTxt').textContent = 'Could not load rewards. Try again shortly.';
+    renderClaimable([]); renderTotals({});
+  }
+}
+load();
+</script>
+</body>
+</html>

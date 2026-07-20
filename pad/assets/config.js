@@ -34,6 +34,11 @@ export const CONTRACTS = {
   // Uniswap periphery, so THIS is the router every trade goes through — LIVE.
   padRouter: "0xAEFE708e04D3E2e9609e6bC987903b31818C2a46",
 
+  // Our RewardVault — custodies the additive 0.25% trader + 0.25% holder legs and
+  // pays capped, Merkle-proven claims in real ETH. Empty until the reward system
+  // ships alongside the next router deploy; the frontend stays inert until it's set.
+  rewardVault: "",
+
   // The platform's buy-back token + its WETH pool (for links / a future buy widget).
   // The above-default fee's 25% cut is paid to the platform, which buys+burns the
   // platform token off-chain — the router does not swap it on-chain. TBD for Robin Labs.
@@ -78,6 +83,15 @@ export const ABIS = {
     "function bondOf(address) view returns (address)",
     "function withdrawDev(address token)",
     "function burnDev(address token)",
+  ],
+  // Our RewardVault — capped, Merkle-proven claims for the 0.25% trader/holder legs.
+  // The claim is a pure verify + capped ETH transfer; the indexer serves the proof.
+  rewardVault: [
+    "function claim(uint256 epoch, address coin, uint8 side, uint256 amount, bytes32[] proof)",
+    "function pot(address coin, uint256 epoch) view returns (uint128 traderPot, uint128 holderPot)",
+    "function currentEpoch() view returns (uint256)",
+    "function EPOCH() view returns (uint256)",
+    "event Claimed(uint256 indexed epoch, address indexed coin, address indexed user, uint8 side, uint256 amount)",
   ],
   // The CurvePool — the bonding curve + graduation. Read progress, drive the
   // graduate button + the dev's auto-graduate target.

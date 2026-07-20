@@ -74,6 +74,30 @@ export const DEMO_STATS = {
   mcapCreatedUsd: 84e6, totalVolumeUsd: 212e6,
 };
 
+// Reward-engine demo data for the Rewards page. Models the additive fee legs: every trade pays an
+// extra 0.25% to net-volume TRADERS and 0.25% to size×time HOLDERS of that coin, claimable as real ETH
+// (users pay their own gas). These are sample values so the claim UI renders populated in preview.
+export const DEMO_REWARDS = {
+  epoch: 19_631, // current epoch index (1-day epochs)
+  epochEndsIn: 4 * 3600 + 12 * 60, // seconds until this epoch closes
+  claimWindowH: 48, // challenge window before an ended epoch's rewards open
+  // protocol-wide, all-time
+  totals: { paidEth: 158.0, tradersEth: 84.3, holdersEth: 73.7, floorGrownEth: 41.2, claimants: 3120 },
+  // the connected wallet's CLAIMABLE rewards (past epochs, finalized) — one row per (coin, side, epoch)
+  claimable: [
+    { sym: "PENGU", name: "Pudgy Penguins", token: "", side: "Holders", epoch: 19_629, eth: 0.0412, reason: "held 74M for 22h" },
+    { sym: "PENGU", name: "Pudgy Penguins", token: "", side: "Traders", epoch: 19_629, eth: 0.0231, reason: "net +74M bought" },
+    { sym: "SPX", name: "SPX6900", token: "", side: "Traders", epoch: 19_630, eth: 0.0186, reason: "net +51M bought" },
+    { sym: "BONK", name: "Bonk", token: "", side: "Holders", epoch: 19_630, eth: 0.0093, reason: "held 33M for 15h" },
+    { sym: "WIF", name: "dogwifhat", token: "", side: "Holders", epoch: 19_628, eth: 0.0067, reason: "held 6.8M full epoch" },
+  ],
+  // the wallet's rewards ACCRUING this (not-yet-finalized) epoch — pending, not claimable until it ends
+  pending: [
+    { sym: "SPX", name: "SPX6900", side: "Traders", eth: 0.0074 },
+    { sym: "BONK", name: "Bonk", side: "Holders", eth: 0.0031 },
+  ],
+};
+
 // Daily analytics series for the stats page (demo values). Deterministic — a
 // gentle upward trend with a mid-window viral spike, so the preview charts look
 // like a launchpad finding traction. The live pad draws the real series.

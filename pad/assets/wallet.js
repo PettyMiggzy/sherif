@@ -537,6 +537,53 @@ export async function feeTotals(token) {
   } catch { return null; }
 }
 
+// ── reward engine (the 0.25% trader + 0.25% holder legs) ────────────────────
+// The chain custodies the ETH and caps it; the indexer computes each wallet's
+// exact net-volume (traders) and balance-seconds (holders) per epoch and serves
+// the Merkle proofs. So the browser READS claimable rewards from the indexer API
+// and SPENDS a plain RewardVault.claim() per leaf (user pays their own gas).
+
+/// Everything a wallet can claim + what's still accruing this epoch.
+/// Shape: { epoch, epochEndsIn, claimWindowH, claimable:[{coin,name,sym,side,epoch,eth,amount,proof}],
+///          pending:[{sym,name,side,eth}], totals:{...} }. Empty (not thrown) when no indexer is set.
+export async function rewards(addr) {
+  const who = addr || _account;
+  if (!who) return { claimable: [], pending: [], totals: {} };
+  try { return await apiGet(`/api/rewards/${who}`); }
+  catch { return { claimable: [], pending: [], totals: {} }; }
+}
+
+/// Protocol-wide reward totals for the page header (indexer only; {} without one).
+export async function rewardStats() {
+  try { return await apiGet(`/api/rewards/stats`); } catch { return {}; }
+}
+
+/// Claim ONE reward leaf. `c` is a row from rewards().claimable — it carries the
+/// epoch, coin, side (0=Traders,1=Holders), amount (wei) and Merkle proof the
+/// indexer served. A pure verify + capped ETH transfer on-chain; the user signs
+/// one clean tx and keeps the ETH.
+export async function claimReward(c) {
+  requireRewardVault();
+  if (!_signer) await connect();
+  const vault = new ethers.Contract(CONTRACTS.rewardVault, ABIS.rewardVault, _signer);
+  return guardedSend(vault, "claim", [c.epoch, c.coin, c.side, c.amount, c.proof], 0n, "Claim reward");
+}
+
+/// Claim EVERY available leaf. Sends them sequentially (one signature each) —
+/// swap for a multicall once the vault ships one. Returns the count claimed.
+export async function claimAllRewards(list) {
+  requireRewardVault();
+  const rows = list || (await rewards(_account)).claimable || [];
+  let n = 0;
+  for (const c of rows) { await claimReward(c); n++; }
+  return n;
+}
+
+function requireRewardVault() {
+  if (!isDeployed("rewardVault"))
+    throw new Error("Rewards open when the Pad goes live — the vault isn't set yet (pre-deploy audit).");
+}
+
 // expose a tiny global for the plain-HTML pages (no bundler)
 if (typeof window !== "undefined") {
   window.RobinPad = {
@@ -545,6 +592,7 @@ if (typeof window !== "undefined") {
     curveInfo, devEscrow, graduate, setGradTarget, withdrawDev, burnDev, listCoins, tokenMeta,
     feed, stats, recentTrades, hasApi,
     holders, trades, chainTrades, feeTotals,
+    rewards, rewardStats, claimReward, claimAllRewards,
   };
   window.SheriffPad = window.RobinPad; // back-compat alias for existing pages
   window.dispatchEvent(new Event("robinpad:ready"));
