@@ -54,6 +54,8 @@ textarea.inp{resize:vertical;min-height:88px}
 input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
 .devbuy .sc{display:flex;justify-content:space-between;color:var(--ink-faint);font-size:.72rem}
 .devbuy p{color:var(--ink-dim);font-size:.8rem;margin:8px 0 0}
+#dbPresets button{background:var(--bg);border:1px solid var(--line-2);border-radius:9px;padding:8px 6px;color:var(--ink-dim);font-weight:700;font-size:.82rem;cursor:pointer;font-family:var(--sans);transition:.14s}
+#dbPresets button:hover{border-color:var(--line-strong);color:var(--ink);background:rgba(220,233,5,.06)}
 .alloc-row{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:.82rem}
 .alloc-row span{flex:0 0 168px}.alloc-row input[type=range]{flex:1;margin:0}.alloc-row b{flex:0 0 42px;text-align:right;color:var(--lime)}
 .tax-tot.bad{color:var(--red)}.tax-tot.ok{color:var(--green)}
@@ -114,12 +116,19 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
       </div>
 
       <div class="field">
-        <label>Dev buy <span class="hint">get your bag before the snipers — capped at 2%</span></label>
+        <label>Dev buy <span class="hint">get your bag before the snipers — no cap</span></label>
         <div class="devbuy">
-          <div class="hd"><span style="font-weight:700">Your first buy</span><span class="amt" id="dbAmt">0.5%</span></div>
-          <input type="range" id="db" min="0" max="2" step="0.1" value="0.5" oninput="dbSync()" />
-          <div class="sc"><span>0% (none)</span><span>2% (max)</span></div>
-          <p id="dbNote">≈ 5,000,000 $TICKER at launch price. Paid in ETH, in the same transaction, before trading opens — so you're never sniped on your own coin.</p>
+          <div class="hd"><span style="font-weight:700">Your first buy</span><span class="amt" id="dbAmt">0.5 ETH</span></div>
+          <input type="number" id="db" min="0" step="0.1" value="0.5" oninput="dbSync()"
+            style="width:100%;background:var(--bg);border:1px solid var(--line-2);border-radius:10px;padding:12px 14px;color:var(--ink);font-size:1.05rem;font-family:var(--mono)" placeholder="0.0" inputmode="decimal" />
+          <div class="sc" id="dbPresets" style="gap:8px;margin-top:8px">
+            <button type="button" data-eth="0" style="flex:1">None</button>
+            <button type="button" data-eth="0.25" style="flex:1">0.25</button>
+            <button type="button" data-eth="0.5" style="flex:1">0.5</button>
+            <button type="button" data-eth="1" style="flex:1">1</button>
+            <button type="button" data-eth="2" style="flex:1">2 ETH</button>
+          </div>
+          <p id="dbNote">Paid in ETH, in the same transaction, before trading opens — so you're never sniped on your own coin. Buys as far up the curve as your ETH reaches; anything past the graduation ceiling is refunded automatically.</p>
         </div>
       </div>
 
@@ -147,7 +156,7 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
       </div>
 
       <button class="btn btn-lime" id="launchBtn" type="button">🚀 Launch coin</button>
-      <p class="note" id="launchNote">Free to launch — you only pay network gas. One transaction: no token approval, no authority grant. The dev buy (if any) rides in the same tx and is capped at 2% on-chain.</p>
+      <p class="note" id="launchNote">Free to launch — you only pay network gas. One transaction: no token approval, no authority grant. The dev buy (if any) rides in the same tx, ahead of the field — no cap, and any ETH past the graduation ceiling is refunded.</p>
     </form>
 
     <aside class="summary">
@@ -177,14 +186,13 @@ function sync(){
   document.getElementById('dbNote').firstChild&&dbSync();
 }
 function dbSync(){
-  const v=parseFloat(document.getElementById('db').value);
-  document.getElementById('dbAmt').textContent=v.toFixed(1)+'%';
-  const t=document.getElementById('ticker').value||'TICKER';
-  const toks=(v/100*1e9).toLocaleString('en-US',{maximumFractionDigits:0});
+  const v=Math.max(0, parseFloat(document.getElementById('db').value)||0);
+  document.getElementById('dbAmt').textContent=(v.toFixed(2).replace(/\.?0+$/,'')||'0')+' ETH';
   document.getElementById('dbNote').textContent= v===0
     ? 'No dev buy — you start with 0 tokens, same as everyone.'
-    : `≈ ${toks} $${t} at launch price. Paid in ETH in the same transaction, before trading opens — so you're never sniped on your own coin.`;
+    : `Buying ≈ ${v} ETH of your own coin in the same transaction, before trading opens — so you're never sniped. No cap: it climbs the curve as far as your ETH reaches, and anything past the graduation ceiling is refunded.`;
 }
+document.getElementById('dbPresets').addEventListener('click',(e)=>{const b=e.target.closest('button[data-eth]');if(!b)return;document.getElementById('db').value=b.dataset.eth;dbSync();});
 dbSync();
 function taxSync(){
   const bt=parseFloat(document.getElementById('buyTax').value);
@@ -242,7 +250,7 @@ $('linkTg').addEventListener('click', async () => {
 $('launchBtn').addEventListener('click', async () => {
   const name = ($('name').value || '').trim();
   const symbol = ($('ticker').value || '').trim();
-  const pct = parseFloat($('db').value) || 0;
+  const devEth = Math.max(0, parseFloat($('db').value) || 0); // uncapped — contract refunds past the ceiling
   if (!name || !symbol) return setNote('Give your coin a name and a ticker first.', 'err');
 
   // gather the trading fee (min 1% each side; only the above-1% part is allocated)
@@ -253,13 +261,12 @@ $('launchBtn').addEventListener('click', async () => {
                 walletBps: w * 100, floorBps: f * 100, burnBps: b * 100,
                 projectWallet: ($('pw').value || '').trim() || Pad.account() };
 
-  const devBuyEth = Pad.estimateDevBuyEth(pct);
   try {
     if (!Pad.account()) { await Pad.connect(); await refreshConnect(); }
-    setNote(pct > 0
-      ? `Launching + buying ${pct.toFixed(1)}% (≈ ${devBuyEth} ETH) in one tx — confirm in your wallet…`
+    setNote(devEth > 0
+      ? `Launching + buying ${devEth} ETH of your coin in one tx — confirm in your wallet…`
       : 'Launching — confirm in your wallet…');
-    const tx = await Pad.launch({ name, symbol, dev: Pad.account(), devBuyEth: pct > 0 ? devBuyEth : '0', tax });
+    const tx = await Pad.launch({ name, symbol, dev: Pad.account(), devBuyEth: devEth > 0 ? String(devEth) : '0', tax });
     setNote('Sent — waiting for confirmation…');
     const rc = await tx.wait();
     setNote('Launched ✓ tx ' + rc.hash.slice(0, 10) + '… — your coin is live on Uniswap + DexScreener.', 'ok');

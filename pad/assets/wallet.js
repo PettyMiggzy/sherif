@@ -28,7 +28,7 @@
 // dependency, so the whole app is self-contained and auditable offline.
 import { ethers } from "./ethers.min.js";
 import {
-  CHAIN, CONTRACTS, ABIS, TOTAL_SUPPLY, MAX_DEVBUY_BPS,
+  CHAIN, CONTRACTS, ABIS, TOTAL_SUPPLY,
   GAS_BUFFER_WEI, isDeployed, API_BASE, hasApi,
 } from "./config.js";
 
@@ -56,8 +56,6 @@ function friendly(err, label) {
     return new Error("You cancelled the signature — nothing was sent.");
   if (s.includes("insufficient funds"))
     return new Error("Not enough ETH to cover this and gas. Top up and try again.");
-  if (s.includes("dev>2%") || s.includes("dev>"))
-    return new Error("That opening buy is over the 2% cap. Lower the dev buy.");
   if (s.includes("maxwallet") || s.includes("maxtx") || s.includes("cooldown") || s.includes("antisnip"))
     return new Error("The opening anti-snipe window caps buy size right now. Try a smaller amount or wait a minute.");
   if (s.includes("slippage") || s.includes("too little received") || s.includes("price"))

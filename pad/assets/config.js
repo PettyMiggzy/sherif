@@ -51,7 +51,7 @@ export const CONTRACTS = {
 export const POOL_FEE = 10000;
 
 export const TOTAL_SUPPLY = 1_000_000_000n; // whole tokens (18 decimals added on-chain)
-export const MAX_DEVBUY_BPS = 200n; // contract-enforced 2% cap on the dev's opening buy
+// (the dev's opening buy is uncapped — it climbs the curve up to the graduation ceiling and refunds any excess)
 export const DEFAULT_FEE_BPS = 100; // the baseline 1% every coin pays (also the floor)
 export const MAX_TAX_BPS = 400; // contract-enforced 4% cap per side
 export const EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee → platform buy-back
