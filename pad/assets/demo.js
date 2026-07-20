@@ -102,6 +102,18 @@ export const DEMO_REWARDS = {
 // and earn the dip-buy fees; withdrawable after a cooldown; can't hurt the coin (it sits under the price).
 export const DEMO_FLOOR = { tvlEth: 6.4, feesPaidEth: 1.82, mineEth: 0.25, earnedEth: 0.0074, backers: 38 };
 
+// Floor pools for the Liquidity page — one per graduated coin. Deterministic sample data. `mineEth`>0 means
+// the connected sample wallet already has a position in that pool.
+export const DEMO_POOLS = SEED.filter((c) => c[4] === "done").map((c, i) => ({
+  sym: c[1], name: c[0], image: "assets/coins/" + c[1].toLowerCase() + ".png",
+  tvlEth: +(2 + (c[2] / 1e6) * 6 + (i % 4) * 1.3).toFixed(2),
+  feesPaidEth: +(0.4 + (c[2] / 1e6) * 1.7 + (i % 3) * 0.25).toFixed(3),
+  backers: 12 + ((i * 7) % 40),
+  aprPct: +(9 + (i * 13) % 22).toFixed(1),          // realized-fee APR estimate (sample)
+  mineEth: i === 0 ? 0.25 : (i === 2 ? 0.1 : 0),     // sample wallet backs a couple pools
+  earnedEth: i === 0 ? 0.0074 : (i === 2 ? 0.0031 : 0),
+}));
+
 // Daily analytics series for the stats page (demo values). Deterministic — a
 // gentle upward trend with a mid-window viral spike, so the preview charts look
 // like a launchpad finding traction. The live pad draws the real series.

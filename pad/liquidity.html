@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Robin Labs — Liquidity</title>
+<meta name="description" content="Back any Robin Labs coin's floor: add ETH to its below-price buy-wall and earn the trading fees. It can't be rugged and pulling it can't dump the coin. Withdraw after a short cooldown." />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<meta name="theme-color" content="#060803" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#060803; --bg-2:#0a0e05; --ink:#f4f7ee; --dim:#93a382;
+    --lime:#dce905; --lime-2:#a6e017; --lime-deep:#7fae00; --up:#8bea3c; --down:#ff6b57; --violet:#8a63e0;
+    --glow:0 0 22px rgba(220,233,5,.45); --line:rgba(220,233,5,.28); --line-2:rgba(220,233,5,.14); --line-strong:rgba(220,233,5,.4);
+    --disp:"Bebas Neue",Impact,sans-serif; --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif; --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden;
+    background-image:radial-gradient(circle at 50% -10%,rgba(220,233,5,.09),transparent 45%),linear-gradient(rgba(220,233,5,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(220,233,5,.03) 1px,transparent 1px);background-size:auto,42px 42px,42px 42px}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 22px}
+  h1,h2,h3,.disp{font-family:var(--disp);font-weight:400;text-transform:uppercase;letter-spacing:.01em;margin:0;line-height:.95}
+  a{color:inherit;text-decoration:none}.lime{color:var(--lime)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:800;font-size:.95rem;border-radius:12px;padding:12px 20px;cursor:pointer;border:1px solid transparent;transition:.16s;font-family:var(--sans)}
+  .btn-lime{background:var(--lime);color:#0a0e05;box-shadow:var(--glow)}
+  .btn-lime:hover{transform:translateY(-2px);box-shadow:0 0 30px rgba(220,233,5,.75)}
+  .btn-ghost{border-color:var(--line);color:var(--ink)}.btn-ghost:hover{background:rgba(220,233,5,.08);border-color:var(--lime)}
+  .mark{display:inline-flex;align-items:center;gap:12px}
+  .mark img{width:34px;height:34px;filter:drop-shadow(var(--glow))}
+  .mark .wm{font-family:var(--disp);font-size:1.35rem;letter-spacing:.2em;padding-left:.1em}
+  .mark .wm small{display:block;font-size:.5em;letter-spacing:.5em;color:var(--lime);margin-top:-4px}
+  header.nav{position:sticky;top:0;z-index:30;backdrop-filter:blur(10px);background:rgba(6,8,3,.72);border-bottom:1px solid var(--line-2)}
+  .nav-in{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;max-width:1120px;margin:0 auto}
+  .nav .links{display:flex;gap:20px;align-items:center;font-size:.9rem;color:var(--dim)}
+  .nav .links a:hover,.nav .links a.on{color:var(--lime)}
+  @media(max-width:760px){.nav .links a:not(.btn){display:none}}
+  .head{padding:40px 0 6px}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.32em;color:var(--lime);text-transform:uppercase}
+  .head h1{font-size:clamp(2.4rem,6.2vw,4rem);margin-top:12px}
+  .head h1 .g{color:var(--lime);text-shadow:0 0 34px rgba(220,233,5,.4)}
+  .head p{max-width:64ch;color:#cfd6c4;margin:14px 0 0;font-size:1.05rem;line-height:1.55}.head p b{color:var(--ink)}
+  .live{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;margin-top:16px;border:1px solid var(--line-2);border-radius:999px;padding:5px 12px}
+  .live .dot{width:8px;height:8px;border-radius:50%;background:var(--lime);box-shadow:0 0 8px var(--lime)}
+  /* how-it-works mini */
+  .facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:26px 0 6px}
+  @media(max-width:760px){.facts{grid-template-columns:1fr}}
+  .fact{border:1px solid var(--line-2);border-radius:14px;background:linear-gradient(180deg,rgba(220,233,5,.05),transparent);padding:16px}
+  .fact h4{font-size:1.1rem;margin:0 0 4px}.fact p{color:var(--dim);font-size:.86rem;line-height:1.45;margin:0}
+  .sec-h{display:flex;align-items:baseline;justify-content:space-between;margin:34px 0 12px}
+  .sec-h h2{font-size:1.7rem}.sec-h .sub{color:var(--dim);font-size:.85rem}
+  /* pools table/grid */
+  .pools{display:flex;flex-direction:column;gap:10px}
+  .pool{display:grid;grid-template-columns:1.4fr .8fr .8fr .8fr auto;gap:14px;align-items:center;border:1px solid var(--line-2);border-radius:14px;background:rgba(9,13,5,.6);padding:14px 16px;transition:transform .18s,border-color .18s}
+  .pool:hover{transform:translateY(-2px);border-color:var(--line-strong)}
+  .pool .coin{display:flex;align-items:center;gap:12px;min-width:0}
+  .pool .coin img{width:40px;height:40px;border-radius:11px;object-fit:cover;background:#141a0b;flex:none}
+  .pool .nm{font-weight:700}.pool .tk{color:var(--dim);font-size:.82rem}
+  .pool .k{font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);display:block}
+  .pool .v{font-family:var(--disp);font-size:1.3rem}
+  .pool .v.apr{color:var(--up)}
+  .pool .mine{color:var(--lime)}
+  .pool .act{display:flex;gap:8px}
+  .pool .act .btn{padding:9px 16px;font-size:.85rem}
+  @media(max-width:860px){.pool{grid-template-columns:1.4fr .8fr auto;gap:10px}.pool .hidecol{display:none}}
+  .colhead{display:grid;grid-template-columns:1.4fr .8fr .8fr .8fr auto;gap:14px;padding:0 16px 2px;font-family:var(--mono);font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+  @media(max-width:860px){.colhead{display:none}}
+  /* your positions */
+  .mypos{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+  .pcard{border:1px solid var(--line-strong);border-radius:16px;background:linear-gradient(180deg,rgba(220,233,5,.06),rgba(9,13,5,.6));padding:16px}
+  .pcard .top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .pcard .top img{width:34px;height:34px;border-radius:9px;object-fit:cover;background:#141a0b}
+  .pcard .r{display:flex;justify-content:space-between;font-size:.85rem;padding:5px 0;border-bottom:1px solid var(--line-2)}
+  .pcard .r:last-of-type{border-bottom:none}.pcard .r b{font-family:var(--mono)}
+  .pcard .r .lime{color:var(--lime)}
+  .pcard .lock{font-family:var(--mono);font-size:.66rem;color:var(--lime-deep);margin-top:8px}
+  .empty{text-align:center;padding:24px;color:var(--dim);border:1px dashed var(--line-2);border-radius:14px}
+  /* create modal-ish inline */
+  .addrow{display:none;grid-column:1/-1;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line-2)}
+  .addrow.open{display:block}
+  .addbox{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .addbox input{flex:1;min-width:120px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;color:var(--ink);padding:11px 12px;font-family:var(--mono);font-size:1rem}
+  .addbox .prev{flex-basis:100%;color:var(--lime-deep);font-size:.76rem;margin-top:2px}
+  .addbox .prev b{color:var(--lime)}
+  .risk{color:#8b9378;font-size:.78rem;line-height:1.5;margin:22px 0 8px;border-left:2px solid var(--line);padding-left:12px}
+  footer{border-top:1px solid var(--line-2);margin-top:40px;padding:22px 0}
+  .foot-in{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;color:var(--dim);font-size:.85rem}
+  .foot-in .mid b{color:var(--lime)}
+</style>
+</head>
+<body>
+
+<header class="nav"><div class="nav-in">
+  <a class="mark" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" /><span class="wm">ROBIN<small>LABS</small></span></a>
+  <div class="links">
+    <a href="index.html">Coins</a>
+    <a href="rewards.html">Rewards</a>
+    <a href="liquidity.html" class="on">Liquidity</a>
+    <a href="stats.html">Stats</a>
+    <a href="docs.html">Docs</a>
+    <a class="btn btn-lime" id="connectBtn" href="#">Connect Wallet</a>
+  </div>
+</div></header>
+
+<main class="wrap">
+  <section class="head">
+    <div class="eyebrow">Community liquidity · earn fees · can't be rugged</div>
+    <h1>Back a coin's floor.<br /><span class="g">Earn the fees.</span></h1>
+    <p>Add ETH to any Robin Labs coin's <b>buy-wall</b> and collect the trading fee on every dip that hits it. Your liquidity sits <b>below the price</b>, so pulling it can never dump the coin — and the coin's core LP is locked forever. Withdraw your stake after a short cooldown.</p>
+    <div id="live" class="live"><span class="dot"></span><span id="liveTxt">Live floor pools</span></div>
+  </section>
+
+  <section class="facts">
+    <div class="fact"><h4>You provide the dip bid</h4><p>Your ETH becomes a standing buy order just under the price. When someone panic-sells, you're the one buying — and you keep the 1% fee.</p></div>
+    <div class="fact"><h4>Pulling it can't hurt the coin</h4><p>A bid below the price can't dump the token when removed — it just thins the floor. Not a rug. The core LP can never be pulled by anyone.</p></div>
+    <div class="fact"><h4>Honest, not a fixed yield</h4><p>You earn only when the coin dips into your wall; if a dip fills it, your ETH becomes the coin. It's a range order. 2-day withdrawal cooldown.</p></div>
+  </section>
+
+  <!-- YOUR POSITIONS -->
+  <div class="sec-h"><h2>Your positions</h2><span class="sub" id="posSub"></span></div>
+  <div id="myPos" class="mypos"></div>
+
+  <!-- ALL POOLS -->
+  <div class="sec-h"><h2>Floor pools</h2><span class="sub">Add liquidity to any coin below</span></div>
+  <div class="colhead"><span>Coin</span><span>Floor pool</span><span>Fees paid</span><span>Est. APR</span><span></span></div>
+  <div class="pools" id="pools"></div>
+
+  <p class="risk"><b>Risk, plainly:</b> providing floor liquidity is a single-sided range order, not a savings account. You earn fees only on dips into your band; if the price trades through it, your ETH converts to the coin at the floor. There's no guaranteed return and no impermanent-loss protection. Only back coins you'd be happy holding.</p>
+</main>
+
+<footer><div class="wrap foot-in">
+  <span>robinlabs.io</span>
+  <span class="mid">Back the floor. <b>Earn the fees.</b></span>
+  <span class="socs"><a href="https://x.com/robinlabzz" target="_blank" rel="noopener">@robinlabzz</a></span>
+</div></footer>
+
+<script type="module">
+import * as Pad from './assets/wallet.js';
+import { DEMO, DEMO_POOLS } from './assets/demo.js';
+const $ = (id) => document.getElementById(id);
+const eth = (n) => (Math.round((n||0)*1e4)/1e4).toLocaleString(undefined,{maximumFractionDigits:4}) + ' ETH';
+const esc = (x) => String(x==null?'':x).replace(/[<>&"]/g,(c)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+const imgTag = (p,cls) => `<img class="${cls}" src="${esc(p.image)}" alt="" onerror="this.style.visibility='hidden'" />`;
+
+if (DEMO){ $('liveTxt').textContent = 'Preview — sample pools'; }
+
+// wallet button
+const cbtn = $('connectBtn');
+const refreshBtn = () => { const a = Pad.account(); cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; };
+cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (DEMO){ alert('Preview build — connect your wallet on the live site.'); return; } try { await Pad.connect(); refreshBtn(); load(); } catch(err){ alert(err.message); } });
+window.addEventListener('robinpad:ready', refreshBtn); refreshBtn();
+
+function poolRow(p, i){
+  const mine = (p.mineEth||0) > 0;
+  const unlock = new Date(Date.now() + 2*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  return `<div class="pool" data-i="${i}">
+    <div class="coin">${imgTag(p,'')}<div><div class="nm">${esc(p.name)}</div><div class="tk">$${esc(p.sym)}${mine?` · <span class="mine">you back ${eth(p.mineEth)}</span>`:''}</div></div></div>
+    <div class="hidecol"><span class="k">Floor pool</span><span class="v">${eth(p.tvlEth)}</span></div>
+    <div class="hidecol"><span class="k">Fees paid</span><span class="v">${eth(p.feesPaidEth)}</span></div>
+    <div><span class="k">Est. APR</span><span class="v apr">${(p.aprPct||0).toFixed(1)}%</span></div>
+    <div class="act"><button class="btn btn-lime addbtn" type="button" data-i="${i}">${mine?'Add':'Provide'}</button></div>
+    <div class="addrow" id="addrow-${i}">
+      <div class="addbox">
+        <input type="number" min="0" step="0.05" placeholder="0.0" value="0.25" data-i="${i}" oninput="prev(${i})" />
+        <span style="color:var(--dim);font-weight:700">ETH</span>
+        <button class="btn btn-lime go" type="button" data-i="${i}">Create position</button>
+        <div class="prev" id="prev-${i}"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+window.prev = function(i){
+  const p = POOLS[i]; const el = $('prev-'+i); const inp = document.querySelector('#addrow-'+i+' input');
+  const amt = parseFloat(inp.value)||0; if (!el) return;
+  if (amt<=0){ el.textContent=''; return; }
+  const pct = (p.tvlEth+amt)>0 ? (amt/(p.tvlEth+amt))*100 : 0;
+  const unlock = new Date(Date.now()+2*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  el.innerHTML = `You'll create a <b>${amt} ETH</b> position · ~<b>${pct.toFixed(1)}%</b> of the pool · withdrawable <b>${unlock}</b>.`;
+};
+
+let POOLS = [];
+function renderPools(){
+  $('pools').innerHTML = POOLS.map(poolRow).join('');
+  document.querySelectorAll('.addbtn').forEach(b => b.addEventListener('click', () => {
+    const row = $('addrow-'+b.dataset.i); row.classList.toggle('open'); if(row.classList.contains('open')) window.prev(+b.dataset.i);
+  }));
+  document.querySelectorAll('.pool .go').forEach(b => b.addEventListener('click', () => onCreate(+b.dataset.i)));
+}
+function renderMine(){
+  const mine = POOLS.filter(p => (p.mineEth||0) > 0);
+  $('posSub').textContent = mine.length ? `${mine.length} active` : '';
+  if (!mine.length){ $('myPos').innerHTML = `<div class="empty">No positions yet — add ETH to a pool below to start earning dip-buy fees.</div>`; return; }
+  const unlock = new Date(Date.now() + 1*86400*1000 + 4*3600*1000);
+  $('myPos').innerHTML = mine.map(p => `<div class="pcard">
+    <div class="top">${imgTag(p,'')}<div><div class="nm" style="font-weight:700">${esc(p.name)}</div><div class="tk" style="color:var(--dim);font-size:.8rem">$${esc(p.sym)}</div></div></div>
+    <div class="r"><span>Backing</span><b>${eth(p.mineEth)}</b></div>
+    <div class="r"><span>Pool share</span><b>${p.tvlEth?((p.mineEth/p.tvlEth)*100).toFixed(1):'—'}%</b></div>
+    <div class="r"><span>Fees earned</span><b class="lime">${eth(p.earnedEth)}</b></div>
+    <div class="lock">Withdrawable in ~1d 4h</div>
+  </div>`).join('');
+}
+
+async function onCreate(i){
+  const inp = document.querySelector('#addrow-'+i+' input'); const amt = parseFloat(inp.value)||0;
+  if (amt<=0){ alert('Enter an ETH amount.'); return; }
+  if (DEMO){ alert('Preview — on the live site this creates a '+amt+' ETH floor position in $'+POOLS[i].sym+' and starts earning dip-buy fees.'); return; }
+  try { if(!Pad.account()){await Pad.connect();refreshBtn();} await (await Pad.floorDeposit(POOLS[i].token, amt)).wait(); load(); } catch(e){ alert(e.message); }
+}
+
+async function load(){
+  if (DEMO){ POOLS = DEMO_POOLS.slice(); renderMine(); renderPools(); return; }
+  // live: list graduated coins that have (or can have) a floor pool
+  try {
+    const { coins } = await Pad.feed({ sort:'graduated', limit:40 });
+    POOLS = await Promise.all((coins||[]).map(async (c) => {
+      const f = await Pad.floorInfo(c.token, Pad.account()).catch(() => null);
+      return { token:c.token, sym:c.symbol, name:c.name, image:c.image,
+               tvlEth:f?.tvlEth||0, feesPaidEth:f?.feesPaidEth||0, aprPct:0, mineEth:f?.mineEth||0, earnedEth:f?.earnedEth||0 };
+    }));
+  } catch { POOLS = []; }
+  renderMine(); renderPools();
+}
+load();
+</script>
+</body>
+</html>
