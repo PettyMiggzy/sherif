@@ -109,6 +109,32 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .stats .s .ic{width:34px;height:34px;flex:none;opacity:.95}
 .stats .s .v{font-size:1.4rem;font-weight:800;line-height:1}
 .stats .s .k{font-size:.72rem;color:var(--dim);margin-top:3px}
+
+/* ───────────────────────── premium polish ───────────────────────── */
+.reveal{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1;transform:none}
+.reveal.d1{transition-delay:.05s}.reveal.d2{transition-delay:.1s}.reveal.d3{transition-delay:.15s}.reveal.d4{transition-delay:.2s}
+@media(prefers-reduced-motion:reduce){.reveal{opacity:1!important;transform:none!important;transition:none!important}}
+/* card hover lift + lime glow */
+.bcard,.wcard,.grow,.step,.rbcard{transition:transform .22s cubic-bezier(.2,.7,.2,1),box-shadow .22s,border-color .22s}
+.bcard:hover,.grow:hover{transform:translateY(-3px);box-shadow:0 14px 36px -16px rgba(220,233,5,.55);border-color:var(--line-strong)}
+.wcard:hover{transform:translateY(-3px);border-color:var(--line-strong);box-shadow:0 14px 32px -18px rgba(220,233,5,.45)}
+.rbcard:hover{transform:translateX(3px);border-color:var(--line-strong)}
+.wcard img,.step img{transition:transform .3s cubic-bezier(.2,.7,.2,1)}
+.wcard:hover img,.step:hover img{transform:scale(1.14) translateY(-1px)}
+/* button sheen */
+.btn-lime{position:relative;overflow:hidden;isolation:isolate}
+.btn-lime::after{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(115deg,transparent 32%,rgba(255,255,255,.5) 50%,transparent 68%);transform:translateX(-130%);transition:transform .6s ease}
+.btn-lime:hover::after{transform:translateX(130%)}
+/* soft rotating aura behind the reward band */
+.rewband{position:relative;isolation:isolate;overflow:hidden}
+.rewband::before{content:"";position:absolute;left:50%;top:50%;width:150%;aspect-ratio:1;transform:translate(-50%,-50%);z-index:-1;pointer-events:none;
+  background:conic-gradient(from 0deg,transparent 0 24%,rgba(220,233,5,.16) 40%,rgba(138,99,224,.13) 56%,transparent 72% 100%);filter:blur(34px);animation:auraspin 14s linear infinite}
+@keyframes auraspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.rewband::before{animation:none}}
+/* live pulse dot */
+.pulse{animation:livepulse 1.8s ease-in-out infinite}
+@keyframes livepulse{0%,100%{opacity:1}50%{opacity:.4}}
 @media(max-width:860px){.stats{grid-template-columns:repeat(2,1fr)}.stats .s:nth-child(2){border-right:none}}
 @media(max-width:520px){.stats .s .v{font-size:1.15rem}}
 
@@ -668,6 +694,43 @@ async function loadStats(){
 }
 
 loadStats(); loadFeed();
+</script>
+<script>
+/* premium motion: scroll-reveal + stat count-up (respects reduced-motion) */
+(function(){
+  var rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var sel = ['.stats','.rewband','.wcard','.step','.grow','.news','.card.robincard','.card.flywheel'];
+  var els = []; sel.forEach(function(s){ Array.prototype.push.apply(els, document.querySelectorAll(s)); });
+  if (rm){ els.forEach(function(e){ e.classList.add('in'); }); }
+  else {
+    els.forEach(function(e,i){ e.classList.add('reveal','d'+((i%4)+1)); });
+    var io = new IntersectionObserver(function(es){ es.forEach(function(en){ if(en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); } }); }, {threshold:.1, rootMargin:'0px 0px -8% 0px'});
+    els.forEach(function(e){ io.observe(e); });
+  }
+  // count-up any .stats .v once it holds a real number and scrolls into view
+  function countUp(el){
+    var m = el.textContent.trim().match(/^([^\d]*)([\d,\.]+)(.*)$/); if(!m) return;
+    var pre=m[1], numStr=m[2].replace(/,/g,''), suf=m[3], target=parseFloat(numStr);
+    if(!isFinite(target)) return; var dec=(numStr.split('.')[1]||'').length, t0=null;
+    var fmt=function(n){ return pre + (dec?n.toFixed(dec):Math.round(n).toLocaleString()) + suf; };
+    function step(ts){ if(!t0)t0=ts; var p=Math.min(1,(ts-t0)/1100), e=1-Math.pow(1-p,3); el.textContent=fmt(target*e); if(p<1)requestAnimationFrame(step); }
+    requestAnimationFrame(step);
+  }
+  if (!rm){
+    document.querySelectorAll('.stats .v').forEach(function(el){
+      var fired=false, tries=0;
+      var so=new IntersectionObserver(function(es){ es.forEach(function(en){
+        if(en.isIntersecting && !fired){
+          var t=setInterval(function(){ tries++;
+            if(/\d/.test(el.textContent)){ fired=true; clearInterval(t); countUp(el); so.disconnect(); }
+            else if(tries>25){ clearInterval(t); }
+          },120);
+        }
+      }); },{threshold:.6});
+      so.observe(el);
+    });
+  }
+})();
 </script>
 </body>
 </html>

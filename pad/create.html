@@ -87,14 +87,14 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
 
       <div class="field">
         <label>Banner <span class="hint">1500×500, shown on the coin page</span></label>
-        <label class="banner-up" for="banner"><div><div class="up-ic"></div><div class="up-t">Click or drop a banner</div></div></label>
+        <label class="banner-up" for="banner"><div><div class="up-ic"><img src="assets/icons/upload.png" alt="" style="width:34px;height:34px;margin:0 auto;opacity:.9" /></div><div class="up-t">Click or drop a banner</div></div></label>
         <input id="banner" type="file" accept="image/*" hidden onchange="prev(this,'banner')" />
       </div>
 
       <div class="field">
         <label>Coin image (pfp) <span class="hint">square, this is the token icon</span></label>
         <div class="pfp-wrap">
-          <label class="pfp-up" for="pfp" id="pfpBox"><div style="text-align:center"><div class="up-ic"></div><div class="up-t">Upload</div></div></label>
+          <label class="pfp-up" for="pfp" id="pfpBox"><div style="text-align:center"><div class="up-ic"><img src="assets/icons/upload.png" alt="" style="width:34px;height:34px;margin:0 auto;opacity:.9" /></div><div class="up-t">Upload</div></div></label>
           <input id="pfp" type="file" accept="image/*" hidden onchange="prev(this,'pfp')" />
           <div class="txt">PNG / JPG / GIF.<br>This is what shows in the trending grid.</div>
         </div>
