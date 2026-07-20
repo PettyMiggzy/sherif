@@ -71,31 +71,23 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .announce .in .sp{flex:1}
 .announce .x{color:var(--faint);cursor:pointer;font-size:1.1rem;background:none;border:none}
 
-/* hero */
-.hero{padding:28px 0 22px}
-/* desktop: the wide illustrated fox banner (headline baked in) */
-.herobanner-d{display:block;position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line-2);
-  box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 60px rgba(220,233,5,.12);background:#050702}
-.herobanner-d img{width:100%;height:auto;display:block}
-.herobanner-m{display:none}
-.herotext{display:none}
-.hero .cta{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:20px}
-.hero h1{font-size:clamp(2.4rem,9vw,3.4rem);letter-spacing:-.03em;line-height:.98}
+/* hero — headline left, glowing R-emblem podium right */
+.hero{display:grid;grid-template-columns:1.06fr .94fr;gap:30px;align-items:center;padding:44px 0 30px}
+.hero h1{font-size:clamp(2.5rem,5.4vw,4.2rem);letter-spacing:-.01em;line-height:.98}
 .hero h1 .g{color:var(--lime)}
+.hero p{color:var(--dim);font-size:1.1rem;max-width:46ch;margin:18px 0 26px;line-height:1.55}
 .hero p b{color:var(--lime)}
-/* mobile: the vertical meme-mascot poster + live headline underneath */
+.hero .cta{display:flex;gap:12px;flex-wrap:wrap}
+.hemblem{position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--line);
+  box-shadow:0 0 70px rgba(220,233,5,.16),0 24px 60px rgba(0,0,0,.55);background:#000;aspect-ratio:4/3}
+.hemblem img{width:100%;height:100%;object-fit:cover;display:block}
+.hemblem::after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 80px rgba(0,0,0,.65);
+  border-radius:20px}
 @media(max-width:860px){
-  .herobanner-d{display:none}
-  .herotext{display:block;text-align:center;margin-top:18px}
-  .herotext p{color:var(--dim);font-size:1.02rem;max-width:36ch;margin:14px auto 0;line-height:1.5}
-  .hero .cta{justify-content:center}
-  .herobanner-m{display:block;position:relative;order:-1;border-radius:16px;overflow:hidden;
-    aspect-ratio:4/5;max-height:500px;border:1px solid var(--line-2);box-shadow:0 16px 44px rgba(0,0,0,.5)}
-  .herobanner-m img{width:100%;height:100%;object-fit:cover;object-position:50% 40%;display:block}
-  .herobanner-m::after{content:"";position:absolute;left:0;right:0;bottom:0;height:22%;pointer-events:none;
-    background:linear-gradient(rgba(6,8,3,0),#060803)}
+  .hero{grid-template-columns:1fr;text-align:center;padding-top:22px}
+  .hero p{margin-inline:auto}.hero .cta{justify-content:center}
+  .hemblem{order:-1;max-width:520px;margin:0 auto;width:100%}
 }
-@media(max-width:420px){.herobanner-m{max-height:440px}}
 
 /* stats bar */
 .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:0;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,var(--panel-2),var(--panel));overflow:hidden;margin:6px 0 36px}
@@ -151,6 +143,46 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .tpill .c.up{color:#8bea3c}.tpill .c.dn{color:#ff6b57}
 @media(prefers-reduced-motion:reduce){.ticker .track{animation:none}}
 @media(max-width:560px){.ticker .lbl .t{display:none}}
+
+/* live board — pump.fun-style 3 columns */
+.bsearch{display:flex;align-items:center;gap:12px;margin:14px 0 12px;flex-wrap:wrap}
+.bsearch .fsearch{margin-left:0;flex:1;max-width:360px}
+.board{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:900px){.board{grid-template-columns:1fr}}
+.board .col{background:var(--bg-2);border:1px solid var(--line-2);border-radius:16px;display:flex;flex-direction:column;overflow:hidden}
+.board .chead{display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--line-2)}
+.board .chead h3{font-size:1.12rem;margin:0;font-weight:800}
+.board .chead .cn{font-family:var(--mono);font-size:.76rem;color:var(--dim);background:rgba(220,233,5,.08);padding:2px 8px;border-radius:7px}
+.board .chead .cnote{margin-left:auto;font-size:.7rem;color:var(--faint);font-family:var(--mono)}
+.board .dot{width:9px;height:9px;border-radius:50%}
+.board .dot.new{background:var(--lime);box-shadow:0 0 8px var(--lime)}
+.board .dot.final{background:#ffb020;box-shadow:0 0 8px #ffb020;animation:tpulse 1.4s infinite}
+.board .dot.grad{background:#8bea3c;box-shadow:0 0 8px #8bea3c}
+.board .list{display:flex;flex-direction:column;gap:10px;padding:12px;max-height:1160px;overflow-y:auto}
+.bempty{color:var(--faint);font-size:.85rem;text-align:center;padding:22px 0;font-family:var(--mono)}
+.bcard{display:block;background:var(--bg);border:1px solid var(--line-2);border-radius:13px;padding:12px;transition:transform .14s,border-color .14s}
+.bcard:hover{transform:translateY(-2px);border-color:var(--line-strong)}
+.btop{display:flex;align-items:center;gap:10px}
+.bav{width:42px;height:42px;border-radius:50%;flex:none;object-fit:cover;border:1.5px solid var(--line);background:var(--bg-2)}
+.bid{min-width:0;flex:1}
+.bnm{font-weight:800;font-size:.98rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btk{color:var(--lime);font-size:.78rem;font-weight:700}
+.bchg{font-family:var(--mono);font-size:.8rem;font-weight:700;flex:none}
+.bchg.up{color:#8bea3c}.bchg.dn{color:#ff6b57}
+.bstats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:11px 0 9px}
+.bstats .bk{display:block;font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-family:var(--mono)}
+.bstats .bv{display:block;font-size:.9rem;font-weight:700;margin-top:1px;font-variant-numeric:tabular-nums}
+.bprog{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.bptrack{flex:1;height:6px;border-radius:5px;background:rgba(255,255,255,.06);overflow:hidden}
+.bpfill{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--lime-2,#a6e017),var(--lime))}
+.bpfill.hot{background:linear-gradient(90deg,var(--lime),#ffb020);box-shadow:0 0 10px rgba(255,176,32,.6)}
+.bppct{font-family:var(--mono);font-size:.74rem;color:var(--dim)}
+.bgrad{margin-bottom:10px}.bok{font-size:.74rem;font-weight:700;color:#8bea3c}
+.bqbuy{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line-strong);background:rgba(220,233,5,.06);color:var(--ink);font-weight:800;font-size:.84rem;padding:9px;border-radius:10px;cursor:pointer;font-family:inherit;transition:.14s}
+.bqbuy svg{width:15px;height:15px;color:var(--lime)}
+.bqbuy .bamt{margin-left:auto;font-family:var(--mono);font-size:.76rem;color:var(--dim)}
+.bqbuy:hover{background:var(--lime);color:#0a0e05;box-shadow:0 0 20px rgba(220,233,5,.35)}
+.bqbuy:hover svg,.bqbuy:hover .bamt{color:#0a0e05}
 
 /* trending cards */
 .tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
@@ -284,22 +316,16 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 
   <!-- HERO -->
   <section class="hero">
-    <!-- desktop: wide fox banner (headline baked in) -->
-    <a class="herobanner-d" href="create.html" aria-label="Robin Labs — the only launchpad that pays successful creators">
-      <img src="assets/hero-banner.jpg" alt="Robin Labs — the only launchpad that pays successful creators. Build. Launch. Graduate. Get rewarded." />
-    </a>
-    <!-- mobile: vertical meme-mascot poster -->
-    <a class="herobanner-m" href="create.html" aria-label="Robin Labs — the only launchpad that pays successful creators">
-      <img src="assets/hero-mobile.jpg" alt="Robin Labs — the meme launchpad that pays successful creators." />
-    </a>
-    <!-- mobile-only headline (desktop's headline is baked into the banner) -->
-    <div class="herotext">
-      <h1>Build. Launch. <span class="g">Graduate.</span></h1>
-      <p>The only launchpad that <b>pays successful creators</b> — up to <b>0.5 ETH</b>. Fair launch, locked liquidity, a floor that can't be rugged.</p>
+    <div class="hcopy">
+      <h1>The launchpad for the<br /><span class="g">future of Robin.</span></h1>
+      <p>Robin Labs is the launchpad that <b>pays its creators</b> — launch free, graduate into a locked floor that can't be pulled, and earn real ETH when you win.</p>
+      <div class="cta">
+        <a class="btn btn-lime" href="#trending">Browse projects</a>
+        <a class="btn btn-ghost" href="create.html">Launch a project →</a>
+      </div>
     </div>
-    <div class="cta">
-      <a class="btn btn-lime" href="create.html"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="margin-right:2px"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>Launch a Project</a>
-      <a class="btn btn-ghost" href="#trending">Explore Projects →</a>
+    <div class="hemblem">
+      <img src="assets/hero-emblem.jpg" alt="Robin Labs — glowing R emblem on a launch podium" />
     </div>
   </section>
 
@@ -314,24 +340,31 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 
   <!-- EXPLORE (filterable) -->
   <section class="sec" id="trending">
-    <div class="sec-h"><h2><img src="assets/icons/hot.png" alt="" />Explore Projects</h2><span class="more" id="fcount"></span></div>
+    <div class="sec-h"><h2><img src="assets/icons/hot.png" alt="" />The Board</h2><span class="more" id="fcount"></span></div>
     <div class="ticker" id="tickerbar" aria-label="Trending by volume">
       <div class="lbl"><span class="dot"></span><span class="t">Trending</span></div>
       <div class="vp"><div class="track" id="ticker"></div></div>
     </div>
-    <div class="filters">
-      <div class="ftabs" id="ftabs">
-        <button class="ftab on" data-sort="trending"><img src="assets/icons/trending.png" alt="" />Trending</button>
-        <button class="ftab" data-sort="new"><img src="assets/icons/new.png" alt="" />New</button>
-        <button class="ftab" data-sort="top"><img src="assets/icons/top-project.png" alt="" />Top</button>
-        <button class="ftab" data-sort="graduated"><img src="assets/icons/graduated.png" alt="" />Graduated</button>
-      </div>
+    <div class="bsearch">
       <label class="fsearch">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="fq" type="search" placeholder="Search name or ticker…" autocomplete="off" />
       </label>
     </div>
-    <div class="tgrid" id="tgrid"><div class="empty">Loading projects…</div></div>
+    <div class="board" id="board">
+      <section class="col">
+        <header class="chead"><span class="dot new"></span><h3>New</h3><span class="cn" id="cnNew">0</span><span class="cnote">just launched</span></header>
+        <div class="list" id="colNew"><div class="bempty">Loading…</div></div>
+      </section>
+      <section class="col">
+        <header class="chead"><span class="dot final"></span><h3>Final Stretch</h3><span class="cn" id="cnFinal">0</span><span class="cnote">about to graduate</span></header>
+        <div class="list" id="colFinal"><div class="bempty">Loading…</div></div>
+      </section>
+      <section class="col">
+        <header class="chead"><span class="dot grad"></span><h3>Graduated</h3><span class="cn" id="cnGrad">0</span><span class="cnote">live on DEX</span></header>
+        <div class="list" id="colGrad"><div class="bempty">Loading…</div></div>
+      </section>
+    </div>
   </section>
 
   <!-- WHY -->
@@ -503,18 +536,42 @@ const cMc   = (c) => c.mcUsd  != null ? c.mcUsd  : (c.mcapEth ? c.mcapEth * ETH_
 const cNew  = (c) => nz(c.at, c.launchTs);
 const cGrad = (c) => c.state === 'done' || c.graduated === true;
 
-function applyFilter(){
+// ── live board: New / Final Stretch / Graduated ─────────────────────────────
+const BOLT = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>';
+const cProg = (c) => c.prog != null ? c.prog : Math.round((c.progress||0)*100);
+window.quickBuy = (token) => {
+  // finish the buy on the coin page (avoids a surprise tx straight from the board)
+  const url = `token.html?c=${encodeURIComponent(token)}${DEMO?'&demo=1':''}`;
+  location.href = DEMO ? url : url + '&buy=0.1';
+};
+function bcard(c){
+  const grad = cGrad(c), prog = cProg(c), ch = c.chg;
+  const chg = ch==null ? '' : `<span class="bchg ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
+  const url = `token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}`;
+  const foot = grad
+    ? `<div class="bgrad"><span class="bok">✔ Graduated · live on DEX</span></div>`
+    : `<div class="bprog"><div class="bptrack"><div class="bpfill${prog>=70?' hot':''}" style="width:${Math.min(100,prog)}%"></div></div><span class="bppct">${prog}%</span></div>`;
+  return `<a class="bcard" href="${url}">
+    <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btk">$${esc(c.symbol||'?')}</div></div>${chg}</div>
+    <div class="bstats"><div><span class="bk">MC</span><span class="bv">${fmtUsd(cMc(c))}</span></div><div><span class="bk">Vol</span><span class="bv">${fmtUsd(cVol(c))}</span></div><div><span class="bk">Holders</span><span class="bv">${fmtNum(c.holders!=null?c.holders:(c.tradesAll||0))}</span></div></div>
+    ${foot}
+    <button class="bqbuy" type="button" onclick="event.preventDefault();event.stopPropagation();quickBuy('${esc(c.token)}')">${BOLT}<span>Quick Buy</span><span class="bamt">0.1 ETH</span></button>
+  </a>`;
+}
+function renderBoard(){
   const q = ($('fq').value || '').trim().toLowerCase();
   let list = ALL.slice();
-  if (SORT === 'graduated') list = list.filter(cGrad);
   if (q) list = list.filter(c => (c.name||'').toLowerCase().includes(q) || (c.symbol||'').toLowerCase().includes(q));
-  if (SORT === 'new') list.sort((a,b)=>cNew(b)-cNew(a));
-  else if (SORT === 'top' || SORT === 'graduated') list.sort((a,b)=>cMc(b)-cMc(a));
-  else list.sort((a,b)=>cVol(b)-cVol(a)); // trending
-  const show = list.slice(0, 12);
-  $('tgrid').innerHTML = show.length ? show.map(tcard).join('')
-    : `<div class="empty">${q ? 'No matches' : 'No projects yet'} — <a class="lime" href="create.html">launch one ›</a></div>`;
-  $('fcount').textContent = list.length ? `${list.length} project${list.length>1?'s':''} ›` : '';
+  const grad   = list.filter(cGrad).sort((a,b)=>cMc(b)-cMc(a));
+  const rest   = list.filter(c => !cGrad(c));
+  const finalS = rest.filter(c => cProg(c) >= 70).sort((a,b)=>cProg(b)-cProg(a));
+  const news   = rest.filter(c => cProg(c) <  70).sort((a,b)=>cNew(b)-cNew(a));
+  const fill = (id, arr, cn) => {
+    $(id).innerHTML = arr.length ? arr.slice(0,40).map(bcard).join('') : `<div class="bempty">Nothing here yet</div>`;
+    $(cn).textContent = arr.length;
+  };
+  fill('colNew', news, 'cnNew'); fill('colFinal', finalS, 'cnFinal'); fill('colGrad', grad, 'cnGrad');
+  $('fcount').textContent = list.length ? `${list.length} live` : '';
 }
 
 // trending ticker — top by volume, scrolling; duplicated for a seamless loop
@@ -535,19 +592,14 @@ async function loadFeed(){
   if (DEMO) ALL = DEMO_COINS.map((c) => ({ ...c, mcUsd: c.mc, volUsd: c.vol }));
   else { try { ALL = (await Pad.feed({ sort:'new', limit:60 })).coins || []; } catch { ALL = []; } }
   renderTicker();
-  applyFilter();
+  renderBoard();
   // graduates rail + announcement
   const grads = ALL.filter(cGrad).slice(0,3);
   $('glist').innerHTML = grads.length ? grads.map(grow).join('') : `<div class="empty" style="padding:14px">None yet</div>`;
   if (grads.length){ $('anName').textContent = '$'+grads[0].symbol; $('anView').href = `token.html?c=${encodeURIComponent(grads[0].token)}${DEMO?'&demo=1':''}`; $('announce').style.display='block'; }
 }
 
-$('ftabs').addEventListener('click', (e) => {
-  const b = e.target.closest('.ftab'); if (!b) return;
-  [...$('ftabs').children].forEach(x => x.classList.remove('on')); b.classList.add('on');
-  SORT = b.dataset.sort; applyFilter();
-});
-let _qt; $('fq').addEventListener('input', () => { clearTimeout(_qt); _qt = setTimeout(applyFilter, 120); });
+let _qt; $('fq').addEventListener('input', () => { clearTimeout(_qt); _qt = setTimeout(renderBoard, 120); });
 
 async function loadStats(){
   if (DEMO){
