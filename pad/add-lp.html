@@ -142,24 +142,23 @@
     <div class="quick"><button type="button" data-a="0.1">0.1</button><button type="button" data-a="0.5">0.5</button><button type="button" data-a="1">1</button><button type="button" data-a="5">5</button></div>
 
     <div class="brk" id="brk">
-      <div class="r"><span>You open with</span><b id="brkIn">—</b></div>
-      <div class="r fee"><span>Protocol fee (10%)</span><b id="brkFee">—</b></div>
       <div class="r net"><span>Into the coin's liquidity</span><b id="brkNet">—</b></div>
+      <div class="r"><span>You keep</span><b id="brkKeep">95% of the fees you earn</b></div>
       <div class="sum" id="brkSum"></div>
     </div>
 
     <button class="btn btn-lime go" id="openBtn" type="button" disabled>Open position</button>
     <div id="msg"></div>
-    <p class="note">A one-time <b>10% protocol fee</b> is taken from the ETH you open with; the rest goes into the coin's liquidity. Longer locks earn a bigger reward share. Withdrawing before your term ends costs a 15% early-exit penalty.</p>
+    <p class="note"><b>No deposit fee</b> — every ETH you put in goes into the coin's liquidity. The protocol keeps <b>5% of the trading fees</b> your position earns; you keep the other 95%. Longer locks earn a bigger reward share. Withdrawing before your term ends costs a 15% early-exit penalty.</p>
   </section>
 
   <section class="facts">
     <div class="fact"><h4>Works for any coin</h4><p>Any token with a liquidity pool on Robinhood Chain — whether it launched here or anywhere else on the chain. First one to back a coin spins up its vault; everyone after shares it.</p></div>
     <div class="fact"><h4>Locked = rug-proof</h4><p>Your stake is locked for the term you choose, so it only ever deepens the coin's market — it can't be yanked out from under it. Longer locks earn up to 3×.</p></div>
-    <div class="fact"><h4>Earn real fees</h4><p>You collect your pro-rata share of every swap's fee for as long as it's locked, claimable as real ETH. Like any LP, price moves rebalance your position (impermanent loss).</p></div>
+    <div class="fact"><h4>Earn real fees</h4><p>You collect 95% of your pro-rata share of every swap's fee for as long as it's locked, claimable as real ETH (the protocol keeps 5%). Like any LP, price moves rebalance your position (impermanent loss).</p></div>
   </section>
 
-  <p class="risk"><b>Risk, plainly:</b> this is real liquidity provision, not a savings account. A 10% protocol fee applies when you open. You earn a share of trade fees while locked, but the price moving rebalances your position (impermanent loss) with no guaranteed return, and early exit costs 15%. Only lock into coins you'd be happy holding.</p>
+  <p class="risk"><b>Risk, plainly:</b> this is real liquidity provision, not a savings account. No fee to open — the protocol keeps 5% of the trade fees your position earns. The price moving rebalances your position (impermanent loss) with no guaranteed return, and early exit costs 15%. Only lock into coins you'd be happy holding.</p>
 </main>
 
 <footer><div class="wrap foot-in">
@@ -175,7 +174,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (x) => String(x==null?'':x).replace(/[<>&"]/g,(c)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 const eth = (n) => (Math.round((n||0)*1e5)/1e5) + ' ETH';
 
-const PROTO_FEE = 0.10; // 10% of the ETH you open with → protocol
+const FEE_CUT = 0.05; // protocol keeps 5% of the LP trading fees earned (no deposit fee)
 const LOCK_TERMS = [ {days:30,label:'Lock 30 days',boost:'1.0×'}, {days:60,label:'Lock 60 days',boost:'1.25×'}, {days:90,label:'Lock 90 days',boost:'1.5×'}, {days:365,label:'Lock 1 year',boost:'2×'}, {days:0,label:'Lock forever',boost:'3×'} ];
 const termOf = (d) => LOCK_TERMS.find(t => t.days === d) || LOCK_TERMS[2];
 const termLabel = (d) => d===0 ? 'forever' : (d>=365 ? '1 year' : d+' days');
@@ -242,12 +241,9 @@ function sync(){
   const brk = $('brk');
   if (amt > 0 && resolved){
     brk.classList.add('show');
-    const fee = amt * PROTO_FEE, net = amt - fee;
-    $('brkIn').textContent = eth(amt);
-    $('brkFee').textContent = '− ' + eth(fee);
-    $('brkNet').textContent = eth(net);
+    $('brkNet').textContent = eth(amt); // no deposit fee — all of it goes into liquidity
     const when = days===0 ? 'locked <b>forever</b>' : `locked <b>${termLabel(days)}</b> · unlocks <b>${new Date(Date.now()+days*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</b>`;
-    $('brkSum').innerHTML = `Opens a <b>$${esc(resolved.symbol||'?')}</b> position with <b>${eth(net)}</b>, ${when} (${termOf(days).boost} rewards). Earns your share of every trade's fee.`;
+    $('brkSum').innerHTML = `Opens a <b>$${esc(resolved.symbol||'?')}</b> position with <b>${eth(amt)}</b>, ${when} (${termOf(days).boost} rewards). You keep <b>95%</b> of your share of every trade's fee.`;
   } else brk.classList.remove('show');
 }
 $('amt').addEventListener('input', sync);
@@ -260,9 +256,8 @@ $('openBtn').addEventListener('click', async () => {
   const amt = parseFloat($('amt').value) || 0;
   const days = +$('term').value;
   if (!resolved || amt <= 0) return;
-  const net = (amt * (1 - PROTO_FEE)).toFixed(4);
   if (DEMO){
-    alert(`Preview — on the live site this opens a locked LP position in $${resolved.symbol}:\n\n• You open with ${amt} ETH\n• 10% protocol fee: ${(amt*PROTO_FEE).toFixed(4)} ETH\n• Into ${resolved.symbol} liquidity: ${net} ETH, locked ${termLabel(days)}\n\nYou then earn your share of every trade's fee.`);
+    alert(`Preview — on the live site this opens a locked LP position in $${resolved.symbol}:\n\n• You open with ${amt} ETH (no deposit fee — all of it into liquidity)\n• Locked ${termLabel(days)}\n• You keep 95% of your share of every trade's fee (protocol keeps 5%)`);
     return;
   }
   try {
