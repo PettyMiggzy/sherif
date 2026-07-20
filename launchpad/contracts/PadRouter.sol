@@ -21,6 +21,11 @@ interface IBondPoke {
     function poke() external;
 }
 
+interface IRewardVault {
+    // side: 0 = Traders (buy leg), 1 = Holders (sell leg)
+    function accrue(address coin, uint8 side) external payable;
+}
+
 /// @title PadRouter — the Pad's swap desk + the project fee
 /// @notice Robinhood Chain has no canonical Uniswap periphery, so this IS the router every trade goes
 /// through. Buys take native ETH (no token approval); sells take the token (one exact-amount approval to
@@ -47,6 +52,13 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     uint16 public constant PLATFORM_IMMEDIATE_BPS = 90; // of the default 1%: 0.9% to platform now
     uint16 public constant PLATFORM_DEFERRED_BPS = 10; // ...and 0.1% held until graduation
     uint16 public constant EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee -> platform (platform buy-back cut)
+    // Additive reward legs (the second half of the fee model). A flat 0.25% per side is carved ON TOP of the
+    // project's swap fee and forwarded as raw ETH to the RewardVault — buy funds that coin's trader pool, sell
+    // its holder pool. These never touch the platform/creator escrows below. Zero vault address = legs off.
+    uint16 public constant REWARD_BUY_BPS = 25; // 0.25% of buy notional -> RewardVault trader pool
+    uint16 public constant REWARD_SELL_BPS = 25; // 0.25% of sell notional -> RewardVault holder pool
+    uint8 internal constant SIDE_TRADERS = 0;
+    uint8 internal constant SIDE_HOLDERS = 1;
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     address public immutable WETH;
@@ -64,6 +76,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     }
 
     address public factory; // only the factory may register a coin (set once)
+    address public rewardVault; // RewardVault for the 0.25% trader/holder legs (0 until set — legs stay off)
     mapping(address => Cfg) internal _cfg;
     mapping(address => address) public bondOf; // token -> its Bond (once graduated)
 
@@ -88,6 +101,9 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     error Dust();
 
     event Registered(address indexed token, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps);
+    event RewardVaultSet(address vault);
+    event FloorDonated(address indexed token, uint256 amount);
+    event RewardAccrued(address indexed token, uint8 side, uint256 amount);
     event Bought(address indexed token, address indexed buyer, uint256 ethIn, uint256 fee, uint256 tokensOut);
     event Sold(address indexed token, address indexed seller, uint256 tokensIn, uint256 fee, uint256 ethOut);
     event FeeSplit(address indexed token, uint256 platform, uint256 deferred, uint256 platformCut, uint256 dev, uint256 floor, uint256 burn);
@@ -102,6 +118,25 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     function setFactory(address f) external onlyOwner {
         require(factory == address(0) && f != address(0), "set");
         factory = f;
+    }
+
+    /// @notice Point the router at the RewardVault. Until set, the two 0.25% reward legs are OFF and trades
+    /// behave exactly as before (existing platform/creator fees unchanged). Settable by the platform so the
+    /// vault can be deployed after the router; re-settable only to migrate the vault, never to a non-contract.
+    function setRewardVault(address v) external onlyOwner {
+        rewardVault = v; // zero disables the legs; a live vault turns them on
+        emit RewardVaultSet(v);
+    }
+
+    /// @notice Accept swept, unclaimed rewards back from the RewardVault and credit them to a coin's floor
+    /// escrow, so the next flushFloor turns them into that coin's Bond Bounty depth. Only the vault may call —
+    /// this is the sweep→floor bridge, reusing the audited floor plumbing. Never reverts a trade (not on the
+    /// trade path).
+    function donateFloor(address token) external payable {
+        if (msg.sender != rewardVault) revert Unknown();
+        if (msg.value == 0) return;
+        floorEscrow[token] += msg.value;
+        emit FloorDonated(token, msg.value);
     }
 
     /// @notice Ownership is load-bearing — the platform's immediate cut, deferred 0.1% and platform buy-back cut all
@@ -146,8 +181,11 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     function buy(address token, uint256 minOut) external payable nonReentrant returns (uint256 tokensOut) {
         Cfg storage c = _cfg[token];
         if (!c.set) revert Unknown();
+        // the 0.25% trader leg is carved ON TOP of the project fee (off until a vault is set)
+        uint16 rbps = rewardVault == address(0) ? 0 : REWARD_BUY_BPS;
         uint256 feeMax = (msg.value * c.buyBps) / 10_000;
-        uint256 netMax = msg.value - feeMax;
+        uint256 rwdMax = (msg.value * rbps) / 10_000;
+        uint256 netMax = msg.value - feeMax - rwdMax;
         if (netMax == 0) revert Dust();
 
         IWETH9(WETH).deposit{value: netMax}();
@@ -164,25 +202,34 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         // pool takes less and leaves a remainder.
         uint256 leftover = netMax - consumed;
         uint256 fee;
+        uint256 reward;
         uint256 spent;
         if (leftover == 0) {
-            // fully consumed — charge the fee on the gross, exactly as configured
+            // fully consumed — charge fee + reward on the gross, exactly as configured
             fee = feeMax;
+            reward = rwdMax;
             spent = msg.value;
             _distribute(token, msg.value, c.buyBps, false);
         } else {
-            // Partial fill (buy overshot the curve): charge the fee only on what was actually consumed and
-            // refund the rest — fee included — so a buyer whose order can't be fully absorbed is never taxed
-            // on ETH that never entered the trade.
+            // Partial fill (buy overshot the curve): charge fee + reward only on what was actually consumed and
+            // refund the rest — fee/reward included — so a buyer whose order can't be fully absorbed is never
+            // taxed on ETH that never entered the trade.
             IWETH9(WETH).withdraw(leftover);
             fee = (consumed * c.buyBps) / 10_000;
-            spent = consumed + fee;
-            uint256 refund = msg.value - spent; // = feeMax + leftover - fee, always ≥ 0
+            reward = (consumed * rbps) / 10_000;
+            spent = consumed + fee + reward;
+            uint256 refund = msg.value - spent; // = feeMax + rwdMax + leftover - fee - reward, always ≥ 0
             if (refund > 0) {
                 (bool r,) = msg.sender.call{value: refund}("");
                 require(r, "refund");
             }
             _distribute(token, consumed, c.buyBps, false);
+        }
+        // forward the trader leg as raw ETH to the vault's current-epoch trader pool (additive; never touches
+        // the platform/creator escrows credited in _distribute)
+        if (reward > 0) {
+            IRewardVault(rewardVault).accrue{value: reward}(token, SIDE_TRADERS);
+            emit RewardAccrued(token, SIDE_TRADERS, reward);
         }
         emit Bought(token, msg.sender, spent, fee, tokensOut);
     }
@@ -197,11 +244,19 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         (uint256 wethOut,) = _swap(token, c.pool, token, amountIn, address(this), 0);
         IWETH9(WETH).withdraw(wethOut);
 
+        uint16 rbps = rewardVault == address(0) ? 0 : REWARD_SELL_BPS;
         uint256 fee = (wethOut * c.sellBps) / 10_000;
-        ethOut = wethOut - fee;
+        uint256 reward = (wethOut * rbps) / 10_000; // 0.25% holder leg, carved on top of the creator fee
+        ethOut = wethOut - fee - reward;
         if (ethOut < minOutEth) revert Slippage();
 
         _distribute(token, wethOut, c.sellBps, true);
+        // forward the holder leg as raw ETH to the vault's current-epoch holder pool (additive; the creator
+        // sell-fee escrow in _distribute is untouched)
+        if (reward > 0) {
+            IRewardVault(rewardVault).accrue{value: reward}(token, SIDE_HOLDERS);
+            emit RewardAccrued(token, SIDE_HOLDERS, reward);
+        }
         (bool ok,) = msg.sender.call{value: ethOut}("");
         require(ok, "pay");
         emit Sold(token, msg.sender, amountIn, fee, ethOut);
