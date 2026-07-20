@@ -81,17 +81,17 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 /* composited emblem: Venice arch/city/podium plate + the real brand logo floating
    in the arch, energized by a slow-rotating light sweep. Edges dissolve into the page. */
 .hemblem{position:relative;aspect-ratio:1/1;
-  -webkit-mask-image:radial-gradient(128% 128% at 50% 47%,#000 76%,transparent 100%);
-  mask-image:radial-gradient(128% 128% at 50% 47%,#000 76%,transparent 100%)}
+  -webkit-mask-image:radial-gradient(closest-side,#000 62%,transparent 100%);
+  mask-image:radial-gradient(closest-side,#000 62%,transparent 100%)}
 .hemblem .hplate{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 /* rotating conic light-sweep behind the logo, blurred into a glow */
-.hemblem .hglow{position:absolute;left:50%;top:36%;width:56%;aspect-ratio:1;border-radius:50%;
-  transform:translate(-50%,-50%);pointer-events:none;filter:blur(16px);opacity:.9;
-  background:conic-gradient(from 0deg,transparent 0 28%,rgba(220,233,5,.28) 42%,rgba(138,99,224,.14) 55%,transparent 70% 100%);
+.hemblem .hglow{position:absolute;left:50%;top:38%;width:50%;aspect-ratio:1;border-radius:50%;
+  transform:translate(-50%,-50%);pointer-events:none;filter:blur(18px);opacity:.85;
+  background:conic-gradient(from 0deg,transparent 0 28%,rgba(220,233,5,.26) 42%,rgba(138,99,224,.12) 55%,transparent 70% 100%);
   animation:hspin 11s linear infinite}
-/* the real logo — floats + glow pulse */
-.hemblem .hlogo{position:absolute;left:50%;top:36%;width:34%;transform:translate(-50%,-50%);
-  filter:drop-shadow(0 0 20px rgba(220,233,5,.55)) drop-shadow(0 8px 24px rgba(0,0,0,.55));
+/* the real logo — floats above the podium + glow pulse */
+.hemblem .hlogo{position:absolute;left:50%;top:38%;width:30%;transform:translate(-50%,-50%);
+  filter:drop-shadow(0 0 22px rgba(220,233,5,.5)) drop-shadow(0 10px 26px rgba(0,0,0,.55));
   animation:hfloat 5.5s ease-in-out infinite;will-change:transform}
 @keyframes hspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
 @keyframes hfloat{0%,100%{transform:translate(-50%,-53%)}50%{transform:translate(-50%,-45%)}}
