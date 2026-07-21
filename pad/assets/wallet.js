@@ -171,15 +171,24 @@ async function guardedSend(contract, method, args, valueWei, label) {
   try { await contract[method].staticCall(...args, { value }); }
   catch (e) { throw friendly(e, label); }
 
-  // 2) estimate gas (a second simulation) so we can price the tx.
+  // Block gas cap. Robinhood Chain (an Arbitrum Orbit L2) runs a LOW block gas limit (~16.7M) AND its
+  // eth_estimateGas can return an inflated figure that exceeds it — even for a tx that only uses ~13M and
+  // succeeds. So we (a) fall back to the block cap when estimation over-shoots/fails, and (b) always clamp the
+  // sent gasLimit to the cap. The tx is only charged what it actually burns; the rest is refunded.
+  let cap = 0n;
+  try { cap = ((await _provider.getBlock("latest")).gasLimit * 9n) / 10n; } catch {}
+
+  // 2) estimate gas so we can price the tx; on failure (e.g. estimate > cap on the L2), fall back to the cap.
   let gas;
   try { gas = await contract[method].estimateGas(...args, { value }); }
-  catch (e) { throw friendly(e, label); }
+  catch (e) { if (cap > 0n) gas = cap; else throw friendly(e, label); }
+  let gasLimit = (gas * 12n) / 10n;
+  if (cap > 0n && gasLimit > cap) gasLimit = cap;
 
   // 3) balance check — the whole point: refuse locally, kindly, if it won't fit.
   const [bal, fee] = await Promise.all([_provider.getBalance(_account), _provider.getFeeData()]);
   const gasPrice = fee.maxFeePerGas ?? fee.gasPrice ?? 0n;
-  const gasCost = gas * gasPrice;
+  const gasCost = gasLimit * gasPrice;
   const need = value + gasCost + GAS_BUFFER_WEI;
   if (bal < need) {
     const fmt = (w) => (+ethers.formatEther(w)).toFixed(4);
@@ -188,7 +197,7 @@ async function guardedSend(contract, method, args, valueWei, label) {
 
   // 4) send — single signer, feePayer = the user, one recipient. [Rules 2 & 4]
   try {
-    return await contract[method](...args, { value, gasLimit: (gas * 12n) / 10n });
+    return await contract[method](...args, { value, gasLimit });
   } catch (e) { throw friendly(e, label); }
 }
 
