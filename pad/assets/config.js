@@ -28,24 +28,24 @@ export const CONTRACTS = {
   v3Factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
 
   // Our CurvePadFactory (one-call launch) — LIVE on Robinhood Chain.
-  padFactory: "0x10439dB99088e22184ACe2Fa9151C6f39FEb5E7E",
+  padFactory: "0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2",
 
   // Our PadRouter — the swap desk + project fee. Robinhood Chain has no canonical
   // Uniswap periphery, so THIS is the router every trade goes through — LIVE.
-  padRouter: "0x5c42e577233D945a3317587377637Dd2B28DbF28",
+  padRouter: "0x7d0c7122E26a75A9f0bd753e84c6115CAfE3Fd9F",
 
   // Our RewardVault — custodies the additive 0.25% trader + 0.25% holder legs and
   // pays capped, Merkle-proven claims in real ETH. Empty until the reward system
   // ships alongside the next router deploy; the frontend stays inert until it's set.
-  rewardVault: "0x8A9C4579C27F950d678A3D486D98F21c25Ba7EDc",
+  rewardVault: "0x0F07dC315e332084129c1D00bEbADAb05edf79Dc",
 
   // Our FloorCoopFactory — deploys a per-coin community floor vault (add to the buy-wall, earn dip-buy
   // fees, withdrawable after a cooldown). Empty until it ships with the reward system's deploy.
-  floorCoopFactory: "0x5A04314a0FF054f31518D7bE54cfcF43E258f64B",
+  floorCoopFactory: "0x26aBF8443C30AA2913b9f94B89787d38146C825b",
 
   // Our PlatformFeeSplitter — routes the platform's cut ($ROBIN buyback split). Standalone; used by the
   // admin panel to read/set the split. Empty until deployed.
-  platformSplitter: "0xf225AaFB594A9DCF4136143eE4f7FF850BaeF6a0",
+  platformSplitter: "0xAc918cd2BF3affFEc81A4f55238539d7eBFd156f",
 
   // The platform's buy-back token + its WETH pool (for links / a future buy widget).
   // The above-default fee's 25% cut is paid to the platform, which buys+burns the
