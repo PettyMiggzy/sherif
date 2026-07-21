@@ -103,6 +103,19 @@ test("holder side rewards balance-seconds (Bob 2.4M > Carol 2.0M > Alice 0.65M)"
   }
 });
 
+test("single-leaf epoch: empty proof verifies, wrong amount is unforgeable", () => {
+  // An epoch where exactly one (user,coin,side) earned → a 1-leaf tree (root == the double-hashed leaf, proof []).
+  // The contract's MerkleProof.verify([], root, leaf) returns leaf==root, so this MUST accept the real leaf and
+  // reject any other — and the double-hash keeps a 32-byte leaf from ever colliding with a 64-byte internal node.
+  const one = StandardMerkleTree.of([[9n, COIN, SIDE.Holders, A, 42n]], LEAF_TYPES);
+  const proof = one.getProof([9n, COIN, SIDE.Holders, A, 42n]);
+  assert.equal(proof.length, 0, "single-leaf proof is empty");
+  assert.equal(one.leafHash([9n, COIN, SIDE.Holders, A, 42n]), one.root, "root == leaf for a 1-leaf tree");
+  assert.ok(StandardMerkleTree.verify(one.root, LEAF_TYPES, [9n, COIN, SIDE.Holders, A, 42n], proof), "real leaf verifies");
+  assert.ok(!StandardMerkleTree.verify(one.root, LEAF_TYPES, [9n, COIN, SIDE.Holders, A, 43n], proof), "wrong amount must fail");
+  assert.ok(!StandardMerkleTree.verify(one.root, LEAF_TYPES, [9n, COIN, SIDE.Traders, A, 42n], proof), "wrong side must fail");
+});
+
 test("algoHash is the keccak of the frozen spec", () => {
   assert.equal(res.algoHash, ethers.keccak256(ethers.toUtf8Bytes(
     "RobinLabs-Rewards-v1|traders=max(0,net_token_accumulation_in_epoch)|" +
