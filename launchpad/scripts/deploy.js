@@ -74,6 +74,14 @@ async function main() {
   const floorFactory = await track("FloorCoopFactory", await (await ethers.getContractFactory("FloorCoopFactory")).deploy(
     WETH, V3_FACTORY, FLOOR_TREASURY
   ));
+  // FloorCoopFactory's owner defaults to the deployer (its constructor takes no owner). Every OTHER contract is
+  // owned by OWNER via its constructor; hand this one over too so the admin wallet owns the whole stack. One-step
+  // so OWNER never has to sign an accept (it can stay cold). Skipped when you deploy from OWNER itself.
+  if (owner.toLowerCase() !== deployer.address.toLowerCase()) {
+    const ft = await (await floorFactory.transferOwnership(owner)).wait();
+    totalGas += ft.gasUsed;
+    console.log(`  floorFactory.transferOwnership -> OWNER  (gas ${ft.gasUsed})`);
+  }
 
   // ── platform fee splitter (standalone; ships as a 100% passthrough) ─────────
   // Deployed but NOT auto-wired as a fee sink: it auto-routes on receive(), so a payer must use .call (not the

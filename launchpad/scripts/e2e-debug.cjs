@@ -193,5 +193,14 @@ async function main() {
     const prc = await (await routerC.withdrawPlatform()).wait();
     console.log("PLATFORM withdrawPlatform OK gas=", prc.gasUsed.toString(), "escrow", ethers.formatEther(pe), "→", ethers.formatEther(await routerC.platformEscrow()));
   } catch (e) { console.log("PLATFORM FAILED:", e.shortMessage || e.message); }
+
+  // (F) FloorCoopFactory ownership handoff (the new one-step transferOwnership the deploy uses)
+  try {
+    const signers = await ethers.getSigners();
+    const before = await floorFac.owner();
+    await (await floorFac.transferOwnership(signers[1].address)).wait();
+    const after = await floorFac.owner();
+    console.log("FLOOR OWNERSHIP:", before, "->", after, after.toLowerCase() === signers[1].address.toLowerCase() ? "OK" : "MISMATCH");
+  } catch (e) { console.log("OWNERSHIP FAILED:", e.shortMessage || e.message); }
 }
 main().catch((e) => { console.error(e); process.exit(1); });

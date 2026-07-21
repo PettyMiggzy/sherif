@@ -19,6 +19,7 @@ contract FloorCoopFactory {
 
     event CoopCreated(address indexed token, address coop);
     event TreasurySet(address treasury);
+    event OwnershipTransferred(address indexed from, address indexed to);
 
     constructor(address weth_, address v3Factory_, address treasury_) {
         require(weth_ != address(0) && v3Factory_ != address(0) && treasury_ != address(0), "zero");
@@ -34,6 +35,16 @@ contract FloorCoopFactory {
         require(t != address(0), "zero");
         treasury = t;
         emit TreasurySet(t);
+    }
+
+    /// One-step ownership handoff. Used at deploy to hand the factory to the platform admin wallet WITHOUT that
+    /// wallet needing to sign an accept — so it can stay cold. The only owner power here is setTreasury; the
+    /// factory custodies no funds itself. Guarded against the zero address so ownership can't be burned by mistake.
+    function transferOwnership(address newOwner) external {
+        if (msg.sender != owner) revert NotOwner();
+        require(newOwner != address(0), "zero");
+        emit OwnershipTransferred(owner, newOwner);
+        owner = newOwner;
     }
 
     function createCoop(address token) external returns (address coop) {

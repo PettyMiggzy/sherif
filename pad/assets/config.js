@@ -212,6 +212,7 @@ export const ADMIN_ABI = {
     "function treasury() view returns (address)",
     "function coopOf(address token) view returns (address)",
     "function setTreasury(address t)",
+    "function transferOwnership(address newOwner)",
   ],
   floorCoop: ["function sweepProtocol()", "function protocolWeth() view returns (uint256)", "function protocolToken() view returns (uint256)"],
   splitter: [

@@ -2,18 +2,21 @@
 
 The exact sequence to take the pad live on Robinhood Chain (chainId 4663). Do it on **testnet first**.
 
-## 0. Hard gate (read first)
-`FloorCoop.sol` (locked-LP staking) has had two internal adversarial audit passes + fixes, but **NOT** a paid external audit or testnet simulation. It custodies user funds and swaps. **Do not put real funds through FloorCoop on mainnet until an external audit + sims are done.** You can launch the rest of the pad (curve launches, trading, rewards) without it — just leave `floorCoopFactory` empty in config until FloorCoop clears audit.
+## 0. Risk you're accepting (read first)
+You've chosen to ship the **full stack**, including `FloorCoop` (locked-LP staking) and `RewardVault`, which
+custody user funds. Both have had internal adversarial audit passes + fixes and are covered end-to-end by
+`npm run e2e` (26/26: launch → trade → creator fees → graduate → LP deposit/earn-fees/claim/withdraw → reward
+claim → admin), but **NOT** a paid external audit. **Strongly recommended: get an external audit before large
+TVL builds up in FloorCoop.** If you'd rather stage it, you can still launch core-only by leaving
+`floorCoopFactory` empty in `config.js` and adding it after audit — the core needs no redeploy.
 
 ## 1. Env (`launchpad/.env`, gitignored — never commit keys)
 ```
-PRIVATE_KEY=0x...            # deployer (funded)
+PRIVATE_KEY=0x...            # DEPLOYER (funded, ~0.02 ETH) — can be a throwaway; KEEP SECRET, never commit
 ROBINHOOD_RPC=https://...    # chain RPC
-OWNER=0x...                  # admin + platform fee sink — USE A MULTISIG for prod
-POSTER=0x...                 # the indexer address that posts reward merkle roots
-GUARDIAN=0x...               # can veto a bad reward root in the challenge window
-FLOOR_TREASURY=0x...         # receives FloorCoop's 10% open fee + 5% fee cut + penalties
-PLATFORM_TREASURY=0x...      # PlatformFeeSplitter treasury
+OWNER=0xcdd5ff5d521d3694c2a2f31edf7cd3c0e9a6fabf   # admin + fee sink — your cold wallet; owns all 6 contracts
+POSTER=0x4b9d2eb283443154594e4174309f2355e5efc261  # posts reward merkle roots
+# GUARDIAN, FLOOR_TREASURY, PLATFORM_TREASURY, PLATFORM all default to OWNER if unset (guardian = owner is fine).
 # optional tuning: EPOCH_LEN, FINALITY_DELAY, CHALLENGE_WINDOW, START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH
 ```
 Confirmed infra (already defaulted in deploy.js): `WETH=0x0Bd7…D73`, `V3_FACTORY=0x1f7d…efa`.
@@ -27,18 +30,28 @@ npx hardhat run scripts/deploy.js --network robinhood   # REAL deploy
 Deploys + wires: 3 deployers, PadRouter, CurvePadFactory, RewardVault (+ `router.setRewardVault`),
 FloorCoopFactory, PlatformFeeSplitter. ~16.3M gas total. It prints the address block for step 3.
 
+**Ownership — all six end up owned by `OWNER`, and `OWNER` never has to sign at deploy (stays cold):**
+PadRouter, CurvePadFactory, RewardVault, PlatformFeeSplitter get `OWNER` via their constructor.
+FloorCoopFactory's owner defaults to the *deployer*, so the script then calls `floorFactory.transferOwnership(OWNER)`
+automatically (one-step — no accept needed). If you deploy *from* `OWNER`, that transfer is skipped (already owned).
+Future owner changes on the router/factory/vault are safe two-step (Ownable2Step: transfer → accept).
+
 ## 3. Wire the front-end (`pad/assets/config.js`)
-Paste the printed addresses into `CONTRACTS`:
-`padRouter`, `padFactory`, `rewardVault`, `floorCoopFactory` (leave empty until FloorCoop clears audit).
-Then set `API_BASE` to your deployed indexer URL (see step 5).
+Paste all five printed addresses into `CONTRACTS`: `padRouter`, `padFactory`, `rewardVault`,
+`floorCoopFactory`, `platformSplitter`. Then set `API_BASE` to your deployed indexer URL (see step 5), or leave
+`""` for direct-RPC. The token page auto-runs the **GoPlus + template safety scan** (`assets/safety.js`) — no
+config needed; GoPlus already supports Robinhood Chain (4663).
 
 ## 4. Flip the pad out of preview mode
-`pad/assets/demo.js` currently forces DEMO **on** (line ~11: `!has("live")`). For a real launch flip it
-back to opt-in so real visitors see the live (empty-then-real) board, not sample coins:
+`pad/assets/demo.js` currently defaults DEMO **on** for the public preview board (localhost auto-shows real
+data; your production domain still shows sample coins unless `?live`). For a real launch, make live the default
+so real visitors see the real board — change the final fallback in the `DEMO` expression from `: true` to
+`: _q.has("demo")` (preview then stays reachable at `?demo=1`):
 ```js
-export const DEMO = typeof location !== "undefined" && new URLSearchParams(location.search).has("demo");
+export const DEMO = typeof location !== "undefined" && (
+  _q.has("demo") ? true : _q.has("live") ? false : _localRpc ? false : _q.has("demo")
+);
 ```
-(Preview stays reachable at `?demo=1`.)
 
 ## 5. Deploy the indexer
 `indexer/` is a reorg-safe indexer + JSON API that feeds the live board (`/api/coins` with
