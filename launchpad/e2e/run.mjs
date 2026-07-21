@@ -234,6 +234,13 @@ async function main() {
     null, { timeout: 20000 }).then(() => true).catch(() => false);
   check("wallet connected in UI", connected, connected ? await page.textContent("#connectBtn") : "connect button never showed an address");
 
+  // Link Telegram — a FREE personal_sign (never a transaction, never on the payment path)
+  await page.fill("#tg", "https://t.me/robinlabs_e2e");
+  await page.click("#linkTg");
+  await page.waitForFunction(() => /Telegram linked ✓|failed|error|cancelled/i.test(document.getElementById("launchNote")?.textContent || ""), null, { timeout: 20000 }).catch(() => {});
+  const tgNote = (await page.textContent("#launchNote").catch(() => "")) || "";
+  check("Telegram link via free signature works", /Telegram linked ✓/.test(tgNote), tgNote.trim().slice(0, 80));
+
   await page.click("#launchBtn");
   const settled = await page.waitForFunction(() => {
     const t = document.getElementById("launchNote")?.textContent || "";
@@ -319,6 +326,41 @@ async function main() {
     const buyNote = (await page.textContent("#tradeNote").catch(() => "")) || "";
     check("UI buy on the curve works", /Bought ✓/.test(buyNote), buyNote.trim().slice(0, 90));
 
+    // (1b) prove the SELL button — exact-amount approval + router.sell (sells are never gated by the guard)
+    const erc20 = new ethers.Contract(token, ["function balanceOf(address) view returns (uint256)"], node2);
+    const held = await erc20.balanceOf(ACCT);
+    const sellHuman = String(Math.max(1, Math.floor(Number(ethers.formatUnits(held, 18)) * 0.1)));
+    await page.click("#tSell");
+    await page.fill("#amtInput", sellHuman);
+    await page.click("#trade");
+    await page.waitForFunction(() => {
+      const t = document.getElementById("tradeNote")?.textContent || "";
+      return /Sold ✓/.test(t) || /(failed|Not enough|Couldn|revert|slippage|cancelled)/i.test(t);
+    }, null, { timeout: 60000 }).catch(() => {});
+    const sellNote = (await page.textContent("#tradeNote").catch(() => "")) || "";
+    check("UI sell works (approval + router.sell)", /Sold ✓/.test(sellNote), sellNote.trim().slice(0, 90));
+
+    // (1c) prove the CREATOR controls — the dev panel shows because the connected wallet launched this coin
+    const devVisible = await page.waitForFunction(() => { const d = document.getElementById("devPanel"); return d && getComputedStyle(d).display !== "none"; }, null, { timeout: 15000 }).then(() => true).catch(() => false);
+    const routerViews = new ethers.Contract(addrs.padRouter, ["function devEscrow(address) view returns (uint256)"], node2);
+    const escBefore = await routerViews.devEscrow(token);
+    if (devVisible) {
+      await page.click('#targetSeg button[data-tg="min"]');
+      await page.waitForFunction(() => /Target updated ✓|failed|error/i.test(document.getElementById("tradeNote")?.textContent || ""), null, { timeout: 30000 }).catch(() => {});
+      const tgtNote = (await page.textContent("#tradeNote").catch(() => "")) || "";
+      check("UI set graduation target (dev control) works", /Target updated ✓/.test(tgtNote), tgtNote.trim().slice(0, 60));
+      await page.click("#collectBtn");
+      await page.waitForFunction(() => /Collected ✓|failed|error/i.test(document.getElementById("tradeNote")?.textContent || ""), null, { timeout: 30000 }).catch(() => {});
+      const colNote = (await page.textContent("#tradeNote").catch(() => "")) || "";
+      check("UI collect creator fees (withdrawDev) works", /Collected ✓/.test(colNote), `sellFee escrow=${(+ethers.formatEther(escBefore)).toFixed(5)} ETH · ${colNote.trim().slice(0, 40)}`);
+      await page.click("#burnBtn");
+      await page.waitForFunction(() => /Burned ✓|failed|error/i.test(document.getElementById("tradeNote")?.textContent || ""), null, { timeout: 30000 }).catch(() => {});
+      const burnNote = (await page.textContent("#tradeNote").catch(() => "")) || "";
+      check("UI buy & burn (burnDev) works", /Burned ✓/.test(burnNote), burnNote.trim().slice(0, 50));
+    } else {
+      check("creator controls (dev panel) available", false, "dev panel never became visible");
+    }
+
     // (2) setup: aim graduation at the earliest tick, then climb (direct router buys) until ready
     const minTick = await curve.minGradTick();
     await (await curve.setGradTarget(minTick)).wait();
@@ -358,6 +400,82 @@ async function main() {
     const stageShown = await page.waitForFunction(() => /Graduated/i.test(document.getElementById("stStage")?.textContent || ""), null, { timeout: 15000 }).then(() => true).catch(() => false);
     await page.screenshot({ path: path.join(SHOTS, "token-graduated.png"), fullPage: true }).catch(() => {});
     check("token page shows the Graduated stage", stageShown, stageShown ? "stage = Graduated, Bond live" : "stage never flipped");
+
+    // ============ POST-GRADUATION FEATURES: LP vault · rewards · admin ============
+
+    // (6) THE LP VAULT ("lock liquidity") — deposit, claim, withdraw. The deposit's manipulation guard needs a
+    //     warm TWAP: prime it with two small swaps spaced in time, then let the price settle so spot ≈ TWAP.
+    try {
+      await (await router.buy(token, 0n, { value: ethers.parseEther("0.05") })).wait();
+      await node2.send("evm_increaseTime", [45]); await node2.send("evm_mine", []);
+      await (await router.buy(token, 0n, { value: ethers.parseEther("0.05") })).wait();
+      await node2.send("evm_increaseTime", [400]); await node2.send("evm_mine", []);
+    } catch (e) { log("floor TWAP warmup:", e.message); }
+    await page.goto(`${WEB_URL}/token.html?c=${token}`, { waitUntil: "domcontentloaded" });
+    await page.click("#connectBtn").catch(() => {});
+    await page.waitForFunction(() => /0x[0-9a-fA-F]{4}…/.test(document.getElementById("connectBtn")?.textContent || ""), null, { timeout: 15000 }).catch(() => {});
+    const coopContract = (a) => new ethers.Contract(a, ["function shares(address) view returns (uint256)"], node2);
+    const floorFacC = new ethers.Contract(addrs.floorCoopFactory, ["function coopOf(address) view returns (address)"], node2);
+    await page.fill("#fcInput", "0.1");
+    await page.click("#fcAdd");
+    await page.waitForFunction(() => /locked ✓|failed|Not enough|Couldn|revert|Manipulated|Stale|cancelled/i.test(document.getElementById("tradeNote")?.textContent || ""), null, { timeout: 60000 }).catch(() => {});
+    const lockNote = (await page.textContent("#tradeNote").catch(() => "")) || "";
+    let coopAddr = await floorFacC.coopOf(token);
+    let mineShares = (coopAddr && !/^0x0+$/.test(coopAddr)) ? await coopContract(coopAddr).shares(ACCT) : 0n;
+    check("UI lock liquidity (FloorCoop deposit) works", /locked ✓/i.test(lockNote) && mineShares > 0n, `${lockNote.trim().slice(0, 50)} · shares=${mineShares}`);
+    await page.click("#fcClaim");
+    await page.waitForFunction(() => /Claimed ✓|failed|error|revert/i.test(document.getElementById("tradeNote")?.textContent || ""), null, { timeout: 30000 }).catch(() => {});
+    check("UI claim floor fees works", /Claimed ✓/i.test((await page.textContent("#tradeNote").catch(() => "")) || ""), "floorClaim");
+    await page.click("#fcWithdraw");
+    await page.waitForFunction(() => /Withdrawn ✓|failed|error|revert/i.test(document.getElementById("tradeNote")?.textContent || ""), null, { timeout: 40000 }).catch(() => {});
+    const fcWNote = (await page.textContent("#tradeNote").catch(() => "")) || "";
+    const sharesAfter = (coopAddr && !/^0x0+$/.test(coopAddr)) ? await coopContract(coopAddr).shares(ACCT) : 0n;
+    check("UI withdraw from floor works", /Withdrawn ✓/i.test(fcWNote) && sharesAfter === 0n, `${fcWNote.trim().slice(0, 45)} · sharesAfter=${sharesAfter}`);
+
+    // (7) REWARDS — accrue a 0.25% leg, advance the epoch, the poster posts a root, then CLAIM through the exact
+    //     frontend function the Rewards page calls (Pad.claimReward → guardedSend → RewardVault.claim).
+    try {
+      const rv = new ethers.Contract(addrs.rewardVault, [
+        "function currentEpoch() view returns (uint256)", "function EPOCH() view returns (uint256)",
+        "function pot(address,uint256) view returns (uint128 traderPot, uint128 holderPot)",
+        "function postRoot(uint256 epoch, bytes32 root, bytes32 algoHash, string uri)",
+      ], owner);
+      const E = Number(await rv.currentEpoch());
+      await (await router.buy(token, 0n, { value: ethers.parseEther("0.2") })).wait();
+      const potE = await rv.pot(token, E);
+      const amount = potE.traderPot; // single claimant → the whole trader pot is one leaf
+      const EPOCH = Number(await rv.EPOCH());
+      await node2.send("evm_setNextBlockTimestamp", [(E + 1) * EPOCH + 5]); await node2.send("evm_mine", []);
+      const inner = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "address", "uint8", "address", "uint256"], [E, token, 0, ACCT, amount]));
+      const leaf = ethers.keccak256(inner); // OZ StandardMerkleTree root of a single leaf IS the leaf; proof []
+      await (await rv.postRoot(E, leaf, ethers.keccak256(ethers.toUtf8Bytes("RobinLabs-Rewards-v1")), "")).wait();
+      const claimHash = await page.evaluate(async (row) => {
+        const tx = await window.RobinPad.claimReward(row);
+        return (await tx.wait()).hash;
+      }, { epoch: E, coin: token, side: 0, amount: amount.toString(), proof: [] });
+      check("UI claim reward (RewardVault) works", typeof claimHash === "string" && claimHash.startsWith("0x"),
+        `claimed ${(+ethers.formatEther(amount)).toFixed(5)} ETH · tx ${(claimHash || "").slice(0, 12)}…`);
+    } catch (e) {
+      check("UI claim reward (RewardVault) works", false, (e.message || String(e)).slice(0, 90));
+    }
+
+    // (8) ADMIN PANEL — drive the real owner console (admin.html): withdraw the platform's accrued buy-side fees.
+    try {
+      const routerR = new ethers.Contract(addrs.padRouter, ["function platformEscrow() view returns (uint256)"], node2);
+      const peBefore = await routerR.platformEscrow();
+      await page.goto(`${WEB_URL}/admin.html`, { waitUntil: "domcontentloaded" });
+      await page.click("#connectBtn").catch(() => {});
+      await page.waitForFunction(() => (document.getElementById("valPlatformEscrow")?.textContent || "—") !== "—", null, { timeout: 20000 }).catch(() => {});
+      await page.click('button[data-act="withdrawPlatform"]');
+      await page.waitForFunction(() => /withdrawPlatform ✓|✗/i.test(document.getElementById("toast")?.textContent || ""), null, { timeout: 40000 }).catch(() => {});
+      const toastTxt = (await page.textContent("#toast").catch(() => "")) || "";
+      const peAfter = await routerR.platformEscrow();
+      await page.screenshot({ path: path.join(SHOTS, "admin-panel.png"), fullPage: true }).catch(() => {});
+      check("admin panel withdraws platform fees", /withdrawPlatform ✓/i.test(toastTxt) && peBefore > 0n && peAfter === 0n,
+        `escrow ${(+ethers.formatEther(peBefore)).toFixed(5)} → ${(+ethers.formatEther(peAfter)).toFixed(5)} · ${toastTxt.trim().slice(0, 35)}`);
+    } catch (e) {
+      check("admin panel withdraws platform fees", false, (e.message || String(e)).slice(0, 90));
+    }
   }
 
   if (cerr.length) log("page console errors:", cerr.slice(0, 6).join(" | "));

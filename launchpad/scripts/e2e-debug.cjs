@@ -18,9 +18,11 @@ async function main() {
   const factory = await D("CurvePadFactory", WETH, V3FAC, owner, owner, await router.getAddress(),
     await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207400, 38000, 27000);
   await (await router.setFactory(await factory.getAddress())).wait();
-  const rv = await D("RewardVault", await router.getAddress(), owner, owner, 604800, 86400, 172800, 2592000, owner);
+  // short reward windows so the post→claim path is testable fast: EPOCH 1h, finalityDelay 0, challenge 0, claim 1d
+  const rv = await D("RewardVault", await router.getAddress(), owner, owner, 3600, 0, 0, 86400, owner);
   await (await router.setRewardVault(await rv.getAddress())).wait();
-  console.log("deployed. router=", await router.getAddress());
+  const floorFac = await D("FloorCoopFactory", WETH, V3FAC, owner);
+  console.log("deployed. router=", await router.getAddress(), "floorFac=", await floorFac.getAddress());
 
   // launch with a 0.5 ETH dev buy
   const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: owner };
@@ -110,5 +112,65 @@ async function main() {
     console.log("CLIMB/GRADUATE FAILED:", e.shortMessage || e.message);
     if (e.data) console.log("  revert data:", e.data);
   }
+
+  // (C) FloorCoop LP: createCoop → warm the oracle → deposit → claim → withdraw
+  try {
+    let coop = await floorFac.coopOf(token);
+    if (/^0x0+$/.test(coop)) { await (await floorFac.createCoop(token)).wait(); coop = await floorFac.coopOf(token); }
+    const coopC = await ethers.getContractAt([
+      "function deposit(uint256 lockDays, uint256 minSharesOut) payable returns (uint256)",
+      "function withdraw(uint256 shareAmt, uint256 minWethOut, uint256 minTokenOut) returns (uint256,uint256)",
+      "function claim()", "function shares(address) view returns (uint256)",
+      "function totalNav() view returns (uint256)", "function totalShares() view returns (uint256)",
+    ], coop);
+    // warm the oracle: two swaps ≥30s apart to write observations, then let the price hold long enough that the
+    // TWAP window (300s) is entirely in the settled period → spot ≈ TWAP, so the deposit's Manipulated guard passes.
+    await (await routerC.buy(token, 0n, { value: ethers.parseEther("0.05") })).wait();
+    await ethers.provider.send("evm_increaseTime", [45]); await ethers.provider.send("evm_mine", []);
+    await (await routerC.buy(token, 0n, { value: ethers.parseEther("0.05") })).wait();
+    await ethers.provider.send("evm_increaseTime", [400]); await ethers.provider.send("evm_mine", []);
+    const drc = await (await coopC.deposit(90, 0n, { value: ethers.parseEther("0.1") })).wait();
+    const sh = await coopC.shares(owner);
+    console.log("FLOOR deposit OK gas=", drc.gasUsed.toString(), "shares=", sh.toString(), "nav=", ethers.formatEther(await coopC.totalNav()));
+    try { await (await coopC.claim()).wait(); console.log("FLOOR claim OK"); } catch (e) { console.log("FLOOR claim:", e.shortMessage || e.message); }
+    const wrc = await (await coopC.withdraw(sh, 0n, 0n)).wait();
+    console.log("FLOOR withdraw OK gas=", wrc.gasUsed.toString(), "sharesAfter=", (await coopC.shares(owner)).toString());
+  } catch (e) {
+    console.log("FLOOR FAILED:", e.shortMessage || e.message);
+    if (e.data) console.log("  revert data:", e.data);
+  }
+
+  // (D) RewardVault: accrue a leg → advance the epoch → poster posts a root → user claims
+  try {
+    const rvC = await ethers.getContractAt([
+      "function currentEpoch() view returns (uint256)", "function EPOCH() view returns (uint256)",
+      "function pot(address,uint256) view returns (uint128 traderPot, uint128 holderPot)",
+      "function postRoot(uint256 epoch, bytes32 root, bytes32 algoHash, string uri)",
+      "function claim(uint256 epoch, address coin, uint8 side, uint256 amount, bytes32[] proof)",
+    ], await rv.getAddress());
+    const E = Number(await rvC.currentEpoch());
+    await (await routerC.buy(token, 0n, { value: ethers.parseEther("0.2") })).wait(); // 0.25% → traderPot for epoch E
+    const pot = await rvC.pot(token, E);
+    console.log("rewards epoch E=", E, "traderPot=", ethers.formatEther(pot.traderPot));
+    const amount = pot.traderPot;
+    const EPOCH = Number(await rvC.EPOCH());
+    await ethers.provider.send("evm_setNextBlockTimestamp", [(E + 1) * EPOCH + 5]); await ethers.provider.send("evm_mine", []);
+    // single-claimant → the whole pot is one leaf; OZ StandardMerkleTree root of one leaf IS the leaf, proof []
+    const inner = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "address", "uint8", "address", "uint256"], [E, token, 0, owner, amount]));
+    const leaf = ethers.keccak256(inner);
+    await (await rvC.postRoot(E, leaf, ethers.keccak256(ethers.toUtf8Bytes("RobinLabs-Rewards-v1")), "")).wait();
+    const crc = await (await rvC.claim(E, token, 0, amount, [])).wait();
+    console.log("REWARD post+claim OK gas=", crc.gasUsed.toString(), "claimed=", ethers.formatEther(amount), "ETH");
+  } catch (e) {
+    console.log("REWARDS FAILED:", e.shortMessage || e.message);
+    if (e.data) console.log("  revert data:", e.data);
+  }
+
+  // (E) platform fee withdrawal (permissionless; funds go to owner)
+  try {
+    const pe = await routerC.platformEscrow();
+    const prc = await (await routerC.withdrawPlatform()).wait();
+    console.log("PLATFORM withdrawPlatform OK gas=", prc.gasUsed.toString(), "escrow", ethers.formatEther(pe), "→", ethers.formatEther(await routerC.platformEscrow()));
+  } catch (e) { console.log("PLATFORM FAILED:", e.shortMessage || e.message); }
 }
 main().catch((e) => { console.error(e); process.exit(1); });

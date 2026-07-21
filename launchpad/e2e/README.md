@@ -24,14 +24,20 @@ conditions, with nobody clicking anything. Exit code `0` = all green.
    *exactly* like the real chain — the emulator just guarantees it either way.)
 4. **Serves a copy of `pad/`** with `config.js` pointed at the proxy and the fresh addresses (your real
    `config.js` is never touched).
-5. **Drives the whole lifecycle in headless Chromium** through an **injected wallet** (a local unlocked key —
-   no MetaMask), asserting each step in the UI *and* on-chain:
-   - **Launch** — clicks the real Launch button on `create.html`; asserts a coin appears on-chain.
-   - **Token page** — opens `token.html` and asserts it renders real data (no demo banner).
-   - **Buy** — advances past the token's anti-snipe window (a trader arriving after the opening), then clicks
-     the real Buy button; asserts "Bought ✓".
-   - **Graduate** — climbs the curve to the graduation window, clicks the real Graduate button; asserts the
-     Bond posts, on-chain `graduated()` flips true with a live Bond address, and the page shows "Graduated".
+5. **Drives EVERY feature in headless Chromium** through an **injected wallet** (a local unlocked key —
+   no MetaMask), asserting each in the UI *and* on-chain:
+   - **Link Telegram** — a free `personal_sign` on `create.html` (never a tx).
+   - **Launch** — the real Launch button on `create.html`; asserts a coin appears on-chain.
+   - **Token page** — opens `token.html`, asserts it renders real data (no demo banner).
+   - **Buy / Sell** — advances past the token's anti-snipe window (a trader arriving after the opening), then
+     the real Buy button, then the Sell toggle (exact-amount approval → `router.sell`).
+   - **Creator controls** — set graduation target, collect fees (`withdrawDev`), buy & burn (`burnDev`).
+   - **Graduate** — climbs the curve, clicks the real Graduate button; asserts the Bond posts, on-chain
+     `graduated()` flips true, and the page shows "Graduated".
+   - **LP vault (lock liquidity)** — warms the pool's TWAP oracle, then deposit → claim fees → withdraw.
+   - **Rewards** — accrues a 0.25% leg, advances the epoch, the poster posts a merkle root, then the frontend
+     `claimReward` claims real ETH.
+   - **Admin panel** — drives `admin.html` as the owner to withdraw the platform's accrued fees.
 
 ## Why it matters
 
@@ -41,22 +47,30 @@ real chain, so this is a faithful regression test of the legacy-tx gas fix in
 "no ETH" / "missing revert data" in MetaMask:
 
 ```
-PASS  UI reports launch success  (Launched ✓ tx 0x…)
-PASS  a coin exists on-chain  (factory.tokenCount()=1)
-PASS  launched token is a real ERC-20  (name="E2E Wolf" symbol="E2EW" supply=1000000000)
-PASS  estimateGas was hostile (36M+ over the 2^24 cap) yet the launch still landed
-PASS  the sent tx fit under the 2^24 per-tx cap  (0 rejected, 0 maxPriorityFee calls)
+PASS  Telegram link via free signature works        (personal_sign)
+PASS  UI reports launch success                      (Launched ✓)
+PASS  a coin exists on-chain / real ERC-20           (E2EW, 1B supply)
+PASS  estimateGas was hostile (36M+ over the cap) yet the launch still landed
+PASS  the sent tx fit under the 2^24 per-tx cap      (0 rejected, 0 maxPriorityFee calls)
 PASS  token page renders the real coin (no demo banner)
-PASS  UI buy on the curve works  (Bought ✓)
-PASS  curve reaches the graduation window  (ready=true after ~2 ETH of buys)
-PASS  UI graduate succeeds (Bond posted, under the 2^24 cap)
-PASS  coin graduated on-chain with a live Bond  (graduated=true bond=0x…)
+PASS  UI buy on the curve works                      (Bought ✓)
+PASS  UI sell works (approval + router.sell)         (Sold ✓)
+PASS  UI set graduation target (dev control)         (Target updated ✓)
+PASS  UI collect creator fees (withdrawDev)          (Collected ✓)
+PASS  UI buy & burn (burnDev)                        (Burned ✓)
+PASS  curve reaches the graduation window
+PASS  UI graduate succeeds (Bond posted, under the cap)
+PASS  coin graduated on-chain with a live Bond
 PASS  token page shows the Graduated stage
+PASS  UI lock liquidity (FloorCoop deposit)          (shares minted)
+PASS  UI claim floor fees / UI withdraw from floor   (shares → 0)
+PASS  UI claim reward (RewardVault)                  (claimed real ETH)
+PASS  admin panel withdraws platform fees            (escrow → 0)
 ```
 
-Measured gas on this stack (all under Robinhood's 16,777,216 per-tx cap): **launch 12.9M · buy 228k ·
-graduate 2.7M**. `scripts/e2e-debug.cjs` is a bare contract-level harness (no UI, no proxy) for reproducing
-these numbers / any revert directly.
+24/24 primary checks green. Measured gas, all under Robinhood's 16,777,216 per-tx cap: **launch 12.9M ·
+buy 228k · sell 223k · graduate 2.7M · floor deposit 496k · reward claim 88k**. `scripts/e2e-debug.cjs` is a
+bare contract-level harness (no UI, no proxy) for reproducing these numbers / any revert directly.
 
 ## Artifacts
 

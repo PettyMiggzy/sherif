@@ -45,10 +45,12 @@ async function main() {
   );
   await (await router.setFactory(await factory.getAddress())).wait();
 
+  // Short reward windows so the E2E can post + claim a root fast: EPOCH 1h (the contract min), finalityDelay 0,
+  // challengeWindow 0 (claim immediately after post), claimWindow 1 day (the contract min). Production uses 7d/1d/2d/30d.
   const rewardVault = await dep(
     "RewardVault",
     await router.getAddress(), owner /*poster*/, owner /*guardian*/,
-    7 * 24 * 3600, 24 * 3600, 2 * 24 * 3600, 30 * 24 * 3600, owner
+    3600, 0, 0, 86400, owner
   );
   await (await router.setRewardVault(await rewardVault.getAddress())).wait();
 
