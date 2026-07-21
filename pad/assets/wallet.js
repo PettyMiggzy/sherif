@@ -164,6 +164,20 @@ export async function linkTelegram(handle) {
 // Returns the sent tx (caller awaits .wait()). Throws a friendly error if the tx
 // would revert OR the wallet can't cover value+gas — so the user never sees the
 // wallet's red screen for what is really just "not enough ETH".
+// Robinhood Chain (an Arbitrum Orbit L2) has two quirks that break a wallet's default signing path, and both
+// are fatal to the LAUNCH tx specifically (it's our heaviest call, ~13M gas):
+//   (a) a 2^24 (16,777,216) PER-TRANSACTION gas cap — NOT a block limit. eth_estimateGas can return a figure
+//       ABOVE that cap (~36M) even for a tx that only burns ~13M and succeeds, so the wallet's own estimate
+//       makes it look like the tx can't fit and it aborts.
+//   (b) no eth_maxPriorityFeePerGas (returns -32601 "method not found"). MetaMask's EIP-1559 (type-2) path
+//       calls it unconditionally; when it throws, MetaMask's fee + balance state gets corrupted and the user
+//       sees a phantom "insufficient funds / no ETH" screen for a wallet that is fully funded.
+// The fix is to hand the wallet a fully-priced LEGACY (type-0) transaction — explicit gasLimit (clamped under
+// the per-tx cap) AND explicit gasPrice from eth_gasPrice — so there is nothing left for it to estimate and it
+// never touches the missing 1559 RPC. This is exactly the shape that succeeded from the console. The tx is only
+// charged what it actually burns; the unused gas headroom is refunded.
+const TX_GAS_CAP = 16_000_000n; // just under the 2^24 (16,777,216) per-tx ceiling; ~13M launch fits with headroom
+
 async function guardedSend(contract, method, args, valueWei, label) {
   const value = valueWei ?? 0n;
 
@@ -171,23 +185,24 @@ async function guardedSend(contract, method, args, valueWei, label) {
   try { await contract[method].staticCall(...args, { value }); }
   catch (e) { throw friendly(e, label); }
 
-  // Block gas cap. Robinhood Chain (an Arbitrum Orbit L2) runs a LOW block gas limit (~16.7M) AND its
-  // eth_estimateGas can return an inflated figure that exceeds it — even for a tx that only uses ~13M and
-  // succeeds. So we (a) fall back to the block cap when estimation over-shoots/fails, and (b) always clamp the
-  // sent gasLimit to the cap. The tx is only charged what it actually burns; the rest is refunded.
-  let cap = 0n;
-  try { cap = ((await _provider.getBlock("latest")).gasLimit * 9n) / 10n; } catch {}
-
-  // 2) estimate gas so we can price the tx; on failure (e.g. estimate > cap on the L2), fall back to the cap.
-  let gas;
-  try { gas = await contract[method].estimateGas(...args, { value }); }
-  catch (e) { if (cap > 0n) gas = cap; else throw friendly(e, label); }
+  // 2) gas limit — estimate for a tight fit, but CLAMP hard to the per-tx cap and fall back to it when the
+  //    estimate over-shoots or fails (the L2's estimate is unreliable on our heavy calls). Estimate via the
+  //    read provider so a wallet-side estimateGas fault (-32603) can't abort us here.
+  let gas = TX_GAS_CAP;
+  try {
+    const rc = contract.connect(_read);
+    gas = await rc[method].estimateGas(...args, { value, from: _account });
+  } catch {}
   let gasLimit = (gas * 12n) / 10n;
-  if (cap > 0n && gasLimit > cap) gasLimit = cap;
+  if (gasLimit > TX_GAS_CAP) gasLimit = TX_GAS_CAP;
 
-  // 3) balance check — the whole point: refuse locally, kindly, if it won't fit.
-  const [bal, fee] = await Promise.all([_provider.getBalance(_account), _provider.getFeeData()]);
-  const gasPrice = fee.maxFeePerGas ?? fee.gasPrice ?? 0n;
+  // 3) legacy gas price straight from eth_gasPrice (never eth_maxPriorityFeePerGas — the chain lacks it).
+  let gasPrice = 0n;
+  try { gasPrice = BigInt(await _read.send("eth_gasPrice", [])); } catch {}
+  if (gasPrice <= 0n) { try { gasPrice = (await _read.getFeeData()).gasPrice ?? 0n; } catch {} }
+
+  // 4) balance check — the whole point: refuse locally, kindly, if it won't fit.
+  const bal = await _provider.getBalance(_account);
   const gasCost = gasLimit * gasPrice;
   const need = value + gasCost + GAS_BUFFER_WEI;
   if (bal < need) {
@@ -195,9 +210,12 @@ async function guardedSend(contract, method, args, valueWei, label) {
     throw new Error(`Not enough ETH. This needs ≈ ${fmt(need)} ETH (incl. gas); you have ${fmt(bal)}.`);
   }
 
-  // 4) send — single signer, feePayer = the user, one recipient. [Rules 2 & 4]
+  // 5) send — single signer, feePayer = the user, one recipient [Rules 2 & 4], as a fully-priced LEGACY tx so
+  //    the wallet has nothing to estimate and never calls the missing 1559 RPC.
+  const overrides = { value, gasLimit, type: 0 };
+  if (gasPrice > 0n) overrides.gasPrice = gasPrice;
   try {
-    return await contract[method](...args, { value, gasLimit });
+    return await contract[method](...args, overrides);
   } catch (e) { throw friendly(e, label); }
 }
 
