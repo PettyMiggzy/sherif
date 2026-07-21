@@ -44,10 +44,14 @@ async function main() {
 
   const routerC = await ethers.getContractAt([
     "function buy(address token, uint256 minOut) payable returns (uint256)",
+    "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256)",
+    "function withdrawDev(address token)", "function burnDev(address token)", "function devEscrow(address) view returns (uint256)",
+    "function platformEscrow() view returns (uint256)", "function withdrawPlatform()",
     "function configOf(address) view returns ((address pool,address curve,address projectWallet,uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,bool set))",
     "function rewardVault() view returns (address)",
   ], await router.getAddress());
   console.log("router.rewardVault=", await routerC.rewardVault());
+  const erc = await ethers.getContractAt(["function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"], token);
 
   // (A) try a router buy with minOut=0
   try {
@@ -57,6 +61,39 @@ async function main() {
     console.log("BUY sent OK gas=", brc.gasUsed.toString());
   } catch (e) {
     console.log("BUY FAILED:", e.shortMessage || e.message);
+    if (e.data) console.log("  revert data:", e.data);
+  }
+
+  // (A2) SELL half the bag (approve → router.sell), then exercise dev fee controls
+  try {
+    const bal = await erc.balanceOf(owner);
+    const amt = bal / 2n;
+    await (await erc.approve(await router.getAddress(), amt)).wait();
+    const out = await routerC.sell.staticCall(token, amt, 0n);
+    const src = await (await routerC.sell(token, amt, 0n)).wait();
+    console.log("SELL OK → ethOut=", ethers.formatEther(out), "gas=", src.gasUsed.toString());
+    console.log("devEscrow after sell=", ethers.formatEther(await routerC.devEscrow(token)), "ETH · platformEscrow=", ethers.formatEther(await routerC.platformEscrow()), "ETH");
+    const wrc = await (await routerC.withdrawDev(token)).wait();
+    console.log("withdrawDev OK gas=", wrc.gasUsed.toString());
+  } catch (e) {
+    console.log("SELL/DEVFEE FAILED:", e.shortMessage || e.message);
+    if (e.data) console.log("  revert data:", e.data);
+  }
+
+  // (A3) another sell to re-accrue, then buy&burn with the escrow
+  try {
+    const bal = await erc.balanceOf(owner);
+    const amt = bal / 4n;
+    if (amt > 0n) {
+      await (await erc.approve(await router.getAddress(), amt)).wait();
+      await (await routerC.sell(token, amt, 0n)).wait();
+      const esc = await routerC.devEscrow(token);
+      console.log("devEscrow before burn=", ethers.formatEther(esc), "ETH");
+      const brc2 = await (await routerC.burnDev(token)).wait();
+      console.log("burnDev OK gas=", brc2.gasUsed.toString());
+    }
+  } catch (e) {
+    console.log("BURNDEV FAILED:", e.shortMessage || e.message);
     if (e.data) console.log("  revert data:", e.data);
   }
 
