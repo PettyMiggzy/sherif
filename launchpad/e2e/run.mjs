@@ -249,12 +249,14 @@ async function main() {
   const fac = new ethers.Contract(addrs.padFactory, [
     "function tokenCount() view returns (uint256)",
     "function allTokens(uint256) view returns (address)",
+    "function recordOf(address) view returns (address token, address curve, address dev, uint256 at)",
   ], node2);
   const count = await fac.tokenCount();
   check("a coin exists on-chain", count === 1n, `factory.tokenCount()=${count}`);
-  let token = null;
+  let token = null, curveAddr = null;
   if (count > 0n) {
     token = await fac.allTokens(count - 1n);
+    curveAddr = (await fac.recordOf(token)).curve;
     const erc = new ethers.Contract(token, ["function symbol() view returns (string)", "function name() view returns (string)", "function totalSupply() view returns (uint256)"], node2);
     const [sym, nm, sup] = await Promise.all([erc.symbol(), erc.name(), erc.totalSupply()]);
     check("launched token is a real ERC-20", sym === "E2EW", `name="${nm}" symbol="${sym}" supply=${ethers.formatUnits(sup, 18)}`);
@@ -276,6 +278,86 @@ async function main() {
     await page.screenshot({ path: path.join(SHOTS, "token-page.png"), fullPage: true }).catch(() => {});
     check("token page renders the real coin (no demo banner)", rendered && !demoBanner,
       rendered ? (demoBanner ? "but demo banner is showing" : "ticker E2EW visible, live data") : "ticker never appeared");
+  }
+
+  // ============ FULL LIFECYCLE: buy up the curve → graduate → the Bond ============
+  // The page is already on token.html?c=<token>. We drive the REAL buy + graduate buttons. The many mid-curve
+  // buys needed to *reach* graduation are volume, not the thing under test, so we do those directly against the
+  // router (reliable, no UI slippage guard) — but the BUY and GRADUATE clicks that matter go through the UI.
+  if (token && curveAddr) {
+    const owner = await node2.getSigner(ACCT); // hardhat account #0 — unlocked on the node
+    const curveAbi = [
+      "function minGradTick() view returns (int24)", "function gradTick() view returns (int24)",
+      "function setGradTarget(int24)", "function ready() view returns (bool)",
+      "function graduated() view returns (bool)", "function bond() view returns (address)",
+    ];
+    const curve = new ethers.Contract(curveAddr, curveAbi, owner);
+    const router = new ethers.Contract(addrs.padRouter, ["function buy(address token, uint256 minOut) payable returns (uint256)"], owner);
+
+    // Advance past the anti-snipe window so a normal trader can buy. The LaunchToken guard (dead window →
+    // maxTx/maxWallet phases) auto-expires at launchTime + antiSnipeSecs; jumping the chain past it is the
+    // faithful "a trader arrives after the opening" — without it, an immediate buy trips the guard (revert TF).
+    try {
+      const tok = new ethers.Contract(token, ["function windowEndsAt() view returns (uint256)"], node2);
+      const winEnd = Number(await tok.windowEndsAt());
+      await node2.send("evm_setNextBlockTimestamp", [winEnd + 5]);
+      await node2.send("evm_mine", []);
+      log(`advanced past anti-snipe window (ends @ ${winEnd})`);
+    } catch (e) { log("anti-snipe advance skipped:", e.message); }
+
+    // connect on the token page
+    await page.click("#connectBtn").catch(() => {});
+    await page.waitForFunction(() => /0x[0-9a-fA-F]{4}…[0-9a-fA-F]{4}/.test(document.getElementById("connectBtn")?.textContent || ""), null, { timeout: 20000 }).catch(() => {});
+
+    // (1) prove the BUY button — small buy, low on the curve, well inside slippage
+    await page.fill("#amtInput", "0.05");
+    await page.click("#trade");
+    await page.waitForFunction(() => {
+      const t = document.getElementById("tradeNote")?.textContent || "";
+      return /Bought ✓/.test(t) || /(failed|Not enough|Couldn|revert|slippage|cancelled)/i.test(t);
+    }, null, { timeout: 60000 }).catch(() => {});
+    const buyNote = (await page.textContent("#tradeNote").catch(() => "")) || "";
+    check("UI buy on the curve works", /Bought ✓/.test(buyNote), buyNote.trim().slice(0, 90));
+
+    // (2) setup: aim graduation at the earliest tick, then climb (direct router buys) until ready
+    const minTick = await curve.minGradTick();
+    await (await curve.setGradTarget(minTick)).wait();
+    let climbs = 0;
+    while (!(await curve.ready()) && climbs < 40) {
+      await (await router.buy(token, 0n, { value: ethers.parseEther("0.5") })).wait();
+      climbs++;
+    }
+    const ready = await curve.ready();
+    check("curve reaches the graduation window", ready, `ready=${ready} after ${climbs} climb-buys (~${(climbs * 0.5).toFixed(1)} ETH)`);
+
+    // (3) prove the GRADUATE button — reload so the UI shows it, then click it (this graduation tx must also
+    //     fit the 2^24 per-tx cap — it's the heaviest post-launch call, deploying the Bond).
+    await page.goto(`${WEB_URL}/token.html?c=${token}`, { waitUntil: "domcontentloaded" });
+    await page.click("#connectBtn").catch(() => {});
+    const gradShown = await page.waitForFunction(() => {
+      const b = document.getElementById("gradBtn"); return b && getComputedStyle(b).display !== "none";
+    }, null, { timeout: 20000 }).then(() => true).catch(() => false);
+    check("UI shows the Graduate button when ready", gradShown, gradShown ? "gradBtn visible" : "never appeared");
+    if (gradShown) {
+      await page.click("#gradBtn");
+      await page.waitForFunction(() => {
+        const t = document.getElementById("tradeNote")?.textContent || "";
+        return /Graduated ✓/.test(t) || /(failed|Not enough|Couldn|revert|cancelled)/i.test(t);
+      }, null, { timeout: 90000 }).catch(() => {});
+      const gradNote = (await page.textContent("#tradeNote").catch(() => "")) || "";
+      check("UI graduate succeeds (Bond posted, under the 2^24 cap)", /Graduated ✓/.test(gradNote),
+        `${gradNote.trim().slice(0, 90)} · ${quirks.capRejected} tx(s) rejected by cap`);
+    }
+
+    // (4) verify on-chain: graduated + a real Bond address
+    const [graduated, bond] = await Promise.all([curve.graduated(), curve.bond()]);
+    const bondOk = graduated && /^0x[0-9a-fA-F]{40}$/.test(bond) && !/^0x0+$/.test(bond);
+    check("coin graduated on-chain with a live Bond", bondOk, `graduated=${graduated} bond=${bond}`);
+
+    // (5) the UI reflects graduation
+    const stageShown = await page.waitForFunction(() => /Graduated/i.test(document.getElementById("stStage")?.textContent || ""), null, { timeout: 15000 }).then(() => true).catch(() => false);
+    await page.screenshot({ path: path.join(SHOTS, "token-graduated.png"), fullPage: true }).catch(() => {});
+    check("token page shows the Graduated stage", stageShown, stageShown ? "stage = Graduated, Bond live" : "stage never flipped");
   }
 
   if (cerr.length) log("page console errors:", cerr.slice(0, 6).join(" | "));

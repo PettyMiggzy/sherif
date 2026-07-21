@@ -24,9 +24,14 @@ conditions, with nobody clicking anything. Exit code `0` = all green.
    *exactly* like the real chain — the emulator just guarantees it either way.)
 4. **Serves a copy of `pad/`** with `config.js` pointed at the proxy and the fresh addresses (your real
    `config.js` is never touched).
-5. **Drives `create.html` in headless Chromium** through an **injected wallet** (a local unlocked key —
-   no MetaMask), clicks the real **Launch** button, and asserts the coin exists in the UI *and* on-chain,
-   then opens its `token.html` page and asserts it renders real data (no demo banner).
+5. **Drives the whole lifecycle in headless Chromium** through an **injected wallet** (a local unlocked key —
+   no MetaMask), asserting each step in the UI *and* on-chain:
+   - **Launch** — clicks the real Launch button on `create.html`; asserts a coin appears on-chain.
+   - **Token page** — opens `token.html` and asserts it renders real data (no demo banner).
+   - **Buy** — advances past the token's anti-snipe window (a trader arriving after the opening), then clicks
+     the real Buy button; asserts "Bought ✓".
+   - **Graduate** — climbs the curve to the graduation window, clicks the real Graduate button; asserts the
+     Bond posts, on-chain `graduated()` flips true with a live Bond address, and the page shows "Graduated".
 
 ## Why it matters
 
@@ -42,7 +47,16 @@ PASS  launched token is a real ERC-20  (name="E2E Wolf" symbol="E2EW" supply=100
 PASS  estimateGas was hostile (36M+ over the 2^24 cap) yet the launch still landed
 PASS  the sent tx fit under the 2^24 per-tx cap  (0 rejected, 0 maxPriorityFee calls)
 PASS  token page renders the real coin (no demo banner)
+PASS  UI buy on the curve works  (Bought ✓)
+PASS  curve reaches the graduation window  (ready=true after ~2 ETH of buys)
+PASS  UI graduate succeeds (Bond posted, under the 2^24 cap)
+PASS  coin graduated on-chain with a live Bond  (graduated=true bond=0x…)
+PASS  token page shows the Graduated stage
 ```
+
+Measured gas on this stack (all under Robinhood's 16,777,216 per-tx cap): **launch 12.9M · buy 228k ·
+graduate 2.7M**. `scripts/e2e-debug.cjs` is a bare contract-level harness (no UI, no proxy) for reproducing
+these numbers / any revert directly.
 
 ## Artifacts
 
