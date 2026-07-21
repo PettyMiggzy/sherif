@@ -94,6 +94,7 @@
     <p class="desc">Sweep your accrued platform fees to the owner wallet. Anyone can trigger these — the ETH always goes to <span class="mono" id="feeOwner">owner()</span>.</p>
     <div class="row"><div class="lbl"><b>Immediate + deferred escrow</b><span>the 0.9% base cut (+ any claimed 0.1% deferred)</span></div><div class="val" id="valPlatformEscrow">—</div><button class="btn sm" data-act="withdrawPlatform">Withdraw</button></div>
     <div class="row"><div class="lbl"><b>Platform cut escrow</b><span>25% of every above-default fee (the $ROBIN buyback slice)</span></div><div class="val" id="valPlatformCut">—</div><button class="btn sm" data-act="withdrawPlatformCut">Withdraw</button></div>
+    <div class="row"><div class="lbl"><b>Rescue stuck escrow</b><span>a coin that never graduated holds its 0.1% + floor escrow forever — this recovers it to the platform (owner only, refuses graduated coins)</span></div><input class="addr" id="inRescue" placeholder="0x coin that never graduated" /><button class="btn sm" data-act="rescueUngraduated" data-arg="inRescue">Rescue</button></div>
     <div class="hint">Per-coin escrows (floor / deferred / burn) are pushed to their destinations from the coin page or by any keeper — they aren't owner funds.</div>
   </section>
 
@@ -176,7 +177,7 @@ function toast(msg, err = false) {
 
 const C = (key, withSigner = false) => new ethers.Contract(CONTRACTS[key], ADMIN_ABI[key], withSigner && signer ? signer : read);
 const TARGET = {
-  withdrawPlatform: 'padRouter', withdrawPlatformCut: 'padRouter', setFactory: 'padRouter', removeFactory: 'padRouter', setRewardVault: 'padRouter',
+  withdrawPlatform: 'padRouter', withdrawPlatformCut: 'padRouter', setFactory: 'padRouter', removeFactory: 'padRouter', setRewardVault: 'padRouter', rescueUngraduated: 'padRouter',
   setPlatform: 'padFactory', seedBlocklist: 'padFactory',
   setPoster: 'rewardVault', setGuardian: 'rewardVault', setChallengeWindow: 'rewardVault', setClaimWindow: 'rewardVault', veto: 'rewardVault',
   setTreasury: 'floorCoopFactory',

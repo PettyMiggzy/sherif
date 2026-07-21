@@ -170,6 +170,7 @@ export const ADMIN_ABI = {
     "function flushFloor(address token)",
     "function claimDeferred(address token)",
     "function flushBurn(address token)",
+    "function rescueUngraduated(address token)",
     "function setFactory(address f)",
     "function removeFactory(address f)",
     "function setRewardVault(address v)",

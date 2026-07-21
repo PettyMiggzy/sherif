@@ -5,6 +5,7 @@
 - **Conservation.** Every wei of WETH and every token is accounted for across the lifecycle — verified to the wei by a 300-run fuzz and a random-graduation battery.
 - **Anti-snipe.** The creator's opening buy runs atomically inside the launch tx; a CREATE2 salt with per-launch entropy blocks pre-init pool DoS.
 - **Fees in-protocol.** The 1% is the Uniswap LP fee tier, not a side transfer — no extra instruction is ever attached to a user's transaction.
+- **No stranded protocol funds.** A coin's 0.1% deferred cut and floor escrow normally release at graduation; for a coin that never graduates, an owner-only `rescueUngraduated` recovers them to the platform. It moves only platform-owned escrow — never user, creator, or LP funds — and refuses a coin that has graduated.
 
 ## Audit & testing
 

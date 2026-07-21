@@ -109,6 +109,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     event Bought(address indexed token, address indexed buyer, uint256 ethIn, uint256 fee, uint256 tokensOut);
     event Sold(address indexed token, address indexed seller, uint256 tokensIn, uint256 fee, uint256 ethOut);
     event FeeSplit(address indexed token, uint256 platform, uint256 deferred, uint256 platformCut, uint256 dev, uint256 floor, uint256 burn);
+    event RescuedUngraduated(address indexed token, uint256 amount);
 
     constructor(address weth_, address owner_) Ownable(owner_) {
         require(weth_ != address(0), "zero");
@@ -444,6 +445,24 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         if (b == address(0)) return; // not graduated yet — keep it held
         deferredEscrow[token] = 0;
         platformEscrow += amt;
+    }
+
+    /// @notice Owner recovery for a coin that NEVER graduates. The deferred 0.1% and floor escrow are otherwise
+    /// only released by claimDeferred/flushFloor, which require a graduated Bond — so for a coin that never reaches
+    /// graduation (the common memecoin outcome) that protocol ETH would be stranded forever. This is the only lever
+    /// that can move those escrows without a Bond: it is owner-gated, it REFUSES a graduated coin (which uses the
+    /// normal release path), and the funds only ever move to the platform escrow (the owner). It cannot touch a
+    /// live/graduated coin, and it moves no user, creator, dev or burn funds.
+    function rescueUngraduated(address token) external onlyOwner nonReentrant {
+        address b = bondOf[token];
+        if (b == address(0)) b = syncBond(token);
+        require(b == address(0), "graduated"); // a graduated coin releases via claimDeferred / flushFloor
+        uint256 amt = deferredEscrow[token] + floorEscrow[token];
+        require(amt > 0, "nothing");
+        deferredEscrow[token] = 0;
+        floorEscrow[token] = 0;
+        platformEscrow += amt;
+        emit RescuedUngraduated(token, amt);
     }
 
     /// @notice Pay the accrued platform buy-back cut (25% of every above-default fee) to the platform, which buys and

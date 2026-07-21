@@ -49,6 +49,7 @@ async function main() {
     "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256)",
     "function withdrawDev(address token)", "function burnDev(address token)", "function devEscrow(address) view returns (uint256)",
     "function platformEscrow() view returns (uint256)", "function withdrawPlatform()",
+    "function deferredEscrow(address) view returns (uint256)", "function floorEscrow(address) view returns (uint256)", "function rescueUngraduated(address token)",
     "function configOf(address) view returns ((address pool,address curve,address projectWallet,uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,bool set))",
     "function rewardVault() view returns (address)",
   ], await router.getAddress());
@@ -202,5 +203,26 @@ async function main() {
     const after = await floorFac.owner();
     console.log("FLOOR OWNERSHIP:", before, "->", after, after.toLowerCase() === signers[1].address.toLowerCase() ? "OK" : "MISMATCH");
   } catch (e) { console.log("OWNERSHIP FAILED:", e.shortMessage || e.message); }
+
+  // (G) rescueUngraduated — recover stuck deferred/floor escrow for a coin that NEVER graduates (the audit fix)
+  try {
+    const tax2 = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: owner };
+    await (await factory.launch({ name: "Never", symbol: "NEVER", dev: owner, tax: tax2 }, { value: 0n })).wait();
+    const tok2 = await factory.allTokens(1);
+    const t2 = await ethers.getContractAt(["function windowEndsAt() view returns (uint256)"], tok2);
+    const we = Number(await t2.windowEndsAt());
+    await ethers.provider.send("evm_setNextBlockTimestamp", [we + 5]); await ethers.provider.send("evm_mine", []);
+    await (await routerC.buy(tok2, 0n, { value: ethers.parseEther("0.5") })).wait(); // accrues the deferred 0.1%
+    const def = await routerC.deferredEscrow(tok2);
+    const peBefore = await routerC.platformEscrow();
+    const rrc = await (await routerC.rescueUngraduated(tok2)).wait();
+    const peAfter = await routerC.platformEscrow();
+    const defAfter = await routerC.deferredEscrow(tok2);
+    const ok = def > 0n && peAfter - peBefore === def && defAfter === 0n;
+    console.log("RESCUE ungraduated:", ok ? "OK" : "MISMATCH", "· recovered", ethers.formatEther(def), "ETH to platform · gas=", rrc.gasUsed.toString());
+    // and it must REFUSE a graduated coin (token was graduated earlier in this run)
+    try { await routerC.rescueUngraduated.staticCall(token); console.log("  ✗ rescue on a GRADUATED coin did NOT revert (bad)"); }
+    catch (e) { console.log("  ✓ rescue correctly refuses a graduated coin:", (e.shortMessage || e.message).includes("graduated") ? "graduated" : (e.shortMessage || e.message)); }
+  } catch (e) { console.log("RESCUE FAILED:", e.shortMessage || e.message); if (e.data) console.log("  data:", e.data); }
 }
 main().catch((e) => { console.error(e); process.exit(1); });
