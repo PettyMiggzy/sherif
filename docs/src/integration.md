@@ -101,3 +101,27 @@ const router = new ethers.Contract(ROUTER, [
 ], signer);
 await (await router.withdrawDev(token)).wait();
 ```
+
+## SDK reference (`assets/wallet.js`)
+
+The pad ships a small ethers-v6 SDK for the newer features. Import it as a module, or use the `window.RobinPad` global on a plain HTML page. Each write goes through the same simulate-then-sign guard as the calls above.
+
+```js
+import * as Pad from "./assets/wallet.js";
+
+// ── Lock Liquidity / FloorCoop (see floorcoop.md) ──
+await (await Pad.floorDeposit(token, "0.25", 90)).wait(); // stake 0.25 ETH, 90-day lock (0 = forever)
+const info = await Pad.floorInfo(token, myAddress);        // { coop, tvlEth, mineEth, earnedEth, feesPaidEth }
+await (await Pad.floorClaim(token)).wait();                // collect your fee share
+await (await Pad.floorWithdraw(token)).wait();             // pull your whole stake (penalty if still locked)
+
+// ── Rewards (see rewards.md) ──
+const { claimable, pending, totals } = await Pad.rewards(myAddress); // claimable[] carry {coin,side,epoch,amount,proof}
+await (await Pad.claimReward(claimable[0])).wait();        // claim one leaf
+const n = await Pad.claimAllRewards();                     // claim every available leaf (one signature each)
+
+// ── Safety: read-only, never signs (see security.md) ──
+const report = await window.RobinSafety.scanToken(token);  // { verdict, source, checks:[{level,label,detail}] }
+const sim = await window.RobinSafety.simulate(router, "buy", [token, minOut], ethers.parseEther("0.1"));
+// → { ok: true, result } on success, or { ok: false, error } if the tx would revert
+```

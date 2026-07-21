@@ -12,10 +12,26 @@ Every coin pays a mandatory **1% per side**. A creator may set a side higher (up
 | Buy 1% base | **Platform** | 0.9% immediately, 0.1% released at graduation |
 | Sell 1% base | **Creator** | Escrowed; collect to wallet or buy+burn |
 | Above-1% (raised) | 25% platform / 75% project | Project 75% splits by `walletBps` / `floorBps` / `burnBps` |
+| **Buy 0.25% reward leg** | **[Traders](rewards.md)** | Additive, on top of the fee above — funds the coin's trader pot (net accumulation) |
+| **Sell 0.25% reward leg** | **[Holders](rewards.md)** | Additive — funds the coin's holder pot (balance-seconds) |
 | Graduation reward | **Creator + Platform** | **0.5 ETH each** at graduation (capped at a quarter of the raise); the rest funds the floor |
 | Sherwood LP fees | **The floor** | Compound back into the locked Bond via `poke()` |
 
 > **Creator income** = the 1% sell tax + a 0.5 ETH graduation reward + any project share of raised tax. Every share is escrowed and paid by separate permissionless flushers, so a trade can never revert on a payout. Accounting is exact to the wei.
+
+## Reward legs
+
+On top of everything above, every trade pays **two additive 0.25% legs**: a buy funds the coin's **Traders** pot, a sell funds its **Holders** pot. They're carved on top of the swap fee, forwarded to the `RewardVault`, and paid back out to that coin's own traders and holders as capped, Merkle-proven claims. See [Rewards](rewards.md) for the scoring and claim flow. The legs are off until a vault is wired, and a trade can never revert on them.
+
+## FloorCoop economics
+
+[Lock Liquidity (FloorCoop)](floorcoop.md) is opt-in staking into a coin's real, locked LP:
+
+| Flow | Detail |
+|------|--------|
+| Open fee | **10%** taken when you open a position; the rest becomes your stake |
+| LP fees earned | The pool's 1% trade fee accrues to the vault pro-rata — **you keep 95%, the protocol keeps 5%** |
+| Early-exit penalty | Withdrawing before your lock ends costs a penalty (from 15%, scaled by lock tier) that stays with the remaining stakers |
 
 ## Why fees ride the protocol
 

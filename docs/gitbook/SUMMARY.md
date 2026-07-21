@@ -16,6 +16,8 @@
 
 * [Fee Model](fees.md)
 * [Graduation](graduation.md)
+* [Lock Liquidity](floorcoop.md)
+* [Rewards](rewards.md)
 
 ## Build On It
 

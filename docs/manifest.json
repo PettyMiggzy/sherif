@@ -5,7 +5,7 @@
     {
       "group": "Getting Started",
       "pages": [
-        { "slug": "overview",    "src": "overview.md",    "title": "Overview",             "description": "What Robin Labs Pad is and how the four contracts fit together." },
+        { "slug": "overview",    "src": "overview.md",    "title": "Overview",             "description": "What Robin Labs Pad is and how the contract stack fits together." },
         { "slug": "network",     "src": "network.md",     "title": "Network & Addresses",  "description": "Robinhood Chain details, live contract addresses, and constants." }
       ]
     },
@@ -26,7 +26,9 @@
       "group": "Economics",
       "pages": [
         { "slug": "fees",        "src": "fees.md",        "title": "Fee Model",            "description": "How the 1%-per-side fee, raised fees, graduation reward and LP-fee compounding flow." },
-        { "slug": "graduation",  "src": "graduation.md",  "title": "Graduation",           "description": "The 'let it ride' graduation window and the three positions of the Bond." }
+        { "slug": "graduation",  "src": "graduation.md",  "title": "Graduation",           "description": "The 'let it ride' graduation window and the three positions of the Bond." },
+        { "slug": "floorcoop",   "src": "floorcoop.md",   "title": "Lock Liquidity",       "description": "Stake ETH into a coin's real, locked Uniswap v3 liquidity and earn a share of every trade's fee." },
+        { "slug": "rewards",     "src": "rewards.md",     "title": "Rewards",              "description": "The additive 0.25% trader/holder legs — how they accrue, get scored per epoch, and pay out as capped Merkle claims." }
       ]
     },
     {
