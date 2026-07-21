@@ -3,6 +3,8 @@
 //   Fork estimate (free):  npx hardhat run scripts/deploy.js                       (FORK_RPC in .env)
 //   Real deploy:           npx hardhat run scripts/deploy.js --network robinhood    (PRIVATE_KEY in .env)
 const { ethers, network } = require("hardhat");
+const fs = require("fs");
+const path = require("path");
 
 // Confirmed Robinhood Chain infra (same addresses the fork tests run against):
 const WETH = process.env.WETH || "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
@@ -117,6 +119,23 @@ async function main() {
   console.log(`  rewardVault:      "${await rewardVault.getAddress()}",`);
   console.log(`  floorCoopFactory: "${await floorFactory.getAddress()}",`);
   console.log(`  platformSplitter: "${await splitter.getAddress()}",  // standalone until $ROBIN buyback is wired`);
+  // Auto-write the 5 addresses straight into the pad's config so there is NOTHING to paste by hand.
+  try {
+    const cfgPath = path.resolve(__dirname, "..", "..", "pad", "assets", "config.js");
+    let cfg = fs.readFileSync(cfgPath, "utf8");
+    const set = (k, v) => { cfg = cfg.replace(new RegExp(`(\\b${k}:\\s*)"[^"]*"`), `$1"${v}"`); };
+    set("padRouter", await router.getAddress());
+    set("padFactory", await factory.getAddress());
+    set("rewardVault", await rewardVault.getAddress());
+    set("floorCoopFactory", await floorFactory.getAddress());
+    set("platformSplitter", await splitter.getAddress());
+    fs.writeFileSync(cfgPath, cfg);
+    console.log(`\n✓ wrote all 5 addresses into pad/assets/config.js — nothing to paste.`);
+    console.log(`  to go live: git add pad/assets/config.js && git commit -m "wire live addresses" && git push`);
+  } catch (e) {
+    console.log(`\n(could not auto-write config.js: ${e.message} — paste the block above into pad/assets/config.js manually)`);
+  }
+
   console.log(`\nreward epochs: ${EPOCH_LEN}s · finalityDelay ${FINALITY_DELAY}s · challenge ${CHALLENGE_WINDOW}s`);
   console.log(`poster=${POSTER}  guardian=${GUARDIAN}  floorTreasury=${FLOOR_TREASURY}`);
   console.log(`\nownership: factory, rewardVault, splitter, floorCoopFactory → OWNER (done).`);
