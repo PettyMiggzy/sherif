@@ -33,7 +33,8 @@ function revertName(e) {
 }
 
 suite("FloorCoop battery — random deposit/withdraw/compound/claim/shove; solvency holds every op", function () {
-  this.timeout(60 * 60 * 1000);
+  // Live-fork round-trips per op → scale the mocha ceiling with SIMS so a big battery can't die on the timeout.
+  this.timeout(Math.max(60, SIMS * 2) * 60 * 1000);
 
   it(`runs ${SIMS} randomized adversarial rounds and never loses track of funds`, async () => {
     const signers = await ethers.getSigners();
@@ -180,6 +181,7 @@ suite("FloorCoop battery — random deposit/withdraw/compound/claim/shove; solve
       await checkSolvency(`#${i}`);
       // occasionally advance time so locks can expire and the oracle stays warm
       if (i % 5 === 0) { await ethers.provider.send("evm_increaseTime", [3600 * 24 * 20]); await ethers.provider.send("evm_mine", []); }
+      if ((i + 1) % 25 === 0) console.log(`      …${i + 1}/${SIMS} rounds, solvency held (${deposits}d/${withdraws}w/${guarded}g)`);
     }
 
     // ── final unwind: everyone withdraws everything; vault must drain to ~dust ──

@@ -15,7 +15,9 @@ function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 10139
 const suite = process.env.FORK_RPC ? describe : describe.skip;
 
 suite("Graduation battery — random 'let it ride' points, invariants hold every time", function () {
-  this.timeout(30 * 60 * 1000);
+  // Each graduation is a full launch+swap+graduate round-trip against a LIVE fork RPC, so 300 of them is a
+  // wall-clock (not compute) cost. Scale the ceiling with SIMS so a big battery can't die on the mocha timeout.
+  this.timeout(Math.max(30, SIMS * 2) * 60 * 1000);
 
   it(`launches + graduates ${SIMS} coins at random points; floor is monotonic; conservation holds`, async () => {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
@@ -105,6 +107,7 @@ suite("Graduation battery — random 'let it ride' points, invariants hold every
       const priceDist = tick < 0n ? startAbs + tick + startAbs : (tick > 0n ? tick : 0n); // rough distance up the curve
       const totalRaise = bondRaise + ethers.parseEther("1"); // undo the 0.5+0.5 payout -> the gross raise
       pts.push({ frac, raise: totalRaise });
+      if ((i + 1) % 20 === 0) console.log(`      …${i + 1}/${SIMS} graduated, invariants held`);
     }
 
     // INV-5 (let it ride): graduating higher up the curve raises strictly more. Per-coin this is exactly
