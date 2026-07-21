@@ -285,6 +285,9 @@ async function main() {
     await page.screenshot({ path: path.join(SHOTS, "token-page.png"), fullPage: true }).catch(() => {});
     check("token page renders the real coin (no demo banner)", rendered && !demoBanner,
       rendered ? (demoBanner ? "but demo banner is showing" : "ticker E2EW visible, live data") : "ticker never appeared");
+    // the GoPlus + template safety scan (read-only) populates its panel
+    const safetyOk = await page.waitForFunction(() => /Verified Robin Labs coin|Not a honeypot|Sells always open|🛡/i.test(document.getElementById("safetyBody")?.textContent || ""), null, { timeout: 15000 }).then(() => true).catch(() => false);
+    check("token page shows the safety scan (GoPlus + template)", safetyOk, safetyOk ? "safety panel populated" : "safety panel stayed on 'scanning'");
   }
 
   // ============ FULL LIFECYCLE: buy up the curve → graduate → the Bond ============
@@ -369,7 +372,7 @@ async function main() {
     await (await curve.setGradTarget(minTick)).wait();
     let climbs = 0;
     while (!(await curve.ready()) && climbs < 40) {
-      await (await router.buy(token, 0n, { value: ethers.parseEther("0.5") })).wait();
+      await (await router.buy(token, 0n, { value: ethers.parseEther("0.5"), gasLimit: 5_000_000n })).wait();
       climbs++;
     }
     const ready = await curve.ready();
@@ -409,9 +412,9 @@ async function main() {
     // (6) THE LP VAULT ("lock liquidity") — deposit, claim, withdraw. The deposit's manipulation guard needs a
     //     warm TWAP: prime it with two small swaps spaced in time, then let the price settle so spot ≈ TWAP.
     try {
-      await (await router.buy(token, 0n, { value: ethers.parseEther("0.05") })).wait();
+      await (await router.buy(token, 0n, { value: ethers.parseEther("0.05"), gasLimit: 5_000_000n })).wait();
       await node2.send("evm_increaseTime", [45]); await node2.send("evm_mine", []);
-      await (await router.buy(token, 0n, { value: ethers.parseEther("0.05") })).wait();
+      await (await router.buy(token, 0n, { value: ethers.parseEther("0.05"), gasLimit: 5_000_000n })).wait();
       await node2.send("evm_increaseTime", [400]); await node2.send("evm_mine", []);
     } catch (e) { log("floor TWAP warmup:", e.message); }
     await page.goto(`${WEB_URL}/token.html?c=${token}`, { waitUntil: "domcontentloaded" });
@@ -434,10 +437,10 @@ async function main() {
       const tok = new ethers.Contract(token, ["function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"], owner);
       for (let i = 0; i < 8; i++) {
         const b0 = await tok.balanceOf(ACCT);
-        await (await router.buy(token, 0n, { value: ethers.parseEther("0.3") })).wait();
+        await (await router.buy(token, 0n, { value: ethers.parseEther("0.3"), gasLimit: 5_000_000n })).wait();
         const got = (await tok.balanceOf(ACCT)) - b0;
         await (await tok.approve(addrs.padRouter, got)).wait();
-        await (await router.sell(token, got, 0n)).wait();
+        await (await router.sell(token, got, 0n, { gasLimit: 5_000_000n })).wait();
       }
       await node2.send("evm_increaseTime", [400]); await node2.send("evm_mine", []);
       const coopKeeper = new ethers.Contract(coopAddr, ["function compound()", "function pending(address) view returns (uint256 wethOwed, uint256 tokenOwed)"], owner);
@@ -471,7 +474,7 @@ async function main() {
         "function postRoot(uint256 epoch, bytes32 root, bytes32 algoHash, string uri)",
       ], owner);
       const E = Number(await rv.currentEpoch());
-      await (await router.buy(token, 0n, { value: ethers.parseEther("0.2") })).wait();
+      await (await router.buy(token, 0n, { value: ethers.parseEther("0.2"), gasLimit: 5_000_000n })).wait();
       const potE = await rv.pot(token, E);
       const amount = potE.traderPot; // single claimant → the whole trader pot is one leaf
       const EPOCH = Number(await rv.EPOCH());

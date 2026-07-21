@@ -253,6 +253,11 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           <div class="tiny" id="devTotal">Lifetime earned: —</div>
         </div>
       </div>
+      <!-- safety scan: GoPlus token-security + Robin Labs template verification + tx simulation -->
+      <div class="panel sec" style="margin-top:16px"><h3>Safety <span class="meta">GoPlus · verified</span></h3>
+        <div id="safetyBody"><div style="color:var(--ink-faint);font-size:.8rem">🛡 Scanning safety…</div></div>
+      </div>
+
       <!-- public fees & rewards: what the creator, traders and holders are earning on THIS coin -->
       <div class="panel sec" style="margin-top:16px"><h3>Fees &amp; rewards <span class="meta">this coin · all-time</span></h3>
         <div class="feegrid">
@@ -302,6 +307,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
+import { mountSafety } from './assets/safety.js';
 import { DEMO, DEMO_COINS, demoTrades, demoHolders, DEMO_FLOOR } from './assets/demo.js';
 const $ = (id) => document.getElementById(id);
 const ETH_USD = 1920;
@@ -434,6 +440,7 @@ async function loadCoin(){
   renderBond(info);
   await maybeShowDev();
   loadTrades(); loadHolders(); renderBanner(); renderFees(); renderFloor();
+  mountSafety(document.getElementById('safetyBody'), TOKEN); // GoPlus + template scan (read-only)
 }
 
 // ── demo preview (?demo=1) — render a sample coin, no chain reads ──
@@ -458,6 +465,8 @@ function renderDemoCoin(){
   renderBond({ graduated: c.state === 'done', ready: c.state === 'grad', progress: c.prog / 100,
     targetFrac: 0.4, minGradTick: -196200, gradTick: -170400 });
   loadTrades(); loadHolders(); renderBanner(); renderFees(c); renderFloor();
+  const sb = document.getElementById('safetyBody');
+  if (sb) sb.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;font-weight:800;color:#10140a;background:var(--green);padding:3px 9px;border-radius:999px">🛡 SAFE</span><span style="color:var(--ink-dim);font-size:.78rem">Sample preview — the live pad scans every coin with GoPlus.</span></div><div style="color:var(--ink-dim);font-size:.8rem;line-height:1.5">Verified Robin Labs coin · not a honeypot · fixed 1B supply, no mint · LP locked at graduation · fee within the 4% cap.</div>`;
 }
 
 // ── locked community LP: stake ETH into the coin's real liquidity, earn a share of every trade fee ──

@@ -234,5 +234,11 @@ export const ADMIN_ABI = {
 // either way, the API just makes it fast. No secrets here; the API is read-only.
 export const API_BASE = "";
 
+// ── GoPlus token-security (see /assets/safety.js) ───────────────────────────
+// GoPlus supports Robinhood Chain (4663), so our coins get the same honeypot/tax/mint scan wallets use.
+// The token_security endpoint works WITHOUT a key (rate-limited); an optional app-key raises the limit.
+// No secret risk if set — it's a public read key — but leave "" to use the free anon tier.
+export const GOPLUS_APP_KEY = "";
+
 export const isDeployed = (key) => /^0x[0-9a-fA-F]{40}$/.test(CONTRACTS[key] || "");
 export const hasApi = () => /^https?:\/\//.test(API_BASE || "");
