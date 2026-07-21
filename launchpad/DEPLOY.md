@@ -41,12 +41,21 @@ export const DEMO = typeof location !== "undefined" && new URLSearchParams(locat
 (Preview stays reachable at `?demo=1`.)
 
 ## 5. Deploy the indexer
-`indexer/` is a reorg-safe indexer + JSON API that feeds the live board (sort/search/trending/trades).
+`indexer/` is a reorg-safe indexer + JSON API that feeds the live board (`/api/coins` with
+sort/search/trending + `/api/stats`, `/api/series`, `/api/trades`).
 ```
 cd indexer && docker compose up -d      # set RPC + the padRouter/padFactory addresses in its env first
 ```
 Point `pad/assets/config.js` `API_BASE` at it. Without it the pad falls back to direct-RPC (slower, no
-volume/trending). The indexer address is also your `POSTER` for reward roots.
+volume/trending).
+
+## Phase gating — what's launch-ready vs not
+- **Core pad (launch / trade / graduate / board):** READY. Contracts deploy + wire; indexer serves the board.
+- **Rewards (the 0.25% trader/holder legs):** contracts READY (RewardVault accrues on every trade), but the
+  **indexer reward module does NOT exist yet** — nothing computes per-epoch net-volume (traders) /
+  balance-seconds (holders) weights, builds the merkle tree, posts the root (via `POSTER`), or serves claim
+  proofs. Until it's built, fees ACCRUE on-chain but are UNCLAIMABLE. Build this before advertising rewards.
+- **LP staking (FloorCoop):** blocked on the external audit (section 0).
 
 ## 6. Post-deploy (optional / later)
 - **$ROBIN buyback:** `PlatformFeeSplitter` ships as a 100% passthrough (`robinShareBps=0`). To divert a
