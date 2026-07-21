@@ -21,10 +21,19 @@ interface IFloorCoopFactory {
 /// costs a 15% penalty. Works for any token with a WETH pool — not just pad launches.
 ///
 /// SECURITY POSTURE: this is a market-making vault that SWAPS (to pair single-sided ETH into full-range LP).
-/// Every deposit/withdraw is TWAP-guarded and the zap swap is bounded to a TWAP-derived price limit + a
-/// per-fill min-out, so a sandwich can't force a bad fill. Accounting is NAV-based (shares price against the
-/// vault's total value in WETH) with a MasterChef-style, lock-weighted fee distributor and strictly
-/// segregated fee/protocol reserves. STILL PENDING the full pre-deploy audit + simulations before real funds.
+/// Every deposit/withdraw is TWAP-guarded, and price-sensitive pool ops (zap swap, mint, burn) run with NO
+/// caller-facing external call before them (harvest is pool-locked; fee payouts are deferred to the end) so
+/// spot can't be manipulated mid-op via a reentrancy window. The zap swap is bounded to a TWAP-derived price
+/// limit (the primary sandwich bound, ~MAX_DEV) plus a fee-aware min-out floor — a sandwich is *bounded* (to
+/// roughly the MAX_DEV band), not eliminated. Accounting is NAV-based with a MasterChef-style, lock-weighted
+/// fee distributor and strictly-segregated fee/protocol reserves. Full-range bounds are derived from the
+/// selected pool's tickSpacing (any fee tier).
+///
+/// SCOPE / LIMITATIONS: supports STANDARD ERC-20 tokens only. Fee-on-transfer, rebasing, and pause/blacklist
+/// tokens are NOT supported — they revert (unusable) or can freeze a single vault's principal; a vault is
+/// per-token and independent, so this never affects other vaults. TWAP_WINDOW/cardinality, MAX_DEV/SWAP_BOUND,
+/// and the min-out tolerance are economic parameters to TUNE in simulation. STILL PENDING the full pre-deploy
+/// external audit + simulations before real funds.
 contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -40,13 +49,14 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     uint256 public constant MIN_FIRST_DEPOSIT = 1e15; // 0.001 ETH floor on the very first deposit
 
     int24 public constant MAX_DEV = 300;              // ~3% max spot-vs-TWAP deviation (manipulation guard)
-    int24 public constant SWAP_BOUND = 300;           // zap swap may move price at most ~3% past the TWAP
-    uint256 public constant SWAP_MIN_OUT_BPS = 9700;  // zap must fill at >= 97% of the TWAP-implied rate
-    uint32 public constant TWAP_WINDOW = 15;
+    int24 public constant SWAP_BOUND = 300;           // zap swap may move price at most ~3% past the TWAP (>= MAX_DEV so the limit is always beyond spot)
+    int24 internal constant TICK_MAX = 887272;        // getSqrtRatioAtTick's hard bound
+    uint32 public constant TWAP_WINDOW = 300;         // 5-min TWAP — manipulation-resistant (audit/sim should tune per chain block time)
 
-    // full-range position bounds (snapped to spacing 200), from PoolMath
-    int24 internal constant LO = -887200;
-    int24 internal constant HI = 887200;
+    // full-range position bounds — derived from the SELECTED pool's tickSpacing in the constructor, because a
+    // token's deepest pool may be the 0.3% tier (spacing 60) etc. where ±887200 is NOT a valid tick.
+    int24 public immutable LO;
+    int24 public immutable HI;
 
     // lock tiers (days => reward-weight multiplier in bps); 0 days == forever
     // resolved in _tier(); kept here for reference: 30->1.0x 60->1.25x 90->1.5x 365->2x forever->3x
@@ -124,8 +134,13 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         tokenIsToken0 = tIs0;
         wethIsToken0 = !tIs0;
         (token0, token1) = tIs0 ? (token_, weth_) : (weth_, token_);
-        // grow the oracle so a 15s TWAP is available for the manipulation guard
-        try IUniswapV3Pool(p).increaseObservationCardinalityNext(24) {} catch {}
+        // full-range bounds valid for THIS pool's spacing: snap the max tick down to a multiple of spacing
+        int24 spacing = IUniswapV3Pool(p).tickSpacing();
+        int24 maxUsable = (TICK_MAX / spacing) * spacing;
+        LO = -maxUsable;
+        HI = maxUsable;
+        // grow the oracle so the TWAP window is available for the manipulation guard (fills over subsequent blocks)
+        try IUniswapV3Pool(p).increaseObservationCardinalityNext(100) {} catch {}
     }
 
     /// pick the token's deepest WETH pool across the standard fee tiers (works for arbitrary chain tokens,
@@ -137,8 +152,12 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
             address p = IUniswapV3Factory(v3Factory_).getPool(token_, weth_, tiers[i]);
             if (p == address(0)) continue;
             uint128 liq = IUniswapV3Pool(p).liquidity();
-            if (liq >= bestLiq) { bestLiq = liq; best = p; }
+            // strict > : ties keep the FIRST (lower, typically deeper) tier, not the last (thinnest)
+            if (liq > bestLiq) { bestLiq = liq; best = p; }
         }
+        // require real depth — a 0-liquidity (initialized-but-empty) pool has an attacker-set price and no
+        // fills to earn; reject it so the vault is never built on an unusable/manipulable pool
+        if (bestLiq == 0) best = address(0);
     }
 
     receive() external payable {} // WETH.withdraw
@@ -157,12 +176,14 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         (, int24 spotTick) = _spot();
         int24 tw = _requireUnmanipulated(spotTick); // guard EVERY placement, returns the TWAP tick
 
-        _harvest();
-        _payPending(msg.sender); // settle fees before this user's weight changes
+        _harvest(); // pool-locked collect — no manipulation window
 
         uint256 navBefore = _navWeth(tw); // AFTER harvest, BEFORE the new money
 
         if (totalShares == 0 && msg.value < MIN_FIRST_DEPOSIT) revert MinDeposit();
+        // degenerate state (value fully evaporated but shares outstanding): reject rather than divide-by-zero.
+        // Self-heals once the residual holder exits (totalShares -> 0 restores the bootstrap branch).
+        if (totalShares > 0 && navBefore == 0) revert Zero();
 
         // 10% protocol fee off the top; the rest becomes working capital
         IWETH9(WETH).deposit{value: msg.value}();
@@ -170,12 +191,18 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         protocolWeth += fee;
         uint256 net = msg.value - fee;
 
-        // zap: swap half the net WETH -> token (TWAP-bounded), then mint full-range with the pair
+        // zap: swap half the net WETH -> token (TWAP-bounded), then mint full-range with the pair. No external
+        // call reaches the caller between the TWAP guard and these price-sensitive ops (harvest is pool-locked;
+        // the swap/mint callbacks only touch the pool + token while the pool is locked) — so spot can't be
+        // manipulated mid-deposit. _payPending (which hands control to the caller) is deferred until AFTER.
         (uint256 wethForLp, uint256 tokenForLp) = _zapHalf(net, tw);
         _mintFullRange(wethForLp, tokenForLp); // reads the live post-swap price; leftover stays loose (in NAV)
 
-        // NAV-based share price: `net` WETH is the value in (swap costs make real NAV added slightly less,
-        // which only ever benefits existing holders — never mints too many shares).
+        _payPending(msg.sender); // settle the caller's fees AFTER the price-sensitive ops, before their weight changes
+
+        // NAV-based share price against `net` WETH committed. Real NAV added is `net` minus swap fee/slippage,
+        // so this can over-mint by at most the TWAP-vs-spot gap (<= MAX_DEV ≈ 3%) — fully absorbed by the 10%
+        // open fee. If OPEN_FEE_BPS is ever lowered, re-derive this bound before trusting it.
         sharesMinted = totalShares == 0 ? net : Math.mulDiv(net, totalShares, navBefore);
         if (sharesMinted == 0 || sharesMinted < minSharesOut) revert Slippage();
 
@@ -210,18 +237,21 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         if (shareAmt == 0 || shareAmt > pp.shares) revert TooMuch();
         (, int24 spotTick) = _spot();
         _requireUnmanipulated(spotTick);
-        _harvest();
-        _payPending(msg.sender);
+        _harvest(); // pool-locked collect — no manipulation window
 
         uint256 ts = totalShares;
-        // (a) pro-rata of loose principal (net of BOTH reserves)
+        // (a) pro-rata of loose principal (net of BOTH reserves), read BEFORE the burn adds to balance
         uint256 shareW = Math.mulDiv(_looseWeth(), shareAmt, ts);
         uint256 shareT = Math.mulDiv(_looseToken(), shareAmt, ts);
-        // (b) pro-rata of the live full-range band
+        // (b) pro-rata of the live full-range band. CRITICAL: the burn runs with NO caller-facing external call
+        // before it (harvest is pool-locked), so the caller cannot manipulate spot between the TWAP guard and
+        // this price-sensitive burn. _payPending (which hands the caller control) is deferred until AFTER.
         (uint256 posW, uint256 posT) = _burnShare(shareAmt, ts);
 
         wethOut = shareW + posW;
         tokenOut = shareT + posT;
+
+        _payPending(msg.sender); // now safe to hand control out — the price-sensitive burn is already done
 
         // update position + weight BEFORE paying out
         bool early = block.timestamp < pp.lockUntil;
@@ -382,7 +412,9 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         uint128 removeL = uint128(Math.mulDiv(bandL, shareAmt, ts));
         if (removeL == 0) return (0, 0);
         (uint256 a0, uint256 a1) = pool.burn(LO, HI, removeL);
-        pool.collect(address(this), LO, HI, uint128(a0), uint128(a1));
+        // collect the full owed (U128_MAX) — _harvest already swept fees, so tokensOwed is exactly this burn's
+        // principal; requesting the max avoids the uint128(a0) truncation edge for large token amounts.
+        pool.collect(address(this), LO, HI, U128_MAX, U128_MAX);
         bandL -= removeL;
         (wethAmt, tokenAmt) = tokenIsToken0 ? (a1, a0) : (a0, a1);
     }
@@ -391,7 +423,10 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         if (wethAmt == 0 || tokenAmt == 0) return;
         (uint160 sqrtP,) = _spot(); // live price NOW — the pool prices the owed amounts at this, so L must too
         (uint256 amount0, uint256 amount1) = tokenIsToken0 ? (tokenAmt, wethAmt) : (wethAmt, tokenAmt);
-        uint128 L = PoolMath.fullRangeLiquidityOrZero(sqrtP, amount0, amount1);
+        // liquidity at THIS pool's spacing-derived full-range bounds (not the hardcoded ±887200)
+        uint128 L = PoolMath.getLiquidityForAmounts(
+            sqrtP, PoolMath.getSqrtRatioAtTick(LO), PoolMath.getSqrtRatioAtTick(HI), amount0, amount1
+        );
         if (L == 0) return; // dust — stays loose for the next compound
         bandL += L;
         _minting = true;
@@ -406,8 +441,11 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         uint256 sellW = wethAmt / 2;
         if (sellW == 0) return (wethAmt, 0);
         bool zeroForOne = wethIsToken0; // selling WETH
-        // price limit: allow the swap to move at most SWAP_BOUND ticks past the TWAP, clamped inside pool bounds
+        // price limit: allow the swap to move at most SWAP_BOUND ticks past the TWAP. Clamp the TICK into
+        // getSqrtRatioAtTick's domain BEFORE the call (extreme-priced tokens can push tw±SWAP_BOUND past ±887272).
         int24 limitTick = zeroForOne ? tw - SWAP_BOUND : tw + SWAP_BOUND;
+        if (limitTick > TICK_MAX) limitTick = TICK_MAX;
+        if (limitTick < -TICK_MAX) limitTick = -TICK_MAX;
         uint160 limit = PoolMath.getSqrtRatioAtTick(limitTick);
         if (limit <= PoolMath.MIN_SQRT_RATIO) limit = PoolMath.MIN_SQRT_RATIO + 1;
         if (limit >= PoolMath.MAX_SQRT_RATIO) limit = PoolMath.MAX_SQRT_RATIO - 1;
@@ -422,11 +460,17 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         tokenGot = tokenDelta < 0 ? uint256(-tokenDelta) : 0;
         wethLeft = wethAmt - wethSpent; // any un-spent WETH (partial fill at the limit) stays as working capital
 
-        // min-out: the fill must be >= 97% of what the TWAP price implies for the WETH actually spent
+        // min-out floor vs the TWAP-implied amount for the WETH actually spent. The tick price-limit above is
+        // the PRIMARY sandwich bound (caps the fill to ~SWAP_BOUND ticks past TWAP); this floor is the secondary
+        // catch. Its tolerance must budget for the legit worst case — the ~3% price band + the pool's own swap
+        // fee — or honest deposits near the band edge on a high-fee pool would spuriously revert.
         if (wethSpent > 0) {
             uint256 price = PoolMath.twapPriceWethPerToken(tw, tokenIsToken0); // WETH per token, 1e18
             uint256 expTok = Math.mulDiv(wethSpent, WAD, price);               // token expected at TWAP
-            if (tokenGot < (expTok * SWAP_MIN_OUT_BPS) / BPS) revert Slippage();
+            uint256 feeBps = uint256(pool.fee()) / 100;                        // 10000->100(1%), 3000->30, ...
+            uint256 tolBps = 305 + feeBps + 50;                               // band (~3.05%) + pool fee + buffer
+            uint256 minOut = Math.mulDiv(expTok, BPS - tolBps, BPS);
+            if (tokenGot < minOut) revert Slippage();
         }
     }
 

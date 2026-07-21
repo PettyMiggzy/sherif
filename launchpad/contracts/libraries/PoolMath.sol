@@ -88,6 +88,24 @@ library PoolMath {
         return Math.mulDiv(amount1, Q96, uint256(sqrtUpper) - uint256(sqrtLower));
     }
 
+    /// @notice Liquidity for an in-range position at ARBITRARY bounds [sqrtA,sqrtB] given the current price
+    /// sqrtP and both amounts. Canonical Uniswap LiquidityAmounts.getLiquidityForAmounts (in-range branch),
+    /// returning min(L0,L1) so neither owed amount can exceed what we hold. Returns 0 on dust/one-sided.
+    /// Used for full-range mints whose tick bounds depend on the pool's tickSpacing (not the hardcoded ±887200).
+    function getLiquidityForAmounts(uint160 sqrtP, uint160 sqrtA, uint160 sqrtB, uint256 amount0, uint256 amount1)
+        internal
+        pure
+        returns (uint128)
+    {
+        if (sqrtA > sqrtB) (sqrtA, sqrtB) = (sqrtB, sqrtA);
+        if (amount0 == 0 || amount1 == 0 || sqrtP <= sqrtA || sqrtP >= sqrtB) return 0;
+        uint256 l0 = _liquidityForAmount0(sqrtP, sqrtB, amount0);
+        uint256 l1 = _liquidityForAmount1(sqrtA, sqrtP, amount1);
+        uint256 l = l0 < l1 ? l0 : l1;
+        if (l == 0 || l > type(uint128).max) return 0;
+        return uint128(l);
+    }
+
     /// @notice Liquidity for a SINGLE-SIDED (range-order) position that sits entirely on one side of the
     /// current price. `token0Side` = the band is entirely ABOVE the current tick (holds only token0);
     /// otherwise it is entirely BELOW (holds only token1). `sqrtLo`/`sqrtHi` are the band's tick bounds.
