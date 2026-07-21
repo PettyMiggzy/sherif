@@ -299,7 +299,10 @@ async function main() {
       "function graduated() view returns (bool)", "function bond() view returns (address)",
     ];
     const curve = new ethers.Contract(curveAddr, curveAbi, owner);
-    const router = new ethers.Contract(addrs.padRouter, ["function buy(address token, uint256 minOut) payable returns (uint256)"], owner);
+    const router = new ethers.Contract(addrs.padRouter, [
+      "function buy(address token, uint256 minOut) payable returns (uint256)",
+      "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256)",
+    ], owner);
 
     // Advance past the anti-snipe window so a normal trader can buy. The LaunchToken guard (dead window →
     // maxTx/maxWallet phases) auto-expires at launchTime + antiSnipeSecs; jumping the chain past it is the
@@ -423,9 +426,36 @@ async function main() {
     let coopAddr = await floorFacC.coopOf(token);
     let mineShares = (coopAddr && !/^0x0+$/.test(coopAddr)) ? await coopContract(coopAddr).shares(ACCT) : 0n;
     check("UI lock liquidity (FloorCoop deposit) works", /locked ✓/i.test(lockNote) && mineShares > 0n, `${lockNote.trim().slice(0, 50)} · shares=${mineShares}`);
+
+    // prove the LP provider actually EARNS fees: generate real trading volume with balanced round-trips (buy,
+    // then sell exactly what was bought → price returns, fees accrue), settle, compound (keeper), then pending > 0.
+    let earnedWeth = 0n, earnedTok = 0n;
+    if (coopAddr && !/^0x0+$/.test(coopAddr)) {
+      const tok = new ethers.Contract(token, ["function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"], owner);
+      for (let i = 0; i < 8; i++) {
+        const b0 = await tok.balanceOf(ACCT);
+        await (await router.buy(token, 0n, { value: ethers.parseEther("0.3") })).wait();
+        const got = (await tok.balanceOf(ACCT)) - b0;
+        await (await tok.approve(addrs.padRouter, got)).wait();
+        await (await router.sell(token, got, 0n)).wait();
+      }
+      await node2.send("evm_increaseTime", [400]); await node2.send("evm_mine", []);
+      const coopKeeper = new ethers.Contract(coopAddr, ["function compound()", "function pending(address) view returns (uint256 wethOwed, uint256 tokenOwed)"], owner);
+      try { await (await coopKeeper.compound()).wait(); } catch (e) { log("floor compound:", e.message); }
+      const pend = await coopKeeper.pending(ACCT); earnedWeth = pend[0]; earnedTok = pend[1];
+    }
+    check("LP provider earns fees from trading volume", earnedWeth > 0n || earnedTok > 0n,
+      `pending ${(+ethers.formatEther(earnedWeth)).toFixed(5)} ETH + ${Math.round(+ethers.formatUnits(earnedTok, 18))} tokens`);
+
+    // reload so the page reads the settled pool, reconnect, then CLAIM those fees through the UI
+    await page.goto(`${WEB_URL}/token.html?c=${token}`, { waitUntil: "domcontentloaded" });
+    await page.click("#connectBtn").catch(() => {});
+    await page.waitForFunction(() => /0x[0-9a-fA-F]{4}…/.test(document.getElementById("connectBtn")?.textContent || ""), null, { timeout: 15000 }).catch(() => {});
     await page.click("#fcClaim");
     await page.waitForFunction(() => /Claimed ✓|failed|error|revert/i.test(document.getElementById("tradeNote")?.textContent || ""), null, { timeout: 30000 }).catch(() => {});
-    check("UI claim floor fees works", /Claimed ✓/i.test((await page.textContent("#tradeNote").catch(() => "")) || ""), "floorClaim");
+    const fcClaimNote = (await page.textContent("#tradeNote").catch(() => "")) || "";
+    const pendAfter = (coopAddr && !/^0x0+$/.test(coopAddr)) ? await new ethers.Contract(coopAddr, ["function pending(address) view returns (uint256,uint256)"], node2).pending(ACCT) : [0n, 0n];
+    check("UI claim floor fees pays out the earned fees", /Claimed ✓/i.test(fcClaimNote) && pendAfter[0] < earnedWeth, `claimed; pending ETH ${(+ethers.formatEther(earnedWeth)).toFixed(5)} → ${(+ethers.formatEther(pendAfter[0])).toFixed(5)}`);
     await page.click("#fcWithdraw");
     await page.waitForFunction(() => /Withdrawn ✓|failed|error|revert/i.test(document.getElementById("tradeNote")?.textContent || ""), null, { timeout: 40000 }).catch(() => {});
     const fcWNote = (await page.textContent("#tradeNote").catch(() => "")) || "";

@@ -120,7 +120,8 @@ async function main() {
     const coopC = await ethers.getContractAt([
       "function deposit(uint256 lockDays, uint256 minSharesOut) payable returns (uint256)",
       "function withdraw(uint256 shareAmt, uint256 minWethOut, uint256 minTokenOut) returns (uint256,uint256)",
-      "function claim()", "function shares(address) view returns (uint256)",
+      "function claim()", "function compound()", "function shares(address) view returns (uint256)",
+      "function pending(address) view returns (uint256 wethOwed, uint256 tokenOwed)",
       "function totalNav() view returns (uint256)", "function totalShares() view returns (uint256)",
     ], coop);
     // warm the oracle: two swaps ≥30s apart to write observations, then let the price hold long enough that the
@@ -131,8 +132,28 @@ async function main() {
     await ethers.provider.send("evm_increaseTime", [400]); await ethers.provider.send("evm_mine", []);
     const drc = await (await coopC.deposit(90, 0n, { value: ethers.parseEther("0.1") })).wait();
     const sh = await coopC.shares(owner);
-    console.log("FLOOR deposit OK gas=", drc.gasUsed.toString(), "shares=", sh.toString(), "nav=", ethers.formatEther(await coopC.totalNav()));
-    try { await (await coopC.claim()).wait(); console.log("FLOOR claim OK"); } catch (e) { console.log("FLOOR claim:", e.shortMessage || e.message); }
+    const navDep = await coopC.totalNav();
+    console.log("FLOOR deposit OK gas=", drc.gasUsed.toString(), "shares=", sh.toString(), "nav=", ethers.formatEther(navDep));
+
+    // now the real question: DOES an LP provider EARN fees when people trade? Generate real volume with BALANCED
+    // round-trips (buy, then sell exactly what was bought) so price returns near start (fees accrue, TWAP stays put).
+    for (let i = 0; i < 10; i++) {
+      const b0 = await erc.balanceOf(owner);
+      await (await routerC.buy(token, 0n, { value: ethers.parseEther("0.3") })).wait();
+      const got = (await erc.balanceOf(owner)) - b0;
+      await (await erc.approve(await router.getAddress(), got)).wait();
+      await (await routerC.sell(token, got, 0n)).wait();
+    }
+    await ethers.provider.send("evm_increaseTime", [400]); await ethers.provider.send("evm_mine", []); // settle so TWAP ≈ spot
+    try { await (await coopC.compound()).wait(); } catch (e) { console.log("compound:", e.shortMessage || e.message); }
+    const pend = await coopC.pending(owner);
+    const navVol = await coopC.totalNav();
+    console.log("FLOOR EARNED → pending weth=", ethers.formatEther(pend[0]), "token=", ethers.formatUnits(pend[1], 18), "· nav", ethers.formatEther(navDep), "→", ethers.formatEther(navVol));
+
+    const balB = await ethers.provider.getBalance(owner);
+    const crc = await (await coopC.claim()).wait();
+    const balA = await ethers.provider.getBalance(owner);
+    console.log("FLOOR claim OK gas=", crc.gasUsed.toString(), "net ETH to staker (incl gas)=", ethers.formatEther(balA - balB));
     const wrc = await (await coopC.withdraw(sh, 0n, 0n)).wait();
     console.log("FLOOR withdraw OK gas=", wrc.gasUsed.toString(), "sharesAfter=", (await coopC.shares(owner)).toString());
   } catch (e) {
