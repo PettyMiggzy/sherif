@@ -3,149 +3,310 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Robin Labs — Platform Admin</title>
+<title>Robin Labs — Admin</title>
+<meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#060803" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <style>
-  :root{--bg:#060803;--panel:#0c1107;--ink:#f4f7ee;--dim:#93a382;--lime:#dce905;--line:rgba(220,233,5,.22);
-    --ok:#7fdc4f;--bad:#e46a6a;--warn:#e4c869;--mono:ui-monospace,"SF Mono",Menlo,monospace;
-    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif}
+  :root{
+    --bg:#060803; --panel:#0c1207; --panel2:#111a0b; --line:#1e2b12;
+    --lime:#a3e635; --limed:#65a30d; --dim:#7c8b6a; --txt:#e8f0dc; --red:#f87171; --amber:#fbbf24;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+  }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;
-    background-image:radial-gradient(circle at 100% -10%,rgba(220,233,5,.07),transparent 40%);min-height:100vh}
-  .wrap{max-width:720px;margin:0 auto;padding:34px 20px 80px}
-  h1{font-family:var(--sans);font-weight:800;font-size:1.6rem;letter-spacing:-.01em;margin:0 0 4px}
-  .sub{color:var(--dim);font-size:.95rem;margin-bottom:22px}
-  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
-  button{font-family:var(--sans);font-weight:700;border-radius:10px;padding:11px 18px;cursor:pointer;border:1px solid transparent;font-size:.92rem;transition:.15s}
-  .lime{background:var(--lime);color:#0a0e05}.lime:hover{filter:brightness(1.08)}
-  .lime:disabled{opacity:.4;cursor:not-allowed;filter:none}
-  .ghost{background:none;border-color:var(--line);color:var(--ink)}.ghost:hover{background:rgba(220,233,5,.08)}
-  .who{font-family:var(--mono);font-size:.8rem;color:var(--dim)}
-  .card{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:18px;margin:14px 0}
-  .card h2{font-size:1.1rem;margin:0 0 2px}
-  .addr{font-family:var(--mono);font-size:.76rem;color:var(--lime);word-break:break-all;margin-bottom:12px}
-  .row{display:flex;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:.78rem;padding:4px 0;border-bottom:1px solid rgba(220,233,5,.08)}
-  .row .k{color:var(--dim)}.row .v{text-align:right;word-break:break-all}
-  .status{margin:12px 0;font-size:.86rem;font-weight:600}
-  .status.ok{color:var(--ok)}.status.bad{color:var(--bad)}.status.warn{color:var(--warn)}.status.dim{color:var(--dim)}
-  .note{border:1px solid var(--line);border-left:3px solid var(--lime);border-radius:10px;background:rgba(220,233,5,.05);padding:12px 15px;font-size:.85rem;margin:18px 0}
-  a{color:var(--lime)}
-  code{font-family:var(--mono);background:rgba(220,233,5,.09);border-radius:4px;padding:1px 5px;font-size:.85em}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:'Plus Jakarta Sans',system-ui,sans-serif;line-height:1.5}
+  a{color:var(--lime);text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 80px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+  .brand{font-family:'Bebas Neue',sans-serif;font-size:1.9rem;letter-spacing:.06em}
+  .brand b{color:var(--lime)}
+  .brand .tag{font-family:var(--mono);font-size:.6rem;letter-spacing:.2em;color:var(--dim);border:1px solid var(--line);padding:2px 6px;border-radius:5px;margin-left:8px;vertical-align:middle}
+  button{font-family:inherit;cursor:pointer;border:none;border-radius:9px;font-weight:700}
+  .btn{background:var(--lime);color:#0a0f04;padding:9px 15px;font-size:.85rem}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:transparent;color:var(--lime);border:1px solid var(--limed)}
+  .btn.danger{background:transparent;color:var(--red);border:1px solid #7f1d1d}
+  .btn.sm{padding:6px 11px;font-size:.78rem}
+  .pill{font-family:var(--mono);font-size:.72rem;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:6px 12px;display:inline-flex;align-items:center;gap:7px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+  .dot.ok{background:var(--lime);box-shadow:0 0 8px var(--lime)}
+  .dot.bad{background:var(--red);box-shadow:0 0 8px var(--red)}
+  .grid{display:grid;gap:14px}
+  .cards{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .card h3{margin:0 0 3px;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:700}
+  .card .big{font-size:1.7rem;font-weight:800;font-family:var(--mono);letter-spacing:-.02em}
+  .card .sub{font-size:.74rem;color:var(--dim);margin-top:2px}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:16px}
+  section > h2{margin:0 0 4px;font-size:1.05rem;font-weight:800;display:flex;align-items:center;gap:9px}
+  section > .desc{color:var(--dim);font-size:.82rem;margin:0 0 14px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:11px 0;border-top:1px solid var(--line)}
+  .row:first-of-type{border-top:none}
+  .row .lbl{flex:1 1 190px;min-width:170px}
+  .row .lbl b{display:block;font-size:.9rem}
+  .row .lbl span{font-size:.75rem;color:var(--dim)}
+  .row .val{font-family:var(--mono);font-size:.82rem;color:var(--lime);word-break:break-all}
+  input{font-family:var(--mono);background:#080d04;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 10px;font-size:.82rem;min-width:0}
+  input.addr{flex:1 1 300px}
+  input.num{width:130px}
+  .mono{font-family:var(--mono)}
+  .warn{color:var(--amber)}
+  .bad{color:var(--red)}
+  .notdeployed{opacity:.5}
+  .notdeployed .btn,.notdeployed input{pointer-events:none}
+  #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0c1207;border:1px solid var(--limed);color:var(--txt);padding:12px 18px;border-radius:12px;font-size:.85rem;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,.6);opacity:0;transition:opacity .2s;z-index:50;font-family:var(--mono)}
+  #toast.show{opacity:1}
+  #toast.err{border-color:#7f1d1d}
+  .danger-zone{border-color:#7f1d1d}
+  .hint{font-size:.75rem;color:var(--dim);margin-top:8px}
+  code{font-family:var(--mono);background:#0a1005;padding:1px 5px;border-radius:4px;font-size:.82rem}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Platform Admin</h1>
-  <div class="sub">Complete the ownership handover. Connect the <strong>platform wallet</strong> and accept ownership on both contracts. Nothing else here can touch a live coin or the Bond.</div>
+  <header>
+    <div class="brand">ROBIN <b>LABS</b><span class="tag">ADMIN</span></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <span class="pill" id="netPill"><span class="dot" id="netDot"></span><span id="netTxt">read-only</span></span>
+      <button class="btn" id="connectBtn">Connect owner wallet</button>
+    </div>
+  </header>
 
-  <div class="bar">
-    <button class="lime" id="connect">Connect wallet</button>
-    <span class="who" id="who">Not connected</span>
+  <div id="ownerWarn" style="display:none" class="card">
+    <b class="warn">⚠ Connected wallet is not the owner of one or more contracts.</b>
+    <div class="sub">Owner-only actions below will revert. Connect the owner wallet (or its multisig signer) to manage. Reads still work.</div>
   </div>
 
-  <div id="cards"></div>
-
-  <div class="note">
-    This page only calls <code>acceptOwnership()</code> — the final step of the two-step transfer already in progress on-chain. It never sees a private key (your wallet signs), and it's safe to delete after you're done. Owner is <a href="https://robinhoodchain.blockscout.com" target="_blank" rel="noopener">verifiable on the explorer</a>.
+  <!-- OVERVIEW -->
+  <div class="grid cards" style="margin-top:16px">
+    <div class="card"><h3>Platform fees withdrawable</h3><div class="big" id="feesTot">—</div><div class="sub" id="feesBreak">immediate + 25% cut</div></div>
+    <div class="card"><h3>Total volume</h3><div class="big" id="volTot">—</div><div class="sub" id="volSub">all-time · ETH</div></div>
+    <div class="card"><h3>Coins / graduated</h3><div class="big" id="coinsTot">—</div><div class="sub" id="coinsSub">launched · graduated</div></div>
+    <div class="card"><h3>Reward epoch</h3><div class="big" id="epochNow">—</div><div class="sub" id="epochSub">posted · pending</div></div>
+    <div class="card"><h3>Poster gas</h3><div class="big" id="posterBal">—</div><div class="sub" id="posterSub">signs postRoot each epoch</div></div>
+    <div class="card"><h3>Rewards accrued</h3><div class="big" id="rwdAccr">—</div><div class="sub" id="rwdSub">accrued · allocated · ETH</div></div>
   </div>
+
+  <!-- FEES -->
+  <section id="secFees">
+    <h2>💰 Fees</h2>
+    <p class="desc">Sweep your accrued platform fees to the owner wallet. Anyone can trigger these — the ETH always goes to <span class="mono" id="feeOwner">owner()</span>.</p>
+    <div class="row"><div class="lbl"><b>Immediate + deferred escrow</b><span>the 0.9% base cut (+ any claimed 0.1% deferred)</span></div><div class="val" id="valPlatformEscrow">—</div><button class="btn sm" data-act="withdrawPlatform">Withdraw</button></div>
+    <div class="row"><div class="lbl"><b>Platform cut escrow</b><span>25% of every above-default fee (the $ROBIN buyback slice)</span></div><div class="val" id="valPlatformCut">—</div><button class="btn sm" data-act="withdrawPlatformCut">Withdraw</button></div>
+    <div class="hint">Per-coin escrows (floor / deferred / burn) are pushed to their destinations from the coin page or by any keeper — they aren't owner funds.</div>
+  </section>
+
+  <!-- REWARDS -->
+  <section id="secRewards">
+    <h2>🎁 Rewards <span class="pill" style="font-size:.62rem"><span class="dot" id="rwdDot"></span><span id="rwdState">—</span></span></h2>
+    <p class="desc">The RewardVault. The indexer's poster posts one Merkle root per epoch; the guardian can veto a bad root before claims open.</p>
+    <div class="row"><div class="lbl"><b>Poster</b><span>signs postRoot() — the indexer's hot key</span></div><div class="val" id="valPoster">—</div></div>
+    <div class="row"><div class="lbl"><b>Guardian</b><span>veto-only brake</span></div><div class="val" id="valGuardian">—</div></div>
+    <div class="row"><div class="lbl"><b>Windows</b><span>challenge (claims open after) · claim (before sweep)</span></div><div class="val" id="valWindows">—</div></div>
+    <div class="row"><div class="lbl"><b>Set poster</b></div><input class="addr" id="inPoster" placeholder="0x new poster address" /><button class="btn sm" data-act="setPoster" data-arg="inPoster">Set</button></div>
+    <div class="row"><div class="lbl"><b>Set guardian</b></div><input class="addr" id="inGuardian" placeholder="0x new guardian address" /><button class="btn sm" data-act="setGuardian" data-arg="inGuardian">Set</button></div>
+    <div class="row"><div class="lbl"><b>Challenge window</b><span>seconds</span></div><input class="num" id="inChallenge" placeholder="172800" /><button class="btn sm" data-act="setChallengeWindow" data-arg="inChallenge">Set</button></div>
+    <div class="row"><div class="lbl"><b>Claim window</b><span>seconds (≥ 1 day)</span></div><input class="num" id="inClaim" placeholder="2592000" /><button class="btn sm" data-act="setClaimWindow" data-arg="inClaim">Set</button></div>
+    <div class="row"><div class="lbl"><b class="warn">Veto an epoch</b><span>guardian only · blocks a bad root before claims open</span></div><input class="num" id="inVeto" placeholder="epoch #" /><button class="btn sm danger" data-act="veto" data-arg="inVeto">Veto</button></div>
+  </section>
+
+  <!-- WIRING -->
+  <section id="secWiring">
+    <h2>🔌 Wiring</h2>
+    <p class="desc">Router + factory plumbing. Register-once configs are immutable; these only affect new registrations / future launches.</p>
+    <div class="row"><div class="lbl"><b>Router → RewardVault</b><span>which vault the 0.25% legs feed</span></div><div class="val" id="valRvWired">—</div></div>
+    <div class="row"><div class="lbl"><b>Factory platform sink</b><span>Sherwood LP fees + graduation sweep (future launches)</span></div><div class="val" id="valPlatform">—</div></div>
+    <div class="row"><div class="lbl"><b>Set factory (allow)</b></div><input class="addr" id="inSetFactory" placeholder="0x factory to authorize" /><button class="btn sm" data-act="setFactory" data-arg="inSetFactory">Allow</button></div>
+    <div class="row"><div class="lbl"><b>Remove factory (revoke)</b><span>revoke a burned deploy key</span></div><input class="addr" id="inRmFactory" placeholder="0x factory to revoke" /><button class="btn sm ghost" data-act="removeFactory" data-arg="inRmFactory">Revoke</button></div>
+    <div class="row"><div class="lbl"><b>Set reward vault</b></div><input class="addr" id="inSetRv" placeholder="0x reward vault" /><button class="btn sm" data-act="setRewardVault" data-arg="inSetRv">Set</button></div>
+    <div class="row"><div class="lbl"><b>Set factory platform</b></div><input class="addr" id="inSetPlatform" placeholder="0x platform sink" /><button class="btn sm" data-act="setPlatform" data-arg="inSetPlatform">Set</button></div>
+  </section>
+
+  <!-- ANTI-SNIPE -->
+  <section id="secSnipe">
+    <h2>🎯 Anti-snipe blocklist</h2>
+    <p class="desc">During a coin's ≤300s anti-snipe window, add sniper addresses to its BUY-side blocklist. Add-only, buy-only, auto-frozen after the window — it can never block a holder's sell.</p>
+    <div class="row"><div class="lbl"><b>Coin</b></div><input class="addr" id="inSnipeToken" placeholder="0x coin token" /></div>
+    <div class="row"><div class="lbl"><b>Bots (comma-separated)</b></div><input class="addr" id="inSnipeBots" placeholder="0xbot1, 0xbot2, …" /><button class="btn sm danger" data-act="seedBlocklist">Block</button></div>
+  </section>
+
+  <!-- FLOORCOOP + SPLITTER -->
+  <section id="secMisc">
+    <h2>⚙️ FloorCoop &amp; Splitter</h2>
+    <p class="desc">The LP-staking treasury sink and the platform-fee splitter ($ROBIN buyback).</p>
+    <div class="row"><div class="lbl"><b>FloorCoop treasury</b><span>receives 10% open fee + 5% cut + penalties</span></div><div class="val" id="valFloorTreasury">—</div></div>
+    <div class="row"><div class="lbl"><b>Set FloorCoop treasury</b></div><input class="addr" id="inFloorTreasury" placeholder="0x treasury" /><button class="btn sm" data-act="setTreasury" data-arg="inFloorTreasury">Set</button></div>
+    <div class="row"><div class="lbl"><b>Splitter → $ROBIN share</b><span id="valRobin">—</span></div><input class="num" id="inRobinBps" placeholder="bps (0-10000)" /><button class="btn sm" data-act="setRobinShareBps" data-arg="inRobinBps">Set</button></div>
+    <div class="row"><div class="lbl"><b>Splitter → $ROBIN sink</b></div><input class="addr" id="inRobinSink" placeholder="0x robin sink" /><button class="btn sm" data-act="setRobinSink" data-arg="inRobinSink">Set</button></div>
+    <div class="row"><div class="lbl"><b>Splitter → platform treasury</b></div><input class="addr" id="inSplitTreasury" placeholder="0x platform treasury" /><button class="btn sm" data-act="setPlatformTreasury" data-arg="inSplitTreasury">Set</button></div>
+  </section>
+
+  <!-- OWNERSHIP -->
+  <section id="secDanger" class="danger-zone">
+    <h2>☠️ Ownership</h2>
+    <p class="desc">2-step (Ownable2Step): <code>transferOwnership</code> then the new owner <code>acceptOwnership()</code>. If you're the pending owner of a contract, an <b>Accept</b> button appears. Double-check addresses — a wrong one locks you out.</p>
+    <div class="row"><div class="lbl"><b>Router</b><span id="pendRouter">pending: —</span></div><div class="val" id="valOwnRouter">—</div><input class="addr" id="inOwnRouter" placeholder="0x new owner" /><button class="btn sm danger" data-act="transferOwnership" data-tgt="padRouter" data-arg="inOwnRouter" data-confirm="1">Transfer</button><button class="btn sm ghost" data-act="acceptOwnership" data-tgt="padRouter" id="accRouter" style="display:none">Accept</button></div>
+    <div class="row"><div class="lbl"><b>Factory</b><span id="pendFactory">pending: —</span></div><div class="val" id="valOwnFactory">—</div><input class="addr" id="inOwnFactory" placeholder="0x new owner" /><button class="btn sm danger" data-act="transferOwnership" data-tgt="padFactory" data-arg="inOwnFactory" data-confirm="1">Transfer</button><button class="btn sm ghost" data-act="acceptOwnership" data-tgt="padFactory" id="accFactory" style="display:none">Accept</button></div>
+    <div class="row"><div class="lbl"><b>RewardVault</b><span id="pendRv">pending: —</span></div><div class="val" id="valOwnRv">—</div><input class="addr" id="inOwnRv" placeholder="0x new owner" /><button class="btn sm danger" data-act="transferOwnership" data-tgt="rewardVault" data-arg="inOwnRv" data-confirm="1">Transfer</button><button class="btn sm ghost" data-act="acceptOwnership" data-tgt="rewardVault" id="accRv" style="display:none">Accept</button></div>
+  </section>
+
+  <p class="hint" style="margin-top:22px">Every action here is enforced on-chain (<code>onlyOwner</code> / poster / guardian). This page holds no keys and needs no login — the chain is the auth. Set <code>API_BASE</code> in <code>assets/config.js</code> for the volume/coins/reward totals.</p>
 </div>
 
+<div id="toast"></div>
+
 <script type="module">
-import { ethers } from "./assets/ethers.min.js";
-import { CHAIN, CONTRACTS } from "./assets/config.js";
+import { ethers } from './assets/ethers.min.js';
+import { CHAIN, CONTRACTS, ADMIN_ABI, API_BASE, isDeployed } from './assets/config.js';
 
-const RPC = new ethers.JsonRpcProvider(CHAIN.rpc[0], CHAIN.id);
-const OWNABLE = [
-  "function owner() view returns (address)",
-  "function pendingOwner() view returns (address)",
-  "function acceptOwnership()",
-];
-const TARGETS = [
-  { key: "CurvePadFactory", addr: CONTRACTS.padFactory },
-  { key: "PadRouter",       addr: CONTRACTS.padRouter },
-];
+const $ = (id) => document.getElementById(id);
+const read = new ethers.JsonRpcProvider(CHAIN.rpc[0], CHAIN.id);
+let signer = null, account = null;
+const fmtEth = (wei) => (wei == null ? '—' : (+ethers.formatEther(wei)).toLocaleString(undefined, { maximumFractionDigits: 4 }) + ' ' + (CHAIN.currency?.symbol || 'ETH'));
+const short = (a) => (!a || /^0x0+$/.test(a) ? '—' : a.slice(0, 6) + '…' + a.slice(-4));
+const secsToDh = (s) => { s = Number(s); const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600); return d ? `${d}d ${h}h` : `${h}h`; };
+const isZero = (a) => !a || /^0x0+$/.test(a);
 
-let account = null;
-const eq = (a, b) => a && b && a.toLowerCase() === b.toLowerCase();
-const short = (a) => a ? a.slice(0, 6) + "…" + a.slice(-4) : "—";
-const cardsEl = document.getElementById("cards");
-const whoEl = document.getElementById("who");
+let toastT;
+function toast(msg, err = false) {
+  const t = $('toast'); t.textContent = msg; t.className = 'show' + (err ? ' err' : '');
+  clearTimeout(toastT); toastT = setTimeout(() => (t.className = ''), err ? 8000 : 5000);
+}
 
-function provider() {
-  if (window.phantom?.ethereum) return window.phantom.ethereum;
-  if (window.ethereum) return window.ethereum;
-  return null;
+const C = (key, withSigner = false) => new ethers.Contract(CONTRACTS[key], ADMIN_ABI[key], withSigner && signer ? signer : read);
+const TARGET = {
+  withdrawPlatform: 'padRouter', withdrawPlatformCut: 'padRouter', setFactory: 'padRouter', removeFactory: 'padRouter', setRewardVault: 'padRouter',
+  setPlatform: 'padFactory', seedBlocklist: 'padFactory',
+  setPoster: 'rewardVault', setGuardian: 'rewardVault', setChallengeWindow: 'rewardVault', setClaimWindow: 'rewardVault', veto: 'rewardVault',
+  setTreasury: 'floorCoopFactory',
+  setRobinShareBps: 'splitter', setRobinSink: 'splitter', setPlatformTreasury: 'splitter',
+};
+const UINT_ACTS = new Set(['setChallengeWindow', 'setClaimWindow', 'setFinalityDelay', 'veto', 'setRobinShareBps']);
+const NOARG_ACTS = new Set(['withdrawPlatform', 'withdrawPlatformCut', 'acceptOwnership']);
+
+async function connect() {
+  if (!window.ethereum && !window.phantom?.ethereum) { toast('No wallet found — open in a wallet browser or install one.', true); return; }
+  const eip = window.phantom?.ethereum || window.ethereum;
+  try {
+    await eip.request({ method: 'eth_requestAccounts' });
+    const cur = await eip.request({ method: 'eth_chainId' });
+    if (cur !== CHAIN.hexId) {
+      try { await eip.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN.hexId }] }); }
+      catch (e) { if (e.code === 4902) await eip.request({ method: 'wallet_addEthereumChain', params: [{ chainId: CHAIN.hexId, chainName: CHAIN.name, nativeCurrency: CHAIN.currency, rpcUrls: CHAIN.rpc, blockExplorerUrls: [CHAIN.explorer] }] }); }
+    }
+    signer = await new ethers.BrowserProvider(eip, 'any').getSigner();
+    account = (await signer.getAddress());
+    $('connectBtn').textContent = short(account);
+    $('netDot').className = 'dot ok'; $('netTxt').textContent = 'connected';
+    refresh();
+  } catch (e) { toast(e.shortMessage || e.message || 'connect failed', true); }
 }
 
 async function refresh() {
-  cardsEl.innerHTML = "";
-  for (const t of TARGETS) {
-    const c = new ethers.Contract(t.addr, OWNABLE, RPC);
-    let owner = "?", pending = "?";
-    try { [owner, pending] = await Promise.all([c.owner(), c.pendingOwner()]); } catch {}
-    t.owner = owner; t.pending = pending;
+  const acct = account ? account.toLowerCase() : null;
+  const mism = [];
 
-    const done = eq(owner, t.pending) || pending === ethers.ZeroAddress;
-    const iAmPending = account && eq(account, pending);
-    let status, cls, btn;
-    if (owner && account && eq(owner, account)) { status = "✓ You already own this contract."; cls = "ok"; btn = ""; }
-    else if (pending === ethers.ZeroAddress) { status = "No transfer pending — ownership is settled."; cls = "dim"; btn = ""; }
-    else if (iAmPending) { status = "You are the pending owner — click to accept."; cls = "warn"; btn = `<button class="lime" data-addr="${t.addr}" data-key="${t.key}">Accept ownership →</button>`; }
-    else if (account) { status = `Connect the pending-owner wallet (${short(pending)}) to accept.`; cls = "bad"; btn = ""; }
-    else { status = "Connect the platform wallet to accept."; cls = "dim"; btn = ""; }
-
-    const div = document.createElement("div");
-    div.className = "card";
-    div.innerHTML = `
-      <h2>${t.key}</h2>
-      <div class="addr">${t.addr}</div>
-      <div class="row"><span class="k">current owner</span><span class="v">${short(owner)}</span></div>
-      <div class="row"><span class="k">pending owner</span><span class="v">${short(pending)}</span></div>
-      <div class="status ${cls}">${status}</div>
-      ${btn}`;
-    cardsEl.appendChild(div);
-  }
-  cardsEl.querySelectorAll("button[data-addr]").forEach((b) =>
-    b.addEventListener("click", () => accept(b.dataset.addr, b.dataset.key, b)));
-}
-
-async function connect() {
-  const inj = provider();
-  if (!inj) { alert("No EVM wallet found. Install Phantom or MetaMask."); return; }
-  try {
-    const [acc] = await inj.request({ method: "eth_requestAccounts" });
-    account = acc;
-    // make sure we're on Robinhood Chain
+  // ── Router (fees + wiring + ownership) ──
+  if (isDeployed('padRouter')) {
     try {
-      await inj.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN.hexId }] });
-    } catch (e) {
-      if (e.code === 4902) await inj.request({ method: "wallet_addEthereumChain", params: [{
-        chainId: CHAIN.hexId, chainName: CHAIN.name, nativeCurrency: CHAIN.currency,
-        rpcUrls: CHAIN.rpc, blockExplorerUrls: [CHAIN.explorer] }] });
-    }
-    whoEl.textContent = "Connected: " + short(account);
-    await refresh();
-  } catch (e) { alert(e.message || "Connection failed"); }
+      const r = C('padRouter');
+      const [pe, pc, own, pend, rv] = await Promise.all([r.platformEscrow(), r.platformCutEscrow(), r.owner(), r.pendingOwner(), r.rewardVault()]);
+      $('valPlatformEscrow').textContent = fmtEth(pe);
+      $('valPlatformCut').textContent = fmtEth(pc);
+      $('feesTot').textContent = fmtEth(pe + pc);
+      $('feeOwner').textContent = short(own);
+      $('valRvWired').textContent = short(rv);
+      $('valOwnRouter').textContent = short(own);
+      $('pendRouter').textContent = 'pending: ' + short(pend);
+      $('accRouter').style.display = acct && pend.toLowerCase() === acct ? '' : 'none';
+      if (acct && own.toLowerCase() !== acct) mism.push('router');
+    } catch {}
+    try {
+      const f = C('padFactory');
+      const [plat, own, pend] = await Promise.all([f.platform(), f.owner(), f.pendingOwner()]);
+      $('valPlatform').textContent = short(plat); $('valOwnFactory').textContent = short(own);
+      $('pendFactory').textContent = 'pending: ' + short(pend);
+      $('accFactory').style.display = acct && pend.toLowerCase() === acct ? '' : 'none';
+      if (acct && own.toLowerCase() !== acct) mism.push('factory');
+    } catch {}
+  } else { ['secFees', 'secWiring', 'secSnipe'].forEach((s) => $(s).classList.add('notdeployed')); }
+
+  // ── RewardVault ──
+  if (isDeployed('rewardVault')) {
+    try {
+      const v = C('rewardVault');
+      const [ep, poster, guardian, cw, clw, own, pend] = await Promise.all([v.currentEpoch(), v.poster(), v.guardian(), v.challengeWindow(), v.claimWindow(), v.owner(), v.pendingOwner()]);
+      $('epochNow').textContent = '#' + ep.toString();
+      $('valPoster').textContent = poster;
+      $('valGuardian').textContent = guardian;
+      $('valWindows').textContent = `${secsToDh(cw)} · ${secsToDh(clw)}`;
+      $('valOwnRv').textContent = short(own);
+      $('pendRv').textContent = 'pending: ' + short(pend);
+      $('accRv').style.display = acct && pend.toLowerCase() === acct ? '' : 'none';
+      if (acct && own.toLowerCase() !== acct) mism.push('rewardVault');
+      const bal = await read.getBalance(poster);
+      $('posterBal').textContent = fmtEth(bal);
+      const low = bal < ethers.parseEther('0.01');
+      $('posterSub').innerHTML = low ? '<span class="bad">⚠ low — top up gas</span>' : 'ok · signs postRoot each epoch';
+      let posted = 0, pending = 0; const prev = Number(ep) - 1;
+      for (let e = Math.max(0, prev - 3); e <= prev; e++) { try { const er = await v.epochRoot(e); if (!isZero(er.root)) posted++; else pending++; } catch {} }
+      $('epochSub').textContent = `${posted} posted · ${pending} pending (last 4)`;
+      $('rwdDot').className = 'dot ' + (low ? 'bad' : 'ok');
+      $('rwdState').textContent = low ? 'poster low on gas' : 'healthy';
+    } catch {}
+  } else { $('secRewards').classList.add('notdeployed'); $('epochNow').textContent = 'off'; $('rwdState').textContent = 'not deployed'; }
+
+  // ── FloorCoop + splitter ──
+  if (isDeployed('floorCoopFactory')) { try { $('valFloorTreasury').textContent = short(await C('floorCoopFactory').treasury()); } catch {} }
+  else { $('valFloorTreasury').textContent = 'not deployed'; }
+  if (isDeployed('splitter')) { try { const s = C('splitter'); const [bps, sink] = await Promise.all([s.robinShareBps(), s.robinSink()]); $('valRobin').textContent = `now ${bps} bps → ${short(sink)}`; } catch {} }
+  else { $('valRobin').textContent = 'splitter not deployed'; }
+
+  // ── API totals ──
+  if (/^https?:\/\//.test(API_BASE)) {
+    try { const s = await (await fetch(API_BASE + '/api/stats')).json(); $('volTot').textContent = (s.volAllEth || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }); $('volSub').textContent = `24h ${(s.vol24hEth || 0).toFixed(2)} · ETH`; $('coinsTot').textContent = `${s.coins ?? '—'} / ${s.graduated ?? '—'}`; } catch {}
+    try { const r = await (await fetch(API_BASE + '/api/rewards/stats')).json(); $('rwdAccr').textContent = (r.accruedEth || 0).toFixed(3); $('rwdSub').textContent = `${(r.allocatedEth || 0).toFixed(3)} allocated · ${r.epochsPosted ?? 0} epochs`; } catch {}
+  } else { $('volSub').textContent = 'set API_BASE'; }
+
+  $('ownerWarn').style.display = mism.length ? 'block' : 'none';
 }
 
-async function accept(addr, key, btn) {
-  const inj = provider();
-  btn.disabled = true; btn.textContent = "Confirm in wallet…";
+async function runAction(btn) {
+  const act = btn.dataset.act;
+  const key = btn.dataset.tgt || TARGET[act];
+  if (!signer) { toast('Connect your owner wallet first', true); return; }
+  if (!isDeployed(key)) { toast(`${key} not deployed yet`, true); return; }
+  let args = [];
   try {
-    const signer = await new ethers.BrowserProvider(inj).getSigner();
-    const c = new ethers.Contract(addr, OWNABLE, signer);
-    const tx = await c.acceptOwnership();
-    btn.textContent = "Accepting… (waiting)";
+    if (act === 'seedBlocklist') {
+      const token = $('inSnipeToken').value.trim();
+      const bots = $('inSnipeBots').value.split(',').map((s) => s.trim()).filter(Boolean).map((a) => ethers.getAddress(a));
+      if (!ethers.isAddress(token) || !bots.length) throw new Error('need a coin + at least one bot address');
+      args = [ethers.getAddress(token), bots];
+    } else if (!NOARG_ACTS.has(act) && btn.dataset.arg) {
+      const raw = $(btn.dataset.arg).value.trim();
+      if (!raw) throw new Error('enter a value');
+      args = UINT_ACTS.has(act) ? [BigInt(raw)] : [ethers.getAddress(raw)];
+    }
+    if (btn.dataset.confirm && !confirm(`Transfer ownership of ${key} to ${args[0]}?\n\nThe new owner must then call acceptOwnership(). A wrong address locks you out. Continue?`)) return;
+  } catch (e) { toast(e.message, true); return; }
+
+  const label = btn.textContent;
+  try {
+    btn.disabled = true; btn.textContent = 'Signing…';
+    const tx = await C(key, true)[act](...args);
+    btn.textContent = 'Pending…';
     await tx.wait();
-    btn.textContent = "✓ Accepted";
-    await refresh();
-  } catch (e) {
-    btn.disabled = false; btn.textContent = "Accept ownership →";
-    alert(e.shortMessage || e.message || "Transaction failed");
-  }
+    toast(`${act} ✓  ${tx.hash.slice(0, 12)}…`);
+    refresh();
+  } catch (e) { toast('✗ ' + (e.shortMessage || e.reason || e.message || 'failed'), true); }
+  finally { btn.disabled = false; btn.textContent = label; }
 }
 
-document.getElementById("connect").addEventListener("click", connect);
-refresh(); // show read-only state immediately
+document.querySelectorAll('button[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b)));
+$('connectBtn').addEventListener('click', connect);
+refresh(); // read-only dashboard loads immediately, no wallet needed
 </script>
 </body>
 </html>

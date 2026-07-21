@@ -43,6 +43,10 @@ export const CONTRACTS = {
   // fees, withdrawable after a cooldown). Empty until it ships with the reward system's deploy.
   floorCoopFactory: "",
 
+  // Our PlatformFeeSplitter — routes the platform's cut ($ROBIN buyback split). Standalone; used by the
+  // admin panel to read/set the split. Empty until deployed.
+  platformSplitter: "",
+
   // The platform's buy-back token + its WETH pool (for links / a future buy widget).
   // The above-default fee's 25% cut is paid to the platform, which buys+burns the
   // platform token off-chain — the router does not swap it on-chain. TBD for Robin Labs.
@@ -144,6 +148,81 @@ export const ABIS = {
     "function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 obsIdx, uint16 obsCard, uint16 obsCardNext, uint8 feeProtocol, bool unlocked)",
     "function token0() view returns (address)",
     "function token1() view returns (address)",
+  ],
+};
+
+// ── Admin ABIs (owner/poster/guardian surface) ──────────────────────────────
+// Used ONLY by admin.html. Every action is gated on-chain (onlyOwner / poster / guardian), so exposing these
+// in a public page is safe: a non-owner's tx simply reverts. Views let the panel show balances + status.
+export const ADMIN_ABI = {
+  padRouter: [
+    "function owner() view returns (address)",
+    "function pendingOwner() view returns (address)",
+    "function platformEscrow() view returns (uint256)",
+    "function platformCutEscrow() view returns (uint256)",
+    "function floorEscrow(address) view returns (uint256)",
+    "function deferredEscrow(address) view returns (uint256)",
+    "function burnEscrow(address) view returns (uint256)",
+    "function isFactory(address) view returns (bool)",
+    "function rewardVault() view returns (address)",
+    "function withdrawPlatform()",
+    "function withdrawPlatformCut()",
+    "function flushFloor(address token)",
+    "function claimDeferred(address token)",
+    "function flushBurn(address token)",
+    "function setFactory(address f)",
+    "function removeFactory(address f)",
+    "function setRewardVault(address v)",
+    "function transferOwnership(address newOwner)",
+    "function acceptOwnership()",
+  ],
+  padFactory: [
+    "function owner() view returns (address)",
+    "function pendingOwner() view returns (address)",
+    "function platform() view returns (address)",
+    "function setPlatform(address p_)",
+    "function seedBlocklist(address token, address[] bots)",
+    "function transferOwnership(address newOwner)",
+    "function acceptOwnership()",
+  ],
+  rewardVault: [
+    "function owner() view returns (address)",
+    "function pendingOwner() view returns (address)",
+    "function poster() view returns (address)",
+    "function guardian() view returns (address)",
+    "function currentEpoch() view returns (uint256)",
+    "function EPOCH() view returns (uint256)",
+    "function finalityDelay() view returns (uint64)",
+    "function challengeWindow() view returns (uint64)",
+    "function claimWindow() view returns (uint64)",
+    "function epochRoot(uint256) view returns (bytes32 root, bytes32 algoHash, uint64 postedAt, uint64 challengeWindow, uint64 claimWindow, bool vetoed)",
+    "function pot(address coin, uint256 epoch) view returns (uint128 traderPot, uint128 holderPot)",
+    "function setPoster(address p)",
+    "function setGuardian(address g)",
+    "function setFinalityDelay(uint64 d)",
+    "function setChallengeWindow(uint64 w)",
+    "function setClaimWindow(uint64 w)",
+    "function veto(uint256 epoch)",
+    "function sweep(uint256 epoch, address coin)",
+    "function transferOwnership(address newOwner)",
+    "function acceptOwnership()",
+  ],
+  floorCoopFactory: [
+    "function owner() view returns (address)",
+    "function treasury() view returns (address)",
+    "function coopOf(address token) view returns (address)",
+    "function setTreasury(address t)",
+  ],
+  floorCoop: ["function sweepProtocol()", "function protocolWeth() view returns (uint256)", "function protocolToken() view returns (uint256)"],
+  splitter: [
+    "function owner() view returns (address)",
+    "function robinSink() view returns (address)",
+    "function robinShareBps() view returns (uint16)",
+    "function platformTreasury() view returns (address)",
+    "function setRobinShareBps(uint16 bps)",
+    "function setRobinSink(address sink)",
+    "function setPlatformTreasury(address t)",
+    "function transferOwnership(address newOwner)",
   ],
 };
 
