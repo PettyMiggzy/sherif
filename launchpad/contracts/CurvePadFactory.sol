@@ -116,7 +116,10 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
         );
         require(
             startTickMag_ > 0 && curveWidth_ > 0 && startTickMag_ % 200 == 0 && curveWidth_ % 200 == 0
-                && minGradWidth_ > 0 && minGradWidth_ % 200 == 0 && minGradWidth_ < curveWidth_,
+                && minGradWidth_ > 0 && minGradWidth_ % 200 == 0 && minGradWidth_ < curveWidth_
+                // derived grad tick magnitude must stay inside the usable full-range bound (spacing-200 → 887200),
+                // or seed()/getSqrtRatioAtTick would revert at the FIRST launch instead of failing here at deploy
+                && startTickMag_ + curveWidth_ <= 887200,
             "curve"
         );
         WETH = weth_;
@@ -168,6 +171,7 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
 
         IERC20(token).safeTransfer(curve, TOTAL_SUPPLY);
         LaunchToken(token).enableTrading(pool, curve, uint64(block.timestamp));
+        LaunchToken(token).exemptAddress(router); // router receives tokens on burnDev/flushBurn — never a sniper
         ICurvePool(curve).seed();
 
         // register the project's tax with the swap desk (router enforces the 4% caps + 100% allocation)

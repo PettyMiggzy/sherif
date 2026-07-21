@@ -1,6 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+// ⚠️ NOT FOR DEPLOYMENT — ALTERNATE (x*y=k off-DEX) LAUNCH MODEL, SUPERSEDED BY THE CurvePool/CurvePadFactory
+// PATH THAT THE PAD ACTUALLY SHIPS (scripts/deploy.js deploys CurvePadFactory, never CurveLaunchFactory). This
+// path has two KNOWN, UNFIXED audit findings that the CurvePool path already designs around:
+//   D1 (HIGH): the token is deployed via plain nonce-CREATE (CurveTokenDeployer), so its Uniswap pool address
+//     is predictable. An attacker can pre-`initialize` that pool once, making every launch's `initialize`
+//     revert and permanently BRICK the pad. Fix before use: deploy the token via CREATE2 with per-launch
+//     entropy (as LaunchTokenDeployer/CurvePadFactory do), or make initialize tolerant.
+//   D2 (MED): graduation gates on `slot0 == gradSqrtPriceX96` exactly; the pre-init pool has zero liquidity so
+//     anyone can shove its price for gas and grief graduation. Fix: tolerance band, or pair the raised WETH at
+//     graduation instead of trusting the empty-pool price.
+// Do NOT deploy CurveLaunchFactory/BondingCurve until D1+D2 are fixed. Kept for reference/tests only.
+
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";

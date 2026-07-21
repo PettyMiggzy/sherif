@@ -10,33 +10,45 @@ import { getHead } from "./indexer.js";
 const DAY = 86400;
 
 // One row per coin, enriched with all-time + 24h activity and last price (ETH/token).
+// WHERE clause shared by the page query and the total-count query, so a filter can't drift between them.
+const coinsWhere = (filter, hasQ) => {
+  const where = [];
+  if (filter === "live") where.push("c.graduated = 0");
+  else if (filter === "graduated") where.push("c.graduated = 1");
+  else if (filter === "final") where.push("c.graduated = 0 AND c.progress >= 0.70"); // "Final Stretch": >=70% up the curve
+  if (hasQ) where.push("(LOWER(c.name) LIKE @q OR LOWER(c.symbol) LIKE @q OR c.token LIKE @q)");
+  return where.length ? `WHERE ${where.join(" AND ")}` : "";
+};
+
 const coinsStmt = (sort, filter, hasQ) => {
   const order = {
     new: "c.launch_block DESC",
+    old: "c.launch_block ASC",
     trending: "vol_24h DESC, trades_24h DESC, c.launch_block DESC",
-    top: "vol_all DESC, c.launch_block DESC",
+    top: "COALESCE(NULLIF(c.mcap_eth,0), vol_all) DESC, c.launch_block DESC", // "Market cap" (mcap, vol fallback)
+    volume: "vol_24h DESC, vol_all DESC, c.launch_block DESC",
+    holders: "holders_est DESC, c.launch_block DESC",
     graduated: "c.grad_block DESC",
   }[sort] || "c.launch_block DESC";
-  const where = [];
-  if (filter === "live") where.push("c.graduated = 0");
-  if (filter === "graduated") where.push("c.graduated = 1");
-  if (hasQ) where.push("(LOWER(c.name) LIKE @q OR LOWER(c.symbol) LIKE @q OR c.token LIKE @q)");
-  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   return db.prepare(`
     SELECT c.*,
       (SELECT COUNT(*) FROM trades t WHERE t.token=c.token) AS trades_all,
       (SELECT COUNT(*) FROM trades t WHERE t.token=c.token AND t.ts>=@since) AS trades_24h,
+      (SELECT COUNT(DISTINCT t.actor) FROM trades t WHERE t.token=c.token) AS holders_est,
       (SELECT COALESCE(SUM(CAST(t.eth AS REAL)),0)/1e18 FROM trades t WHERE t.token=c.token) AS vol_all,
       (SELECT COALESCE(SUM(CAST(t.eth AS REAL)),0)/1e18 FROM trades t WHERE t.token=c.token AND t.ts>=@since) AS vol_24h,
       (SELECT MAX(t.ts) FROM trades t WHERE t.token=c.token) AS last_trade_ts,
       (SELECT CAST(t.eth AS REAL)/NULLIF(CAST(t.tokens AS REAL),0)
          FROM trades t WHERE t.token=c.token ORDER BY t.block DESC, t.log_index DESC LIMIT 1) AS last_price
     FROM coins c
-    ${whereSql}
+    ${coinsWhere(filter, hasQ)}
     ORDER BY ${order}
     LIMIT @limit OFFSET @offset
   `);
 };
+
+const coinsCountStmt = (filter, hasQ) =>
+  db.prepare(`SELECT COUNT(*) AS n FROM coins c ${coinsWhere(filter, hasQ)}`);
 
 const shapeCoin = (r) => ({
   token: r.token, curve: r.curve, pool: r.pool, dev: r.dev,
@@ -157,10 +169,10 @@ export function startApi() {
         const qRaw = (url.searchParams.get("q") || "").trim().toLowerCase();
         const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 60), 1), 200);
         const offset = Math.max(Number(url.searchParams.get("offset") || 0), 0);
-        const rows = coinsStmt(sort, filter, !!qRaw).all({
-          since, limit, offset, q: qRaw ? `%${qRaw}%` : "%",
-        });
-        return send(res, 200, { coins: rows.map(shapeCoin), sort, filter, limit, offset }, origin);
+        const params = { since, limit, offset, q: qRaw ? `%${qRaw}%` : "%" };
+        const rows = coinsStmt(sort, filter, !!qRaw).all(params);
+        const total = coinsCountStmt(filter, !!qRaw).get(params).n; // full match count for {coins,total} contract
+        return send(res, 200, { coins: rows.map(shapeCoin), total, sort, filter, limit, offset }, origin);
       }
 
       let m = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})$/);

@@ -38,6 +38,7 @@ let _account = null;
 
 // A read-only provider for quotes/simulation even before the user connects.
 const _read = new ethers.JsonRpcProvider(CHAIN.rpc[0], CHAIN.id);
+const REWARD_LEG_BPS = 25; // 0.25% router reward leg (buy→traders / sell→holders), carved before the swap when the vault is set
 
 // ── provider detection: prefer Phantom's EVM provider, then any injected wallet ─
 function injected() {
@@ -240,7 +241,9 @@ export async function buy({ token, ethAmount, slippagePct = 8 }) {
   requireRouter();
   const value = ethers.parseEther(String(ethAmount));
   const c = await getTax(token);
-  const net = (value * BigInt(10000 - c.buyBps)) / 10000n; // what actually hits the pool
+  // subtract the project fee AND the 0.25% router reward leg (carved before the swap once rewardVault is set);
+  // harmless when legs are off (only makes minOut 0.25% more lenient, dwarfed by the slippage haircut).
+  const net = (value * BigInt(10000 - c.buyBps - REWARD_LEG_BPS)) / 10000n; // what actually hits the pool
   const minOut = await quoteMinOut({ pool: c.pool, tokenIn: CONTRACTS.weth, tokenOut: token, amountIn: net, slippagePct });
   const router = new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _signer);
   return guardedSend(router, "buy", [token, minOut], value, "Buy");
@@ -264,7 +267,7 @@ export async function sell({ token, tokenAmount, slippagePct = 8 }) {
 
   const c = await getTax(token);
   const gross = await quoteMinOut({ pool: c.pool, tokenIn: token, tokenOut: CONTRACTS.weth, amountIn, slippagePct });
-  const minOutEth = (gross * BigInt(10000 - c.sellBps)) / 10000n; // guard on the post-tax ETH
+  const minOutEth = (gross * BigInt(10000 - c.sellBps - REWARD_LEG_BPS)) / 10000n; // guard on the post-tax + post-leg ETH
   const router = new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _signer);
   return guardedSend(router, "sell", [token, amountIn, minOutEth], 0n, "Sell");
 }
@@ -651,6 +654,7 @@ export async function floorDeposit(token, ethAmount, lockDays = 90) {
 
 export async function floorClaim(token) {
   requireFloor();
+  if (!_signer) await connect();
   const coop = await coopFor(token);
   return guardedSend(new ethers.Contract(coop, ABIS.floorCoop, _signer), "claim", [], 0n, "Claim floor fees");
 }
@@ -658,6 +662,7 @@ export async function floorClaim(token) {
 /// Withdraw the caller's whole stake (after the cooldown).
 export async function floorWithdraw(token) {
   requireFloor();
+  if (!_signer) await connect();
   const coop = await coopFor(token);
   const c = new ethers.Contract(coop, ABIS.floorCoop, _signer);
   const sh = await c.shares(_account);

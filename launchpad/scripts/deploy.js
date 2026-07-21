@@ -61,8 +61,9 @@ async function main() {
   const EPOCH_LEN = Number(process.env.EPOCH_LEN || 7 * 24 * 3600);        // 7-day reward epochs (>= 1h)
   const FINALITY_DELAY = Number(process.env.FINALITY_DELAY || 24 * 3600);  // root only postable 1d after epoch end
   const CHALLENGE_WINDOW = Number(process.env.CHALLENGE_WINDOW || 2 * 24 * 3600); // 2d guardian veto window
+  const CLAIM_WINDOW = Number(process.env.CLAIM_WINDOW || 30 * 24 * 3600);        // 30d to claim before sweep-to-floor
   const rewardVault = await track("RewardVault", await (await ethers.getContractFactory("RewardVault")).deploy(
-    await router.getAddress(), POSTER, GUARDIAN, EPOCH_LEN, FINALITY_DELAY, CHALLENGE_WINDOW, owner
+    await router.getAddress(), POSTER, GUARDIAN, EPOCH_LEN, FINALITY_DELAY, CHALLENGE_WINDOW, CLAIM_WINDOW, owner
   ));
   const wireRv = await (await router.setRewardVault(await rewardVault.getAddress())).wait();
   totalGas += wireRv.gasUsed;

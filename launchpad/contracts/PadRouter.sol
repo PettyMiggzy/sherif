@@ -75,8 +75,10 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         bool set;
     }
 
-    address public factory; // only the factory may register a coin (set once)
+    address public factory; // the primary factory (first set); reads use this
+    mapping(address => bool) public isFactory; // allowlist — a router can serve a TEST + PROD factory
     address public rewardVault; // RewardVault for the 0.25% trader/holder legs (0 until set — legs stay off)
+    mapping(address => bool) public wasRewardVault; // every vault ever wired — old vaults may still donateFloor after a migration
     mapping(address => Cfg) internal _cfg;
     mapping(address => address) public bondOf; // token -> its Bond (once graduated)
 
@@ -115,15 +117,22 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
 
     receive() external payable {} // WETH.withdraw
 
+    /// @notice Authorize a factory to register coins. Allowlist (not set-once) so one router can serve a TEST +
+    /// PRODUCTION factory sharing the same audited code, as the deploy notes intend. Must be a contract.
     function setFactory(address f) external onlyOwner {
-        require(factory == address(0) && f != address(0), "set");
-        factory = f;
+        require(f != address(0), "zero");
+        if (factory == address(0)) factory = f; // primary, for external reads
+        isFactory[f] = true;
     }
 
     /// @notice Point the router at the RewardVault. Until set, the two 0.25% reward legs are OFF and trades
-    /// behave exactly as before (existing platform/creator fees unchanged). Settable by the platform so the
-    /// vault can be deployed after the router; re-settable only to migrate the vault, never to a non-contract.
+    /// behave exactly as before. Settable to migrate the vault; must be a CONTRACT (a code-size check stops an
+    /// EOA/typo that would silently misdirect leg ETH). Old vaults stay authorized to donateFloor their sweeps.
     function setRewardVault(address v) external onlyOwner {
+        if (v != address(0)) {
+            require(v.code.length > 0, "not a contract");
+            wasRewardVault[v] = true;
+        }
         rewardVault = v; // zero disables the legs; a live vault turns them on
         emit RewardVaultSet(v);
     }
@@ -133,7 +142,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     /// this is the sweep→floor bridge, reusing the audited floor plumbing. Never reverts a trade (not on the
     /// trade path).
     function donateFloor(address token) external payable {
-        if (msg.sender != rewardVault) revert Unknown();
+        if (!wasRewardVault[msg.sender]) revert Unknown(); // current OR a migrated-away vault sweeping its tail
         if (msg.value == 0) return;
         floorEscrow[token] += msg.value;
         emit FloorDonated(token, msg.value);
@@ -163,7 +172,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         uint16 floorBps,
         uint16 burnBps
     ) external {
-        if (msg.sender != factory) revert OnlyFactory();
+        if (!isFactory[msg.sender]) revert OnlyFactory();
         if (_cfg[token].set) revert AlreadySet(); // register-once: a coin's config can never be overwritten
         // every coin pays at least the default 1%, up to the 4% cap, per side
         if (buyBps < DEFAULT_FEE_BPS || sellBps < DEFAULT_FEE_BPS || buyBps > MAX_TAX_BPS || sellBps > MAX_TAX_BPS) {
@@ -228,8 +237,13 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         // forward the trader leg as raw ETH to the vault's current-epoch trader pool (additive; never touches
         // the platform/creator escrows credited in _distribute)
         if (reward > 0) {
-            IRewardVault(rewardVault).accrue{value: reward}(token, SIDE_TRADERS);
-            emit RewardAccrued(token, SIDE_TRADERS, reward);
+            // try/catch so a paused/buggy/misconfigured vault can NEVER revert a trade (upholds the non-revert
+            // guarantee). On failure the leg becomes this coin's floor rather than being lost.
+            try IRewardVault(rewardVault).accrue{value: reward}(token, SIDE_TRADERS) {
+                emit RewardAccrued(token, SIDE_TRADERS, reward);
+            } catch {
+                floorEscrow[token] += reward;
+            }
         }
         emit Bought(token, msg.sender, spent, fee, tokensOut);
     }
@@ -254,8 +268,11 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         // forward the holder leg as raw ETH to the vault's current-epoch holder pool (additive; the creator
         // sell-fee escrow in _distribute is untouched)
         if (reward > 0) {
-            IRewardVault(rewardVault).accrue{value: reward}(token, SIDE_HOLDERS);
-            emit RewardAccrued(token, SIDE_HOLDERS, reward);
+            try IRewardVault(rewardVault).accrue{value: reward}(token, SIDE_HOLDERS) {
+                emit RewardAccrued(token, SIDE_HOLDERS, reward);
+            } catch {
+                floorEscrow[token] += reward; // vault misbehaved — leg becomes floor, trade still succeeds
+            }
         }
         (bool ok,) = msg.sender.call{value: ethOut}("");
         require(ok, "pay");

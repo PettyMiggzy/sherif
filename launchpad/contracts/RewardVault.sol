@@ -57,6 +57,7 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
     address public guardian; // multisig — veto only, no custody
     uint64 public finalityDelay; // a root may only cover blocks this old (reorg safety)
     uint64 public challengeWindow; // time after postRoot before claims open
+    uint64 public claimWindow; // grace period AFTER claims open before sweep-to-floor is allowed
 
     // ── state ──
     mapping(address => mapping(uint256 => Pot)) public pot; // coin => epoch => pot
@@ -96,16 +97,19 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         uint256 epochLen_,
         uint64 finalityDelay_,
         uint64 challengeWindow_,
+        uint64 claimWindow_,
         address owner_
     ) Ownable(owner_) {
         if (router_ == address(0) || poster_ == address(0) || guardian_ == address(0)) revert ZeroAddr();
         require(epochLen_ >= 1 hours, "epoch too short");
+        require(claimWindow_ >= 1 days, "claim window too short");
         router = router_;
         EPOCH = epochLen_;
         poster = poster_;
         guardian = guardian_;
         finalityDelay = finalityDelay_;
         challengeWindow = challengeWindow_;
+        claimWindow = claimWindow_;
     }
 
     function currentEpoch() public view returns (uint256) {
@@ -152,6 +156,9 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         if (msg.sender != guardian) revert OnlyGuardian();
         EpochRoot storage er = epochRoot[epoch];
         if (er.root == bytes32(0)) revert NoRoot();
+        // only during the challenge window, before claims open — a veto after claims begin could otherwise
+        // strand a partially-claimed epoch's funds (M-fix: bound the guardian's power in time).
+        if (block.timestamp >= er.postedAt + challengeWindow) revert TooEarly();
         er.vetoed = true;
         emit EpochVetoed(epoch);
     }
@@ -205,7 +212,9 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         EpochRoot storage er = epochRoot[epoch];
         if (er.root == bytes32(0)) revert NoRoot();
         if (er.vetoed) revert Vetoed();
-        if (block.timestamp < er.postedAt + challengeWindow) revert TooEarly();
+        // sweep only AFTER claims have had their full grace window — otherwise sweep front-runs claims the
+        // instant they open, pushing the whole pot to the floor and reverting every honest claim (H-fix).
+        if (block.timestamp < er.postedAt + challengeWindow + claimWindow) revert TooEarly();
         if (swept[coin][epoch]) revert AlreadyClaimed();
         swept[coin][epoch] = true;
 
@@ -242,6 +251,11 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
 
     function setChallengeWindow(uint64 w) external onlyOwner {
         challengeWindow = w;
+    }
+
+    function setClaimWindow(uint64 w) external onlyOwner {
+        require(w >= 1 days, "claim window too short");
+        claimWindow = w;
     }
 
     /// @notice Ownership gates roles/timing only — never custody (funds move solely by capped Merkle claim or

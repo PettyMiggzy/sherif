@@ -81,6 +81,13 @@ contract LaunchToken is ERC20 {
         _mint(factory_, supply_);
     }
 
+    /// @notice Factory-only: mark an infrastructure address (e.g. the PadRouter, which receives tokens on
+    /// burnDev/flushBurn buys) as guard-exempt, so those protocol buys don't trip maxTx/maxWallet/deadWindow
+    /// during the anti-snipe window. Only the trusted factory can call this; it is never used for user wallets.
+    function exemptAddress(address a) external onlyFactory {
+        if (a != address(0)) isExempt[a] = true;
+    }
+
     /// @notice Latches trading on and records the pool + exemptions. Called once, atomically, by the
     /// factory at the end of launch(). One-way — there is no disableTrading().
     function enableTrading(address pool_, address vault_, uint64 launchTime_) external onlyFactory {
