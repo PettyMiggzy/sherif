@@ -121,7 +121,7 @@
   <section class="facts">
     <div class="fact"><h4>Real liquidity, not a side bet</h4><p>Your ETH goes into the coin's actual pool, deepening the market everyone trades against. You earn your pro-rata cut of every swap's fee for as long as it's locked.</p></div>
     <div class="fact"><h4>Locked = it can't be rugged</h4><p>Your stake is locked for your chosen term, so it can only ever help the coin's depth — never pulled out from under it. Longer locks earn a bigger share (up to 3× at forever).</p></div>
-    <div class="fact"><h4>Honest about the risk</h4><p>You earn a <b>share</b> of each fee (the protocol keeps 5%). Early exit costs a 15% penalty. Like any LP, if the price moves your position rebalances — impermanent loss is real.</p></div>
+    <div class="fact"><h4>Honest about the risk</h4><p>A 10% fee applies when you open, then you earn a <b>share</b> of each fee (the protocol keeps 5%). Early exit costs a 15% penalty. Like any LP, if the price moves your position rebalances — impermanent loss is real.</p></div>
   </section>
 
   <!-- ANY-TOKEN CTA -->
@@ -142,7 +142,7 @@
   <div class="colhead"><span>Coin</span><span>Total locked</span><span>Fees paid</span><span>Est. APR</span><span></span></div>
   <div class="pools" id="pools"></div>
 
-  <p class="risk"><b>Risk, plainly:</b> locking liquidity is real LPing, not a savings account. No fee to open — the protocol keeps 5% of the trade fees your position earns. The price moving rebalances your position (impermanent loss) and there's no guaranteed return. Withdrawing before your term ends costs a 15% penalty. Only lock into coins you'd be happy holding.</p>
+  <p class="risk"><b>Risk, plainly:</b> locking liquidity is real LPing, not a savings account. A 10% protocol fee applies when you open, and the protocol keeps 5% of the trade fees your position earns after that. The price moving rebalances your position (impermanent loss) and there's no guaranteed return. Withdrawing before your term ends costs a 15% penalty. Only lock into coins you'd be happy holding.</p>
 </main>
 
 <footer><div class="wrap foot-in">
@@ -196,9 +196,10 @@ window.prev = function(i){
   const amt = parseFloat(inp.value)||0; if (!el) return;
   if (amt<=0){ el.textContent=''; return; }
   const days = +(document.querySelector('#addrow-'+i+' .termsel')?.value ?? 90);
-  const pct = (p.tvlEth+amt)>0 ? (amt/(p.tvlEth+amt))*100 : 0;
+  const net = amt * 0.9; // 10% protocol fee on open
+  const pct = (p.tvlEth+net)>0 ? (net/(p.tvlEth+net))*100 : 0;
   const when = days===0 ? 'locked <b>forever</b>' : `locked <b>${termLabel(days)}</b> · unlocks <b>${new Date(Date.now()+days*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</b>`;
-  el.innerHTML = `Stake <b>${amt} ETH</b> → ~<b>${pct.toFixed(1)}%</b> of the pool · ${when}. Earns your share of every trade's fee.`;
+  el.innerHTML = `Stake <b>${amt} ETH</b> <span style="color:var(--dim)">(−10% fee → ${(Math.round(net*1e4)/1e4)} in)</span> → ~<b>${pct.toFixed(1)}%</b> of the pool · ${when}. You keep 95% of your fee share.`;
 };
 
 let POOLS = [];
@@ -226,7 +227,7 @@ async function onCreate(i){
   const inp = document.querySelector('#addrow-'+i+' input'); const amt = parseFloat(inp.value)||0;
   const days = +(document.querySelector('#addrow-'+i+' .termsel')?.value ?? 90);
   if (amt<=0){ alert('Enter an ETH amount.'); return; }
-  if (DEMO){ alert(`Preview — on the live site this stakes ${amt} ETH into $${POOLS[i].sym}'s real liquidity, locked ${termLabel(days)}, and starts earning your share of every trade's fee.`); return; }
+  if (DEMO){ alert(`Preview — on the live site this stakes ${amt} ETH into $${POOLS[i].sym}'s real liquidity (10% protocol fee on open), locked ${termLabel(days)}, and starts earning your share of every trade's fee (protocol keeps 5%).`); return; }
   try { if(!Pad.account()){await Pad.connect();refreshBtn();} await (await Pad.floorDeposit(POOLS[i].token, amt, days)).wait(); load(); } catch(e){ alert(e.message); }
 }
 

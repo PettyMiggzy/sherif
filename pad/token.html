@@ -283,7 +283,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
         <div class="fc-preview" id="fcPreview"></div>
         <div class="fc-btns"><button class="btn btn-lime" id="fcAdd" type="button">Lock liquidity</button><button class="btn btn-ghost" id="fcClaim" type="button">Claim fees</button></div>
         <button class="btn btn-ghost" id="fcWithdraw" type="button" style="width:100%;margin-top:8px">Withdraw</button>
-        <p class="fc-risk">You earn <b>your share</b> of each trade's fee (the protocol keeps <b>5%</b>). Locked for your chosen term; withdrawing early costs a <b>15%</b> penalty. Like any LP, if the price moves your position rebalances (<b>impermanent loss</b>).</p>
+        <p class="fc-risk">A <b>10%</b> fee applies when you open; after that you earn <b>your share</b> of each trade's fee (the protocol keeps <b>5%</b>). Locked for your chosen term; withdrawing early costs a <b>15%</b> penalty. Like any LP, if the price moves your position rebalances (<b>impermanent loss</b>).</p>
       </div>
 
       <div class="panel sec" style="margin-top:16px"><h3>Coin info</h3>
@@ -496,15 +496,17 @@ function fcShowPos(f){
     $('fcAdd').textContent = 'Add & re-lock';
   } else { $('fcAdd').textContent = 'Lock liquidity'; }
 }
+const OPEN_FEE = 0.10; // 10% protocol fee taken when a position is opened
 window.fcPrev = function(){
   const amt = parseFloat($('fcInput').value) || 0;
   const el = $('fcPreview'); if (!el) return;
   if (amt <= 0 || !FLOOR){ el.textContent = ''; return; }
-  const pct = (FLOOR.tvlEth + amt) > 0 ? (amt/(FLOOR.tvlEth + amt))*100 : 0;
+  const net = amt * (1 - OPEN_FEE);
+  const pct = (FLOOR.tvlEth + net) > 0 ? (net/(FLOOR.tvlEth + net))*100 : 0;
   const term = fcTerm.days === 0
     ? `locked <b>forever</b> (<b>${fcTerm.boost}</b> rewards)`
     : `locked <b>${fcTerm.days}d</b> · unlocks <b>${new Date(Date.now() + fcTerm.days*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</b> (<b>${fcTerm.boost}</b>)`;
-  el.innerHTML = `Stake <b>${amt} ETH</b> → ~<b>${pct.toFixed(1)}%</b> of the pool · ${term}. Earns your share of every trade's fee.`;
+  el.innerHTML = `Stake <b>${amt} ETH</b> <span style="color:var(--dim)">(−10% fee → ${(Math.round(net*1e4)/1e4)} in)</span> → ~<b>${pct.toFixed(1)}%</b> of the pool · ${term}. You keep 95% of your fee share.`;
 };
 function renderFloor(){
   const eth = (n) => (Math.round((n||0)*1e4)/1e4) + ' ETH';
@@ -530,7 +532,7 @@ const _fcPreview = (msg) => alert(msg || 'Preview — this is live on the real s
 $('fcAdd').addEventListener('click', async () => {
   const amt = parseFloat($('fcInput').value) || 0; if (amt<=0) return setNote('Enter an ETH amount.', 'err');
   const term = fcTerm.days === 0 ? 'forever' : fcTerm.days + ' days';
-  if (DEMO) return _fcPreview(`Preview — on the live site this stakes ${amt} ETH into the coin's real liquidity, locked for ${term}, and starts earning your share of every trade's fee.`);
+  if (DEMO) return _fcPreview(`Preview — on the live site this stakes ${amt} ETH into the coin's real liquidity (a 10% protocol fee applies on open), locked for ${term}, and starts earning your share of every trade's fee (protocol keeps 5%).`);
   try { if(!Pad.account()){await Pad.connect();refreshConnect();} setNote('Locking liquidity…'); await (await Pad.floorDeposit(COIN.token, amt, fcTerm.days)).wait(); setNote('Liquidity locked ✓','ok'); renderFloor(); }
   catch(e){ setNote(e.message,'err'); }
 });
