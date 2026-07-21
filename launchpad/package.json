@@ -7,11 +7,14 @@
     "build": "hardhat compile",
     "test": "hardhat test",
     "sim": "node sim/curve-sim.mjs",
-    "testnet": "node scripts/testnet.mjs"
+    "testnet": "node scripts/testnet.mjs",
+    "e2e": "node e2e/run.mjs"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-    "hardhat": "^2.22.10"
+    "@uniswap/v3-core": "^1.0.1",
+    "hardhat": "^2.22.10",
+    "playwright": "^1.55.0"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.2",

@@ -2,3 +2,6 @@
 # local secrets — never commit
 .env
 .env.local
+
+# e2e runtime artifacts (staged pad copy, addresses, screenshots)
+e2e/.run/
