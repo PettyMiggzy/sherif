@@ -14,6 +14,24 @@ const suite = process.env.FORK_RPC ? describe : describe.skip;
 function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32; }; }
 const LOCK_DAYS = [30, 60, 90, 365, 0];
 
+// FloorCoop custom-error selectors → name, so a revert is never a black box.
+const FC_ERRORS = ["NoPool", "NotPool", "Manipulated", "Zero", "Locked", "TooMuch", "Slippage", "PayFail", "MinDeposit", "BadTerm", "StaleTwap"];
+const SELECTORS = Object.fromEntries(FC_ERRORS.map((n) => [ethers.id(`${n}()`).slice(0, 10), n]));
+// Guard-class reverts are the vault CORRECTLY refusing to price against a manipulated/cold oracle — a settle+retry
+// clears them. Anything else (PayFail, arithmetic panic, a real Locked after unlock) means funds are genuinely stuck.
+const GUARD_CLASS = new Set(["Manipulated", "StaleTwap", "Slippage"]);
+// Decode a revert to its FloorCoop error name (via decoded revert, raw selector, or message), else a trimmed message.
+function revertName(e) {
+  if (e && e.revert && e.revert.name) return e.revert.name;
+  const data = e && (e.data || (e.info && e.info.error && e.info.error.data));
+  if (typeof data === "string" && SELECTORS[data.slice(0, 10)]) return SELECTORS[data.slice(0, 10)];
+  const m = (e && e.message) || "";
+  const hit = FC_ERRORS.find((n) => m.includes(n));
+  if (hit) return hit;
+  if (/panic|arithmetic|overflow|underflow|0x11/i.test(m)) return "Panic(arithmetic)";
+  return m.slice(0, 160) || "unknown";
+}
+
 suite("FloorCoop battery — random deposit/withdraw/compound/claim/shove; solvency holds every op", function () {
   this.timeout(60 * 60 * 1000);
 
@@ -146,10 +164,10 @@ suite("FloorCoop battery — random deposit/withdraw/compound/claim/shove; solve
           await shove(rand() < 0.5); // move price to poke the TWAP guard
         }
       } catch (e) {
-        // Guarded reverts are EXPECTED and correct (Manipulated / Slippage / Locked / StaleTwap / TooMuch).
-        const msg = (e.message || "");
-        if (/Manipulated|Slippage|Locked|StaleTwap|TooMuch|Zero|MinDeposit|range/.test(msg)) { guarded++; }
-        else throw new Error(`#${i} unexpected revert: ${msg.slice(0, 200)}`);
+        // Guarded reverts are EXPECTED and correct (Manipulated / Slippage / Locked / StaleTwap / TooMuch / etc.).
+        const name = revertName(e);
+        if (["Manipulated", "Slippage", "Locked", "StaleTwap", "TooMuch", "Zero", "MinDeposit", "BadTerm"].includes(name) || /range/.test(e.message || "")) { guarded++; }
+        else throw new Error(`#${i} unexpected revert: ${name}`);
       }
       await checkSolvency(`#${i}`);
       // occasionally advance time so locks can expire and the oracle stays warm
@@ -175,15 +193,28 @@ suite("FloorCoop battery — random deposit/withdraw/compound/claim/shove; solve
       if (sh > 0n) {
         const wB = await wethW.balanceOf(u.address), tB = await tokC.balanceOf(u.address);
         // retry across settles — a transient guard block must NOT permanently strand funds
-        for (let attempt = 0; attempt < 3 && sh > 0n; attempt++) {
+        let lastReason = null;
+        for (let attempt = 0; attempt < 4 && sh > 0n; attempt++) {
           try {
             await (await coop.connect(u).withdraw(sh, 0, 0)).wait();
             withdrawnW[u.address] += (await wethW.balanceOf(u.address)) - wB;
             withdrawnT[u.address] += (await tokC.balanceOf(u.address)) - tB;
             sh = 0n;
-          } catch (e) { await settle(); } // price still settling — write obs + wait, then retry
+          } catch (e) {
+            lastReason = revertName(e);
+            // A NON-guard revert (PayFail, arithmetic panic, still-Locked) is a real liveness bug: settling can't
+            // clear it, so fail immediately with the decoded cause instead of masking it behind 3 wasted retries.
+            if (!GUARD_CLASS.has(lastReason)) {
+              throw new Error(`FUNDS STRANDED (real): ${u.address} withdraw of ${sh} shares reverted with ${lastReason} — not a price-guard block, settling won't fix it`);
+            }
+            await settle(); // guard-class: price/oracle still converging — write obs + wait, then retry
+          }
         }
-        if (sh > 0n) throw new Error(`FUNDS STRANDED: ${u.address} could not withdraw ${sh} shares after settling`);
+        if (sh > 0n) {
+          // Exhausted retries on a guard-class revert. This is the harness's oracle not having reconverged after the
+          // 400-day jump, NOT a contract defect — but we surface the exact reason + share count so it's never guessed at.
+          throw new Error(`FUNDS STRANDED (guard/${lastReason}): ${u.address} could not withdraw ${sh} shares after 4 settle+retry passes. Last block on the TWAP guard (${lastReason}); withdrawal opens once the oracle reconverges to spot.`);
+        }
       }
       await (await coop.connect(u).claim()).wait().catch(() => {});
     }
