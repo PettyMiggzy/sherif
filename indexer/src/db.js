@@ -64,6 +64,45 @@ CREATE TABLE IF NOT EXISTS trades (
 );
 CREATE INDEX IF NOT EXISTS idx_trades_token ON trades(token, block DESC);
 CREATE INDEX IF NOT EXISTS idx_trades_ts    ON trades(ts DESC);
+
+-- Raw RewardVault Accrued rows (one per trade's 0.25% leg). Stored raw + PK'd like trades so a reorg re-scan
+-- purges & re-inserts them without double-counting; the (coin,epoch,side) pot is a SUM over these (in BigInt).
+CREATE TABLE IF NOT EXISTS reward_accruals (
+  tx        TEXT,
+  log_index INTEGER,
+  coin      TEXT,
+  epoch     INTEGER,
+  side      INTEGER,   -- 0 = Traders (buy leg), 1 = Holders (sell leg)
+  amount    TEXT,      -- wei
+  block     INTEGER,
+  ts        INTEGER,
+  PRIMARY KEY (tx, log_index)
+);
+CREATE INDEX IF NOT EXISTS idx_accruals_epoch ON reward_accruals(epoch);
+
+-- One posted root per finalized epoch (write-once here; re-posts on veto update it in place).
+CREATE TABLE IF NOT EXISTS reward_roots (
+  epoch      INTEGER PRIMARY KEY,
+  root       TEXT,
+  algo_hash  TEXT,
+  uri        TEXT,
+  n_leaves   INTEGER,
+  per_coin   TEXT,     -- JSON: per-coin pot vs allocated, for transparency
+  posted_tx  TEXT,     -- postRoot() tx hash (null until posted on-chain)
+  computed_ts INTEGER
+);
+
+-- The computed leaf set + proofs the claim API serves. Recomputed idempotently per epoch.
+CREATE TABLE IF NOT EXISTS reward_claims (
+  epoch  INTEGER,
+  coin   TEXT,
+  side   INTEGER,
+  user   TEXT,
+  amount TEXT,        -- wei
+  proof  TEXT,        -- JSON array of bytes32
+  PRIMARY KEY (epoch, coin, side, user)
+);
+CREATE INDEX IF NOT EXISTS idx_claims_user ON reward_claims(user);
 `);
 
 // Defensive migration: add any newer columns a pre-existing db is missing, so
@@ -139,3 +178,36 @@ export const setCoinNameSymbol = db.prepare("UPDATE coins SET name=?, symbol=? W
 // re-scan a window we delete trades in it so the re-insert reflects the new
 // canonical chain. (Coins are launch-once; we just re-upsert them.)
 export const purgeTradesFrom = db.prepare("DELETE FROM trades WHERE block >= ?");
+
+// ── rewards ──────────────────────────────────────────────────────────────────
+export const insertAccrual = db.prepare(`
+INSERT INTO reward_accruals (tx, log_index, coin, epoch, side, amount, block, ts)
+VALUES (@tx, @log_index, @coin, @epoch, @side, @amount, @block, @ts)
+ON CONFLICT(tx, log_index) DO NOTHING
+`);
+// Purged alongside trades in the reorg re-scan window (same block predicate).
+export const purgeAccrualsFrom = db.prepare("DELETE FROM reward_accruals WHERE block >= ?");
+
+export const upsertRewardRoot = db.prepare(`
+INSERT INTO reward_roots (epoch, root, algo_hash, uri, n_leaves, per_coin, posted_tx, computed_ts)
+VALUES (@epoch, @root, @algo_hash, @uri, @n_leaves, @per_coin, @posted_tx, @computed_ts)
+ON CONFLICT(epoch) DO UPDATE SET
+  root=excluded.root, algo_hash=excluded.algo_hash, uri=excluded.uri,
+  n_leaves=excluded.n_leaves, per_coin=excluded.per_coin,
+  posted_tx=COALESCE(excluded.posted_tx, reward_roots.posted_tx), computed_ts=excluded.computed_ts
+`);
+export const setRewardRootPostedTx = db.prepare("UPDATE reward_roots SET posted_tx=@posted_tx WHERE epoch=@epoch");
+export const getRewardRoot = db.prepare("SELECT * FROM reward_roots WHERE epoch = ?");
+
+export const deleteClaimsForEpoch = db.prepare("DELETE FROM reward_claims WHERE epoch = ?");
+export const insertRewardClaim = db.prepare(`
+INSERT INTO reward_claims (epoch, coin, side, user, amount, proof)
+VALUES (@epoch, @coin, @side, @user, @amount, @proof)
+ON CONFLICT(epoch, coin, side, user) DO UPDATE SET amount=excluded.amount, proof=excluded.proof
+`);
+export const getRewardClaim = db.prepare(
+  "SELECT amount, proof FROM reward_claims WHERE epoch=? AND coin=? AND side=? AND user=?");
+export const claimsForEpoch = db.prepare(
+  "SELECT coin, side, user, amount, proof FROM reward_claims WHERE epoch = ?");
+export const claimsForUser = db.prepare(
+  "SELECT epoch, coin, side, amount, proof FROM reward_claims WHERE user = ? ORDER BY epoch DESC");

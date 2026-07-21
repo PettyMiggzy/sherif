@@ -6,6 +6,8 @@ import http from "node:http";
 import { db } from "./db.js";
 import { CFG } from "./config.js";
 import { getHead } from "./indexer.js";
+import { getRewardRoot, claimsForEpoch, claimsForUser, getRewardClaim } from "./db.js";
+import { currentEpoch as rewardsEpoch, userAllocations as rewardsUserAlloc } from "./rewards.js";
 
 const DAY = 86400;
 
@@ -107,6 +109,14 @@ const oneCoinStmt = db.prepare(`
 const tradesStmt = db.prepare(
   "SELECT tx, log_index, side, actor, eth, tokens, fee, block, ts FROM trades WHERE token=? ORDER BY block DESC, log_index DESC LIMIT ?");
 
+// ── rewards ──
+const coinNameStmt = db.prepare("SELECT name, symbol FROM coins WHERE token = ?");
+const rewardAccruedStmt = db.prepare(
+  "SELECT COALESCE(SUM(CAST(amount AS REAL)),0)/1e18 AS eth, COUNT(DISTINCT coin) AS coins FROM reward_accruals");
+const rewardRootsPostedStmt = db.prepare("SELECT COUNT(*) AS posted FROM reward_roots WHERE posted_tx IS NOT NULL");
+const rewardClaimsStmt = db.prepare(
+  "SELECT COALESCE(SUM(CAST(amount AS REAL)),0)/1e18 AS eth, COUNT(*) AS n FROM reward_claims");
+
 function send(res, code, body, origin) {
   const json = JSON.stringify(body);
   res.writeHead(code, {
@@ -190,6 +200,78 @@ export function startApi() {
           eth: t.eth, tokens: t.tokens, fee: t.fee, block: t.block, ts: t.ts,
         }));
         return send(res, 200, { trades: rows }, origin);
+      }
+
+      // ── rewards ──
+      const rootMeta = (epoch) => {
+        const r = getRewardRoot.get(epoch);
+        return r ? { root: r.root, algoHash: r.algo_hash, uri: r.uri, posted: !!r.posted_tx, postedTx: r.posted_tx } : null;
+      };
+      const enrich = (coin) => { const c = coinNameStmt.get(coin) || {}; return { name: c.name || null, sym: c.symbol || null }; };
+      const ethOf = (wei) => Number(BigInt(wei)) / 1e18;
+
+      // Global reward totals for the stats page.
+      if (path === "/api/rewards/stats") {
+        const accrued = rewardAccruedStmt.get();
+        const roots = rewardRootsPostedStmt.get();
+        const claims = rewardClaimsStmt.get();
+        return send(res, 200, {
+          accruedEth: accrued.eth, coinsWithRewards: accrued.coins,
+          epochsPosted: roots.posted, allocatedEth: claims.eth, leaves: claims.n,
+          epoch: rewardsEpoch(now), epochLen: CFG.epochLen,
+        }, origin);
+      }
+
+      // Transparency artifact: the full leaf set + root for an epoch (what the on-chain `uri` points at).
+      m = path.match(/^\/api\/rewards\/epoch\/(\d+)$/);
+      if (m) {
+        const epoch = Number(m[1]);
+        const meta = rootMeta(epoch);
+        if (!meta) return send(res, 404, { error: "epoch not computed" }, origin);
+        const r = getRewardRoot.get(epoch);
+        const leaves = claimsForEpoch.all(epoch).map((c) => ({
+          coin: c.coin, side: c.side, user: c.user, amount: c.amount, proof: JSON.parse(c.proof),
+        }));
+        return send(res, 200, {
+          epoch, ...meta, nLeaves: r.n_leaves, perCoin: r.per_coin ? JSON.parse(r.per_coin) : {}, leaves,
+        }, origin);
+      }
+
+      // A single claim's exact args + proof (used to re-fetch one leaf).
+      m = path.match(/^\/api\/rewards\/claim\/(\d+)\/(0x[0-9a-fA-F]{40})\/([01])\/(0x[0-9a-fA-F]{40})$/);
+      if (m) {
+        const epoch = Number(m[1]), coin = m[2].toLowerCase(), side = Number(m[3]), user = m[4].toLowerCase();
+        const c = getRewardClaim.get(epoch, coin, side, user);
+        if (!c) return send(res, 404, { error: "no claim" }, origin);
+        return send(res, 200, { epoch, coin, side, user, amount: c.amount, proof: JSON.parse(c.proof), ...(rootMeta(epoch) || {}) }, origin);
+      }
+
+      // The wallet page's feed: everything `addr` can claim (finalized+posted epochs, with proofs) + what's
+      // still accruing this (open) epoch (a live provisional estimate, no proof yet). Shape matches Pad.rewards().
+      m = path.match(/^\/api\/rewards\/(0x[0-9a-fA-F]{40})$/);
+      if (m) {
+        const who = m[1].toLowerCase();
+        const ep = rewardsEpoch(now);
+        const sideName = (s) => (s === 0 ? "trader" : "holder");
+        const claimable = claimsForUser.all(who)
+          .filter((c) => (getRewardRoot.get(c.epoch) || {}).posted_tx) // only epochs whose root is actually on-chain
+          .map((c) => ({
+            epoch: c.epoch, coin: c.coin, side: c.side, sideName: sideName(c.side),
+            amount: c.amount, eth: ethOf(c.amount), proof: JSON.parse(c.proof), ...enrich(c.coin),
+          }));
+        // pending = provisional allocation for the current, not-yet-finalized epoch.
+        const pending = rewardsUserAlloc(who, ep).map((p) => ({
+          epoch: ep, coin: p.coin, side: p.side, sideName: sideName(p.side),
+          amount: p.amount, eth: ethOf(p.amount), ...enrich(p.coin),
+        }));
+        const totalEth = claimable.reduce((s, c) => s + c.eth, 0);
+        return send(res, 200, {
+          epoch: ep,
+          epochEndsIn: (ep + 1) * CFG.epochLen - now,
+          claimWindowH: Math.round(CFG.challengeWindow / 3600),
+          claimable, pending,
+          totals: { claimableEth: totalEth, pendingEth: pending.reduce((s, p) => s + p.eth, 0) },
+        }, origin);
       }
 
       return send(res, 404, { error: "no such route" }, origin);

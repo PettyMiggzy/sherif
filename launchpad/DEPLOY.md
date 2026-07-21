@@ -42,19 +42,36 @@ export const DEMO = typeof location !== "undefined" && new URLSearchParams(locat
 
 ## 5. Deploy the indexer
 `indexer/` is a reorg-safe indexer + JSON API that feeds the live board (`/api/coins` with
-sort/search/trending + `/api/stats`, `/api/series`, `/api/trades`).
+sort/search/trending + `/api/stats`, `/api/series`, `/api/trades`) **and runs the reward merkle poster**.
 ```
 cd indexer && docker compose up -d      # set RPC + the padRouter/padFactory addresses in its env first
 ```
 Point `pad/assets/config.js` `API_BASE` at it. Without it the pad falls back to direct-RPC (slower, no
 volume/trending).
 
+### Rewards (enable after RewardVault is deployed)
+Set these in the indexer's env, then restart it:
+```
+REWARD_VAULT=0x…      # the deployed RewardVault (turns on Accrued indexing + the poster)
+EPOCH_LEN=604800      # MUST equal RewardVault.EPOCH  (deploy default 7d)
+FINALITY_DELAY=0      # MUST equal RewardVault.finalityDelay
+POSTER_KEY=0x…        # the POSTER account's private key — signs postRoot(); omit to compute-only (no on-chain post)
+```
+The poster then, each epoch: indexes the `Accrued` legs → derives each (coin,epoch,side) pot → computes trader
+(net-accumulation) + holder (balance-seconds) weights from trades → allocates the pot (floor, so Σ ≤ cap) →
+builds ONE global merkle root → persists every leaf+proof → calls `postRoot`. The pad claims via the API:
+`GET /api/rewards/user/<addr>` (all a wallet's claims + proofs), `/api/rewards/claim/<epoch>/<coin>/<side>/<addr>`
+(one claim's exact args), `/api/rewards/epoch/<n>` (the full leaf set + root — the transparency artifact the
+on-chain `uri` points at). Scoring spec is frozen in `src/rewards.js`; its keccak is posted as `algoHash`.
+Correctness is covered by `test/rewards.test.mjs` (leaf parity with the contract, proof verification,
+conservation, both scoring rules).
+
 ## Phase gating — what's launch-ready vs not
 - **Core pad (launch / trade / graduate / board):** READY. Contracts deploy + wire; indexer serves the board.
-- **Rewards (the 0.25% trader/holder legs):** contracts READY (RewardVault accrues on every trade), but the
-  **indexer reward module does NOT exist yet** — nothing computes per-epoch net-volume (traders) /
-  balance-seconds (holders) weights, builds the merkle tree, posts the root (via `POSTER`), or serves claim
-  proofs. Until it's built, fees ACCRUE on-chain but are UNCLAIMABLE. Build this before advertising rewards.
+- **Rewards (the 0.25% trader/holder legs):** READY. RewardVault accrues on-chain and the indexer's poster
+  computes weights, builds the merkle tree, posts the root (via `POSTER_KEY`), and serves claim proofs — set the
+  `REWARD_VAULT`/`POSTER_KEY` env above once the vault is deployed. (Still off-chain-operator-trusted by design:
+  the on-chain conservation cap + guardian veto bound a bad root to misallocating one coin's own fees.)
 - **LP staking (FloorCoop):** blocked on the external audit (section 0).
 
 ## 6. Post-deploy (optional / later)

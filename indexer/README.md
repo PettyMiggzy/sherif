@@ -128,6 +128,34 @@ Base URL is your host. All responses are JSON, `cache-control: max-age=5`.
 | `GET /api/coins?sort=&filter=&q=&limit=&offset=` | the browse feed |
 | `GET /api/coin/:token` | one coin, fully enriched |
 | `GET /api/trades/:token?limit=` | recent trades (exact wei) |
+| `GET /api/rewards/user/:addr` | all of a wallet's reward claims + Merkle proofs, across epochs |
+| `GET /api/rewards/claim/:epoch/:coin/:side/:addr` | one claim's exact args + proof (`side` 0=traders,1=holders) |
+| `GET /api/rewards/epoch/:n` | the full leaf set + root for an epoch (transparency artifact) |
+
+## Rewards (RewardVault merkle poster)
+
+When `REWARD_VAULT` is set (see `.env.example`), the indexer also runs the off-chain half of the RewardVault
+design. On-chain, PadRouter forwards two 0.25% legs per trade — a BUY leg (traders) and a SELL leg (holders) —
+and RewardVault custodies them per `(coin, epoch, side)` and caps what can ever leave (`Σ claims ≤ pot`). It
+never scores. This poster does:
+
+1. **Index** the `Accrued` events (raw, PK'd like trades; reorg-safe) → derive each `(coin,epoch,side)` pot.
+2. **Score** each finalized epoch from the coin's trades:
+   - **Traders** (BUY-leg pot) ∝ `max(0, Σ buy − Σ sell tokens)` in the epoch (net accumulation).
+   - **Holders** (SELL-leg pot) ∝ balance-seconds (`∫ balance dt`, balance carried in from before the epoch,
+     clamped at 0).
+3. **Allocate** each pot `amount = floor(pot · weight / Σweight)` so `Σ ≤ pot` (dust stays unclaimed → swept to
+   floor after the claim window).
+4. **Build** ONE global Merkle root over all coins' leaves for the epoch; each leaf is
+   `keccak(keccak(abi.encode(epoch, coin, side, user, amount)))` — identical to the contract and OZ
+   `StandardMerkleTree`, so proofs verify against `RewardVault.claim`.
+5. **Persist** every leaf + proof (served by the API) and **post** the root on-chain via `POSTER_KEY`.
+
+The scoring spec is frozen in `src/rewards.js`; its keccak is posted on-chain as `algoHash` so anyone can
+recompute from `/api/rewards/epoch/:n` and challenge a mismatch. Correctness is covered by
+`test/rewards.test.mjs` (`node --test test/rewards.test.mjs`): leaf parity with the contract formula, proof
+verification, conservation, and both scoring rules. Omit `POSTER_KEY` to run compute-only (serves proofs, posts
+nothing) for a dry run.
 
 **`/api/coins` params**
 

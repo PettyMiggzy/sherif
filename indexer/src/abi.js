@@ -11,6 +11,8 @@ export const EVENTS = [
   // CurvePool (emitted by each curve; matched back to its token by address)
   "event Graduated(address indexed bond, uint256 raisedWeth, uint256 leftoverToken)",
   "event GradTargetSet(int24 targetTick)",
+  // RewardVault — one per trade's 0.25% leg (side: 0=Traders buy leg, 1=Holders sell leg)
+  "event Accrued(address indexed coin, uint256 indexed epoch, uint8 side, uint256 amount)",
 ];
 
 // Minimal read ABIs for enriching a coin at launch time (name / symbol).
@@ -44,4 +46,5 @@ export const TOPICS = {
   Sold: iface.getEvent("Sold").topicHash,
   Graduated: iface.getEvent("Graduated").topicHash,
   GradTargetSet: iface.getEvent("GradTargetSet").topicHash,
+  Accrued: iface.getEvent("Accrued").topicHash,
 };

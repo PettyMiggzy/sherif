@@ -8,7 +8,7 @@ import { iface, TOPICS, ERC20, CURVE, POOL } from "./abi.js";
 import {
   db, getCursor, setCursor, upsertCoin, markGraduated, insertTrade,
   coinByCurve, purgeTradesFrom, setGeometry, setGradTargetByCurve,
-  setSnapshot, coinGeom,
+  setSnapshot, coinGeom, insertAccrual, purgeAccrualsFrom,
 } from "./db.js";
 
 const WETH = (process.env.WETH || "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73").toLowerCase();
@@ -84,8 +84,13 @@ async function getLogsRange(from, to) {
   // we query by topic0 across any address and match back by log.address.
   const grads = await withRetry(() =>
     provider.getLogs({ fromBlock: from, toBlock: to, topics: [[TOPICS.Graduated, TOPICS.GradTargetSet]] }), "getLogs.grads");
+  // RewardVault Accrued (0.25% legs) — only when a vault is configured.
+  const accruals = CFG.rewardVault
+    ? await withRetry(() =>
+        provider.getLogs({ fromBlock: from, toBlock: to, address: CFG.rewardVault, topics: [TOPICS.Accrued] }), "getLogs.accruals")
+    : [];
   // Merge + order by (block, logIndex) for deterministic application.
-  return [...launched, ...trades, ...grads].sort((a, b) =>
+  return [...launched, ...trades, ...grads, ...accruals].sort((a, b) =>
     a.blockNumber - b.blockNumber || a.index - b.index);
 }
 
@@ -126,6 +131,16 @@ async function applyLog(log) {
     });
     // The pool moved — flag this token so we re-snapshot it once per chunk.
     return { touched: token, ts };
+  }
+
+  if (parsed.name === "Accrued") {
+    // epoch is an indexed arg (= block.timestamp / EPOCH on-chain) — authoritative, no recompute.
+    insertAccrual.run({
+      tx: log.transactionHash, log_index: log.index,
+      coin: a.coin.toLowerCase(), epoch: Number(a.epoch), side: Number(a.side),
+      amount: a.amount.toString(), block: log.blockNumber, ts,
+    });
+    return;
   }
 
   if (parsed.name === "GradTargetSet") {
@@ -202,9 +217,9 @@ export async function tick() {
   let from = stored === null ? CFG.startBlock : Math.max(CFG.startBlock, stored - reorgWindow + 1);
   if (from > safeHead) return 0;
 
-  // Delete any trades in the re-scanned window so orphaned-block rows can't linger.
+  // Delete any trades + accruals in the re-scanned window so orphaned-block rows can't linger.
   if (stored !== null) {
-    const del = db.transaction(() => purgeTradesFrom.run(from));
+    const del = db.transaction(() => { purgeTradesFrom.run(from); purgeAccrualsFrom.run(from); });
     del();
   }
 

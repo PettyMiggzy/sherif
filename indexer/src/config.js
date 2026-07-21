@@ -35,4 +35,12 @@ export const CFG = {
   confirmations: num("CONFIRMATIONS", 3),
   dbPath: process.env.DB_PATH || resolve(__dir, "..", "data", "robinlabs.db"),
   corsOrigin: process.env.CORS_ORIGIN || "*",
+
+  // ── rewards (RewardVault merkle poster) ──
+  rewardVault: (process.env.REWARD_VAULT || "").toLowerCase(), // "" disables Accrued indexing + posting
+  epochLen: num("EPOCH_LEN", 7 * 24 * 3600),                   // MUST match RewardVault.EPOCH (7d default)
+  finalityDelay: num("FINALITY_DELAY", 0),                     // MUST match RewardVault.finalityDelay (reorg gate)
+  challengeWindow: num("CHALLENGE_WINDOW", 2 * 24 * 3600),     // = RewardVault.challengeWindow (claims open after this; shown in the UI)
+  posterKey: process.env.POSTER_KEY || "",                     // poster private key; "" = compute+persist but don't post on-chain
+  rewardUriBase: process.env.REWARD_URI_BASE || "",            // optional: prefix for the pinned leaf-set URI (else self /api URL)
 };
