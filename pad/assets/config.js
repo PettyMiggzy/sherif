@@ -111,7 +111,8 @@ export const ABIS = {
     "function deposit(uint256 lockDays, uint256 minSharesOut) payable returns (uint256 sharesMinted)",
     "function withdraw(uint256 shareAmt, uint256 minWethOut, uint256 minTokenOut) returns (uint256 wethOut, uint256 tokenOut)",
     "function claim()",
-    "function recenter()",
+    "function compound()",
+    "function sweepProtocol()",
   ],
   // The CurvePool — the bonding curve + graduation. Read progress, drive the
   // graduate button + the dev's auto-graduate target.

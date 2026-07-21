@@ -5,73 +5,92 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IUniswapV3Factory, IUniswapV3Pool, IUniswapV3MintCallback, IWETH9} from "./interfaces/IUniswapV3.sol";
+import {IUniswapV3Factory, IUniswapV3Pool, IUniswapV3MintCallback, IUniswapV3SwapCallback, IWETH9} from "./interfaces/IUniswapV3.sol";
 import {PoolMath} from "./libraries/PoolMath.sol";
 
-/// @title FloorCoop — the community floor: add liquidity, earn fees, can't hurt the coin
-/// @notice A per-coin *sibling* to the Bond (never touches the sealed Bond, so the Bond's un-ruggability proof
-/// stays intact). Anyone deposits ETH; the vault places it as a **single-sided WETH buy-wall** on the "coin
-/// gets cheaper" side of the current price (below price when the coin is token0, above when it's token1).
-/// Depositors earn the 1% swap fee on every dip that trades into the wall.
+interface IFloorCoopFactory {
+    function treasury() external view returns (address);
+}
+
+/// @title FloorCoop — locked liquidity staking for ANY token on the chain
+/// @notice A per-token vault. You send ETH and pick a lock term (30/60/90/365 days or forever). The vault
+/// takes a 10% protocol fee, then zaps the rest into the token's REAL full-range Uniswap v3 liquidity — the
+/// same liquidity everyone trades against. Your stake is time-locked, so it can only ever DEEPEN the coin's
+/// market; it can't be yanked out from under it. You earn your share of every swap's fee for as long as it's
+/// locked (the protocol keeps 5% of fees). Longer locks earn a bigger reward weight (1.0x -> 3x). Early exit
+/// costs a 15% penalty. Works for any token with a WETH pool — not just pad launches.
 ///
-/// Why pulling this liquidity can't hurt the coin: the wall sits on the cheaper-than-spot side, so removing an
-/// unfilled bid there does NOT move the price — it only thins the floor (never a rug). If a dip trades through
-/// the wall first, the depositor's WETH has already become the coin (they're a holder now). The coin's core
-/// price-supporting liquidity is the Bond's Sherwood LP, which has no withdraw path and can never be pulled.
-/// (Honest caveat: while a dip is *inside* the band, pulling removes live support — still not a rug, but real
-/// depth; disclosed in the UI.)
-///
-/// Accounting is **NAV-based** (v2, hardened after the deep review): shares price against the vault's total
-/// value in WETH — the band position (valued at TWAP) plus loose WETH and loose caught-token (valued at TWAP),
-/// net of the fee reserve. This makes entry and exit symmetric, so a new depositor can never mint cheap shares
-/// against caught token they didn't fund. Every mint/burn is TWAP-guarded and consolidates to ONE position at
-/// its recorded range; fee reserves are strictly segregated from principal. Still pending the pre-deploy deep
-/// audit + simulations before any real deposit.
-contract FloorCoop is IUniswapV3MintCallback, ReentrancyGuard {
+/// SECURITY POSTURE: this is a market-making vault that SWAPS (to pair single-sided ETH into full-range LP).
+/// Every deposit/withdraw is TWAP-guarded and the zap swap is bounded to a TWAP-derived price limit + a
+/// per-fill min-out, so a sandwich can't force a bad fill. Accounting is NAV-based (shares price against the
+/// vault's total value in WETH) with a MasterChef-style, lock-weighted fee distributor and strictly
+/// segregated fee/protocol reserves. STILL PENDING the full pre-deploy audit + simulations before real funds.
+contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    uint24 public constant POOL_FEE = 10000;
-    int24 public constant SPACING = 200;
+    // ─────────────────────────────────────────────────────────────── constants ──
     uint128 internal constant U128_MAX = type(uint128).max;
-    uint256 internal constant ACC = 1e18;
+    uint256 internal constant ACC = 1e27;   // fee-accumulator fixed-point (high, since weights can be large)
     uint256 internal constant WAD = 1e18;
+    uint256 internal constant BPS = 10000;
 
-    int24 public constant WALL_NEAR = 200; //  one spacing off spot
-    int24 public constant WALL_FAR = 6800; //  ~-49% wide buy wall
-    int24 public constant MAX_DEV = 300; //     ~3% max spot-vs-TWAP deviation
+    uint256 public constant OPEN_FEE_BPS = 1000;      // 10% protocol fee taken on open
+    uint256 public constant FEE_CUT_BPS = 500;        // 5% of earned trading fees -> protocol
+    uint256 public constant EARLY_PENALTY_BPS = 1500; // 15% penalty on early (pre-unlock) withdrawal
+    uint256 public constant MIN_FIRST_DEPOSIT = 1e15; // 0.001 ETH floor on the very first deposit
+
+    int24 public constant MAX_DEV = 300;              // ~3% max spot-vs-TWAP deviation (manipulation guard)
+    int24 public constant SWAP_BOUND = 300;           // zap swap may move price at most ~3% past the TWAP
+    uint256 public constant SWAP_MIN_OUT_BPS = 9700;  // zap must fill at >= 97% of the TWAP-implied rate
     uint32 public constant TWAP_WINDOW = 15;
-    int24 internal constant TICK_BOUND = 887200;
-    uint256 public constant COOLDOWN = 2 days; // withdrawal lock after each deposit (smoothing + anti-JIT)
-    uint256 public constant MIN_FIRST_DEPOSIT = 1e15; // 0.001 ETH — raises the bar on share-inflation games
 
+    // full-range position bounds (snapped to spacing 200), from PoolMath
+    int24 internal constant LO = -887200;
+    int24 internal constant HI = 887200;
+
+    // lock tiers (days => reward-weight multiplier in bps); 0 days == forever
+    // resolved in _tier(); kept here for reference: 30->1.0x 60->1.25x 90->1.5x 365->2x forever->3x
+
+    // ─────────────────────────────────────────────────────────────── immutables ──
     IERC20 public immutable token;
     address public immutable WETH;
     IUniswapV3Pool public immutable pool;
     address public immutable token0;
     address public immutable token1;
     bool public immutable tokenIsToken0;
-    bool public immutable wallBelow; // WETH wall is on the below-price side iff WETH is token1
+    bool public immutable wethIsToken0;
+    address public immutable factory; // reads the live treasury from here (rotatable by the factory owner)
 
-    // the ONE WETH band the vault owns (invariant: bandL is the liquidity that lives at exactly [bandLo,bandHi])
-    int24 public bandLo;
-    int24 public bandHi;
-    uint128 public bandL;
+    // ─────────────────────────────────────────────────────────────── position ──
+    uint128 public bandL; // the vault's full-range liquidity at [LO,HI]
 
+    // per-user staking position
+    struct Pos {
+        uint256 shares;    // principal shares (claim on NAV; used for withdraw)
+        uint256 weight;    // shares * multiplier/BPS (used for fee distribution)
+        uint256 multBps;   // this position's locked reward multiplier
+        uint256 lockUntil; // timestamp the lock ends (type(uint).max for forever)
+    }
+    mapping(address => Pos) public pos;
     uint256 public totalShares;
-    mapping(address => uint256) public shares;
-    mapping(address => uint256) public depositAt;
+    uint256 public totalWeight;
 
-    // fee accumulators (two: a filled wall earns fees in token, an unfilled one in WETH)
-    uint256 public accWethPerShare;
-    uint256 public accTokenPerShare;
+    // lock-weighted fee distributor (MasterChef pattern, per WEIGHT)
+    uint256 public accWethPerWeight;
+    uint256 public accTokenPerWeight;
     mapping(address => uint256) public debtWeth;
     mapping(address => uint256) public debtToken;
-    // fees collected but not yet claimed — kept strictly apart from principal
-    uint256 public feeReserveWeth;
-    uint256 public feeReserveToken;
+
+    // strictly-segregated reserves (never counted as principal)
+    uint256 public feeReserveWeth;   // stakers' unclaimed fees (WETH)
+    uint256 public feeReserveToken;  // stakers' unclaimed fees (token)
+    uint256 public protocolWeth;     // protocol's cut (open fees + 5% + penalties), WETH — swept to treasury
+    uint256 public protocolToken;    // protocol's cut, token — swept to treasury
 
     bool private _minting;
+    bool private _swapping;
 
+    // ─────────────────────────────────────────────────────────────── errors/events ──
     error NoPool();
     error NotPool();
     error Manipulated();
@@ -81,98 +100,149 @@ contract FloorCoop is IUniswapV3MintCallback, ReentrancyGuard {
     error Slippage();
     error PayFail();
     error MinDeposit();
+    error BadTerm();
 
-    event Deposited(address indexed user, uint256 wethIn, uint256 sharesMinted);
-    event Withdrawn(address indexed user, uint256 sharesBurned, uint256 wethOut, uint256 tokenOut);
+    event Opened(address indexed user, uint256 ethIn, uint256 netIn, uint256 sharesMinted, uint256 multBps, uint256 lockUntil);
+    event Withdrawn(address indexed user, uint256 sharesBurned, uint256 wethOut, uint256 tokenOut, uint256 penaltyWeth, uint256 penaltyToken);
     event Claimed(address indexed user, uint256 wethOut, uint256 tokenOut);
-    event Recentered(int24 tick, int24 lo, int24 hi, uint128 liquidity);
     event Harvested(uint256 wethFees, uint256 tokenFees);
+    event Compounded(uint128 addedLiquidity);
+    event ProtocolSwept(uint256 weth, uint256 token);
 
-    constructor(address token_, address weth_, address v3Factory_) {
-        require(token_ != address(0) && weth_ != address(0), "zero");
-        address p = IUniswapV3Factory(v3Factory_).getPool(token_, weth_, POOL_FEE);
+    // ─────────────────────────────────────────────────────────────── constructor ──
+    constructor(address token_, address weth_, address v3Factory_, address factory_) {
+        require(token_ != address(0) && weth_ != address(0) && factory_ != address(0), "zero");
+        address p = _deepestPool(v3Factory_, token_, weth_);
         if (p == address(0)) revert NoPool();
         (uint160 sp,,,,,,) = IUniswapV3Pool(p).slot0();
         if (sp == 0) revert NoPool();
         token = IERC20(token_);
         WETH = weth_;
         pool = IUniswapV3Pool(p);
+        factory = factory_;
         bool tIs0 = token_ < weth_;
         tokenIsToken0 = tIs0;
-        wallBelow = tIs0;
+        wethIsToken0 = !tIs0;
         (token0, token1) = tIs0 ? (token_, weth_) : (weth_, token_);
+        // grow the oracle so a 15s TWAP is available for the manipulation guard
+        try IUniswapV3Pool(p).increaseObservationCardinalityNext(24) {} catch {}
+    }
+
+    /// pick the token's deepest WETH pool across the standard fee tiers (works for arbitrary chain tokens,
+    /// whose main pool may not be the pad's 1% tier).
+    function _deepestPool(address v3Factory_, address token_, address weth_) internal view returns (address best) {
+        uint24[4] memory tiers = [uint24(100), 500, 3000, 10000];
+        uint128 bestLiq;
+        for (uint256 i = 0; i < tiers.length; i++) {
+            address p = IUniswapV3Factory(v3Factory_).getPool(token_, weth_, tiers[i]);
+            if (p == address(0)) continue;
+            uint128 liq = IUniswapV3Pool(p).liquidity();
+            if (liq >= bestLiq) { bestLiq = liq; best = p; }
+        }
     }
 
     receive() external payable {} // WETH.withdraw
 
     // ─────────────────────────────────────────────────────────────── deposit ──
-    /// @notice Add ETH to the coin's floor buy-wall. Shares are priced against the vault's total NAV (WETH),
-    /// so you can never mint cheap shares against value others funded. `minSharesOut` guards slippage.
-    function deposit(uint256 minSharesOut) external payable nonReentrant returns (uint256 sharesMinted) {
+    /// @notice Open (or add to) a locked LP position. `lockDays` ∈ {30,60,90,365,0(forever)}. `minSharesOut`
+    /// guards slippage. Returns the principal shares minted.
+    function deposit(uint256 lockDays, uint256 minSharesOut)
+        external
+        payable
+        nonReentrant
+        returns (uint256 sharesMinted)
+    {
         if (msg.value == 0) revert Zero();
-        (, int24 spot,,,,,) = pool.slot0();
-        int24 tw = _requireUnmanipulated(spot); // guard EVERY placement (H5), returns the TWAP tick
-        _harvest();
-        _payPending(msg.sender); // settle the caller's fees before their share count changes (H6)
+        (uint256 multBps, uint256 lockUntil) = _tier(lockDays); // reverts on an unknown term
+        (, int24 spotTick) = _spot();
+        int24 tw = _requireUnmanipulated(spotTick); // guard EVERY placement, returns the TWAP tick
 
-        // consolidate the existing position to ONE band at the current price (C3), using principal WETH only (C2)
-        _recenterInternal(spot);
-        uint256 navBefore = _navWeth(tw); // AFTER recenter, BEFORE the new ETH
+        _harvest();
+        _payPending(msg.sender); // settle fees before this user's weight changes
+
+        uint256 navBefore = _navWeth(tw); // AFTER harvest, BEFORE the new money
 
         if (totalShares == 0 && msg.value < MIN_FIRST_DEPOSIT) revert MinDeposit();
-        IWETH9(WETH).deposit{value: msg.value}();
-        uint128 addL = _addWethToWall(msg.value); // adds to the just-recentered band (same range)
-        if (addL == 0) revert Zero();
 
-        sharesMinted = totalShares == 0 ? msg.value : Math.mulDiv(msg.value, totalShares, navBefore);
+        // 10% protocol fee off the top; the rest becomes working capital
+        IWETH9(WETH).deposit{value: msg.value}();
+        uint256 fee = (msg.value * OPEN_FEE_BPS) / BPS;
+        protocolWeth += fee;
+        uint256 net = msg.value - fee;
+
+        // zap: swap half the net WETH -> token (TWAP-bounded), then mint full-range with the pair
+        (uint256 wethForLp, uint256 tokenForLp) = _zapHalf(net, tw);
+        _mintFullRange(wethForLp, tokenForLp); // reads the live post-swap price; leftover stays loose (in NAV)
+
+        // NAV-based share price: `net` WETH is the value in (swap costs make real NAV added slightly less,
+        // which only ever benefits existing holders — never mints too many shares).
+        sharesMinted = totalShares == 0 ? net : Math.mulDiv(net, totalShares, navBefore);
         if (sharesMinted == 0 || sharesMinted < minSharesOut) revert Slippage();
 
+        Pos storage pp = pos[msg.sender];
+        // adding to an existing position can only lengthen the lock / raise the multiplier (never shorten)
+        uint256 newMult = multBps > pp.multBps ? multBps : pp.multBps;
+        uint256 newLock = lockUntil > pp.lockUntil ? lockUntil : pp.lockUntil;
+
         totalShares += sharesMinted;
-        shares[msg.sender] += sharesMinted;
-        depositAt[msg.sender] = block.timestamp;
+        pp.shares += sharesMinted;
+        pp.multBps = newMult;
+        pp.lockUntil = newLock;
+
+        // recompute this user's weight wholesale at the (possibly raised) multiplier
+        totalWeight = totalWeight - pp.weight;
+        pp.weight = Math.mulDiv(pp.shares, newMult, BPS);
+        totalWeight += pp.weight;
+
         _syncDebt(msg.sender);
-        emit Deposited(msg.sender, msg.value, sharesMinted);
+        emit Opened(msg.sender, msg.value, net, sharesMinted, newMult, newLock);
     }
 
-    // ────────────────────────────────────────────────────────────── withdraw ──
-    /// @notice Withdraw `shareAmt` after the cooldown — the pro-rata slice of the band + loose principal (WETH
-    /// if untouched, token if a dip filled it). `minWethOut`/`minTokenOut` guard slippage.
+    // ─────────────────────────────────────────────────────────────── withdraw ──
+    /// @notice Withdraw `shareAmt` of principal. Before your lock ends this costs a 15% penalty (to the
+    /// protocol); after it, no penalty. Pays the pro-rata slice of the LP position + loose principal.
     function withdraw(uint256 shareAmt, uint256 minWethOut, uint256 minTokenOut)
         external
         nonReentrant
         returns (uint256 wethOut, uint256 tokenOut)
     {
-        uint256 bal = shares[msg.sender];
-        if (shareAmt == 0 || shareAmt > bal) revert TooMuch();
-        if (block.timestamp < depositAt[msg.sender] + COOLDOWN) revert Locked();
-        (, int24 spot,,,,,) = pool.slot0();
-        _requireUnmanipulated(spot); // guard (H5/H7)
+        Pos storage pp = pos[msg.sender];
+        if (shareAmt == 0 || shareAmt > pp.shares) revert TooMuch();
+        (, int24 spotTick) = _spot();
+        _requireUnmanipulated(spotTick);
         _harvest();
-        _payPending(msg.sender); // pay fees + shrink the reserve, before splitting principal
+        _payPending(msg.sender);
 
         uint256 ts = totalShares;
-        // (a) pro-rata of LOOSE principal (caught token, or WETH freed by a recenter) — balance net of reserves
-        uint256 looseW = IERC20(WETH).balanceOf(address(this)) - feeReserveWeth;
-        uint256 looseT = token.balanceOf(address(this)) - feeReserveToken;
-        uint256 shareW = Math.mulDiv(looseW, shareAmt, ts);
-        uint256 shareT = Math.mulDiv(looseT, shareAmt, ts);
-        // (b) pro-rata of the live band, freed by burning their fraction of the liquidity
-        uint128 removeL = uint128(Math.mulDiv(bandL, shareAmt, ts));
-        uint256 posW;
-        uint256 posT;
-        if (removeL > 0) {
-            (uint256 a0, uint256 a1) = pool.burn(bandLo, bandHi, removeL);
-            pool.collect(address(this), bandLo, bandHi, uint128(a0), uint128(a1));
-            bandL -= removeL;
-            (posW, posT) = tokenIsToken0 ? (a1, a0) : (a0, a1);
-        }
-
-        shares[msg.sender] = bal - shareAmt;
-        totalShares = ts - shareAmt;
-        _syncDebt(msg.sender);
+        // (a) pro-rata of loose principal (net of BOTH reserves)
+        uint256 shareW = Math.mulDiv(_looseWeth(), shareAmt, ts);
+        uint256 shareT = Math.mulDiv(_looseToken(), shareAmt, ts);
+        // (b) pro-rata of the live full-range band
+        (uint256 posW, uint256 posT) = _burnShare(shareAmt, ts);
 
         wethOut = shareW + posW;
         tokenOut = shareT + posT;
+
+        // update position + weight BEFORE paying out
+        bool early = block.timestamp < pp.lockUntil;
+        pp.shares -= shareAmt;
+        totalShares = ts - shareAmt;
+        totalWeight = totalWeight - pp.weight;
+        pp.weight = Math.mulDiv(pp.shares, pp.multBps, BPS);
+        totalWeight += pp.weight;
+        _syncDebt(msg.sender);
+
+        uint256 penW;
+        uint256 penT;
+        if (early) {
+            penW = (wethOut * EARLY_PENALTY_BPS) / BPS;
+            penT = (tokenOut * EARLY_PENALTY_BPS) / BPS;
+            protocolWeth += penW;
+            protocolToken += penT;
+            wethOut -= penW;
+            tokenOut -= penT;
+        }
+
         if (wethOut < minWethOut || tokenOut < minTokenOut) revert Slippage();
         if (wethOut > 0) {
             IWETH9(WETH).withdraw(wethOut);
@@ -180,85 +250,113 @@ contract FloorCoop is IUniswapV3MintCallback, ReentrancyGuard {
             if (!ok) revert PayFail();
         }
         if (tokenOut > 0) token.safeTransfer(msg.sender, tokenOut);
-        emit Withdrawn(msg.sender, shareAmt, wethOut, tokenOut);
+        emit Withdrawn(msg.sender, shareAmt, wethOut, tokenOut, penW, penT);
     }
 
-    // ───────────────────────────────────────────────────────────────── claim ──
-    /// @notice Claim your accrued dip-buy fees (real ETH + any token from filled dips) without withdrawing.
+    // ─────────────────────────────────────────────────────────────── claim ──
+    /// @notice Claim your accrued fee share (real ETH + any token) without touching your locked principal.
     function claim() external nonReentrant {
         _harvest();
         _payPending(msg.sender);
     }
 
-    // ─────────────────────────────────────────────────────────────── recenter ──
-    /// @notice Permissionless keeper: realize fees and re-place the wall at the current price so the floor
-    /// tracks the coin. TWAP-guarded.
-    function recenter() external nonReentrant {
-        (, int24 spot,,,,,) = pool.slot0();
-        _requireUnmanipulated(spot);
+    // ─────────────────────────────────────────────────────────────── keeper ──
+    /// @notice Permissionless: realize fees and fold any loose principal back into the full-range position.
+    function compound() external nonReentrant {
+        (, int24 spotTick) = _spot();
+        int24 tw = _requireUnmanipulated(spotTick);
         _harvest();
-        _recenterInternal(spot);
+        uint256 looseW = _looseWeth();
+        if (looseW == 0) return;
+        (uint256 wethForLp, uint256 tokenForLp) = _zapHalf(looseW, tw);
+        uint128 before = bandL;
+        _mintFullRange(wethForLp, tokenForLp);
+        emit Compounded(bandL - before);
     }
 
-    // ─────────────────────────────────────────────────────────────── views ────
+    /// @notice Permissionless: push the protocol's accumulated cut to the treasury.
+    function sweepProtocol() external nonReentrant {
+        uint256 w = protocolWeth;
+        uint256 t = protocolToken;
+        protocolWeth = 0;
+        protocolToken = 0;
+        address to = treasury();
+        if (w > 0) {
+            IWETH9(WETH).withdraw(w);
+            (bool ok,) = to.call{value: w}("");
+            if (!ok) revert PayFail();
+        }
+        if (t > 0) token.safeTransfer(to, t);
+        emit ProtocolSwept(w, t);
+    }
+
+    // ─────────────────────────────────────────────────────────────── views ──
+    /// live protocol-fee recipient (rotatable by the factory owner)
+    function treasury() public view returns (address) { return IFloorCoopFactory(factory).treasury(); }
+
+    function shares(address user) external view returns (uint256) { return pos[user].shares; }
+
     function pending(address user) external view returns (uint256 wethOwed, uint256 tokenOwed) {
-        uint256 s = shares[user];
-        wethOwed = (s * accWethPerShare) / ACC - debtWeth[user];
-        tokenOwed = (s * accTokenPerShare) / ACC - debtToken[user];
+        uint256 w = pos[user].weight;
+        wethOwed = Math.mulDiv(w, accWethPerWeight, ACC) - debtWeth[user];
+        tokenOwed = Math.mulDiv(w, accTokenPerWeight, ACC) - debtToken[user];
     }
 
-    /// @notice Total vault value in WETH (band + loose principal), valued at TWAP.
+    /// @notice Total vault value in WETH (full-range band + loose principal), valued at the TWAP.
     function totalNav() external view returns (uint256) {
         return _navWeth(_twapTick());
     }
 
     // ─────────────────────────────────────────────────────── internals: NAV ──
-    function _twapTick() internal view returns (int24) {
-        uint32[] memory ago = new uint32[](2);
-        ago[0] = TWAP_WINDOW;
-        ago[1] = 0;
-        (int56[] memory cum,) = pool.observe(ago);
-        return PoolMath.meanTick(cum[0], cum[1], TWAP_WINDOW);
-    }
-
-    /// vault NAV in WETH at the given (TWAP) tick: band position + loose principal, token priced at TWAP
     function _navWeth(int24 twapTick) internal view returns (uint256) {
         uint160 sqrtTwap = PoolMath.getSqrtRatioAtTick(twapTick);
         uint256 bandWeth;
         uint256 bandToken;
         if (bandL > 0) {
             (uint256 a0, uint256 a1) = PoolMath.getAmountsForLiquidity(
-                sqrtTwap, PoolMath.getSqrtRatioAtTick(bandLo), PoolMath.getSqrtRatioAtTick(bandHi), bandL
+                sqrtTwap, PoolMath.getSqrtRatioAtTick(LO), PoolMath.getSqrtRatioAtTick(HI), bandL
             );
             (bandWeth, bandToken) = tokenIsToken0 ? (a1, a0) : (a0, a1);
         }
-        uint256 looseW = IERC20(WETH).balanceOf(address(this)) - feeReserveWeth;
-        uint256 looseT = token.balanceOf(address(this)) - feeReserveToken;
         uint256 price = PoolMath.twapPriceWethPerToken(twapTick, tokenIsToken0); // WETH per token, 1e18
-        return bandWeth + looseW + Math.mulDiv(bandToken + looseT, price, WAD);
+        return bandWeth + _looseWeth() + Math.mulDiv(bandToken + _looseToken(), price, WAD);
+    }
+
+    function _looseWeth() internal view returns (uint256) {
+        return IERC20(WETH).balanceOf(address(this)) - feeReserveWeth - protocolWeth;
+    }
+
+    function _looseToken() internal view returns (uint256) {
+        return token.balanceOf(address(this)) - feeReserveToken - protocolToken;
     }
 
     // ─────────────────────────────────────────────────── internals: fees ──
     function _harvest() internal {
-        if (bandL == 0 || totalShares == 0) return;
-        pool.burn(bandLo, bandHi, 0);
-        (uint128 c0, uint128 c1) = pool.collect(address(this), bandLo, bandHi, U128_MAX, U128_MAX);
+        if (bandL == 0 || totalWeight == 0) return;
+        pool.burn(LO, HI, 0); // poke: credits owed fees to the position
+        (uint128 c0, uint128 c1) = pool.collect(address(this), LO, HI, U128_MAX, U128_MAX);
         (uint256 wethFee, uint256 tokenFee) = tokenIsToken0 ? (uint256(c1), uint256(c0)) : (uint256(c0), uint256(c1));
         if (wethFee > 0) {
-            accWethPerShare += (wethFee * ACC) / totalShares;
-            feeReserveWeth += wethFee;
+            uint256 cut = (wethFee * FEE_CUT_BPS) / BPS;
+            protocolWeth += cut;
+            uint256 dist = wethFee - cut;
+            accWethPerWeight += Math.mulDiv(dist, ACC, totalWeight);
+            feeReserveWeth += dist;
         }
         if (tokenFee > 0) {
-            accTokenPerShare += (tokenFee * ACC) / totalShares;
-            feeReserveToken += tokenFee;
+            uint256 cut = (tokenFee * FEE_CUT_BPS) / BPS;
+            protocolToken += cut;
+            uint256 dist = tokenFee - cut;
+            accTokenPerWeight += Math.mulDiv(dist, ACC, totalWeight);
+            feeReserveToken += dist;
         }
         if (wethFee > 0 || tokenFee > 0) emit Harvested(wethFee, tokenFee);
     }
 
     function _payPending(address user) internal {
-        uint256 s = shares[user];
-        uint256 wethOwed = (s * accWethPerShare) / ACC - debtWeth[user];
-        uint256 tokenOwed = (s * accTokenPerShare) / ACC - debtToken[user];
+        uint256 w = pos[user].weight;
+        uint256 wethOwed = Math.mulDiv(w, accWethPerWeight, ACC) - debtWeth[user];
+        uint256 tokenOwed = Math.mulDiv(w, accTokenPerWeight, ACC) - debtToken[user];
         _syncDebt(user);
         if (wethOwed > 0) {
             feeReserveWeth -= wethOwed;
@@ -274,96 +372,106 @@ contract FloorCoop is IUniswapV3MintCallback, ReentrancyGuard {
     }
 
     function _syncDebt(address user) internal {
-        uint256 s = shares[user];
-        debtWeth[user] = (s * accWethPerShare) / ACC;
-        debtToken[user] = (s * accTokenPerShare) / ACC;
+        uint256 w = pos[user].weight;
+        debtWeth[user] = Math.mulDiv(w, accWethPerWeight, ACC);
+        debtToken[user] = Math.mulDiv(w, accTokenPerWeight, ACC);
     }
 
     // ─────────────────────────────────────────── internals: position ──
-    /// burn the current band, pull principal back here, re-place ONLY principal WETH (never the fee reserve)
-    /// as a fresh single-sided wall at the current price. Caught token stays loose (valued in NAV).
-    function _recenterInternal(int24 tick) internal {
-        if (bandL > 0) {
-            pool.burn(bandLo, bandHi, bandL);
-            pool.collect(address(this), bandLo, bandHi, U128_MAX, U128_MAX);
-            bandL = 0;
+    function _burnShare(uint256 shareAmt, uint256 ts) internal returns (uint256 wethAmt, uint256 tokenAmt) {
+        uint128 removeL = uint128(Math.mulDiv(bandL, shareAmt, ts));
+        if (removeL == 0) return (0, 0);
+        (uint256 a0, uint256 a1) = pool.burn(LO, HI, removeL);
+        pool.collect(address(this), LO, HI, uint128(a0), uint128(a1));
+        bandL -= removeL;
+        (wethAmt, tokenAmt) = tokenIsToken0 ? (a1, a0) : (a0, a1);
+    }
+
+    function _mintFullRange(uint256 wethAmt, uint256 tokenAmt) internal {
+        if (wethAmt == 0 || tokenAmt == 0) return;
+        (uint160 sqrtP,) = _spot(); // live price NOW — the pool prices the owed amounts at this, so L must too
+        (uint256 amount0, uint256 amount1) = tokenIsToken0 ? (tokenAmt, wethAmt) : (wethAmt, tokenAmt);
+        uint128 L = PoolMath.fullRangeLiquidityOrZero(sqrtP, amount0, amount1);
+        if (L == 0) return; // dust — stays loose for the next compound
+        bandL += L;
+        _minting = true;
+        pool.mint(address(this), LO, HI, L, "");
+        _minting = false;
+    }
+
+    // ─────────────────────────────────────────── internals: zap swap ──
+    /// swap half of `wethAmt` into token, bounded to a TWAP-derived price limit + a min-out floor so a
+    /// sandwich can't force a bad fill. Returns the (weth, token) now available to add as liquidity.
+    function _zapHalf(uint256 wethAmt, int24 tw) internal returns (uint256 wethLeft, uint256 tokenGot) {
+        uint256 sellW = wethAmt / 2;
+        if (sellW == 0) return (wethAmt, 0);
+        bool zeroForOne = wethIsToken0; // selling WETH
+        // price limit: allow the swap to move at most SWAP_BOUND ticks past the TWAP, clamped inside pool bounds
+        int24 limitTick = zeroForOne ? tw - SWAP_BOUND : tw + SWAP_BOUND;
+        uint160 limit = PoolMath.getSqrtRatioAtTick(limitTick);
+        if (limit <= PoolMath.MIN_SQRT_RATIO) limit = PoolMath.MIN_SQRT_RATIO + 1;
+        if (limit >= PoolMath.MAX_SQRT_RATIO) limit = PoolMath.MAX_SQRT_RATIO - 1;
+
+        _swapping = true;
+        (int256 a0, int256 a1) = pool.swap(address(this), zeroForOne, int256(sellW), limit, "");
+        _swapping = false;
+
+        // deltas: positive = we paid, negative = we received
+        (int256 wethDelta, int256 tokenDelta) = wethIsToken0 ? (a0, a1) : (a1, a0);
+        uint256 wethSpent = wethDelta > 0 ? uint256(wethDelta) : 0;
+        tokenGot = tokenDelta < 0 ? uint256(-tokenDelta) : 0;
+        wethLeft = wethAmt - wethSpent; // any un-spent WETH (partial fill at the limit) stays as working capital
+
+        // min-out: the fill must be >= 97% of what the TWAP price implies for the WETH actually spent
+        if (wethSpent > 0) {
+            uint256 price = PoolMath.twapPriceWethPerToken(tw, tokenIsToken0); // WETH per token, 1e18
+            uint256 expTok = Math.mulDiv(wethSpent, WAD, price);               // token expected at TWAP
+            if (tokenGot < (expTok * SWAP_MIN_OUT_BPS) / BPS) revert Slippage();
         }
-        uint256 principalWeth = IERC20(WETH).balanceOf(address(this)) - feeReserveWeth; // C2: exclude reserve
-        if (principalWeth > 0) _placeWall(tick, principalWeth);
-        emit Recentered(tick, bandLo, bandHi, bandL);
     }
 
-    /// add WETH to the band at the current tick. Precondition: bandL is 0 OR the recomputed range equals the
-    /// stored range (guaranteed because callers recenter first) — so bandL always matches [bandLo,bandHi] (C3).
-    function _addWethToWall(uint256 wethAmt) internal returns (uint128 addL) {
-        (, int24 tick,,,,,) = pool.slot0();
-        (int24 lo, int24 hi, bool above) = _band(tick, wallBelow ? false : true, WALL_NEAR, WALL_FAR);
-        addL = PoolMath.singleSidedLiquidityOrZero(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), wethAmt, above);
-        if (addL == 0) return 0;
-        // never accumulate liquidity at a different range than what's stored
-        require(bandL == 0 || (lo == bandLo && hi == bandHi), "range");
-        bandLo = lo;
-        bandHi = hi;
-        bandL += addL;
-        _mint(lo, hi, addL);
+    // ─────────────────────────────────────────── internals: guards/math ──
+    function _spot() internal view returns (uint160 sqrtP, int24 tick) {
+        (sqrtP, tick,,,,,) = pool.slot0();
     }
 
-    function _placeWall(int24 tick, uint256 wethAmt) internal {
-        (int24 lo, int24 hi, bool above) = _band(tick, wallBelow ? false : true, WALL_NEAR, WALL_FAR);
-        uint128 L = PoolMath.singleSidedLiquidityOrZero(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), wethAmt, above);
-        if (L == 0) return; // dust — WETH stays loose for the next placement
-        bandLo = lo;
-        bandHi = hi;
-        bandL = L;
-        _mint(lo, hi, L);
-    }
-
-    function _band(int24 tick, bool above, int24 near, int24 far) internal pure returns (int24 lo, int24 hi, bool isAbove) {
-        int24 base = _snapDown(tick);
-        if (above) {
-            lo = _clamp(base + near);
-            hi = _clamp(base + far);
-        } else {
-            lo = _clamp(base - far);
-            hi = _clamp(base - near);
-        }
-        return (lo, hi, above);
-    }
-
-    function _clamp(int24 t) internal pure returns (int24) {
-        if (t > TICK_BOUND) return TICK_BOUND;
-        if (t < -TICK_BOUND) return -TICK_BOUND;
-        return t;
-    }
-
-    function _snapDown(int24 t) internal pure returns (int24) {
-        int24 r = t % SPACING;
-        if (r != 0 && t < 0) return t - r - SPACING;
-        return t - r;
-    }
-
-    /// @dev reverts if spot deviates from the TWAP mean by more than MAX_DEV; returns the TWAP tick.
-    function _requireUnmanipulated(int24 spotTick) internal view returns (int24 mean) {
+    function _twapTick() internal view returns (int24) {
         uint32[] memory ago = new uint32[](2);
         ago[0] = TWAP_WINDOW;
         ago[1] = 0;
         (int56[] memory cum,) = pool.observe(ago);
-        mean = PoolMath.meanTick(cum[0], cum[1], TWAP_WINDOW);
+        return PoolMath.meanTick(cum[0], cum[1], TWAP_WINDOW);
+    }
+
+    /// @dev reverts if spot deviates from the TWAP mean by more than MAX_DEV; returns the TWAP tick.
+    function _requireUnmanipulated(int24 spotTick) internal view returns (int24 mean) {
+        mean = _twapTick();
         int24 d = spotTick > mean ? spotTick - mean : mean - spotTick;
         if (d > MAX_DEV) revert Manipulated();
     }
 
-    function _mint(int24 lo, int24 hi, uint128 L) internal {
-        if (L == 0) return;
-        _minting = true;
-        pool.mint(address(this), lo, hi, L, "");
-        _minting = false;
+    function _tier(uint256 lockDays) internal view returns (uint256 multBps, uint256 lockUntil) {
+        if (lockDays == 30) return (10000, block.timestamp + 30 days);
+        if (lockDays == 60) return (12500, block.timestamp + 60 days);
+        if (lockDays == 90) return (15000, block.timestamp + 90 days);
+        if (lockDays == 365) return (20000, block.timestamp + 365 days);
+        if (lockDays == 0) return (30000, type(uint256).max); // forever
+        revert BadTerm();
     }
 
+    // ─────────────────────────────────────────── callbacks ──
     function uniswapV3MintCallback(uint256 amount0Owed, uint256 amount1Owed, bytes calldata) external override {
         if (msg.sender != address(pool)) revert NotPool();
         require(_minting, "no mint");
         if (amount0Owed > 0) IERC20(token0).safeTransfer(msg.sender, amount0Owed);
         if (amount1Owed > 0) IERC20(token1).safeTransfer(msg.sender, amount1Owed);
+    }
+
+    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata) external override {
+        if (msg.sender != address(pool)) revert NotPool();
+        require(_swapping, "no swap");
+        // pay the positive delta side (what we owe the pool for the swap)
+        if (amount0Delta > 0) IERC20(token0).safeTransfer(msg.sender, uint256(amount0Delta));
+        if (amount1Delta > 0) IERC20(token1).safeTransfer(msg.sender, uint256(amount1Delta));
     }
 }
