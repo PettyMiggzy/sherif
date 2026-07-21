@@ -6,7 +6,8 @@
   "scripts": {
     "build": "hardhat compile",
     "test": "hardhat test",
-    "sim": "node sim/curve-sim.mjs"
+    "sim": "node sim/curve-sim.mjs",
+    "testnet": "node scripts/testnet.mjs"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
