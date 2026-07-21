@@ -29,11 +29,16 @@ interface IFloorCoopFactory {
 /// fee distributor and strictly-segregated fee/protocol reserves. Full-range bounds are derived from the
 /// selected pool's tickSpacing (any fee tier).
 ///
-/// SCOPE / LIMITATIONS: supports STANDARD ERC-20 tokens only. Fee-on-transfer, rebasing, and pause/blacklist
-/// tokens are NOT supported — they revert (unusable) or can freeze a single vault's principal; a vault is
-/// per-token and independent, so this never affects other vaults. TWAP_WINDOW/cardinality, MAX_DEV/SWAP_BOUND,
-/// and the min-out tolerance are economic parameters to TUNE in simulation. STILL PENDING the full pre-deploy
-/// external audit + simulations before real funds.
+/// SCOPE / LIMITATIONS: supports STANDARD ERC-20 tokens only. Fee-on-transfer and rebasing tokens revert
+/// (unusable). A token that pauses/blacklists transfers TO THE VAULT after deposits land will FREEZE that
+/// vault's real principal (harvest/withdraw both need pool.collect) — no theft, no cross-vault effect (each
+/// vault is an independent per-token contract), but user funds can be stranded, so only lock into tokens you
+/// trust. The vault binds to ONE pool chosen at construction (the deepest WETH pool with >0 liquidity); a
+/// permissionless first-mover could pin it to a thinly-seeded pool — the adaptive-TWAP min-history guard
+/// mitigates this, and a minimum-liquidity threshold is a candidate hardening for the external audit. The
+/// first-deposit share-inflation vector is minSharesOut-gated and unprofitable (10% + tiered penalties); a
+/// virtual-shares offset is a candidate hardening. TWAP window/cardinality, MAX_DEV/SWAP_BOUND, and the min-out
+/// tolerance are economic parameters to TUNE in simulation. STILL PENDING the full external audit + sims.
 contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -49,9 +54,14 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     uint256 public constant MIN_FIRST_DEPOSIT = 1e15; // 0.001 ETH floor on the very first deposit
 
     int24 public constant MAX_DEV = 300;              // ~3% max spot-vs-TWAP deviation (manipulation guard)
-    int24 public constant SWAP_BOUND = 300;           // zap swap may move price at most ~3% past the TWAP (>= MAX_DEV so the limit is always beyond spot)
+    int24 public constant SWAP_BOUND = 360;           // zap swap limit; strictly > MAX_DEV so the limit is always beyond spot (no SPL revert at the deviation edge)
     int24 internal constant TICK_MAX = 887272;        // getSqrtRatioAtTick's hard bound
-    uint32 public constant TWAP_WINDOW = 300;         // 5-min TWAP — manipulation-resistant (audit/sim should tune per chain block time)
+    // TWAP is ADAPTIVE: we use the longest window the pool's oracle actually holds, capped at TWAP_WINDOW and
+    // floored at TWAP_MIN. This never requests more history than exists (so observe can't revert OLD and brick
+    // the vault on fast chains), rejects pools too fresh to have a trustworthy TWAP, and uses the strongest
+    // window available. Cardinality is grown at construction; it fills as the pool trades.
+    uint32 public constant TWAP_WINDOW = 300;         // preferred (cap) TWAP window — 5 min when the oracle can cover it
+    uint32 public constant TWAP_MIN = 30;             // reject deposits/withdraws until the pool has >= 30s of oracle history
 
     // full-range position bounds — derived from the SELECTED pool's tickSpacing in the constructor, because a
     // token's deepest pool may be the 0.3% tier (spacing 60) etc. where ±887200 is NOT a valid tick.
@@ -111,6 +121,7 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     error PayFail();
     error MinDeposit();
     error BadTerm();
+    error StaleTwap();
 
     event Opened(address indexed user, uint256 ethIn, uint256 netIn, uint256 sharesMinted, uint256 multBps, uint256 lockUntil);
     event Withdrawn(address indexed user, uint256 sharesBurned, uint256 wethOut, uint256 tokenOut, uint256 penaltyWeth, uint256 penaltyToken);
@@ -139,8 +150,10 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         int24 maxUsable = (TICK_MAX / spacing) * spacing;
         LO = -maxUsable;
         HI = maxUsable;
-        // grow the oracle so the TWAP window is available for the manipulation guard (fills over subsequent blocks)
-        try IUniswapV3Pool(p).increaseObservationCardinalityNext(100) {} catch {}
+        // grow the oracle ring buffer so a meaningful TWAP window can accrue (fills as the pool trades). The
+        // window itself is ADAPTIVE (see _twapTick), so under-provisioning here degrades the window length, it
+        // never bricks. 300 slots gives ~5 min even on ~1s-block chains; still cheap enough for one-time setup.
+        try IUniswapV3Pool(p).increaseObservationCardinalityNext(300) {} catch {}
     }
 
     /// pick the token's deepest WETH pool across the standard fee tiers (works for arbitrary chain tokens,
@@ -265,8 +278,13 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         uint256 penW;
         uint256 penT;
         if (early) {
-            penW = (wethOut * EARLY_PENALTY_BPS) / BPS;
-            penT = (tokenOut * EARLY_PENALTY_BPS) / BPS;
+            // Scale the early-exit penalty by the lock tier's multiplier so the reward ladder is backed by a
+            // matching exit cost: 30d(1.0x)->15%, 90d(1.5x)->22.5%, 1yr(2x)->30%, forever(3x)->45%. Without this
+            // 'forever' would strictly dominate (max fee weight, same flat 15% exit) and let a whale bail after
+            // farming an outsized fee share. multBps>=BPS so the penalty is always >= EARLY_PENALTY_BPS.
+            uint256 penBps = Math.mulDiv(EARLY_PENALTY_BPS, pp.multBps, BPS);
+            penW = (wethOut * penBps) / BPS;
+            penT = (tokenOut * penBps) / BPS;
             protocolWeth += penW;
             protocolToken += penT;
             wethOut -= penW;
@@ -321,6 +339,9 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     }
 
     // ─────────────────────────────────────────────────────────────── views ──
+    // INTEGRATOR WARNING: pending()/totalNav() are NOT safe to consume atomically from inside an external call
+    // into this contract (e.g. as an on-chain oracle) — during a mint/swap callback or a mid-withdraw payout,
+    // bandL/balances can be transiently inconsistent (classic read-only reentrancy). They are correct at rest.
     /// live protocol-fee recipient (rotatable by the factory owner)
     function treasury() public view returns (address) { return IFloorCoopFactory(factory).treasury(); }
 
@@ -332,7 +353,8 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         tokenOwed = Math.mulDiv(w, accTokenPerWeight, ACC) - debtToken[user];
     }
 
-    /// @notice Total vault value in WETH (full-range band + loose principal), valued at the TWAP.
+    /// @notice Total vault value in WETH (full-range band + loose principal), valued at the TWAP. Reverts
+    /// StaleTwap if the pool has < TWAP_MIN of oracle history. See the INTEGRATOR WARNING above.
     function totalNav() external view returns (uint256) {
         return _navWeth(_twapTick());
     }
@@ -479,12 +501,29 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         (sqrtP, tick,,,,,) = pool.slot0();
     }
 
+    /// seconds of oracle history the pool currently holds (age of its oldest stored observation).
+    function _availableWindow() internal view returns (uint32) {
+        (,, uint16 index, uint16 card,,,) = pool.slot0();
+        if (card <= 1) return 0; // a single (constantly-overwritten) slot carries no usable window
+        // oldest observation is the slot right after the newest, once the ring buffer has wrapped
+        (uint32 tsOld,,, bool init) = pool.observations((uint256(index) + 1) % card);
+        if (!init) (tsOld,,,) = pool.observations(0); // not yet wrapped: oldest is slot 0
+        uint32 nowTs = uint32(block.timestamp);
+        return nowTs > tsOld ? nowTs - tsOld : 0;
+    }
+
+    /// TWAP mean tick over the LONGEST window the oracle can serve, capped at TWAP_WINDOW, floored at TWAP_MIN.
+    /// Never asks for more history than exists (so observe can't revert OLD); reverts StaleTwap if the pool is
+    /// too fresh/thin to give a trustworthy TWAP (which also rejects freshly 1-wei-seeded manipulable pools).
     function _twapTick() internal view returns (int24) {
+        uint32 avail = _availableWindow();
+        uint32 w = avail < TWAP_WINDOW ? avail : TWAP_WINDOW;
+        if (w < TWAP_MIN) revert StaleTwap();
         uint32[] memory ago = new uint32[](2);
-        ago[0] = TWAP_WINDOW;
+        ago[0] = w;
         ago[1] = 0;
         (int56[] memory cum,) = pool.observe(ago);
-        return PoolMath.meanTick(cum[0], cum[1], TWAP_WINDOW);
+        return PoolMath.meanTick(cum[0], cum[1], w);
     }
 
     /// @dev reverts if spot deviates from the TWAP mean by more than MAX_DEV; returns the TWAP tick.

@@ -50,6 +50,11 @@ interface IUniswapV3Pool {
         view
         returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s);
 
+    function observations(uint256 index)
+        external
+        view
+        returns (uint32 blockTimestamp, int56 tickCumulative, uint160 secondsPerLiquidityCumulativeX128, bool initialized);
+
     function slot0()
         external
         view
