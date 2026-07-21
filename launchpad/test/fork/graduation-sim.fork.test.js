@@ -34,8 +34,16 @@ suite("Graduation battery — random 'let it ride' points, invariants hold every
     const probeAddr = await probe.getAddress();
     const wethW = await ethers.getContractAt(
       ["function deposit() payable", "function approve(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"], WETH);
-    await (await wethW.connect(buyer).deposit({ value: 200n * ONE })).wait();
+    // Each graduation permanently sinks ~4-25 ETH of the buyer's WETH into the pool/Bond, so a fixed one-shot
+    // deposit runs dry at high SIMS and aborts the battery mid-run. Give the buyer a huge native balance and
+    // top the WETH working balance back up before any swap that could exceed it — the budget must never be the
+    // thing that "fails" a 300-run battery.
+    await ethers.provider.send("hardhat_setBalance", [buyer.address, "0x" + (10n ** 24n).toString(16)]); // 1,000,000 ETH
+    await (await wethW.connect(buyer).deposit({ value: 500n * ONE })).wait();
     await (await wethW.connect(buyer).approve(probeAddr, 1n << 250n)).wait();
+    const topUpWeth = async () => { // keep >= one worst-case swap (60 ETH) in hand
+      if ((await wethW.balanceOf(buyer.address)) < 80n * ONE) await (await wethW.connect(buyer).deposit({ value: 500n * ONE })).wait();
+    };
     const tokAbi = ["function balanceOf(address) view returns (uint256)"];
 
     const rand = rng(0xC0FFEE);
@@ -59,6 +67,7 @@ suite("Graduation battery — random 'let it ride' points, invariants hold every
       const maxS = BigInt(await curveC.gradSqrtPriceX96());
       const frac = 5 + Math.floor(rand() * 96); // 5%..100%
       const sqrtLimit = minS + ((maxS - minS) * BigInt(frac)) / 100n;
+      await topUpWeth(); // refill the buyer's WETH so a 300-run battery never aborts on budget
       await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 60n * ONE, sqrtLimit)).wait();
       expect(await curveC.ready(), `#${i} ready`).to.equal(true);
 

@@ -55,8 +55,10 @@ suite("FloorCoop battery — random deposit/withdraw/compound/claim/shove; solve
     const probeAddr = await probe.getAddress();
     const wethW = await ethers.getContractAt(
       ["function deposit() payable", "function withdraw(uint256)", "function approve(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"], WETH);
+    await ethers.provider.send("hardhat_setBalance", [buyer.address, "0x" + (10n ** 24n).toString(16)]); // 1,000,000 ETH
     await (await wethW.connect(buyer).deposit({ value: 400n * ONE })).wait();
     await (await wethW.connect(buyer).approve(probeAddr, 1n << 250n)).wait();
+    const topUpWeth = async () => { if ((await wethW.balanceOf(buyer.address)) < 20n * ONE) await (await wethW.connect(buyer).deposit({ value: 400n * ONE })).wait(); };
 
     const rc = await (await factory.launch({ name: "FC", symbol: "FC", dev: dev.address, tax: NOTAX })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
@@ -95,6 +97,7 @@ suite("FloorCoop battery — random deposit/withdraw/compound/claim/shove; solve
 
     const shove = async (up) => {
       // move spot by swapping; `up` buys token (price up), else sells token-side via WETH the other way
+      await topUpWeth();
       const s = BigInt((await pool.slot0()).sqrtPriceX96);
       const lim = up ? (s * 1020n) / 1000n : (s * 980n) / 1000n;
       try { await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 3n * ONE, lim)).wait(); } catch {}
@@ -134,9 +137,14 @@ suite("FloorCoop battery — random deposit/withdraw/compound/claim/shove; solve
           const amt = (ONE / 10n) + BigInt(Math.floor(rand() * 3e18)); // 0.1 .. ~3.1 ETH
           const lock = LOCK_DAYS[Math.floor(rand() * LOCK_DAYS.length)];
           const pBefore = await coop.protocolWeth();
-          await (await coop.connect(u).deposit(lock, 0, { value: amt })).wait();
+          const rcp = await (await coop.connect(u).deposit(lock, 0, { value: amt })).wait();
           const pGain = (await coop.protocolWeth()) - pBefore;
-          expect(pGain, `#${i} 10% open fee`).to.equal(amt / 10n); // exactly 10% to protocol
+          // deposit() harvests LP fees in the SAME tx (before the open fee), routing 5% (FEE_CUT_BPS) of the
+          // harvested WETH to protocol too. So protocolΔ = 10% open fee + 5%·harvestedWeth — not just the open
+          // fee. Read the harvest from this tx's own Harvested event so the check is exact, not approximate.
+          let harvestCut = 0n;
+          for (const l of rcp.logs) { let pl; try { pl = coop.interface.parseLog(l); } catch { continue; } if (pl && pl.name === "Harvested") harvestCut += (pl.args[0] * 500n) / 10000n; }
+          expect(pGain, `#${i} protocol gain = 10% open fee + 5% harvest cut`).to.equal(amt / 10n + harvestCut);
           depositedEth[u.address] += amt;
           deposits++;
         } else if (act < 0.62) {
