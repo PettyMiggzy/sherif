@@ -62,6 +62,11 @@ library PoolMath {
         returns (uint128)
     {
         if (amount0 == 0 || amount1 == 0) return 0;
+        // Honor the "return 0, never revert" contract at price extremes: if spot is at/below the position's lower
+        // bound or at/above its upper, one of the sub-computations would underflow (sqrtP - SQRT_RATIO_AT_MIN_TICK)
+        // or divide by zero (SQRT_RATIO_AT_MAX_TICK - sqrtP). Skip gracefully instead of reverting (which would
+        // brick Bond.poke on a token pinned to a price extreme).
+        if (sqrtP <= SQRT_RATIO_AT_MIN_TICK || sqrtP >= SQRT_RATIO_AT_MAX_TICK) return 0;
         uint256 l0 = _liquidityForAmount0(sqrtP, SQRT_RATIO_AT_MAX_TICK, amount0);
         uint256 l1 = _liquidityForAmount1(SQRT_RATIO_AT_MIN_TICK, sqrtP, amount1);
         uint256 l = l0 < l1 ? l0 : l1;

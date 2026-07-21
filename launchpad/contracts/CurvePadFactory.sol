@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {LaunchToken} from "./LaunchToken.sol";
 import {LaunchTokenDeployer, CurvePoolDeployer} from "./deployers/CurveDeployers.sol";
 import {IUniswapV3Pool, IUniswapV3SwapCallback, IWETH9} from "./interfaces/IUniswapV3.sol";
@@ -35,7 +36,7 @@ interface IPadRouter {
 /// own coin. The dev buy is uncapped by supply (bounded only by the curve ceiling + the ETH sent). Token is
 /// on Uniswap + DexScreener from block one. Free to launch; the platform
 /// funds nothing (the token seeds its own liquidity); the dev buy is optional and paid by the dev.
-contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
+contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     using SafeERC20 for IERC20;
 
     uint16 public constant AMBUSH_BPS = 2500; // 25% -> the Bond's Ambush; 75% is the curve
@@ -138,7 +139,7 @@ contract CurvePadFactory is Ownable2Step, IUniswapV3SwapCallback {
 
     /// @notice One tx: token + real pool + seeded curve + trading on. Send ETH to also make the dev's first
     /// buy (≤2%) in the same tx, before trading opens to anyone else. DEX + DexScreener day one.
-    function launch(LaunchParams calldata p) external payable returns (address token, address curve, address pool) {
+    function launch(LaunchParams calldata p) external payable nonReentrant returns (address token, address curve, address pool) {
         if (p.dev == address(0)) revert BadValue();
 
         uint256 ambushAmt = (TOTAL_SUPPLY * AMBUSH_BPS) / 10_000;

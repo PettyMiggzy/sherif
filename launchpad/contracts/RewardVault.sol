@@ -45,6 +45,11 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         bytes32 root; // global Merkle root over ALL coins' leaves for this epoch
         bytes32 algoHash; // keccak of the frozen scoring spec + reference impl
         uint64 postedAt; // finalizes at postedAt + challengeWindow
+        // Windows are SNAPSHOTTED here at postRoot, not read live from the mutable state vars, so a later
+        // setChallengeWindow/setClaimWindow can never retroactively collapse an in-flight epoch's guardian veto
+        // window or pull its sweep boundary earlier. Each epoch runs under the windows in effect when it was posted.
+        uint64 challengeWindow;
+        uint64 claimWindow;
         bool vetoed; // guardian kill switch — blocks finalization only
     }
 
@@ -145,6 +150,8 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         er.root = root;
         er.algoHash = algoHash;
         er.postedAt = uint64(block.timestamp);
+        er.challengeWindow = challengeWindow; // snapshot the live windows; future setters won't move this epoch
+        er.claimWindow = claimWindow;
         er.vetoed = false; // re-posting clears the veto; the fresh challenge window restarts
         dataURI[epoch] = uri;
         emit RootPosted(epoch, root, algoHash, uri);
@@ -158,7 +165,7 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         if (er.root == bytes32(0)) revert NoRoot();
         // only during the challenge window, before claims open — a veto after claims begin could otherwise
         // strand a partially-claimed epoch's funds (M-fix: bound the guardian's power in time).
-        if (block.timestamp >= er.postedAt + challengeWindow) revert TooEarly();
+        if (block.timestamp >= er.postedAt + er.challengeWindow) revert TooEarly();
         er.vetoed = true;
         emit EpochVetoed(epoch);
     }
@@ -173,7 +180,7 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         EpochRoot storage er = epochRoot[epoch];
         if (er.root == bytes32(0)) revert NoRoot();
         if (er.vetoed) revert Vetoed();
-        if (block.timestamp < er.postedAt + challengeWindow) revert TooEarly(); // past the challenge window
+        if (block.timestamp < er.postedAt + er.challengeWindow) revert TooEarly(); // past the challenge window
 
         // leaf binds epoch+coin+side+user+amount → spendable only against that exact pot slice.
         // Double-hash matches @openzeppelin/merkle-tree's standard leaf encoding (second-preimage safe).
@@ -214,7 +221,7 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         if (er.vetoed) revert Vetoed();
         // sweep only AFTER claims have had their full grace window — otherwise sweep front-runs claims the
         // instant they open, pushing the whole pot to the floor and reverting every honest claim (H-fix).
-        if (block.timestamp < er.postedAt + challengeWindow + claimWindow) revert TooEarly();
+        if (block.timestamp < er.postedAt + er.challengeWindow + er.claimWindow) revert TooEarly();
         if (swept[coin][epoch]) revert AlreadyClaimed();
         swept[coin][epoch] = true;
 

@@ -52,6 +52,13 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     uint256 public constant FEE_CUT_BPS = 500;        // 5% of earned trading fees -> protocol
     uint256 public constant EARLY_PENALTY_BPS = 1500; // 15% penalty on early (pre-unlock) withdrawal
     uint256 public constant MIN_FIRST_DEPOSIT = 1e15; // 0.001 ETH floor on the very first deposit
+    uint256 public constant MIN_POOL_WETH = 1e17;     // 0.1 WETH min real depth to bind a coop (anti attacker-shaped-pool)
+    // A withdraw must take the WHOLE position or leave at least this many shares. This forbids dust-weight
+    // positions, which is a SOLVENCY-CRITICAL invariant: the fee accumulator grows by mulDiv(dist, ACC, totalWeight),
+    // so a near-zero totalWeight would inflate accWethPerWeight until mulDiv(w, acc, ACC) overflows uint256 and
+    // _payPending reverts — permanently bricking every deposit/withdraw/claim. Flooring totalWeight (weight >= shares
+    // >= MIN_SHARES for any live position) keeps the accumulator ~29 orders of magnitude below overflow.
+    uint256 public constant MIN_SHARES = 1e12;
 
     int24 public constant MAX_DEV = 300;              // ~3% max spot-vs-TWAP deviation (manipulation guard)
     int24 public constant SWAP_BOUND = 360;           // zap swap limit; strictly > MAX_DEV so the limit is always beyond spot (no SPL revert at the deviation edge)
@@ -122,6 +129,7 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     error MinDeposit();
     error BadTerm();
     error StaleTwap();
+    error DustExit();
 
     event Opened(address indexed user, uint256 ethIn, uint256 netIn, uint256 sharesMinted, uint256 multBps, uint256 lockUntil);
     event Withdrawn(address indexed user, uint256 sharesBurned, uint256 wethOut, uint256 tokenOut, uint256 penaltyWeth, uint256 penaltyToken);
@@ -168,9 +176,13 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
             // strict > : ties keep the FIRST (lower, typically deeper) tier, not the last (thinnest)
             if (liq > bestLiq) { bestLiq = liq; best = p; }
         }
-        // require real depth — a 0-liquidity (initialized-but-empty) pool has an attacker-set price and no
-        // fills to earn; reject it so the vault is never built on an unusable/manipulable pool
-        if (bestLiq == 0) best = address(0);
+        // require real depth. A 0-liquidity (initialized-but-empty) pool has an attacker-set price and no fills to
+        // earn; and a dust pool (e.g. 1 wei of liquidity) is just as attacker-shaped — spot==TWAP trivially against a
+        // price the attacker chose, neutralizing both the manipulation guard and the zap min-out. Beyond rejecting
+        // zero, require the selected pool to actually custody a floor of REAL WETH, so binding a coop forces an
+        // attacker to lock genuine capital at a skewed price that arbitrage will drain — not a free 1-wei fake.
+        if (bestLiq == 0) return address(0);
+        if (IERC20(weth_).balanceOf(best) < MIN_POOL_WETH) best = address(0);
     }
 
     receive() external payable {} // WETH.withdraw
@@ -248,17 +260,24 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     {
         Pos storage pp = pos[msg.sender];
         if (shareAmt == 0 || shareAmt > pp.shares) revert TooMuch();
-        (, int24 spotTick) = _spot();
-        _requireUnmanipulated(spotTick);
+        // No-dust invariant: take the whole position or leave >= MIN_SHARES. A dust remainder would let totalWeight
+        // approach zero and blow up the fee accumulator (see MIN_SHARES). Withdraw-all is always allowed.
+        if (pp.shares - shareAmt != 0 && pp.shares - shareAmt < MIN_SHARES) revert DustExit();
+        // NO spot-vs-TWAP manipulation gate on withdraw. Unlike deposit/compound (which SWAP and so must price
+        // against a trustworthy TWAP), withdraw pays strictly pro-rata of REAL holdings — a pro-rata v3 burn plus a
+        // pro-rata split of loose reserves — which is value-fair at ANY spot price and moves no price itself (a burn
+        // is not a swap). Gating it on deviation added zero safety and let an attacker freeze every staker's exit by
+        // shoving spot >MAX_DEV off TWAP (routine on a volatile memecoin, e.g. during a dump). The caller's own
+        // slippage is covered by minWethOut/minTokenOut below; other stakers are untouched (each keeps pro-rata).
         _harvest(); // pool-locked collect — no manipulation window
 
         uint256 ts = totalShares;
         // (a) pro-rata of loose principal (net of BOTH reserves), read BEFORE the burn adds to balance
         uint256 shareW = Math.mulDiv(_looseWeth(), shareAmt, ts);
         uint256 shareT = Math.mulDiv(_looseToken(), shareAmt, ts);
-        // (b) pro-rata of the live full-range band. CRITICAL: the burn runs with NO caller-facing external call
-        // before it (harvest is pool-locked), so the caller cannot manipulate spot between the TWAP guard and
-        // this price-sensitive burn. _payPending (which hands the caller control) is deferred until AFTER.
+        // (b) pro-rata of the live full-range band. The burn runs with NO caller-facing external call before it
+        // (harvest is pool-locked), and _payPending (which hands the caller control) is deferred until AFTER — so a
+        // token-transfer hook cannot reenter to move spot between the reserve reads and this burn.
         (uint256 posW, uint256 posT) = _burnShare(shareAmt, ts);
 
         wethOut = shareW + posW;
@@ -409,6 +428,13 @@ contract FloorCoop is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         uint256 w = pos[user].weight;
         uint256 wethOwed = Math.mulDiv(w, accWethPerWeight, ACC) - debtWeth[user];
         uint256 tokenOwed = Math.mulDiv(w, accTokenPerWeight, ACC) - debtToken[user];
+        // Cap each payout at the reserve actually held. The lock-weighted accumulator (acc += mulDiv(dist, ACC,
+        // totalWeight), rounded down) drifts by a few wei against the reserve as weights are recomputed wholesale on
+        // every deposit/withdraw, so the sum of users' `owed` can exceed feeReserve by dust. Without this cap the
+        // final claimant's `feeReserve -= owed` underflows and reverts — bricking _payPending, hence every
+        // deposit/withdraw/claim. Capping pays what exists (never more), absorbing the rounding dust harmlessly.
+        if (wethOwed > feeReserveWeth) wethOwed = feeReserveWeth;
+        if (tokenOwed > feeReserveToken) tokenOwed = feeReserveToken;
         _syncDebt(user);
         if (wethOwed > 0) {
             feeReserveWeth -= wethOwed;

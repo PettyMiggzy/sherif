@@ -15,7 +15,7 @@ function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 10139
 const LOCK_DAYS = [30, 60, 90, 365, 0];
 
 // FloorCoop custom-error selectors → name, so a revert is never a black box.
-const FC_ERRORS = ["NoPool", "NotPool", "Manipulated", "Zero", "Locked", "TooMuch", "Slippage", "PayFail", "MinDeposit", "BadTerm", "StaleTwap"];
+const FC_ERRORS = ["NoPool", "NotPool", "Manipulated", "Zero", "Locked", "TooMuch", "Slippage", "PayFail", "MinDeposit", "BadTerm", "StaleTwap", "DustExit"];
 const SELECTORS = Object.fromEntries(FC_ERRORS.map((n) => [ethers.id(`${n}()`).slice(0, 10), n]));
 // Guard-class reverts are the vault CORRECTLY refusing to price against a manipulated/cold oracle — a settle+retry
 // clears them. Anything else (PayFail, arithmetic panic, a real Locked after unlock) means funds are genuinely stuck.
@@ -175,8 +175,14 @@ suite("FloorCoop battery — random deposit/withdraw/compound/claim/shove; solve
       } catch (e) {
         // Guarded reverts are EXPECTED and correct (Manipulated / Slippage / Locked / StaleTwap / TooMuch / etc.).
         const name = revertName(e);
-        if (["Manipulated", "Slippage", "Locked", "StaleTwap", "TooMuch", "Zero", "MinDeposit", "BadTerm"].includes(name) || /range/.test(e.message || "")) { guarded++; }
-        else throw new Error(`#${i} unexpected revert: ${name}`);
+        if (["Manipulated", "Slippage", "Locked", "StaleTwap", "TooMuch", "Zero", "MinDeposit", "BadTerm", "DustExit"].includes(name) || /range/.test(e.message || "")) { guarded++; }
+        else {
+          const opName = act < 0.42 ? "deposit" : act < 0.62 ? "withdraw" : act < 0.74 ? "compound" : act < 0.86 ? "claim" : act < 0.93 ? "sweep" : "shove";
+          console.log(`\n=== UNEXPECTED REVERT at #${i} op=${opName} (act=${act.toFixed(4)}) decoded=${name} ===`);
+          console.log("MESSAGE:", (e.message || "").slice(0, 1500));
+          console.log("STACK:", (e.stack || "").slice(0, 2500));
+          throw new Error(`#${i} unexpected revert on ${opName}: ${name}`);
+        }
       }
       await checkSolvency(`#${i}`);
       // occasionally advance time so locks can expire and the oracle stays warm

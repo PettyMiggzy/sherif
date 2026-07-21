@@ -125,6 +125,13 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         isFactory[f] = true;
     }
 
+    /// @notice Revoke a factory's authorization to register NEW coins (e.g. a burned/compromised deploy key).
+    /// Existing coin configs are register-once and immutable, so this cannot disturb live coins — it only stops
+    /// the revoked key from registering further tokens. `factory` (the external-read pointer) is left as-is.
+    function removeFactory(address f) external onlyOwner {
+        isFactory[f] = false;
+    }
+
     /// @notice Point the router at the RewardVault. Until set, the two 0.25% reward legs are OFF and trades
     /// behave exactly as before. Settable to migrate the vault; must be a CONTRACT (a code-size check stops an
     /// EOA/typo that would silently misdirect leg ETH). Old vaults stay authorized to donateFloor their sweeps.

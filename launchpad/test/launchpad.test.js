@@ -143,7 +143,13 @@ describe("LaunchToken anti-snipe guard", () => {
     const maxTx1 = (SUPPLY * 50n) / 10000n; // 0.5%
     const user = base.user.address;
 
-    // dead window (timestamp < launchTime+2): buy reverts
+    // dead window (timestamp < launchTime+2): buy reverts.
+    // Pin the next block's timestamp INTO the window — deadSecs is only 2s and hardhat uses wall-clock block
+    // timestamps, so without this the async round-trips above (impersonate/setBalance/getSigner) can push the
+    // buy's block past launchTime+2 and the guard (correctly) no longer fires. launchTime == the launch tx's
+    // timestamp and no block has been mined since, so launchTime+1 is a valid strictly-increasing next stamp.
+    const lt = Number(await tk.launchTime());
+    await network.provider.send("evm_setNextBlockTimestamp", [lt + 1]);
     await expect(tk.connect(poolSigner).transfer(user, ONE)).to.be.revertedWithCustomError(tk, "DeadWindow");
 
     // move past dead window into phase 1

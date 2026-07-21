@@ -119,9 +119,11 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         sherwoodL = kL;
         _mint(sherwoodLo, sherwoodHi, kL);
 
-        // 2) Bounty (WETH) + 3) Ambush (token) — single-sided range orders
-        _placeBounty(tick, bountyWeth);
-        _placeAmbush(tick, ambushTokens);
+        // 2) Bounty (WETH) + 3) Ambush (token) — single-sided range orders. post() is atomic inside graduate()
+        // (curve-only, no front-run window) and the oracle may be too fresh for a TWAP, so anchor to the honest
+        // just-set spot on both sides (aboveAnchor == belowAnchor == tick) — identical to the original behavior.
+        _placeBounty(tick, tick, bountyWeth);
+        _placeAmbush(tick, tick, ambushTokens);
 
         emit Posted(sherwoodL, bountyL, ambushL);
     }
@@ -132,7 +134,14 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     function poke() external nonReentrant {
         if (!posted) revert NotPosted();
         (uint160 sp, int24 tick,,,,,) = pool.slot0();
-        _requireUnmanipulated(tick);
+        int24 mean = _requireUnmanipulated(tick);
+        // Anchor the recenter walls to the CONSERVATIVE side of {spot, TWAP mean}, not raw spot: above-bands to
+        // max(spot,mean), below-bands to min(spot,mean). Within the allowed ±MAX_DEV, an attacker who shoves spot to
+        // make a wall richer for themselves (e.g. lift the Bounty bid toward true price to dump into) instead falls
+        // back to the honest mean, removing the profitable component; whichever way they push, a band stays strictly
+        // single-sided w.r.t. spot (NEAR=200 < MAX_DEV=300 would otherwise let a mean-only center straddle spot).
+        int24 aboveAnchor = tick > mean ? tick : mean;
+        int24 belowAnchor = tick < mean ? tick : mean;
 
         // Sherwood: poke the position to realize fees, collect them HERE, and compound them straight back
         // into the locked full-range position. The permanent, never-withdrawable liquidity therefore GROWS
@@ -162,15 +171,17 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         // recenter around the current price: all WETH -> Bounty, all tokens -> Ambush
         uint256 wbal = IERC20(WETH).balanceOf(address(this));
         uint256 tbal = token.balanceOf(address(this));
-        if (wbal > 0) _placeBounty(tick, wbal);
-        if (tbal > 0) _placeAmbush(tick, tbal);
+        if (wbal > 0) _placeBounty(aboveAnchor, belowAnchor, wbal);
+        if (tbal > 0) _placeAmbush(aboveAnchor, belowAnchor, tbal);
         emit Poked(tick, bountyL, ambushL, kf0, kf1);
     }
 
     // --------------------------------------------------------------- internals
-    function _placeBounty(int24 tick, uint256 wethAmt) internal {
-        // Bounty holds WETH, on the "token gets cheaper" side (below price iff WETH is token1).
-        (int24 lo, int24 hi, bool above) = _band(tick, bountyBelow ? false : true, BOUNTY_NEAR, BOUNTY_FAR);
+    function _placeBounty(int24 aboveAnchor, int24 belowAnchor, uint256 wethAmt) internal {
+        // Bounty holds WETH, on the "token gets cheaper" side (below price iff WETH is token1). Anchor to the
+        // conservative side: an above-band to max(spot,mean), a below-band to min(spot,mean).
+        bool above = bountyBelow ? false : true;
+        (int24 lo, int24 hi,) = _band(above ? aboveAnchor : belowAnchor, above, BOUNTY_NEAR, BOUNTY_FAR);
         // OrZero: skip (don't revert) if the amount is 0 or too small to make any liquidity — the WETH just
         // stays here for the next poke instead of bricking this one.
         uint128 L = PoolMath.singleSidedLiquidityOrZero(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), wethAmt, above);
@@ -181,9 +192,10 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         _mint(lo, hi, L);
     }
 
-    function _placeAmbush(int24 tick, uint256 tokenAmt) internal {
+    function _placeAmbush(int24 aboveAnchor, int24 belowAnchor, uint256 tokenAmt) internal {
         // Ambush hold the token, on the "token gets more expensive" side (opposite of the Bounty).
-        (int24 lo, int24 hi, bool above) = _band(tick, bountyBelow ? true : false, AMBUSH_NEAR, AMBUSH_FAR);
+        bool above = bountyBelow ? true : false;
+        (int24 lo, int24 hi,) = _band(above ? aboveAnchor : belowAnchor, above, AMBUSH_NEAR, AMBUSH_FAR);
         uint128 L = PoolMath.singleSidedLiquidityOrZero(PoolMath.getSqrtRatioAtTick(lo), PoolMath.getSqrtRatioAtTick(hi), tokenAmt, above);
         if (L == 0) return;
         ambushLo = lo;
@@ -220,12 +232,12 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         return t - r;
     }
 
-    function _requireUnmanipulated(int24 spotTick) internal view {
+    function _requireUnmanipulated(int24 spotTick) internal view returns (int24 mean) {
         uint32[] memory ago = new uint32[](2);
         ago[0] = TWAP_WINDOW;
         ago[1] = 0;
         (int56[] memory cum,) = pool.observe(ago);
-        int24 mean = PoolMath.meanTick(cum[0], cum[1], TWAP_WINDOW);
+        mean = PoolMath.meanTick(cum[0], cum[1], TWAP_WINDOW);
         int24 d = spotTick > mean ? spotTick - mean : mean - spotTick;
         if (d > MAX_DEV) revert Manipulated();
     }

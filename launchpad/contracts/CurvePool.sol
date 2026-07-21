@@ -263,6 +263,11 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         uint256 quote = PoolMath.quoteWethPerToken(sp, tokenIsToken0);
         require(quote > 0, "price"); // fail fast rather than divide-by-zero at an extreme (mis-configured) price
         uint256 sherwoodTokens = Math.min(tokenPool, Math.mulDiv(sherwoodWeth, 1e18, quote));
+        // Sherwood needs BOTH sides; a 0 token amount would make Bond.post's fullRangeLiquidity revert "bad
+        // liquidity" and brick graduate() (raise stranded in the curve). Unreachable with the pad's large-supply
+        // low-price geometry (quote << 1e18 → sherwoodTokens == tokenPool), but assert it with a named error so a
+        // misconfigured price/supply fails loudly here rather than deep in the math library.
+        require(sherwoodTokens > 0, "sherwood");
         uint256 ambushForBond = tokenPool - sherwoodTokens;
 
         address b = ICurveBondDeployer(bondDeployer).deploy(address(token), WETH, address(v3Factory), platform, address(this));
