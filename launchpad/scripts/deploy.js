@@ -43,7 +43,9 @@ async function main() {
   const ltd = await reuse("LaunchTokenDeployer", process.env.LTD, "LaunchTokenDeployer");
   const cpd = await reuse("CurvePoolDeployer", process.env.CPD, "CurvePoolDeployer");
   const bd = await reuse("BondDeployer", process.env.BD, "BondDeployer");
-  const router = await track("PadRouter", await (await ethers.getContractFactory("PadRouter")).deploy(WETH, owner));
+  // Deploy the router owned by the DEPLOYER so it can wire itself (setFactory / setRewardVault are owner-only).
+  // We hand it to OWNER at the end. If deployer == owner this is a no-op distinction.
+  const router = await track("PadRouter", await (await ethers.getContractFactory("PadRouter")).deploy(WETH, deployer.address));
   const factory = await track("CurvePadFactory", await (await ethers.getContractFactory("CurvePadFactory")).deploy(
     WETH, V3_FACTORY, platform, owner, await router.getAddress(),
     await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(),
@@ -68,6 +70,17 @@ async function main() {
   const wireRv = await (await router.setRewardVault(await rewardVault.getAddress())).wait();
   totalGas += wireRv.gasUsed;
   console.log(`  router.setRewardVault   (gas ${wireRv.gasUsed})`);
+
+  // Router is fully wired now → hand it to OWNER. PadRouter is Ownable2Step, so this sets OWNER as *pending*
+  // owner; OWNER completes it by calling acceptOwnership() once (from the admin panel). Until then the deployer
+  // still owns the router — the pad TRADES fine regardless (owner powers are just admin: fee withdrawals, wiring).
+  let routerPending = false;
+  if (owner.toLowerCase() !== deployer.address.toLowerCase()) {
+    const rt = await (await router.transferOwnership(owner)).wait();
+    totalGas += rt.gasUsed;
+    routerPending = true;
+    console.log(`  router.transferOwnership -> OWNER (pending accept)  (gas ${rt.gasUsed})`);
+  }
 
   // ── community locked-LP staking: one vault per token, minted on demand ──────
   const FLOOR_TREASURY = process.env.FLOOR_TREASURY || owner; // receives the 10% open fee + 5% fee cut + penalties
@@ -106,6 +119,12 @@ async function main() {
   console.log(`  platformSplitter: "${await splitter.getAddress()}",  // standalone until $ROBIN buyback is wired`);
   console.log(`\nreward epochs: ${EPOCH_LEN}s · finalityDelay ${FINALITY_DELAY}s · challenge ${CHALLENGE_WINDOW}s`);
   console.log(`poster=${POSTER}  guardian=${GUARDIAN}  floorTreasury=${FLOOR_TREASURY}`);
+  console.log(`\nownership: factory, rewardVault, splitter, floorCoopFactory → OWNER (done).`);
+  if (routerPending) {
+    console.log(`⚠️  ONE STEP LEFT: from OWNER (${owner}), call acceptOwnership() on PadRouter once`);
+    console.log(`    (admin.html → Ownership → Router → Accept). The pad trades fine before you do; this just`);
+    console.log(`    moves the router's ADMIN keys (fee withdrawals, wiring) from the deployer to your cold wallet.`);
+  }
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
