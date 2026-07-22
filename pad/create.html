@@ -86,17 +86,17 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
       <h1 class="title">Start a coin</h1>
 
       <div class="field">
-        <label>Banner <span class="hint">1500×500, shown on the coin page</span></label>
+        <label>Banner <span class="hint">wide 3:1, best ~1200×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
         <label class="banner-up" for="banner"><div><div class="up-ic"><img src="assets/icons/upload.png" alt="" style="width:34px;height:34px;margin:0 auto;opacity:.9" /></div><div class="up-t">Click or drop a banner</div></div></label>
         <input id="banner" type="file" accept="image/*" hidden onchange="prev(this,'banner')" />
       </div>
 
       <div class="field">
-        <label>Coin image (pfp) <span class="hint">square, this is the token icon</span></label>
+        <label>Coin image (pfp) <span class="hint">square, best ~400×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
         <div class="pfp-wrap">
           <label class="pfp-up" for="pfp" id="pfpBox"><div style="text-align:center"><div class="up-ic"><img src="assets/icons/upload.png" alt="" style="width:34px;height:34px;margin:0 auto;opacity:.9" /></div><div class="up-t">Upload</div></div></label>
           <input id="pfp" type="file" accept="image/*" hidden onchange="prev(this,'pfp')" />
-          <div class="txt">PNG / JPG / GIF.<br>This is what shows in the trending grid.</div>
+          <div class="txt">JPG / PNG / HEIC.<br>This is what shows in the trending grid.</div>
         </div>
       </div>
 

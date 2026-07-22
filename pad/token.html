@@ -262,8 +262,8 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           <h3 style="margin-top:18px">Coin profile</h3>
           <div class="sub">Image, banner &amp; socials. One free signature — no gas. Anyone can see it instantly.</div>
           <div class="profedit">
-            <label class="pf">Profile image (pfp)<input type="file" id="epfp" accept="image/*"><span class="ihint">JPG, PNG or HEIC · any size (we resize it) · square looks best</span></label>
-            <label class="pf">Banner<input type="file" id="ebanner" accept="image/*"><span class="ihint">JPG, PNG or HEIC · any size · wide ~3:1 looks best</span></label>
+            <label class="pf">Profile image (pfp)<input type="file" id="epfp" accept="image/*"><span class="ihint">Square, best ~400×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
+            <label class="pf">Banner<input type="file" id="ebanner" accept="image/*"><span class="ihint">Wide 3:1, best ~1200×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
             <textarea id="edesc" maxlength="280" rows="2" placeholder="Short description (max 280 chars)"></textarea>
             <input type="text" id="etg" placeholder="Telegram link (https://t.me/…)">
             <input type="text" id="etw" placeholder="Twitter/X link (https://x.com/…)">
@@ -343,7 +343,7 @@ const agoS = (ts) => { if (!ts) return ''; const s = Math.max(0, Math.floor(Date
 const setNote = (m, kind) => { const n = $('tradeNote'); n.textContent = m; n.style.color = kind === 'err' ? 'var(--red)' : kind === 'ok' ? 'var(--green)' : 'var(--ink-faint)'; };
 const refreshConnect = () => { const a = Pad.account(); const b = $('connectBtn'); b.textContent = a ? Pad.short(a) : 'Connect wallet'; b.title = a ? 'View your profile' : ''; };
 
-let SIDE = 'buy', COIN = null, PROFILE = null;
+let SIDE = 'buy', COIN = null, PROFILE = null, COIN_HAS_BANNER = false;
 
 // Symbol with exactly one leading $ (some coins' on-chain symbol already includes it,
 // which was producing "Sell $$TEST3").
@@ -518,7 +518,16 @@ async function imgDataUrl(id, maxDim){
 function applyProfile(prof, symbol){
   if (!prof) return;
   if (prof.image) { const fb = (symbol || '?').replace(/[^\w]/g, '').slice(0, 3) || '?'; $('pfp').innerHTML = `<img src="${esc(prof.image)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" onerror="this.parentNode.textContent='${fb}'" />`; }
-  if (prof.banner) { const b = document.querySelector('.banner'); if (b) { b.style.backgroundImage = `url("${esc(prof.banner)}")`; b.style.backgroundSize = 'cover'; b.style.backgroundPosition = 'center'; } }
+  if (prof.banner) {
+    const b = document.querySelector('.banner');
+    if (b) {
+      b.style.backgroundImage = `url("${esc(prof.banner)}")`; b.style.backgroundSize = 'cover'; b.style.backgroundPosition = 'center';
+      // the creator's own banner replaces the "Trending on Robin Labs" marquee — no other
+      // projects plastered over this coin's banner.
+      COIN_HAS_BANNER = true;
+      b.querySelectorAll('.art, .bmore, .bwrap').forEach((el) => { el.style.display = 'none'; });
+    }
+  }
   const who = document.querySelector('.who');
   if (who && (prof.description || prof.telegram || prof.twitter || prof.website)) {
     const link = (url, label) => (/^https?:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--lime);text-decoration:none">${label}</a>` : '');
@@ -772,6 +781,7 @@ function buildCandles(){
 
 // ── trending-tokens marquee in the banner ──
 async function renderBanner(){
+  if (COIN_HAS_BANNER) return;              // coin has its own banner → don't overlay other projects
   const el = $('bmq'); if (!el) return;
   let list = [];
   if (DEMO) list = DEMO_COINS.slice();
