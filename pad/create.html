@@ -180,22 +180,35 @@ function prev(inp,which){
 }
 // Downscale an uploaded image to a small webp data: URL so it fits the profile store's
 // size cap and loads fast. Returns "" if no file was chosen for that input.
-function imgDataUrl(id, maxDim){
+// Robust on phones: createImageBitmap (decodes HEIC/EXIF photos) → <img> fallback →
+// downscale → webp/jpeg/png encode → raw-bytes fallback. Returns "" only when no file
+// is chosen; THROWS when a chosen file can't be processed (never silently blank).
+const IMG_OK=/^data:image\/(webp|png|jpeg|gif);base64,/;
+async function imgDataUrl(id, maxDim, maxBytes=700000){
   const f=(document.getElementById(id)?.files||[])[0];
-  if(!f) return Promise.resolve("");
-  return new Promise((res)=>{
-    const img=new Image();
-    img.onload=()=>{ let w=img.width,h=img.height; const s=Math.min(1,maxDim/Math.max(w,h));
-      w=Math.max(1,Math.round(w*s)); h=Math.max(1,Math.round(h*s));
-      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
-      cv.getContext('2d').drawImage(img,0,0,w,h);
-      let url=''; try{ url=cv.toDataURL('image/webp',0.85);}catch(e){}
-      if(!/^data:image\/(webp|png|jpeg)/.test(url)) url=cv.toDataURL('image/png');
-      res(url);
-    };
-    img.onerror=()=>res("");
-    img.src=URL.createObjectURL(f);
-  });
+  if(!f) return "";
+  let src=null,w=0,h=0;
+  try{ src=await createImageBitmap(f); w=src.width; h=src.height; }catch{}
+  if(!src){
+    try{ src=await new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>rej(new Error('decode'));im.src=URL.createObjectURL(f);});
+      w=src.naturalWidth||src.width; h=src.naturalHeight||src.height; }catch{}
+  }
+  if(src&&w&&h){
+    try{
+      const s=Math.min(1,maxDim/Math.max(w,h));
+      const cw=Math.max(1,Math.round(w*s)),ch=Math.max(1,Math.round(h*s));
+      const cv=document.createElement('canvas'); cv.width=cw; cv.height=ch;
+      cv.getContext('2d').drawImage(src,0,0,cw,ch);
+      let url='';
+      for(const t of ['image/webp','image/jpeg','image/png']){ try{url=cv.toDataURL(t,0.85);}catch{url='';} if(IMG_OK.test(url)) break; }
+      if(IMG_OK.test(url)&&url.length*0.75<=maxBytes) return url;
+    }catch{}
+  }
+  if(f.size<=maxBytes&&/^image\/(png|jpeg|webp|gif)$/.test(f.type||'')){
+    const raw=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(new Error('read'));r.readAsDataURL(f);});
+    if(IMG_OK.test(raw)) return raw;
+  }
+  throw new Error('could not process that image — try a JPG or PNG under 700KB');
 }
 function sync(){
   const n=document.getElementById('name').value||'Your coin';

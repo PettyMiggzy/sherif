@@ -467,24 +467,45 @@ async function maybeShowDev(){
 }
 
 // ── creator: edit the coin profile (image/banner/socials) any time ──
-// Downscale a picked image to a small webp data: URL (keeps the signed payload tiny).
-function imgDataUrl(id, maxDim){
+// Turn a picked image file into a small data: URL. Robust for phones: tries
+// createImageBitmap (decodes HEIC/EXIF-rotated photos on Safari), falls back to
+// <img>, then downscales to `maxDim` and encodes webp→jpeg→png (Safari lacks webp
+// encode). If every canvas path fails but the original is already small and a plain
+// type, it sends the raw bytes. Returns '' ONLY when no file was chosen; when a file
+// WAS chosen but can't be processed it THROWS — so we never silently save a blank
+// image (the old code returned '' on failure, which is why "saved ✓" but no picture).
+const IMG_OK = /^data:image\/(webp|png|jpeg|gif);base64,/;
+async function imgDataUrl(id, maxDim, maxBytes = 700000){
   const f = ($(id)?.files || [])[0];
-  if (!f) return Promise.resolve('');
-  return new Promise((res) => {
-    const img = new Image();
-    img.onload = () => {
-      let w = img.width, h = img.height; const s = Math.min(1, maxDim / Math.max(w, h));
-      w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
-      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-      cv.getContext('2d').drawImage(img, 0, 0, w, h);
-      let url = ''; try { url = cv.toDataURL('image/webp', 0.85); } catch (e) {}
-      if (!/^data:image\/(webp|png|jpeg)/.test(url)) url = cv.toDataURL('image/png');
-      res(url);
-    };
-    img.onerror = () => res('');
-    img.src = URL.createObjectURL(f);
-  });
+  if (!f) return '';
+  let src = null, w = 0, h = 0;
+  try { src = await createImageBitmap(f); w = src.width; h = src.height; } catch {}
+  if (!src) {
+    try {
+      src = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('decode')); im.src = URL.createObjectURL(f); });
+      w = src.naturalWidth || src.width; h = src.naturalHeight || src.height;
+    } catch {}
+  }
+  if (src && w && h) {
+    try {
+      const s = Math.min(1, maxDim / Math.max(w, h));
+      const cw = Math.max(1, Math.round(w * s)), ch = Math.max(1, Math.round(h * s));
+      const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+      cv.getContext('2d').drawImage(src, 0, 0, cw, ch);
+      let url = '';
+      for (const t of ['image/webp', 'image/jpeg', 'image/png']) {
+        try { url = cv.toDataURL(t, 0.85); } catch { url = ''; }
+        if (IMG_OK.test(url)) break;
+      }
+      if (IMG_OK.test(url) && url.length * 0.75 <= maxBytes) return url;
+    } catch {}
+  }
+  // canvas path failed (tainted/HEIC/OOM) → send raw bytes if small enough & a plain type
+  if (f.size <= maxBytes && /^image\/(png|jpeg|webp|gif)$/.test(f.type || '')) {
+    const raw = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('read')); r.readAsDataURL(f); });
+    if (IMG_OK.test(raw)) return raw;
+  }
+  throw new Error('Could not process that image — try a JPG or PNG under 700KB.');
 }
 // Paint a profile onto the page (pfp, banner, description + socials). Reused by the
 // initial load and by the creator's save (so a fresh save shows instantly, without
@@ -516,14 +537,20 @@ $('saveProfile')?.addEventListener('click', async () => {
   try {
     if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
     if (Pad.account().toLowerCase() !== COIN.dev.toLowerCase()) return note('Only the coin creator can set the profile.', 'err');
+    const pickedPfp = ($('epfp').files || []).length, pickedBanner = ($('ebanner').files || []).length;
     note('Preparing images…');
-    const [pfp, banner] = await Promise.all([imgDataUrl('epfp', 400), imgDataUrl('ebanner', 1200)]);
+    // imgDataUrl THROWS if a chosen file can't be encoded — so we never save a blank image.
+    let pfp = '', banner = '';
+    try { pfp = await imgDataUrl('epfp', 400); } catch (e) { return note('Profile image: ' + e.message, 'err'); }
+    try { banner = await imgDataUrl('ebanner', 1200); } catch (e) { return note('Banner: ' + e.message, 'err'); }
+    const desc = ($('edesc').value || '').trim(), tg = ($('etg').value || '').trim(), tw = ($('etw').value || '').trim(), web = ($('eweb').value || '').trim();
+    // Don't POST an all-empty profile (that's what created the blank rows before).
+    if (!pfp && !banner && !desc && !tg && !tw && !web && !(PROFILE && PROFILE.image))
+      return note('Pick an image or add a description first.', 'err');
+    if ((pickedPfp && !pfp) || (pickedBanner && !banner)) return note('That image could not be read — try a JPG or PNG.', 'err');
     note('Sign the message in your wallet (free, no gas)…');
     const saved = await Pad.setCoinProfile(TOKEN, {
-      description: ($('edesc').value || '').trim(),
-      telegram: ($('etg').value || '').trim(),
-      twitter: ($('etw').value || '').trim(),
-      website: ($('eweb').value || '').trim(),
+      description: desc, telegram: tg, twitter: tw, website: web,
       pfp, banner, // "" leaves the existing image untouched
     });
     // Render the fresh profile straight from the POST response (its image URL is
