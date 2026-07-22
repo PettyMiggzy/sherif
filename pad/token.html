@@ -570,19 +570,29 @@ $('saveProfile')?.addEventListener('click', async () => {
 async function loadCoin(){
   if (DEMO){ renderDemoCoin(); return; }
   if (!/^0x[0-9a-fA-F]{40}$/.test(TOKEN)){ $('nm').textContent = 'Unknown coin'; setNote('No coin address in the link.', 'err'); return; }
-  let meta, tax, info;
-  try { [meta, tax] = await Promise.all([Pad.tokenMeta(TOKEN), Pad.getTax(TOKEN)]); }
-  catch { $('nm').textContent = 'Coin not found'; return; }
-  if (!tax.set){ $('nm').textContent = meta.name; $('tk').textContent = disp(meta.symbol); setNote('This coin is not registered on Robin Labs.', 'err'); return; }
-  // Live on-chain read (best) + the indexer's snapshot (reliable at scale) in parallel.
-  // The public RPC gets hammered on launch day; when curveInfo() fails we still render
-  // market cap / price / stage / bond from the indexer instead of blanking out.
-  let apiCoin;
-  [info, apiCoin] = await Promise.all([
-    Pad.curveInfo(tax.curve, TOKEN).catch(() => null),
+  // FAST PATH: the indexer serves almost the whole page in ONE query (name, symbol,
+  // curve, pool, dev, mcap, progress, graduated, ticks). We only make a live call for
+  // the trade tax (buy/sell bps, not indexed). Direct-RPC tokenMeta/curveInfo (≈13 calls)
+  // are used ONLY as a fallback when the indexer doesn't have the coin — that's what was
+  // making the coin page slow, routing a dozen calls through the RPC per load.
+  let info = null, meta, tax;
+  const [apiCoin, taxRes] = await Promise.all([
     Pad.coin(TOKEN).catch(() => null),
+    Pad.getTax(TOKEN).catch(() => null),
   ]);
-  const view = info || viewFromApi(apiCoin);
+  tax = taxRes;
+  if (apiCoin) {
+    meta = { name: apiCoin.name, symbol: apiCoin.symbol };
+    if (!tax) tax = { curve: apiCoin.curve, pool: apiCoin.pool, projectWallet: apiCoin.dev, set: true, buyBps: 0, sellBps: 0 };
+  } else {
+    // Indexer doesn't know this coin — fall back to reading the chain directly.
+    try { [meta, tax] = await Promise.all([Pad.tokenMeta(TOKEN), Pad.getTax(TOKEN)]); }
+    catch { $('nm').textContent = 'Coin not found'; return; }
+  }
+  if (!tax || !tax.set){ $('nm').textContent = meta?.name || 'Coin'; $('tk').textContent = disp(meta?.symbol); setNote('This coin is not registered on Robin Labs.', 'err'); return; }
+  // Stats/bond from the indexer snapshot; only read curveInfo live if the indexer lacked it.
+  let view = viewFromApi(apiCoin);
+  if (!view) { info = await Pad.curveInfo(tax.curve, TOKEN).catch(() => null); view = info; }
 
   COIN = { token: TOKEN, curve: tax.curve, pool: tax.pool, dev: tax.projectWallet, symbol: meta.symbol, name: meta.name,
     minGradTick: view?.minGradTick, gradTick: view?.gradTick, bond: view?.bond };
