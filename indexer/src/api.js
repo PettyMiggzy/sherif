@@ -160,15 +160,23 @@ async function rpcHandle(payload) {
     miss.push(req); missIdx.push(i);
   }
   if (miss.length) {
-    const resp = await rpcForward(miss);
+    // Forward with SYNTHETIC unique ids (the array index), never the client's ids. A client
+    // batch with duplicate or omitted ids would otherwise let one entry's response overwrite
+    // another's in the id map — and get written to the shared cache under the WRONG params
+    // key, poisoning that key for every other user for the TTL. We correlate by our own unique
+    // id, then restore the client's original id on the way out.
+    const fwd = miss.map((req, j) => ({ jsonrpc: "2.0", id: j, method: req.method, params: req.params ?? [] }));
+    const resp = await rpcForward(fwd);
     const byId = new Map();
-    for (const r of (Array.isArray(resp) ? resp : [resp])) byId.set(r.id, r);
+    for (const r of (Array.isArray(resp) ? resp : [resp])) if (r && typeof r.id === "number") byId.set(r.id, r);
     for (let j = 0; j < miss.length; j++) {
       const req = miss[j], i = missIdx[j];
-      const r = byId.get(req.id) || { jsonrpc: "2.0", id: req.id, error: { code: -32603, message: "no upstream response" } };
-      out[i] = r;
+      const r = byId.get(j);
+      out[i] = r ? { ...r, id: req.id } : { jsonrpc: "2.0", id: req.id, error: { code: -32603, message: "no upstream response" } };
       const ttl = rpcTtl(req.method);
-      if (ttl && r && r.result !== undefined && !r.error) {
+      // Cache only a real, non-null result: a null (e.g. a not-yet-mined receipt) cached for
+      // the TTL would stall confirmation UIs; and never cache when correlation failed.
+      if (ttl && r && r.result !== undefined && r.result !== null && !r.error) {
         if (RPC_CACHE.size > 8000) RPC_CACHE.clear();
         RPC_CACHE.set(req.method + ":" + JSON.stringify(req.params || []), { result: r.result, exp: Date.now() + ttl });
       }
@@ -184,10 +192,12 @@ function clientIp(req) {
   return (xff.length ? xff[xff.length - 1] : "") || req.socket?.remoteAddress || "?";
 }
 // Parse a query-string integer, clamped to [min,max], falling back to `def` when it's
-// missing OR non-numeric. Number("abc") is NaN and would bind to a SQL LIMIT/OFFSET as a
-// "datatype mismatch" → 500 on a public endpoint; Number.isFinite closes that off.
+// missing OR non-numeric. NOTE: Number(null)/Number("") are 0 (finite!), so an ABSENT param
+// would otherwise clamp to `min` instead of `def` — treat null/""/undefined as NaN so the
+// default fires. Number("abc") is NaN too, which would bind to SQL LIMIT/OFFSET as a
+// "datatype mismatch" → 500 on a public endpoint; Number.isFinite closes both off.
 function intParam(v, def, min, max) {
-  const n = Number(v);
+  const n = (v === null || v === undefined || v === "") ? NaN : Number(v);
   return Math.min(Math.max(Number.isFinite(n) ? Math.trunc(n) : def, min), max);
 }
 // Tiny per-IP-per-second rate limiter (batches count as one request), shared by /rpc and
@@ -333,6 +343,11 @@ const rewardAccruedStmt = db.prepare(
 const rewardRootsPostedStmt = db.prepare("SELECT COUNT(*) AS posted FROM reward_roots WHERE posted_tx IS NOT NULL");
 const rewardClaimsStmt = db.prepare(
   "SELECT COALESCE(SUM(CAST(amount AS REAL)),0)/1e18 AS eth, COUNT(*) AS n FROM reward_claims");
+// Per-side split (0=traders, 1=holders) + distinct claimants, for the rewards page totals strip.
+const rewardClaimsBySideStmt = db.prepare(
+  "SELECT COALESCE(SUM(CASE WHEN side=0 THEN CAST(amount AS REAL) END),0)/1e18 AS traders, " +
+  "COALESCE(SUM(CASE WHEN side=1 THEN CAST(amount AS REAL) END),0)/1e18 AS holders, " +
+  "COUNT(DISTINCT user) AS claimants FROM reward_claims");
 
 function send(res, code, body, origin) {
   const json = JSON.stringify(body);
@@ -428,7 +443,9 @@ export function startApi() {
     // Micro-cache for GET /api/* (not /media, not /health). On a hit, serve the stored
     // bytes from RAM; on a miss, transparently capture this response into the cache.
     if (CACHE_TTL_MS > 0 && path.startsWith("/api/")) {
-      const key = path + url.search;
+      // Key by host too: responses embed absolute media URLs built from the request host
+      // (base), so a body cached for one host must not be served to a different one.
+      const key = base + "\n" + path + url.search;
       const hit = API_CACHE.get(key);
       if (hit && hit.exp > Date.now()) {
         res.writeHead(200, { ...hit.headers, "x-cache": "HIT" });
@@ -577,9 +594,12 @@ export function startApi() {
         const accrued = rewardAccruedStmt.get();
         const roots = rewardRootsPostedStmt.get();
         const claims = rewardClaimsStmt.get();
+        const bySide = rewardClaimsBySideStmt.get();
         return send(res, 200, {
           accruedEth: accrued.eth, coinsWithRewards: accrued.coins,
           epochsPosted: roots.posted, allocatedEth: claims.eth, leaves: claims.n,
+          // Names the rewards page's totals strip reads (global protocol totals):
+          paidEth: claims.eth, claimants: bySide.claimants, tradersEth: bySide.traders, holdersEth: bySide.holders,
           epoch: rewardsEpoch(now), epochLen: CFG.epochLen,
         }, origin);
       }
