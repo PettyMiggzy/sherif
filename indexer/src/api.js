@@ -3,13 +3,70 @@
 // chain — even right after a reorg re-scan. Volume/price are summed as ETH-scale
 // REAL for ranking + display; per-trade wei stay exact in /api/trades.
 import http from "node:http";
+import { ethers } from "ethers";
 import { db } from "./db.js";
 import { CFG } from "./config.js";
 import { getHead } from "./indexer.js";
 import { getRewardRoot, claimsForEpoch, claimsForUser, getRewardClaim } from "./db.js";
+import {
+  coinDev, upsertCoinMetaFields, setCoinPfp, setCoinBanner,
+  getCoinMetaLite, getCoinPfp, getCoinBanner,
+} from "./db.js";
 import { currentEpoch as rewardsEpoch, userAllocations as rewardsUserAlloc } from "./rewards.js";
 
 const DAY = 86400;
+
+// ── coin profiles (creator-signed metadata) ──────────────────────────────────
+// The exact message a coin's dev signs to authorize a profile update. It binds the
+// token + every field (images by keccak digest) so a signature can't be replayed to
+// another coin or a changed payload. MUST byte-match the frontend (pad/assets/wallet.js).
+export function profileMessage(token, p) {
+  const canon = JSON.stringify({
+    description: p.description || "",
+    telegram: p.telegram || "",
+    twitter: p.twitter || "",
+    website: p.website || "",
+    pfp: p.pfp || "",       // data: URL or ""
+    banner: p.banner || "", // data: URL or ""
+    ts: p.ts,
+  });
+  return `Robin Labs — set coin profile\ntoken: ${token.toLowerCase()}\nts: ${p.ts}\ndigest: ${ethers.id(canon)}`;
+}
+
+const IMG_MIME = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+function parseDataUrl(dataUrl) {
+  const m = /^data:([a-z0-9.+/-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(dataUrl || "");
+  if (!m) throw new Error("image must be a base64 data: URL");
+  const mime = m[1].toLowerCase();
+  if (!IMG_MIME.has(mime)) throw new Error("image must be png, jpeg, webp or gif");
+  const buf = Buffer.from(m[2], "base64");
+  if (buf.length === 0) throw new Error("empty image");
+  if (buf.length > CFG.profileMaxImageBytes) throw new Error(`image too large (max ${Math.floor(CFG.profileMaxImageBytes / 1024)}KB)`);
+  return { buf, mime };
+}
+
+function readBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on("data", (c) => { size += c.length; if (size > maxBytes) { reject(new Error("payload too large")); req.destroy(); } else chunks.push(c); });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+// Absolute base for media links, derived from the request (works behind Caddy/any proxy).
+function mediaBase(req) {
+  const proto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() || "http";
+  const host = req.headers["x-forwarded-host"] || req.headers.host || "";
+  return host ? `${proto}://${host}` : "";
+}
+const profileOf = (token, m, base) => (m ? {
+  description: m.description || null, telegram: m.telegram || null,
+  twitter: m.twitter || null, website: m.website || null,
+  image: m.has_pfp ? `${base}/media/${token}/pfp?v=${m.updated_ts}` : null,
+  banner: m.has_banner ? `${base}/media/${token}/banner?v=${m.updated_ts}` : null,
+  updatedTs: m.updated_ts || null,
+} : null);
 
 // One row per coin, enriched with all-time + 24h activity and last price (ETH/token).
 // WHERE clause shared by the page query and the total-count query, so a filter can't drift between them.
@@ -41,8 +98,11 @@ const coinsStmt = (sort, filter, hasQ) => {
       (SELECT COALESCE(SUM(CAST(t.eth AS REAL)),0)/1e18 FROM trades t WHERE t.token=c.token AND t.ts>=@since) AS vol_24h,
       (SELECT MAX(t.ts) FROM trades t WHERE t.token=c.token) AS last_trade_ts,
       (SELECT CAST(t.eth AS REAL)/NULLIF(CAST(t.tokens AS REAL),0)
-         FROM trades t WHERE t.token=c.token ORDER BY t.block DESC, t.log_index DESC LIMIT 1) AS last_price
+         FROM trades t WHERE t.token=c.token ORDER BY t.block DESC, t.log_index DESC LIMIT 1) AS last_price,
+      cm.description AS meta_desc, cm.telegram AS meta_tg, cm.twitter AS meta_tw, cm.website AS meta_web,
+      cm.updated_ts AS meta_ts, (cm.pfp IS NOT NULL) AS has_pfp, (cm.banner IS NOT NULL) AS has_banner
     FROM coins c
+    LEFT JOIN coin_meta cm ON cm.token = c.token
     ${coinsWhere(filter, hasQ)}
     ORDER BY ${order}
     LIMIT @limit OFFSET @offset
@@ -52,9 +112,14 @@ const coinsStmt = (sort, filter, hasQ) => {
 const coinsCountStmt = (filter, hasQ) =>
   db.prepare(`SELECT COUNT(*) AS n FROM coins c ${coinsWhere(filter, hasQ)}`);
 
-const shapeCoin = (r) => ({
+const shapeCoin = (r, base = "") => ({
   token: r.token, curve: r.curve, pool: r.pool, dev: r.dev,
   name: r.name, symbol: r.symbol,
+  // creator-set profile (null until a profile is saved). `image` is the coin's pfp.
+  image: r.has_pfp ? `${base}/media/${r.token}/pfp?v=${r.meta_ts}` : null,
+  banner: r.has_banner ? `${base}/media/${r.token}/banner?v=${r.meta_ts}` : null,
+  description: r.meta_desc || null,
+  telegram: r.meta_tg || null, twitter: r.meta_tw || null, website: r.meta_web || null,
   launchBlock: r.launch_block, launchTs: r.launch_ts, launchTx: r.launch_tx,
   devBought: r.dev_bought,
   graduated: !!r.graduated,
@@ -103,8 +168,10 @@ const oneCoinStmt = db.prepare(`
     (SELECT COALESCE(SUM(CAST(t.eth AS REAL)),0)/1e18 FROM trades t WHERE t.token=c.token AND t.ts>=@since) AS vol_24h,
     (SELECT MAX(t.ts) FROM trades t WHERE t.token=c.token) AS last_trade_ts,
     (SELECT CAST(t.eth AS REAL)/NULLIF(CAST(t.tokens AS REAL),0)
-       FROM trades t WHERE t.token=c.token ORDER BY t.block DESC, t.log_index DESC LIMIT 1) AS last_price
-  FROM coins c WHERE c.token=@token
+       FROM trades t WHERE t.token=c.token ORDER BY t.block DESC, t.log_index DESC LIMIT 1) AS last_price,
+    cm.description AS meta_desc, cm.telegram AS meta_tg, cm.twitter AS meta_tw, cm.website AS meta_web,
+    cm.updated_ts AS meta_ts, (cm.pfp IS NOT NULL) AS has_pfp, (cm.banner IS NOT NULL) AS has_banner
+  FROM coins c LEFT JOIN coin_meta cm ON cm.token = c.token WHERE c.token=@token
 `);
 const tradesStmt = db.prepare(
   "SELECT tx, log_index, side, actor, eth, tokens, fee, block, ts FROM trades WHERE token=? ORDER BY block DESC, log_index DESC LIMIT ?");
@@ -122,14 +189,24 @@ function send(res, code, body, origin) {
   res.writeHead(code, {
     "content-type": "application/json; charset=utf-8",
     "access-control-allow-origin": origin,
-    "access-control-allow-methods": "GET, OPTIONS",
+    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-headers": "content-type",
     "cache-control": "public, max-age=5",
   });
   res.end(json);
 }
 
+function sendMedia(res, blob, mime, origin) {
+  res.writeHead(200, {
+    "content-type": mime || "application/octet-stream",
+    "access-control-allow-origin": origin,
+    "cache-control": "public, max-age=300",
+  });
+  res.end(blob);
+}
+
 export function startApi() {
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const origin = CFG.corsOrigin;
     if (req.method === "OPTIONS") { send(res, 204, {}, origin); return; }
     let url;
@@ -137,6 +214,50 @@ export function startApi() {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const now = Math.floor(Date.now() / 1000);
     const since = now - DAY;
+    const base = mediaBase(req);
+
+    // ── write: set a coin's profile (creator-signed) ──────────────────────────
+    // Body: { description, telegram, twitter, website, pfp?, banner?, ts, signature }.
+    // pfp/banner are base64 data: URLs. The signature must be the coin's dev over
+    // profileMessage(token, body); anyone else is rejected. See docs/api.md.
+    if (req.method === "POST") {
+      const mm = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/meta$/);
+      if (!mm) return send(res, 404, { error: "no such route" }, origin);
+      try {
+        const token = mm[1].toLowerCase();
+        const dev = coinDev.get(token);
+        if (!dev) return send(res, 404, { error: "unknown coin" }, origin);
+        const raw = await readBody(req, CFG.profileMaxImageBytes * 4);
+        const body = JSON.parse(raw.toString("utf8"));
+        const ts = Number(body.ts);
+        if (!Number.isFinite(ts)) return send(res, 400, { error: "missing ts" }, origin);
+        if (Math.abs(now - ts) > CFG.profileMaxSigAgeSecs) return send(res, 400, { error: "signature expired — sign and submit again" }, origin);
+        const existing = getCoinMetaLite.get(token);
+        if (existing && existing.updated_ts && ts <= existing.updated_ts) return send(res, 409, { error: "a newer profile already exists" }, origin);
+        let signer;
+        try { signer = ethers.verifyMessage(profileMessage(token, body), String(body.signature || "")); }
+        catch { return send(res, 400, { error: "bad signature" }, origin); }
+        if (signer.toLowerCase() !== String(dev.dev).toLowerCase())
+          return send(res, 403, { error: "only the coin's creator can set its profile" }, origin);
+        const pfp = body.pfp ? parseDataUrl(body.pfp) : null;
+        const banner = body.banner ? parseDataUrl(body.banner) : null;
+        const fields = {
+          token,
+          description: String(body.description || "").slice(0, 280),
+          telegram: String(body.telegram || "").slice(0, 200),
+          twitter: String(body.twitter || "").slice(0, 200),
+          website: String(body.website || "").slice(0, 200),
+          updated_ts: ts, updated_by: signer.toLowerCase(),
+        };
+        db.transaction(() => {
+          upsertCoinMetaFields.run(fields);
+          if (pfp) setCoinPfp.run({ token, blob: pfp.buf, mime: pfp.mime });
+          if (banner) setCoinBanner.run({ token, blob: banner.buf, mime: banner.mime });
+        })();
+        return send(res, 200, { ok: true, token, profile: profileOf(token, getCoinMetaLite.get(token), base) }, origin);
+      } catch (e) { return send(res, 400, { error: String(e.message || e) }, origin); }
+    }
+    if (req.method !== "GET") return send(res, 405, { error: "method not allowed" }, origin);
 
     try {
       if (path === "/" || path === "/health") {
@@ -182,14 +303,30 @@ export function startApi() {
         const params = { since, limit, offset, q: qRaw ? `%${qRaw}%` : "%" };
         const rows = coinsStmt(sort, filter, !!qRaw).all(params);
         const total = coinsCountStmt(filter, !!qRaw).get(params).n; // full match count for {coins,total} contract
-        return send(res, 200, { coins: rows.map(shapeCoin), total, sort, filter, limit, offset }, origin);
+        return send(res, 200, { coins: rows.map((r) => shapeCoin(r, base)), total, sort, filter, limit, offset }, origin);
       }
 
-      let m = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})$/);
+      // Serve a coin's image bytes (pfp | banner). Cacheable; ?v=updatedTs busts the cache.
+      let m = path.match(/^\/media\/(0x[0-9a-fA-F]{40})\/(pfp|banner)$/);
+      if (m) {
+        const token = m[1].toLowerCase();
+        const row = m[2] === "pfp" ? getCoinPfp.get(token) : getCoinBanner.get(token);
+        if (!row || !row.blob) return send(res, 404, { error: "no image" }, origin);
+        return sendMedia(res, row.blob, row.mime, origin);
+      }
+
+      // A coin's profile (creator-set metadata + image URLs). `profile` is null until set.
+      m = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/meta$/);
+      if (m) {
+        const token = m[1].toLowerCase();
+        return send(res, 200, { token, profile: profileOf(token, getCoinMetaLite.get(token), base) }, origin);
+      }
+
+      m = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})$/);
       if (m) {
         const r = oneCoinStmt.get({ token: m[1].toLowerCase(), since });
         if (!r) return send(res, 404, { error: "not found" }, origin);
-        return send(res, 200, { coin: shapeCoin(r) }, origin);
+        return send(res, 200, { coin: shapeCoin(r, base) }, origin);
       }
 
       m = path.match(/^\/api\/trades\/(0x[0-9a-fA-F]{40})$/);

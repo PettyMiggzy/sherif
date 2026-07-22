@@ -87,6 +87,8 @@ export class RobinLabsAPI {
   }
   coin(token) { return this._get(`/api/coin/${token}`); }
   trades(token) { return this._get(`/api/trades/${token}`); }
+  /** A coin's creator-set profile: { description, telegram, twitter, website, image, banner, updatedTs } or null. */
+  profile(token) { return this._get(`/api/coin/${token}/meta`).then((r) => r.profile || null); }
   /** A wallet's claimable (with Merkle proofs) + pending rewards. */
   rewards(addr) { return this._get(`/api/rewards/${addr}`); }
   rewardsStats() { return this._get("/api/rewards/stats"); }

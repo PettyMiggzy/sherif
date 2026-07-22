@@ -126,8 +126,11 @@ Base URL is your host. All responses are JSON, `cache-control: max-age=5`.
 | `GET /health` | `{ ok, head, cursor, coins, trades }` — liveness + how far indexed |
 | `GET /api/stats` | totals: coins, graduated, 24h volume & trades |
 | `GET /api/coins?sort=&filter=&q=&limit=&offset=` | the browse feed |
-| `GET /api/coin/:token` | one coin, fully enriched |
+| `GET /api/coin/:token` | one coin, fully enriched (includes the profile) |
 | `GET /api/trades/:token?limit=` | recent trades (exact wei) |
+| `GET /api/coin/:token/meta` | the coin's creator-set profile (image/banner URLs + socials) |
+| `POST /api/coin/:token/meta` | set the profile — **creator-signed** (only the coin's `dev`) |
+| `GET /media/:token/:kind` | the coin's image bytes (`kind` = `pfp` \| `banner`) |
 | `GET /api/rewards/user/:addr` | all of a wallet's reward claims + Merkle proofs, across epochs |
 | `GET /api/rewards/claim/:epoch/:coin/:side/:addr` | one claim's exact args + proof (`side` 0=traders,1=holders) |
 | `GET /api/rewards/epoch/:n` | the full leaf set + root for an epoch (transparency artifact) |

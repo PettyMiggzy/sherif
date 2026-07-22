@@ -65,6 +65,24 @@ CREATE TABLE IF NOT EXISTS trades (
 CREATE INDEX IF NOT EXISTS idx_trades_token ON trades(token, block DESC);
 CREATE INDEX IF NOT EXISTS idx_trades_ts    ON trades(ts DESC);
 
+-- Coin profile: off-chain, creator-signed metadata (image, banner, socials). NOT from the
+-- chain — set via POST /api/coin/:token/meta, which verifies the signer is the coin's dev.
+-- Images are small blobs (size-capped) served by GET /media/:token/:kind. Purely cosmetic:
+-- nothing here affects trading, and a missing row just means "no profile yet".
+CREATE TABLE IF NOT EXISTS coin_meta (
+  token       TEXT PRIMARY KEY,
+  description TEXT,
+  telegram    TEXT,
+  twitter     TEXT,
+  website     TEXT,
+  pfp         BLOB,
+  pfp_mime    TEXT,
+  banner      BLOB,
+  banner_mime TEXT,
+  updated_ts  INTEGER,
+  updated_by  TEXT       -- the dev address that signed the update
+);
+
 -- Raw RewardVault Accrued rows (one per trade's 0.25% leg). Stored raw + PK'd like trades so a reorg re-scan
 -- purges & re-inserts them without double-counting; the (coin,epoch,side) pot is a SUM over these (in BigInt).
 CREATE TABLE IF NOT EXISTS reward_accruals (
@@ -173,6 +191,26 @@ export const coinGeom = db.prepare("SELECT token, pool, token0, start_tick, grad
 export const coinByCurve = db.prepare("SELECT token FROM coins WHERE curve = ?");
 export const coinRow = db.prepare("SELECT token FROM coins WHERE token = ?");
 export const setCoinNameSymbol = db.prepare("UPDATE coins SET name=?, symbol=? WHERE token=?");
+export const coinDev = db.prepare("SELECT token, dev FROM coins WHERE token = ?");
+
+// ── coin profiles (creator-signed off-chain metadata) ──────────────────────────
+// Text fields upsert every time; images are updated only when a new one is supplied
+// (so re-saving text keeps the existing pfp/banner). Blobs are read on demand only.
+export const upsertCoinMetaFields = db.prepare(`
+  INSERT INTO coin_meta (token, description, telegram, twitter, website, updated_ts, updated_by)
+  VALUES (@token, @description, @telegram, @twitter, @website, @updated_ts, @updated_by)
+  ON CONFLICT(token) DO UPDATE SET
+    description=excluded.description, telegram=excluded.telegram, twitter=excluded.twitter,
+    website=excluded.website, updated_ts=excluded.updated_ts, updated_by=excluded.updated_by`);
+export const setCoinPfp = db.prepare("UPDATE coin_meta SET pfp=@blob, pfp_mime=@mime WHERE token=@token");
+export const setCoinBanner = db.prepare("UPDATE coin_meta SET banner=@blob, banner_mime=@mime WHERE token=@token");
+// Lite = no blobs (for the feed join + the meta JSON); has_* flags say whether an image exists.
+export const getCoinMetaLite = db.prepare(`
+  SELECT token, description, telegram, twitter, website, updated_ts, updated_by,
+         (pfp IS NOT NULL) AS has_pfp, (banner IS NOT NULL) AS has_banner
+  FROM coin_meta WHERE token = ?`);
+export const getCoinPfp = db.prepare("SELECT pfp AS blob, pfp_mime AS mime FROM coin_meta WHERE token = ?");
+export const getCoinBanner = db.prepare("SELECT banner AS blob, banner_mime AS mime FROM coin_meta WHERE token = ?");
 
 // A reorg on the very tip can leave rows from an orphaned block. Before we
 // re-scan a window we delete trades in it so the re-insert reflects the new

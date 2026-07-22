@@ -424,6 +424,24 @@ async function loadCoin(){
   $('infoBuy').textContent = (tax.buyBps / 100) + '% + 0.25%';
   $('infoSell').textContent = (tax.sellBps / 100) + '% + 0.25%';
 
+  // creator profile (image, banner, description, socials) — from the indexer, if saved
+  try {
+    const prof = await Pad.getCoinProfile(TOKEN);
+    if (prof) {
+      if (prof.image) { const fb = (meta.symbol || '?').replace(/[^\w]/g, '').slice(0, 3) || '?'; $('pfp').innerHTML = `<img src="${prof.image}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" onerror="this.parentNode.textContent='${fb}'" />`; }
+      if (prof.banner) { const b = document.querySelector('.banner'); if (b) { b.style.backgroundImage = `url(${prof.banner})`; b.style.backgroundSize = 'cover'; b.style.backgroundPosition = 'center'; } }
+      const who = document.querySelector('.who');
+      if (who && (prof.description || prof.telegram || prof.twitter || prof.website)) {
+        const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const link = (url, label) => (/^https?:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--lime);text-decoration:none">${label}</a>` : '');
+        const socials = [link(prof.telegram, 'Telegram'), link(prof.twitter, 'Twitter/X'), link(prof.website, 'Website')].filter(Boolean).join(' · ');
+        let box = document.getElementById('coinProfile');
+        if (!box) { box = document.createElement('div'); box.id = 'coinProfile'; box.style.cssText = 'margin-top:7px;font-size:.9rem;color:var(--ink-dim);display:flex;flex-direction:column;gap:5px;max-width:52ch'; who.appendChild(box); }
+        box.innerHTML = (prof.description ? `<div>${esc(prof.description)}</div>` : '') + (socials ? `<div>${socials}</div>` : '');
+      }
+    }
+  } catch { /* profiles are cosmetic — never block the coin page */ }
+
   // chart
   if (tax.pool){ $('dex').src = 'https://dexscreener.com/robinhood/' + tax.pool.toLowerCase() + '?embed=1&theme=dark&info=0&trades=0'; }
 

@@ -178,6 +178,25 @@ function prev(inp,which){
   if(which==='banner'){const el=inp.previousElementSibling;el.style.backgroundImage=`url(${url})`;el.style.backgroundSize='cover';el.style.backgroundPosition='center';el.innerHTML='';}
   else{const el=document.getElementById('pfpBox');el.style.backgroundImage=`url(${url})`;el.style.backgroundSize='cover';el.style.backgroundPosition='center';el.innerHTML='';}
 }
+// Downscale an uploaded image to a small webp data: URL so it fits the profile store's
+// size cap and loads fast. Returns "" if no file was chosen for that input.
+function imgDataUrl(id, maxDim){
+  const f=(document.getElementById(id)?.files||[])[0];
+  if(!f) return Promise.resolve("");
+  return new Promise((res)=>{
+    const img=new Image();
+    img.onload=()=>{ let w=img.width,h=img.height; const s=Math.min(1,maxDim/Math.max(w,h));
+      w=Math.max(1,Math.round(w*s)); h=Math.max(1,Math.round(h*s));
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      let url=''; try{ url=cv.toDataURL('image/webp',0.85);}catch(e){}
+      if(!/^data:image\/(webp|png|jpeg)/.test(url)) url=cv.toDataURL('image/png');
+      res(url);
+    };
+    img.onerror=()=>res("");
+    img.src=URL.createObjectURL(f);
+  });
+}
 function sync(){
   const n=document.getElementById('name').value||'Your coin';
   const t=document.getElementById('ticker').value||'TICKER';
@@ -270,6 +289,25 @@ $('launchBtn').addEventListener('click', async () => {
     setNote('Sent — waiting for confirmation…');
     const rc = await tx.wait();
     setNote('Launched ✓ tx ' + rc.hash.slice(0, 10) + '… — your coin is live on Uniswap + DexScreener.', 'ok');
+
+    // Save the coin profile (image, description, Telegram) — one free signature. The
+    // coin is already live if this is skipped or fails; the creator can set it later.
+    const token = Pad.launchedTokenOf(rc);
+    const desc = ($('desc').value || '').trim();
+    const tg = ($('tg').value || '').trim();
+    const wantsProfile = token && (desc || tg || ($('pfp').files || []).length || ($('banner').files || []).length);
+    if (wantsProfile && Pad.hasApi()) {
+      try {
+        setNote('Launched ✓ — saving your coin profile (one free signature)…', 'ok');
+        const [pfp, banner] = await Promise.all([imgDataUrl('pfp', 400), imgDataUrl('banner', 1200)]);
+        await Pad.setCoinProfile(token, { description: desc, telegram: tg, pfp, banner });
+        setNote('Launched ✓ and profile saved — your coin is live.', 'ok');
+      } catch (e) {
+        setNote('Launched ✓ — profile not saved (' + e.message + '). You can add it later.', 'ok');
+      }
+    } else if (wantsProfile && !Pad.hasApi()) {
+      setNote('Launched ✓ — your coin is live. (Images & socials save once the indexer API is connected.)', 'ok');
+    }
   } catch (e) {
     // pre-deploy this surfaces the honest "not live yet" message; post-deploy it
     // surfaces friendly, guarded errors (never the wallet's red screen)

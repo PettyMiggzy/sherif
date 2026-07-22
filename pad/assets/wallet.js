@@ -160,6 +160,54 @@ export async function linkTelegram(handle) {
   return { message, signature, address: _account };
 }
 
+// ── coin profiles (creator-signed off-chain metadata: image, banner, socials) ──
+// The message the coin's dev signs to authorize a profile update. MUST byte-match
+// the indexer (indexer/src/api.js profileMessage) or the signature won't verify.
+export function profileMessage(token, p) {
+  const canon = JSON.stringify({
+    description: p.description || "",
+    telegram: p.telegram || "",
+    twitter: p.twitter || "",
+    website: p.website || "",
+    pfp: p.pfp || "",
+    banner: p.banner || "",
+    ts: p.ts,
+  });
+  return `Robin Labs — set coin profile\ntoken: ${String(token).toLowerCase()}\nts: ${p.ts}\ndigest: ${ethers.id(canon)}`;
+}
+
+/// Save a coin's profile. Only the coin's creator (dev) can — it's a free signature,
+/// no funds move. `fields`: { description, telegram, twitter, website, pfp, banner }
+/// where pfp/banner are base64 data: URLs (or omitted to leave the existing image).
+export async function setCoinProfile(token, fields = {}) {
+  if (!hasApi()) throw new Error("Profiles save once the indexer API is configured (API_BASE).");
+  if (!_signer) await connect();
+  const payload = {
+    description: String(fields.description || "").slice(0, 280),
+    telegram: String(fields.telegram || "").trim().slice(0, 200),
+    twitter: String(fields.twitter || "").trim().slice(0, 200),
+    website: String(fields.website || "").trim().slice(0, 200),
+    pfp: fields.pfp || "",
+    banner: fields.banner || "",
+    ts: Math.floor(Date.now() / 1000),
+  };
+  const signature = await _signer.signMessage(profileMessage(token, payload));
+  const res = await fetch(`${API_BASE.replace(/\/+$/, "")}/api/coin/${token}/meta`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...payload, signature }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `profile save failed (${res.status})`);
+  return j.profile;
+}
+
+/// Read a coin's saved profile (image/banner URLs + socials), or null.
+export async function getCoinProfile(token) {
+  if (!hasApi()) return null;
+  try { const j = await apiGet(`/api/coin/${token}/meta`); return j.profile || null; }
+  catch { return null; }
+}
+
 // ── the guard: simulate + balance-check BEFORE any signature ──────────────────
 // Returns the sent tx (caller awaits .wait()). Throws a friendly error if the tx
 // would revert OR the wallet can't cover value+gas — so the user never sees the
@@ -233,7 +281,17 @@ export async function launch({ name, symbol, dev, devBuyEth = "0", tax }) {
   const t = normalizeTax(tax, dev || _account);
   const params = { name, symbol, dev: dev || _account, tax: t };
   const tx = await guardedSend(factory, "launch", [params], value, "Launch");
-  return tx; // await tx.wait() then read the Launched event for {token, curve, pool}
+  return tx; // await tx.wait() then Pad.launchedTokenOf(receipt) for the new coin address
+}
+
+/// Pull the new coin's address out of a launch receipt (the factory's Launched event).
+export function launchedTokenOf(receipt) {
+  const iface = new ethers.Interface(ABIS.padFactory);
+  for (const log of receipt?.logs || []) {
+    if (String(log.address || "").toLowerCase() !== CONTRACTS.padFactory.toLowerCase()) continue;
+    try { const p = iface.parseLog(log); if (p?.name === "Launched") return p.args.token; } catch { /* not this event */ }
+  }
+  return null;
 }
 
 // Fill in a valid tax tuple. No tax => 0/0, but the allocation still must sum to
@@ -705,7 +763,8 @@ function requireFloor() {
 // expose a tiny global for the plain-HTML pages (no bundler)
 if (typeof window !== "undefined") {
   window.RobinPad = {
-    connect, account, short, linkTelegram, launch, buy, sell, getTax,
+    connect, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax,
+    setCoinProfile, getCoinProfile, profileMessage,
     estimateDevBuyEth, isDeployed,
     curveInfo, devEscrow, graduate, setGradTarget, withdrawDev, burnDev, listCoins, tokenMeta,
     feed, stats, recentTrades, hasApi,
