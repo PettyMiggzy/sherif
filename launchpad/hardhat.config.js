@@ -24,4 +24,20 @@ module.exports = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
   },
+  // Blockscout source verification (needed before the explorer shows Read/Write, name tags, etc.).
+  // Blockscout uses an Etherscan-compatible API and ignores the key, so any non-empty string works.
+  etherscan: {
+    apiKey: { robinhood: process.env.BLOCKSCOUT_KEY || "blockscout" },
+    customChains: [
+      {
+        network: "robinhood",
+        chainId: 4663,
+        urls: {
+          apiURL: "https://robinhoodchain.blockscout.com/api",
+          browserURL: "https://robinhoodchain.blockscout.com",
+        },
+      },
+    ],
+  },
+  sourcify: { enabled: false },
 };
