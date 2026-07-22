@@ -12,7 +12,7 @@ const TOTAL = 1_000_000_000; // 1B whole tokens
 
 // param sets to trace
 const SETS = [
-  { name: "$1800 start -> $34k grad", smag: 207800, cw: 29400, mgw: 29200 },
+  { name: "$1800 start -> ~4 ETH (grad floats up)", smag: 207800, cw: 31200, mgw: 31000 },
 ];
 
 function priceFDV(sqrtP, tokenIsToken0) {

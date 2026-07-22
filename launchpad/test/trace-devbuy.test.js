@@ -6,7 +6,7 @@ const V3_FACTORY = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
 const ONE = 10n ** 18n;
 const ETH_USD = 1920;
 const TOTAL = 1_000_000_000;
-const SMAG = 201600, CW = 23000, MGW = 22800;
+const SMAG = 207800, CW = 31200, MGW = 31000;
 
 describe("dev-buy FDV", function () {
   this.timeout(120000);
