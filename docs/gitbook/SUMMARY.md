@@ -21,5 +21,6 @@
 
 ## Build On It
 
+* [JavaScript SDK](sdk.md)
 * [Indexer API](api.md)
 * [Security Model](security.md)

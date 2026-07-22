@@ -34,6 +34,7 @@
     {
       "group": "Build On It",
       "pages": [
+        { "slug": "sdk",         "src": "sdk.md",         "title": "JavaScript SDK",       "description": "Import the pad's data in one line: live addresses, typed ABIs, and read clients for the indexer API and direct on-chain reads." },
         { "slug": "api",         "src": "api.md",         "title": "Indexer API",          "description": "A fast read API for the browse feed, trades, volume and stats — built to scale." },
         { "slug": "security",    "src": "security.md",    "title": "Security Model",       "description": "Immutability, floor-drain proof, conservation, anti-snipe and wallet safety." }
       ]

@@ -1,0 +1,15 @@
+{
+  "name": "@robinlabs/pad-sdk",
+  "version": "0.1.0",
+  "description": "Read-only SDK for the Robin Labs Pad on Robinhood Chain — live addresses, typed ABIs, and clients for the indexer API + direct on-chain reads.",
+  "type": "module",
+  "main": "robinlabs.mjs",
+  "module": "robinlabs.mjs",
+  "exports": { ".": "./robinlabs.mjs" },
+  "files": ["robinlabs.mjs", "README.md"],
+  "sideEffects": false,
+  "peerDependencies": { "ethers": "^6" },
+  "peerDependenciesMeta": { "ethers": { "optional": true } },
+  "license": "MIT",
+  "keywords": ["robinlabs", "robinhood-chain", "memecoin", "launchpad", "ethers", "web3", "sdk"]
+}
