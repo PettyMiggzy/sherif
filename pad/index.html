@@ -263,7 +263,10 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .wgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
 @media(max-width:900px){.wgrid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:480px){.wgrid{grid-template-columns:1fr}}
-.wcard{padding:22px 18px;text-align:center}
+.wcard{padding:22px 18px;text-align:center;min-height:208px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.whydots{display:flex;gap:7px;justify-content:center;margin-top:16px}
+.whydots span{width:6px;height:6px;border-radius:50%;background:var(--line-strong);transition:background .3s,transform .3s;opacity:.5}
+.whydots span.on{background:var(--lime);opacity:1;transform:scale(1.25)}
 .wcard img{width:46px;height:46px;margin:0 auto 12px;object-fit:contain}
 .wcard h3{font-size:1.02rem;margin-bottom:7px}
 .wcard p{color:var(--dim);font-size:.85rem;line-height:1.45;margin:0}
@@ -459,13 +462,52 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
       <h2>Why launch on <span class="lime" style="margin-left:.3em">Robin Labs</span>?</h2>
       <p style="color:var(--dim);max-width:60ch;margin:10px auto 0;font-size:1rem;line-height:1.5">Other pads take your fees and disappear. Here the creator gets paid — at graduation, on every dip, and on the liquidity you back.</p>
     </div>
-    <div class="wgrid">
+    <!-- Six selling points cycle through four slots so every one gets airtime.
+         Pauses on hover; static (all six shown) if JS is off or reduced-motion. -->
+    <div class="wgrid" id="whyGrid" style="transition:opacity .34s ease">
       <div class="card wcard"><img src="assets/icons/reward.png" alt="" /><h3>Get paid to graduate</h3><p>Hit the target and Robin Labs pays you up to <b class="lime">0.5 ETH</b> — straight to your wallet, no strings.</p></div>
-      <div class="card wcard"><img src="assets/icons/reward-floor.png" alt="" /><h3>A floor that buys the dip</h3><p>At the Bond your coin gets a <b>protocol-owned floor</b> that buys every dip, forever — and it can't be pulled. Your chart has a real bottom.</p></div>
-      <div class="card wcard"><img src="assets/icons/locked.png" alt="" /><h3>Earn fees on your own LP</h3><p>Lock liquidity into your graduated coin and keep <b class="lime">95%</b> of every trade's fee — real ETH, for as long as it's locked.</p></div>
-      <div class="card wcard"><img src="assets/icons/community.png" alt="" /><h3>Fair launch, real pair</h3><p>No presale, no insiders. One tx spins up a real Uniswap v3 pair with charts on DexScreener from block one.</p></div>
+      <div class="card wcard"><img src="assets/icons/reward-floor.png" alt="" /><h3>A floor that buys the dip</h3><p>At the Bond your coin gets a <b>protocol-owned floor</b> that buys every dip, forever — and it can't be pulled.</p></div>
+      <div class="card wcard"><img src="assets/icons/reward-trader.png" alt="" /><h3>Traders earn real ETH</h3><p>Every buy pays <b class="lime">0.25%</b> back to a coin's real net-volume traders — wash-proof, claimed as ETH.</p></div>
+      <div class="card wcard"><img src="assets/icons/locked.png" alt="" /><h3>Earn fees on your own LP</h3><p>Lock liquidity into your graduated coin and keep <b class="lime">95%</b> of every trade's fee — real ETH.</p></div>
     </div>
+    <div class="whydots" id="whyDots" aria-hidden="true"></div>
   </section>
+  <script>
+  (function () {
+    var FEATS = [
+      { i: 'reward.png',        h: 'Get paid to graduate',    p: 'Hit the target and Robin Labs pays you up to <b class="lime">0.5 ETH</b> — straight to your wallet, no strings.' },
+      { i: 'reward-floor.png',  h: 'A floor that buys the dip', p: 'At the Bond your coin gets a <b>protocol-owned floor</b> that buys every dip, forever — and it can’t be pulled.' },
+      { i: 'reward-trader.png', h: 'Traders earn real ETH',    p: 'Every buy pays <b class="lime">0.25%</b> back to a coin’s real net-volume traders — wash-proof, claimed as ETH.' },
+      { i: 'reward-holder.png', h: 'Holders get paid to hold', p: 'Every sell sends <b class="lime">0.25%</b> to diamond hands — rewarded by size × time, in real ETH.' },
+      { i: 'locked.png',        h: 'Earn fees on your own LP', p: 'Lock liquidity into your graduated coin and keep <b class="lime">95%</b> of every trade’s fee — real ETH.' },
+      { i: 'community.png',     h: 'Fair launch, real pair',   p: 'No presale, no insiders. One tx spins up a real Uniswap v3 pair with charts on DexScreener from block one.' },
+    ];
+    var grid = document.getElementById('whyGrid'), dots = document.getElementById('whyDots');
+    if (!grid) return;
+    var card = function (f) { return '<div class="card wcard"><img src="assets/icons/' + f.i + '" alt="" /><h3>' + f.h + '</h3><p>' + f.p + '</p></div>'; };
+    var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { grid.innerHTML = FEATS.map(card).join(''); return; } // show all, no motion
+    var N = 4, off = 0, timer = null, PERIOD = 5000;
+    if (dots) { for (var d = 0; d < FEATS.length; d++) dots.insertAdjacentHTML('beforeend', '<span></span>'); }
+    var paint = function () {
+      var win = [];
+      for (var k = 0; k < N; k++) win.push(card(FEATS[(off + k) % FEATS.length]));
+      grid.style.opacity = '0';
+      setTimeout(function () {
+        grid.innerHTML = win.join('');
+        grid.style.opacity = '1';
+        if (dots) for (var j = 0; j < dots.children.length; j++)
+          dots.children[j].className = (j >= off && j < off + N) || (off + N > FEATS.length && j < (off + N) % FEATS.length) ? 'on' : '';
+      }, 340);
+    };
+    var start = function () { if (!timer) timer = setInterval(function () { off = (off + 1) % FEATS.length; paint(); }, PERIOD); };
+    var stop = function () { clearInterval(timer); timer = null; };
+    if (dots) for (var m = 0; m < N; m++) dots.children[m].className = 'on';
+    grid.addEventListener('mouseenter', stop);
+    grid.addEventListener('mouseleave', start);
+    start();
+  })();
+  </script>
 
   <!-- HOW IT WORKS -->
   <section class="sec" id="how">
