@@ -1,0 +1,49 @@
+# API-only deploy — keep the pad on Vercel, host just the indexer + JSON API here
+# on its own subdomain (e.g. api.robinlab.io). Caddy gets an automatic HTTPS cert
+# and reverse-proxies the whole subdomain to the indexer.
+#
+#   1. Point DNS:  api.robinlab.io  A  ->  <this droplet's IP>
+#   2. echo "SITE_DOMAIN=api.robinlab.io" into .env  (plus the values below)
+#   3. docker compose -f docker-compose.api.yml up -d --build
+#
+# Then set  export const API_BASE = "https://api.robinlab.io"  in pad/assets/config.js.
+# The SQLite DB (coins, trades, AND coin profiles) lives on the named volume, so
+# `docker compose ... up -d` again after a code update never loses data.
+
+services:
+  indexer:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /app/data/robinlabs.db
+      PORT: "8787"
+    volumes:
+      - indexer-data:/app/data
+    expose:
+      - "8787"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - indexer
+    ports:
+      - "80:80"
+      - "443:443"
+    # Auto-HTTPS for the subdomain; proxy everything to the indexer (it only answers
+    # /health, /api/*, /media/* and 404s the rest — no pad is served here).
+    command: caddy reverse-proxy --from ${SITE_DOMAIN} --to indexer:8787
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  indexer-data:
+  caddy-data:
+  caddy-config:

@@ -67,6 +67,41 @@ export const API_BASE = "https://pad.robinlabs.io";   // your SITE_DOMAIN
 That's it — `https://pad.robinlabs.io` now serves the pad, and
 `…/api/coins` is the live feed.
 
+### DigitalOcean droplet — API only, pad stays on Vercel (recommended)
+
+If you already have a droplet and the pad is on Vercel, host just the **API** on a
+subdomain and point the pad at it. Real disk = coin profiles are safe; always-on =
+never spins down.
+
+```bash
+# 0) DNS: add an A record  api.robinlab.io -> <droplet IP>  (wait for it to resolve)
+
+# 1) on the droplet
+git clone <this repo> && cd <repo>/indexer
+cat > .env <<'ENV'
+SITE_DOMAIN=api.robinlab.io
+FACTORY=0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2
+ROUTER=0x7d0c7122E26a75A9f0bd753e84c6115CAfE3Fd9F
+REWARD_VAULT=0x0F07dC315e332084129c1D00bEbADAb05edf79Dc
+START_BLOCK=15944153
+CORS_ORIGIN=*
+# RPC_URL=<your private Robinhood Chain RPC>   # optional; else the public RPC
+ENV
+
+# 2) one command (installs nothing else — Docker does it all)
+docker compose -f docker-compose.api.yml up -d --build
+```
+
+Caddy fetches the HTTPS cert automatically. Confirm with
+`curl https://api.robinlab.io/health` → `{"ok":true,...}`. Then set, in
+`pad/assets/config.js`:
+
+```js
+export const API_BASE = "https://api.robinlab.io";
+```
+
+Commit + push → Vercel redeploys → the feed (images, volume, trending) is live.
+
 ### Managed (Fly.io) — API only, keep the pad on Vercel
 
 The pad is already on Vercel, so you only need to host the **API** and point the
