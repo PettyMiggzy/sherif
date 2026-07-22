@@ -16,6 +16,14 @@ import { currentEpoch as rewardsEpoch, userAllocations as rewardsUserAlloc } fro
 
 const DAY = 86400;
 
+// ── origin micro-cache ────────────────────────────────────────────────────────
+// Serve identical GET /api/* responses straight from memory for a few seconds, so a
+// launch-day crowd is absorbed by RAM instead of hammering SQLite/the RPC — the same
+// win a CDN gives, but at the origin (works even with no Cloudflare in front). Data is
+// at most CACHE_TTL_MS stale, exactly matching the Cache-Control we already send.
+const API_CACHE = new Map(); // key -> { body, headers, exp }
+const CACHE_TTL_MS = Number(process.env.API_CACHE_MS || 5000);
+
 // ── coin profiles (creator-signed metadata) ──────────────────────────────────
 // The exact message a coin's dev signs to authorize a profile update. It binds the
 // token + every field (images by keccak digest) so a signature can't be replayed to
@@ -258,6 +266,30 @@ export function startApi() {
       } catch (e) { return send(res, 400, { error: String(e.message || e) }, origin); }
     }
     if (req.method !== "GET") return send(res, 405, { error: "method not allowed" }, origin);
+
+    // Micro-cache for GET /api/* (not /media, not /health). On a hit, serve the stored
+    // bytes from RAM; on a miss, transparently capture this response into the cache.
+    if (CACHE_TTL_MS > 0 && path.startsWith("/api/")) {
+      const key = path + url.search;
+      const hit = API_CACHE.get(key);
+      if (hit && hit.exp > Date.now()) {
+        res.writeHead(200, { ...hit.headers, "x-cache": "HIT" });
+        return res.end(hit.body);
+      }
+      const _end = res.end.bind(res);
+      const _writeHead = res.writeHead.bind(res);
+      let _code = 200, _hdrs = {};
+      res.writeHead = (code, headers) => { _code = code; _hdrs = headers || {}; return _writeHead(code, { ...(headers || {}), "x-cache": "MISS" }); };
+      res.end = (chunk) => {
+        try {
+          if (_code === 200 && chunk) {
+            if (API_CACHE.size > 2000) API_CACHE.clear(); // expire-in-5s working set is tiny; this is just a safety valve
+            API_CACHE.set(key, { body: chunk, headers: _hdrs, exp: Date.now() + CACHE_TTL_MS });
+          }
+        } catch { /* caching is best-effort */ }
+        return _end(chunk);
+      };
+    }
 
     try {
       if (path === "/" || path === "/health") {
