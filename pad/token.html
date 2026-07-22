@@ -424,7 +424,9 @@ $('trade').addEventListener('click', async () => {
       const rc = await (await Pad.sell({ token: TOKEN, tokenAmount: raw })).wait();
       setNote('Sold ✓ ' + rc.hash.slice(0, 12) + '…', 'ok');
     }
-    setTimeout(loadCoin, 1500);
+    refreshStatsLive();                          // MC/price move immediately from the live chain
+    setTimeout(() => { loadTrades(); loadHolders(); }, 3000);
+    setTimeout(loadCoin, 9000);                  // full reconcile once the indexer has the trade
     if (SIDE === 'sell') setTimeout(loadBal, 1600);
   } catch (e) { setNote(e.message, 'err'); }
 });
@@ -437,7 +439,8 @@ $('gradBtn').addEventListener('click', async () => {
     setNote('Graduating — posting the Bond…');
     const rc = await (await Pad.graduate(COIN.curve)).wait();
     setNote('Graduated ✓ the Bond is live. ' + rc.hash.slice(0, 12) + '…', 'ok');
-    setTimeout(loadCoin, 1500);
+    refreshStatsLive();                          // stage flips to Graduated immediately
+    setTimeout(loadCoin, 9000);                  // full reconcile once the indexer has it
   } catch (e) { setNote(e.message, 'err'); }
 });
 
@@ -603,7 +606,13 @@ async function loadCoin(){
   let view = viewFromApi(apiCoin);
   if (!view) { info = await Pad.curveInfo(tax.curve, TOKEN).catch(() => null); view = info; }
 
-  COIN = { token: TOKEN, curve: tax.curve, pool: tax.pool, dev: tax.projectWallet, symbol: meta.symbol, name: meta.name,
+  // `dev` MUST be the coin's LAUNCH creator (what the indexer + on-chain gates check), NOT
+  // the fee wallet (projectWallet). Using projectWallet locked a creator out of their own
+  // coin whenever they routed fees to a treasury. Prefer the indexer's launch dev, then the
+  // curve's dev; keep projectWallet separate for fee display.
+  COIN = { token: TOKEN, curve: tax.curve, pool: tax.pool,
+    dev: (apiCoin?.dev || view?.dev || tax.projectWallet), projectWallet: tax.projectWallet,
+    symbol: meta.symbol, name: meta.name,
     minGradTick: view?.minGradTick, gradTick: view?.gradTick, bond: view?.bond };
 
   // header
@@ -625,24 +634,13 @@ async function loadCoin(){
   // chart
   if (tax.pool){ $('dex').src = 'https://dexscreener.com/robinhood/' + tax.pool.toLowerCase() + '?embed=1&theme=dark&info=0&trades=0'; }
 
-  // stats — from the live read when available, else the indexer snapshot
-  if (view && view.mcapEth != null){
-    $('stMc').textContent = fmt(view.mcapEth * ETH_USD);
-    const px = (view.wethPerToken != null ? view.wethPerToken : view.mcapEth / 1e9) * ETH_USD;
-    $('stPx').textContent = '$' + px.toPrecision(2);
-  }
-  if (view){
-    $('stStage').textContent = view.graduated ? 'Graduated' : view.ready ? 'Ready' : 'Bonding';
-    $('stStage').className = 'v' + (view.graduated ? ' g' : '');
-  }
-
-  // bond / graduation panel
-  renderBond(view);
+  // stats + bond — from the live read when available, else the indexer snapshot
+  paintStats(view);
   await maybeShowDev();
   // honor a ?buy=<eth> deep-link from the board's Quick Buy (prefill the buy amount once)
   const preBuy = parseFloat(q.get('buy'));
   if (Number.isFinite(preBuy) && preBuy > 0 && !window.__preBuyDone) { window.__preBuyDone = true; if (SIDE !== 'buy') side('buy'); $('amtInput').value = String(preBuy); }
-  loadTrades(); loadHolders(); renderBanner(); renderFees(); renderFloor();
+  loadTrades(); loadHolders(); renderBanner(); renderFees(apiCoin); renderFloor();
   mountSafety(document.getElementById('safetyBody'), TOKEN); // GoPlus + template scan (read-only)
 }
 
@@ -799,9 +797,9 @@ async function renderBanner(){
 
 // ── public fees & rewards for this coin (creator / traders / holders / floor) ──
 function setFee(id, eth){ const e = $(id); if (!e) return; const v = eth >= 1 ? eth.toFixed(3) : eth > 0 ? eth.toPrecision(2) : '0'; e.innerHTML = `${v} <small>ETH</small>`; }
-async function renderFees(demoCoin){
+async function renderFees(coinData){
   if (DEMO){
-    const c = demoCoin || DEMO_COINS.find((x) => x.token === (COIN && COIN.token)) || DEMO_COINS[0];
+    const c = coinData || DEMO_COINS.find((x) => x.token === (COIN && COIN.token)) || DEMO_COINS[0];
     const volEth = (c.vol || c.mc * 0.4) / ETH_USD;              // this coin's traded volume in ETH
     setFee('feeDev',     volEth * 0.5 * 0.01);                   // creator: 1% of sells
     setFee('feeTraders', volEth * 0.5 * 0.0025);                 // 0.25% of buys → traders
@@ -809,9 +807,12 @@ async function renderFees(demoCoin){
     setFee('feeFloor',   volEth * 0.006);                        // fees compounded into the Bond floor
     return;
   }
-  // live: public on-chain reads (everyone can see the creator's take + the reward pools)
+  // live: creator take + floor from on-chain FeeSplit; the 0.25% trader/holder reward legs
+  // are estimated from the coin's real all-time volume (0.25% of buys / of sells) — the pad
+  // has no per-coin reward-pool endpoint, and /api/rewards/:addr is a WALLET lookup.
   try { const f = await Pad.feeTotals(COIN.token); if (f){ setFee('feeDev', Number(f.dev||0)/1e18); if (f.floor!=null) setFee('feeFloor', Number(f.floor)/1e18); } } catch {}
-  try { const r = await Pad.rewards(COIN.token); if (r && r.coinTotals){ setFee('feeTraders', r.coinTotals.tradersEth||0); setFee('feeHolders', r.coinTotals.holdersEth||0); } } catch {}
+  const volEth = Number(coinData?.volAllEth || 0);
+  if (volEth > 0){ setFee('feeTraders', volEth * 0.5 * 0.0025); setFee('feeHolders', volEth * 0.5 * 0.0025); }
 }
 
 // ── live trades feed (green buys / red sells) ──
@@ -854,6 +855,9 @@ async function loadHolders(){
 // refresh the live feed periodically
 setInterval(() => { if (COIN) loadTrades(); }, 12000);
 setInterval(() => { if (COIN) loadHolders(); }, 30000);
+// Keep MC / price / stage live as OTHER people trade — one cheap indexer query every 12s
+// (the snapshot is refreshed on every trade, so this tracks the market without a chain read).
+setInterval(async () => { if (!COIN || DEMO) return; const c = await Pad.coin(TOKEN).catch(() => null); if (c) paintStats(viewFromApi(c)); }, 12000);
 
 // Reshape the indexer's coin snapshot into the same shape curveInfo() returns, so the
 // stats row and the bond panel render from it when the live RPC read fails.
@@ -872,6 +876,25 @@ function viewFromApi(c){
     minGradTick: mn, gradTick: cl, gradTarget: tg, startTick: st,
     bond: c.bond ?? null, tick: c.lastTick ?? null,
   };
+}
+// Paint the MC / Price / Stage cards + bond panel from a view (curveInfo shape OR viewFromApi).
+function paintStats(view){
+  if (!view) return;
+  if (view.mcapEth != null){
+    $('stMc').textContent = fmt(view.mcapEth * ETH_USD);
+    const px = (view.wethPerToken != null ? view.wethPerToken : view.mcapEth / 1e9) * ETH_USD;
+    $('stPx').textContent = '$' + px.toPrecision(2);
+  }
+  $('stStage').textContent = view.graduated ? 'Graduated' : view.ready ? 'Ready' : 'Bonding';
+  $('stStage').className = 'v' + (view.graduated ? ' g' : '');
+  renderBond(view);
+}
+// Instant refresh from a LIVE chain read — used right after the user trades, before the
+// indexer has caught up, so MC/price move the moment their buy/sell confirms.
+async function refreshStatsLive(){
+  if (!COIN || !COIN.curve) return;
+  const v = await Pad.curveInfo(COIN.curve, TOKEN).catch(() => null);
+  if (v){ paintStats(v); COIN.minGradTick = v.minGradTick; COIN.gradTick = v.gradTick; COIN.bond = v.bond ?? COIN.bond; }
 }
 function renderBond(info){
   const t = $('bondTitle'), s = $('bondSub'), fill = $('bondFill'), lab = $('bondLab'), grad = $('gradBtn'), pill = $('floorPill'), mark = $('bondMark');

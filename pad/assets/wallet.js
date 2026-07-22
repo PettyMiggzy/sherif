@@ -284,10 +284,12 @@ async function guardedSend(contract, method, args, valueWei, label) {
   let gasLimit = (gas * 12n) / 10n;
   if (gasLimit > TX_GAS_CAP) gasLimit = TX_GAS_CAP;
 
-  // 3) legacy gas price straight from eth_gasPrice (never eth_maxPriorityFeePerGas — the chain lacks it).
+  // 3) legacy gas price (never eth_maxPriorityFeePerGas — the chain lacks it). getFeeData()
+  // works on both JsonRpcProvider and FallbackProvider; the raw eth_gasPrice call is only a
+  // secondary and only when the provider actually exposes .send() (FallbackProvider doesn't).
   let gasPrice = 0n;
-  try { gasPrice = BigInt(await _read.send("eth_gasPrice", [])); } catch {}
-  if (gasPrice <= 0n) { try { gasPrice = (await _read.getFeeData()).gasPrice ?? 0n; } catch {} }
+  try { gasPrice = (await _read.getFeeData()).gasPrice ?? 0n; } catch {}
+  if (gasPrice <= 0n && typeof _read.send === "function") { try { gasPrice = BigInt(await _read.send("eth_gasPrice", [])); } catch {} }
 
   // 4) balance check — the whole point: refuse locally, kindly, if it won't fit.
   const bal = await _provider.getBalance(_account);
