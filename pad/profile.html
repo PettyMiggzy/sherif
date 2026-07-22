@@ -254,11 +254,16 @@ function showConnectPrompt(){
   $('stLaunched').textContent = '—'; $('stHoldings').textContent = '—'; $('stValue').textContent = '—';
 }
 
+let loadedFor = '';
+function loadOnce(addr){ if (loadedFor.toLowerCase() === String(addr).toLowerCase()) return; loadedFor = addr; load(addr).catch(console.error); }
+
 async function boot(){
   const paramAddr = (q.get('a') || '').trim();
-  if (isAddr(paramAddr)) { load(paramAddr).catch(console.error); return; }
+  if (isAddr(paramAddr)) { loadOnce(paramAddr); return; }
   const acct = Pad.account();
-  if (isAddr(acct)) { load(acct).catch(console.error); return; }
+  if (isAddr(acct)) { loadOnce(acct); return; }
+  // Not connected yet — eagerConnect may still be restoring the session. Show the
+  // prompt for now; robinpad:ready fires load() below if an account comes back.
   showConnectPrompt();
 }
 
@@ -268,10 +273,17 @@ $('connectBtn').addEventListener('click', async () => {
     const a = Pad.account();
     $('connectBtn').textContent = a ? short(a) : 'Connect Wallet';
     // once connected, if we were not already viewing a specific ?a wallet, show mine
-    if (!isAddr((q.get('a') || '').trim()) && isAddr(a)) load(a).catch(console.error);
+    if (!isAddr((q.get('a') || '').trim()) && isAddr(a)) loadOnce(a);
   } catch (e) { /* user declined */ }
 });
-window.addEventListener('robinpad:ready', () => { const a = Pad.account(); if (a) $('connectBtn').textContent = short(a); });
+// eagerConnect restores a prior session AFTER boot() runs; when it does, show the
+// connected wallet AND load its portfolio (unless we're viewing a specific ?a).
+window.addEventListener('robinpad:ready', () => {
+  const a = Pad.account();
+  if (!isAddr(a)) return;
+  $('connectBtn').textContent = short(a);
+  if (!isAddr((q.get('a') || '').trim())) loadOnce(a);
+});
 boot();
 </script>
 </body>

@@ -309,6 +309,19 @@ async function guardedSend(contract, method, args, valueWei, label) {
   } catch (e) { throw friendly(e, label); }
 }
 
+// Legacy-tx overrides for user-signed calls that DON'T go through guardedSend
+// (approve, createCoop). The chain lacks eth_maxPriorityFeePerGas, so a default
+// type-2 tx throws -32601 and corrupts the wallet's fee/balance state. Force a
+// fully-priced legacy tx (type:0 + explicit gasPrice) exactly like guardedSend.
+async function legacyOverrides() {
+  let gasPrice = 0n;
+  try { gasPrice = (await _read.getFeeData()).gasPrice ?? 0n; } catch {}
+  if (gasPrice <= 0n && typeof _read.send === "function") { try { gasPrice = BigInt(await _read.send("eth_gasPrice", [])); } catch {} }
+  const o = { type: 0 };
+  if (gasPrice > 0n) o.gasPrice = gasPrice;
+  return o;
+}
+
 // ── LAUNCH — one call, one recipient, optional dev buy, approval-free [Rule 1] ─
 // devBuyEth: string ETH amount to spend on the creator's OWN opening buy (≤2%,
 // enforced + excess-refunded by the contract). "0" = no dev buy.
@@ -400,7 +413,7 @@ export async function sell({ token, tokenAmount, slippagePct = 8 }) {
 
   const allowance = await erc.allowance(_account, CONTRACTS.padRouter);
   if (allowance < amountIn) {
-    const atx = await erc.approve(CONTRACTS.padRouter, amountIn); // exact amount, our router
+    const atx = await erc.approve(CONTRACTS.padRouter, amountIn, await legacyOverrides()); // exact amount, our router; legacy tx (no 1559 on this chain)
     await atx.wait();
   }
 
@@ -791,7 +804,7 @@ export async function floorDeposit(token, ethAmount, lockDays = 90) {
   if (!_signer) await connect();
   const fac = new ethers.Contract(CONTRACTS.floorCoopFactory, ABIS.floorCoopFactory, _signer);
   let coop = await fac.coopOf(token);
-  if (/^0x0+$/.test(coop)) { await (await fac.createCoop(token)).wait(); coop = await fac.coopOf(token); }
+  if (/^0x0+$/.test(coop)) { await (await fac.createCoop(token, await legacyOverrides())).wait(); coop = await fac.coopOf(token); } // legacy tx (no 1559 on this chain)
   const c = new ethers.Contract(coop, ABIS.floorCoop, _signer);
   // (lockDays, minSharesOut=0): TWAP-guarded on-chain; UI can tighten minShares from a NAV quote later.
   return guardedSend(c, "deposit", [lockDays, 0n], ethers.parseEther(String(ethAmount)), "Lock liquidity");
