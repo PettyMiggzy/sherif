@@ -12,8 +12,7 @@ const TOTAL = 1_000_000_000; // 1B whole tokens
 
 // param sets to trace
 const SETS = [
-  { name: "YOURS committed ($3376 start)", smag: 201600, cw: 23000, mgw: 22800 },
-  { name: "PONS-matched ($2603 start, grad ~$44k)", smag: 204200, cw: 28200, mgw: 28000 },
+  { name: "YOU on Pons system: $1800 start, grad ~$44k", smag: 207800, cw: 32000, mgw: 31800 },
 ];
 
 function priceFDV(sqrtP, tokenIsToken0) {
