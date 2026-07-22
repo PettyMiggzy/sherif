@@ -147,7 +147,7 @@ async function rpcForward(payload) {
 }
 async function rpcHandle(payload) {
   const arr = Array.isArray(payload) ? payload : [payload];
-  if (arr.length > 100) throw new Error("batch too large");
+  if (arr.length > 20) throw new Error("batch too large");
   const out = new Array(arr.length);
   const miss = [], missIdx = [];
   for (let i = 0; i < arr.length; i++) {
@@ -176,15 +176,26 @@ async function rpcHandle(payload) {
   }
   return Array.isArray(payload) ? out : out[0];
 }
-// Tiny per-IP rate limit (batches count as one request). Bursty page loads are fine;
-// this just caps a single abuser from draining the upstream through the open proxy.
-const RPC_RL = new Map(); // ip -> { sec, n }
-function rpcRateOk(ip) {
-  const sec = Math.floor(Date.now() / 1000);
-  const e = RPC_RL.get(ip);
-  if (!e || e.sec !== sec) { RPC_RL.set(ip, { sec, n: 1 }); if (RPC_RL.size > 20000) for (const [k, v] of RPC_RL) if (v.sec !== sec) RPC_RL.delete(k); return true; }
-  e.n++; return e.n <= CFG.rpcProxyMaxPerSec;
+// The REAL client IP. We sit behind exactly one trusted proxy (Caddy), which APPENDS the
+// direct peer to X-Forwarded-For — so the trustworthy value is the RIGHTMOST hop. Using the
+// left-most (as before) let an attacker spoof the header and bypass the rate limit entirely.
+function clientIp(req) {
+  const xff = String(req.headers["x-forwarded-for"] || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return (xff.length ? xff[xff.length - 1] : "") || req.socket?.remoteAddress || "?";
 }
+// Tiny per-IP-per-second rate limiter (batches count as one request), shared by /rpc and
+// the profile POST so one abuser can't drain the upstream RPC or peg a CPU core on HEIC.
+function makeRateLimiter(maxPerSec) {
+  const m = new Map(); // ip -> { sec, n }
+  return (ip) => {
+    const sec = Math.floor(Date.now() / 1000);
+    const e = m.get(ip);
+    if (!e || e.sec !== sec) { m.set(ip, { sec, n: 1 }); if (m.size > 20000) for (const [k, v] of m) if (v.sec !== sec) m.delete(k); return true; }
+    e.n++; return e.n <= maxPerSec;
+  };
+}
+const rpcRateOk = makeRateLimiter(CFG.rpcProxyMaxPerSec);
+const metaRateOk = makeRateLimiter(2); // profile uploads: ≤2/s/IP (HEIC decode is CPU-bound on the main thread)
 
 // Absolute base for media links, derived from the request (works behind Caddy/any proxy).
 function mediaBase(req) {
@@ -355,7 +366,7 @@ export function startApi() {
     if (req.method === "POST") {
       // Read-only JSON-RPC proxy (served by the paid RPC, cached, rate-limited).
       if (CFG.rpcProxy && path === "/rpc") {
-        const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "?";
+        const ip = clientIp(req);
         if (!rpcRateOk(ip)) return send(res, 429, { error: "rate limited" }, origin);
         try {
           const raw = await readBody(req, 512 * 1024);
@@ -366,6 +377,7 @@ export function startApi() {
       }
       const mm = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/meta$/);
       if (!mm) return send(res, 404, { error: "no such route" }, origin);
+      if (!metaRateOk(clientIp(req))) return send(res, 429, { error: "rate limited — wait a moment and try again" }, origin);
       try {
         const token = mm[1].toLowerCase();
         const dev = coinDev.get(token);

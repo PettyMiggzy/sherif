@@ -45,4 +45,6 @@ primary_region = "iad"
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "512mb"
+  # 1 GB: sharp + heic-convert decode/resize images in-process and can spike well
+  # past 512 MB on a large iPhone HEIC, which would OOM-kill the machine.
+  memory = "1024mb"

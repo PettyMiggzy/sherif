@@ -4,6 +4,7 @@
 //   --no-poster  don't run the reward merkle poster
 //   --once       run a single backfill pass (+ one reward compute/post pass), then exit (for cron / CI)
 import { CFG } from "./config.js";
+import { db } from "./db.js";
 import { runLoop, tick } from "./indexer.js";
 import { startApi } from "./api.js";
 import { runPosterLoop, runPosterOnce } from "./poster.js";
@@ -31,7 +32,17 @@ else console.log("[indexer] disabled (--no-index); serving API only");
 // The poster runs on the writer node (needs the fresh index + the poster key).
 if (!noPoster && !noIndex) runPosterLoop();
 
-// Graceful shutdown so SQLite WAL checkpoints cleanly.
+// Graceful shutdown so SQLite WAL checkpoints cleanly. Without this the -wal file
+// can carry recent commits across a restart; TRUNCATE folds them into the main db
+// and close() releases the file handle before the process exits.
+let shuttingDown = false;
 for (const sig of ["SIGINT", "SIGTERM"]) {
-  process.on(sig, () => { console.log(`\n${sig} — bye`); process.exit(0); });
+  process.on(sig, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n${sig} — checkpointing db and shutting down`);
+    try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch (e) { console.error("checkpoint failed:", e.message); }
+    try { db.close(); } catch {}
+    process.exit(0);
+  });
 }

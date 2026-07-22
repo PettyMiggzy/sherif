@@ -6,7 +6,7 @@ import { ethers } from "ethers";
 import { CFG } from "./config.js";
 import { iface, TOPICS, ERC20, CURVE, POOL } from "./abi.js";
 import {
-  db, getCursor, setCursor, upsertCoin, markGraduated, insertTrade,
+  db, getCursor, setCursor, setHeadTs, upsertCoin, markGraduated, insertTrade,
   coinByCurve, purgeTradesFrom, setGeometry, setGradTargetByCurve,
   setSnapshot, coinGeom, insertAccrual, purgeAccrualsFrom,
 } from "./db.js";
@@ -209,6 +209,11 @@ export async function tick() {
   head = await provider.getBlockNumber();
   const safeHead = head - CFG.confirmations;
   if (safeHead < CFG.startBlock) return 0;
+
+  // Record the confirmed frontier's block timestamp so the reward poster knows how
+  // far (in wall-clock terms) indexing has actually completed. Cheap: one getBlock
+  // per poll, cached at the tip. Best-effort — a miss just leaves the prior value.
+  try { const hb = await provider.getBlock(safeHead); if (hb) setHeadTs(Number(hb.timestamp)); } catch {}
 
   const stored = getCursor();
   // Start at the stored cursor minus a reorg window (re-scan the tip); first run

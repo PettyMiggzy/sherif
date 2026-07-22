@@ -143,6 +143,12 @@ export const getCursor = () => {
   return r ? Number(r.v) : null;
 };
 export const setCursor = (n) => _setMeta.run("cursor", String(n));
+// Block timestamp of the indexed frontier (the confirmed safeHead). The reward
+// poster reads this to confirm the indexer has caught up PAST an epoch boundary
+// before it computes/posts that epoch's root — otherwise the accrual set could be
+// incomplete and the on-chain root permanently wrong. 0 = never synced.
+export const getHeadTs = () => { const r = _getMeta.get("head_ts"); return r ? Number(r.v) : 0; };
+export const setHeadTs = (ts) => _setMeta.run("head_ts", String(ts));
 
 // ── writes (idempotent — safe to re-run over the same blocks on a reorg) ─────
 export const upsertCoin = db.prepare(`

@@ -11,7 +11,7 @@ import { db } from "./db.js";
 import { CFG } from "./config.js";
 import {
   upsertRewardRoot, setRewardRootPostedTx, getRewardRoot,
-  deleteClaimsForEpoch, insertRewardClaim,
+  deleteClaimsForEpoch, insertRewardClaim, getHeadTs,
 } from "./db.js";
 import { computeEpoch, currentEpoch, epochBounds, ALGO_HASH } from "./rewards.js";
 
@@ -46,10 +46,18 @@ function persist(computed) {
 }
 
 // Is epoch e finalized for posting? Mirror the contract's postRoot gate: the epoch has fully ended AND
-// finalityDelay has elapsed past its end (so a root can't cover reorg-able blocks).
+// finalityDelay has elapsed past its end (so a root can't cover reorg-able blocks) AND — critically — the
+// INDEXER has actually caught up past that boundary. Without the last check a lagging indexer would compute
+// a root over an incomplete accrual set and post a permanently-wrong allocation on-chain.
 function finalized(epoch, nowSec) {
   const { t1 } = epochBounds(epoch);
-  return nowSec >= t1 + CFG.finalityDelay;
+  const cutoff = t1 + CFG.finalityDelay;
+  if (nowSec < cutoff) return false;
+  const headTs = getHeadTs();
+  // headTs === 0 means the indexer has never recorded a frontier (fresh DB / API-only
+  // node) — fall back to the time-only gate. Once it's set, it must be past the cutoff.
+  if (headTs && headTs < cutoff) return false;
+  return true;
 }
 
 // Compute + persist every finalized, unposted epoch. Returns the list processed. Does NOT touch the chain.
