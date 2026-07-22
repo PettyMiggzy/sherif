@@ -475,37 +475,33 @@ async function maybeShowDev(){
 // WAS chosen but can't be processed it THROWS — so we never silently save a blank
 // image (the old code returned '' on failure, which is why "saved ✓" but no picture).
 const IMG_OK = /^data:image\/(webp|png|jpeg|gif);base64,/;
-async function imgDataUrl(id, maxDim, maxBytes = 700000){
+async function imgDataUrl(id, maxDim, maxBytes = 750000){
   const f = ($(id)?.files || [])[0];
   if (!f) return '';
-  let src = null, w = 0, h = 0;
-  try { src = await createImageBitmap(f); w = src.width; h = src.height; } catch {}
-  if (!src) {
+  const isHeic = /heic|heif/.test(((f.type || '') + ' ' + (f.name || '')).toLowerCase());
+  // Decode memory-safely: createImageBitmap with resizeWidth downsamples DURING decode,
+  // so a 12MP phone photo never has to fully rasterize — that's what was OOM-ing on
+  // low-memory phones. Fall back to a plain decode, then to <img> (covers iOS Safari).
+  let bmp = null;
+  try { bmp = await createImageBitmap(f, { resizeWidth: maxDim, resizeQuality: 'high' }); } catch {}
+  if (!bmp) { try { bmp = await createImageBitmap(f); } catch {} }
+  if (!bmp) { try { bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(0); im.src = URL.createObjectURL(f); }); } catch {} }
+  if (bmp) {
     try {
-      src = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('decode')); im.src = URL.createObjectURL(f); });
-      w = src.naturalWidth || src.width; h = src.naturalHeight || src.height;
-    } catch {}
-  }
-  if (src && w && h) {
-    try {
-      const s = Math.min(1, maxDim / Math.max(w, h));
-      const cw = Math.max(1, Math.round(w * s)), ch = Math.max(1, Math.round(h * s));
+      const iw = bmp.width || bmp.naturalWidth || 0, ih = bmp.height || bmp.naturalHeight || 0;
+      const s = Math.min(1, maxDim / Math.max(iw, ih, 1));
+      const cw = Math.max(1, Math.round(iw * s)), ch = Math.max(1, Math.round(ih * s));
       const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
-      cv.getContext('2d').drawImage(src, 0, 0, cw, ch);
-      let url = '';
+      cv.getContext('2d').drawImage(bmp, 0, 0, cw, ch);
       for (const t of ['image/webp', 'image/jpeg', 'image/png']) {
-        try { url = cv.toDataURL(t, 0.85); } catch { url = ''; }
-        if (IMG_OK.test(url)) break;
+        let url = ''; try { url = cv.toDataURL(t, 0.82); } catch {}
+        if (IMG_OK.test(url) && url.length * 0.75 <= maxBytes) return url;
       }
-      if (IMG_OK.test(url) && url.length * 0.75 <= maxBytes) return url;
     } catch {}
   }
-  // canvas path failed (tainted/HEIC/OOM) → send raw bytes if small enough & a plain type
-  if (f.size <= maxBytes && /^image\/(png|jpeg|webp|gif)$/.test(f.type || '')) {
-    const raw = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('read')); r.readAsDataURL(f); });
-    if (IMG_OK.test(raw)) return raw;
-  }
-  throw new Error('Could not process that image — try a JPG or PNG under 700KB.');
+  // Undecodable. HEIC can't be converted on Android at all — say so specifically.
+  if (isHeic) throw new Error("iPhone HEIC photos can't be read on Android. On iPhone set Camera → Formats → Most Compatible, or just upload a screenshot / JPG / PNG.");
+  throw new Error('could not read that image — please use a JPG or PNG');
 }
 // Paint a profile onto the page (pfp, banner, description + socials). Reused by the
 // initial load and by the creator's save (so a fresh save shows instantly, without
