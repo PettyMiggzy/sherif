@@ -17,13 +17,14 @@ const ETH_USD = Number(process.env.ETH_USD || 1920);
 // Calibrated on the fork (scripts/calibrate-curve.js): START ~$2k mcap (buy 2% ≈ $40 to keep entry cheap),
 // CEILING ~$84k mcap.
 //
-// GRADUATION FLOOR: MIN_GRAD_WIDTH is set so nothing can graduate before ~4 ETH is raised — at 4 ETH the
-// split is a full 0.5 ETH creator reward + 0.5 ETH platform reward + ~3.0 ETH into the floor (never thin).
-// (37200 -> ~4.0 ETH / ~$78k mcap min grad; ceiling 38000 -> ~4.2 ETH. A coin that never reaches 4 ETH
-// stays tradeable on its curve but does not graduate.)
-const START_TICK_MAG = Number(process.env.START_TICK_MAG || 207400);
-const CURVE_WIDTH = Number(process.env.CURVE_WIDTH || 38000);
-const MIN_GRAD_WIDTH = Number(process.env.MIN_GRAD_WIDTH || 37200);
+// GRADUATION CALIBRATION (single-sided V3): tuned so a coin graduates at ~4.2 ETH raised / ~$30k mcap
+// — matching the NOXA benchmark on this chain — with a healthy split: 0.5 ETH creator + 0.5 ETH platform
+// + ~3.2 ETH into the floor (never thin). Start mcap ~$3.9k.
+//   START_TICK_MAG 200200 -> start ~$3.9k ; CURVE_WIDTH 20400 -> ceiling ~$30k @ ~4.2 ETH ; MIN_GRAD 20200.
+// (Verified forward: start $3.9k -> graduates $29.9k at 4.21 ETH raised. Old 207400/38000 graduated ~$84k.)
+const START_TICK_MAG = Number(process.env.START_TICK_MAG || 200200);
+const CURVE_WIDTH = Number(process.env.CURVE_WIDTH || 20400);
+const MIN_GRAD_WIDTH = Number(process.env.MIN_GRAD_WIDTH || 20200);
 
 async function main() {
   const [deployer] = await ethers.getSigners();
