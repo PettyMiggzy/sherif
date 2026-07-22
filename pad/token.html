@@ -163,6 +163,11 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .devrow{display:flex;gap:8px;margin-top:10px}
 .devrow .btn{flex:1;padding:9px}
 .tiny{font-size:.72rem;color:var(--ink-faint);margin-top:8px}
+.profedit{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.profedit .pf{display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--ink-dim)}
+.profedit input[type=file]{font-size:.74rem;color:var(--ink-dim)}
+.profedit textarea,.profedit input[type=text]{background:var(--bg-2);border:1px solid var(--line-2);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:.82rem;font-family:inherit;width:100%;resize:vertical}
+.profedit .btn{padding:10px}
 .foot{border-top:1px solid var(--line);padding:20px 0 40px;color:var(--ink-faint);font-size:.76rem;text-align:center}
 </style>
 </head>
@@ -251,6 +256,19 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           </div>
           <div class="tiny" id="devEsc">Uncollected (current): —</div>
           <div class="tiny" id="devTotal">Lifetime earned: —</div>
+
+          <h3 style="margin-top:18px">Coin profile</h3>
+          <div class="sub">Image, banner &amp; socials. One free signature — no gas. Anyone can see it instantly.</div>
+          <div class="profedit">
+            <label class="pf">Profile image (pfp)<input type="file" id="epfp" accept="image/*"></label>
+            <label class="pf">Banner<input type="file" id="ebanner" accept="image/*"></label>
+            <textarea id="edesc" maxlength="280" rows="2" placeholder="Short description (max 280 chars)"></textarea>
+            <input type="text" id="etg" placeholder="Telegram link (https://t.me/…)">
+            <input type="text" id="etw" placeholder="Twitter/X link (https://x.com/…)">
+            <input type="text" id="eweb" placeholder="Website (https://…)">
+            <button class="btn btn-lime" id="saveProfile" type="button">Save profile</button>
+            <div class="tiny" id="profNote"></div>
+          </div>
         </div>
       </div>
       <!-- safety scan: GoPlus token-security + Robin Labs template verification + tx simulation -->
@@ -321,7 +339,7 @@ const agoS = (ts) => { if (!ts) return ''; const s = Math.max(0, Math.floor(Date
 const setNote = (m, kind) => { const n = $('tradeNote'); n.textContent = m; n.style.color = kind === 'err' ? 'var(--red)' : kind === 'ok' ? 'var(--green)' : 'var(--ink-faint)'; };
 const refreshConnect = () => { const a = Pad.account(); $('connectBtn').textContent = a ? Pad.short(a) : 'Connect wallet'; };
 
-let SIDE = 'buy', COIN = null;
+let SIDE = 'buy', COIN = null, PROFILE = null;
 
 // ── side toggle ──
 function side(s){
@@ -397,9 +415,78 @@ async function loadDevEsc(){
 }
 async function maybeShowDev(){
   const a = Pad.account();
-  if (COIN && a && a.toLowerCase() === COIN.dev.toLowerCase()){ $('devPanel').style.display = 'block'; loadDevEsc(); }
+  if (COIN && a && a.toLowerCase() === COIN.dev.toLowerCase()){ $('devPanel').style.display = 'block'; loadDevEsc(); fillProfileForm(); }
   else $('devPanel').style.display = 'none';
 }
+
+// ── creator: edit the coin profile (image/banner/socials) any time ──
+// Downscale a picked image to a small webp data: URL (keeps the signed payload tiny).
+function imgDataUrl(id, maxDim){
+  const f = ($(id)?.files || [])[0];
+  if (!f) return Promise.resolve('');
+  return new Promise((res) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height; const s = Math.min(1, maxDim / Math.max(w, h));
+      w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      let url = ''; try { url = cv.toDataURL('image/webp', 0.85); } catch (e) {}
+      if (!/^data:image\/(webp|png|jpeg)/.test(url)) url = cv.toDataURL('image/png');
+      res(url);
+    };
+    img.onerror = () => res('');
+    img.src = URL.createObjectURL(f);
+  });
+}
+// Paint a profile onto the page (pfp, banner, description + socials). Reused by the
+// initial load and by the creator's save (so a fresh save shows instantly, without
+// waiting out the API's 5s read-cache).
+function applyProfile(prof, symbol){
+  if (!prof) return;
+  if (prof.image) { const fb = (symbol || '?').replace(/[^\w]/g, '').slice(0, 3) || '?'; $('pfp').innerHTML = `<img src="${prof.image}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" onerror="this.parentNode.textContent='${fb}'" />`; }
+  if (prof.banner) { const b = document.querySelector('.banner'); if (b) { b.style.backgroundImage = `url(${prof.banner})`; b.style.backgroundSize = 'cover'; b.style.backgroundPosition = 'center'; } }
+  const who = document.querySelector('.who');
+  if (who && (prof.description || prof.telegram || prof.twitter || prof.website)) {
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const link = (url, label) => (/^https?:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--lime);text-decoration:none">${label}</a>` : '');
+    const socials = [link(prof.telegram, 'Telegram'), link(prof.twitter, 'Twitter/X'), link(prof.website, 'Website')].filter(Boolean).join(' · ');
+    let box = document.getElementById('coinProfile');
+    if (!box) { box = document.createElement('div'); box.id = 'coinProfile'; box.style.cssText = 'margin-top:7px;font-size:.9rem;color:var(--ink-dim);display:flex;flex-direction:column;gap:5px;max-width:52ch'; who.appendChild(box); }
+    box.innerHTML = (prof.description ? `<div>${esc(prof.description)}</div>` : '') + (socials ? `<div>${socials}</div>` : '');
+  }
+}
+function fillProfileForm(){
+  if (!PROFILE) return;
+  if (!$('edesc').value) $('edesc').value = PROFILE.description || '';
+  if (!$('etg').value)   $('etg').value   = PROFILE.telegram || '';
+  if (!$('etw').value)   $('etw').value   = PROFILE.twitter || '';
+  if (!$('eweb').value)  $('eweb').value  = PROFILE.website || '';
+}
+$('saveProfile')?.addEventListener('click', async () => {
+  if (!COIN) return;
+  const note = (m, ok) => { const n = $('profNote'); n.textContent = m; n.style.color = ok === 'err' ? 'var(--red)' : ok === 'ok' ? 'var(--green)' : 'var(--ink-faint)'; };
+  try {
+    if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
+    if (Pad.account().toLowerCase() !== COIN.dev.toLowerCase()) return note('Only the coin creator can set the profile.', 'err');
+    note('Preparing images…');
+    const [pfp, banner] = await Promise.all([imgDataUrl('epfp', 400), imgDataUrl('ebanner', 1200)]);
+    note('Sign the message in your wallet (free, no gas)…');
+    const saved = await Pad.setCoinProfile(TOKEN, {
+      description: ($('edesc').value || '').trim(),
+      telegram: ($('etg').value || '').trim(),
+      twitter: ($('etw').value || '').trim(),
+      website: ($('eweb').value || '').trim(),
+      pfp, banner, // "" leaves the existing image untouched
+    });
+    // Render the fresh profile straight from the POST response (its image URL is
+    // cache-busted with ?v=ts), so it shows immediately without the 5s read-cache lag.
+    PROFILE = saved || PROFILE;
+    applyProfile(PROFILE, COIN.symbol);
+    $('epfp').value = ''; $('ebanner').value = '';
+    note('Saved ✓ — your profile is live.', 'ok');
+  } catch (e) { note(e.message, 'err'); }
+});
 
 // ── load the coin ──
 async function loadCoin(){
@@ -426,20 +513,8 @@ async function loadCoin(){
 
   // creator profile (image, banner, description, socials) — from the indexer, if saved
   try {
-    const prof = await Pad.getCoinProfile(TOKEN);
-    if (prof) {
-      if (prof.image) { const fb = (meta.symbol || '?').replace(/[^\w]/g, '').slice(0, 3) || '?'; $('pfp').innerHTML = `<img src="${prof.image}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" onerror="this.parentNode.textContent='${fb}'" />`; }
-      if (prof.banner) { const b = document.querySelector('.banner'); if (b) { b.style.backgroundImage = `url(${prof.banner})`; b.style.backgroundSize = 'cover'; b.style.backgroundPosition = 'center'; } }
-      const who = document.querySelector('.who');
-      if (who && (prof.description || prof.telegram || prof.twitter || prof.website)) {
-        const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        const link = (url, label) => (/^https?:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--lime);text-decoration:none">${label}</a>` : '');
-        const socials = [link(prof.telegram, 'Telegram'), link(prof.twitter, 'Twitter/X'), link(prof.website, 'Website')].filter(Boolean).join(' · ');
-        let box = document.getElementById('coinProfile');
-        if (!box) { box = document.createElement('div'); box.id = 'coinProfile'; box.style.cssText = 'margin-top:7px;font-size:.9rem;color:var(--ink-dim);display:flex;flex-direction:column;gap:5px;max-width:52ch'; who.appendChild(box); }
-        box.innerHTML = (prof.description ? `<div>${esc(prof.description)}</div>` : '') + (socials ? `<div>${socials}</div>` : '');
-      }
-    }
+    PROFILE = await Pad.getCoinProfile(TOKEN);
+    applyProfile(PROFILE, meta.symbol);
   } catch { /* profiles are cosmetic — never block the coin page */ }
 
   // chart
