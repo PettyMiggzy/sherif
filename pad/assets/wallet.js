@@ -32,6 +32,12 @@ import {
   GAS_BUFFER_WEI, isDeployed, API_BASE, hasApi,
 } from "./config.js";
 
+// Re-export the config helper so pages doing `import * as Pad from './wallet.js'`
+// can call `Pad.hasApi()` (a namespace import only sees a module's own exports,
+// not what it imports). create.html relies on this to decide whether to upload
+// the coin profile after launch.
+export { hasApi };
+
 let _provider = null; // ethers BrowserProvider
 let _signer = null;
 let _account = null;
