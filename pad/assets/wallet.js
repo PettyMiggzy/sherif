@@ -207,6 +207,15 @@ export async function setCoinProfile(token, fields = {}) {
   return j.profile;
 }
 
+/// One coin's full record from the indexer (name, symbol, mcapEth, progress, graduated,
+/// ticks, …), or null. Lets the coin page render market cap / price / stage / bond even
+/// when the public RPC is overloaded and the direct curveInfo() call fails.
+export async function coin(token) {
+  if (!hasApi()) return null;
+  try { const j = await apiGet(`/api/coin/${token}`); return j.coin || null; }
+  catch { return null; }
+}
+
 /// A wallet's holdings from the indexer's holder index (coins it launched or traded,
 /// with an approximate balance). Returns null if the API/endpoint is unavailable, so the
 /// caller can fall back to scanning balances directly. `null` (no api) vs `[]` (nothing held).
@@ -807,7 +816,7 @@ if (typeof window !== "undefined") {
     setCoinProfile, getCoinProfile, profileMessage,
     estimateDevBuyEth, isDeployed, tokenBalance, holdings, coinHolders,
     curveInfo, devEscrow, graduate, setGradTarget, withdrawDev, burnDev, listCoins, tokenMeta,
-    feed, stats, recentTrades, hasApi,
+    feed, stats, recentTrades, hasApi, coin,
     holders, trades, chainTrades, feeTotals,
     rewards, rewardStats, claimReward, claimAllRewards,
     floorInfo, floorDeposit, floorClaim, floorWithdraw,

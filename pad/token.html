@@ -576,10 +576,18 @@ async function loadCoin(){
   try { [meta, tax] = await Promise.all([Pad.tokenMeta(TOKEN), Pad.getTax(TOKEN)]); }
   catch { $('nm').textContent = 'Coin not found'; return; }
   if (!tax.set){ $('nm').textContent = meta.name; $('tk').textContent = disp(meta.symbol); setNote('This coin is not registered on Robin Labs.', 'err'); return; }
-  try { info = await Pad.curveInfo(tax.curve, TOKEN); } catch { info = null; }
+  // Live on-chain read (best) + the indexer's snapshot (reliable at scale) in parallel.
+  // The public RPC gets hammered on launch day; when curveInfo() fails we still render
+  // market cap / price / stage / bond from the indexer instead of blanking out.
+  let apiCoin;
+  [info, apiCoin] = await Promise.all([
+    Pad.curveInfo(tax.curve, TOKEN).catch(() => null),
+    Pad.coin(TOKEN).catch(() => null),
+  ]);
+  const view = info || viewFromApi(apiCoin);
 
   COIN = { token: TOKEN, curve: tax.curve, pool: tax.pool, dev: tax.projectWallet, symbol: meta.symbol, name: meta.name,
-    minGradTick: info?.minGradTick, gradTick: info?.gradTick, bond: info?.bond };
+    minGradTick: view?.minGradTick, gradTick: view?.gradTick, bond: view?.bond };
 
   // header
   $('nm').textContent = meta.name;
@@ -600,17 +608,19 @@ async function loadCoin(){
   // chart
   if (tax.pool){ $('dex').src = 'https://dexscreener.com/robinhood/' + tax.pool.toLowerCase() + '?embed=1&theme=dark&info=0&trades=0'; }
 
-  // stats
-  if (info){
-    const mc = info.mcapEth * ETH_USD;
-    $('stMc').textContent = fmt(mc);
-    $('stPx').textContent = '$' + (info.wethPerToken * ETH_USD).toPrecision(2);
-    $('stStage').textContent = info.graduated ? 'Graduated' : info.ready ? 'Ready' : 'Bonding';
-    $('stStage').className = 'v' + (info.graduated ? ' g' : '');
+  // stats — from the live read when available, else the indexer snapshot
+  if (view && view.mcapEth != null){
+    $('stMc').textContent = fmt(view.mcapEth * ETH_USD);
+    const px = (view.wethPerToken != null ? view.wethPerToken : view.mcapEth / 1e9) * ETH_USD;
+    $('stPx').textContent = '$' + px.toPrecision(2);
+  }
+  if (view){
+    $('stStage').textContent = view.graduated ? 'Graduated' : view.ready ? 'Ready' : 'Bonding';
+    $('stStage').className = 'v' + (view.graduated ? ' g' : '');
   }
 
   // bond / graduation panel
-  renderBond(info);
+  renderBond(view);
   await maybeShowDev();
   // honor a ?buy=<eth> deep-link from the board's Quick Buy (prefill the buy amount once)
   const preBuy = parseFloat(q.get('buy'));
@@ -827,6 +837,24 @@ async function loadHolders(){
 setInterval(() => { if (COIN) loadTrades(); }, 12000);
 setInterval(() => { if (COIN) loadHolders(); }, 30000);
 
+// Reshape the indexer's coin snapshot into the same shape curveInfo() returns, so the
+// stats row and the bond panel render from it when the live RPC read fails.
+function viewFromApi(c){
+  if (!c) return null;
+  const st = c.startTick, cl = c.gradTick, mn = c.minGradTick, tg = c.gradTarget;
+  const span = Math.abs((cl ?? 0) - (st ?? 0)) || 1;
+  const frac = (t) => (t == null || st == null) ? 0 : Math.max(0, Math.min(1, Math.abs(t - st) / span));
+  const progress = (c.progress != null) ? c.progress : frac(c.lastTick);
+  const minFrac = frac(mn);
+  return {
+    graduated: !!c.graduated, ready: !c.graduated && progress >= minFrac - 1e-9,
+    mcapEth: c.mcapEth != null ? c.mcapEth : null,
+    wethPerToken: c.mcapEth != null ? c.mcapEth / 1e9 : null,
+    progress, minFrac, targetFrac: frac(tg),
+    minGradTick: mn, gradTick: cl, gradTarget: tg, startTick: st,
+    bond: c.bond ?? null, tick: c.lastTick ?? null,
+  };
+}
 function renderBond(info){
   const t = $('bondTitle'), s = $('bondSub'), fill = $('bondFill'), lab = $('bondLab'), grad = $('gradBtn'), pill = $('floorPill'), mark = $('bondMark');
   if (!info){ t.textContent = 'Loading…'; return; }
