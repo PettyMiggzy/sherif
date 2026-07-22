@@ -82,6 +82,7 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
     error NotPool();
     error NotDev();
     error BadTarget();
+    error BadPoolInit();
 
     event Seeded(int24 curveLo, int24 curveHi, uint128 liquidity);
     event Graduated(address indexed bond, uint256 raisedWeth, uint256 leftoverToken);
@@ -142,7 +143,17 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         // Claim + initialize the pool at the start price (DEX + DexScreener live from here).
         address p = IUniswapV3Factory(v3Factory_).getPool(token_, weth_, POOL_FEE);
         if (p == address(0)) p = IUniswapV3Factory(v3Factory_).createPool(token_, weth_, POOL_FEE);
-        IUniswapV3Pool(p).initialize(PoolMath.getSqrtRatioAtTick(startTick_));
+        uint160 wantSqrt = PoolMath.getSqrtRatioAtTick(startTick_);
+        // Guard the initialize: a same-block front-runner could pre-create AND pre-initialize the
+        // (token, WETH, 10000) pool, which would make an unconditional initialize() revert and grief the
+        // launch. If it is already initialized we accept it ONLY when it sits at our exact start price;
+        // any other price is a hostile init and we revert loudly rather than launch onto a wrong curve.
+        (uint160 existingSqrt,,,,,,) = IUniswapV3Pool(p).slot0();
+        if (existingSqrt == 0) {
+            IUniswapV3Pool(p).initialize(wantSqrt);
+        } else if (existingSqrt != wantSqrt) {
+            revert BadPoolInit();
+        }
         pool = IUniswapV3Pool(p);
     }
 
