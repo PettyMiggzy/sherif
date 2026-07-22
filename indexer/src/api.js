@@ -108,6 +108,84 @@ function readBody(req, maxBytes) {
   });
 }
 
+// ── JSON-RPC read proxy ────────────────────────────────────────────────────────
+// The pad makes its live on-chain READS (quotes, balances, slot0) through POST /rpc so
+// thousands of browsers hit the paid RPC via this ONE cached hop instead of hammering
+// the public RPC each. Read methods only — writes (sendRawTransaction) are refused;
+// wallets broadcast their own txs. Identical reads are cached briefly, so a crowd
+// loading the same coin collapses to a single upstream call — the real load reducer.
+const RPC_READ_METHODS = new Set([
+  "eth_chainId", "net_version", "eth_blockNumber", "eth_gasPrice", "eth_maxPriorityFeePerGas",
+  "eth_getBalance", "eth_getCode", "eth_getStorageAt", "eth_call", "eth_estimateGas",
+  "eth_getLogs", "eth_getBlockByNumber", "eth_getBlockByHash", "eth_getTransactionByHash",
+  "eth_getTransactionReceipt", "eth_getTransactionCount", "eth_feeHistory", "eth_getBlockReceipts",
+]);
+const RPC_CACHE = new Map(); // key -> { result, exp }
+function rpcTtl(method) {
+  switch (method) {
+    case "eth_chainId": case "net_version": return 3600_000;
+    case "eth_call": case "eth_getCode": case "eth_getLogs": return 4000;
+    case "eth_getBalance": case "eth_getTransactionCount":
+    case "eth_getTransactionReceipt": case "eth_getTransactionByHash":
+    case "eth_getBlockByNumber": case "eth_getBlockByHash": return 3000;
+    case "eth_blockNumber": case "eth_gasPrice": case "eth_feeHistory":
+    case "eth_maxPriorityFeePerGas": return 2000;
+    default: return 0; // eth_estimateGas + anything else: never cache (per-tx / dynamic)
+  }
+}
+async function rpcForward(payload) {
+  const urls = [CFG.rpcUrl, CFG.rpcFallback].filter((u, i, a) => u && a.indexOf(u) === i);
+  let lastErr;
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(9000) });
+      if (!r.ok) { lastErr = new Error(`upstream ${r.status}`); continue; }
+      return await r.json();
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error("no upstream RPC");
+}
+async function rpcHandle(payload) {
+  const arr = Array.isArray(payload) ? payload : [payload];
+  if (arr.length > 100) throw new Error("batch too large");
+  const out = new Array(arr.length);
+  const miss = [], missIdx = [];
+  for (let i = 0; i < arr.length; i++) {
+    const req = arr[i] || {};
+    const method = req.method;
+    if (!RPC_READ_METHODS.has(method)) { out[i] = { jsonrpc: "2.0", id: req.id ?? null, error: { code: -32601, message: `method not allowed: ${method}` } }; continue; }
+    const ttl = rpcTtl(method);
+    const key = ttl ? method + ":" + JSON.stringify(req.params || []) : null;
+    if (key) { const hit = RPC_CACHE.get(key); if (hit && hit.exp > Date.now()) { out[i] = { jsonrpc: "2.0", id: req.id, result: hit.result }; continue; } }
+    miss.push(req); missIdx.push(i);
+  }
+  if (miss.length) {
+    const resp = await rpcForward(miss);
+    const byId = new Map();
+    for (const r of (Array.isArray(resp) ? resp : [resp])) byId.set(r.id, r);
+    for (let j = 0; j < miss.length; j++) {
+      const req = miss[j], i = missIdx[j];
+      const r = byId.get(req.id) || { jsonrpc: "2.0", id: req.id, error: { code: -32603, message: "no upstream response" } };
+      out[i] = r;
+      const ttl = rpcTtl(req.method);
+      if (ttl && r && r.result !== undefined && !r.error) {
+        if (RPC_CACHE.size > 8000) RPC_CACHE.clear();
+        RPC_CACHE.set(req.method + ":" + JSON.stringify(req.params || []), { result: r.result, exp: Date.now() + ttl });
+      }
+    }
+  }
+  return Array.isArray(payload) ? out : out[0];
+}
+// Tiny per-IP rate limit (batches count as one request). Bursty page loads are fine;
+// this just caps a single abuser from draining the upstream through the open proxy.
+const RPC_RL = new Map(); // ip -> { sec, n }
+function rpcRateOk(ip) {
+  const sec = Math.floor(Date.now() / 1000);
+  const e = RPC_RL.get(ip);
+  if (!e || e.sec !== sec) { RPC_RL.set(ip, { sec, n: 1 }); if (RPC_RL.size > 20000) for (const [k, v] of RPC_RL) if (v.sec !== sec) RPC_RL.delete(k); return true; }
+  e.n++; return e.n <= CFG.rpcProxyMaxPerSec;
+}
+
 // Absolute base for media links, derived from the request (works behind Caddy/any proxy).
 function mediaBase(req) {
   const proto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() || "http";
@@ -275,6 +353,17 @@ export function startApi() {
     // pfp/banner are base64 data: URLs. The signature must be the coin's dev over
     // profileMessage(token, body); anyone else is rejected. See docs/api.md.
     if (req.method === "POST") {
+      // Read-only JSON-RPC proxy (served by the paid RPC, cached, rate-limited).
+      if (CFG.rpcProxy && path === "/rpc") {
+        const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "?";
+        if (!rpcRateOk(ip)) return send(res, 429, { error: "rate limited" }, origin);
+        try {
+          const raw = await readBody(req, 512 * 1024);
+          const payload = JSON.parse(raw.toString("utf8"));
+          const result = await rpcHandle(payload);
+          return send(res, 200, result, origin);
+        } catch (e) { return send(res, 400, { error: String(e.message || e) }, origin); }
+      }
       const mm = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/meta$/);
       if (!mm) return send(res, 404, { error: "no such route" }, origin);
       try {

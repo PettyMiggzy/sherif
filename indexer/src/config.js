@@ -26,6 +26,10 @@ const num = (k, d) => {
 
 export const CFG = {
   rpcUrl: process.env.RPC_URL || "https://robinhoodchain.blockscout.com/api/eth-rpc",
+  // Upstream fallback for the /rpc read-proxy if the primary (paid) RPC errors.
+  rpcFallback: process.env.RPC_FALLBACK || "https://robinhoodchain.blockscout.com/api/eth-rpc",
+  rpcProxy: (process.env.RPC_PROXY ?? "1") !== "0",   // expose POST /rpc (read-only JSON-RPC proxy)
+  rpcProxyMaxPerSec: num("RPC_PROXY_MAX_PER_SEC", 40), // per-IP request cap (batches count as one)
   factory: (process.env.FACTORY || "0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2").toLowerCase(),
   router: (process.env.ROUTER || "0x7d0c7122E26a75A9f0bd753e84c6115CAfE3Fd9F").toLowerCase(),
   startBlock: num("START_BLOCK", 0),

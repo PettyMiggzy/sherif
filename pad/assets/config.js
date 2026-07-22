@@ -15,9 +15,12 @@ export const CHAIN = {
   hexId: "0x1237", // 4663
   name: "Robinhood Chain",
   currency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  // Public RPC. The fork tests use a private archive RPC (never committed); this
-  // read-only public endpoint is enough for balances, quotes and simulation.
-  rpc: ["https://robinhoodchain.blockscout.com/api/eth-rpc"],
+  // Read RPCs, in priority order. First is the indexer's read-proxy: it serves reads
+  // from the paid RPC server-side with a short cache, so a launch-day crowd hits ONE
+  // cached hop instead of each browser hammering the public RPC. The public endpoint is
+  // kept as an automatic failover if the proxy is ever unreachable. (Writes never use
+  // these — wallets broadcast their own txs through the user's own RPC.)
+  rpc: ["https://api.robinlab.io/rpc", "https://robinhoodchain.blockscout.com/api/eth-rpc"],
   explorer: "https://robinhoodchain.blockscout.com",
 };
 

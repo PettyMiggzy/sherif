@@ -42,8 +42,16 @@ let _provider = null; // ethers BrowserProvider
 let _signer = null;
 let _account = null;
 
-// A read-only provider for quotes/simulation even before the user connects.
-const _read = new ethers.JsonRpcProvider(CHAIN.rpc[0], CHAIN.id);
+// A read-only provider for quotes/simulation even before the user connects. When more
+// than one RPC is configured, use a FallbackProvider so reads prefer the indexer proxy
+// (priority 1, paid + cached) and automatically fail over to the public RPC if it stalls.
+const _read = (() => {
+  const cfgs = CHAIN.rpc.map((url, i) => ({
+    provider: new ethers.JsonRpcProvider(url, CHAIN.id, { staticNetwork: true }),
+    priority: i + 1, stallTimeout: 1500, weight: 1,
+  }));
+  return cfgs.length > 1 ? new ethers.FallbackProvider(cfgs, CHAIN.id, { quorum: 1 }) : cfgs[0].provider;
+})();
 const REWARD_LEG_BPS = 25; // 0.25% router reward leg (buy→traders / sell→holders), carved before the swap when the vault is set
 
 // ── provider detection: prefer Phantom's EVM provider, then any injected wallet ─
