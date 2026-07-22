@@ -117,7 +117,8 @@
   <section class="head">
     <div class="eyebrow">Open a position · any token on the chain</div>
     <h1>Lock into <span class="g">any token.</span></h1>
-    <p>Not just Robin Labs coins — paste <b>any token's contract address</b> on Robinhood Chain and open a locked liquidity position. You add to that coin's <b>real pool</b>, earn your <b>share of every trade's fee</b>, and it's <b>locked</b> so it can never be pulled out from under the coin.</p>
+    <p>Paste <b>any token's contract address</b> on Robinhood Chain, add to its <b>real pool</b>, and earn your <b>share of every trade's fee</b> — locked so it can never be pulled out from under the coin.</p>
+    <p style="margin-top:10px;color:#cfd6c4"><b class="lime">Safest on graduated coins.</b> A Robin Labs coin must reach <b>the Bond</b> (graduation) before you can lock LP into it — a graduated coin has a <b>protocol-owned floor</b> under its price, so you're far less likely to lose your ETH. Pre-graduation coins can still go to zero, so they're blocked.</p>
   </section>
 
   <!-- THE OPENER -->
@@ -216,18 +217,26 @@ async function onAddr(){
   resolved = null; sync();
   if (!isAddr(a)){ hideChip(); return; }
   if (DEMO){ showChip(demoToken(a)); return; }
-  // live: resolve name/symbol + check a WETH pool exists for this token
+  // live: resolve the coin + whether it's a graduated Robin Labs coin (has the Bond floor)
   try {
-    const meta = await Pad.tokenMeta(a).catch(() => ({ name:'Token', symbol:'?' }));
-    const info = await Pad.floorInfo(a, Pad.account()).catch(() => null); // resolves/reads the vault if any
-    const hasPool = await Pad.hasLpPool(a).catch(() => true); // pool check (falls back to allowing)
-    showChip({ token:a, name:meta.name, symbol:meta.symbol, image:'', hasPool, poolTxt: hasPool ? 'WETH pool ✓' : 'no WETH pool' });
-  } catch { showChip({ token:a, name:'Token', symbol:'?', image:'', hasPool:false, poolTxt:'lookup failed' }); }
+    const [c, hasPool] = await Promise.all([
+      Pad.coin(a).catch(() => null),          // indexer: is it a Robin Labs coin? graduated?
+      Pad.hasLpPool(a).catch(() => true),     // does a WETH pool exist at all?
+    ]);
+    let name = 'Token', symbol = '?';
+    if (c) { name = c.name; symbol = c.symbol; }
+    else { const m = await Pad.tokenMeta(a).catch(() => ({ name:'Token', symbol:'?' })); name = m.name; symbol = m.symbol; }
+    const isPad = !!c, graduated = !!(c && c.graduated);
+    showChip({
+      token:a, name, symbol, image:'', hasPool, isPad, graduated,
+      poolTxt: isPad ? (graduated ? 'Graduated · floored ✓' : 'On the curve — not graduated') : (hasPool ? 'WETH pool ✓' : 'no WETH pool'),
+    });
+  } catch { showChip({ token:a, name:'Token', symbol:'?', image:'', hasPool:false, isPad:false, graduated:false, poolTxt:'lookup failed' }); }
 }
 
 function showChip(t){
   resolved = t;
-  const chip = $('tokchip'); chip.classList.add('show'); chip.classList.toggle('bad', !t.hasPool);
+  const chip = $('tokchip'); chip.classList.add('show'); chip.classList.toggle('bad', !t.hasPool || (t.isPad && !t.graduated));
   $('tokAv').textContent = (t.symbol||'?').slice(0,2);
   if (t.image){ $('tokAv').style.background = `center/cover url(${esc(t.image)})`; $('tokAv').textContent=''; }
   $('tokNm').textContent = t.name || 'Token';
@@ -240,14 +249,21 @@ function hideChip(){ $('tokchip').classList.remove('show'); }
 function sync(){
   const amt = parseFloat($('amt').value) || 0;
   const days = +$('term').value;
-  const ok = resolved && resolved.hasPool && amt > 0;
+  // SAFETY GATE: a Robin Labs coin must be GRADUATED before you can lock LP into it — a
+  // graduated coin has the Bond (a protocol-owned floor the price can't be rugged below),
+  // so you're far less likely to lose your ETH. Pre-graduation coins can still go to zero,
+  // so locking into them is blocked. (Non-pad tokens with a real pool are allowed but
+  // flagged as higher-risk since they have no Bond floor.)
+  const padUngraduated = resolved && resolved.isPad && !resolved.graduated;
+  const ok = resolved && resolved.hasPool && !padUngraduated && amt > 0;
   $('openBtn').disabled = !ok;
-  // Never a silent dead-end: say exactly what's needed, and relabel the button to match.
-  const btn = $('openBtn');
+  const btn = $('openBtn'); const sym = resolved ? tsym(resolved.symbol) : '';
   if (!resolved) { setMsg('Paste a token contract address above to begin.'); btn.textContent = 'Paste a token first'; }
-  else if (!resolved.hasPool) { setMsg('This token has no WETH pool yet — LP opens once a coin graduates to a DEX pool.', 'err'); btn.textContent = 'No WETH pool for this token'; }
+  else if (padUngraduated) { setMsg(`${sym} hasn’t graduated yet — LP opens at the Bond (graduation), when the coin gets its protocol floor. That floor is what makes locking safer, so it’s blocked until then.`, 'err'); btn.textContent = 'Opens at the Bond (not graduated)'; }
+  else if (!resolved.hasPool) { setMsg('This token has no liquidity pool — nothing to add LP to.', 'err'); btn.textContent = 'No pool for this token'; }
   else if (amt <= 0) { setMsg('Enter an amount of ETH to add.'); btn.textContent = 'Enter an amount'; }
-  else { setMsg(''); btn.textContent = 'Open position'; }
+  else if (resolved.isPad) { setMsg(`✓ Graduated — the Bond puts a protocol floor under ${sym}, so this is lower-risk than a curve coin. It’s still real LP: value moves with the price (impermanent loss), 10% to open, 15% to exit early. Not a savings account.`, 'ok'); btn.textContent = 'Open position'; }
+  else { setMsg('⚠ Not a graduated Robin Labs coin — no Bond floor, so this is higher-risk. Only lock ETH you’re happy to leave in. Real LP: impermanent loss, 10% open, 15% early exit.', 'err'); btn.textContent = 'Open position (higher risk)'; }
   const brk = $('brk');
   if (amt > 0 && resolved){
     brk.classList.add('show');
