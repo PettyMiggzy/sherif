@@ -66,7 +66,12 @@ contract LaunchTokenDeployer {
         LaunchToken.GuardConfig calldata g,
         bytes32 salt
     ) external returns (address) {
-        return address(new LaunchToken{salt: salt}(name, symbol, supply, factory, g));
+        // Bind the CREATE2 salt to the CALLER so the token's address depends on who deploys it. This deployer is
+        // public and stateless (reused across factories), so without this an attacker could call deploy() directly
+        // with the victim's exact salt+args and occupy the target address first, bricking the launch. Folding
+        // msg.sender into the salt makes an attacker's address differ from the factory's — the collision is gone.
+        bytes32 s = keccak256(abi.encodePacked(msg.sender, salt));
+        return address(new LaunchToken{salt: s}(name, symbol, supply, factory, g));
     }
 }
 

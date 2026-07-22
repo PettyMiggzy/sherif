@@ -263,7 +263,15 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         if (!c.set) revert Unknown();
         IERC20(token).safeTransferFrom(msg.sender, address(this), amountIn);
 
-        (uint256 wethOut,) = _swap(token, c.pool, token, amountIn, address(this), 0);
+        (uint256 wethOut, uint256 consumedIn) = _swap(token, c.pool, token, amountIn, address(this), 0);
+        // Partial fill: the curve can only pay for `consumedIn` tokens (its WETH runs out at the start-price
+        // floor, where the single-sided position has 0 liquidity and v3 stops consuming input without reverting).
+        // Refund the untouched remainder to the seller rather than stranding it in the router — mirrors the
+        // buy-side leftover refund. Without this, a seller who submits more than the pool can absorb (e.g. a
+        // 'sell all' at the floor with minOutEth=0) permanently loses the unconsumed tokens.
+        if (consumedIn < amountIn) {
+            IERC20(token).safeTransfer(msg.sender, amountIn - consumedIn);
+        }
         IWETH9(WETH).withdraw(wethOut);
 
         uint16 rbps = rewardVault == address(0) ? 0 : REWARD_SELL_BPS;
