@@ -21,6 +21,10 @@ export const CHAIN = {
   // kept as an automatic failover if the proxy is ever unreachable. (Writes never use
   // these — wallets broadcast their own txs through the user's own RPC.)
   rpc: ["https://api.robinlab.io/rpc", "https://robinhoodchain.blockscout.com/api/eth-rpc"],
+  // RPC given to the WALLET when adding the chain (wallet_addEthereumChain). MUST be a
+  // full, write-capable endpoint — the wallet broadcasts the user's txs through it — so
+  // it must NEVER include the read-only /rpc proxy (which refuses eth_sendRawTransaction).
+  walletRpcUrls: ["https://robinhoodchain.blockscout.com/api/eth-rpc"],
   explorer: "https://robinhoodchain.blockscout.com",
 };
 

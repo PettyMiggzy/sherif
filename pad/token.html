@@ -165,6 +165,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .tiny{font-size:.72rem;color:var(--ink-faint);margin-top:8px}
 .profedit{display:flex;flex-direction:column;gap:8px;margin-top:10px}
 .profedit .pf{display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--ink-dim)}
+.profedit .ihint{font-size:.68rem;color:var(--ink-faint)}
 .profedit input[type=file]{font-size:.74rem;color:var(--ink-dim)}
 .profedit textarea,.profedit input[type=text]{background:var(--bg-2);border:1px solid var(--line-2);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:.82rem;font-family:inherit;width:100%;resize:vertical}
 .profedit .btn{padding:10px}
@@ -261,8 +262,8 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           <h3 style="margin-top:18px">Coin profile</h3>
           <div class="sub">Image, banner &amp; socials. One free signature — no gas. Anyone can see it instantly.</div>
           <div class="profedit">
-            <label class="pf">Profile image (pfp)<input type="file" id="epfp" accept="image/*"></label>
-            <label class="pf">Banner<input type="file" id="ebanner" accept="image/*"></label>
+            <label class="pf">Profile image (pfp)<input type="file" id="epfp" accept="image/*"><span class="ihint">JPG, PNG or HEIC · any size (we resize it) · square looks best</span></label>
+            <label class="pf">Banner<input type="file" id="ebanner" accept="image/*"><span class="ihint">JPG, PNG or HEIC · any size · wide ~3:1 looks best</span></label>
             <textarea id="edesc" maxlength="280" rows="2" placeholder="Short description (max 280 chars)"></textarea>
             <input type="text" id="etg" placeholder="Telegram link (https://t.me/…)">
             <input type="text" id="etw" placeholder="Twitter/X link (https://x.com/…)">
@@ -480,39 +481,36 @@ async function maybeShowDev(){
 // WAS chosen but can't be processed it THROWS — so we never silently save a blank
 // image (the old code returned '' on failure, which is why "saved ✓" but no picture).
 const IMG_OK = /^data:image\/(webp|png|jpeg|gif);base64,/;
-async function imgDataUrl(id, maxDim, maxBytes = 750000){
+async function imgDataUrl(id, maxDim){
   const f = ($(id)?.files || [])[0];
-  if (!f) return '';
-  // Decode memory-safely: createImageBitmap with resizeWidth downsamples DURING decode,
-  // so a 12MP phone photo never has to fully rasterize — that's what was OOM-ing on
-  // low-memory phones. Fall back to a plain decode, then to <img> (covers iOS Safari).
-  let bmp = null;
-  try { bmp = await createImageBitmap(f, { resizeWidth: maxDim, resizeQuality: 'high' }); } catch {}
-  if (!bmp) { try { bmp = await createImageBitmap(f); } catch {} }
-  if (!bmp) { try { bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(0); im.src = URL.createObjectURL(f); }); } catch {} }
-  if (bmp) {
-    try {
-      const iw = bmp.width || bmp.naturalWidth || 0, ih = bmp.height || bmp.naturalHeight || 0;
+  if (!f) return '';                                   // no file chosen → leave existing image
+  if (f.size > 16 * 1024 * 1024) throw new Error('image is over 16MB — pick a smaller one');
+  // Best-effort local downscale (keeps the upload tiny). On ANY failure we send the RAW
+  // file and let the server convert + resize it — so it always works, HEIC included.
+  try {
+    let bmp = await createImageBitmap(f, { resizeWidth: maxDim, resizeQuality: 'high' }).catch(() => null);
+    if (!bmp) bmp = await createImageBitmap(f).catch(() => null);
+    if (!bmp) bmp = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = URL.createObjectURL(f); });
+    const iw = bmp && (bmp.width || bmp.naturalWidth), ih = bmp && (bmp.height || bmp.naturalHeight);
+    if (bmp && iw && ih) {
       const s = Math.min(1, maxDim / Math.max(iw, ih, 1));
-      const cw = Math.max(1, Math.round(iw * s)), ch = Math.max(1, Math.round(ih * s));
-      const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
-      cv.getContext('2d').drawImage(bmp, 0, 0, cw, ch);
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(iw * s)); cv.height = Math.max(1, Math.round(ih * s));
+      cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
       for (const t of ['image/webp', 'image/jpeg', 'image/png']) {
-        let url = ''; try { url = cv.toDataURL(t, 0.82); } catch {}
-        if (IMG_OK.test(url) && url.length * 0.75 <= maxBytes) return url;
+        let url = ''; try { url = cv.toDataURL(t, 0.85); } catch {}
+        if (IMG_OK.test(url)) return url;            // webp is always tiny; server re-checks anyway
       }
-    } catch {}
-  }
-  // Couldn't decode locally (HEIC/exotic) → hand the RAW file to the server, which
-  // converts + downscales it. That's how iPhone HEIC works on Android with no setting.
-  if (f.size <= 16 * 1024 * 1024) {
-    let raw = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(0); r.readAsDataURL(f); });
-    if (typeof raw === 'string') {
-      if (/^data:;?base64,/.test(raw)) { const n = (f.name || '').toLowerCase(); const mm = /\.hei?c$/.test(n) ? 'image/heic' : /\.heif$/.test(n) ? 'image/heif' : 'application/octet-stream'; raw = raw.replace(/^data:;?base64,/, `data:${mm};base64,`); }
-      if (/^data:[\w.+/-]+;base64,/.test(raw)) return raw;
     }
+  } catch { /* fall through to raw */ }
+  // Raw fallback — the server downscales/converts (HEIC etc.). FileReader never rejects here,
+  // so a picked file never surfaces an "undefined" error.
+  let raw = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(String(r.result || '')); r.onerror = () => res(''); r.readAsDataURL(f); });
+  if (raw) {
+    if (/^data:;?base64,/.test(raw)) { const n = (f.name || '').toLowerCase(); const mm = /\.hei?c$/.test(n) ? 'image/heic' : /\.heif$/.test(n) ? 'image/heif' : 'application/octet-stream'; raw = raw.replace(/^data:;?base64,/, `data:${mm};base64,`); }
+    if (/^data:[\w.+/-]+;base64,/.test(raw)) return raw;
   }
-  throw new Error('that image is too large — please use one under 16MB');
+  throw new Error('could not read that image — please try a JPG or PNG');
 }
 // Paint a profile onto the page (pfp, banner, description + socials). Reused by the
 // initial load and by the creator's save (so a fresh save shows instantly, without
@@ -547,8 +545,8 @@ $('saveProfile')?.addEventListener('click', async () => {
     note('Preparing images…');
     // imgDataUrl THROWS if a chosen file can't be encoded — so we never save a blank image.
     let pfp = '', banner = '';
-    try { pfp = await imgDataUrl('epfp', 400); } catch (e) { return note('Profile image: ' + e.message, 'err'); }
-    try { banner = await imgDataUrl('ebanner', 1200); } catch (e) { return note('Banner: ' + e.message, 'err'); }
+    try { pfp = await imgDataUrl('epfp', 400); } catch (e) { return note('Profile image: ' + (e?.message || 'could not read it — try a JPG or PNG'), 'err'); }
+    try { banner = await imgDataUrl('ebanner', 1200); } catch (e) { return note('Banner: ' + (e?.message || 'could not read it — try a JPG or PNG'), 'err'); }
     const desc = ($('edesc').value || '').trim(), tg = ($('etg').value || '').trim(), tw = ($('etw').value || '').trim(), web = ($('eweb').value || '').trim();
     // Don't POST an all-empty profile (that's what created the blank rows before).
     if (!pfp && !banner && !desc && !tg && !tw && !web && !(PROFILE && PROFILE.image))

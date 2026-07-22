@@ -147,7 +147,8 @@ async function ensureChain(eip) {
         method: "wallet_addEthereumChain",
         params: [{
           chainId: CHAIN.hexId, chainName: CHAIN.name, nativeCurrency: CHAIN.currency,
-          rpcUrls: CHAIN.rpc, blockExplorerUrls: [CHAIN.explorer],
+          // write-capable RPC only — the wallet broadcasts txs through this, never our read proxy
+          rpcUrls: CHAIN.walletRpcUrls || CHAIN.rpc, blockExplorerUrls: [CHAIN.explorer],
         }],
       });
     } else { throw e; }
@@ -817,6 +818,25 @@ function requireFloor() {
     throw new Error("The community floor opens when the Pad goes live (pre-deploy audit).");
 }
 
+// Restore an existing wallet session WITHOUT a popup (eth_accounts is silent), so the
+// connection persists across page navigations instead of forcing a reconnect every page.
+async function eagerConnect() {
+  try {
+    const eip = injected();
+    if (!eip) return;
+    const accts = await eip.request({ method: "eth_accounts" }); // silent: returns [] if not authorized
+    if (!accts || !accts.length) return;
+    _provider = new ethers.BrowserProvider(eip, "any");
+    _signer = await _provider.getSigner();
+    _account = await _signer.getAddress();
+    eip.removeAllListeners?.("accountsChanged");
+    eip.on?.("accountsChanged", () => location.reload());
+    eip.on?.("chainChanged", () => location.reload());
+    window.dispatchEvent(new Event("robinpad:ready"));   // re-fire so the UI shows the restored address
+    window.dispatchEvent(new Event("sheriffpad:ready"));
+  } catch { /* stays disconnected — the Connect button still works */ }
+}
+
 // expose a tiny global for the plain-HTML pages (no bundler)
 if (typeof window !== "undefined") {
   window.RobinPad = {
@@ -832,4 +852,5 @@ if (typeof window !== "undefined") {
   window.SheriffPad = window.RobinPad; // back-compat alias for existing pages
   window.dispatchEvent(new Event("robinpad:ready"));
   window.dispatchEvent(new Event("sheriffpad:ready"));
+  eagerConnect(); // silently restore a prior connection so it survives navigation
 }

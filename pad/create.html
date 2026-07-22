@@ -183,35 +183,32 @@ function prev(inp,which){
 // Robust on phones: createImageBitmap (decodes HEIC/EXIF photos) → <img> fallback →
 // downscale → webp/jpeg/png encode → raw-bytes fallback. Returns "" only when no file
 // is chosen; THROWS when a chosen file can't be processed (never silently blank).
+// Best-effort local downscale → tiny upload; on ANY failure send the raw file and let the
+// server convert/resize (HEIC included). Returns "" only when no file is chosen; throws a
+// clear Error otherwise (never rejects with a non-Error, so no "undefined" messages).
 const IMG_OK=/^data:image\/(webp|png|jpeg|gif);base64,/;
-async function imgDataUrl(id, maxDim, maxBytes=750000){
+async function imgDataUrl(id, maxDim){
   const f=(document.getElementById(id)?.files||[])[0];
   if(!f) return "";
-  // Memory-safe decode (downsample during decode → no OOM on big phone photos), then
-  // full decode, then <img> fallback.
-  let bmp=null;
-  try{ bmp=await createImageBitmap(f,{resizeWidth:maxDim,resizeQuality:'high'}); }catch{}
-  if(!bmp){ try{ bmp=await createImageBitmap(f); }catch{} }
-  if(!bmp){ try{ bmp=await new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>rej(0);im.src=URL.createObjectURL(f);}); }catch{} }
-  if(bmp){
-    try{
-      const iw=bmp.width||bmp.naturalWidth||0, ih=bmp.height||bmp.naturalHeight||0;
+  if(f.size>16*1024*1024) throw new Error('image is over 16MB — pick a smaller one');
+  try{
+    let bmp=await createImageBitmap(f,{resizeWidth:maxDim,resizeQuality:'high'}).catch(()=>null);
+    if(!bmp) bmp=await createImageBitmap(f).catch(()=>null);
+    if(!bmp) bmp=await new Promise((res)=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>res(null);im.src=URL.createObjectURL(f);});
+    const iw=bmp&&(bmp.width||bmp.naturalWidth), ih=bmp&&(bmp.height||bmp.naturalHeight);
+    if(bmp&&iw&&ih){
       const s=Math.min(1,maxDim/Math.max(iw,ih,1));
-      const cw=Math.max(1,Math.round(iw*s)),ch=Math.max(1,Math.round(ih*s));
-      const cv=document.createElement('canvas'); cv.width=cw; cv.height=ch;
-      cv.getContext('2d').drawImage(bmp,0,0,cw,ch);
-      for(const t of ['image/webp','image/jpeg','image/png']){ let url=''; try{url=cv.toDataURL(t,0.82);}catch{} if(IMG_OK.test(url)&&url.length*0.75<=maxBytes) return url; }
-    }catch{}
-  }
-  // Couldn't decode locally (HEIC/exotic) → send the RAW file; the server converts it.
-  if(f.size<=16*1024*1024){
-    let raw=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(0);r.readAsDataURL(f);});
-    if(typeof raw==='string'){
-      if(/^data:;?base64,/.test(raw)){ const n=(f.name||'').toLowerCase(); const mm=/\.hei?c$/.test(n)?'image/heic':/\.heif$/.test(n)?'image/heif':'application/octet-stream'; raw=raw.replace(/^data:;?base64,/,`data:${mm};base64,`); }
-      if(/^data:[\w.+/-]+;base64,/.test(raw)) return raw;
+      const cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(iw*s)); cv.height=Math.max(1,Math.round(ih*s));
+      cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height);
+      for(const t of ['image/webp','image/jpeg','image/png']){ let url=''; try{url=cv.toDataURL(t,0.85);}catch{} if(IMG_OK.test(url)) return url; }
     }
+  }catch{}
+  let raw=await new Promise((res)=>{const r=new FileReader();r.onload=()=>res(String(r.result||''));r.onerror=()=>res('');r.readAsDataURL(f);});
+  if(raw){
+    if(/^data:;?base64,/.test(raw)){ const n=(f.name||'').toLowerCase(); const mm=/\.hei?c$/.test(n)?'image/heic':/\.heif$/.test(n)?'image/heif':'application/octet-stream'; raw=raw.replace(/^data:;?base64,/,`data:${mm};base64,`); }
+    if(/^data:[\w.+/-]+;base64,/.test(raw)) return raw;
   }
-  throw new Error('that image is too large — please use one under 16MB');
+  throw new Error('could not read that image — please try a JPG or PNG');
 }
 function sync(){
   const n=document.getElementById('name').value||'Your coin';
