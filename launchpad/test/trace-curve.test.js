@@ -12,8 +12,8 @@ const TOTAL = 1_000_000_000; // 1B whole tokens
 
 // param sets to trace
 const SETS = [
-  { name: "DEEP: $1800 start, 4-ETH raise, grad ~$41k", smag: 207800, cw: 31200, mgw: 31000 },
-  { name: "STEEP: $2000 start, $1400 pops mcap, grad ~$16k", smag: 206800, cw: 21000, mgw: 20800 },
+  { name: "YOURS committed ($3376 start)", smag: 201600, cw: 23000, mgw: 22800 },
+  { name: "PONS-matched ($2603 start, grad ~$44k)", smag: 204200, cw: 28200, mgw: 28000 },
 ];
 
 function priceFDV(sqrtP, tokenIsToken0) {
