@@ -5,7 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IUniswapV3Factory, IUniswapV3Pool, IUniswapV3MintCallback} from "./interfaces/IUniswapV3.sol";
+import {IUniswapV3Factory, IUniswapV3Pool, IUniswapV3MintCallback, IUniswapV3SwapCallback} from "./interfaces/IUniswapV3.sol";
 import {PoolMath} from "./libraries/PoolMath.sol";
 
 interface ICurveBondDeployer {
@@ -25,7 +25,7 @@ interface ICurveBond {
 /// charts it the moment it's created. When price reaches the graduation end (the curve is bought out), anyone
 /// calls `graduate()`: it collects the raised WETH + any unsold token and posts the Bond (Sherwood + Bounty +
 /// Ambush) into the SAME pool. No ETH from the platform — the token seeds its own liquidity; buyers bring ETH.
-contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
+contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint24 public constant POOL_FEE = 10000;
@@ -74,6 +74,7 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         // to "let it ride" for a thicker floor, or lower it (never below the minimum) to graduate sooner.
 
     bool private _minting;
+    bool private _swapping;
 
     error NotSeeded();
     error AlreadySeeded();
@@ -240,7 +241,22 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         // the ceiling. That closes the floor-drain vector while allowing "let it ride" anywhere below it.
         (uint160 sp, int24 tickNow,,,,,) = pool.slot0();
         bool aboveCeil = tokenIsToken0 ? tickNow > gradTick + GRAD_MAX_DEV : tickNow < gradTick - GRAD_MAX_DEV;
-        if (aboveCeil) revert NotReady();
+        if (aboveCeil) {
+            // Anti-grief: anyone can shove spot into the empty zone ABOVE the ceiling for ~0 cost (no liquidity
+            // past gradTick), which used to make graduate() revert and let an attacker block graduation every
+            // block. Instead of reverting, nudge spot back down to the honest ceiling using the curve's OWN
+            // still-live liquidity BEFORE we burn it, so the Bond posts around a real, backed price (no drain).
+            // Selling the token drives price toward the ceiling; the swap traverses the empty zone consuming ~0
+            // and stops exactly at the ceiling limit (the curve position, which ends at gradTick, is untouched).
+            uint160 ceilSqrt = PoolMath.getSqrtRatioAtTick(gradTick);
+            _swapping = true;
+            pool.swap(address(this), tokenIsToken0, int256(1), ceilSqrt, "");
+            _swapping = false;
+            (sp, tickNow,,,,,) = pool.slot0();
+            // must now sit at/below the ceiling; if the nudge somehow didn't land, refuse rather than post high
+            bool stillAbove = tokenIsToken0 ? tickNow > gradTick + GRAD_MAX_DEV : tickNow < gradTick - GRAD_MAX_DEV;
+            if (stillAbove) revert NotReady();
+        }
         graduated = true;
 
         // pull the whole curve position back here (raised WETH + the still-unsold curve tokens)
@@ -305,5 +321,15 @@ contract CurvePool is IUniswapV3MintCallback, ReentrancyGuard {
         require(_minting, "no mint");
         if (amount0Owed > 0) IERC20(token0).safeTransfer(msg.sender, amount0Owed);
         if (amount1Owed > 0) IERC20(token1).safeTransfer(msg.sender, amount1Owed);
+    }
+
+    /// @dev Only ever invoked by the one-off graduate() nudge that pushes a griefed above-ceiling spot back to
+    /// the ceiling. Guarded by `_swapping` (set only inside graduate()) and the pool identity, so no external
+    /// caller can drain the curve through it. Pays whatever the pool is owed from this contract's balance.
+    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata) external override {
+        if (msg.sender != address(pool)) revert NotPool();
+        require(_swapping, "no swap");
+        if (amount0Delta > 0) IERC20(token0).safeTransfer(msg.sender, uint256(amount0Delta));
+        if (amount1Delta > 0) IERC20(token1).safeTransfer(msg.sender, uint256(amount1Delta));
     }
 }
