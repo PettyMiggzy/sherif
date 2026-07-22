@@ -124,18 +124,24 @@ async function main() {
   console.log(`  padFactory:       "${await factory.getAddress()}",`);
   console.log(`  rewardVault:      "${await rewardVault.getAddress()}",`);
   console.log(`  floorCoopFactory: "${await floorFactory.getAddress()}",`);
-  console.log(`  platformSplitter: "${await splitter.getAddress()}",  // standalone until $ROBIN buyback is wired`);
+  console.log(`  splitter: "${await splitter.getAddress()}",  // standalone until $ROBIN buyback is wired`);
   // Auto-write the 5 addresses straight into the pad's config so there is NOTHING to paste by hand.
   try {
     const cfgPath = path.resolve(__dirname, "..", "..", "pad", "assets", "config.js");
     let cfg = fs.readFileSync(cfgPath, "utf8");
-    const set = (k, v) => { cfg = cfg.replace(new RegExp(`(\\b${k}:\\s*)"[^"]*"`), `$1"${v}"`); };
+    const missed = [];
+    const set = (k, v) => {
+      const re = new RegExp(`(\\b${k}:\\s*)"[^"]*"`);
+      if (!re.test(cfg)) { missed.push(k); return; } // don't silently no-op on a key rename
+      cfg = cfg.replace(re, `$1"${v}"`);
+    };
     set("padRouter", await router.getAddress());
     set("padFactory", await factory.getAddress());
     set("rewardVault", await rewardVault.getAddress());
     set("floorCoopFactory", await floorFactory.getAddress());
-    set("platformSplitter", await splitter.getAddress());
+    set("splitter", await splitter.getAddress()); // config.js key is `splitter` (NOT platformSplitter)
     fs.writeFileSync(cfgPath, cfg);
+    if (missed.length) throw new Error(`config keys not found (paste these by hand): ${missed.join(", ")}`);
     console.log(`\n✓ wrote all 5 addresses into pad/assets/config.js — nothing to paste.`);
     console.log(`  to go live: git add pad/assets/config.js && git commit -m "wire live addresses" && git push`);
   } catch (e) {
