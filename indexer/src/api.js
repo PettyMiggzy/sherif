@@ -64,6 +64,7 @@ async function ensureImg() {
   try { _heic = (await import("heic-convert")).default; } catch { _heic = null; }
   _imgReady = true;
 }
+ensureImg(); // preload at startup so /health can report `img` and the first upload isn't slow
 function looksHeic(buf, mime) {
   if (/hei[cf]/i.test(mime || "")) return true;
   // ISO-BMFF: bytes 4..8 == "ftyp", brand at 8..12 is heic/heif/mif1/msf1/hevc…
@@ -344,7 +345,9 @@ export function startApi() {
         const c = db.prepare("SELECT COUNT(*) n FROM coins").get().n;
         const t = db.prepare("SELECT COUNT(*) n FROM trades").get().n;
         const cur = db.prepare("SELECT v FROM meta WHERE k='cursor'").get();
-        return send(res, 200, { ok: true, head: getHead(), cursor: cur ? Number(cur.v) : null, coins: c, trades: t }, origin);
+        // `img` proves this build has the image-conversion toolchain loaded (HEIC etc.) —
+        // a quick way to confirm a redeploy actually took and the deps installed.
+        return send(res, 200, { ok: true, head: getHead(), cursor: cur ? Number(cur.v) : null, coins: c, trades: t, img: !!(_sharp && _heic) }, origin);
       }
 
       if (path === "/api/stats") {
