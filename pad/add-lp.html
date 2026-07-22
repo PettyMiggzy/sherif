@@ -242,6 +242,12 @@ function sync(){
   const days = +$('term').value;
   const ok = resolved && resolved.hasPool && amt > 0;
   $('openBtn').disabled = !ok;
+  // Never a silent dead-end: say exactly what's needed, and relabel the button to match.
+  const btn = $('openBtn');
+  if (!resolved) { setMsg('Paste a token contract address above to begin.'); btn.textContent = 'Paste a token first'; }
+  else if (!resolved.hasPool) { setMsg('This token has no WETH pool yet — LP opens once a coin graduates to a DEX pool.', 'err'); btn.textContent = 'No WETH pool for this token'; }
+  else if (amt <= 0) { setMsg('Enter an amount of ETH to add.'); btn.textContent = 'Enter an amount'; }
+  else { setMsg(''); btn.textContent = 'Open position'; }
   const brk = $('brk');
   if (amt > 0 && resolved){
     brk.classList.add('show');
@@ -275,6 +281,12 @@ $('openBtn').addEventListener('click', async () => {
     setMsg('Position opened ✓ — you’re now earning fees.', 'ok');
   } catch(e){ setMsg(e.message || 'Failed', 'err'); }
 });
+
+// Prefill from ?token= / ?c= so a coin page can link straight here, and paint the initial
+// "paste a token first" guidance. (Runs last, after setMsg/sync/onAddr are all defined.)
+const _pre = new URLSearchParams(location.search);
+const _preTok = (_pre.get('token') || _pre.get('c') || '').trim();
+if (isAddr(_preTok)) { $('addr').value = _preTok; onAddr(); } else sync();
 </script>
 </body>
 </html>
