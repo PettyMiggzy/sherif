@@ -471,7 +471,7 @@ export async function listCoins(max = 60) {
   for (let i = n - 1; i >= Math.max(0, n - max); i--) idxs.push(i);
   const tokens = await Promise.all(idxs.map((i) => f.allTokens(i)));
   const recs = await Promise.all(tokens.map((t) => f.recordOf(t)));
-  return recs.map((r) => ({ token: r.token, curve: r.curve, dev: r.dev, at: Number(r.at) }));
+  return recs.map((r) => ({ token: r.token, curve: r.curve, dev: r.dev, at: Number(r[3]) })); // r[3]=Record.at (see feed())
 }
 
 // ── indexer API client (optional; graceful fallback to direct RPC) ──────────
@@ -489,10 +489,16 @@ async function apiGet(path) {
 /// Returns { coins, total }. `offset` advances pages; `limit` sizes each page.
 export async function feed({ sort = "new", filter = "all", q = "", limit = 24, offset = 0 } = {}) {
   if (hasApi()) {
-    const params = new URLSearchParams({ sort, filter, limit: String(limit), offset: String(offset) });
-    if (q) params.set("q", q);
-    const r = await apiGet(`/api/coins?${params}`);
-    return { source: "api", coins: r.coins || [], total: r.total ?? null };
+    try {
+      const params = new URLSearchParams({ sort, filter, limit: String(limit), offset: String(offset) });
+      if (q) params.set("q", q);
+      const r = await apiGet(`/api/coins?${params}`);
+      return { source: "api", coins: r.coins || [], total: r.total ?? null };
+    } catch (e) {
+      // Indexer configured but unreachable — fall through to reading the chain directly
+      // so the board still shows coins (just without the rich sorts/volume/images).
+      console.warn("feed: indexer unreachable, falling back to direct RPC —", e?.message || e);
+    }
   }
   // Fallback with no indexer: page the factory list newest-first. Rich sorts
   // (volume/trending/mcap) need the indexer, but new/old + paging work on-chain.
@@ -514,7 +520,7 @@ export async function feed({ sort = "new", filter = "all", q = "", limit = 24, o
   let coins = recs.map((r, i) => ({
     token: r.token, curve: r.curve, dev: r.dev,
     name: metas[i].name, symbol: metas[i].symbol,
-    launchTs: Number(r.at), graduated: false,
+    launchTs: Number(r[3]), graduated: false, // r[3] = Record.at — ethers Result `.at` collides with Array.prototype.at
   }));
   if (q) {
     const s = q.toLowerCase();
