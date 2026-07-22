@@ -234,7 +234,7 @@ export const ADMIN_ABI = {
 // API in ONE request instead of fanning out dozens of RPC calls per page. Leave
 // "" and everything falls back to reading the chain directly — the pad works
 // either way, the API just makes it fast. No secrets here; the API is read-only.
-export const API_BASE = "";
+export const API_BASE = "https://api.robinlab.io";
 
 // ── GoPlus token-security (see /assets/safety.js) ───────────────────────────
 // GoPlus supports Robinhood Chain (4663), so our coins get the same honeypot/tax/mint scan wallets use.
