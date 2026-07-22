@@ -207,6 +207,22 @@ export async function setCoinProfile(token, fields = {}) {
   return j.profile;
 }
 
+/// A wallet's holdings from the indexer's holder index (coins it launched or traded,
+/// with an approximate balance). Returns null if the API/endpoint is unavailable, so the
+/// caller can fall back to scanning balances directly. `null` (no api) vs `[]` (nothing held).
+export async function holdings(addr) {
+  if (!hasApi()) return null;
+  try { const j = await apiGet(`/api/holdings/${addr}`); return Array.isArray(j.coins) ? j.coins : null; }
+  catch { return null; }
+}
+
+/// A coin's holders (top N + count) from the holder index, or null.
+export async function coinHolders(token, limit = 20) {
+  if (!hasApi()) return null;
+  try { return await apiGet(`/api/coin/${token}/holders?limit=${limit}`); }
+  catch { return null; }
+}
+
 /// Read a coin's saved profile (image/banner URLs + socials), or null.
 export async function getCoinProfile(token) {
   if (!hasApi()) return null;
@@ -789,7 +805,7 @@ if (typeof window !== "undefined") {
   window.RobinPad = {
     connect, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax,
     setCoinProfile, getCoinProfile, profileMessage,
-    estimateDevBuyEth, isDeployed, tokenBalance,
+    estimateDevBuyEth, isDeployed, tokenBalance, holdings, coinHolders,
     curveInfo, devEscrow, graduate, setGradTarget, withdrawDev, burnDev, listCoins, tokenMeta,
     feed, stats, recentTrades, hasApi,
     holders, trades, chainTrades, feeTotals,

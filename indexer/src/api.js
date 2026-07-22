@@ -11,6 +11,7 @@ import { getRewardRoot, claimsForEpoch, claimsForUser, getRewardClaim } from "./
 import {
   coinDev, upsertCoinMetaFields, setCoinPfp, setCoinBanner,
   getCoinMetaLite, getCoinPfp, getCoinBanner,
+  holdingsByActor, holdersByToken,
 } from "./db.js";
 import { currentEpoch as rewardsEpoch, userAllocations as rewardsUserAlloc } from "./rewards.js";
 
@@ -420,6 +421,39 @@ export function startApi() {
           eth: t.eth, tokens: t.tokens, fee: t.fee, block: t.block, ts: t.ts,
         }));
         return send(res, 200, { trades: rows }, origin);
+      }
+
+      // A wallet's holdings — coins it launched or traded, with an approximate balance
+      // and enough coin metadata to render a card. Derived from curve activity (see
+      // db.js): the client can refine each `balance` with a live balanceOf. `approx` flags
+      // that these are curve-derived, not a full ERC20-transfer ledger.
+      m = path.match(/^\/api\/holdings\/(0x[0-9a-fA-F]{40})$/);
+      if (m) {
+        const rows = holdingsByActor.all({ a: m[1].toLowerCase() });
+        const coins = rows.map((r) => ({
+          token: r.token, curve: r.curve, pool: r.pool, dev: r.dev,
+          name: r.name, symbol: r.symbol, graduated: !!r.graduated,
+          mcapEth: r.mcap_eth ?? null, progress: r.progress ?? null, launchTs: r.launch_ts ?? null,
+          image: r.has_pfp ? `${base}/media/${r.token}/pfp?v=${r.meta_ts}` : null,
+          balance: r.bal_wei / 1e18,          // whole tokens (approx)
+          isDev: String(r.dev).toLowerCase() === m[1].toLowerCase(),
+        }));
+        return send(res, 200, { holder: m[1].toLowerCase(), approx: true, count: coins.length, coins }, origin);
+      }
+
+      // A coin's holders (top N + count), from curve activity. dev_bought is credited to
+      // the creator. Same approximation caveat as /api/holdings.
+      m = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/holders$/);
+      if (m) {
+        const token = m[1].toLowerCase();
+        const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 20), 1), 200);
+        const dev = coinDev.get(token);
+        const devBoughtTokens = dev ? Number((db.prepare("SELECT dev_bought AS d FROM coins WHERE token=?").get(token) || {}).d || 0) / 1e18 : 0;
+        const map = new Map();
+        for (const r of holdersByToken.all({ t: token })) map.set(r.holder, (r.net_wei || 0) / 1e18);
+        if (dev) map.set(dev.dev, (map.get(dev.dev) || 0) + devBoughtTokens); // credit the launch allocation
+        const all = [...map.entries()].map(([holder, balance]) => ({ holder, balance })).filter((h) => h.balance > 1e-6).sort((a, b) => b.balance - a.balance);
+        return send(res, 200, { token, approx: true, holders: all.length, top: all.slice(0, limit) }, origin);
       }
 
       // ── rewards ──

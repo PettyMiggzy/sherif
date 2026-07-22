@@ -217,6 +217,39 @@ export const getCoinBanner = db.prepare("SELECT banner AS blob, banner_mime AS m
 // canonical chain. (Coins are launch-once; we just re-upsert them.)
 export const purgeTradesFrom = db.prepare("DELETE FROM trades WHERE block >= ?");
 
+// ── holdings / holders (derived from curve activity — no extra indexing) ───────
+// Balance ≈ the creator's launch allocation (dev_bought, for the coin's dev) plus the
+// net of every PadRouter buy/sell by that wallet. This is reorg-safe for free (it's a
+// query over `trades` + `coins`). It reflects BONDING-CURVE activity: it does NOT see
+// wallet-to-wallet ERC20 transfers or post-graduation DEX trades, so the client refines
+// displayed numbers with a live balanceOf. Token amounts summed as REAL (whole-token
+// precision is exact enough for a dashboard; exact wei live on /api/trades).
+//
+// One wallet's holdings: coins it launched or traded, with an approx balance (wei-scale).
+export const holdingsByActor = db.prepare(`
+  WITH tn AS (
+    SELECT token,
+           SUM(CASE WHEN side='buy' THEN CAST(tokens AS REAL) ELSE -CAST(tokens AS REAL) END) AS net_wei
+    FROM trades WHERE actor=@a GROUP BY token
+  )
+  SELECT c.token, c.curve, c.pool, c.dev, c.name, c.symbol, c.graduated,
+         c.mcap_eth, c.progress, c.launch_ts,
+         cm.updated_ts AS meta_ts, (cm.pfp IS NOT NULL) AS has_pfp,
+         (COALESCE(tn.net_wei,0) + CASE WHEN c.dev=@a THEN CAST(c.dev_bought AS REAL) ELSE 0 END) AS bal_wei
+  FROM coins c
+  LEFT JOIN tn ON tn.token = c.token
+  LEFT JOIN coin_meta cm ON cm.token = c.token
+  WHERE (tn.token IS NOT NULL OR c.dev=@a)
+    AND (COALESCE(tn.net_wei,0) + CASE WHEN c.dev=@a THEN CAST(c.dev_bought AS REAL) ELSE 0 END) > 1e12
+  ORDER BY bal_wei DESC
+`);
+// One coin's net position per wallet from trades (dev_bought is added to the dev in JS).
+export const holdersByToken = db.prepare(`
+  SELECT actor AS holder,
+         SUM(CASE WHEN side='buy' THEN CAST(tokens AS REAL) ELSE -CAST(tokens AS REAL) END) AS net_wei
+  FROM trades WHERE token=@t GROUP BY actor
+`);
+
 // ── rewards ──────────────────────────────────────────────────────────────────
 export const insertAccrual = db.prepare(`
 INSERT INTO reward_accruals (tx, log_index, coin, epoch, side, amount, block, ts)

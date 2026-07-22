@@ -338,7 +338,7 @@ const fmtEth = (wei) => { const n = Number(wei) / 1e18; return n >= 1 ? n.toFixe
 const fmtTok = (wei) => { const n = Number(wei) / 1e18; return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : Math.round(n); };
 const agoS = (ts) => { if (!ts) return ''; const s = Math.max(0, Math.floor(Date.now()/1000) - ts); return s<60?s+'s':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h':Math.floor(s/86400)+'d'; };
 const setNote = (m, kind) => { const n = $('tradeNote'); n.textContent = m; n.style.color = kind === 'err' ? 'var(--red)' : kind === 'ok' ? 'var(--green)' : 'var(--ink-faint)'; };
-const refreshConnect = () => { const a = Pad.account(); $('connectBtn').textContent = a ? Pad.short(a) : 'Connect wallet'; };
+const refreshConnect = () => { const a = Pad.account(); const b = $('connectBtn'); b.textContent = a ? Pad.short(a) : 'Connect wallet'; b.title = a ? 'View your profile' : ''; };
 
 let SIDE = 'buy', COIN = null, PROFILE = null;
 
@@ -394,7 +394,10 @@ $('quick').addEventListener('click', (e) => {
   }
 });
 $('copyCa').addEventListener('click', () => { if (TOKEN && navigator.clipboard) navigator.clipboard.writeText(TOKEN); });
-$('connectBtn').addEventListener('click', async () => { try { await Pad.connect(); refreshConnect(); await maybeShowDev(); if (SIDE === 'sell') loadBal(); } catch (e) { setNote(e.message, 'err'); } });
+$('connectBtn').addEventListener('click', async () => {
+  if (Pad.account()) { location.href = 'profile.html'; return; }   // already connected → open your profile
+  try { await Pad.connect(); refreshConnect(); await maybeShowDev(); if (SIDE === 'sell') loadBal(); } catch (e) { setNote(e.message, 'err'); }
+});
 renderQuick(); // paint the buy presets on first load (before any side toggle)
 window.addEventListener('robinpad:ready', refreshConnect);
 refreshConnect();

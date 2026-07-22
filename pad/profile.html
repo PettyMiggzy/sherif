@@ -172,6 +172,28 @@ async function allCoins(cap = UNIVERSE_CAP){
   }
   return out;
 }
+// Prefer the indexer's holder index: it returns exactly the coins this wallet touched,
+// so we only balanceOf a handful (scales to any number of coins). Fall back to a bounded
+// full client scan if the endpoint isn't available.
+async function loadHoldings(coins, addr){
+  let candidates = null;
+  try { candidates = await Pad.holdings(addr); } catch {}
+  if (candidates !== null){
+    const held = [];
+    for (let i = 0; i < candidates.length; i += 8){
+      const batch = candidates.slice(i, i + 8);
+      const rows = await Promise.all(batch.map(async (c) => {
+        let bal = Number(c.balance) || 0;                          // approx from the index
+        try { const b = Number(await Pad.tokenBalance(c.token, addr)); if (Number.isFinite(b)) bal = b; } catch {}
+        return { c, bal };                                         // refined to the exact on-chain balance
+      }));
+      for (const r of rows) if (r.bal > 0) held.push(r);
+    }
+    held.sort((a,b) => (b.bal * priceEth(b.c)) - (a.bal * priceEth(a.c)));
+    return { held, scanned: candidates.length, total: candidates.length, server: true };
+  }
+  return scanHoldings(coins, addr);
+}
 async function scanHoldings(coins, addr){
   const sub = coins.slice(0, HOLDINGS_SCAN_CAP);
   const held = [];
@@ -211,7 +233,7 @@ async function load(addr){
   $('cLaunched').textContent = launched.length ? launched.length + ' coin' + (launched.length>1?'s':'') : '';
 
   // holdings = coins this wallet holds a balance of
-  const { held, scanned, total } = await scanHoldings(coins, target);
+  const { held, scanned, total, server } = await loadHoldings(coins, target);
   $('holdings').innerHTML = held.length
     ? held.map(holdingCard).join('')
     : `<div class="empty">No holdings in listed coins yet. <a href="index.html">Explore coins →</a></div>`;
@@ -219,7 +241,7 @@ async function load(addr){
   const portfolio = held.reduce((s, h) => s + h.bal * priceEth(h.c) * ETH_USD, 0);
   $('stValue').textContent = held.length ? fmtUsd(portfolio) : '$0';
   $('cHoldings').textContent = held.length ? held.length + ' position' + (held.length>1?'s':'') : '';
-  $('holdNote').textContent = total > scanned ? `Checked balances across the ${scanned} most recent coins.` : '';
+  $('holdNote').textContent = (!server && total > scanned) ? `Checked balances across the ${scanned} most recent coins.` : '';
 }
 
 function showConnectPrompt(){
