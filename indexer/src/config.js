@@ -37,7 +37,10 @@ export const CFG = {
   corsOrigin: process.env.CORS_ORIGIN || "*",
 
   // ── coin profiles (creator-signed off-chain metadata: image, banner, socials) ──
-  profileMaxImageBytes: num("PROFILE_MAX_IMAGE_BYTES", 800 * 1024), // per image (pfp/banner), after base64 decode
+  profileMaxImageBytes: num("PROFILE_MAX_IMAGE_BYTES", 800 * 1024), // per STORED image (after server downscale)
+  profileMaxUploadBytes: num("PROFILE_MAX_UPLOAD_BYTES", 16 * 1024 * 1024), // per RAW upload the server will convert (HEIC photos are a few MB)
+  profilePfpDim: num("PROFILE_PFP_DIM", 400),                      // server downscales the pfp to fit this box
+  profileBannerDim: num("PROFILE_BANNER_DIM", 1200),               // …and the banner to this
   profileMaxSigAgeSecs: num("PROFILE_MAX_SIG_AGE", 600),            // reject signatures older/newer than this skew
 
   // ── rewards (RewardVault merkle poster) ──

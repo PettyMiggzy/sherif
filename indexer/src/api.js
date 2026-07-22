@@ -41,16 +41,60 @@ export function profileMessage(token, p) {
   return `Robin Labs — set coin profile\ntoken: ${token.toLowerCase()}\nts: ${p.ts}\ndigest: ${ethers.id(canon)}`;
 }
 
-const IMG_MIME = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-function parseDataUrl(dataUrl) {
+// Decode a base64 data: URL to { buf, mime } — accepts ANY image type (incl. HEIC/HEIF)
+// because the server downscales/converts before storing. Only the raw UPLOAD cap applies
+// here; the STORED-size cap is enforced after normalizeImage().
+function parseUpload(dataUrl) {
   const m = /^data:([a-z0-9.+/-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(dataUrl || "");
   if (!m) throw new Error("image must be a base64 data: URL");
   const mime = m[1].toLowerCase();
-  if (!IMG_MIME.has(mime)) throw new Error("image must be png, jpeg, webp or gif");
   const buf = Buffer.from(m[2], "base64");
   if (buf.length === 0) throw new Error("empty image");
-  if (buf.length > CFG.profileMaxImageBytes) throw new Error(`image too large (max ${Math.floor(CFG.profileMaxImageBytes / 1024)}KB)`);
+  if (buf.length > CFG.profileMaxUploadBytes) throw new Error(`image too large (max ${Math.floor(CFG.profileMaxUploadBytes / (1024 * 1024))}MB)`);
   return { buf, mime };
+}
+
+// Lazily load the image toolchain so the indexer still boots if they're absent
+// (e.g. a compute-only replica). sharp = resize/encode (its prebuilt libvips can't
+// decode HEIC), heic-convert = pure-JS HEIC/HEIF → JPEG.
+let _sharp, _heic, _imgReady = false;
+async function ensureImg() {
+  if (_imgReady) return;
+  try { _sharp = (await import("sharp")).default; } catch { _sharp = null; }
+  try { _heic = (await import("heic-convert")).default; } catch { _heic = null; }
+  _imgReady = true;
+}
+function looksHeic(buf, mime) {
+  if (/hei[cf]/i.test(mime || "")) return true;
+  // ISO-BMFF: bytes 4..8 == "ftyp", brand at 8..12 is heic/heif/mif1/msf1/hevc…
+  if (buf.length > 12 && buf.toString("latin1", 4, 8) === "ftyp") {
+    const brand = buf.toString("latin1", 8, 12).toLowerCase();
+    return /hei[cf]|mif1|msf1|hevc|heix/.test(brand);
+  }
+  return false;
+}
+// Convert any uploaded image to a small web-displayable webp that fits `maxDim`.
+// HEIC is decoded to JPEG first, EXIF orientation is applied, and it's never upscaled.
+async function normalizeImage(buf, mime, maxDim) {
+  await ensureImg();
+  let input = buf;
+  if (looksHeic(buf, mime)) {
+    if (!_heic) throw new Error("this server build can't read HEIC yet — upload a JPG or PNG");
+    input = Buffer.from(await _heic({ buffer: buf, format: "JPEG", quality: 0.92 }));
+  }
+  if (_sharp) {
+    const out = await _sharp(input, { failOn: "none" })
+      .rotate()                                                              // honor EXIF orientation
+      .resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toBuffer();
+    if (out.length > CFG.profileMaxImageBytes) throw new Error("image too large after processing");
+    return { buf: out, mime: "image/webp" };
+  }
+  // No sharp: only accept an already-small web image, stored as-is.
+  const ok = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+  if (ok.has(mime) && input.length <= CFG.profileMaxImageBytes) return { buf: input, mime };
+  throw new Error("image processing unavailable on this server");
 }
 
 function readBody(req, maxBytes) {
@@ -235,7 +279,7 @@ export function startApi() {
         const token = mm[1].toLowerCase();
         const dev = coinDev.get(token);
         if (!dev) return send(res, 404, { error: "unknown coin" }, origin);
-        const raw = await readBody(req, CFG.profileMaxImageBytes * 4);
+        const raw = await readBody(req, CFG.profileMaxUploadBytes * 3);
         const body = JSON.parse(raw.toString("utf8"));
         const ts = Number(body.ts);
         if (!Number.isFinite(ts)) return send(res, 400, { error: "missing ts" }, origin);
@@ -247,8 +291,12 @@ export function startApi() {
         catch { return send(res, 400, { error: "bad signature" }, origin); }
         if (signer.toLowerCase() !== String(dev.dev).toLowerCase())
           return send(res, 403, { error: "only the coin's creator can set its profile" }, origin);
-        const pfp = body.pfp ? parseDataUrl(body.pfp) : null;
-        const banner = body.banner ? parseDataUrl(body.banner) : null;
+        // Convert/downscale server-side so ANY format works (incl. iPhone HEIC that phones
+        // can't process). These awaits happen before the sync db transaction below.
+        const pfpRaw = body.pfp ? parseUpload(body.pfp) : null;
+        const bannerRaw = body.banner ? parseUpload(body.banner) : null;
+        const pfp = pfpRaw ? await normalizeImage(pfpRaw.buf, pfpRaw.mime, CFG.profilePfpDim) : null;
+        const banner = bannerRaw ? await normalizeImage(bannerRaw.buf, bannerRaw.mime, CFG.profileBannerDim) : null;
         const fields = {
           token,
           description: String(body.description || "").slice(0, 280),

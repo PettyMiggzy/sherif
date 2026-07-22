@@ -16,6 +16,8 @@
   "dependencies": {
     "@openzeppelin/merkle-tree": "^1.0.8",
     "better-sqlite3": "^11.8.1",
-    "ethers": "^6.13.5"
+    "ethers": "^6.13.5",
+    "heic-convert": "^2.1.0",
+    "sharp": "^0.33.5"
   }
 }

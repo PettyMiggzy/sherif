@@ -478,7 +478,6 @@ const IMG_OK = /^data:image\/(webp|png|jpeg|gif);base64,/;
 async function imgDataUrl(id, maxDim, maxBytes = 750000){
   const f = ($(id)?.files || [])[0];
   if (!f) return '';
-  const isHeic = /heic|heif/.test(((f.type || '') + ' ' + (f.name || '')).toLowerCase());
   // Decode memory-safely: createImageBitmap with resizeWidth downsamples DURING decode,
   // so a 12MP phone photo never has to fully rasterize — that's what was OOM-ing on
   // low-memory phones. Fall back to a plain decode, then to <img> (covers iOS Safari).
@@ -499,9 +498,16 @@ async function imgDataUrl(id, maxDim, maxBytes = 750000){
       }
     } catch {}
   }
-  // Undecodable. HEIC can't be converted on Android at all — say so specifically.
-  if (isHeic) throw new Error("iPhone HEIC photos can't be read on Android. On iPhone set Camera → Formats → Most Compatible, or just upload a screenshot / JPG / PNG.");
-  throw new Error('could not read that image — please use a JPG or PNG');
+  // Couldn't decode locally (HEIC/exotic) → hand the RAW file to the server, which
+  // converts + downscales it. That's how iPhone HEIC works on Android with no setting.
+  if (f.size <= 16 * 1024 * 1024) {
+    let raw = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(0); r.readAsDataURL(f); });
+    if (typeof raw === 'string') {
+      if (/^data:;?base64,/.test(raw)) { const n = (f.name || '').toLowerCase(); const mm = /\.hei?c$/.test(n) ? 'image/heic' : /\.heif$/.test(n) ? 'image/heif' : 'application/octet-stream'; raw = raw.replace(/^data:;?base64,/, `data:${mm};base64,`); }
+      if (/^data:[\w.+/-]+;base64,/.test(raw)) return raw;
+    }
+  }
+  throw new Error('that image is too large — please use one under 16MB');
 }
 // Paint a profile onto the page (pfp, banner, description + socials). Reused by the
 // initial load and by the creator's save (so a fresh save shows instantly, without
