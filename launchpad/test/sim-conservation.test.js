@@ -124,7 +124,7 @@ suite("Randomized conservation/solvency sim — many actors, interleaved buys+se
         if (consumed === 0n) zeroBuys++; // price sitting at the ceiling: buy fills nothing, no revert
       } else {
         // sell a random fraction (25%..100%) of the bag
-        const num = 25n + BigInt(Math.floor(rand() * 76n));
+        const num = 25n + BigInt(Math.floor(rand() * 76));
         let amt = (bag * num) / 100n;
         if (amt === 0n) amt = bag;
         const poolWethBefore = await wethW.balanceOf(poolAddr);
