@@ -39,7 +39,7 @@
   .nav-in{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;max-width:1120px;margin:0 auto}
   .nav .links{display:flex;gap:20px;align-items:center;font-size:.9rem;color:var(--dim)}
   .nav .links a:hover,.nav .links a.on{color:var(--lime)}
-  @media(max-width:760px){.nav .links a:not(.btn){display:none}}
+  @media(max-width:760px){.nav-in{flex-wrap:wrap}.nav .links{order:3;width:100%;justify-content:flex-start;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:.85rem}}
   .head{padding:40px 0 6px}
   .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.32em;color:var(--lime);text-transform:uppercase}
   .head h1{font-size:clamp(2.4rem,6.2vw,4rem);margin-top:12px}
@@ -158,6 +158,8 @@ import { DEMO, DEMO_POOLS } from './assets/demo.js';
 const $ = (id) => document.getElementById(id);
 const eth = (n) => (Math.round((n||0)*1e4)/1e4).toLocaleString(undefined,{maximumFractionDigits:4}) + ' ETH';
 const esc = (x) => String(x==null?'':x).replace(/[<>&"]/g,(c)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+// Prefix a single $ — but never a second one for coins whose on-chain symbol already starts with $.
+const tsym = (s) => { s = String(s || '?'); return s.startsWith('$') ? s : '$' + s; };
 const imgTag = (p,cls) => `<img class="${cls}" src="${esc(p.image)}" alt="" onerror="this.style.visibility='hidden'" />`;
 // staking-style lock terms — longer lock earns a bigger reward share; forever = 0 days
 const LOCK_TERMS = [ {days:30,label:'30 days'}, {days:60,label:'60 days'}, {days:90,label:'90 days'}, {days:365,label:'1 year'}, {days:0,label:'Forever'} ];
@@ -175,7 +177,7 @@ window.addEventListener('robinpad:ready', refreshBtn); refreshBtn();
 function poolRow(p, i){
   const mine = (p.mineEth||0) > 0;
   return `<div class="pool" data-i="${i}">
-    <div class="coin">${imgTag(p,'')}<div><div class="nm">${esc(p.name)}</div><div class="tk">$${esc(p.sym)}${mine?` · <span class="mine">you locked ${eth(p.mineEth)}</span>`:''}</div></div></div>
+    <div class="coin">${imgTag(p,'')}<div><div class="nm">${esc(p.name)}</div><div class="tk">${esc(tsym(p.sym))}${mine?` · <span class="mine">you locked ${eth(p.mineEth)}</span>`:''}</div></div></div>
     <div class="hidecol"><span class="k">Total locked</span><span class="v">${eth(p.tvlEth)}</span></div>
     <div class="hidecol"><span class="k">Fees paid</span><span class="v">${eth(p.feesPaidEth)}</span></div>
     <div><span class="k">Est. APR</span><span class="v apr">${(p.aprPct||0).toFixed(1)}%</span></div>
@@ -216,7 +218,7 @@ function renderMine(){
   $('posSub').textContent = mine.length ? `${mine.length} active` : '';
   if (!mine.length){ $('myPos').innerHTML = `<div class="empty">No positions yet — lock ETH into a pool below to start earning your share of trade fees.</div>`; return; }
   $('myPos').innerHTML = mine.map(p => `<div class="pcard">
-    <div class="top">${imgTag(p,'')}<div><div class="nm" style="font-weight:700">${esc(p.name)}</div><div class="tk" style="color:var(--dim);font-size:.8rem">$${esc(p.sym)}</div></div></div>
+    <div class="top">${imgTag(p,'')}<div><div class="nm" style="font-weight:700">${esc(p.name)}</div><div class="tk" style="color:var(--dim);font-size:.8rem">${esc(tsym(p.sym))}</div></div></div>
     <div class="r"><span>Staked</span><b>${eth(p.mineEth)}</b></div>
     <div class="r"><span>Pool share</span><b>${p.tvlEth?((p.mineEth/p.tvlEth)*100).toFixed(1):'—'}%</b></div>
     <div class="r"><span>Fees earned</span><b class="lime">${eth(p.earnedEth)}</b></div>
@@ -228,7 +230,7 @@ async function onCreate(i){
   const inp = document.querySelector('#addrow-'+i+' input'); const amt = parseFloat(inp.value)||0;
   const days = +(document.querySelector('#addrow-'+i+' .termsel')?.value ?? 90);
   if (amt<=0){ alert('Enter an ETH amount.'); return; }
-  if (DEMO){ alert(`Preview — on the live site this stakes ${amt} ETH into $${POOLS[i].sym}'s real liquidity (10% protocol fee on open), locked ${termLabel(days)}, and starts earning your share of every trade's fee (protocol keeps 5%).`); return; }
+  if (DEMO){ alert(`Preview — on the live site this stakes ${amt} ETH into ${tsym(POOLS[i].sym)}'s real liquidity (10% protocol fee on open), locked ${termLabel(days)}, and starts earning your share of every trade's fee (protocol keeps 5%).`); return; }
   try { if(!Pad.account()){await Pad.connect();refreshBtn();} await (await Pad.floorDeposit(POOLS[i].token, amt, days)).wait(); load(); } catch(e){ alert(e.message); }
 }
 

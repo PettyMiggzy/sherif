@@ -51,8 +51,8 @@ export const CONTRACTS = {
   floorCoopFactory: "0x26aBF8443C30AA2913b9f94B89787d38146C825b",
 
   // Our PlatformFeeSplitter — routes the platform's cut ($ROBIN buyback split). Standalone; used by the
-  // admin panel to read/set the split. Empty until deployed.
-  platformSplitter: "0xAc918cd2BF3affFEc81A4f55238539d7eBFd156f",
+  // admin panel to read/set the split. Key MUST be `splitter` to match ADMIN_ABI.splitter and admin.html.
+  splitter: "0xAc918cd2BF3affFEc81A4f55238539d7eBFd156f",
 
   // The platform's buy-back token + its WETH pool (for links / a future buy widget).
   // The above-default fee's 25% cut is paid to the platform, which buys+burns the

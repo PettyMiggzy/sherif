@@ -50,7 +50,7 @@
   .nav .links{display:flex;gap:20px;align-items:center;font-size:.9rem;color:var(--dim)}
   .nav .links a:hover{color:var(--lime)}
   .nav .links a.on{color:var(--lime)}
-  @media(max-width:720px){.nav .links a:not(.btn){display:none}}
+  @media(max-width:720px){.nav-in{flex-wrap:wrap}.nav .links{order:3;width:100%;justify-content:flex-start;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:.85rem}}
 
   .head{padding:40px 0 6px}
   .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.32em;color:var(--lime);text-transform:uppercase}
@@ -244,16 +244,19 @@ import { DEMO, DEMO_REWARDS, DEMO_COINS } from './assets/demo.js';
 
 const $ = (id) => document.getElementById(id);
 const fmtEth = (n) => (Math.round((n||0)*1e4)/1e4).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:4}) + " ETH";
-const imgFor = (sym) => { const c = DEMO_COINS.find(x => x.symbol === sym); return c ? c.image : null; };
+// Demo sample-coin logos are for the DEMO preview ONLY — in live mode a real coin whose
+// symbol happens to match a sample one must NOT borrow its logo. Live rows use the gradient
+// fallback (the API doesn't carry a reward-row image yet).
+const imgFor = (sym) => { if (!DEMO) return null; const c = DEMO_COINS.find(x => x.symbol === sym); return c ? c.image : null; };
 const tokFor = (sym) => { const c = DEMO_COINS.find(x => x.symbol === sym); return c ? c.token : ''; };
 const esc = (x) => String(x==null?'':x).replace(/[<>&"]/g,(c)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 
 // demo banner + live pill
 if (DEMO) $('live').classList.add('demo'), $('liveTxt').textContent = 'Preview — sample rewards';
 
-const av = (sym) => { const s = imgFor(sym); return s
-  ? `<img class="av" src="${esc(s)}" alt="" onerror="this.style.visibility='hidden'" />`
-  : `<div class="av" style="display:grid;place-items:center;font-weight:800;color:#0a0e05;background:linear-gradient(135deg,#dce905,#8a63e0)">${esc(sym.slice(0,2))}</div>`; };
+const av = (sym) => { const s = String(sym || '?'); const src = imgFor(s); return src
+  ? `<img class="av" src="${esc(src)}" alt="" onerror="this.style.visibility='hidden'" />`
+  : `<div class="av" style="display:grid;place-items:center;font-weight:800;color:#0a0e05;background:linear-gradient(135deg,#dce905,#8a63e0)">${esc(s.slice(0,2))}</div>`; };
 
 function fmtCountdown(s){ s=Math.max(0,s|0); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60); return h+'h '+m+'m'; }
 
@@ -269,7 +272,14 @@ let CLAIMABLE = []; // the current wallet's claimable rows (each carries the liv
 
 // The API sends `side` as a uint8 (0=Traders,1=Holders) for the claim tx and `sideName`
 // for display; demo data uses a string `side`. Resolve a label that works for all three.
-const sideLabelOf = (r) => r.sideName || (typeof r.side === 'number' ? (r.side === 1 ? 'Holders' : 'Traders') : (r.side || 'Traders'));
+// The API's sideName is lowercase singular ('trader'/'holder'); demo data uses a string
+// side; the claim tx uses a uint8. Normalize ALL of them to canonical 'Traders'/'Holders'
+// so both the label and the `side === 'Holders'` style check downstream match.
+const sideLabelOf = (r) => {
+  const raw = r.sideName != null ? r.sideName
+    : (typeof r.side === 'number' ? (r.side === 1 ? 'holder' : 'trader') : r.side);
+  return String(raw || 'trader').toLowerCase().startsWith('hold') ? 'Holders' : 'Traders';
+};
 const tsym = (s) => { s = String(s || '?'); return s.startsWith('$') ? s : '$' + s; };
 
 function claimRow(r, i){
