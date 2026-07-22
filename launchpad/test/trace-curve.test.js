@@ -12,8 +12,8 @@ const TOTAL = 1_000_000_000; // 1B whole tokens
 
 // param sets to trace
 const SETS = [
-  { name: "NEW committed (deploy.js)", smag: 201600, cw: 23000, mgw: 22800 },
-  { name: "LOW START $1.8k -> $34k grad", smag: 207800, cw: 29400, mgw: 29200 },
+  { name: "A: $1500 start -> $34k grad", smag: 209800, cw: 31400, mgw: 31200 },
+  { name: "B: $2150 start -> $34k grad", smag: 206200, cw: 27800, mgw: 27600 },
 ];
 
 function priceFDV(sqrtP, tokenIsToken0) {
