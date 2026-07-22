@@ -622,14 +622,26 @@ const cGrad = (c) => c.state === 'done' || c.graduated === true;
 // ── live board: New / Final Stretch / Graduated ─────────────────────────────
 const BOLT = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>';
 const cProg = (c) => c.prog != null ? c.prog : Math.round((c.progress||0)*100);
+// Price change badge — no backend needed. Demo rows carry a signed `chg`; live rows
+// carry the curve's start/last tick. Price change since launch = 1.0001^|startTick-lastTick|-1.
+// We take the ABSOLUTE tick delta on purpose: a bonding curve's price can only sit at or
+// above the launch price (sells walk back down the curve, never below the start), so the
+// change is always an appreciation. Using abs also makes it independent of pool tick
+// orientation — some coins are token0, some token1, which flips the raw tick sign.
+const cChg = (c) => {
+  if (c.chg != null) return +c.chg;
+  const s = +c.startTick, l = +c.lastTick;
+  if (Number.isFinite(s) && Number.isFinite(l) && s !== l) return (Math.pow(1.0001, Math.abs(s - l)) - 1) * 100;
+  return null;
+};
 window.quickBuy = (token) => {
   // finish the buy on the coin page (avoids a surprise tx straight from the board)
   const url = `token.html?c=${encodeURIComponent(token)}${DEMO?'&demo=1':''}`;
   location.href = DEMO ? url : url + '&buy=0.1';
 };
 function bcard(c){
-  const grad = cGrad(c), prog = cProg(c), ch = c.chg;
-  const chg = ch==null ? '' : `<span class="bchg ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
+  const grad = cGrad(c), prog = cProg(c), ch = cChg(c);
+  const chg = (ch==null || Math.abs(ch)<0.05) ? '' : `<span class="bchg ${ch>=0?'up':'dn'}" title="price change since launch">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
   const url = `token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}`;
   const foot = grad
     ? `<div class="bgrad"><span class="bok">✓ Graduated · live on DEX</span></div>`
