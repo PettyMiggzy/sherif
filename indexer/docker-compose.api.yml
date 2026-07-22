@@ -10,10 +10,16 @@
 # The SQLite DB (coins, trades, AND coin profiles) lives on the named volume, so
 # `docker compose ... up -d` again after a code update never loses data.
 
+# NOTE: `dns:` on each service points containers at public resolvers. Hosts that use
+# systemd-resolved expose DNS at 127.0.0.53, which is unreachable from inside a
+# container — without this, containers can't resolve anything (RPC, Let's Encrypt).
 services:
   indexer:
     build: .
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     env_file: .env
     environment:
       DB_PATH: /app/data/robinlabs.db
@@ -31,6 +37,9 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     depends_on:
       - indexer
     ports:
