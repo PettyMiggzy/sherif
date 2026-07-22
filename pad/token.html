@@ -224,7 +224,8 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
         <div class="buybox">
           <div class="toggle"><button class="on" id="tBuy" type="button">Buy</button><button id="tSell" type="button">Sell</button></div>
           <div class="amt"><input id="amtInput" placeholder="0.0" value="0.1" inputmode="decimal" /><span class="cur" id="cur">ETH</span></div>
-          <div class="quick" id="quick"><button type="button" data-q="0.05">0.05</button><button type="button" data-q="0.1">0.1</button><button type="button" data-q="0.5">0.5</button><button type="button" data-q="1">1 ETH</button></div>
+          <div class="sellbal" id="sellBal" style="display:none;font-size:.74rem;color:var(--ink-dim);margin:-4px 0 8px;text-align:right"></div>
+          <div class="quick" id="quick"></div>
           <button class="btn btn-lime" style="width:100%" id="trade" type="button">Buy</button>
           <p id="tradeNote" style="color:var(--ink-faint);font-size:.75rem;margin:10px 0 0;text-align:center">Buys send native ETH — no token approval. Simulated and balance-checked before you sign.</p>
         </div>
@@ -341,25 +342,68 @@ const refreshConnect = () => { const a = Pad.account(); $('connectBtn').textCont
 
 let SIDE = 'buy', COIN = null, PROFILE = null;
 
+// Symbol with exactly one leading $ (some coins' on-chain symbol already includes it,
+// which was producing "Sell $$TEST3").
+const disp = (s) => { s = String(s || '').trim(); return s ? (s.startsWith('$') ? s : '$' + s) : ''; };
+let BAL = 0, BAL_STR = '0'; // connected wallet's token balance (Number for %, exact string for Max)
+
+// The quick-amount buttons mean different things per side: ETH amounts to BUY, a
+// percentage of your token balance to SELL (the old code used ETH numbers as token
+// amounts — clicking "1 ETH" tried to sell 1 token).
+function renderQuick(){
+  const q = $('quick');
+  if (SIDE === 'buy'){
+    q.innerHTML = [['0.05','0.05'],['0.1','0.1'],['0.5','0.5'],['1','1 ETH']]
+      .map(([v,l]) => `<button type="button" data-eth="${v}">${l}</button>`).join('');
+  } else {
+    q.innerHTML = [['25','25%'],['50','50%'],['75','75%'],['100','Max']]
+      .map(([p,l]) => `<button type="button" data-pct="${p}">${l}</button>`).join('');
+  }
+}
+
 // ── side toggle ──
 function side(s){
   SIDE = s;
   const b = $('tBuy'), se = $('tSell'), tr = $('trade'), c = $('cur');
-  if (s === 'buy'){ b.classList.add('on'); se.classList.remove('on'); c.textContent = 'ETH'; tr.classList.add('btn-lime'); tr.classList.remove('btn-ghost'); tr.textContent = 'Buy $' + (COIN?.symbol || ''); $('amtInput').value = '0.1'; }
-  else { se.classList.add('on'); b.classList.remove('on'); c.textContent = COIN?.symbol || 'tokens'; tr.classList.remove('btn-lime'); tr.classList.add('btn-ghost'); tr.textContent = 'Sell $' + (COIN?.symbol || ''); $('amtInput').value = ''; }
+  if (s === 'buy'){ b.classList.add('on'); se.classList.remove('on'); c.textContent = 'ETH'; tr.classList.add('btn-lime'); tr.classList.remove('btn-ghost'); tr.textContent = 'Buy ' + disp(COIN?.symbol); $('amtInput').value = '0.1'; $('sellBal').style.display = 'none'; }
+  else { se.classList.add('on'); b.classList.remove('on'); c.textContent = disp(COIN?.symbol) || 'tokens'; tr.classList.remove('btn-lime'); tr.classList.add('btn-ghost'); tr.textContent = 'Sell ' + disp(COIN?.symbol); $('amtInput').value = ''; loadBal(); }
+  renderQuick();
+}
+// Load + show the connected wallet's token balance (sell side only).
+async function loadBal(){
+  const el = $('sellBal');
+  if (SIDE !== 'sell' || !Pad.account() || !COIN){ el.style.display = 'none'; return; }
+  try {
+    BAL_STR = await Pad.tokenBalance(TOKEN);
+    BAL = Number(BAL_STR) || 0;
+    const show = BAL >= 1e6 ? (BAL/1e6).toFixed(2)+'M' : BAL >= 1e3 ? (BAL/1e3).toFixed(2)+'k' : (+BAL.toFixed(4));
+    el.innerHTML = `You hold <b style="color:var(--ink)">${show}</b> ${disp(COIN.symbol)}`;
+    el.style.display = 'block';
+  } catch { el.style.display = 'none'; }
 }
 $('tBuy').addEventListener('click', () => side('buy'));
 $('tSell').addEventListener('click', () => side('sell'));
-$('quick').addEventListener('click', (e) => { const v = e.target.dataset.q; if (v) $('amtInput').value = v; });
+$('quick').addEventListener('click', (e) => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  if (btn.dataset.eth != null) { $('amtInput').value = btn.dataset.eth; return; }
+  if (btn.dataset.pct != null) {
+    if (!Pad.account()) { setNote('Connect your wallet to sell by %.', 'err'); return; }
+    const pct = Number(btn.dataset.pct);
+    // Max sells the exact balance string (round-trips to precise wei); others compute from the Number.
+    $('amtInput').value = pct >= 100 ? BAL_STR : String(+((BAL * pct) / 100).toFixed(6));
+  }
+});
 $('copyCa').addEventListener('click', () => { if (TOKEN && navigator.clipboard) navigator.clipboard.writeText(TOKEN); });
-$('connectBtn').addEventListener('click', async () => { try { await Pad.connect(); refreshConnect(); await maybeShowDev(); } catch (e) { setNote(e.message, 'err'); } });
+$('connectBtn').addEventListener('click', async () => { try { await Pad.connect(); refreshConnect(); await maybeShowDev(); if (SIDE === 'sell') loadBal(); } catch (e) { setNote(e.message, 'err'); } });
+renderQuick(); // paint the buy presets on first load (before any side toggle)
 window.addEventListener('robinpad:ready', refreshConnect);
 refreshConnect();
 
 // ── trade ──
 $('trade').addEventListener('click', async () => {
   if (!COIN) return;
-  const amount = parseFloat($('amtInput').value) || 0;
+  const raw = ($('amtInput').value || '').trim();
+  const amount = parseFloat(raw) || 0;
   if (amount <= 0) return setNote('Enter an amount first.', 'err');
   try {
     if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
@@ -368,11 +412,14 @@ $('trade').addEventListener('click', async () => {
       const rc = await (await Pad.buy({ token: TOKEN, ethAmount: amount })).wait();
       setNote('Bought ✓ ' + rc.hash.slice(0, 12) + '…', 'ok');
     } else {
+      if (BAL && amount > BAL + 1e-9) return setNote(`You only hold ${(+BAL.toFixed(4))} ${disp(COIN.symbol)}.`, 'err');
       setNote('Selling — one exact-amount approval to the router, then the swap…');
-      const rc = await (await Pad.sell({ token: TOKEN, tokenAmount: amount })).wait();
+      // pass the raw string (not the parsed float) so "Max" sells the exact wei balance
+      const rc = await (await Pad.sell({ token: TOKEN, tokenAmount: raw })).wait();
       setNote('Sold ✓ ' + rc.hash.slice(0, 12) + '…', 'ok');
     }
     setTimeout(loadCoin, 1500);
+    if (SIDE === 'sell') setTimeout(loadBal, 1600);
   } catch (e) { setNote(e.message, 'err'); }
 });
 
@@ -507,7 +554,7 @@ async function loadCoin(){
   $('pfp').textContent = (meta.symbol || '?').slice(0, 3);
   $('ca').textContent = Pad.short(TOKEN);
   document.title = meta.name + ' — Robin Labs Pad';
-  $('trade').textContent = (SIDE === 'buy' ? 'Buy $' : 'Sell $') + meta.symbol;
+  $('trade').textContent = (SIDE === 'buy' ? 'Buy ' : 'Sell ') + disp(meta.symbol);
   $('infoBuy').textContent = (tax.buyBps / 100) + '% + 0.25%';
   $('infoSell').textContent = (tax.sellBps / 100) + '% + 0.25%';
 

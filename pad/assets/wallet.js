@@ -341,6 +341,17 @@ export async function buy({ token, ethAmount, slippagePct = 8 }) {
 }
 
 // ── SELL — the single, isolated, EXACT-amount approval to OUR verified router ──
+/// The connected wallet's balance of a coin, as an EXACT decimal string (18-dp).
+/// Returned as a string so "sell max" can round-trip to the precise wei (Number()
+/// would lose precision on large balances); callers Number() it for display/percent.
+export async function tokenBalance(token) {
+  if (!_account) return "0";
+  try {
+    const erc = new ethers.Contract(token, ABIS.erc20, _read);
+    return ethers.formatUnits(await erc.balanceOf(_account), 18);
+  } catch { return "0"; }
+}
+
 // EVM has no approval-free way to sell a standard ERC20 through an AMM, so this
 // is the ONE approval in the app: exact amount (never MaxUint), to our own
 // PadRouter only, simulated first. The sell tax comes off the ETH out.
@@ -777,7 +788,7 @@ if (typeof window !== "undefined") {
   window.RobinPad = {
     connect, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax,
     setCoinProfile, getCoinProfile, profileMessage,
-    estimateDevBuyEth, isDeployed,
+    estimateDevBuyEth, isDeployed, tokenBalance,
     curveInfo, devEscrow, graduate, setGradTarget, withdrawDev, burnDev, listCoins, tokenMeta,
     feed, stats, recentTrades, hasApi,
     holders, trades, chainTrades, feeTotals,

@@ -639,16 +639,21 @@ window.quickBuy = (token) => {
   const url = `token.html?c=${encodeURIComponent(token)}${DEMO?'&demo=1':''}`;
   location.href = DEMO ? url : url + '&buy=0.1';
 };
+// Symbol with exactly one leading $ (some coins' on-chain symbol already carries it → "$$").
+const tsym = (s) => { s = String(s || '?'); return s.startsWith('$') ? s : '$' + s; };
 function bcard(c){
   const grad = cGrad(c), prog = cProg(c), ch = cChg(c);
-  const chg = (ch==null || Math.abs(ch)<0.05) ? '' : `<span class="bchg ${ch>=0?'up':'dn'}" title="price change since launch">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
+  // Instant badge from tick math (change since launch). enrichBoard() upgrades it to
+  // DexScreener's real 24h change (red/green) once its batch call returns.
+  const chgInner = (ch==null || Math.abs(ch)<0.05) ? '' : `${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%`;
+  const chgCls = (ch!=null && ch<0) ? 'dn' : 'up';
   const url = `token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}`;
   const foot = grad
     ? `<div class="bgrad"><span class="bok">✓ Graduated · live on DEX</span></div>`
     : `<div class="bprog"><div class="bptrack"><div class="bpfill${prog>=70?' hot':''}" style="width:${Math.min(100,prog)}%"></div></div><span class="bppct">${prog}%</span></div>`;
-  return `<a class="bcard" href="${url}">
-    <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btk">$${esc(c.symbol||'?')}</div></div>${chg}</div>
-    <div class="bstats"><div><span class="bk">MC</span><span class="bv">${fmtUsd(cMc(c))}</span></div><div><span class="bk">Vol</span><span class="bv">${fmtUsd(cVol(c))}</span></div><div><span class="bk">Holders</span><span class="bv">${fmtNum(c.holders!=null?c.holders:(c.tradesAll||0))}</span></div></div>
+  return `<a class="bcard" data-tok="${esc(c.token)}" href="${url}">
+    <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btk">${esc(tsym(c.symbol))}</div></div><span class="bchg ${chgCls}" data-chg title="price change since launch"${chgInner?'':' style="display:none"'}>${chgInner}</span></div>
+    <div class="bstats"><div><span class="bk">MC</span><span class="bv" data-mc>${fmtUsd(cMc(c))}</span></div><div><span class="bk">Vol</span><span class="bv" data-vol>${fmtUsd(cVol(c))}</span></div><div><span class="bk">Holders</span><span class="bv">${fmtNum(c.holders!=null?c.holders:(c.tradesAll||0))}</span></div></div>
     ${foot}
     <button class="bqbuy" type="button" onclick="event.preventDefault();event.stopPropagation();quickBuy('${esc(c.token)}')">${BOLT}<span>Quick Buy</span><span class="bamt">0.1 ETH</span></button>
   </a>`;
@@ -763,6 +768,47 @@ function syncFooter() {
   $('fcount').textContent = n ? (done ? `${n} shown` : `${n}+ shown`) : '';
 }
 
+// ── DexScreener enrichment: real 24h change (red/green) + real MC/Vol on each card ──
+// Client-side, no backend. Robinhood Chain pairs ARE indexed by DexScreener
+// (chainId "robinhood"). We batch all of a page's tokens into one request, pick the
+// deepest-liquidity pair per token, and patch the already-rendered cards in place —
+// so the tick-math badge shows instantly and upgrades to the real 24h number when this
+// returns. Failures are swallowed: the card keeps its tick badge and indexer MC/Vol.
+const DS_BASE = 'https://api.dexscreener.com/latest/dex/tokens/';
+const dsCache = new Map(); // token -> { chg, mc, vol, ts }  (ts-only entry = fetched, no pair yet)
+async function enrichBoard(coins) {
+  if (DEMO) return; // preview uses the sample `chg` values; don't hit DexScreener with fake addresses
+  const toks = coins.map(c => String(c.token || '').toLowerCase()).filter(Boolean);
+  const need = toks.filter(t => { const h = dsCache.get(t); return !h || Date.now() - h.ts > 30000; });
+  for (let i = 0; i < need.length; i += 30) {
+    const batch = need.slice(i, i + 30);
+    let data;
+    try { const r = await fetch(DS_BASE + batch.join(','), { cache: 'no-store' }); if (!r.ok) continue; data = await r.json(); }
+    catch { continue; }
+    const best = {};
+    for (const p of (data.pairs || [])) {
+      const addr = String(p.baseToken?.address || '').toLowerCase();
+      if (!addr) continue;
+      if (!best[addr] || (p.liquidity?.usd || 0) > (best[addr].liquidity?.usd || 0)) best[addr] = p;
+    }
+    for (const t of batch) {
+      const p = best[t];
+      dsCache.set(t, p ? { chg: p.priceChange?.h24, mc: (p.marketCap ?? p.fdv), vol: p.volume?.h24, ts: Date.now() } : { ts: Date.now() });
+    }
+  }
+  for (const t of toks) patchCard(t);
+}
+function patchCard(t) {
+  const d = dsCache.get(t); if (!d) return;
+  const card = document.querySelector(`.bcard[data-tok="${t}"]`); if (!card) return;
+  if (d.chg != null && Number.isFinite(+d.chg)) {
+    const b = card.querySelector('[data-chg]');
+    if (b) { const up = +d.chg >= 0; b.className = 'bchg ' + (up ? 'up' : 'dn'); b.title = '24h change (DexScreener)'; b.textContent = `${up ? '▲' : '▼'}${Math.abs(+d.chg).toFixed(1)}%`; b.style.display = ''; }
+  }
+  if (d.mc != null && +d.mc > 0) { const m = card.querySelector('[data-mc]'); if (m) m.textContent = fmtUsd(+d.mc); }
+  if (d.vol != null) { const v = card.querySelector('[data-vol]'); if (v) v.textContent = fmtUsd(+d.vol); }
+}
+
 function resetBoard(opts) {
   session++; offset = 0; done = false; busy = false;
   // soft reset (a live re-poll) repaints in place with no skeleton flash; a hard reset (tab/search) shows it
@@ -783,6 +829,7 @@ async function loadNext() {
     done = true; busy = false; syncFooter(); return;
   }
   $('board').insertAdjacentHTML('beforeend', coins.map(bcard).join(''));
+  enrichBoard(coins);                             // async: real 24h change + MC/Vol from DexScreener
   offset += coins.length;
   if (coins.length < PAGE) done = true;
   busy = false; syncFooter();
