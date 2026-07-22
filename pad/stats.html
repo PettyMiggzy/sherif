@@ -318,7 +318,7 @@ async function boot(){
       coins:s.projectsLaunched, graduated:s.graduatedTotal, vol24hEth:s.vol24hEth, trades24h:1900,
       liveTxt:(s.projectsLaunched-s.graduatedTotal).toLocaleString()+" still trading" });
     $('mVolEth').innerHTML = "<b>"+fmtNum(s.projectsLaunched)+"</b> creators, and counting";
-    $('foot-note').textContent = "Preview mode — sample numbers. Add ?live to see the live board.";
+    $('foot-note').textContent = "Preview mode — sample numbers. Remove ?demo to see the live board.";
   } else {
     const s = await Pad.stats();
     if (s){

@@ -1,26 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Demo data — loads ONLY when the URL has ?demo=1 (or #demo). Lets you preview a
-// fully-populated pad before any real coins launch. It never touches the live
-// feed otherwise, so real visitors still see the honest (empty) board.
+// Demo data — OPT-IN preview. Loads ONLY when the URL has ?demo=1; otherwise every
+// visitor sees the honest, live on-chain board. The stack is deployed and coins have
+// launched, so sample data is never the default — just a populated-pad preview.
 //   Preview:  robinlabs.io/?demo=1   ·   robinlabs.io/token.html?c=<any>&demo=1
-// ─────────────────────────────────────────────────────────────────────────────
-// TEMPORARY: demo is ON by default so the populated pad is visible for review.
-// Add ?live=1 to see the real (empty) board. Flip this back to opt-in
-// (has("demo")) before launching real coins — otherwise real coin pages render
-// the sample coin instead of the live one.
-//
-// EXCEPTION: when the pad's RPC is a localhost node it's a dev / local-testnet run,
-// so we always show REAL chain data (never the sample board) — otherwise a coin you
-// just launched locally renders as a demo coin. This needs no URL flag and survives
-// every `git pull`, so the local click-through "just works". Precedence:
-//   ?demo ⇒ preview (force sample even locally) · ?live ⇒ real · localhost RPC ⇒ real · else preview.
-import { CHAIN } from "./config.js";
+// (Was temporarily ON-by-default during pre-launch review — now flipped to opt-in.)
 const _q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
-const _localRpc = Array.isArray(CHAIN?.rpc) &&
-  CHAIN.rpc.some((u) => /\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|\/|$)/i.test(String(u)));
-export const DEMO = typeof location !== "undefined" && (
-  _q.has("demo") ? true : _q.has("live") ? false : _localRpc ? false : true
-);
+export const DEMO = typeof location !== "undefined" && _q.has("demo");
 
 // Floating "PREVIEW" badge so sample data is never mistaken for real numbers.
 if (DEMO && typeof document !== "undefined") {
