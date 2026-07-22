@@ -183,6 +183,13 @@ function clientIp(req) {
   const xff = String(req.headers["x-forwarded-for"] || "").split(",").map((s) => s.trim()).filter(Boolean);
   return (xff.length ? xff[xff.length - 1] : "") || req.socket?.remoteAddress || "?";
 }
+// Parse a query-string integer, clamped to [min,max], falling back to `def` when it's
+// missing OR non-numeric. Number("abc") is NaN and would bind to a SQL LIMIT/OFFSET as a
+// "datatype mismatch" → 500 on a public endpoint; Number.isFinite closes that off.
+function intParam(v, def, min, max) {
+  const n = Number(v);
+  return Math.min(Math.max(Number.isFinite(n) ? Math.trunc(n) : def, min), max);
+}
 // Tiny per-IP-per-second rate limiter (batches count as one request), shared by /rpc and
 // the profile POST so one abuser can't drain the upstream RPC or peg a CPU core on HEIC.
 function makeRateLimiter(maxPerSec) {
@@ -462,7 +469,7 @@ export function startApi() {
       }
 
       if (path === "/api/series") {
-        const days = Math.min(Math.max(Number(url.searchParams.get("days") || 30), 1), 180);
+        const days = intParam(url.searchParams.get("days"), 30, 1, 180);
         const from = now - days * DAY;
         // Bucket by UTC day, then fill gaps so the chart has a point per day.
         const byDay = new Map();
@@ -483,8 +490,8 @@ export function startApi() {
         const sort = url.searchParams.get("sort") || "new";
         const filter = url.searchParams.get("filter") || "all";
         const qRaw = (url.searchParams.get("q") || "").trim().toLowerCase();
-        const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 60), 1), 200);
-        const offset = Math.max(Number(url.searchParams.get("offset") || 0), 0);
+        const limit = intParam(url.searchParams.get("limit"), 60, 1, 200);
+        const offset = intParam(url.searchParams.get("offset"), 0, 0, 1e9);
         const params = { since, limit, offset, q: qRaw ? `%${qRaw}%` : "%" };
         const rows = coinsStmt(sort, filter, !!qRaw).all(params);
         const total = coinsCountStmt(filter, !!qRaw).get(params).n; // full match count for {coins,total} contract
@@ -516,7 +523,7 @@ export function startApi() {
 
       m = path.match(/^\/api\/trades\/(0x[0-9a-fA-F]{40})$/);
       if (m) {
-        const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 50), 1), 500);
+        const limit = intParam(url.searchParams.get("limit"), 50, 1, 500);
         const rows = tradesStmt.all(m[1].toLowerCase(), limit).map((t) => ({
           tx: t.tx, logIndex: t.log_index, side: t.side, actor: t.actor,
           eth: t.eth, tokens: t.tokens, fee: t.fee, block: t.block, ts: t.ts,
@@ -547,7 +554,7 @@ export function startApi() {
       m = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/holders$/);
       if (m) {
         const token = m[1].toLowerCase();
-        const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 20), 1), 200);
+        const limit = intParam(url.searchParams.get("limit"), 20, 1, 200);
         const dev = coinDev.get(token);
         const devBoughtTokens = dev ? Number((db.prepare("SELECT dev_bought AS d FROM coins WHERE token=?").get(token) || {}).d || 0) / 1e18 : 0;
         const map = new Map();

@@ -6,7 +6,7 @@ import { ethers } from "ethers";
 import { CFG } from "./config.js";
 import { iface, TOPICS, ERC20, CURVE, POOL } from "./abi.js";
 import {
-  db, getCursor, setCursor, setHeadTs, upsertCoin, markGraduated, insertTrade,
+  db, getCursor, setCursor, setHeadTs, upsertCoin, markGraduated, ungraduateFrom, insertTrade,
   coinByCurve, purgeTradesFrom, setGeometry, setGradTargetByCurve,
   setSnapshot, coinGeom, insertAccrual, purgeAccrualsFrom,
 } from "./db.js";
@@ -222,9 +222,11 @@ export async function tick() {
   let from = stored === null ? CFG.startBlock : Math.max(CFG.startBlock, stored - reorgWindow + 1);
   if (from > safeHead) return 0;
 
-  // Delete any trades + accruals in the re-scanned window so orphaned-block rows can't linger.
+  // Delete any trades + accruals in the re-scanned window so orphaned-block rows can't linger,
+  // and undo graduations from that window — a re-emitted Graduated re-applies, a vanished one
+  // (reorged away) stays cleared instead of leaving the coin permanently marked graduated.
   if (stored !== null) {
-    const del = db.transaction(() => { purgeTradesFrom.run(from); purgeAccrualsFrom.run(from); });
+    const del = db.transaction(() => { purgeTradesFrom.run(from); purgeAccrualsFrom.run(from); ungraduateFrom.run(from); });
     del();
   }
 

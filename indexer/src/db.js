@@ -167,6 +167,15 @@ UPDATE coins SET graduated=1, grad_block=@grad_block, grad_ts=@grad_ts,
   raised_weth=@raised_weth, bond=@bond WHERE curve=@curve
 `);
 
+// Undo graduation for any coin graduated at/after a block, used in the reorg re-scan:
+// a Graduated log orphaned by a reorg (and not re-mined) would otherwise leave the coin
+// stuck graduated=1 forever, since a re-emitted Graduated re-applies but a vanished one
+// has no reset path. Clearing here lets the re-scan re-derive the true state.
+export const ungraduateFrom = db.prepare(`
+UPDATE coins SET graduated=0, grad_block=NULL, grad_ts=NULL, raised_weth=NULL, bond=NULL
+WHERE grad_block >= ?
+`);
+
 export const insertTrade = db.prepare(`
 INSERT INTO trades (tx, log_index, token, side, actor, eth, tokens, fee, block, ts)
 VALUES (@tx, @log_index, @token, @side, @actor, @eth, @tokens, @fee, @block, @ts)
