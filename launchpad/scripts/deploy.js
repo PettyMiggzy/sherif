@@ -15,10 +15,15 @@ const ETH_USD = Number(process.env.ETH_USD || 1920);
 // anywhere in between; the later it's clicked, the bigger the raise/floor. All multiples of 200;
 // MIN_GRAD_WIDTH < CURVE_WIDTH. For a cheap TEST factory set small widths.
 // Calibrated on the fork (scripts/calibrate-curve.js): START ~$2k mcap (buy 2% ≈ $40 to keep entry cheap),
-// MIN grad ~$28k mcap / ~2.5 ETH raise (full 0.5 ETH reward per side + ~1.5 ETH floor), CEILING ~$84k mcap.
+// CEILING ~$84k mcap.
+//
+// GRADUATION FLOOR: MIN_GRAD_WIDTH is set so nothing can graduate before ~4 ETH is raised — at 4 ETH the
+// split is a full 0.5 ETH creator reward + 0.5 ETH platform reward + ~3.0 ETH into the floor (never thin).
+// (37200 -> ~4.0 ETH / ~$78k mcap min grad; ceiling 38000 -> ~4.2 ETH. A coin that never reaches 4 ETH
+// stays tradeable on its curve but does not graduate.)
 const START_TICK_MAG = Number(process.env.START_TICK_MAG || 207400);
 const CURVE_WIDTH = Number(process.env.CURVE_WIDTH || 38000);
-const MIN_GRAD_WIDTH = Number(process.env.MIN_GRAD_WIDTH || 27000);
+const MIN_GRAD_WIDTH = Number(process.env.MIN_GRAD_WIDTH || 37200);
 
 async function main() {
   const [deployer] = await ethers.getSigners();
