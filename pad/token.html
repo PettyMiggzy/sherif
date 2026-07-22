@@ -712,8 +712,11 @@ function fcShowPos(f){
     $('fcPosAmt').textContent = (Math.round(f.mineEth*1e4)/1e4) + ' ETH';
     $('fcPosPct').textContent = f.tvlEth ? ((f.mineEth/f.tvlEth)*100).toFixed(1)+'%' : '—';
     $('fcPosFees').textContent = (Math.round((f.earnedEth||0)*1e4)/1e4) + ' ETH';
-    $('fcLock').textContent = f.unlockTxt || 'unlocked';
-    const locked = f.lockedTxt && !f.unlocked;
+    const nowS = Math.floor(Date.now()/1000);
+    const locked = !!f.forever || (f.lockUntil != null && isFinite(f.lockUntil) && f.lockUntil > nowS && !f.unlocked);
+    $('fcLock').textContent = f.forever ? 'locked forever'
+      : locked ? 'unlocks ' + new Date(f.lockUntil*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'})
+      : 'unlocked';
     $('fcWithdraw').textContent = locked ? 'Withdraw early (15% penalty)' : 'Withdraw';
     $('fcAdd').textContent = 'Add & re-lock';
   } else { $('fcAdd').textContent = 'Lock liquidity'; }
@@ -739,7 +742,7 @@ function renderFloor(){
     $('fcFees').textContent = eth(f.feesPaidEth);
     $('fcMine').textContent = eth(f.mineEth);
     $('fcEarned').textContent = eth(f.earnedEth);
-    fcShowPos({ ...f, unlockTxt: 'unlocks in 74d', lockedTxt: true, unlocked: false });
+    fcShowPos({ ...f, lockUntil: Math.floor(Date.now()/1000) + 74*86400, forever: false, unlocked: false });
     fcPrev();
   } else if (COIN){
     ['fcTvl','fcFees','fcMine','fcEarned'].forEach(id=>$(id).textContent='—');
@@ -881,7 +884,10 @@ function viewFromApi(c){
   const progress = (c.progress != null) ? c.progress : frac(c.lastTick);
   const minFrac = frac(mn);
   return {
-    graduated: !!c.graduated, ready: !c.graduated && progress >= minFrac - 1e-9,
+    // Require real tick data before calling a coin "ready": if the indexer's one-shot geometry
+    // read hiccuped at launch, minGradTick is null and frac()→0, which would otherwise make a
+    // fresh 0%-progress coin show "Ready to graduate" + the Graduate button.
+    graduated: !!c.graduated, ready: !c.graduated && mn != null && st != null && progress >= minFrac - 1e-9,
     mcapEth: c.mcapEth != null ? c.mcapEth : null,
     wethPerToken: c.mcapEth != null ? c.mcapEth / 1e9 : null,
     progress, minFrac, targetFrac: frac(tg),

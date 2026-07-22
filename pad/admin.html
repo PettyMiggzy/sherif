@@ -194,7 +194,7 @@ async function connect() {
     const cur = await eip.request({ method: 'eth_chainId' });
     if (cur !== CHAIN.hexId) {
       try { await eip.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN.hexId }] }); }
-      catch (e) { if (e.code === 4902) await eip.request({ method: 'wallet_addEthereumChain', params: [{ chainId: CHAIN.hexId, chainName: CHAIN.name, nativeCurrency: CHAIN.currency, rpcUrls: CHAIN.rpc, blockExplorerUrls: [CHAIN.explorer] }] }); }
+      catch (e) { if (e.code === 4902) await eip.request({ method: 'wallet_addEthereumChain', params: [{ chainId: CHAIN.hexId, chainName: CHAIN.name, nativeCurrency: CHAIN.currency, rpcUrls: CHAIN.walletRpcUrls || CHAIN.rpc, blockExplorerUrls: [CHAIN.explorer] }] }); }
     }
     signer = await new ethers.BrowserProvider(eip, 'any').getSigner();
     account = (await signer.getAddress());

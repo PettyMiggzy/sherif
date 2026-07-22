@@ -117,6 +117,7 @@ export const ABIS = {
     "function WETH() view returns (address)",
     "function totalShares() view returns (uint256)",
     "function shares(address) view returns (uint256)",
+    "function pos(address) view returns (uint256 shares, uint256 weight, uint256 multBps, uint256 lockUntil)",
     "function pending(address user) view returns (uint256 wethOwed, uint256 tokenOwed)",
     "function totalNav() view returns (uint256)",
     "function deposit(uint256 lockDays, uint256 minSharesOut) payable returns (uint256 sharesMinted)",

@@ -288,7 +288,7 @@ $('openBtn').addEventListener('click', async () => {
   if (!resolved || amt <= 0) return;
   const net = (amt * (1 - PROTO_FEE)).toFixed(4);
   if (DEMO){
-    alert(`Preview — on the live site this opens a locked LP position in $${resolved.symbol}:\n\n• You open with ${amt} ETH\n• 10% protocol fee: ${(amt*PROTO_FEE).toFixed(4)} ETH\n• Into ${resolved.symbol} liquidity: ${net} ETH, locked ${termLabel(days)}\n• Then you keep 95% of your share of every trade's fee (protocol keeps 5%)`);
+    alert(`Preview — on the live site this opens a locked LP position in ${tsym(resolved.symbol)}:\n\n• You open with ${amt} ETH\n• 10% protocol fee: ${(amt*PROTO_FEE).toFixed(4)} ETH\n• Into ${tsym(resolved.symbol)} liquidity: ${net} ETH, locked ${termLabel(days)}\n• Then you keep 95% of your share of every trade's fee (protocol keeps 5%)`);
     return;
   }
   try {

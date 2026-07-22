@@ -364,7 +364,9 @@ async function load(){
     if (r.epoch) $('epochBox').innerHTML = `Epoch <b>${r.epoch}</b> · closes in <b>${fmtCountdown(r.epochEndsIn||0)}</b>`;
     renderClaimable(r.claimable || []);
     renderPending(r.pending || []);
-    renderTotals(r.totals || {});
+    // The totals strip is a GLOBAL protocol stat, not this wallet's — feed it from
+    // /api/rewards/stats (r.totals is the per-wallet {claimableEth,pendingEth} shape).
+    try { renderTotals(await Pad.rewardStats() || {}); } catch { renderTotals({}); }
   } catch(err){
     $('subTxt').textContent = 'Could not load rewards. Try again shortly.';
     renderClaimable([]); renderTotals({});

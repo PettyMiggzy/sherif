@@ -790,9 +790,17 @@ export async function floorInfo(token, who) {
   const [ts, nav] = await Promise.all([c.totalShares(), c.totalNav().catch(() => 0n)]);
   const out = { coop, tvlEth: Number(ethers.formatEther(nav)), feesPaidEth: 0, mineEth: 0, earnedEth: 0 };
   if (who && ts > 0n) {
-    const [sh, pend] = await Promise.all([c.shares(who), c.pending(who)]);
+    const [sh, pend, p] = await Promise.all([c.shares(who), c.pending(who), c.pos(who).catch(() => null)]);
     out.mineEth = Number(ethers.formatEther((nav * sh) / ts));
     out.earnedEth = Number(ethers.formatEther(pend[0]));
+    // Per-user lock: lockUntil is a unix ts, or ~uint256.max for a "forever" lock. Surface both
+    // the raw timestamp and derived flags so the UI can label a locked position honestly (and
+    // warn about the 15% early-exit penalty) instead of always showing "unlocked".
+    const luRaw = p ? (p.lockUntil ?? p[3] ?? 0n) : 0n;
+    const forever = BigInt(luRaw) > 10n ** 18n; // any lock past year ~3e10 is the forever sentinel
+    out.forever = forever;
+    out.lockUntil = forever ? Infinity : Number(luRaw);
+    out.unlocked = !forever && out.lockUntil > 0 && Math.floor(Date.now() / 1000) >= out.lockUntil;
   }
   return out;
 }
