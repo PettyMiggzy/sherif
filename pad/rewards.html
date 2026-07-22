@@ -266,14 +266,19 @@ function renderTotals(t){
 
 let CLAIMABLE = []; // the current wallet's claimable rows (each carries the live claim descriptor)
 
+// The API sends `side` as a uint8 (0=Traders,1=Holders) for the claim tx and `sideName`
+// for display; demo data uses a string `side`. Resolve a label that works for all three.
+const sideLabelOf = (r) => r.sideName || (typeof r.side === 'number' ? (r.side === 1 ? 'Holders' : 'Traders') : (r.side || 'Traders'));
+const tsym = (s) => { s = String(s || '?'); return s.startsWith('$') ? s : '$' + s; };
+
 function claimRow(r, i){
-  const sideCls = r.side === 'Holders' ? 'h' : 't';
-  const sideIco = r.side === 'Holders' ? '' : '';
+  const side = sideLabelOf(r);
+  const sideCls = side === 'Holders' ? 'h' : 't';
   return `<div class="rrow" data-eth="${r.eth}">
     ${av(r.sym)}
-    <div><div class="nm">${esc(r.name)} <span style="color:var(--dim)">$${esc(r.sym)}</span></div>
+    <div><div class="nm">${esc(r.name)} <span style="color:var(--dim)">${esc(tsym(r.sym))}</span></div>
       <div class="meta">Epoch ${r.epoch} · ${esc(r.reason||'')}</div></div>
-    <span class="side ${sideCls}">${sideIco} ${esc(r.side)}</span>
+    <span class="side ${sideCls}">${esc(side)}</span>
     <div style="display:flex;align-items:center;gap:12px">
       <div class="amt">${fmtEth(r.eth)}<small>claimable</small></div>
       <button class="btn btn-lime claim" data-i="${i}">Claim</button>
@@ -301,7 +306,7 @@ function renderPending(list){
   if (!list || !list.length){ $('pendingBox').style.display='none'; return; }
   $('pendingBox').style.display = 'block';
   $('pendingRows').innerHTML = list.map(p =>
-    `<div class="prow"><span>${p.side==='Holders'?'':''} ${esc(p.name)} <span style="color:var(--dim)">$${esc(p.sym)}</span> · ${esc(p.side)}</span><span class="r">+${fmtEth(p.eth)}</span></div>`
+    `<div class="prow"><span>${esc(p.name)} <span style="color:var(--dim)">${esc(tsym(p.sym))}</span> · ${esc(sideLabelOf(p))}</span><span class="r">+${fmtEth(p.eth)}</span></div>`
   ).join('');
 }
 

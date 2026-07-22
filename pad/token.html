@@ -329,6 +329,8 @@ import * as Pad from './assets/wallet.js';
 import { mountSafety } from './assets/safety.js';
 import { DEMO, DEMO_COINS, demoTrades, demoHolders, DEMO_FLOOR } from './assets/demo.js';
 const $ = (id) => document.getElementById(id);
+// Escape untrusted strings (coin symbol/name from the chain, explorer tags) before any innerHTML.
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const ETH_USD = 1920;
 const q = new URLSearchParams(location.search);
 const TOKEN = (q.get('c') || '').trim();
@@ -517,11 +519,10 @@ async function imgDataUrl(id, maxDim, maxBytes = 750000){
 // waiting out the API's 5s read-cache).
 function applyProfile(prof, symbol){
   if (!prof) return;
-  if (prof.image) { const fb = (symbol || '?').replace(/[^\w]/g, '').slice(0, 3) || '?'; $('pfp').innerHTML = `<img src="${prof.image}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" onerror="this.parentNode.textContent='${fb}'" />`; }
-  if (prof.banner) { const b = document.querySelector('.banner'); if (b) { b.style.backgroundImage = `url(${prof.banner})`; b.style.backgroundSize = 'cover'; b.style.backgroundPosition = 'center'; } }
+  if (prof.image) { const fb = (symbol || '?').replace(/[^\w]/g, '').slice(0, 3) || '?'; $('pfp').innerHTML = `<img src="${esc(prof.image)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" onerror="this.parentNode.textContent='${fb}'" />`; }
+  if (prof.banner) { const b = document.querySelector('.banner'); if (b) { b.style.backgroundImage = `url("${esc(prof.banner)}")`; b.style.backgroundSize = 'cover'; b.style.backgroundPosition = 'center'; } }
   const who = document.querySelector('.who');
   if (who && (prof.description || prof.telegram || prof.twitter || prof.website)) {
-    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const link = (url, label) => (/^https?:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--lime);text-decoration:none">${label}</a>` : '');
     const socials = [link(prof.telegram, 'Telegram'), link(prof.twitter, 'Twitter/X'), link(prof.website, 'Website')].filter(Boolean).join(' · ');
     let box = document.getElementById('coinProfile');
@@ -574,7 +575,7 @@ async function loadCoin(){
   let meta, tax, info;
   try { [meta, tax] = await Promise.all([Pad.tokenMeta(TOKEN), Pad.getTax(TOKEN)]); }
   catch { $('nm').textContent = 'Coin not found'; return; }
-  if (!tax.set){ $('nm').textContent = meta.name; $('tk').textContent = '$' + meta.symbol; setNote('This coin is not registered on Robin Labs.', 'err'); return; }
+  if (!tax.set){ $('nm').textContent = meta.name; $('tk').textContent = disp(meta.symbol); setNote('This coin is not registered on Robin Labs.', 'err'); return; }
   try { info = await Pad.curveInfo(tax.curve, TOKEN); } catch { info = null; }
 
   COIN = { token: TOKEN, curve: tax.curve, pool: tax.pool, dev: tax.projectWallet, symbol: meta.symbol, name: meta.name,
@@ -582,7 +583,7 @@ async function loadCoin(){
 
   // header
   $('nm').textContent = meta.name;
-  $('tk').textContent = '$' + meta.symbol;
+  $('tk').textContent = disp(meta.symbol);
   $('pfp').textContent = (meta.symbol || '?').slice(0, 3);
   $('ca').textContent = Pad.short(TOKEN);
   document.title = meta.name + ' — Robin Labs Pad';
@@ -611,6 +612,9 @@ async function loadCoin(){
   // bond / graduation panel
   renderBond(info);
   await maybeShowDev();
+  // honor a ?buy=<eth> deep-link from the board's Quick Buy (prefill the buy amount once)
+  const preBuy = parseFloat(q.get('buy'));
+  if (Number.isFinite(preBuy) && preBuy > 0 && !window.__preBuyDone) { window.__preBuyDone = true; if (SIDE !== 'buy') side('buy'); $('amtInput').value = String(preBuy); }
   loadTrades(); loadHolders(); renderBanner(); renderFees(); renderFloor();
   mountSafety(document.getElementById('safetyBody'), TOKEN); // GoPlus + template scan (read-only)
 }
@@ -620,7 +624,7 @@ function renderDemoCoin(){
   const c = DEMO_COINS.find((x) => x.token === TOKEN) || DEMO_COINS[0];
   COIN = { token: c.token, curve: c.curve, pool: c.pool, dev: c.dev, symbol: c.symbol, name: c.name,
     minGradTick: -196200, gradTick: -170400, bond: c.state === 'done' ? c.pool : null };
-  $('nm').textContent = c.name; $('tk').textContent = '$' + c.symbol;
+  $('nm').textContent = c.name; $('tk').textContent = disp(c.symbol);
   if (c.image) $('pfp').innerHTML = `<img src="${c.image}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" onerror="this.parentNode.textContent='${(c.symbol||'?').slice(0,3)}'" />`;
   else if (c.emoji) { $('pfp').textContent = c.emoji; $('pfp').style.fontSize = '2.6rem'; }
   else $('pfp').textContent = (c.symbol || '?').slice(0, 3);
@@ -757,9 +761,9 @@ async function renderBanner(){
   list = list.filter((c) => !COIN || c.token !== COIN.token).slice(0, 12);
   if (!list.length){ const w = el.parentNode; if (w) w.style.display = 'none'; return; }
   const pill = (c) => {
-    const img = c.image ? `<img src="${c.image}" alt="" onerror="this.style.visibility='hidden'" />` : `<img alt="" />`;
+    const img = c.image ? `<img src="${esc(c.image)}" alt="" onerror="this.style.visibility='hidden'" />` : `<img alt="" />`;
     const ch = c.chg; const chg = ch == null ? '' : `<span class="c ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
-    return `<a class="bt" href="token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}">${img}<span class="s">$${c.symbol||'?'}</span>${chg}</a>`;
+    return `<a class="bt" href="token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}">${img}<span class="s">${esc(disp(c.symbol))}</span>${chg}</a>`;
   };
   const html = list.map(pill).join('');
   el.innerHTML = html + html; // duplicate → seamless -50% loop
@@ -814,7 +818,8 @@ async function loadHolders(){
   if (!h.top.length){ body.innerHTML = '<div class="empty">No holders yet.</div>'; return; }
   body.innerHTML = h.top.map((o) => {
     const name = label[o.address] || (o.name ? '' + o.name : (o.isContract ? 'Contract' : Pad.short(o.address)));
-    return `<div class="h"><a href="${EXPL}/address/${o.address}" target="_blank" rel="noopener">${name}</a><b>${o.pct.toFixed(o.pct >= 1 ? 1 : 2)}%</b></div>`;
+    const addr = /^0x[0-9a-fA-F]{40}$/.test(o.address || '') ? o.address : '';
+    return `<div class="h"><a href="${EXPL}/address/${encodeURIComponent(addr)}" target="_blank" rel="noopener">${esc(name)}</a><b>${o.pct.toFixed(o.pct >= 1 ? 1 : 2)}%</b></div>`;
   }).join('');
 }
 

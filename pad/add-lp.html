@@ -174,6 +174,7 @@ import * as Pad from './assets/wallet.js';
 import { DEMO } from './assets/demo.js';
 const $ = (id) => document.getElementById(id);
 const esc = (x) => String(x==null?'':x).replace(/[<>&"]/g,(c)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+const tsym = (s) => { s = String(s || '?'); return s.startsWith('$') ? s : '$' + s; };
 const eth = (n) => (Math.round((n||0)*1e5)/1e5) + ' ETH';
 
 const PROTO_FEE = 0.10; // 10% of the ETH taken when a position is opened → protocol
@@ -230,7 +231,7 @@ function showChip(t){
   $('tokAv').textContent = (t.symbol||'?').slice(0,2);
   if (t.image){ $('tokAv').style.background = `center/cover url(${esc(t.image)})`; $('tokAv').textContent=''; }
   $('tokNm').textContent = t.name || 'Token';
-  $('tokTk').textContent = '$' + (t.symbol || '?');
+  $('tokTk').textContent = tsym(t.symbol);
   $('tokPool').textContent = t.poolTxt || (t.hasPool ? 'found' : 'none');
   sync();
 }
@@ -249,7 +250,7 @@ function sync(){
     $('brkFee').textContent = '− ' + eth(fee);
     $('brkNet').textContent = eth(net);
     const when = days===0 ? 'locked <b>forever</b>' : `locked <b>${termLabel(days)}</b> · unlocks <b>${new Date(Date.now()+days*86400*1000).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</b>`;
-    $('brkSum').innerHTML = `Opens a <b>$${esc(resolved.symbol||'?')}</b> position with <b>${eth(net)}</b>, ${when} (${termOf(days).boost} rewards). You then keep <b>95%</b> of your share of every trade's fee.`;
+    $('brkSum').innerHTML = `Opens a <b>${esc(tsym(resolved.symbol))}</b> position with <b>${eth(net)}</b>, ${when} (${termOf(days).boost} rewards). You then keep <b>95%</b> of your share of every trade's fee.`;
   } else brk.classList.remove('show');
 }
 $('amt').addEventListener('input', sync);

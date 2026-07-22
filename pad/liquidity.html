@@ -235,7 +235,7 @@ async function load(){
   if (DEMO){ POOLS = DEMO_POOLS.slice(); renderMine(); renderPools(); return; }
   // live: list graduated coins that have (or can have) a floor pool
   try {
-    const { coins } = await Pad.feed({ sort:'graduated', limit:40 });
+    const { coins } = await Pad.feed({ filter:'graduated', limit:40 });
     POOLS = await Promise.all((coins||[]).map(async (c) => {
       const f = await Pad.floorInfo(c.token, Pad.account()).catch(() => null);
       return { token:c.token, sym:c.symbol, name:c.name, image:c.image,
