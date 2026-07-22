@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wallet profile — Robin Labs Pad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<style>
+:root{--bg:#0d0f07;--bg-2:#12150a;--bg-3:#1a1e10;--panel:#15180d;--line:rgba(220,233,5,.14);--line-2:rgba(255,255,255,.08);
+  --line-strong:rgba(220,233,5,.34);--ink:#f6f7f1;--ink-dim:#a7ad97;--ink-faint:#7f8570;--lime:#dce905;--lime-soft:#e4ff7a;--lime-deep:#a8d600;--green:#48d16a;--red:#ff5a52;--gold:#f5c542;
+  --sans:"Plus Jakarta Sans",system-ui,sans-serif;--mono:ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+img,svg{display:block}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.02em}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;font-size:.9rem;border-radius:11px;padding:10px 16px;cursor:pointer;border:1px solid transparent;font-family:inherit;white-space:nowrap}
+.btn-dark{background:#0e1206;border:1px solid var(--line);color:var(--ink)}
+.btn-lime{background:var(--lime);color:#0a0e05}
+.btn-ghost{border:1px solid var(--line-strong);color:var(--ink);background:rgba(255,255,255,.02)}
+
+header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line-2)}
+.nav-in{max-width:1140px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:18px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:1.05rem;letter-spacing:.02em}
+.brand img{height:28px;width:auto}.brand b{color:var(--lime)}
+.nav-links{display:flex;gap:16px;margin-left:8px;flex-wrap:wrap}
+.nav-links a{color:var(--ink-dim);font-weight:600;font-size:.9rem}
+.nav-links a:hover{color:var(--ink)}
+.nav-cta{margin-left:auto;display:flex;gap:10px;align-items:center}
+@media(max-width:860px){.nav-links{display:none}}
+
+main{padding:30px 0 60px}
+/* identity header */
+.phead{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:8px}
+.pav{width:74px;height:74px;border-radius:20px;flex:none;display:grid;place-items:center;font-weight:800;font-size:1.7rem;color:#0a0e05;overflow:hidden;border:2px solid var(--line)}
+.pav img{width:100%;height:100%;object-fit:cover}
+.pwho h1{font-size:1.9rem;line-height:1.1}
+.paddr{display:flex;align-items:center;gap:8px;margin-top:4px;color:var(--ink-dim);font-family:var(--mono);font-size:.86rem}
+.paddr button{background:var(--bg-2);border:1px solid var(--line-2);color:var(--ink-dim);border-radius:7px;padding:3px 8px;font-size:.72rem;cursor:pointer;font-family:inherit}
+.you{background:rgba(220,233,5,.14);color:var(--lime);border:1px solid var(--line-strong);border-radius:999px;padding:2px 10px;font-size:.72rem;font-weight:800;margin-left:8px}
+.phead .spacer{flex:1}
+
+.pstats{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,var(--bg-2),var(--panel));overflow:hidden;margin:20px 0 30px}
+.pstats .s{padding:16px 18px;border-right:1px solid var(--line-2)}
+.pstats .s:last-child{border-right:0}
+.pstats .k{font-size:.66rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint);font-family:var(--mono)}
+.pstats .v{font-size:1.5rem;font-weight:800;margin-top:3px}
+@media(max-width:560px){.pstats .v{font-size:1.15rem}}
+
+section{margin:0 0 34px}
+.sh{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.sh h2{font-size:1.2rem}
+.sh .c{color:var(--ink-faint);font-family:var(--mono);font-size:.82rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.pc{background:var(--bg);border:1px solid var(--line-2);border-radius:14px;padding:13px;transition:transform .14s,border-color .14s;display:block}
+.pc:hover{transform:translateY(-2px);border-color:var(--line-strong)}
+.pc-top{display:flex;align-items:center;gap:10px}
+.pc-av{width:42px;height:42px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;color:#0a0e05;overflow:hidden;border:1.5px solid var(--line)}
+.pc-av img{width:100%;height:100%;object-fit:cover}
+.pc-id{min-width:0;flex:1}
+.pc-nm{font-weight:800;font-size:.96rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-tk{color:var(--lime);font-size:.78rem;font-weight:700}
+.pc-row{display:flex;justify-content:space-between;align-items:baseline;margin-top:11px;font-size:.82rem}
+.pc-row .k{color:var(--ink-faint);font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.05em}
+.pc-row .v{font-weight:700;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;margin-top:10px;font-size:.72rem;font-weight:700}
+.badge.grad{color:var(--green)}
+.badge.live{color:var(--lime)}
+.empty{border:1px dashed var(--line-2);border-radius:14px;padding:26px;text-align:center;color:var(--ink-faint);font-size:.9rem}
+.empty a{color:var(--lime);font-weight:700}
+.note{color:var(--ink-faint);font-size:.76rem;margin-top:10px}
+.foot{border-top:1px solid var(--line-2);padding:22px 0 44px;color:var(--ink-faint);font-size:.76rem;text-align:center}
+.skel{height:96px;border-radius:14px;background:linear-gradient(100deg,var(--bg-2),var(--bg-3),var(--bg-2));background-size:200% 100%;animation:sh 1.2s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+</style>
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
+  <nav class="nav-links">
+    <a href="index.html#trending">Explore</a><a href="index.html#graduates">Graduated</a>
+    <a href="rewards.html">Rewards</a><a href="liquidity.html">Liquidity</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
+  </nav>
+  <div class="nav-cta">
+    <button class="btn btn-dark" id="connectBtn" type="button">Connect Wallet</button>
+    <a class="btn btn-lime" href="create.html">Launch Token</a>
+  </div>
+</div></header>
+
+<main class="wrap">
+  <div class="phead">
+    <div class="pav" id="pav">?</div>
+    <div class="pwho">
+      <h1 id="pname">Wallet profile</h1>
+      <div class="paddr"><span id="paddr">Connect your wallet to see your projects &amp; holdings</span><button id="copyAddr" type="button" style="display:none">Copy</button><span class="you" id="youTag" style="display:none">You</span></div>
+    </div>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="pstats">
+    <div class="s"><div class="k">Launched</div><div class="v" id="stLaunched">—</div></div>
+    <div class="s"><div class="k">Holdings</div><div class="v" id="stHoldings">—</div></div>
+    <div class="s"><div class="k">Portfolio</div><div class="v" id="stValue">—</div></div>
+  </div>
+
+  <section>
+    <div class="sh"><h2>Launched projects</h2><span class="c" id="cLaunched"></span></div>
+    <div class="grid" id="launched"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+  </section>
+
+  <section>
+    <div class="sh"><h2>Holdings</h2><span class="c" id="cHoldings"></span></div>
+    <div class="grid" id="holdings"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+    <div class="note" id="holdNote"></div>
+  </section>
+</main>
+<div class="foot">Robin Labs on Robinhood Chain. Holdings and launches are read live on-chain. Not financial advice.</div>
+
+<script type="module">
+import * as Pad from './assets/wallet.js';
+const $ = (id) => document.getElementById(id);
+const q = new URLSearchParams(location.search);
+const ETH_USD = 1920;            // display-only, matches the rest of the pad
+const SUPPLY = 1e9;              // every Robin Labs coin is a fixed 1,000,000,000 supply
+const UNIVERSE_CAP = 400;        // most we page in to scan for launches
+const HOLDINGS_SCAN_CAP = 160;   // most coins we check a balance on (RPC-bounded)
+
+const isAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a || '');
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const short = (a) => a ? a.slice(0,6) + '…' + a.slice(-4) : '';
+const tsym = (s) => { s = String(s || '?'); return s.startsWith('$') ? s : '$' + s; };
+const fmtUsd = (n) => { n = +n || 0; return n >= 1000 ? '$' + (n/1000).toFixed(n>=10000?0:1) + 'k' : '$' + (n>=1 ? Math.round(n) : n.toPrecision(2)); };
+const fmtTok = (n) => { n = +n || 0; return n >= 1e6 ? (n/1e6).toFixed(2)+'M' : n >= 1e3 ? (n/1e3).toFixed(2)+'k' : (+n.toFixed(2)); };
+const priceEth = (c) => (+c.mcapEth || (c.mcUsd ? c.mcUsd/ETH_USD : 0)) / SUPPLY;
+
+// deterministic gradient from an address, so each wallet has a stable look
+function avaStyle(addr){ const h = parseInt((addr||'0x0').slice(2,8),16) || 0; return `background:linear-gradient(135deg,hsl(${h%360} 68% 55%),hsl(${(h>>4)%360} 68% 45%))`; }
+function coinAva(c, cls){
+  const fb = (c.symbol || '?').replace(/[^\w]/g,'').slice(0,3) || '?';
+  if (c.image) return `<div class="${cls}"><img src="${esc(c.image)}" alt="" onerror="this.parentNode.textContent='${esc(fb)}'"/></div>`;
+  return `<div class="${cls}" style="${avaStyle(c.token)}">${esc(fb.slice(0,2))}</div>`;
+}
+function launchedCard(c){
+  const grad = c.graduated === true || c.state === 'done';
+  const mc = fmtUsd((+c.mcapEth || 0) * ETH_USD || c.mcUsd || 0);
+  return `<a class="pc" href="token.html?c=${encodeURIComponent(c.token)}">
+    <div class="pc-top">${coinAva(c,'pc-av')}<div class="pc-id"><div class="pc-nm">${esc(c.name||'Token')}</div><div class="pc-tk">${esc(tsym(c.symbol))}</div></div></div>
+    <div class="pc-row"><span class="k">Market cap</span><span class="v">${mc}</span></div>
+    <span class="badge ${grad?'grad':'live'}">${grad?'✓ Graduated':'● Live on the curve'}</span>
+  </a>`;
+}
+function holdingCard(h){
+  const c = h.c, valUsd = h.bal * priceEth(c) * ETH_USD;
+  return `<a class="pc" href="token.html?c=${encodeURIComponent(c.token)}">
+    <div class="pc-top">${coinAva(c,'pc-av')}<div class="pc-id"><div class="pc-nm">${esc(c.name||'Token')}</div><div class="pc-tk">${esc(tsym(c.symbol))}</div></div></div>
+    <div class="pc-row"><span class="k">Balance</span><span class="v">${fmtTok(h.bal)}</span></div>
+    <div class="pc-row"><span class="k">Value</span><span class="v">${valUsd>0?fmtUsd(valUsd):'—'}</span></div>
+  </a>`;
+}
+
+async function allCoins(cap = UNIVERSE_CAP){
+  const out = []; let offset = 0; const limit = 100;
+  while (out.length < cap){
+    let page;
+    try { page = await Pad.feed({ sort:'new', filter:'all', limit, offset }); }
+    catch { break; }
+    const coins = page?.coins || [];
+    if (!coins.length) break;
+    out.push(...coins); offset += coins.length;
+    if (coins.length < limit) break;
+  }
+  return out;
+}
+async function scanHoldings(coins, addr){
+  const sub = coins.slice(0, HOLDINGS_SCAN_CAP);
+  const held = [];
+  for (let i = 0; i < sub.length; i += 8){
+    const batch = sub.slice(i, i + 8);
+    const rows = await Promise.all(batch.map(async (c) => {
+      try { return { c, bal: Number(await Pad.tokenBalance(c.token, addr)) }; }
+      catch { return { c, bal: 0 }; }
+    }));
+    for (const r of rows) if (r.bal > 0) held.push(r);
+  }
+  held.sort((a,b) => (b.bal * priceEth(b.c)) - (a.bal * priceEth(a.c)));
+  return { held, scanned: sub.length, total: coins.length };
+}
+
+function paintIdentity(addr, isMe){
+  $('pav').textContent = ''; $('pav').style.cssText = avaStyle(addr); $('pav').textContent = addr.slice(2,4).toUpperCase();
+  $('pname').textContent = isMe ? 'Your profile' : 'Wallet ' + short(addr);
+  $('paddr').textContent = addr;
+  $('copyAddr').style.display = '';
+  $('youTag').style.display = isMe ? '' : 'none';
+  $('copyAddr').onclick = () => { if (navigator.clipboard) navigator.clipboard.writeText(addr); };
+}
+
+async function load(addr){
+  const me = (Pad.account() || '').toLowerCase();
+  paintIdentity(addr, me && me === addr.toLowerCase());
+  const target = addr.toLowerCase();
+
+  const coins = await allCoins();
+  // launched = coins this wallet created
+  const launched = coins.filter((c) => String(c.dev || '').toLowerCase() === target);
+  $('launched').innerHTML = launched.length
+    ? launched.map(launchedCard).join('')
+    : `<div class="empty">No coins launched from this wallet yet. <a href="create.html">Launch one →</a></div>`;
+  $('stLaunched').textContent = launched.length;
+  $('cLaunched').textContent = launched.length ? launched.length + ' coin' + (launched.length>1?'s':'') : '';
+
+  // holdings = coins this wallet holds a balance of
+  const { held, scanned, total } = await scanHoldings(coins, target);
+  $('holdings').innerHTML = held.length
+    ? held.map(holdingCard).join('')
+    : `<div class="empty">No holdings in listed coins yet. <a href="index.html">Explore coins →</a></div>`;
+  $('stHoldings').textContent = held.length;
+  const portfolio = held.reduce((s, h) => s + h.bal * priceEth(h.c) * ETH_USD, 0);
+  $('stValue').textContent = held.length ? fmtUsd(portfolio) : '$0';
+  $('cHoldings').textContent = held.length ? held.length + ' position' + (held.length>1?'s':'') : '';
+  $('holdNote').textContent = total > scanned ? `Checked balances across the ${scanned} most recent coins.` : '';
+}
+
+function showConnectPrompt(){
+  $('launched').innerHTML = `<div class="empty">Connect your wallet to see your launched projects.</div>`;
+  $('holdings').innerHTML = `<div class="empty">Connect your wallet to see your holdings.</div>`;
+  $('stLaunched').textContent = '—'; $('stHoldings').textContent = '—'; $('stValue').textContent = '—';
+}
+
+async function boot(){
+  const paramAddr = (q.get('a') || '').trim();
+  if (isAddr(paramAddr)) { load(paramAddr).catch(console.error); return; }
+  const acct = Pad.account();
+  if (isAddr(acct)) { load(acct).catch(console.error); return; }
+  showConnectPrompt();
+}
+
+$('connectBtn').addEventListener('click', async () => {
+  try {
+    await Pad.connect();
+    const a = Pad.account();
+    $('connectBtn').textContent = a ? short(a) : 'Connect Wallet';
+    // once connected, if we were not already viewing a specific ?a wallet, show mine
+    if (!isAddr((q.get('a') || '').trim()) && isAddr(a)) load(a).catch(console.error);
+  } catch (e) { /* user declined */ }
+});
+window.addEventListener('robinpad:ready', () => { const a = Pad.account(); if (a) $('connectBtn').textContent = short(a); });
+boot();
+</script>
+</body>
+</html>

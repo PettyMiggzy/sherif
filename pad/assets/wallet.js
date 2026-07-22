@@ -344,11 +344,12 @@ export async function buy({ token, ethAmount, slippagePct = 8 }) {
 /// The connected wallet's balance of a coin, as an EXACT decimal string (18-dp).
 /// Returned as a string so "sell max" can round-trip to the precise wei (Number()
 /// would lose precision on large balances); callers Number() it for display/percent.
-export async function tokenBalance(token) {
-  if (!_account) return "0";
+export async function tokenBalance(token, who) {
+  const addr = who || _account;
+  if (!addr) return "0";
   try {
     const erc = new ethers.Contract(token, ABIS.erc20, _read);
-    return ethers.formatUnits(await erc.balanceOf(_account), 18);
+    return ethers.formatUnits(await erc.balanceOf(addr), 18);
   } catch { return "0"; }
 }
 
