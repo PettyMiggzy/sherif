@@ -108,12 +108,14 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
       <div class="field"><label>Description</label><textarea class="inp" id="desc" placeholder="Tell the town who this coin is…" maxlength="280"></textarea></div>
 
       <div class="row2">
-        <div class="field"><label>Twitter / X <span class="hint">optional</span></label><input class="inp" placeholder="https://x.com/…" /></div>
+        <div class="field"><label>Twitter / X <span class="hint">optional</span></label><input class="inp" id="tw" placeholder="https://x.com/…" /></div>
         <div class="field"><label>Telegram <span class="hint">optional · link free</span></label>
           <input class="inp" id="tg" placeholder="https://t.me/…" />
           <button type="button" id="linkTg" class="btn btn-ghost" style="margin-top:8px;font-size:.8rem;padding:8px 12px">Link with a free signature</button>
         </div>
       </div>
+
+      <div class="field"><label>Website <span class="hint">optional</span></label><input class="inp" id="web" placeholder="https://…" /></div>
 
       <div class="field">
         <label>Dev buy <span class="hint">get your bag before the snipers — no cap</span></label>
@@ -308,12 +310,14 @@ $('launchBtn').addEventListener('click', async () => {
     const token = Pad.launchedTokenOf(rc);
     const desc = ($('desc').value || '').trim();
     const tg = ($('tg').value || '').trim();
-    const wantsProfile = token && (desc || tg || ($('pfp').files || []).length || ($('banner').files || []).length);
+    const tw = ($('tw').value || '').trim();
+    const web = ($('web').value || '').trim();
+    const wantsProfile = token && (desc || tg || tw || web || ($('pfp').files || []).length || ($('banner').files || []).length);
     if (wantsProfile && Pad.hasApi()) {
       try {
         setNote('Launched ✓ — saving your coin profile (one free signature)…', 'ok');
         const [pfp, banner] = await Promise.all([imgDataUrl('pfp', 400), imgDataUrl('banner', 1200)]);
-        await Pad.setCoinProfile(token, { description: desc, telegram: tg, pfp, banner });
+        await Pad.setCoinProfile(token, { description: desc, telegram: tg, twitter: tw, website: web, pfp, banner });
         setNote('Launched ✓ and profile saved — your coin is live.', 'ok');
       } catch (e) {
         setNote('Launched ✓ — profile not saved (' + e.message + '). You can add it later.', 'ok');
