@@ -170,6 +170,11 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .profedit textarea,.profedit input[type=text]{background:var(--bg-2);border:1px solid var(--line-2);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:.82rem;font-family:inherit;width:100%;resize:vertical}
 .profedit .btn{padding:10px}
 .foot{border-top:1px solid var(--line);padding:20px 0 40px;color:var(--ink-faint);font-size:.76rem;text-align:center}
+/* creator social links — icon chips with real brand logos */
+.socs{display:flex;gap:8px;margin-top:4px;flex-wrap:wrap}
+.soc{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:var(--bg-3);border:1px solid var(--line-2);color:var(--ink-dim);transition:color .18s,border-color .18s,background .18s,transform .18s}
+.soc:hover{color:var(--lime);border-color:var(--line-strong);background:rgba(220,233,5,.08);transform:translateY(-1px)}
+.soc svg{width:17px;height:17px;display:block}
 </style>
 </head>
 <body>
@@ -533,11 +538,18 @@ function applyProfile(prof, symbol){
   }
   const who = document.querySelector('.who');
   if (who && (prof.description || prof.telegram || prof.twitter || prof.website)) {
-    const link = (url, label) => (/^https?:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--lime);text-decoration:none">${label}</a>` : '');
-    const socials = [link(prof.telegram, 'Telegram'), link(prof.twitter, 'Twitter/X'), link(prof.website, 'Website')].filter(Boolean).join(' · ');
+    // Real brand marks as inline SVG (crisp, theme-tinted via currentColor, no external requests).
+    const SOC = {
+      telegram: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>',
+      twitter: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',
+      website: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M3 12h18M12 2.8c2.6 2.4 3.9 5.8 3.9 9.2s-1.3 6.8-3.9 9.2c-2.6-2.4-3.9-5.8-3.9-9.2S9.4 5.2 12 2.8z"/></svg>',
+    };
+    const chip = (url, kind, label) => (/^https?:\/\//i.test(url || '')
+      ? `<a class="soc" href="${esc(url)}" target="_blank" rel="noopener noreferrer" aria-label="${label}" title="${label}">${SOC[kind]}</a>` : '');
+    const socials = [chip(prof.telegram, 'telegram', 'Telegram'), chip(prof.twitter, 'twitter', 'Twitter / X'), chip(prof.website, 'website', 'Website')].filter(Boolean).join('');
     let box = document.getElementById('coinProfile');
-    if (!box) { box = document.createElement('div'); box.id = 'coinProfile'; box.style.cssText = 'margin-top:7px;font-size:.9rem;color:var(--ink-dim);display:flex;flex-direction:column;gap:5px;max-width:52ch'; who.appendChild(box); }
-    box.innerHTML = (prof.description ? `<div>${esc(prof.description)}</div>` : '') + (socials ? `<div>${socials}</div>` : '');
+    if (!box) { box = document.createElement('div'); box.id = 'coinProfile'; box.style.cssText = 'margin-top:7px;font-size:.9rem;color:var(--ink-dim);display:flex;flex-direction:column;gap:7px;max-width:52ch'; who.appendChild(box); }
+    box.innerHTML = (prof.description ? `<div>${esc(prof.description)}</div>` : '') + (socials ? `<div class="socs">${socials}</div>` : '');
   }
 }
 function fillProfileForm(){
