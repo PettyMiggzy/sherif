@@ -67,6 +67,34 @@ export const API_BASE = "https://pad.robinlabs.io";   // your SITE_DOMAIN
 That's it — `https://pad.robinlabs.io` now serves the pad, and
 `…/api/coins` is the live feed.
 
+### Managed (Fly.io) — API only, keep the pad on Vercel
+
+The pad is already on Vercel, so you only need to host the **API** and point the
+site at it. `fly.toml` is committed and ready:
+
+```bash
+cd indexer
+fly apps create robinlabs-indexer
+fly volumes create indexer_data -r iad -n 1 -s 1     # 1 GB disk for the DB (holds coin profiles)
+fly secrets set RPC_URL=<your private Robinhood Chain RPC>   # optional; else the public RPC
+fly deploy
+```
+
+Then set `API_BASE` in `pad/assets/config.js` to `https://robinlabs-indexer.fly.dev`,
+commit + push → Vercel redeploys and the feed goes live (images, volume, trending).
+CORS is already open, so cross-origin (Vercel ↔ Fly) just works.
+
+### The live values for THIS deployment
+
+Already baked into `fly.toml` / use in `.env` — no need to look them up:
+
+| Key | Value |
+|-----|-------|
+| `FACTORY` | `0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2` |
+| `ROUTER` | `0x7d0c7122E26a75A9f0bd753e84c6115CAfE3Fd9F` |
+| `REWARD_VAULT` | `0x0F07dC315e332084129c1D00bEbADAb05edf79Dc` |
+| `START_BLOCK` | `15944153` (the factory's deploy block — fast first sync) |
+
 ## Scaling to a launch-day crowd (10k concurrent)
 
 The users' **launches and trades never touch this backend** — those go straight

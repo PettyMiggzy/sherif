@@ -1,0 +1,48 @@
+# Deploy the Robin Labs indexer + JSON API to Fly.io (managed, HTTPS, persistent disk).
+#
+#   cd indexer
+#   fly apps create robinlabs-indexer                       # or `fly launch --no-deploy --copy-config`
+#   fly volumes create indexer_data -r iad -n 1 -s 1        # 1 GB disk for the SQLite DB (holds coin profiles!)
+#   fly secrets set RPC_URL=<your private Robinhood Chain RPC>   # optional; falls back to the public RPC
+#   fly deploy
+#
+# It comes up at https://robinlabs-indexer.fly.dev — put that in pad/assets/config.js as API_BASE.
+# The DB (coins, trades, and coin profiles) lives on the volume, so redeploys don't lose anything.
+
+app = "robinlabs-indexer"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Public config (safe to commit). Private RPC goes in `fly secrets`, never here.
+[env]
+  PORT = "8787"
+  DB_PATH = "/app/data/robinlabs.db"
+  FACTORY = "0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2"
+  ROUTER = "0x7d0c7122E26a75A9f0bd753e84c6115CAfE3Fd9F"
+  REWARD_VAULT = "0x0F07dC315e332084129c1D00bEbADAb05edf79Dc"
+  START_BLOCK = "15944153"
+  CORS_ORIGIN = "*"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = false   # keep indexing 24/7 — never suspend
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[[mounts]]
+  source = "indexer_data"
+  destination = "/app/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
