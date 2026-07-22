@@ -87,6 +87,10 @@ export class RobinLabsAPI {
   }
   coin(token) { return this._get(`/api/coin/${token}`); }
   trades(token) { return this._get(`/api/trades/${token}`); }
+  /** A wallet's holdings (coins it launched or holds) — curve-derived, `approx:true`; refine with a live balanceOf. */
+  holdings(addr) { return this._get(`/api/holdings/${addr}`); }
+  /** A coin's holders: { token, approx, holders, top:[{holder,balance}] }. */
+  holders(token, limit = 20) { return this._get(`/api/coin/${token}/holders?limit=${limit}`); }
   /** A coin's creator-set profile: { description, telegram, twitter, website, image, banner, updatedTs } or null. */
   profile(token) { return this._get(`/api/coin/${token}/meta`).then((r) => r.profile || null); }
   /** A wallet's claimable (with Merkle proofs) + pending rewards. */
