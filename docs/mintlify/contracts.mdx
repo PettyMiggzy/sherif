@@ -55,7 +55,7 @@ event FeeSplit(address indexed token, uint256 platform, uint256 deferred, uint25
 
 ## CurvePool
 
-The bonding curve and graduation. Read it for progress and the graduation window; call `graduate()` (permissionless) to post the Bond, or `setGradTarget()` (creator-only) to move the auto-graduate price.
+The bonding curve and graduation. Read it for progress; call `graduate()` (permissionless) to post the Bond once the curve reaches its ceiling.
 
 ```solidity
 function pool() view returns (address)     // the Uniswap v3 pool
@@ -63,22 +63,19 @@ function dev() view returns (address)
 function bond() view returns (address)     // zero until graduated
 function seeded() view returns (bool)
 function graduated() view returns (bool)
-function ready() view returns (bool)       // eligible to graduate right now
-function seedTime() view returns (uint64)
+function ready() view returns (bool)       // true only once the tick reaches gradTick
 
 // geometry — ticks along the curve (price rises left to right)
-function startTick() view returns (int24)      // curve start (~$4k FDV)
-function minGradTick() view returns (int24)    // earliest graduation (~$30k)
-function gradTarget() view returns (int24)     // auto-graduate price (dev-settable)
-function gradTick() view returns (int24)       // ceiling (~$76k)
+function startTick() view returns (int24)      // curve start (~$3.4k FDV)
+function gradTick() view returns (int24)       // the ceiling (~$34k FDV) — the only price that graduates
 
-function setGradTarget(int24 targetTick)   // creator only, within [min, ceiling]
 function graduate()                        // permissionless once ready()
 
 event Seeded(int24 curveLo, int24 curveHi, uint128 liquidity)
-event GradTargetSet(int24 targetTick)
 event Graduated(address indexed bond, uint256 raisedWeth, uint256 leftoverToken)
 ```
+
+> Graduation is **ceiling-only**: a coin graduates at exactly one point, the top of the curve. There's no creator-settable target, no minimum, and no timeout. (`gradTarget`/`minGradTick`/`seedTime` remain on the contract as vestigial storage but no longer gate graduation — don't treat them as controls.)
 
 ## Bond
 
@@ -166,6 +163,5 @@ These are everything the [indexer](api.md) consumes — enough to reconstruct th
 | `Bought` | Router | A buy: ETH in, fee, tokens out |
 | `Sold` | Router | A sell: tokens in, fee, ETH out |
 | `FeeSplit` | Router | Exact fee routing per trade (platform/deferred/cut/dev/floor/burn) |
-| `GradTargetSet` | Curve | Creator moved the auto-graduate price |
-| `Graduated` | Curve | Graduation: raised WETH, the Bond address |
+| `Graduated` | Curve | Graduation at the ceiling: raised WETH, the Bond address |
 | `Posted` / `Poked` | Bond | Floor posted / fees compounded |

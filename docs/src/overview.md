@@ -1,6 +1,6 @@
 # Overview
 
-**Robin Labs Pad** is a creator-first memecoin launchpad on **Robinhood Chain**. One-transaction launches into a real Uniswap v3 pool, a bonding-curve for price discovery, a strategic "let it ride" graduation, and a permanently-locked floor — **the Bond**.
+**Robin Labs Pad** is a creator-first memecoin launchpad on **Robinhood Chain**. One-transaction launches into a real Uniswap v3 pool, a bonding-curve for price discovery, a single ceiling graduation, and a permanently-locked floor — **the Bond**.
 
 Robin Labs is a set of audited, non-upgradeable contracts. There are no proxies and no admin backdoors — the platform owner can point new launches at a fee wallet and nothing else. A launch is a single transaction that deploys the token, seeds the bonding curve, opens trading, and (optionally) executes the creator's own opening buy — atomically.
 
@@ -19,7 +19,7 @@ A coin's life spans a stack of audited, non-upgradeable contracts:
 |----------|------|
 | `CurvePadFactory` | Deploys the token + curve + pool in one tx, registers the coin with the router, runs the anti-snipe opening buy. |
 | `PadRouter` | The only trade path. Applies the 1% fee in-protocol, splits it to escrows, carves the 0.25% reward legs, exposes dev fee controls. |
-| `CurvePool` | The bonding curve — a single-sided v3 position spanning `[startTick → gradTick]`. Owns graduation and the "let it ride" logic. |
+| `CurvePool` | The bonding curve — a single-sided v3 position spanning `[startTick → gradTick]`. Owns graduation, which fires at exactly one point: the curve ceiling. |
 | `Bond` | Protocol-owned floor posted at graduation and locked forever — *Sherwood* (full-range LP), *Bounty* (WETH buy-wall), *Ambush* (token sell-wall). Fees compound back in via `poke()`. |
 | `RewardVault` | Custodies the two 0.25% [reward](rewards.md) legs per `(coin, epoch, side)` and pays capped, Merkle-proven claims. |
 | `FloorCoopFactory` (+ per-token `FloorCoop`) | Deploys a per-coin [FloorCoop](floorcoop.md) vault: stake ETH into real locked LP, earn a share of trade fees. |

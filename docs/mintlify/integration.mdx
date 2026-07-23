@@ -1,6 +1,6 @@
 ---
 title: "Integration Guide"
-description: "Copy-paste ethers v6: launch, buy/sell, read curve state, graduate and dev controls."
+description: "Copy-paste ethers v6: launch, buy/sell, read curve state, graduate and dev fee controls."
 ---
 
 # Integration Guide
@@ -14,7 +14,7 @@ One transaction. Send ETH with the call to make the creator's opening buy (≤2%
 ```js
 import { ethers } from "ethers";
 
-const FACTORY = "0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2";
+const FACTORY = "0xF54032C714e186bC6e5D84230c3B25cAC2e238Ed";
 const abi = [
   "function launch((string name,string symbol,address dev,(uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,address projectWallet) tax) p) payable returns (address token,address curve,address pool)",
 ];
@@ -44,7 +44,7 @@ console.log("launched", token);
 ## Buy & sell
 
 ```js
-const ROUTER = "0x7d0c7122E26a75A9f0bd753e84c6115CAfE3Fd9F";
+const ROUTER = "0xCA10a8821aF3D54eA9050A279EDd073654f5Fa1C";
 const rAbi = [
   "function buy(address token,uint256 minOut) payable returns (uint256)",
   "function sell(address token,uint256 amountIn,uint256 minOutEth) returns (uint256)",
@@ -84,21 +84,18 @@ const span = Math.abs(Number(ceil) - Number(start)) || 1;
 const progress = Math.min(1, Math.abs(Number(tick) - Number(start)) / span); // 0 … 1
 ```
 
-## Graduate & dev controls
+## Graduate & dev fee controls
 
 ```js
 const curve = new ethers.Contract(curveAddr, [
   "function ready() view returns (bool)",
   "function graduate()",
-  "function setGradTarget(int24 targetTick)",
 ], signer);
 
-// Anyone can graduate once ready() — this is the "Graduate" button / a keeper bot.
+// Graduation is ceiling-only: ready() flips to true only once the curve fills to
+// gradTick. There's no creator target, no minimum, and no timeout. Anyone can then
+// graduate — this is the "Graduate" button / a keeper bot.
 if (await curve.ready()) await (await curve.graduate()).wait();
-
-// Creator only: move the auto-graduate price. Lower = graduate sooner;
-// higher = ride longer for a bigger raise + thicker floor.
-await (await curve.setGradTarget(targetTick)).wait();
 
 // Creator only: collect your escrowed sell fees — or buy + burn with them.
 const router = new ethers.Contract(ROUTER, [

@@ -34,7 +34,7 @@ GET /api/coins?sort=trending&filter=live&q=wood&limit=60
   graduated, raisedWeth, bond,
   progress, mcapEth, lastPriceEth,           # live snapshot — no chain read needed
   tradesAll, trades24h, volAllEth, vol24hEth,
-  startTick, minGradTick, gradTick, gradTarget,
+  startTick, gradTick,                       # curve start + ceiling (graduation is ceiling-only)
   image, banner, description, telegram, twitter, website }   # joined from the profile (null until set)
 ```
 

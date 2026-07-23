@@ -24,11 +24,11 @@ export const CHAIN = {
 
 // Live, source-verified deployment (Blockscout + Sourcify, chain 4663).
 export const ADDRESSES = {
-  curvePadFactory:  "0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2", // one-call launch
-  padRouter:        "0x7d0c7122E26a75A9f0bd753e84c6115CAfE3Fd9F", // every buy/sell
-  rewardVault:      "0x0F07dC315e332084129c1D00bEbADAb05edf79Dc", // 0.25% reward legs
-  floorCoopFactory: "0x26aBF8443C30AA2913b9f94B89787d38146C825b", // per-coin LP vaults
-  platformSplitter: "0xAc918cd2BF3affFEc81A4f55238539d7eBFd156f",
+  curvePadFactory:  "0xF54032C714e186bC6e5D84230c3B25cAC2e238Ed", // one-call launch
+  padRouter:        "0xCA10a8821aF3D54eA9050A279EDd073654f5Fa1C", // every buy/sell
+  rewardVault:      "0x5Ca5C1D2D10Bf605F9C42c5Baa0a3f897a3E3811", // 0.25% reward legs
+  floorCoopFactory: "0x2615120ECbe93D5DC5e9268337f42817a3224102", // per-coin LP vaults
+  platformSplitter: "0xF56A82476114BDadC425b850d53FEFCb847e7C65",
   weth:             "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
   uniswapV3Factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
 };
