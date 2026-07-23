@@ -186,7 +186,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
   <div class="spacer"></div><a class="nlink" href="browse.html">← All coins</a><a class="nlink" href="profile.html">Portfolio</a><button class="btn btn-ghost" id="connectBtn" type="button">Connect wallet</button>
 </div></header>
 
-<div class="banner"><div class="art"></div><div class="bmore">Trending on Robin Labs</div><div class="bwrap"><div class="bmq" id="bmq"></div></div></div>
+<div class="banner"><div class="art"></div></div>
 <main class="wrap">
   <div class="idbar">
     <div class="pfp" id="pfp">?</div>
@@ -199,12 +199,17 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
   <div class="layout">
     <div>
       <div class="chart">
-        <div class="hd"><span class="dot"></span> DexScreener · live chart <span style="margin-left:auto" class="mono">Uniswap v3 · 1%</span></div>
-        <iframe id="dex" title="DexScreener chart" loading="lazy" src="about:blank"></iframe>
-        <div class="ph" id="chartPh" style="display:none">
-          <div class="candles" id="candles" aria-hidden="true"></div>
-          <svg class="cline" id="cline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path id="clinePath" d="" /></svg>
-          <div class="ph-txt"><div class="big">Live chart</div><div>Real Uniswap v3 pair — charts on DexScreener from block one.</div></div>
+        <div class="hd"><span class="dot"></span> Price · live
+          <span class="mono" id="pLast" style="margin-left:8px;color:var(--ink);font-weight:700"></span>
+          <a href="#" id="dexLink" target="_blank" rel="noopener" class="mono" style="margin-left:auto;color:var(--ink-dim);font-size:.74rem">Uniswap v3 · 1% · DexScreener ↗</a>
+        </div>
+        <div style="position:relative;height:440px;background:var(--bg-2)">
+          <svg id="psvg" viewBox="0 0 1000 400" preserveAspectRatio="none" style="width:100%;height:100%;display:block"></svg>
+          <span id="pHi" class="mono" style="position:absolute;top:8px;left:12px;font-size:.72rem;color:var(--ink-faint)"></span>
+          <span id="pLo" class="mono" style="position:absolute;bottom:10px;left:12px;font-size:.72rem;color:var(--ink-faint)"></span>
+          <div class="ph" id="chartPh" style="display:none;position:absolute;inset:0">
+            <div class="ph-txt"><div class="big">Live chart</div><div>Chart builds from the first trade — buy to kick it off.</div></div>
+          </div>
         </div>
       </div>
       <div class="statrow">
@@ -631,7 +636,8 @@ async function loadCoin(){
   } catch { /* profiles are cosmetic — never block the coin page */ }
 
   // chart
-  if (tax.pool){ $('dex').src = 'https://dexscreener.com/robinhood/' + tax.pool.toLowerCase() + '?embed=1&theme=dark&info=0&trades=0'; }
+  if (tax.pool){ const dl = $('dexLink'); if (dl) dl.href = 'https://dexscreener.com/robinhood/' + tax.pool.toLowerCase(); }
+  renderPriceChart();
 
   // stats + bond — from the live read when available, else the indexer snapshot
   paintStats(view);
@@ -639,7 +645,7 @@ async function loadCoin(){
   // honor a ?buy=<eth> deep-link from the board's Quick Buy (prefill the buy amount once)
   const preBuy = parseFloat(q.get('buy'));
   if (Number.isFinite(preBuy) && preBuy > 0 && !window.__preBuyDone) { window.__preBuyDone = true; if (SIDE !== 'buy') side('buy'); $('amtInput').value = String(preBuy); }
-  loadTrades(); loadHolders(); renderBanner(); renderFees(apiCoin); renderFloor();
+  loadTrades(); loadHolders(); renderFees(apiCoin); renderFloor();
   mountSafety(document.getElementById('safetyBody'), TOKEN); // GoPlus + template scan (read-only)
 }
 
@@ -661,10 +667,10 @@ function renderDemoCoin(){
   $('stStage').textContent = c.state === 'done' ? 'Graduated' : c.state === 'grad' ? 'Ready' : 'Bonding';
   $('stStage').className = 'v' + (c.state === 'done' ? ' g' : '');
   // chart: show the placeholder (no real DexScreener pair in demo)
-  $('dex').style.display = 'none'; $('chartPh').style.display = 'grid'; buildCandles();
+  renderPriceChart();
   renderBond({ graduated: c.state === 'done', ready: c.state === 'grad', progress: c.prog / 100,
     gradTick: -170400 });
-  loadTrades(); loadHolders(); renderBanner(); renderFees(c); renderFloor();
+  loadTrades(); loadHolders(); renderFees(c); renderFloor();
   const sb = document.getElementById('safetyBody');
   if (sb) sb.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;font-weight:800;color:#10140a;background:var(--green);padding:3px 9px;border-radius:999px">🛡 SAFE</span><span style="color:var(--ink-dim);font-size:.78rem">Sample preview — the live pad scans every coin with GoPlus.</span></div><div style="color:var(--ink-dim);font-size:.8rem;line-height:1.5">Verified Robin Labs coin · not a honeypot · fixed 1B supply, no mint · LP locked at graduation · fee within the 4% cap.</div>`;
 }
@@ -758,25 +764,50 @@ $('fcWithdraw').addEventListener('click', async () => {
 });
 buildTerms();
 
-// ── animated candlestick backdrop for the chart placeholder (deterministic) ──
-function buildCandles(){
-  const wrap = $('candles'); if (!wrap || wrap.dataset.built) return; wrap.dataset.built = 1;
-  const N = 30; let price = 42, html = '', pts = [];
-  for (let i = 0; i < N; i++){
-    const open = price;
-    const drift = Math.sin(i * 0.55) * 3 + i * 0.5;               // gentle uptrend
-    const noise = ((i * 37) % 13) - 6;                            // deterministic wiggle
-    price = Math.max(10, Math.min(86, open + drift * 0.18 + noise));
-    const close = price, up = close >= open;
-    const bt = Math.max(open, close), bb = Math.min(open, close);
-    const hi = Math.min(94, bt + Math.abs(noise) * 0.7 + 3), lo = Math.max(6, bb - Math.abs(noise) * 0.7 - 3);
-    html += `<div class="candle ${up?'up':'dn'}" style="--b:${bb}%;--h:${Math.max(3,bt-bb)}%;--wt:${100-hi}%;--wb:${lo}%">`
-          + `<div class="body" style="animation-delay:${i*38}ms"></div></div>`;
-    pts.push([ (i/(N-1))*100, 100 - (open+close)/2 ]);            // price line in svg coords (y inverted)
+// ── native price chart — a clean line/area from OUR OWN trade data ──
+// Price per trade = eth/tokens (both 18-dec wei, so the ratio is WETH-per-token) × ETH_USD. This renders
+// with the correct scale on any chain — DexScreener mis-reads token decimals on new L2s and shows a garbage
+// ">999Q" axis, so we chart it ourselves and keep DexScreener as an external link.
+function fmtPrice(v){
+  if (!(v > 0)) return '$0';
+  if (v >= 1) return '$' + v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  return '$' + v.toPrecision(3);
+}
+async function renderPriceChart(){
+  const svg = $('psvg'); if (!svg) return;
+  let pts = [];
+  if (DEMO){
+    let p = 0.0000012; for (let i = 0; i < 48; i++){ p *= 1 + (Math.sin(i * 0.5) * 0.04 + 0.014); pts.push(p); }
+  } else {
+    let rows = []; try { rows = await Pad.trades(TOKEN, 200); } catch {}
+    for (const t of (rows || [])){
+      const e = Number(t.eth), tok = Number(t.tokens);
+      if (e > 0 && tok > 0) pts.push((e / tok) * ETH_USD);
+    }
+    pts.reverse();                                  // API is newest-first → chronological
   }
-  wrap.innerHTML = html;
-  const path = $('clinePath');
-  if (path) path.setAttribute('d', 'M' + pts.map(p => p[0].toFixed(1)+','+p[1].toFixed(1)).join(' L'));
+  const ph = $('chartPh');
+  if (pts.length < 2){ if (ph) ph.style.display = 'grid'; svg.style.display = 'none'; return; }
+  if (ph) ph.style.display = 'none'; svg.style.display = 'block';
+
+  const W = 1000, H = 400, pad = 10;
+  let lo = Math.min(...pts), hi = Math.max(...pts);
+  if (hi <= lo){ hi = lo * 1.01 || 1; lo = lo * 0.99; }
+  const X = (i) => pad + (i / (pts.length - 1)) * (W - 2 * pad);
+  const Y = (v) => H - pad - ((v - lo) / (hi - lo)) * (H - 2 * pad);
+  const line = pts.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+  const area = `${line} L${X(pts.length - 1).toFixed(1)},${(H - pad).toFixed(1)} L${X(0).toFixed(1)},${(H - pad).toFixed(1)} Z`;
+  const up = pts[pts.length - 1] >= pts[0];
+  const col = up ? '#48d16a' : '#ff5a52';
+  const gid = 'pg' + (up ? 'u' : 'd');
+  svg.innerHTML =
+    `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">`
+    + `<stop offset="0%" stop-color="${col}" stop-opacity="0.26"/><stop offset="100%" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>`
+    + `<path d="${area}" fill="url(#${gid})" stroke="none"/>`
+    + `<path d="${line}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  if ($('pHi')) $('pHi').textContent = fmtPrice(hi);
+  if ($('pLo')) $('pLo').textContent = fmtPrice(lo);
+  if ($('pLast')) $('pLast').textContent = fmtPrice(pts[pts.length - 1]);
 }
 
 // ── trending-tokens marquee in the banner ──
