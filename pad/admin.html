@@ -98,6 +98,15 @@
     <div class="hint">Per-coin escrows (floor / deferred / burn) are pushed to their destinations from the coin page or by any keeper — they aren't owner funds.</div>
   </section>
 
+  <!-- LP FEES — collect on demand -->
+  <section id="secLpFees">
+    <h2>🪙 LP fees — collect anytime</h2>
+    <p class="desc">Sweep the live Uniswap 1% fee your curves earn on <b>every</b> trade — no need to wait for graduation. Permissionless: the split (your platform share + the creator's) is paid on-chain to the wired wallets. The keeper does this on a schedule; use these to collect <b>right now</b>.</p>
+    <div class="row"><div class="lbl"><b>Collect one coin</b><span>enter the coin's token address</span></div><input class="addr" id="inCollectOne" placeholder="0x coin token" /><button class="btn sm" id="btnCollectOne">Collect</button></div>
+    <div class="row"><div class="lbl"><b>Collect every live coin</b><span id="collectAllSub">sweeps fees from all coins still bonding</span></div><div class="val" id="valLiveCoins">—</div><button class="btn sm" id="btnCollectAll">Collect all</button></div>
+    <div class="hint">Only bonding (not-yet-graduated) coins have collectable live fees — a graduated coin already swept its fees into the Bond at graduation. Needs the v2 factory (the current live coins predate <code>collectFees()</code>).</div>
+  </section>
+
   <!-- REWARDS -->
   <section id="secRewards">
     <h2>🎁 Rewards <span class="pill" style="font-size:.62rem"><span class="dot" id="rwdDot"></span><span id="rwdState">—</span></span></h2>
@@ -266,7 +275,7 @@ async function refresh() {
 
   // ── API totals ──
   if (/^https?:\/\//.test(API_BASE)) {
-    try { const s = await (await fetch(API_BASE + '/api/stats')).json(); $('volTot').textContent = (s.volAllEth || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }); $('volSub').textContent = `24h ${(s.vol24hEth || 0).toFixed(2)} · ETH`; $('coinsTot').textContent = `${s.coins ?? '—'} / ${s.graduated ?? '—'}`; } catch {}
+    try { const s = await (await fetch(API_BASE + '/api/stats')).json(); $('volTot').textContent = (s.volAllEth || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }); $('volSub').textContent = `24h ${(s.vol24hEth || 0).toFixed(2)} · ETH`; $('coinsTot').textContent = `${s.coins ?? '—'} / ${s.graduated ?? '—'}`; const live = (s.coins ?? 0) - (s.graduated ?? 0); if ($('valLiveCoins')) $('valLiveCoins').textContent = `${live} live`; } catch {}
     try { const r = await (await fetch(API_BASE + '/api/rewards/stats')).json(); $('rwdAccr').textContent = (r.accruedEth || 0).toFixed(3); $('rwdSub').textContent = `${(r.allocatedEth || 0).toFixed(3)} allocated · ${r.epochsPosted ?? 0} epochs`; } catch {}
   } else { $('volSub').textContent = 'set API_BASE'; }
 
@@ -307,6 +316,57 @@ async function runAction(btn) {
   } catch (e) { toast('✗ ' + (e.shortMessage || e.reason || e.message || 'failed'), true); }
   finally { btn.disabled = false; btn.textContent = label; }
 }
+
+// ── LP fees: collect on demand (per-coin curve, not a fixed contract) ──────────
+const CURVE_ABI = ['function collectFees() returns (uint256 wethFees, uint256 tokenFees)'];
+async function resolveCurve(token) {
+  if (!/^https?:\/\//.test(API_BASE)) throw new Error('set API_BASE to resolve coins');
+  const j = await (await fetch(`${API_BASE}/api/coin/${token.toLowerCase()}`)).json();
+  const c = j.coin || j;
+  if (!c || !c.curve) throw new Error('coin not found');
+  return { curve: c.curve, graduated: !!c.graduated };
+}
+async function collectCurve(curveAddr) {
+  const gp = (await read.getFeeData()).gasPrice; // legacy tx — Robinhood Chain has no priority-fee RPC
+  const tx = await new ethers.Contract(curveAddr, CURVE_ABI, signer).collectFees({ type: 0, gasPrice: gp });
+  await tx.wait();
+  return tx.hash;
+}
+async function collectOne() {
+  if (!signer) { toast('Connect your owner wallet first', true); return; }
+  const btn = $('btnCollectOne'), label = btn.textContent;
+  try {
+    const token = $('inCollectOne').value.trim();
+    if (!ethers.isAddress(token)) throw new Error('enter a coin token address');
+    btn.disabled = true; btn.textContent = 'Resolving…';
+    const { curve, graduated } = await resolveCurve(token);
+    if (graduated) throw new Error('coin graduated — its fees were already swept at graduation');
+    btn.textContent = 'Signing…';
+    const hash = await collectCurve(curve);
+    toast(`collected ✓  ${hash.slice(0, 12)}…`);
+  } catch (e) { toast('✗ ' + (e.shortMessage || e.reason || e.message || 'failed'), true); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+async function collectAll() {
+  if (!signer) { toast('Connect your owner wallet first', true); return; }
+  if (!/^https?:\/\//.test(API_BASE)) { toast('set API_BASE first', true); return; }
+  const btn = $('btnCollectAll'), label = btn.textContent;
+  try {
+    btn.disabled = true; btn.textContent = 'Loading…';
+    const j = await (await fetch(`${API_BASE}/api/coins?limit=500`)).json();
+    const coins = (j.coins || j || []).filter((c) => c.curve && !c.graduated);
+    if (!coins.length) throw new Error('no live (bonding) coins to collect');
+    let ok = 0, fail = 0;
+    for (let i = 0; i < coins.length; i++) {
+      btn.textContent = `Collecting ${i + 1}/${coins.length}…`;
+      try { await collectCurve(coins[i].curve); ok++; } catch { fail++; }
+    }
+    toast(`collected ${ok}/${coins.length}${fail ? ` · ${fail} failed` : ''} ✓`, fail > 0);
+  } catch (e) { toast('✗ ' + (e.shortMessage || e.reason || e.message || 'failed'), true); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+$('btnCollectOne').addEventListener('click', collectOne);
+$('btnCollectAll').addEventListener('click', collectAll);
 
 document.querySelectorAll('button[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b)));
 $('connectBtn').addEventListener('click', connect);
