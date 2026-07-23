@@ -38,7 +38,7 @@ suite("Calibration sim — NEW params (201600 / 23000 / 22800): ~$3.4k start / ~
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, V3_FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(),
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress,
       START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH
     );
     await (await router.setFactory(await factory.getAddress())).wait();

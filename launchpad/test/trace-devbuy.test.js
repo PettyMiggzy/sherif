@@ -22,7 +22,7 @@ describe("dev-buy FDV", function () {
       const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
       const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
         WETH, V3_FACTORY, platform.address, dep.address, await router.getAddress(),
-        await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), SMAG, CW, MGW);
+        await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, SMAG, CW, MGW);
       await (await router.setFactory(await factory.getAddress())).wait();
       const buyEth = ethers.parseEther((buyUsd / ETH_USD).toFixed(6));
       await ethers.provider.send("hardhat_setBalance", [dep.address, "0x" + (10n ** 24n).toString(16)]);

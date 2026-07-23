@@ -26,7 +26,7 @@ suite("CurvePool on a Robinhood Chain fork — DEX day one", function () {
     const width = 35800, minGradWidth = 19800;
 
     const curve = await (await ethers.getContractFactory("CurvePool")).deploy(
-      tokAddr, WETH, FACTORY, platform.address, dev.address, await bd.getAddress(),
+      tokAddr, WETH, FACTORY, platform.address, dev.address, await bd.getAddress(), ethers.ZeroAddress,
       CURVE, AMBUSH, startTick, width, minGradWidth
     );
     const curveAddr = await curve.getAddress();

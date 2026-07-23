@@ -41,7 +41,7 @@ suite("Mass-dump sim — buy a coin up ~2x, then everyone dumps (fork)", functio
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(),
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress,
       START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH
     );
     await (await router.setFactory(await factory.getAddress())).wait();

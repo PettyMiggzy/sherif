@@ -35,7 +35,7 @@ describe("Curve tracer — real FDV vs ETH raised, step by step", function () {
       const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
       const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
         WETH, V3_FACTORY, platform.address, dep.address, await router.getAddress(),
-        await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(),
+        await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress,
         S.smag, S.cw, S.mgw
       );
       await (await router.setFactory(await factory.getAddress())).wait();

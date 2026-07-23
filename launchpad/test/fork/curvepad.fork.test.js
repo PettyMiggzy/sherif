@@ -21,7 +21,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800, 19800
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 207200, 35800, 19800
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     // plain default 1% here (the above-default split is covered in padrouter.fork.test.js)
@@ -103,7 +103,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800, 19800
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 207200, 35800, 19800
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     // plain default 1% here (the above-default split is covered in padrouter.fork.test.js)
@@ -145,7 +145,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     // production graduation geometry: the coin graduates only at the ceiling (~$76k mcap)
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 196200, 25800, 16400
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 196200, 25800, 16400
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
@@ -183,7 +183,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 196200, 25800, 16400
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 196200, 25800, 16400
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
@@ -238,7 +238,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207200, 35800, 19800
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 207200, 35800, 19800
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };

@@ -17,7 +17,7 @@ async function stack(dep, platform, startMag = 207200, width = 35800, minGradWid
   const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
   const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
     WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), startMag, width, minGradWidth
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, startMag, width, minGradWidth
   );
   await (await router.setFactory(await factory.getAddress())).wait();
   return { router, factory };

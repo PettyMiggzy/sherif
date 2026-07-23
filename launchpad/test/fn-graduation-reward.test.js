@@ -21,7 +21,7 @@ suite("Graduation reward — creator earns 0.5 only at the full ceiling", functi
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, V3_FACTORY, platform.address, dep.address, await router.getAddress(),
-      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), START_TICK_MAG, CURVE_WIDTH, minGradWidth);
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, START_TICK_MAG, CURVE_WIDTH, minGradWidth);
     await (await router.setFactory(await factory.getAddress())).wait();
     const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const rc = await (await factory.launch({ name: "Grad", symbol: "GRD", dev: dev.address, tax: NOTAX })).wait();
