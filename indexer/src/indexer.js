@@ -9,6 +9,7 @@ import {
   db, getCursor, setCursor, setHeadTs, upsertCoin, markGraduated, ungraduateFrom, insertTrade,
   coinByCurve, purgeTradesFrom, setGeometry,
   setSnapshot, coinGeom, insertAccrual, purgeAccrualsFrom,
+  liveCoinsAll, tradeCountForToken, getMeta, setMeta,
 } from "./db.js";
 
 const WETH = (process.env.WETH || "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73").toLowerCase();
@@ -71,15 +72,14 @@ async function nameSymbol(token) {
 
 // Pull every relevant log in [from,to]. Robinhood Chain's Blockscout RPC rejects
 // an address-array filter ("invalid address"), so we query per contract: the
-// factory (Launched), the router (Bought/Sold), and Graduated by topic0 across
-// any curve (matched back to its coin by log.address).
+// factory (Launched) and Graduated by topic0 across any curve (matched back to its
+// coin by log.address). Trades come from the pools' own Swap events, scanned
+// separately in getPoolSwaps (bots/DexScreener bypass our router).
 async function getLogsRange(from, to) {
   // Sequential (not parallel) — Blockscout 500s if you fan out too many getLogs
   // at once. Each call is retried independently.
   const launched = await withRetry(() =>
     provider.getLogs({ fromBlock: from, toBlock: to, address: CFG.factory, topics: [TOPICS.Launched] }), "getLogs.launched");
-  const trades = await withRetry(() =>
-    provider.getLogs({ fromBlock: from, toBlock: to, address: CFG.router, topics: [[TOPICS.Bought, TOPICS.Sold]] }), "getLogs.trades");
   // Graduated is curve-emitted with no indexed token, so we query by topic0 across
   // any address and match back by log.address.
   const grads = await withRetry(() =>
@@ -90,8 +90,48 @@ async function getLogsRange(from, to) {
         provider.getLogs({ fromBlock: from, toBlock: to, address: CFG.rewardVault, topics: [TOPICS.Accrued] }), "getLogs.accruals")
     : [];
   // Merge + order by (block, logIndex) for deterministic application.
-  return [...launched, ...trades, ...grads, ...accruals].sort((a, b) =>
+  return [...launched, ...grads, ...accruals].sort((a, b) =>
     a.blockNumber - b.blockNumber || a.index - b.index);
+}
+
+// Scan the Uniswap Swap events for a set of pools over [from,to]. One getLogs per
+// pool (Robinhood's RPC rejects address arrays; a topic0-only scan would pull every
+// unrelated pool on the chain). Sequential to avoid Blockscout 500s under fan-out.
+async function getPoolSwaps(pools, from, to) {
+  const out = [];
+  for (const p of pools) {
+    const logs = await withRetry(() =>
+      provider.getLogs({ fromBlock: from, toBlock: to, address: p.pool, topics: [TOPICS.Swap] }),
+      `getLogs.swap.${p.pool.slice(0, 10)}`);
+    for (const l of logs) out.push(l);
+  }
+  return out;
+}
+
+// Turn one pool Swap into a trade row. `coin` = { token, token0 } (both lowercased).
+// Amounts are signed from the POOL's view: a negative delta means the pool PAID OUT.
+// So a negative token delta = tokens left the pool = a BUY; positive = a SELL.
+function decodeSwap(log, coin) {
+  let parsed;
+  try { parsed = iface.parseLog(log); } catch { return null; }
+  if (!parsed || parsed.name !== "Swap") return null;
+  const a = parsed.args;
+  const tokenIsToken0 = coin.token0 === coin.token;
+  const tokenDelta = tokenIsToken0 ? a.amount0 : a.amount1;
+  const wethDelta = tokenIsToken0 ? a.amount1 : a.amount0;
+  const buy = tokenDelta < 0n; // pool sent our token out -> someone bought
+  const eth = buy ? wethDelta : -wethDelta;      // buy: WETH in (+); sell: WETH out (+)
+  const tokens = buy ? -tokenDelta : tokenDelta; // absolute token amount moved
+  return {
+    tx: log.transactionHash, log_index: log.index,
+    token: coin.token, side: buy ? "buy" : "sell",
+    // The swap recipient — the best cheap proxy for the trader without a per-swap
+    // getTransaction (often an aggregator/router). Client refines with live balanceOf.
+    actor: a.recipient.toLowerCase(),
+    eth: (eth < 0n ? -eth : eth).toString(),
+    tokens: (tokens < 0n ? -tokens : tokens).toString(),
+    fee: "0", block: log.blockNumber,
+  };
 }
 
 // Decode one log and gather EVERYTHING it needs from the chain (block ts, token
@@ -133,6 +173,9 @@ async function prepareLog(log, geom, curves) {
       }));
       const snap = await readSnapshotValues(g);
       if (snap) writes.push(() => setSnapshot.run({ token, ...snap, snap_ts: ts }));
+      // Surface the pool so this pass's swap scan (incl. the atomic dev-buy Swap in
+      // this very block) picks it up immediately, not a pass later.
+      return { writes, newPool: { pool, token, token0: gv.token0 } };
     }
     return { writes };
   }
@@ -243,6 +286,12 @@ export async function tick() {
   // matching + snapshots) before the pass has been committed.
   const geom = new Map();   // token -> geometry read this pass
   const curves = new Map(); // curve -> token, for coins launched this pass
+  // Pools whose Swap events we scan this pass: every live coin from the db, plus any
+  // launched mid-pass (added below). pool(lc) -> { pool, token, token0 }.
+  const poolMap = new Map();
+  for (const c of liveCoinsAll.all()) {
+    if (c.pool && c.token0) poolMap.set(c.pool.toLowerCase(), { pool: c.pool.toLowerCase(), token: c.token, token0: c.token0 });
+  }
 
   let applied = 0;
   let reached = from - 1;   // highest block whose window is committed
@@ -261,6 +310,19 @@ export async function tick() {
       if (!p) continue;
       for (const w of p.writes) writes.push(w);
       if (p.touched) touched.set(p.touched, p.ts);
+      if (p.newPool) poolMap.set(p.newPool.pool, p.newPool);
+    }
+    // The real trade feed: every Swap on every known pool this window (buys/sells that
+    // bypass our router included). Decode -> trade rows; flag each pool touched.
+    const swapLogs = await getPoolSwaps([...poolMap.values()], lo, hi);
+    for (const sl of swapLogs) {
+      const coin = poolMap.get(sl.address.toLowerCase());
+      if (!coin) continue;
+      const row = decodeSwap(sl, coin);
+      if (!row) continue;
+      row.ts = await blockTs(sl.blockNumber);
+      writes.push(() => insertTrade.run(row));
+      touched.set(coin.token, row.ts);
     }
     // One snapshot per pool that traded this chunk — bounds RPC to ACTIVITY, not coin
     // count. A pool with 500 trades is still one slot0 read. Read now; write in the commit.
@@ -283,7 +345,7 @@ export async function tick() {
     })();
     firstChunk = false;
     reached = hi;
-    applied += logs.length;
+    applied += logs.length + swapLogs.length;
   }
 
   // Advance the reward-poster completeness gate ONLY to the block the cursor actually
@@ -294,11 +356,58 @@ export async function tick() {
   return applied;
 }
 
+// One-time swap backfill: coins launched BEFORE pool-Swap indexing existed had their
+// trades (all of them — bots swap the pool directly) scanned past by the cursor and
+// never recorded. Re-scan each such coin's [launch_block, cursor] once for its pool's
+// Swap events. Idempotent (inserts DO NOTHING on conflict) and gated by a per-coin meta
+// flag so a restart doesn't re-scan. New coins never need this — tick() catches their
+// swaps live. Runs only when the cursor is already past the coin's launch.
+async function backfillSwaps() {
+  const cursor = getCursor();
+  if (cursor === null) return; // fresh db — the normal forward scan covers everything
+  for (const c of liveCoinsAll.all()) {
+    if (!c.pool || !c.token0 || c.launch_block == null) continue;
+    const flag = `backfilled:${c.token}`;
+    if (getMeta(flag)) continue;
+    const already = tradeCountForToken.get(c.token)?.n || 0;
+    const coin = { token: c.token, token0: c.token0, pool: c.pool.toLowerCase() };
+    let inserted = 0, lastTs = null;
+    try {
+      for (let lo = c.launch_block; lo <= cursor; lo += CFG.chunk) {
+        const hi = Math.min(lo + CFG.chunk - 1, cursor);
+        const logs = await getPoolSwaps([coin], lo, hi);
+        const rows = [];
+        for (const l of logs) {
+          const row = decodeSwap(l, coin);
+          if (!row) continue;
+          row.ts = await blockTs(l.blockNumber);
+          lastTs = row.ts;
+          rows.push(row);
+        }
+        if (rows.length) {
+          db.transaction(() => { for (const r of rows) insertTrade.run(r); })();
+          inserted += rows.length;
+        }
+      }
+      setMeta(flag, "1"); // completed cleanly — never re-scan this coin
+      if (inserted) {
+        const snap = await readSnapshotValues(coinGeom.get(c.token));
+        if (snap && lastTs) setSnapshot.run({ token: c.token, ...snap, snap_ts: lastTs });
+        console.log(`[indexer] backfilled ${inserted} pool swaps for ${c.symbol || c.token} (had ${already})`);
+      }
+    } catch (e) {
+      // Leave the flag unset so the next start retries this coin from scratch.
+      console.warn(`[indexer] backfill failed for ${c.symbol || c.token}: ${e.shortMessage || e.message || e}`);
+    }
+  }
+}
+
 export async function runLoop() {
   const startFrom = getCursor();
   console.log(`[indexer] rpc=${CFG.rpcUrl}`);
   console.log(`[indexer] factory=${CFG.factory} router=${CFG.router}`);
   console.log(`[indexer] cursor=${startFrom ?? `(fresh, from block ${CFG.startBlock})`}`);
+  try { await backfillSwaps(); } catch (e) { console.error(`[indexer] backfill error: ${e.message || e}`); }
   for (;;) {
     try {
       const n = await tick();

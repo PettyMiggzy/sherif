@@ -154,6 +154,9 @@ export const setCursor = (n) => _setMeta.run("cursor", String(n));
 // incomplete and the on-chain root permanently wrong. 0 = never synced.
 export const getHeadTs = () => { const r = _getMeta.get("head_ts"); return r ? Number(r.v) : 0; };
 export const setHeadTs = (ts) => _setMeta.run("head_ts", String(ts));
+// Generic meta flags (used to mark a coin's one-time swap backfill complete).
+export const getMeta = (k) => { const r = _getMeta.get(k); return r ? r.v : null; };
+export const setMeta = (k, v) => _setMeta.run(k, String(v));
 
 // ── writes (idempotent — safe to re-run over the same blocks on a reorg) ─────
 export const upsertCoin = db.prepare(`
@@ -204,6 +207,13 @@ SELECT token, pool, token0, start_tick, grad_tick FROM coins
 WHERE graduated=0 AND pool IS NOT NULL AND start_tick IS NOT NULL AND token = ?
 `);
 export const coinGeom = db.prepare("SELECT token, pool, token0, start_tick, grad_tick FROM coins WHERE token = ?");
+// Every live (non-graduated) coin with a pool — the set whose Uniswap Swap events we scan
+// each pass for the trade feed, and backfill once at startup for coins that predate this.
+export const liveCoinsAll = db.prepare(`
+  SELECT token, symbol, pool, token0, start_tick, grad_tick, launch_block FROM coins
+  WHERE graduated = 0 AND pool IS NOT NULL
+`);
+export const tradeCountForToken = db.prepare("SELECT COUNT(*) AS n FROM trades WHERE token = ?");
 
 export const coinByCurve = db.prepare("SELECT token FROM coins WHERE curve = ?");
 export const coinRow = db.prepare("SELECT token FROM coins WHERE token = ?");
