@@ -1,0 +1,18 @@
+{
+  "network": "robinhood",
+  "chainId": 4663,
+  "deployedAt": "2026-07-23T13:46:07.943Z",
+  "owner": "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf",
+  "platform": "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf",
+  "factoryBlock": 17333890,
+  "contracts": {
+    "padRouter": "0xCA10a8821aF3D54eA9050A279EDd073654f5Fa1C",
+    "padFactory": "0xF54032C714e186bC6e5D84230c3B25cAC2e238Ed",
+    "rewardVault": "0x5Ca5C1D2D10Bf605F9C42c5Baa0a3f897a3E3811",
+    "floorCoopFactory": "0x2615120ECbe93D5DC5e9268337f42817a3224102",
+    "platformSplitter": "0xF56A82476114BDadC425b850d53FEFCb847e7C65",
+    "launchTokenDeployer": "0x55676403eFB000b8667D0F9C6cEdbBF17b9BdcD3",
+    "curvePoolDeployer": "0x548Fe951F2022c23bF2e896971aFCD83a39852BB",
+    "bondDeployer": "0xEe00259A69ab91b9702021571048d1eECbC80eAC"
+  }
+}
