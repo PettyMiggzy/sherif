@@ -26,6 +26,10 @@ interface IRewardVault {
     function accrue(address coin, uint8 side) external payable;
 }
 
+interface IFeeConfig {
+    function swapSplit() external view returns (uint16 platformBps, uint16 creatorBps, uint16 floorBps);
+}
+
 /// @title PadRouter — the Pad's swap desk + the project fee
 /// @notice Robinhood Chain has no canonical Uniswap periphery, so this IS the router every trade goes
 /// through. Buys take native ETH (no token approval); sells take the token (one exact-amount approval to
@@ -77,6 +81,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
 
     address public factory; // the primary factory (first set); reads use this
     mapping(address => bool) public isFactory; // allowlist — a router can serve a TEST + PROD factory
+    address public feeConfig; // owner-governed swap-split source (0 => the legacy default split below)
     address public rewardVault; // RewardVault for the 0.25% trader/holder legs (0 until set — legs stay off)
     mapping(address => bool) public wasRewardVault; // every vault ever wired — old vaults may still donateFloor after a migration
     mapping(address => Cfg) internal _cfg;
@@ -104,6 +109,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
 
     event Registered(address indexed token, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps);
     event RewardVaultSet(address vault);
+    event FeeConfigSet(address feeConfig);
     event FloorDonated(address indexed token, uint256 amount);
     event RewardAccrued(address indexed token, uint8 side, uint256 amount);
     event Bought(address indexed token, address indexed buyer, uint256 ethIn, uint256 fee, uint256 tokensOut);
@@ -143,6 +149,15 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         }
         rewardVault = v; // zero disables the legs; a live vault turns them on
         emit RewardVaultSet(v);
+    }
+
+    /// @notice Point the router at the owner-governed FeeConfig. Once set, every trade's swap fee splits per
+    /// FeeConfig.swapSplit() (platform / creator / floor) instead of the legacy default. Owner-only; must be a
+    /// contract (a code check stops an EOA/typo). Setting it back to 0 restores the legacy split.
+    function setFeeConfig(address fc) external onlyOwner {
+        if (fc != address(0)) require(fc.code.length > 0, "not a contract");
+        feeConfig = fc;
+        emit FeeConfigSet(fc);
     }
 
     /// @notice Accept swept, unclaimed rewards back from the RewardVault and credit them to a coin's floor
@@ -339,6 +354,30 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         uint256 fee = (value * feeBps) / 10_000;
         if (fee == 0) return;
 
+        // ── v2: configurable split (platform / creator / floor), read live from the owner-governed FeeConfig ──
+        // Same split on both sides. Defensive: a missing/broken/over-100% config can NEVER revert a trade — it
+        // falls through to all-platform (the safe default). Enabled only once the owner wires setFeeConfig.
+        address fc = feeConfig;
+        if (fc != address(0)) {
+            try IFeeConfig(fc).swapSplit() returns (uint16 pBps, uint16 cBps, uint16 fBps) {
+                if (uint256(pBps) + cBps + fBps == 10_000) {
+                    uint256 toFloor = (fee * fBps) / 10_000;
+                    uint256 toCreator = (fee * cBps) / 10_000;
+                    uint256 toPlatform = fee - toFloor - toCreator; // platform absorbs rounding
+                    platformEscrow += toPlatform;
+                    devEscrow[token] += toCreator;
+                    floorEscrow[token] += toFloor;
+                    emit FeeSplit(token, toPlatform, 0, 0, toCreator, toFloor, 0);
+                    return;
+                }
+            } catch {}
+            // config unreadable or invalid → everything to the platform (never revert the trade)
+            platformEscrow += fee;
+            emit FeeSplit(token, fee, 0, 0, 0, 0, 0);
+            return;
+        }
+
+        // ── legacy default split (feeConfig unset) ──
         // The above-default excess is the "clean" piece; the default-1% base takes the remainder, so the
         // parts sum to `fee` exactly (no dust).
         uint256 excess = feeBps > DEFAULT_FEE_BPS ? (value * (feeBps - DEFAULT_FEE_BPS)) / 10_000 : 0;

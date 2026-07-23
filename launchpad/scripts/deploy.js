@@ -54,15 +54,22 @@ async function main() {
   // Deploy the router owned by the DEPLOYER so it can wire itself (setFactory / setRewardVault are owner-only).
   // We hand it to OWNER at the end. If deployer == owner this is a no-op distinction.
   const router = await track("PadRouter", await (await ethers.getContractFactory("PadRouter")).deploy(WETH, deployer.address));
+  // FeeConfig — the single owner-governed fee dial (LP creator split + swap platform/creator/floor split).
+  // Owned by OWNER directly so the cold wallet can retune fees with no redeploy. Curves + router read it.
+  const feeConfig = await track("FeeConfig", await (await ethers.getContractFactory("FeeConfig")).deploy(owner));
   const factory = await track("CurvePadFactory", await (await ethers.getContractFactory("CurvePadFactory")).deploy(
     WETH, V3_FACTORY, platform, owner, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(),
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), await feeConfig.getAddress(),
     START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH
   ));
   console.log(`  (curve: startTickMag=${START_TICK_MAG} ceilWidth=${CURVE_WIDTH} minGradWidth=${MIN_GRAD_WIDTH})`);
+  console.log(`  (fee defaults: LP creator 10% / platform 90% · swap 45/45/10 platform/creator/floor — retune anytime via FeeConfig)`);
   const wire = await (await router.setFactory(await factory.getAddress())).wait();
   totalGas += wire.gasUsed;
   console.log(`  router.setFactory       (gas ${wire.gasUsed})`);
+  const wireFc = await (await router.setFeeConfig(await feeConfig.getAddress())).wait();
+  totalGas += wireFc.gasUsed;
+  console.log(`  router.setFeeConfig     (gas ${wireFc.gasUsed})`);
 
   // ── reward system: the additive 0.25% trader/holder legs land here ──────────
   // RewardVault needs the router at construction; the router then points its legs at the vault.
@@ -164,6 +171,7 @@ async function main() {
         rewardVault: await rewardVault.getAddress(),
         floorCoopFactory: await floorFactory.getAddress(),
         platformSplitter: await splitter.getAddress(),
+        feeConfig: await feeConfig.getAddress(),
         launchTokenDeployer: await ltd.getAddress(),
         curvePoolDeployer: await cpd.getAddress(),
         bondDeployer: await bd.getAddress(),

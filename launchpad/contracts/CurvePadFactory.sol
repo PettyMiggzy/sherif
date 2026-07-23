@@ -50,6 +50,7 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     LaunchTokenDeployer public immutable tokenDeployer;
     CurvePoolDeployer public immutable curveDeployer;
     address public immutable bondDeployer;
+    address public immutable feeConfig; // owner-governed LP/swap split source, handed to every curve
 
     address public platform;
     bool private _swapping; // guards the swap callback (WETH is only ever transient, mid-launch)
@@ -106,6 +107,7 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         address tokenDeployer_,
         address curveDeployer_,
         address bondDeployer_,
+        address feeConfig_,
         int24 startTickMag_,
         int24 curveWidth_,
         int24 minGradWidth_
@@ -130,6 +132,7 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         tokenDeployer = LaunchTokenDeployer(tokenDeployer_);
         curveDeployer = CurvePoolDeployer(curveDeployer_);
         bondDeployer = bondDeployer_;
+        feeConfig = feeConfig_; // may be address(0) → curves default to 100% LP fee to the platform
         START_TICK_MAG = startTickMag_;
         CURVE_WIDTH = curveWidth_;
         MIN_GRAD_WIDTH = minGradWidth_;
@@ -166,7 +169,7 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
 
         int24 startTick = token < WETH ? -START_TICK_MAG : START_TICK_MAG;
         curve = curveDeployer.deploy(
-            token, WETH, v3Factory, platform, p.dev, bondDeployer, curveAmt, ambushAmt, startTick, CURVE_WIDTH, MIN_GRAD_WIDTH
+            token, WETH, v3Factory, platform, p.dev, bondDeployer, feeConfig, curveAmt, ambushAmt, startTick, CURVE_WIDTH, MIN_GRAD_WIDTH
         );
         pool = ICurvePool(curve).pool();
 

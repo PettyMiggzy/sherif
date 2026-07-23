@@ -83,6 +83,7 @@ contract CurvePoolDeployer {
         address platform,
         address dev,
         address bondDeployer,
+        address feeConfig,
         uint256 curveSupply,
         uint256 ambushSupply,
         int24 startTick,
@@ -91,7 +92,7 @@ contract CurvePoolDeployer {
     ) external returns (address) {
         return address(
             new CurvePool(
-                token, weth, v3Factory, platform, dev, bondDeployer, curveSupply, ambushSupply, startTick, curveWidth, minGradWidth
+                token, weth, v3Factory, platform, dev, bondDeployer, feeConfig, curveSupply, ambushSupply, startTick, curveWidth, minGradWidth
             )
         );
     }

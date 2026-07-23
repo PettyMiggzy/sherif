@@ -18,6 +18,10 @@ interface ICurveBond {
     function post(uint256 sherwoodWeth, uint256 sherwoodTokens, uint256 bountyWeth, uint256 ambushTokens) external;
 }
 
+interface IFeeConfig {
+    function lpCreatorBps() external view returns (uint16);
+}
+
 /// @title CurvePool — a bonding curve that IS a real Uniswap v3 pool (DEX + DexScreener from block one)
 /// @notice Instead of a math curve holding ETH off-DEX, the launch seeds the token as a single-sided
 /// concentrated v3 position spanning [start, grad] price. That position behaves like a bonding curve — buyers
@@ -39,9 +43,10 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     IUniswapV3Pool public immutable pool;
     address public immutable token0;
     address public immutable token1;
-    address public immutable platform; // buy-side (LP) fees + graduation sweep
-    address public immutable dev; // project dev
+    address public immutable platform; // LP-fee + graduation sweep recipient (platform's share)
+    address public immutable dev; // project dev — the "creator" fee recipient
     address public immutable bondDeployer;
+    address public immutable feeConfig; // owner-governed LP-split source (0 => 100% to platform)
     bool public immutable tokenIsToken0;
 
     uint256 public immutable curveSupply; // seeded as the single-sided curve
@@ -78,7 +83,7 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
 
     event Seeded(int24 curveLo, int24 curveHi, uint128 liquidity);
     event Graduated(address indexed bond, uint256 raisedWeth, uint256 leftoverToken);
-    event FeesCollected(address indexed by, uint256 wethFees, uint256 tokenFees);
+    event FeesCollected(address indexed by, uint256 wethFees, uint256 tokenFees, uint16 creatorBps);
 
     /// @param curveWidth_ tick span from start to the curve CEILING (a positive multiple of SPACING). The ceiling
     /// is the ONLY graduation point — a coin graduates only when buys carry price all the way to it (~4.2 ETH).
@@ -91,6 +96,7 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         address platform_,
         address dev_,
         address bondDeployer_,
+        address feeConfig_,
         uint256 curveSupply_,
         uint256 ambushSupply_,
         int24 startTick_,
@@ -114,6 +120,7 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         platform = platform_;
         dev = dev_;
         bondDeployer = bondDeployer_;
+        feeConfig = feeConfig_; // may be address(0): then collectFees sends 100% to the platform
         curveSupply = curveSupply_;
         ambushSupply = ambushSupply_;
         startTick = startTick_;
@@ -185,24 +192,49 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         return PoolMath.getSqrtRatioAtTick(gradTick);
     }
 
-    /// @notice Sweep the curve position's accrued Uniswap swap fees (the 1% fee tier) to the platform — the
-    /// NOXA model: the platform keeps the full 1% on EVERY trade, STREAMED LIVE, instead of only at graduation.
-    /// It doesn't matter where a trade is executed (the pad UI, DexScreener, an aggregator, a raw swap) — every
-    /// swap hits this one pool and pays this single-sided position the fee, so this captures 100% of volume.
+    /// @notice Sweep the curve position's accrued Uniswap swap fees (the 1% fee tier) and split them between
+    /// the creator and the platform per the owner-governed FeeConfig — the NOXA model, made configurable: the
+    /// house keeps the fee on EVERY trade, STREAMED LIVE, instead of only at graduation. It doesn't matter where
+    /// a trade executes (pad UI, DexScreener, an aggregator, a raw swap) — every swap hits this one pool and pays
+    /// this single-sided position the fee, so this captures 100% of volume.
     ///
     /// Only the FEES move: the curve principal (the accumulating raise that becomes the Bond floor at
     /// graduation) is left fully intact, because Uniswap accounts swap fees separately from position liquidity.
     /// `burn(0)` realizes the accrued fees into the position's `tokensOwed` WITHOUT removing any liquidity;
-    /// `collect` then pays them out. Permissionless (a keeper can poke it), and the recipient is the hardcoded
-    /// `platform`, so an untrusted caller can never redirect the funds — they only pay gas to flush them.
-    /// Buys pay the fee in WETH, sells pay it in the token, so both sides may be non-zero.
+    /// `collect` pulls them here and we forward the split. Permissionless (a keeper can poke it); the only
+    /// recipients are the immutable `dev` (creator) and `platform`, so an untrusted caller can never redirect
+    /// the funds — they only pay gas to flush them. Buys pay the fee in WETH, sells in the token → both may move.
     function collectFees() external nonReentrant returns (uint256 wethFees, uint256 tokenFees) {
         if (!seeded) revert NotSeeded();
         if (graduated) revert AlreadyGraduated(); // post-grad the position is burned; fees already swept
         pool.burn(curveLo, curveHi, 0); // poke: moves accrued fees into tokensOwed, principal untouched
-        (uint256 c0, uint256 c1) = pool.collect(platform, curveLo, curveHi, U128_MAX, U128_MAX);
+        (uint256 c0, uint256 c1) = pool.collect(address(this), curveLo, curveHi, U128_MAX, U128_MAX);
         (wethFees, tokenFees) = tokenIsToken0 ? (c1, c0) : (c0, c1);
-        emit FeesCollected(msg.sender, wethFees, tokenFees);
+        uint16 cbps = _lpCreatorBps();
+        _splitFee(IERC20(WETH), wethFees, cbps);
+        _splitFee(token, tokenFees, cbps);
+        emit FeesCollected(msg.sender, wethFees, tokenFees, cbps);
+    }
+
+    /// @dev Pay `amount` of `asset` out as `creatorBps` to the creator (dev) and the remainder to the platform.
+    function _splitFee(IERC20 asset, uint256 amount, uint16 creatorBps) internal {
+        if (amount == 0) return;
+        uint256 toCreator = (amount * creatorBps) / 10_000;
+        if (toCreator > 0) asset.safeTransfer(dev, toCreator);
+        uint256 toPlatform = amount - toCreator;
+        if (toPlatform > 0) asset.safeTransfer(platform, toPlatform);
+    }
+
+    /// @dev The creator's LP-fee share (bps) from the owner-governed config, clamped to the 50% hard cap. A
+    /// zero/unset/misbehaving config means 0 → 100% to the platform (never reverts a collection).
+    function _lpCreatorBps() internal view returns (uint16) {
+        address fc = feeConfig;
+        if (fc == address(0)) return 0;
+        try IFeeConfig(fc).lpCreatorBps() returns (uint16 b) {
+            return b > 5000 ? 5000 : b;
+        } catch {
+            return 0;
+        }
     }
 
     /// @notice Progress: is the coin graduatable? The ONLY way to graduate is reaching the full ceiling
