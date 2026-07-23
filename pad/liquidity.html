@@ -222,7 +222,7 @@ function renderMine(){
     <div class="r"><span>Staked</span><b>${eth(p.mineEth)}</b></div>
     <div class="r"><span>Pool share</span><b>${p.tvlEth?((p.mineEth/p.tvlEth)*100).toFixed(1):'—'}%</b></div>
     <div class="r"><span>Fees earned</span><b class="lime">${eth(p.earnedEth)}</b></div>
-    <div class="lock">${p.lockTxt || 'Locked · unlocks in 74d'}</div>
+    <div class="lock">${p.lockTxt || 'Locked'}</div>
   </div>`).join('');
 }
 
@@ -241,8 +241,16 @@ async function load(){
     const { coins } = await Pad.feed({ filter:'graduated', limit:40 });
     POOLS = await Promise.all((coins||[]).map(async (c) => {
       const f = await Pad.floorInfo(c.token, Pad.account()).catch(() => null);
+      // Carry the real on-chain lock (lockUntil/forever/unlocked) into the pool entry and derive an
+      // honest label — mirrors token.html's fcShowPos. No more hardcoded "unlocks in 74d".
+      const nowS = Math.floor(Date.now()/1000);
+      const locked = !!f?.forever || (f?.lockUntil != null && isFinite(f.lockUntil) && f.lockUntil > nowS && !f.unlocked);
+      const lockTxt = f?.forever ? 'Locked · forever'
+        : locked ? 'Locked · unlocks ' + new Date(f.lockUntil*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'})
+        : (f?.unlocked ? 'Unlocked' : '');
       return { token:c.token, sym:c.symbol, name:c.name, image:c.image,
-               tvlEth:f?.tvlEth||0, feesPaidEth:f?.feesPaidEth||0, aprPct:0, mineEth:f?.mineEth||0, earnedEth:f?.earnedEth||0 };
+               tvlEth:f?.tvlEth||0, feesPaidEth:f?.feesPaidEth||0, aprPct:0, mineEth:f?.mineEth||0, earnedEth:f?.earnedEth||0,
+               forever:f?.forever, lockUntil:f?.lockUntil, unlocked:f?.unlocked, lockTxt };
     }));
   } catch { POOLS = []; }
   renderMine(); renderPools();

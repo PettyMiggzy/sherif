@@ -310,9 +310,9 @@ async function guardedSend(contract, method, args, valueWei, label) {
 }
 
 // Legacy-tx overrides for user-signed calls that DON'T go through guardedSend
-// (approve, createCoop). The chain lacks eth_maxPriorityFeePerGas, so a default
-// type-2 tx throws -32601 and corrupts the wallet's fee/balance state. Force a
-// fully-priced legacy tx (type:0 + explicit gasPrice) exactly like guardedSend.
+// (approve). The chain lacks eth_maxPriorityFeePerGas, so a default type-2 tx
+// throws -32601 and corrupts the wallet's fee/balance state. Force a fully-priced
+// legacy tx (type:0 + explicit gasPrice) exactly like guardedSend.
 async function legacyOverrides() {
   let gasPrice = 0n;
   try { gasPrice = (await _read.getFeeData()).gasPrice ?? 0n; } catch {}
@@ -326,7 +326,8 @@ async function legacyOverrides() {
 // devBuyEth: string ETH amount to spend on the creator's OWN opening buy (≤2%,
 // enforced + excess-refunded by the contract). "0" = no dev buy.
 // tax: {buyBps, sellBps, walletBps, floorBps, burnBps, projectWallet} — the
-// project's self-set tax (≤4%/side; splits sum to 100%). Omit for a no-tax coin.
+// project's self-set tax (≤4%/side; splits sum to 100%). Omitting it still charges the
+// 1% floor — clampBps enforces a 100 bps minimum, so every coin pays at least 1% buy & sell.
 export async function launch({ name, symbol, dev, devBuyEth = "0", tax }) {
   if (!_signer) await connect();
   if (!isDeployed("padFactory"))
@@ -349,8 +350,9 @@ export function launchedTokenOf(receipt) {
   return null;
 }
 
-// Fill in a valid tax tuple. No tax => 0/0, but the allocation still must sum to
-// 100% (the contract requires it), so default it all to the wallet bucket.
+// Fill in a valid tax tuple. clampBps floors buy/sell at the 1% (100 bps) minimum, so even a
+// "no-tax" coin still pays 1%/side; the allocation must sum to 100% (the contract requires it),
+// so default it all to the wallet bucket.
 function normalizeTax(tax, devAddr) {
   const t = tax || {};
   const buyBps = clampBps(t.buyBps), sellBps = clampBps(t.sellBps);
@@ -591,7 +593,7 @@ export async function feed({ sort = "new", filter = "all", q = "", limit = 24, o
   }));
   if (q) {
     const s = q.toLowerCase();
-    coins = coins.filter((c) => c.name?.toLowerCase().includes(s) || c.symbol?.toLowerCase().includes(s) || c.token.includes(s));
+    coins = coins.filter((c) => c.name?.toLowerCase().includes(s) || c.symbol?.toLowerCase().includes(s) || c.token.toLowerCase().includes(s));
   }
   return { source: "rpc", coins, total: n };
 }
@@ -812,7 +814,7 @@ export async function floorDeposit(token, ethAmount, lockDays = 90) {
   if (!_signer) await connect();
   const fac = new ethers.Contract(CONTRACTS.floorCoopFactory, ABIS.floorCoopFactory, _signer);
   let coop = await fac.coopOf(token);
-  if (/^0x0+$/.test(coop)) { await (await fac.createCoop(token, await legacyOverrides())).wait(); coop = await fac.coopOf(token); } // legacy tx (no 1559 on this chain)
+  if (/^0x0+$/.test(coop)) { await (await guardedSend(fac, "createCoop", [token], 0n, "Create vault")).wait(); coop = await fac.coopOf(token); } // legacy + gas-clamped (heavy deploy; no 1559 on this chain)
   const c = new ethers.Contract(coop, ABIS.floorCoop, _signer);
   // (lockDays, minSharesOut=0): TWAP-guarded on-chain; UI can tighten minShares from a NAV quote later.
   return guardedSend(c, "deposit", [lockDays, 0n], ethers.parseEther(String(ethAmount)), "Lock liquidity");

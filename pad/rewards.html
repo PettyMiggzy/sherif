@@ -337,7 +337,7 @@ async function onClaimAll(){
 const cbtn = $('connectBtn');
 const refreshBtn = () => { const a = Pad.account(); cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; };
 cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (DEMO){ alert('Preview build — connect your wallet on the live site.'); return; } try { await Pad.connect(); refreshBtn(); load(); } catch(err){ alert(err.message); } });
-window.addEventListener('robinpad:ready', refreshBtn); refreshBtn();
+window.addEventListener('robinpad:ready', ()=>{ refreshBtn(); load(); }); refreshBtn();
 
 async function load(){
   if (DEMO){

@@ -15,7 +15,7 @@
 :root{--bg:#0d0f07;--bg-2:#12150a;--bg-3:#1a1e10;--panel:#15180d;--line:rgba(220,233,5,.14);--line-2:rgba(255,255,255,.08);
   --line-strong:rgba(220,233,5,.34);--ink:#f6f7f1;--ink-dim:#a7ad97;--ink-faint:#7f8570;--lime:#dce905;--lime-soft:#e4ff7a;--lime-deep:#a8d600;--green:#48d16a;--red:#ff5a52;--gold:#f5c542;
   --disp:"Bebas Neue",Impact,sans-serif;--sans:"Plus Jakarta Sans",system-ui,sans-serif;--mono:ui-monospace,Menlo,monospace}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 a{color:inherit;text-decoration:none}svg,img,iframe{display:block}
 h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transform:uppercase;margin:0;line-height:.95}
 .mono{font-family:var(--mono)}
@@ -24,6 +24,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .top-in{display:flex;align-items:center;gap:16px;padding:12px 20px;max-width:1280px;margin:0 auto}
 .brand{display:flex;align-items:center;gap:9px;font-family:var(--disp);font-size:1.5rem;letter-spacing:1px}.brand .tag{color:var(--lime)}
 .spacer{flex:1}.nlink{color:var(--ink-dim);font-size:.9rem;padding:8px 6px}.nlink:hover{color:var(--ink)}
+@media(max-width:600px){.top-in{gap:8px}.nlink{font-size:.78rem;padding:6px 4px}.nlink[href="profile.html"]{display:none}}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;font-size:.92rem;border-radius:10px;padding:11px 18px;cursor:pointer;border:1px solid transparent}
 .btn-lime{background:var(--lime);color:#10140a}.btn-lime[disabled]{opacity:.6;cursor:not-allowed}
 .btn-ghost{border-color:var(--line-strong);color:var(--ink);background:none}
@@ -229,7 +230,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
       <div class="panel">
         <div class="buybox">
           <div class="toggle"><button class="on" id="tBuy" type="button">Buy</button><button id="tSell" type="button">Sell</button></div>
-          <div class="amt"><input id="amtInput" placeholder="0.0" value="0.1" inputmode="decimal" /><span class="cur" id="cur">ETH</span></div>
+          <div class="amt"><input id="amtInput" aria-label="Amount" placeholder="0.0" value="0.1" inputmode="decimal" /><span class="cur" id="cur">ETH</span></div>
           <div class="sellbal" id="sellBal" style="display:none;font-size:.74rem;color:var(--ink-dim);margin:-4px 0 8px;text-align:right"></div>
           <div class="quick" id="quick"></div>
           <button class="btn btn-lime" style="width:100%" id="trade" type="button">Buy</button>
@@ -269,10 +270,10 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           <div class="profedit">
             <label class="pf">Profile image (pfp)<input type="file" id="epfp" accept="image/*"><span class="ihint">Square, best ~400×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
             <label class="pf">Banner<input type="file" id="ebanner" accept="image/*"><span class="ihint">Wide 3:1, best ~1200×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
-            <textarea id="edesc" maxlength="280" rows="2" placeholder="Short description (max 280 chars)"></textarea>
-            <input type="text" id="etg" placeholder="Telegram link (https://t.me/…)">
-            <input type="text" id="etw" placeholder="Twitter/X link (https://x.com/…)">
-            <input type="text" id="eweb" placeholder="Website (https://…)">
+            <textarea id="edesc" aria-label="Short description" maxlength="280" rows="2" placeholder="Short description (max 280 chars)"></textarea>
+            <input type="text" id="etg" aria-label="Telegram link" placeholder="Telegram link (https://t.me/…)">
+            <input type="text" id="etw" aria-label="X / Twitter link" placeholder="Twitter/X link (https://x.com/…)">
+            <input type="text" id="eweb" aria-label="Website" placeholder="Website (https://…)">
             <button class="btn btn-lime" id="saveProfile" type="button">Save profile</button>
             <div class="tiny" id="profNote"></div>
           </div>
@@ -308,7 +309,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           <div class="fc-pos-h"><span>Your position</span><span class="fc-lock" id="fcLock"></span></div>
           <div class="fc-pos-b"><div><span class="k">Staked</span><b id="fcPosAmt">—</b></div><div><span class="k">Pool share</span><b id="fcPosPct">—</b></div><div><span class="k">Fees earned</span><b id="fcPosFees">—</b></div></div>
         </div>
-        <div class="fc-amt"><input id="fcInput" placeholder="0.0" value="0.25" inputmode="decimal" oninput="fcPrev()" /><span>ETH</span></div>
+        <div class="fc-amt"><input id="fcInput" aria-label="Stake amount" placeholder="0.0" value="0.25" inputmode="decimal" oninput="fcPrev()" /><span>ETH</span></div>
         <div class="fc-terms" id="fcTerms" role="radiogroup" aria-label="Lock term"></div>
         <div class="fc-preview" id="fcPreview"></div>
         <div class="fc-btns"><button class="btn btn-lime" id="fcAdd" type="button">Lock liquidity</button><button class="btn btn-ghost" id="fcClaim" type="button">Claim fees</button></div>
@@ -607,7 +608,7 @@ async function loadCoin(){
   tax = taxRes;
   if (apiCoin) {
     meta = { name: apiCoin.name, symbol: apiCoin.symbol };
-    if (!tax) tax = { curve: apiCoin.curve, pool: apiCoin.pool, projectWallet: apiCoin.dev, set: true, buyBps: 0, sellBps: 0 };
+    if (!tax) tax = { curve: apiCoin.curve, pool: apiCoin.pool, projectWallet: apiCoin.dev, set: true, buyBps: apiCoin.buyBps ?? 100, sellBps: apiCoin.sellBps ?? 100 };
   } else {
     // Indexer doesn't know this coin — fall back to reading the chain directly.
     try { [meta, tax] = await Promise.all([Pad.tokenMeta(TOKEN), Pad.getTax(TOKEN)]); }
@@ -616,7 +617,7 @@ async function loadCoin(){
   if (!tax || !tax.set){ $('nm').textContent = meta?.name || 'Coin'; $('tk').textContent = disp(meta?.symbol); setNote('This coin is not registered on Robin Labs.', 'err'); return; }
   // Stats/bond from the indexer snapshot; only read curveInfo live if the indexer lacked it.
   let view = viewFromApi(apiCoin);
-  if (!view) { info = await Pad.curveInfo(tax.curve, TOKEN).catch(() => null); view = info; }
+  if (!view || view.mcapEth == null) { info = await Pad.curveInfo(tax.curve, TOKEN).catch(() => null); view = info || view; }
 
   // `dev` MUST be the coin's LAUNCH creator (what the indexer + on-chain gates check), NOT
   // the fee wallet (projectWallet). Using projectWallet locked a creator out of their own

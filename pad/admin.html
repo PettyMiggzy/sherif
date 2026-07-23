@@ -296,7 +296,10 @@ async function runAction(btn) {
   const label = btn.textContent;
   try {
     btn.disabled = true; btn.textContent = 'Signing…';
-    const tx = await C(key, true)[act](...args);
+    // Robinhood Chain lacks eth_maxPriorityFeePerGas, so a default type-2 tx throws -32601 and
+    // corrupts the wallet's fee/balance state. Force a fully-priced legacy tx (type:0 + gasPrice).
+    const gp = (await read.getFeeData()).gasPrice;
+    const tx = await C(key, true)[act](...args, { type: 0, gasPrice: gp });
     btn.textContent = 'Pending…';
     await tx.wait();
     toast(`${act} ✓  ${tx.hash.slice(0, 12)}…`);
