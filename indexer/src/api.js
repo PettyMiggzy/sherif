@@ -75,6 +75,17 @@ function looksHeic(buf, mime) {
   }
   return false;
 }
+// Reject/timeout guard: image decode + convert is CPU-bound (heic-convert runs on the
+// main thread; sharp offloads to libuv's threadpool). Bound the worst case with (a) the
+// raw-byte cap enforced in parseUpload, (b) a pixel-dimension cap so a decompression bomb
+// is refused before it's fully decoded, and (c) a wall-clock timeout on the whole convert
+// so a pathological image can't wedge the event loop indefinitely.
+function withTimeout(promise, ms, label) {
+  let t;
+  const timeout = new Promise((_, reject) => { t = setTimeout(() => reject(new Error(`${label} timed out`)), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
+
 // Convert any uploaded image to a small web-displayable webp that fits `maxDim`.
 // HEIC is decoded to JPEG first, EXIF orientation is applied, and it's never upscaled.
 async function normalizeImage(buf, mime, maxDim) {
@@ -85,7 +96,9 @@ async function normalizeImage(buf, mime, maxDim) {
     input = Buffer.from(await _heic({ buffer: buf, format: "JPEG", quality: 0.92 }));
   }
   if (_sharp) {
-    const out = await _sharp(input, { failOn: "none" })
+    // limitInputPixels makes sharp throw on an over-large image from its header, BEFORE
+    // allocating a full raster (covers the HEIC→JPEG output too, which re-enters sharp here).
+    const out = await _sharp(input, { failOn: "none", limitInputPixels: CFG.profileMaxPixels })
       .rotate()                                                              // honor EXIF orientation
       .resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
       .webp({ quality: 82 })
@@ -184,12 +197,22 @@ async function rpcHandle(payload) {
   }
   return Array.isArray(payload) ? out : out[0];
 }
-// The REAL client IP. We sit behind exactly one trusted proxy (Caddy), which APPENDS the
-// direct peer to X-Forwarded-For — so the trustworthy value is the RIGHTMOST hop. Using the
-// left-most (as before) let an attacker spoof the header and bypass the rate limit entirely.
+// The REAL client IP, used as the rate-limit / log key. Each trusted reverse-proxy in
+// front of us APPENDS the peer it saw to X-Forwarded-For, so the client sits N entries
+// from the RIGHT, where N = the number of trusted hops (Caddy alone = 1; Cloudflare→Caddy
+// = 2). We never trust the LEFTMOST entry — it's client-supplied and spoofable. When
+// Cloudflare is in front it also sets CF-Connecting-IP to the true client, which is
+// immune to XFF spoofing, so we prefer that when present.
+const TRUSTED_PROXY_HOPS = Math.max(1, Number(process.env.TRUSTED_PROXY_HOPS) || 1);
+const USE_CF_IP = (process.env.USE_CF_IP ?? "1") !== "0";
 function clientIp(req) {
+  if (USE_CF_IP) {
+    const cf = String(req.headers["cf-connecting-ip"] || "").trim();
+    if (cf) return cf;
+  }
   const xff = String(req.headers["x-forwarded-for"] || "").split(",").map((s) => s.trim()).filter(Boolean);
-  return (xff.length ? xff[xff.length - 1] : "") || req.socket?.remoteAddress || "?";
+  if (xff.length) return xff[Math.max(0, xff.length - TRUSTED_PROXY_HOPS)];
+  return req.socket?.remoteAddress || "?";
 }
 // Parse a query-string integer, clamped to [min,max], falling back to `def` when it's
 // missing OR non-numeric. NOTE: Number(null)/Number("") are 0 (finite!), so an ABSENT param
@@ -200,15 +223,17 @@ function intParam(v, def, min, max) {
   const n = (v === null || v === undefined || v === "") ? NaN : Number(v);
   return Math.min(Math.max(Number.isFinite(n) ? Math.trunc(n) : def, min), max);
 }
-// Tiny per-IP-per-second rate limiter (batches count as one request), shared by /rpc and
-// the profile POST so one abuser can't drain the upstream RPC or peg a CPU core on HEIC.
+// Tiny per-IP-per-second rate limiter, shared by /rpc and the profile POST so one abuser
+// can't drain the upstream RPC or peg a CPU core on HEIC. `cost` lets a caller charge more
+// than one unit for a single request — a JSON-RPC batch of N methods becomes N upstream
+// calls, so it must count as N (see /rpc), not 1.
 function makeRateLimiter(maxPerSec) {
   const m = new Map(); // ip -> { sec, n }
-  return (ip) => {
+  return (ip, cost = 1) => {
     const sec = Math.floor(Date.now() / 1000);
     const e = m.get(ip);
-    if (!e || e.sec !== sec) { m.set(ip, { sec, n: 1 }); if (m.size > 20000) for (const [k, v] of m) if (v.sec !== sec) m.delete(k); return true; }
-    e.n++; return e.n <= maxPerSec;
+    if (!e || e.sec !== sec) { m.set(ip, { sec, n: cost }); if (m.size > 20000) for (const [k, v] of m) if (v.sec !== sec) m.delete(k); return cost <= maxPerSec; }
+    e.n += cost; return e.n <= maxPerSec;
   };
 }
 const rpcRateOk = makeRateLimiter(CFG.rpcProxyMaxPerSec);
@@ -239,6 +264,12 @@ const coinsWhere = (filter, hasQ) => {
   return where.length ? `WHERE ${where.join(" AND ")}` : "";
 };
 
+// TODO(perf): each ranked row runs ~7 correlated per-coin subqueries over `trades`
+// (all-time + 24h vol/count, distinct-actor count, last price/ts). Indexes on
+// trades(token, ts) and trades(token, actor) (see db.js) keep these cheap for now, but at
+// scale the real fix is a per-coin aggregate/snapshot table (trades_all, vol_all, 24h
+// rollups, holders_est, last_price) maintained incrementally on trade insert / reorg
+// re-scan, so the feed reads O(1) columns instead of scanning each coin's trade history.
 const coinsStmt = (sort, filter, hasQ) => {
   const order = {
     new: "c.launch_block DESC",
@@ -389,10 +420,15 @@ export function startApi() {
       // Read-only JSON-RPC proxy (served by the paid RPC, cached, rate-limited).
       if (CFG.rpcProxy && path === "/rpc") {
         const ip = clientIp(req);
+        // Cheap pre-check (cost 1) drops a flood of single requests before we read a body.
         if (!rpcRateOk(ip)) return send(res, 429, { error: "rate limited" }, origin);
         try {
           const raw = await readBody(req, 512 * 1024);
           const payload = JSON.parse(raw.toString("utf8"));
+          // A batch of N methods fans out to N upstream calls — charge the limiter the
+          // remaining N-1 so a big batch can't drive maxPerSec×batchSize upstream/sec/IP.
+          const n = Array.isArray(payload) ? payload.length : 1;
+          if (n > 1 && !rpcRateOk(ip, n - 1)) return send(res, 429, { error: "rate limited" }, origin);
           const result = await rpcHandle(payload);
           return send(res, 200, result, origin);
         } catch (e) { return send(res, 400, { error: String(e.message || e) }, origin); }
@@ -420,8 +456,8 @@ export function startApi() {
         // can't process). These awaits happen before the sync db transaction below.
         const pfpRaw = body.pfp ? parseUpload(body.pfp) : null;
         const bannerRaw = body.banner ? parseUpload(body.banner) : null;
-        const pfp = pfpRaw ? await normalizeImage(pfpRaw.buf, pfpRaw.mime, CFG.profilePfpDim) : null;
-        const banner = bannerRaw ? await normalizeImage(bannerRaw.buf, bannerRaw.mime, CFG.profileBannerDim) : null;
+        const pfp = pfpRaw ? await withTimeout(normalizeImage(pfpRaw.buf, pfpRaw.mime, CFG.profilePfpDim), CFG.profileDecodeTimeoutMs, "image processing") : null;
+        const banner = bannerRaw ? await withTimeout(normalizeImage(bannerRaw.buf, bannerRaw.mime, CFG.profileBannerDim), CFG.profileDecodeTimeoutMs, "image processing") : null;
         const fields = {
           token,
           description: String(body.description || "").slice(0, 280),

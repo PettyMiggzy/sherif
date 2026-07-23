@@ -64,6 +64,11 @@ CREATE TABLE IF NOT EXISTS trades (
 );
 CREATE INDEX IF NOT EXISTS idx_trades_token ON trades(token, block DESC);
 CREATE INDEX IF NOT EXISTS idx_trades_ts    ON trades(ts DESC);
+-- The ranked feed (trending/volume/top/holders) runs several correlated per-coin
+-- aggregations per row (see api.js coinsStmt): (token, ts) serves the 24h-windowed
+-- sums/counts + MAX(ts); (token, actor) serves COUNT(DISTINCT actor) as an index-only scan.
+CREATE INDEX IF NOT EXISTS idx_trades_token_ts    ON trades(token, ts);
+CREATE INDEX IF NOT EXISTS idx_trades_token_actor ON trades(token, actor);
 
 -- Coin profile: off-chain, creator-signed metadata (image, banner, socials). NOT from the
 -- chain — set via POST /api/coin/:token/meta, which verifies the signer is the coin's dev.

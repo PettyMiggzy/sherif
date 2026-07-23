@@ -17,6 +17,14 @@ services:
   indexer:
     build: .
     restart: unless-stopped
+    # Cap memory so a large in-process HEIC decode can't OOM the host (mirrors fly.toml's
+    # 1 GB), and rotate logs so an unattended box doesn't fill its disk with JSON logs.
+    mem_limit: 1g
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -37,6 +45,12 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    mem_limit: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -46,8 +60,9 @@ services:
       - "80:80"
       - "443:443"
     # Auto-HTTPS for the subdomain; proxy everything to the indexer (it only answers
-    # /health, /api/*, /media/* and 404s the rest — no pad is served here).
-    command: caddy reverse-proxy --from ${SITE_DOMAIN} --to indexer:8787
+    # /health, /api/*, /media/* and 404s the rest — no pad is served here). Fail fast if
+    # SITE_DOMAIN is unset rather than starting with a broken (empty) --from.
+    command: caddy reverse-proxy --from ${SITE_DOMAIN:?set SITE_DOMAIN in .env} --to indexer:8787
     volumes:
       - caddy-data:/data
       - caddy-config:/config

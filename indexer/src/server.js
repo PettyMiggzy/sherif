@@ -18,6 +18,12 @@ const once = args.has("--once");
 console.log("── Robin Labs Pad indexer ──");
 console.log(`db=${CFG.dbPath}`);
 
+// Global crash guard. The API server, indexer loop and reward poster share ONE process,
+// so a single escaping promise rejection (or a throw off the event loop) would otherwise
+// take all three down. Log and keep running — never process.exit here.
+process.on("unhandledRejection", (e) => console.error("unhandledRejection", e));
+process.on("uncaughtException", (e) => console.error("uncaughtException", e));
+
 if (once) {
   const n = await tick();
   console.log(`[backfill] applied ${n} logs; cursor now up to date.`);

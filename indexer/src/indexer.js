@@ -94,68 +94,94 @@ async function getLogsRange(from, to) {
     a.blockNumber - b.blockNumber || a.index - b.index);
 }
 
-async function applyLog(log) {
+// Decode one log and gather EVERYTHING it needs from the chain (block ts, token
+// name/symbol, curve geometry, initial snapshot) — all network I/O, done OUTSIDE any db
+// transaction. Returns a list of pure-synchronous db write closures for the caller to run
+// inside the atomic commit, plus (for trades) the pool it touched so we snapshot it once
+// per window. `geom` and `curves` are in-window overlays so a coin launched earlier in the
+// SAME pass is visible to a later trade/graduation before the pass has been committed.
+async function prepareLog(log, geom, curves) {
   let parsed;
-  try { parsed = iface.parseLog(log); } catch { return; }
-  if (!parsed) return;
+  try { parsed = iface.parseLog(log); } catch { return null; }
+  if (!parsed) return null;
   const ts = await blockTs(log.blockNumber);
   const a = parsed.args;
+  const writes = [];
 
   if (parsed.name === "Launched") {
     const token = a.token.toLowerCase();
     const curve = a.curve.toLowerCase();
     const pool = a.pool.toLowerCase();
     const { name, symbol } = await nameSymbol(token);
-    upsertCoin.run({
+    const coinRow = {
       token, curve, pool, dev: a.dev.toLowerCase(), name, symbol,
       launch_block: log.blockNumber, launch_ts: ts, launch_tx: log.transactionHash,
       dev_bought: a.devBought.toString(),
-    });
-    // Read the curve geometry once (start + ceiling never change) + an initial
-    // snapshot, so the coin shows correct progress the moment it lands.
-    await readGeometry(token, curve, pool);
-    await snapshotToken(token, ts);
-    return;
+    };
+    writes.push(() => upsertCoin.run(coinRow));
+    curves.set(curve, token);
+    // Read the curve geometry once (start + ceiling never change) + an initial snapshot, so
+    // the coin shows correct progress the moment it lands. Remember the geometry in-window
+    // so a same-pass trade can snapshot before the launch row is committed.
+    const gv = await readGeometryValues(curve, pool);
+    if (gv) {
+      const g = { token, pool, ...gv };
+      geom.set(token, g);
+      writes.push(() => setGeometry.run({
+        token, start_tick: gv.start_tick, min_grad_tick: gv.min_grad_tick,
+        grad_tick: gv.grad_tick, grad_target: gv.grad_target, token0: gv.token0,
+      }));
+      const snap = await readSnapshotValues(g);
+      if (snap) writes.push(() => setSnapshot.run({ token, ...snap, snap_ts: ts }));
+    }
+    return { writes };
   }
 
   if (parsed.name === "Bought" || parsed.name === "Sold") {
     const buy = parsed.name === "Bought";
     const token = a.token.toLowerCase();
-    insertTrade.run({
+    const row = {
       tx: log.transactionHash, log_index: log.index,
       token, side: buy ? "buy" : "sell",
       actor: (buy ? a.buyer : a.seller).toLowerCase(),
       eth: (buy ? a.ethIn : a.ethOut).toString(),
       tokens: (buy ? a.tokensOut : a.tokensIn).toString(),
       fee: a.fee.toString(), block: log.blockNumber, ts,
-    });
+    };
+    writes.push(() => insertTrade.run(row));
     // The pool moved — flag this token so we re-snapshot it once per chunk.
-    return { touched: token, ts };
+    return { writes, touched: token, ts };
   }
 
   if (parsed.name === "Accrued") {
     // epoch is an indexed arg (= block.timestamp / EPOCH on-chain) — authoritative, no recompute.
-    insertAccrual.run({
+    const row = {
       tx: log.transactionHash, log_index: log.index,
       coin: a.coin.toLowerCase(), epoch: Number(a.epoch), side: Number(a.side),
       amount: a.amount.toString(), block: log.blockNumber, ts,
-    });
-    return;
+    };
+    writes.push(() => insertAccrual.run(row));
+    return { writes };
   }
 
   if (parsed.name === "Graduated") {
-    // Emitted by the curve; log.address is the curve. Only act if we know it.
+    // Emitted by the curve; log.address is the curve. Only act if we know it — either
+    // already indexed, or launched earlier in THIS same (not-yet-committed) pass.
     const curve = log.address.toLowerCase();
-    if (!coinByCurve.get(curve)) return;
-    markGraduated.run({
+    if (!curves.has(curve) && !coinByCurve.get(curve)) return null;
+    const row = {
       curve, grad_block: log.blockNumber, grad_ts: ts,
       raised_weth: a.raisedWeth.toString(), bond: a.bond.toLowerCase(),
-    });
+    };
+    writes.push(() => markGraduated.run(row));
+    return { writes };
   }
+  return null;
 }
 
-// Read the curve's fixed geometry (ticks) + token0 orientation, once.
-async function readGeometry(token, curve, pool) {
+// Read the curve's fixed geometry (ticks) + token0 orientation. Pure network read —
+// returns the values (or null on failure); the caller emits the db write into the commit.
+async function readGeometryValues(curve, pool) {
   try {
     const c = new ethers.Contract(curve, CURVE, provider);
     const p = new ethers.Contract(pool, POOL, provider);
@@ -166,31 +192,34 @@ async function readGeometry(token, curve, pool) {
       withRetry(() => c.gradTarget(), "curve.gradTarget", 3),
       withRetry(() => p.token0(), "pool.token0", 3),
     ]);
-    setGeometry.run({
-      token, start_tick: Number(startTick), min_grad_tick: Number(minGradTick),
+    return {
+      start_tick: Number(startTick), min_grad_tick: Number(minGradTick),
       grad_tick: Number(gradTick), grad_target: Number(gradTarget), token0: token0.toLowerCase(),
-    });
+    };
   } catch (e) {
-    console.warn(`[indexer] geometry read failed for ${token}: ${e.shortMessage || e.message}`);
+    console.warn(`[indexer] geometry read failed for ${curve}: ${e.shortMessage || e.message}`);
+    return null;
   }
 }
 
-// Refresh one coin's live snapshot (progress + mcap) from its pool tick.
-async function snapshotToken(token, ts) {
-  const g = coinGeom.get(token);
-  if (!g || !g.pool || g.start_tick === null || g.token0 === null) return;
+// Read one coin's live snapshot (progress + mcap) from its pool tick. Pure network read —
+// `g` is its geometry ({ pool, token0, start_tick, grad_tick }, from the in-window overlay
+// or the db). Returns the snapshot values (or null); the caller emits the db write.
+async function readSnapshotValues(g) {
+  if (!g || !g.pool || g.start_tick === null || g.start_tick === undefined || g.token0 === null || g.token0 === undefined) return null;
   try {
     const p = new ethers.Contract(g.pool, POOL, provider);
     const slot0 = await withRetry(() => p.slot0(), "pool.slot0", 3);
     const tick = Number(slot0.tick);
     const wethPerToken = priceFromSqrt(slot0.sqrtPriceX96, g.token0);
-    setSnapshot.run({
-      token, last_tick: tick,
+    return {
+      last_tick: tick,
       progress: frac(tick, g.start_tick, g.grad_tick),
-      mcap_eth: wethPerToken * TOTAL_SUPPLY, snap_ts: ts,
-    });
+      mcap_eth: wethPerToken * TOTAL_SUPPLY,
+    };
   } catch (e) {
-    console.warn(`[indexer] snapshot failed for ${token}: ${e.shortMessage || e.message}`);
+    console.warn(`[indexer] snapshot failed for ${g.token || g.pool}: ${e.shortMessage || e.message}`);
+    return null;
   }
 }
 
@@ -203,11 +232,6 @@ export async function tick() {
   const safeHead = head - CFG.confirmations;
   if (safeHead < CFG.startBlock) return 0;
 
-  // Record the confirmed frontier's block timestamp so the reward poster knows how
-  // far (in wall-clock terms) indexing has actually completed. Cheap: one getBlock
-  // per poll, cached at the tip. Best-effort — a miss just leaves the prior value.
-  try { const hb = await provider.getBlock(safeHead); if (hb) setHeadTs(Number(hb.timestamp)); } catch {}
-
   const stored = getCursor();
   // Start at the stored cursor minus a reorg window (re-scan the tip); first run
   // starts at the configured deploy block.
@@ -215,31 +239,58 @@ export async function tick() {
   let from = stored === null ? CFG.startBlock : Math.max(CFG.startBlock, stored - reorgWindow + 1);
   if (from > safeHead) return 0;
 
-  // Delete any trades + accruals in the re-scanned window so orphaned-block rows can't linger,
-  // and undo graduations from that window — a re-emitted Graduated re-applies, a vanished one
-  // (reorged away) stays cleared instead of leaving the coin permanently marked graduated.
-  if (stored !== null) {
-    const del = db.transaction(() => { purgeTradesFrom.run(from); purgeAccrualsFrom.run(from); ungraduateFrom.run(from); });
-    del();
-  }
+  // In-window overlays so a coin launched earlier in THIS pass is visible (for graduation
+  // matching + snapshots) before the pass has been committed.
+  const geom = new Map();   // token -> geometry read this pass
+  const curves = new Map(); // curve -> token, for coins launched this pass
 
   let applied = 0;
+  let reached = from - 1;   // highest block whose window is committed
+  let firstChunk = true;
   for (let lo = from; lo <= safeHead; lo += CFG.chunk) {
     const hi = Math.min(lo + CFG.chunk - 1, safeHead);
+
+    // ── network phase — ALL RPC I/O, outside any transaction ──────────────────────────
+    // Fetch the window's logs and enrich each (block ts, name/symbol, geometry, pool tick),
+    // building a list of pure-synchronous db write closures. Nothing is written yet.
     const logs = await getLogsRange(lo, hi);
-    // Apply sequentially — each log may make its own enrichment RPC calls, and
-    // firing them all at once trips the public RPC's rate limit.
+    const writes = [];
     const touched = new Map(); // token -> latest ts, deduped so a busy pool is read once
     for (const log of logs) {
-      const r = await applyLog(log);
-      if (r?.touched) touched.set(r.touched, r.ts);
+      const p = await prepareLog(log, geom, curves);
+      if (!p) continue;
+      for (const w of p.writes) writes.push(w);
+      if (p.touched) touched.set(p.touched, p.ts);
     }
-    // One snapshot per pool that traded this chunk — bounds RPC to ACTIVITY, not
-    // coin count. A pool with 500 trades is still one slot0 read.
-    for (const [token, ts] of touched) await snapshotToken(token, ts);
+    // One snapshot per pool that traded this chunk — bounds RPC to ACTIVITY, not coin
+    // count. A pool with 500 trades is still one slot0 read. Read now; write in the commit.
+    for (const [token, ts] of touched) {
+      const snap = await readSnapshotValues(geom.get(token) || coinGeom.get(token));
+      if (snap) writes.push(() => setSnapshot.run({ token, ...snap, snap_ts: ts }));
+    }
+
+    // ── commit phase — ONE atomic transaction ────────────────────────────────────────
+    // Purge the re-scanned reorg window (first chunk only — the window [from, stored] is
+    // ≤ reorgWindow blocks, so it lies entirely within this first chunk) and re-insert its
+    // rows in the SAME transaction, so a reader never observes the window emptied. Later
+    // chunks are all NEW blocks (> stored) that no reader had, so they need no purge. The
+    // transaction body is pure synchronous better-sqlite3 — all network I/O happened above.
+    const doPurge = firstChunk && stored !== null;
+    db.transaction(() => {
+      if (doPurge) { purgeTradesFrom.run(from); purgeAccrualsFrom.run(from); ungraduateFrom.run(from); }
+      for (const w of writes) w();
+      setCursor(hi);
+    })();
+    firstChunk = false;
+    reached = hi;
     applied += logs.length;
-    setCursor(hi);
   }
+
+  // Advance the reward-poster completeness gate ONLY to the block the cursor actually
+  // reached, and only AFTER the loop has committed it — head_ts must never run ahead of the
+  // indexed cursor, or the poster could post a root over an incomplete accrual set. Lagging
+  // is safe (the poster just waits); running ahead is the bug. Best-effort, outside any tx.
+  if (reached >= from) { try { setHeadTs(await blockTs(reached)); } catch {} }
   return applied;
 }
 

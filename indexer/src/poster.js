@@ -89,14 +89,27 @@ export async function postPending() {
   const cur = currentEpoch(now);
   for (const { epoch } of _epochsWithAccruals.all(cur)) {
     const row = getRewardRoot.get(epoch);
-    if (!row || !row.root || row.posted_tx) continue; // not computed, or already posted
+    if (!row || !row.root) continue; // nothing computed to post
+    // Read the epoch's on-chain state up front so we can act on a VETO even for an epoch we
+    // already recorded as posted — posted_tx is sticky (upsert COALESCEs it), so without this
+    // a vetoed root would be skipped forever and its claims blocked.
+    let onchain;
+    try { onchain = await vault.epochRoot(epoch); }
+    catch (e) { console.warn(`[poster] epochRoot ${epoch} read failed: ${e.shortMessage || e.message || e}`); continue; }
+    if (row.posted_tx) {
+      // Already posted. Re-post ONLY if the on-chain root was vetoed: clear the sticky
+      // posted_tx so the next compute pass recomputes it (its skip is gated on posted_tx)
+      // and a subsequent post pass re-posts. A live (non-vetoed) posted root is left
+      // untouched — no infinite re-posting.
+      if (onchain.vetoed) setRewardRootPostedTx.run({ epoch, posted_tx: null });
+      continue;
+    }
+    if (onchain.root && onchain.root !== ethers.ZeroHash && !onchain.vetoed) {
+      // computed but a (non-vetoed) root is already on-chain — record and move on, don't double-post
+      setRewardRootPostedTx.run({ epoch, posted_tx: "onchain" });
+      continue;
+    }
     try {
-      const onchain = await vault.epochRoot(epoch);
-      if (onchain.root && onchain.root !== ethers.ZeroHash && !onchain.vetoed) {
-        // already has a (non-vetoed) root on-chain — record and move on, don't double-post
-        setRewardRootPostedTx.run({ epoch, posted_tx: "onchain" });
-        continue;
-      }
       const tx = await vault.postRoot(epoch, row.root, row.algo_hash || ALGO_HASH, row.uri || uriFor(epoch));
       const rc = await tx.wait();
       setRewardRootPostedTx.run({ epoch, posted_tx: rc.hash });
