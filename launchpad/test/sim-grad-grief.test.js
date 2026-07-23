@@ -78,4 +78,71 @@ describe("Graduation grief — spot shoved above the ceiling must not block grad
     console.log(`      post-grad buy+sell both succeeded — pool trades normally after a griefed graduation`);
     expect(true).to.equal(true);
   });
+
+  it("HARDER: attacker plants REAL liquidity above the ceiling, then shoves — graduate() still powers through", async () => {
+    const [dep, platform, dev, buyer, attacker] = await ethers.getSigners();
+    const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
+    const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
+    const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
+      WETH, V3_FACTORY, platform.address, dep.address, await router.getAddress(),
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(),
+      START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH);
+    await (await router.setFactory(await factory.getAddress())).wait();
+    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const rc = await (await factory.launch({ name: "Grief2", symbol: "GR2", dev: dev.address, tax: NOTAX })).wait();
+    const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
+    const { token, curve, pool: poolAddr } = ev.args;
+    const curveC = await ethers.getContractAt("CurvePool", curve);
+    const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
+    const gradTick = Number(await curveC.gradTick());
+    const tokenIsToken0 = await curveC.tokenIsToken0();
+
+    const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
+    const atk = await (await ethers.getContractFactory("LiquidityAttacker")).deploy();
+    const wethW = await ethers.getContractAt([
+      "function deposit() payable", "function approve(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"], WETH);
+    const TOK = await ethers.getContractAt(["function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"], token);
+    for (const who of [buyer, attacker]) {
+      await ethers.provider.send("hardhat_setBalance", [who.address, "0x" + (10n ** 24n).toString(16)]);
+      await (await wethW.connect(who).deposit({ value: 80n * ONE })).wait();
+      await (await wethW.connect(who).approve(await probe.getAddress(), 1n << 250n)).wait();
+    }
+    await ethers.provider.send("evm_increaseTime", [400]);
+    await ethers.provider.send("evm_mine", []);
+
+    // attacker grabs a token bag with a small partial buy (to fund their planted liquidity), THEN the buyer
+    // completes the curve up to the ceiling (only ~4.2 ETH total reaches it, so only one actor can park there)
+    const ceiling = await curveC.gradSqrtPriceX96();
+    await (await probe.connect(attacker).swapExactIn(poolAddr, WETH, 1n * ONE)).wait();
+    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 60n * ONE, ceiling)).wait();
+    expect(await curveC.ready(), "eligible at the ceiling").to.equal(true);
+
+    // ATTACK: attacker mints a REAL v3 position spanning just above the ceiling (thick liquidity), then shoves
+    // spot up into it. A 1-wei nudge would be eaten by this liquidity; the balance-sized nudge must power through.
+    await (await wethW.connect(attacker).approve(await atk.getAddress(), 1n << 250n)).wait();
+    await (await TOK.connect(attacker).approve(await atk.getAddress(), 1n << 250n)).wait();
+    // band on the "above the ceiling" side (tokenIsToken0 => above = higher ticks; else lower)
+    const lo = tokenIsToken0 ? gradTick + 200 : gradTick - 600;
+    const hi = tokenIsToken0 ? gradTick + 600 : gradTick - 200;
+    await (await atk.connect(attacker).mint(poolAddr, lo, hi, 5n * 10n ** 15n)).wait();
+    // shove spot into the planted band (buy the token past the ceiling)
+    await (await probe.connect(attacker).swapExactIn(poolAddr, WETH, 5n * ONE)).wait();
+    const shoved = Number((await pool.slot0()).tick);
+    const aboveCeil = tokenIsToken0 ? shoved > gradTick + 50 : shoved < gradTick - 50;
+    console.log(`      attacker planted liquidity [${lo},${hi}] + shoved spot to ${shoved} (gradTick=${gradTick}); aboveCeil=${aboveCeil}`);
+    expect(aboveCeil, "spot must be above the ceiling inside the planted liquidity").to.equal(true);
+
+    // graduate() must power the balance-sized nudge THROUGH the attacker's liquidity down to the ceiling and post
+    const grc = await (await curveC.graduate()).wait();
+    const gev = grc.logs.map((l) => { try { return curveC.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Graduated");
+    expect(gev, "Graduated event emitted despite planted liquidity").to.not.equal(undefined);
+    expect(await curveC.graduated()).to.equal(true);
+    const tickAtGrad = Number((await pool.slot0()).tick);
+    const devAfter = tickAtGrad > gradTick ? tickAtGrad - gradTick : gradTick - tickAtGrad;
+    console.log(`      graduate() POWERED THROUGH planted liquidity. Bond raise=${Number(ethers.formatEther(gev.args.raisedWeth)).toFixed(4)} ETH, tick pulled to ${tickAtGrad} (dev ${devAfter} from ceiling)`);
+    expect(devAfter, "spot pulled back to the ceiling before the Bond posted").to.be.at.most(50);
+    expect(Number(ethers.formatEther(gev.args.raisedWeth)), "raise preserved").to.be.greaterThan(2.5);
+  });
 });

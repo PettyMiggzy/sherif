@@ -16,6 +16,11 @@ contract TokenDeployer {
         address factory,
         LaunchToken.GuardConfig calldata guard
     ) external returns (address) {
-        return address(new LaunchToken{salt: salt}(name, symbol, supply, factory, guard));
+        // Bind the CREATE2 salt to the caller so an attacker calling this public, stateless deployer directly
+        // with a victim's exact salt+args can't pre-occupy the token's target address and brick the launch
+        // (matches LaunchTokenDeployer). NOTE: only the legacy LaunchpadFactory uses this deployer — the live
+        // CurvePad stack uses LaunchTokenDeployer — but the defect is real if that factory is ever deployed.
+        bytes32 s = keccak256(abi.encodePacked(msg.sender, salt));
+        return address(new LaunchToken{salt: s}(name, symbol, supply, factory, guard));
     }
 }

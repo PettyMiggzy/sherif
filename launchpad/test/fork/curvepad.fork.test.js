@@ -238,7 +238,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect(await curveC.graduated()).to.equal(true);
   });
 
-  it("graduate() refuses a MANIPULATED post-buyout price — the floor-drain vector is closed (CP-1)", async () => {
+  it("graduate() corrects a MANIPULATED post-buyout price back to the ceiling — floor-drain closed, no DoS (CP-1)", async () => {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
 
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
@@ -282,8 +282,13 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const dev0 = shoved > gradTick ? shoved - gradTick : gradTick - shoved;
     expect(dev0).to.be.greaterThan(50n); // price is now well past the graduation tick (beyond the tolerance)
 
-    // graduate() must REFUSE to post the Bond around this manipulated price (was the floor-drain vector)
-    await expect(curveC.graduate()).to.be.revertedWithCustomError(curveC, "NotReady");
-    expect(await curveC.graduated()).to.equal(false);
+    // graduate() must NOT be blocked by the manipulation (that would be a griefing DoS). Instead it nudges spot
+    // back to the honest ceiling and posts the Bond THERE — so the floor-drain vector stays closed (the Bond is
+    // never posted around the shoved price) AND graduation can't be held hostage.
+    await (await curveC.graduate()).wait();
+    expect(await curveC.graduated()).to.equal(true);
+    const afterTick = (await pool.slot0()).tick;
+    const devAfter = afterTick > gradTick ? afterTick - gradTick : gradTick - afterTick;
+    expect(devAfter).to.be.at.most(50n); // spot was pulled back to the ceiling before the Bond posted (not honored)
   });
 });

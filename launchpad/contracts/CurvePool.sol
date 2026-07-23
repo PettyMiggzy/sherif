@@ -250,7 +250,12 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
             // and stops exactly at the ceiling limit (the curve position, which ends at gradTick, is untouched).
             uint160 ceilSqrt = PoolMath.getSqrtRatioAtTick(gradTick);
             _swapping = true;
-            pool.swap(address(this), tokenIsToken0, int256(1), ceilSqrt, "");
+            // Size the nudge to our whole token balance (the ambush reserve). The ceiling price limit stops the
+            // swap EXACTLY at the ceiling, so in the honest empty-zone case ~0 is consumed; if an attacker planted
+            // real liquidity between spot and the ceiling to defeat a tiny nudge, this powers straight through it
+            // (selling tokens above the ceiling only nets extra WETH) until price lands on the ceiling. It can
+            // never cross into the curve — the limit is the ceiling — so the raise stays intact.
+            pool.swap(address(this), tokenIsToken0, int256(token.balanceOf(address(this))), ceilSqrt, "");
             _swapping = false;
             (sp, tickNow,,,,,) = pool.slot0();
             // must now sit at/below the ceiling; if the nudge somehow didn't land, refuse rather than post high
