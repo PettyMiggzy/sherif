@@ -238,7 +238,9 @@ suite("Edge-case sim — production calibration on a real Uniswap v3 fork", func
 
     // (3) rewards paid correctly: fixed 0.5 each (platform also sweeps tiny weth dust)
     expect(devGain, "creator reward = 0.5 ETH").to.equal(ethers.parseEther("0.5"));
-    expect(platGain, "platform reward ≈ 0.5 ETH").to.be.closeTo(ethers.parseEther("0.5"), ethers.parseEther("0.01"));
+    // v2: platform gets its 0.5 reward PLUS the LP fees graduate() now sweeps (100% to platform, feeConfig unset).
+    expect(platGain, "platform reward (0.5) + swept LP fees").to.be.gte(ethers.parseEther("0.5"));
+    expect(platGain, "platform gain is 0.5 plus a modest LP-fee slice").to.be.lte(ethers.parseEther("0.75"));
 
     // (3) Bond posted with both legs
     const bond = await ethers.getContractAt("Bond", await ctx.curveC.bond());

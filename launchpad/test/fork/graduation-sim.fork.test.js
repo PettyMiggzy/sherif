@@ -82,7 +82,9 @@ suite("Graduation battery — graduate at the ceiling, invariants hold every tim
       const devGain = (await wethW.balanceOf(dev.address)) - devBefore;
       const platGain = (await wethW.balanceOf(platformAddr)) - platBefore;
       expect(devGain, `#${i} dev reward`).to.equal(HALF);
-      expect(platGain, `#${i} platform reward`).to.be.closeTo(HALF, ethers.parseEther("0.002"));
+      // v2: graduate() sweeps pending LP fees too (100% to platform, feeConfig unset) → 0.5 reward + fee slice.
+      expect(platGain, `#${i} platform reward (0.5) + swept LP fees`).to.be.gte(HALF);
+      expect(platGain, `#${i} platform gain is 0.5 + a modest LP-fee slice`).to.be.lte(ethers.parseEther("0.75"));
 
       // INV-3: the curve is fully drained — no WETH or token stranded in it
       expect(await wethW.balanceOf(curve), `#${i} curve weth`).to.equal(0n);

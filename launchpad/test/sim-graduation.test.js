@@ -97,7 +97,10 @@ suite("Graduation sim — NEW calibration (201600 / 23000 / 22800) lands at ~4.2
     // ── ASSERTIONS ──────────────────────────────────────────────────────────────
     // creator + platform each get a fixed 0.5 ETH (platform also sweeps a tiny WETH dust on top)
     expect(devGain, "creator reward").to.equal(ethers.parseEther("0.5"));
-    expect(platGain, "platform reward").to.be.closeTo(ethers.parseEther("0.5"), ethers.parseEther("0.01"));
+    // v2: graduate() also sweeps the curve's pending LP fees, which (with feeConfig unset) go 100% to the
+    // platform on top of its fixed 0.5 reward. So platform gain = 0.5 + swept LP fees (a small, positive slice).
+    expect(platGain, "platform reward (0.5) + swept LP fees").to.be.gte(ethers.parseEther("0.5"));
+    expect(platGain, "platform gain is the 0.5 reward plus a modest LP-fee slice").to.be.lte(ethers.parseEther("0.75"));
 
     // raise ~4.2 ETH (±15%), Bond ~3.2 ETH (±15%), mcap ~$34k (±15%)
     expect(f(grossRaise), "gross raise ~4.2 ETH").to.be.closeTo(4.2, 4.2 * 0.15);

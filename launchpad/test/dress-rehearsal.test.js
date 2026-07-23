@@ -121,7 +121,8 @@ suite("DRESS REHEARSAL — full production stack + trading bot on a real fork", 
     const creatorGot = Number(ethers.formatEther((await W.balanceOf(dev.address)) - devPre));
     const platGot = Number(ethers.formatEther((await W.balanceOf(platform.address)) - platPre));
     ok("creator receives ~0.5 ETH at graduation", creatorGot >= 0.49 && creatorGot <= 0.51, `${creatorGot} ETH`);
-    ok("platform receives ~0.5 ETH at graduation", platGot >= 0.49 && platGot <= 0.51, `${platGot} ETH`);
+    // v2: platform also gets the LP fees graduate() sweeps (100% to platform, feeConfig unset) on top of its 0.5.
+    ok("platform receives its 0.5 reward + swept LP fees", platGot >= 0.49 && platGot <= 0.75, `${platGot} ETH`);
     ok("Bond floor funded ~3+ ETH", bondRaise >= 2.8, `${bondRaise.toFixed(3)} ETH`);
     ok("graduated flag set", await curveC.graduated());
     const bondAddr = await curveC.bond();
