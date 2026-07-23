@@ -148,6 +148,34 @@ async function main() {
     console.log(`\n(could not auto-write config.js: ${e.message} — paste the block above into pad/assets/config.js manually)`);
   }
 
+  // Machine-readable manifest → the contract verifier (scripts/verify-stack.cjs verifies this infra on
+  // Blockscout; scripts/auto-verify.cjs reads `factory` + `factoryBlock` to watch for new coins to verify).
+  try {
+    let factoryBlock = 0;
+    try { factoryBlock = (await factory.deploymentTransaction().wait()).blockNumber || 0; } catch { /* fork/estimate */ }
+    const manifest = {
+      network: network.name,
+      chainId: 4663,
+      deployedAt: new Date().toISOString(),
+      owner, platform, factoryBlock,
+      contracts: {
+        padRouter: await router.getAddress(),
+        padFactory: await factory.getAddress(),
+        rewardVault: await rewardVault.getAddress(),
+        floorCoopFactory: await floorFactory.getAddress(),
+        platformSplitter: await splitter.getAddress(),
+        launchTokenDeployer: await ltd.getAddress(),
+        curvePoolDeployer: await cpd.getAddress(),
+        bondDeployer: await bd.getAddress(),
+      },
+    };
+    const outPath = path.resolve(__dirname, "..", "deploy.json");
+    fs.writeFileSync(outPath, JSON.stringify(manifest, null, 2));
+    console.log(`\n✓ wrote scripts/../deploy.json (factory ${manifest.contracts.padFactory} @ block ${factoryBlock})`);
+    console.log(`  verify infra now:   node scripts/verify-stack.cjs`);
+    console.log(`  auto-verify coins:  FACTORY=${manifest.contracts.padFactory} START_BLOCK=${factoryBlock} node scripts/auto-verify.cjs`);
+  } catch (e) { console.log(`(could not write deploy.json: ${e.message})`); }
+
   console.log(`\nreward epochs: ${EPOCH_LEN}s · finalityDelay ${FINALITY_DELAY}s · challenge ${CHALLENGE_WINDOW}s`);
   console.log(`poster=${POSTER}  guardian=${GUARDIAN}  floorTreasury=${FLOOR_TREASURY}`);
   console.log(`\nownership: factory, rewardVault, splitter, floorCoopFactory → OWNER (done).`);

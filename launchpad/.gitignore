@@ -8,3 +8,6 @@ e2e/.run/
 
 # transient verification/experiment helpers + logs (not part of the deliverable)
 scripts/_*
+
+# auto-verifier scan progress (regenerated at runtime; per-environment)
+scripts/.auto-verify-state.json

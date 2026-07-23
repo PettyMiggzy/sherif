@@ -36,6 +36,29 @@ FloorCoopFactory's owner defaults to the *deployer*, so the script then calls `f
 automatically (one-step — no accept needed). If you deploy *from* `OWNER`, that transfer is skipped (already owned).
 Future owner changes on the router/factory/vault are safe two-step (Ownable2Step: transfer → accept).
 
+## 2b. Verify the contracts on Blockscout (source shown on the explorer)
+`deploy.js` writes `launchpad/deploy.json` (all addresses + the factory's deploy block). Verification
+uses **Blockscout's native verifier** — no API key, no constructor args (Blockscout auto-detects them).
+(Sourcify can't fetch bytecode for chain 4663, so we don't use it.)
+
+**One-time infra** (router, factory, vault, floor factory, splitter, 3 deployers):
+```
+cd launchpad && npx hardhat compile        # artifacts must match what you deployed
+node scripts/verify-stack.cjs              # reads deploy.json, verifies all 8
+```
+
+**Every launched coin (token / curve / bond) — automatic.** Run the auto-verifier once to backfill,
+then leave it running so every future coin self-verifies within a minute of launch:
+```
+node scripts/auto-verify.cjs --once        # verify all existing coins now, then exit
+# 24/7 on the droplet (restarts on reboot, scan progress persisted):
+docker compose -f docker-compose.verifier.yml up -d --build
+```
+The loop watches the factory's `Launched` (token+curve) and each curve's `Graduated` (bond) and submits
+each new address. It's read-only on-chain and needs no key. One coin on demand:
+`node scripts/verify-coin.cjs <token> [curve] [bond]`. The Blockscout verifier is occasionally flooded by
+a rival bot; the scripts retry through that automatically.
+
 ## 3. Wire the front-end (`pad/assets/config.js`)
 Paste all five printed addresses into `CONTRACTS`: `padRouter`, `padFactory`, `rewardVault`,
 `floorCoopFactory`, `platformSplitter`. Then set `API_BASE` to your deployed indexer URL (see step 5), or leave
