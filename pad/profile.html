@@ -83,7 +83,7 @@ section{margin:0 0 34px}
 <header class="nav"><div class="nav-in">
   <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
   <nav class="nav-links">
-    <a href="index.html#trending">Explore</a><a href="index.html#graduates">Graduated</a>
+    <a href="browse.html">Browse</a><a href="browse.html#graduates">Graduated</a>
     <a href="rewards.html">Rewards</a><a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
   </nav>
   <div class="nav-cta">
@@ -240,7 +240,7 @@ async function load(addr){
   const { held, scanned, total, server } = await loadHoldings(coins, target);
   $('holdings').innerHTML = held.length
     ? held.map(holdingCard).join('')
-    : `<div class="empty">No holdings in listed coins yet. <a href="index.html">Explore coins →</a></div>`;
+    : `<div class="empty">No holdings in listed coins yet. <a href="browse.html">Explore coins →</a></div>`;
   $('stHoldings').textContent = held.length;
   const portfolio = held.reduce((s, h) => s + h.bal * priceEth(h.c) * ETH_USD, 0);
   $('stValue').textContent = held.length ? fmtUsd(portfolio) : '$0';
