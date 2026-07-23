@@ -1,18 +1,19 @@
 {
   "network": "robinhood",
   "chainId": 4663,
-  "deployedAt": "2026-07-23T13:46:07.943Z",
+  "deployedAt": "2026-07-23T22:28:18.274Z",
   "owner": "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf",
   "platform": "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf",
-  "factoryBlock": 17333890,
+  "factoryBlock": 17646568,
   "contracts": {
-    "padRouter": "0xCA10a8821aF3D54eA9050A279EDd073654f5Fa1C",
-    "padFactory": "0xF54032C714e186bC6e5D84230c3B25cAC2e238Ed",
-    "rewardVault": "0x5Ca5C1D2D10Bf605F9C42c5Baa0a3f897a3E3811",
-    "floorCoopFactory": "0x2615120ECbe93D5DC5e9268337f42817a3224102",
-    "platformSplitter": "0xF56A82476114BDadC425b850d53FEFCb847e7C65",
-    "launchTokenDeployer": "0x55676403eFB000b8667D0F9C6cEdbBF17b9BdcD3",
-    "curvePoolDeployer": "0x548Fe951F2022c23bF2e896971aFCD83a39852BB",
-    "bondDeployer": "0xEe00259A69ab91b9702021571048d1eECbC80eAC"
+    "padRouter": "0xeA5b12Cbba5B1790A3b00C5C5884484bb2AABFaa",
+    "padFactory": "0x59A9Fd6Fdb8B5Ed60ABF889b84d2C2fcc8a1dEDe",
+    "rewardVault": null,
+    "floorCoopFactory": "0x8f33ED14d81D7986A708af4C2DAD7DAEe9778D95",
+    "platformSplitter": "0xCADAbB14339BE77a2Fc4D4151B1E453b81940653",
+    "feeConfig": "0x96a7c260E215853c38aC82c891827e5Dbf50efD8",
+    "launchTokenDeployer": "0xc53f32BCc25351043b95eE4B4D60964C65bB2541",
+    "curvePoolDeployer": "0xb28B2CA4D456109E53c985968452d8B23392C777",
+    "bondDeployer": "0x0925cbB3Af5d632c18cd70524f389e3fa878161C"
   }
 }
