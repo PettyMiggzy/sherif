@@ -60,7 +60,7 @@ suite("DRESS REHEARSAL — full production stack + trading bot on a real fork", 
     const curveC = await ethers.getContractAt("CurvePool", curve);
     const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
     const TOK = await ethers.getContractAt(["function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"], token);
-    ok("token registered with router at launch", (await router.cfgOf(token)).set === true);
+    ok("token registered with router at launch", (await router.configOf(token)).set === true);
     const devTok = Number(ethers.formatEther(await TOK.balanceOf(dev.address)));
     ok("$1400 dev buy ≈ 30% of supply", devTok >= 0.25e9 && devTok <= 0.35e9, `got ${(devTok/1e6).toFixed(0)}M (${(devTok/1e7).toFixed(1)}%)`);
     console.log(`      $ROBIN launched. dev holds ${(devTok/1e6).toFixed(0)}M (${(devTok/1e7).toFixed(1)}% of supply) for $1400`);
@@ -98,11 +98,11 @@ suite("DRESS REHEARSAL — full production stack + trading bot on a real fork", 
     ok("NO sell ever reverted through the router (not a honeypot)", sellReverts === 0, `${sellReverts} reverts`);
     console.log(`      bot: ${buys} buys / ${sells} sells across ${traders.length} wallets · sell reverts: ${sellReverts}`);
 
-    // reward legs must have accrued to the vault (0.25% buy + 0.25% sell)
-    const rvWeth = await new ethers.Contract(WETH, ["function balanceOf(address) view returns (uint256)"], ethers.provider).balanceOf(await rewardVault.getAddress());
-    ok("RewardVault accrued the trader/holder reward legs", rvWeth > 0n, `${ethers.formatEther(rvWeth)} ETH`);
-    // project tax must have accrued to escrow
-    ok("router collected project tax to escrow", (await router.escrowOf(token)) >= 0n);
+    // reward legs are forwarded as raw native ETH into the vault (0.25% buy + 0.25% sell)
+    const rvEth = await ethers.provider.getBalance(await rewardVault.getAddress());
+    ok("RewardVault accrued the trader/holder reward legs", rvEth > 0n, `${ethers.formatEther(rvEth)} ETH`);
+    // project tax must have accrued to the coin's dev escrow (walletBps=100% -> projectWallet)
+    ok("router collected project tax to escrow", (await router.devEscrow(token)) > 0n, `${ethers.formatEther(await router.devEscrow(token))} ETH`);
 
     // ── 4) DRIVE TO GRADUATION ─────────────────────────────────────────────────
     const ceiling = await curveC.gradSqrtPriceX96();
