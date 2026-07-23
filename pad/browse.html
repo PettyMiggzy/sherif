@@ -390,13 +390,19 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
     <div class="s"><img class="ic" src="assets/icons/buy-robin.png" alt="" /><div><div class="v" id="stVol">—</div><div class="k">Total Volume</div></div></div>
   </section>
 
-  <!-- EXPLORE (filterable) -->
-  <section class="sec" id="trending">
-    <div class="sec-h"><h2><img src="assets/icons/hot.png" alt="" />The Board</h2><span class="more" id="fcount"></span></div>
+  <!-- TRENDING (top by 24h volume) -->
+  <section class="sec" id="trendsec">
+    <div class="sec-h"><h2><img src="assets/icons/hot.png" alt="" />Trending <span style="color:var(--dim);font-weight:600;font-size:.9rem">· by 24h volume</span></h2></div>
     <div class="ticker" id="tickerbar" aria-label="Trending by volume">
-      <div class="lbl"><span class="dot"></span><span class="t">Trending</span></div>
+      <div class="lbl"><span class="dot"></span><span class="t">Live</span></div>
       <div class="vp"><div class="track" id="ticker"></div></div>
     </div>
+    <div class="tgrid" id="trendCards" aria-label="Top projects by volume" style="margin-top:14px"></div>
+  </section>
+
+  <!-- EXPLORE (filterable) -->
+  <section class="sec" id="trending">
+    <div class="sec-h"><h2>All Projects</h2><span class="more" id="fcount"></span></div>
     <div class="bsearch">
       <div class="ftabs" id="ftabs" role="tablist"></div>
       <label class="bsort">
@@ -406,7 +412,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
       </label>
       <label class="fsearch">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <input id="fq" type="search" placeholder="Search name or ticker…" autocomplete="off" />
+        <input id="fq" type="search" placeholder="Search name, ticker, or contract address…" autocomplete="off" spellcheck="false" />
       </label>
     </div>
     <div class="board" id="board"></div>
@@ -757,6 +763,13 @@ async function initBoard() {
   // trending strip (top 14 by trending) + graduates rail (top 3 by mcap) — each a
   // bounded query, independent of how many coins exist in total.
   boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:14 }).then(r => renderTicker(r.coins));
+  // TRENDING cards — the top 8 projects by 24h volume, shown as cards at the top of the pad
+  boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:8 }).then(r => {
+    const el = $('trendCards'); if (!el) return;
+    const top = r.coins || [];
+    el.innerHTML = top.length ? top.map(tcard).join('') : `<div class="empty" style="padding:14px;grid-column:1/-1">No live projects yet — <a href="create.html">launch the first</a>.</div>`;
+    const sec = document.getElementById('trendsec'); if (sec && !top.length) sec.style.display = 'none'; // hide the whole trending block until there are coins
+  });
   boardQuery({ sort:'top', filter:'graduated', q:'', offset:0, limit:3 }).then(r => {
     const grads = r.coins || [];
     $('glist').innerHTML = grads.length ? grads.map(grow).join('') : `<div class="empty" style="padding:14px">None yet</div>`;
