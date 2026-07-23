@@ -71,20 +71,26 @@ async function main() {
   totalGas += wireFc.gasUsed;
   console.log(`  router.setFeeConfig     (gas ${wireFc.gasUsed})`);
 
-  // ── reward system: the additive 0.25% trader/holder legs land here ──────────
-  // RewardVault needs the router at construction; the router then points its legs at the vault.
-  const POSTER = process.env.POSTER || owner;      // the indexer address that posts epoch merkle roots
-  const GUARDIAN = process.env.GUARDIAN || owner;  // can veto a bad root inside the challenge window
-  const EPOCH_LEN = Number(process.env.EPOCH_LEN || 7 * 24 * 3600);        // 7-day reward epochs (>= 1h)
-  const FINALITY_DELAY = Number(process.env.FINALITY_DELAY || 24 * 3600);  // root only postable 1d after epoch end
-  const CHALLENGE_WINDOW = Number(process.env.CHALLENGE_WINDOW || 2 * 24 * 3600); // 2d guardian veto window
-  const CLAIM_WINDOW = Number(process.env.CLAIM_WINDOW || 30 * 24 * 3600);        // 30d to claim before sweep-to-floor
-  const rewardVault = await track("RewardVault", await (await ethers.getContractFactory("RewardVault")).deploy(
-    await router.getAddress(), POSTER, GUARDIAN, EPOCH_LEN, FINALITY_DELAY, CHALLENGE_WINDOW, CLAIM_WINDOW, owner
-  ));
-  const wireRv = await (await router.setRewardVault(await rewardVault.getAddress())).wait();
-  totalGas += wireRv.gasUsed;
-  console.log(`  router.setRewardVault   (gas ${wireRv.gasUsed})`);
+  // ── reward system: the additive 0.25% trader/holder legs land here (OPTIONAL) ──────────
+  // Skipped entirely when NO_REWARDS is set — then the router's reward legs stay off (rewardVault=0) and no
+  // poster/guardian/epoch machinery is needed. The v2 fee model (LP + swap split) is complete without it.
+  const POSTER = process.env.POSTER || owner;
+  const GUARDIAN = process.env.GUARDIAN || owner;
+  const EPOCH_LEN = Number(process.env.EPOCH_LEN || 7 * 24 * 3600);
+  const FINALITY_DELAY = Number(process.env.FINALITY_DELAY || 24 * 3600);
+  const CHALLENGE_WINDOW = Number(process.env.CHALLENGE_WINDOW || 2 * 24 * 3600);
+  const CLAIM_WINDOW = Number(process.env.CLAIM_WINDOW || 30 * 24 * 3600);
+  let rewardVault = null;
+  if (process.env.NO_REWARDS) {
+    console.log(`  (rewards disabled — router reward legs stay off; no RewardVault deployed)`);
+  } else {
+    rewardVault = await track("RewardVault", await (await ethers.getContractFactory("RewardVault")).deploy(
+      await router.getAddress(), POSTER, GUARDIAN, EPOCH_LEN, FINALITY_DELAY, CHALLENGE_WINDOW, CLAIM_WINDOW, owner
+    ));
+    const wireRv = await (await router.setRewardVault(await rewardVault.getAddress())).wait();
+    totalGas += wireRv.gasUsed;
+    console.log(`  router.setRewardVault   (gas ${wireRv.gasUsed})`);
+  }
 
   // Router is fully wired now → hand it to OWNER. PadRouter is Ownable2Step, so this sets OWNER as *pending*
   // owner; OWNER completes it by calling acceptOwnership() once (from the admin panel). Until then the deployer
@@ -129,7 +135,7 @@ async function main() {
   console.log(`\n=== paste into pad/assets/config.js CONTRACTS ===`);
   console.log(`  padRouter:        "${await router.getAddress()}",`);
   console.log(`  padFactory:       "${await factory.getAddress()}",`);
-  console.log(`  rewardVault:      "${await rewardVault.getAddress()}",`);
+  if (rewardVault) console.log(`  rewardVault:      "${await rewardVault.getAddress()}",`);
   console.log(`  floorCoopFactory: "${await floorFactory.getAddress()}",`);
   console.log(`  splitter: "${await splitter.getAddress()}",  // standalone until $ROBIN buyback is wired`);
   // Auto-write the 5 addresses straight into the pad's config so there is NOTHING to paste by hand.
@@ -144,7 +150,7 @@ async function main() {
     };
     set("padRouter", await router.getAddress());
     set("padFactory", await factory.getAddress());
-    set("rewardVault", await rewardVault.getAddress());
+    set("rewardVault", rewardVault ? await rewardVault.getAddress() : "");
     set("floorCoopFactory", await floorFactory.getAddress());
     set("splitter", await splitter.getAddress()); // config.js key is `splitter` (NOT platformSplitter)
     fs.writeFileSync(cfgPath, cfg);
@@ -168,7 +174,7 @@ async function main() {
       contracts: {
         padRouter: await router.getAddress(),
         padFactory: await factory.getAddress(),
-        rewardVault: await rewardVault.getAddress(),
+        rewardVault: rewardVault ? await rewardVault.getAddress() : null,
         floorCoopFactory: await floorFactory.getAddress(),
         platformSplitter: await splitter.getAddress(),
         feeConfig: await feeConfig.getAddress(),
