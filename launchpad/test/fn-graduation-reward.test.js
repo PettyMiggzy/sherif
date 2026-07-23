@@ -52,6 +52,9 @@ suite("Graduation reward — creator earns 0.5 only at the full ceiling", functi
     const creatorGot = f((await W().balanceOf(dev.address)) - dPre), platGot = f((await W().balanceOf(platform.address)) - pPre);
     console.log(`      FULL: raise->Bond ${f(gev.args.raisedWeth).toFixed(3)} ETH · creator +${creatorGot} · platform +${platGot}`);
     expect(creatorGot, "creator earns 0.5 at full ceiling").to.be.closeTo(0.5, 0.02);
-    expect(platGot, "platform earns 0.5").to.be.closeTo(0.5, 0.02);
+    // v2: graduate() also sweeps + splits the curve's pending LP fees. With feeConfig unset (ZeroAddress) the
+    // creator's LP share is 0, so ALL the swept fees go to the platform on top of its 0.5 reward → platform > 0.5.
+    expect(platGot, "platform earns its 0.5 reward PLUS the swept LP fees").to.be.greaterThan(0.5);
+    expect(platGot, "platform (reward + LP fees) exceeds the creator (reward only)").to.be.greaterThan(creatorGot);
   });
 });

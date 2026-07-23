@@ -17,6 +17,7 @@ const { BLOCKSCOUT, verifyAddress } = require("./lib/blockscout.cjs");
 const INFRA = {
   padRouter: { sol: "contracts/PadRouter.sol", name: "PadRouter" },
   padFactory: { sol: "contracts/CurvePadFactory.sol", name: "CurvePadFactory" },
+  feeConfig: { sol: "contracts/FeeConfig.sol", name: "FeeConfig" },
   rewardVault: { sol: "contracts/RewardVault.sol", name: "RewardVault" },
   floorCoopFactory: { sol: "contracts/FloorCoopFactory.sol", name: "FloorCoopFactory" },
   platformSplitter: { sol: "contracts/PlatformFeeSplitter.sol", name: "PlatformFeeSplitter" },

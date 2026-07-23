@@ -284,7 +284,20 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         }
         graduated = true;
 
-        // pull the whole curve position back here (raised WETH + the still-unsold curve tokens)
+        // Sweep + split any LP fees pending since the last collectFees() FIRST, through the SAME creator/platform
+        // split — so the final pre-graduation fee batch honors the fee config instead of silently folding into the
+        // raise (and thus the floor). burn(0) realizes only fees into tokensOwed; principal stays in the position.
+        {
+            pool.burn(curveLo, curveHi, 0);
+            (uint256 g0, uint256 g1) = pool.collect(address(this), curveLo, curveHi, U128_MAX, U128_MAX);
+            (uint256 wFee, uint256 tFee) = tokenIsToken0 ? (g1, g0) : (g0, g1);
+            uint16 cbps = _lpCreatorBps();
+            _splitFee(IERC20(WETH), wFee, cbps);
+            _splitFee(token, tFee, cbps);
+            emit FeesCollected(msg.sender, wFee, tFee, cbps);
+        }
+
+        // pull the whole curve position back here (raised WETH + the still-unsold curve tokens) — principal only
         pool.burn(curveLo, curveHi, curveL);
         (uint256 c0, uint256 c1) = pool.collect(address(this), curveLo, curveHi, U128_MAX, U128_MAX);
         (uint256 raisedWeth, uint256 leftToken) = tokenIsToken0 ? (c1, c0) : (c0, c1);

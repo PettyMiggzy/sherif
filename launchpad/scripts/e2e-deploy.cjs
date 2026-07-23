@@ -40,7 +40,7 @@ async function main() {
   const factory = await dep(
     "CurvePadFactory",
     WETH, V3FAC, owner /*platform*/, owner, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(),
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress,
     START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH
   );
   await (await router.setFactory(await factory.getAddress())).wait();

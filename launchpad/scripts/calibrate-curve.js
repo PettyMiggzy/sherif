@@ -30,7 +30,7 @@ async function main() {
   const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
   const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
     WETH, V3FACTORY, platform.address, dep.address, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), STM, CW, MGW
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, STM, CW, MGW
   );
   await (await router.setFactory(await factory.getAddress())).wait();
 

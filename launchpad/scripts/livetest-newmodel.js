@@ -23,7 +23,7 @@ async function main() {
   // tiny curve: start 207200, ceiling width 4000, min-grad width 2000
   const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
     WETH, V3, me.address, me.address, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 259400, 4000, 2000
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 259400, 4000, 2000
   );
   await factory.waitForDeployment();
   await (await router.setFactory(await factory.getAddress())).wait();

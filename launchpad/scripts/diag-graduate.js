@@ -14,7 +14,7 @@ async function main() {
   const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
   const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
     WETH, V3, platform.address, dep.address, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 252400, 4000
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 252400, 4000
   );
   await (await router.setFactory(await factory.getAddress())).wait();
   const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };

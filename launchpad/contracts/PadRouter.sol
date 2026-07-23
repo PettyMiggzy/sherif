@@ -344,6 +344,26 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         IERC20(tokenIn).safeTransfer(msg.sender, owed);
     }
 
+    /// @dev Read FeeConfig.swapSplit() defensively: a hard gas cap bounds a griefing callee, and a FIXED 96-byte
+    /// output buffer copies at most 3 words no matter how large the return data is (returndata-bomb proof).
+    /// Decoding into uint256s can never revert on dirty high bits (unlike Solidity's strict uintN decoder), so
+    /// this NEVER reverts — it returns ok=false on any failure and the caller falls back to all-platform. This is
+    /// what makes the swap fee split safe to read on the trade path without ever bricking a buy/sell.
+    function _readSwapSplit(address fc) internal view returns (bool ok, uint256 p, uint256 c, uint256 f) {
+        bytes4 sel = IFeeConfig.swapSplit.selector;
+        assembly {
+            let m := mload(0x40)
+            mstore(m, sel)
+            // staticcall(gas, addr, inPtr, inSize, outPtr, outSize): fixed 0x60 out buffer, 50k gas cap
+            ok := staticcall(50000, fc, m, 4, m, 0x60)
+            if lt(returndatasize(), 0x60) { ok := 0 } // require a full 3-word answer, else treat as failure
+            p := mload(m)
+            c := mload(add(m, 0x20))
+            f := mload(add(m, 0x40))
+        }
+        if (!ok) return (false, 0, 0, 0); // never let stale scratch bytes look like a valid split
+    }
+
     /// @dev Split the fee for one trade. `value` is the ETH the fee is charged on (msg.value on a buy, the
     /// WETH-out on a sell); `feeBps` is that side's rate; `sellSide` is true for a sell. The default 1% base
     /// goes to the PLATFORM on a buy (0.9% now, 0.1% deferred to graduation) and to the CREATOR on a sell
@@ -359,18 +379,22 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         // falls through to all-platform (the safe default). Enabled only once the owner wires setFeeConfig.
         address fc = feeConfig;
         if (fc != address(0)) {
-            try IFeeConfig(fc).swapSplit() returns (uint16 pBps, uint16 cBps, uint16 fBps) {
-                if (uint256(pBps) + cBps + fBps == 10_000) {
-                    uint256 toFloor = (fee * fBps) / 10_000;
-                    uint256 toCreator = (fee * cBps) / 10_000;
-                    uint256 toPlatform = fee - toFloor - toCreator; // platform absorbs rounding
-                    platformEscrow += toPlatform;
-                    devEscrow[token] += toCreator;
-                    floorEscrow[token] += toFloor;
-                    emit FeeSplit(token, toPlatform, 0, 0, toCreator, toFloor, 0);
-                    return;
-                }
-            } catch {}
+            // Read the split with a HARD gas cap + FIXED-SIZE output buffer (see _readSwapSplit). A high-level
+            // try/catch would NOT protect the trade: return-data decoding runs in THIS frame after the call
+            // returns, so dirty high-bits or a returndata bomb from a hostile/oddly-compiled config could revert
+            // the trade uncaught. The low-level read can't: it never auto-decodes and copies at most 96 bytes.
+            (bool ok, uint256 p, uint256 c, uint256 f) = _readSwapSplit(fc);
+            // Bound each share BEFORE summing so a lying config can't overflow the check, then require exactly 100%.
+            if (ok && p <= 10_000 && c <= 10_000 && f <= 10_000 && p + c + f == 10_000) {
+                uint256 toFloor = (fee * f) / 10_000;
+                uint256 toCreator = (fee * c) / 10_000;
+                uint256 toPlatform = fee - toFloor - toCreator; // platform absorbs rounding
+                platformEscrow += toPlatform;
+                devEscrow[token] += toCreator;
+                floorEscrow[token] += toFloor;
+                emit FeeSplit(token, toPlatform, 0, 0, toCreator, toFloor, 0);
+                return;
+            }
             // config unreadable or invalid → everything to the platform (never revert the trade)
             platformEscrow += fee;
             emit FeeSplit(token, fee, 0, 0, 0, 0, 0);

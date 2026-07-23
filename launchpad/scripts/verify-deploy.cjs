@@ -20,7 +20,7 @@ async function main() {
   // mirror deploy.js exactly:
   const router = await D("PadRouter", WETH, deployer.address);         // owned by deployer so it can self-wire
   const factory = await D("CurvePadFactory", WETH, V3FAC, owner, owner, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207400, 38000, 27000);
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 207400, 38000, 27000);
   await (await router.setFactory(await factory.getAddress())).wait();  // deployer wires — must succeed
   const rv = await D("RewardVault", await router.getAddress(), owner, owner, 3600, 0, 0, 86400, owner);
   await (await router.setRewardVault(await rv.getAddress())).wait();

@@ -16,7 +16,7 @@ async function main() {
   const ltd = await D("LaunchTokenDeployer"), cpd = await D("CurvePoolDeployer"), bd = await D("BondDeployer");
   const router = await D("PadRouter", WETH, owner);
   const factory = await D("CurvePadFactory", WETH, V3FAC, owner, owner, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 207400, 38000, 27000);
+    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 207400, 38000, 27000);
   await (await router.setFactory(await factory.getAddress())).wait();
   // short reward windows so the post→claim path is testable fast: EPOCH 1h, finalityDelay 0, challenge 0, claim 1d
   const rv = await D("RewardVault", await router.getAddress(), owner, owner, 3600, 0, 0, 86400, owner);
