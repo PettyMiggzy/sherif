@@ -20,7 +20,7 @@
 :root{
   --bg:#060803; --bg-2:#0b0f06; --panel:#0c1108; --panel-2:#101609;
   --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06); --line-strong:rgba(220,233,5,.4);
-  --ink:#f4f7ee; --dim:#93a382; --faint:#6f7a5e;
+  --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
   --lime:#dce905; --lime-2:#c3d400; --lime-deep:#8a9c00; --green:#5fd16a; --red:#ff5a52;
   --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
@@ -552,7 +552,7 @@ function bcard(c){
   const foot = grad
     ? `<div class="bgrad"><span class="bok">✓ Graduated · live on DEX</span></div>`
     : `<div class="bprog"><div class="bptrack"><div class="bpfill${prog>=70?' hot':''}" style="width:${Math.min(100,prog)}%"></div></div><span class="bppct">${prog}%</span></div>`;
-  return `<a class="bcard" data-tok="${esc(c.token)}" href="${url}">
+  return `<a class="bcard" data-tok="${esc(String(c.token).toLowerCase())}" href="${url}">
     <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btk">${esc(tsym(c.symbol))}</div></div><span class="bchg ${chgCls}" data-chg title="price change since launch"${chgInner?'':' style="display:none"'}>${chgInner}</span></div>
     <div class="bstats"><div><span class="bk">MC</span><span class="bv" data-mc>${fmtUsd(cMc(c))}</span></div><div><span class="bk">Vol</span><span class="bv" data-vol>${fmtUsd(cVol(c))}</span></div><div><span class="bk">Holders</span><span class="bv">${fmtNum(c.holders!=null?c.holders:(c.tradesAll||0))}</span></div></div>
     ${foot}
@@ -647,13 +647,13 @@ async function boardQuery(args) {
 
 function buildTabs() {
   $('ftabs').innerHTML = FILTERS.map(f =>
-    `<button class="ftab${f.key===curFilter.key?' on':''}" role="tab" data-key="${f.key}"><img src="${f.icon}" alt="" />${f.label}</button>`
+    `<button class="ftab${f.key===curFilter.key?' on':''}" role="tab" aria-selected="${f.key===curFilter.key?'true':'false'}" data-key="${f.key}"><img src="${f.icon}" alt="" />${f.label}</button>`
   ).join('');
   $('ftabs').querySelectorAll('.ftab').forEach(btn => btn.addEventListener('click', () => {
     const f = FILTERS.find(x => x.key === btn.dataset.key);
     if (!f || f.key === curFilter.key) return;
     curFilter = f;
-    $('ftabs').querySelectorAll('.ftab').forEach(b => b.classList.toggle('on', b === btn));
+    $('ftabs').querySelectorAll('.ftab').forEach(b => { const on = b === btn; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
     resetBoard();
   }));
   // sort dropdown — independent of the filter tabs

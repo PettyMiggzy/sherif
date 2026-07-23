@@ -20,7 +20,7 @@
 :root{
   --bg:#060803; --bg-2:#0b0f06; --panel:#0c1108; --panel-2:#101609;
   --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06); --line-strong:rgba(220,233,5,.4);
-  --ink:#f4f7ee; --dim:#93a382; --faint:#6f7a5e;
+  --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
   --lime:#dce905; --lime-2:#c3d400; --lime-deep:#8a9c00; --green:#5fd16a; --red:#ff5a52;
   --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
@@ -69,7 +69,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .announce .in{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,rgba(220,233,5,.10),rgba(220,233,5,.02));border:1px solid var(--line);border-radius:12px;padding:11px 16px;font-size:.9rem}
 .announce .in .grad{font-weight:800}.announce .in .r{color:var(--lime);font-weight:800}
 .announce .in .sp{flex:1}
-.announce .x{color:var(--faint);cursor:pointer;font-size:1.1rem;background:none;border:none}
+.announce .x{color:var(--faint);cursor:pointer;font-size:1.1rem;background:none;border:none;min-width:40px;min-height:40px;display:inline-flex;align-items:center;justify-content:center}
 
 /* hero — headline left, glowing R-emblem podium right */
 .hero{display:grid;grid-template-columns:1.06fr .94fr;gap:30px;align-items:center;padding:44px 0 30px}
@@ -366,7 +366,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <span><b class="grad" id="anName">$—</b> just graduated! Creator rewarded with <span class="r">0.5 ETH</span></span>
   <span class="sp"></span>
   <a class="btn btn-ghost" style="padding:7px 16px" id="anView" href="browse.html#graduates">View</a>
-  <button class="x" onclick="document.getElementById('announce').style.display='none'">✕</button>
+  <button class="x" aria-label="Dismiss" onclick="document.getElementById('announce').style.display='none'">✕</button>
 </div></div>
 
 <main>
@@ -546,7 +546,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <section class="card news">
     <div class="t"><b>Stay in the loop</b><div>Latest launches, rewards and platform updates.</div></div>
     <form onsubmit="event.preventDefault();this.reset();alert('Thanks — you are on the list!')">
-      <input type="email" placeholder="Enter your email" required />
+      <input type="email" aria-label="Email address" placeholder="Enter your email" required />
       <button class="btn btn-lime" type="submit">Subscribe</button>
     </form>
     <div class="soc">

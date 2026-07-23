@@ -5,7 +5,7 @@
 //   Preview:  robinlabs.io/?demo=1   ·   robinlabs.io/token.html?c=<any>&demo=1
 // (Was temporarily ON-by-default during pre-launch review — now flipped to opt-in.)
 const _q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
-export const DEMO = typeof location !== "undefined" && _q.has("demo");
+export const DEMO = typeof location !== "undefined" && ["1","true",""].includes(_q.get("demo"));
 
 // Floating "PREVIEW" badge so sample data is never mistaken for real numbers.
 if (DEMO && typeof document !== "undefined") {

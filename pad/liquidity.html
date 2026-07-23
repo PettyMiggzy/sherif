@@ -70,6 +70,12 @@
   @media(max-width:860px){.pool{grid-template-columns:1.4fr .8fr auto;gap:10px}.pool .hidecol{display:none}}
   .colhead{display:grid;grid-template-columns:1.4fr .8fr .8fr .8fr auto;gap:14px;padding:0 16px 2px;font-family:var(--mono);font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
   @media(max-width:860px){.colhead{display:none}}
+  /* Live pools: per-pool APR + lifetime fees aren't computed on-chain yet — hide those two
+     columns rather than show fake zeros. Demo mode keeps them (sample data is complete). */
+  body.livemode .colhead{grid-template-columns:1.4fr .8fr auto}
+  body.livemode .pool{grid-template-columns:1.4fr .8fr auto}
+  body.livemode .col-fees,body.livemode .col-apr{display:none}
+  @media(max-width:860px){body.livemode .pool{grid-template-columns:1.4fr auto}}
   /* your positions */
   .mypos{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
   .pcard{border:1px solid var(--line-strong);border-radius:16px;background:linear-gradient(180deg,rgba(220,233,5,.06),rgba(9,13,5,.6));padding:16px}
@@ -140,7 +146,7 @@
 
   <!-- ALL POOLS -->
   <div class="sec-h"><h2>Locked pools</h2><span class="sub">Stake into any coin below</span></div>
-  <div class="colhead"><span>Coin</span><span>Total locked</span><span>Fees paid</span><span>Est. APR</span><span></span></div>
+  <div class="colhead"><span>Coin</span><span>Total locked</span><span class="col-fees">Fees paid</span><span class="col-apr">Est. APR</span><span></span></div>
   <div class="pools" id="pools"></div>
 
   <p class="risk"><b>Risk, plainly:</b> locking liquidity is real LPing, not a savings account. A 10% protocol fee applies when you open, and the protocol keeps 5% of the trade fees your position earns after that. The price moving rebalances your position (impermanent loss) and there's no guaranteed return. Withdrawing before your term ends costs a 15% penalty. Only lock into coins you'd be happy holding.</p>
@@ -167,20 +173,23 @@ const termOptions = () => LOCK_TERMS.map(t => `<option value="${t.days}"${t.days
 const termLabel = (d) => d===0 ? 'forever' : (d>=365 ? '1 year' : d+' days');
 
 if (DEMO){ $('liveTxt').textContent = 'Preview — sample pools'; }
+// Live pools don't yet expose per-pool APR or lifetime fees on-chain — hide those two
+// columns (rather than show fake 0s). Demo keeps them, since the sample data is complete.
+document.body.classList.toggle('livemode', !DEMO);
 
 // wallet button
 const cbtn = $('connectBtn');
 const refreshBtn = () => { const a = Pad.account(); cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; };
 cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (DEMO){ alert('Preview build — connect your wallet on the live site.'); return; } try { await Pad.connect(); refreshBtn(); load(); } catch(err){ alert(err.message); } });
-window.addEventListener('robinpad:ready', refreshBtn); refreshBtn();
+window.addEventListener('robinpad:ready', ()=>{ refreshBtn(); load(); }); refreshBtn();
 
 function poolRow(p, i){
   const mine = (p.mineEth||0) > 0;
   return `<div class="pool" data-i="${i}">
     <div class="coin">${imgTag(p,'')}<div><div class="nm">${esc(p.name)}</div><div class="tk">${esc(tsym(p.sym))}${mine?` · <span class="mine">you locked ${eth(p.mineEth)}</span>`:''}</div></div></div>
     <div class="hidecol"><span class="k">Total locked</span><span class="v">${eth(p.tvlEth)}</span></div>
-    <div class="hidecol"><span class="k">Fees paid</span><span class="v">${eth(p.feesPaidEth)}</span></div>
-    <div><span class="k">Est. APR</span><span class="v apr">${(p.aprPct||0).toFixed(1)}%</span></div>
+    <div class="hidecol col-fees"><span class="k">Fees paid</span><span class="v">${eth(p.feesPaidEth)}</span></div>
+    <div class="col-apr"><span class="k">Est. APR</span><span class="v apr">${(p.aprPct||0).toFixed(1)}%</span></div>
     <div class="act"><button class="btn btn-lime addbtn" type="button" data-i="${i}">${mine?'Add':'Lock'}</button></div>
     <div class="addrow" id="addrow-${i}">
       <div class="addbox">

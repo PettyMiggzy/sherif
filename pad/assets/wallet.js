@@ -575,9 +575,14 @@ export async function feed({ sort = "new", filter = "all", q = "", limit = 24, o
   const f = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _read);
   const n = Number(await f.tokenCount());
   const oldestFirst = sort === "old";
+  // With a search query and no indexer, a single page's worth of reads would only ever match
+  // within the current page. Scan the whole factory list instead, then filter + slice below.
+  const scanAll = !!q;
+  const want = scanAll ? n : limit;
+  const base = scanAll ? 0 : offset;
   const idxs = [];
-  for (let k = 0; k < limit; k++) {
-    const i = oldestFirst ? offset + k : n - 1 - offset - k;
+  for (let k = 0; k < want; k++) {
+    const i = oldestFirst ? base + k : n - 1 - base - k;
     if (i < 0 || i >= n) break;
     idxs.push(i);
   }
@@ -591,11 +596,14 @@ export async function feed({ sort = "new", filter = "all", q = "", limit = 24, o
     name: metas[i].name, symbol: metas[i].symbol,
     launchTs: Number(r[3]), graduated: false, // r[3] = Record.at — ethers Result `.at` collides with Array.prototype.at
   }));
+  let total = n;
   if (q) {
     const s = q.toLowerCase();
     coins = coins.filter((c) => c.name?.toLowerCase().includes(s) || c.symbol?.toLowerCase().includes(s) || c.token.toLowerCase().includes(s));
+    total = coins.length;                 // total reflects the filtered set, so pagination is correct
+    coins = coins.slice(offset, offset + limit); // and we still return just the requested page
   }
-  return { source: "rpc", coins, total: n };
+  return { source: "rpc", coins, total };
 }
 
 /// Platform-wide totals for a stats strip (indexer only; null without one).
