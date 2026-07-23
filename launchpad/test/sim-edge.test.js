@@ -303,9 +303,11 @@ suite("Edge-case sim — production calibration on a real Uniswap v3 fork", func
     const platGain = (await ctx.wethW.balanceOf(ctx.platform.address)) - platBefore;
     const grossRaise = bondRaise + 2n * ethers.parseEther("0.5");
     console.log(`      CASE 5 — timeout graduation: gross=${f(grossRaise).toFixed(4)} ETH into Bond=${f(bondRaise).toFixed(4)} ETH`);
-    console.log(`      CASE 5 — creator=${f(devGain).toFixed(4)}  platform=${f(platGain).toFixed(4)}`);
+    console.log(`      CASE 5 — creator=${f(devGain).toFixed(4)} (FORFEITED)  platform=${f(platGain).toFixed(4)}`);
 
-    expect(devGain, "creator reward = 0.5 ETH").to.equal(ethers.parseEther("0.5"));
+    // Timeout graduation happens at the MINIMUM (below the ceiling) => the creator FORFEITS their 0.5 reward
+    // (an abandoned coin graduated late/thin never earned it); the platform still takes its cut.
+    expect(devGain, "creator forfeits reward on a below-ceiling timeout graduation").to.equal(0n);
     expect(platGain, "platform reward ≈ 0.5 ETH").to.be.closeTo(ethers.parseEther("0.5"), ethers.parseEther("0.01"));
     const bond = await ethers.getContractAt("Bond", await ctx.curveC.bond());
     expect(await bond.posted(), "Bond posted on timeout graduation").to.equal(true);

@@ -199,12 +199,9 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const { curve, pool: poolAddr } = ev.args;
     const curveC = await ethers.getContractAt("CurvePool", curve);
 
-    // the hands-off DEFAULT target sits strictly between the minimum and the ceiling (Rec #2: healthier default)
-    {
-      const mn = await curveC.minGradTick(), cl = await curveC.gradTick(), tg = await curveC.gradTarget();
-      const between = mn < cl ? (tg > mn && tg < cl) : (tg < mn && tg > cl);
-      expect(between, "default target between min and ceiling").to.equal(true);
-    }
+    // the DEFAULT target is the FULL ceiling: no graduation until the full raise, and the creator earns their
+    // 0.5 reward only by riding all the way there (lowering the target = early graduation = forfeit the 0.5).
+    expect(await curveC.gradTarget(), "default target is the ceiling").to.equal(await curveC.gradTick());
 
     // access control + bounds
     await expect(curveC.connect(mallory).setGradTarget(await curveC.gradTick())).to.be.revertedWithCustomError(curveC, "NotDev");

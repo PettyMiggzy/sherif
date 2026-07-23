@@ -57,7 +57,6 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     // above 1 WETH (so riding longer thickens the floor, not the payouts).
     uint256 public constant GRAD_REWARD = 0.5 ether;
     int24 public constant GRAD_MAX_DEV = 50; // graduation can't post above the ceiling by more than this (anti-manipulation)
-    uint16 public constant DEFAULT_GRAD_FRAC = 40; // default gradTarget sits 40% up the [min, ceiling] tick range
         // (≈+50% mcap over the bare minimum) so a hands-off launch graduates with a healthier floor / lighter wall
     uint256 public constant GRAD_TIMEOUT = 7 days; // abandon-proof: after this, anyone may graduate at the MINIMUM
         // even if the dev set a higher target and walked away — the floor can be delayed but never denied
@@ -134,12 +133,11 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         // tick); token1 => the token is on the BELOW-price side (price rises as tick falls).
         gradTick = tIs0 ? startTick_ + curveWidth_ : startTick_ - curveWidth_;
         minGradTick = tIs0 ? startTick_ + minGradWidth_ : startTick_ - minGradWidth_;
-        // Default graduation target sits 40% of the way up the [min, ceiling] tick range — a healthier
-        // hands-off structure than the bare minimum. The dev can move it anywhere in [min, ceiling] via
-        // setGradTarget (down to the minimum to graduate sooner, up to the ceiling to ride).
-        int24 gspan = tIs0 ? gradTick - minGradTick : minGradTick - gradTick; // positive tick distance
-        int24 goff = int24((int256(gspan) * int256(uint256(DEFAULT_GRAD_FRAC))) / 100);
-        gradTarget = tIs0 ? minGradTick + goff : minGradTick - goff;
+        // Default graduation target = the FULL ceiling (~4.2 ETH raised). The coin does NOT graduate until it
+        // rides all the way to the ceiling, and only then does the creator earn their 0.5 WETH reward. The dev
+        // MAY lower the target via setGradTarget to graduate EARLY — but early graduation forfeits the creator's
+        // 0.5 reward (it stays in the raise → the floor) and leaves a thinner floor. See graduate().
+        gradTarget = gradTick;
 
         // Claim + initialize the pool at the start price (DEX + DexScreener live from here).
         address p = IUniswapV3Factory(v3Factory_).getPool(token_, weth_, POOL_FEE);
@@ -270,15 +268,20 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         (uint256 raisedWeth, uint256 leftToken) = tokenIsToken0 ? (c1, c0) : (c0, c1);
         require(raisedWeth > 0, "empty");
 
-        // Creator + platform graduation reward: a FIXED 0.5 WETH each (a launch incentive on top of the ongoing
-        // fees). Capped at raise/4 apiece so the two payouts can never exceed half the raise — the Bond floor
-        // always keeps >=50% (and keeps everything above 1 WETH on a bigger "let it ride" raise). WETH transfers
-        // can't reenter (nonReentrant + no callback); dev and platform are both non-zero at construction.
-        uint256 reward = Math.min(GRAD_REWARD, raisedWeth / 4);
-        if (reward > 0) {
-            raisedWeth -= 2 * reward;
-            IERC20(WETH).safeTransfer(dev, reward);      // creator
-            IERC20(WETH).safeTransfer(platform, reward); // platform
+        // Graduation reward: 0.5 WETH each, capped at raise/4 apiece so the two payouts can never exceed half the
+        // raise (the Bond floor always keeps >=50%). THE CREATOR'S 0.5 IS EARNED ONLY BY RIDING TO THE FULL
+        // CEILING (~4.2 ETH): if the coin graduated EARLY — the dev lowered gradTarget, or the 7-day abandon-proof
+        // timeout graduated it below the ceiling — the creator forfeits their 0.5, which stays in the raise and
+        // thickens the (otherwise thinner) early floor. The platform still takes its cut. tickNow was clamped
+        // to <= the ceiling above. Reentrancy-safe (nonReentrant + no callback).
+        bool fullTarget = tokenIsToken0 ? tickNow >= gradTick - GRAD_MAX_DEV : tickNow <= gradTick + GRAD_MAX_DEV;
+        uint256 platReward = Math.min(GRAD_REWARD, raisedWeth / 4);
+        uint256 devReward = fullTarget ? platReward : 0; // early graduation => creator forfeits
+        uint256 totalReward = devReward + platReward;
+        if (totalReward > 0) {
+            raisedWeth -= totalReward;
+            if (devReward > 0) IERC20(WETH).safeTransfer(dev, devReward); // creator
+            IERC20(WETH).safeTransfer(platform, platReward);              // platform
         }
 
         // Post the Bond around the CURRENT price. The Sherwood LP needs tokens; pair them from the Ambush
