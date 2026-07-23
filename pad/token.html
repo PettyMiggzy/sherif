@@ -195,6 +195,10 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
       <span class="ca"><span id="ca" class="mono">—</span> <button id="copyCa" type="button">Copy</button></span>
     </div>
   </div>
+  <div id="pendingProfile" style="display:none;margin:14px 0 0;padding:12px 14px;border:1px solid var(--lime);border-radius:12px;background:rgba(220,233,5,.08);font-size:.9rem;align-items:center;gap:12px;justify-content:space-between">
+    <span id="pendingProfileMsg">Your coin image is still finishing…</span>
+    <button id="pendingProfileBtn" class="btn" style="flex:none">Finish now</button>
+  </div>
 
   <div class="layout">
     <div>
@@ -544,6 +548,60 @@ function applyProfile(prof, symbol){
     box.innerHTML = (prof.description ? `<div>${esc(prof.description)}</div>` : '') + (socials ? `<div class="socs">${socials}</div>` : '');
   }
 }
+
+// ── auto-finish a coin image the creator launched with but that hasn't saved yet ──────────────
+// create.html stashes the (downscaled) profile in this browser BEFORE uploading. If the upload was
+// interrupted (missed signature, tab close, hiccup) the image lives ONLY here — so on the coin page we
+// complete it: auto-submit when the creator wallet is connected, or a one-click "Finish now" that
+// connects + retries. It self-heals until the image is confirmed on the backend, then clears the stash.
+const PENDING_KEY = 'rl_pending_profile:' + String(TOKEN || '').toLowerCase();
+let PENDING = null;
+function readPending(){
+  try {
+    const s = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null');
+    if (!s) return null;
+    if (s._ts && Date.now() - s._ts > 24 * 3600 * 1000) { localStorage.removeItem(PENDING_KEY); return null; } // expire after 24h
+    return s;
+  } catch { return null; }
+}
+function showPending(msg, showBtn = true){
+  const b = $('pendingProfile'); if (!b) return;
+  $('pendingProfileMsg').textContent = msg;
+  $('pendingProfileBtn').style.display = showBtn ? '' : 'none';
+  b.style.display = 'flex';
+}
+function hidePending(){ const b = $('pendingProfile'); if (b) b.style.display = 'none'; }
+async function finishPendingProfile(){
+  if (!TOKEN || DEMO || !Pad.hasApi()) return;
+  PENDING = readPending();
+  if (!PENDING) return;
+  if (PROFILE && PROFILE.image) { localStorage.removeItem(PENDING_KEY); hidePending(); return; } // already saved
+  await tryCompletePending();
+}
+async function tryCompletePending(){
+  if (!PENDING) return;
+  const acct = Pad.account && Pad.account();
+  if (!acct || !COIN || acct.toLowerCase() !== String(COIN.dev || '').toLowerCase()) {
+    showPending('Your coin image is ready to save — connect the creator wallet to finish (free, no gas).', true);
+    return;
+  }
+  try {
+    showPending('Finishing your coin image… approve the free signature.', false);
+    await Pad.setCoinProfile(TOKEN, {
+      description: PENDING.description || '', telegram: PENDING.telegram || '', twitter: PENDING.twitter || '',
+      website: PENDING.website || '', pfp: PENDING.pfp || '', banner: PENDING.banner || '',
+    });
+    localStorage.removeItem(PENDING_KEY); PENDING = null; hidePending();
+    try { PROFILE = await Pad.getCoinProfile(TOKEN); applyProfile(PROFILE, COIN.symbol); } catch {}
+  } catch (e) {
+    showPending('Image not saved yet (' + (e.message || 'error') + ') — click to retry.', true);
+  }
+}
+document.getElementById('pendingProfileBtn')?.addEventListener('click', async () => {
+  try { if (!Pad.account()) { await Pad.connect(); refreshConnect(); } } catch {}
+  await tryCompletePending();
+});
+
 function fillProfileForm(){
   if (!PROFILE) return;
   if (!$('edesc').value) $('edesc').value = PROFILE.description || '';
@@ -634,6 +692,7 @@ async function loadCoin(){
     PROFILE = await Pad.getCoinProfile(TOKEN);
     applyProfile(PROFILE, meta.symbol);
   } catch { /* profiles are cosmetic — never block the coin page */ }
+  finishPendingProfile(); // if this browser launched the coin with an image that hasn't saved yet, complete it
 
   // chart
   if (tax.pool){ const dl = $('dexLink'); if (dl) dl.href = 'https://dexscreener.com/robinhood/' + tax.pool.toLowerCase(); }

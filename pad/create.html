@@ -190,6 +190,17 @@ function prev(inp,which){
 // server convert/resize (HEIC included). Returns "" only when no file is chosen; throws a
 // clear Error otherwise (never rejects with a non-Error, so no "undefined" messages).
 const IMG_OK=/^data:image\/(webp|png|jpeg|gif);base64,/;
+// Persist a just-launched coin's (downscaled) profile to THIS browser so it can never be lost if the upload
+// is interrupted. The coin page reads this and auto-finishes the save. Keyed by token; cleared on confirm.
+const PENDING_KEY = (token) => 'rl_pending_profile:' + String(token).toLowerCase();
+function stashPendingProfile(token, prof){
+  try {
+    const body = JSON.stringify({ ...prof, _ts: Date.now() });
+    if (body.length > 4_500_000) return; // too big for localStorage (e.g. a raw HEIC) — rely on the direct upload
+    localStorage.setItem(PENDING_KEY(token), body);
+  } catch {}
+}
+function clearPendingProfile(token){ try { localStorage.removeItem(PENDING_KEY(token)); } catch {} }
 async function imgDataUrl(id, maxDim){
   const f=(document.getElementById(id)?.files||[])[0];
   if(!f) return "";
@@ -303,22 +314,24 @@ $('launchBtn').addEventListener('click', async () => {
     const web = ($('web').value || '').trim();
     const wantsProfile = token && (desc || tg || tw || web || ($('pfp').files || []).length || ($('banner').files || []).length);
     if (wantsProfile && Pad.hasApi()) {
+      const [pfp, banner] = await Promise.all([imgDataUrl('pfp', 400), imgDataUrl('banner', 1200)]);
+      const prof = { description: desc, telegram: tg, twitter: tw, website: web, pfp, banner };
+      // Persist the (downscaled) images to this browser FIRST, so they can NEVER be lost — if the upload is
+      // interrupted (missed signature, tab close, hiccup) the coin page auto-finishes it from this stash.
+      stashPendingProfile(token, prof);
       try {
         setNote('Launched ✓ — saving your coin profile (one free signature)…', 'ok');
-        const [pfp, banner] = await Promise.all([imgDataUrl('pfp', 400), imgDataUrl('banner', 1200)]);
-        await Pad.setCoinProfile(token, { description: desc, telegram: tg, twitter: tw, website: web, pfp, banner });
+        await Pad.setCoinProfile(token, prof);
+        clearPendingProfile(token); // confirmed saved
         setNote('Launched ✓ and profile saved — your coin is live.', 'ok');
       } catch (e) {
-        // Don't silently move on and lose the image — tell them clearly and how to fix it, and DON'T
-        // auto-redirect over the message. They open the coin and add it via Creator controls (free signature).
-        const link = 'token.html?c=' + encodeURIComponent(token);
-        setNote('Launched ✓ — but the image/profile did NOT save (' + e.message + '). Open your coin and use “Creator controls → Profile” to add it (free, no gas): ' + link, 'err');
-        return; // stop here so the error stays on screen
+        // Leave the stash; the coin page finishes it. Never a dead end.
+        setNote('Launched ✓ — finishing your image on your coin page…', 'ok');
       }
     } else if (wantsProfile && !Pad.hasApi()) {
       setNote('Launched ✓ — your coin is live. (Images & socials save once the indexer API is connected.)', 'ok');
     }
-    // Send the creator straight to their new coin's page.
+    // Send the creator straight to their new coin's page (which completes any pending image).
     if (token) location.href = 'token.html?c=' + encodeURIComponent(token);
   } catch (e) {
     // pre-deploy this surfaces the honest "not live yet" message; post-deploy it
