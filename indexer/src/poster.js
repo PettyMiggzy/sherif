@@ -53,10 +53,12 @@ function finalized(epoch, nowSec) {
   const { t1 } = epochBounds(epoch);
   const cutoff = t1 + CFG.finalityDelay;
   if (nowSec < cutoff) return false;
-  const headTs = getHeadTs();
-  // headTs === 0 means the indexer has never recorded a frontier (fresh DB / API-only
-  // node) — fall back to the time-only gate. Once it's set, it must be past the cutoff.
-  if (headTs && headTs < cutoff) return false;
+  // The indexed frontier MUST have passed the cutoff. head_ts === 0 means the indexer has not
+  // yet recorded a frontier (fresh DB / mid-backfill) — treat that as "not caught up" and refuse
+  // to post, rather than falling back to a time-only gate that would post over a partial accrual
+  // set during backfill (a permanently-wrong on-chain allocation). The poster runs in-process
+  // with the indexer, so head_ts becomes non-zero as soon as the first tick commits.
+  if (getHeadTs() < cutoff) return false;
   return true;
 }
 
@@ -97,11 +99,18 @@ export async function postPending() {
     try { onchain = await vault.epochRoot(epoch); }
     catch (e) { console.warn(`[poster] epochRoot ${epoch} read failed: ${e.shortMessage || e.message || e}`); continue; }
     if (row.posted_tx) {
-      // Already posted. Re-post ONLY if the on-chain root was vetoed: clear the sticky
-      // posted_tx so the next compute pass recomputes it (its skip is gated on posted_tx)
-      // and a subsequent post pass re-posts. A live (non-vetoed) posted root is left
-      // untouched — no infinite re-posting.
-      if (onchain.vetoed) setRewardRootPostedTx.run({ epoch, posted_tx: null });
+      // Already posted. Re-post ONLY if the on-chain root was vetoed AND recomputing over the
+      // current (possibly now-complete) accrual set yields a DIFFERENT root — i.e. the data was
+      // corrected. Re-posting the identical vetoed root would just be vetoed again forever, so in
+      // that case we leave posted_tx set and stop fighting the guardian until the data changes.
+      // A live (non-vetoed) posted root is left untouched — no re-posting at all.
+      if (onchain.vetoed) {
+        const fresh = computeEpoch(epoch);
+        if (fresh.root && fresh.root !== onchain.root) {
+          persist(fresh);                                       // record the corrected allocation
+          setRewardRootPostedTx.run({ epoch, posted_tx: null }); // un-gate: a later pass re-posts it
+        }
+      }
       continue;
     }
     if (onchain.root && onchain.root !== ethers.ZeroHash && !onchain.vetoed) {

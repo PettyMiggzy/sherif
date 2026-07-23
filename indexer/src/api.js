@@ -86,6 +86,25 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
 }
 
+// Largest raster a HEIF declares, read from its `ispe` (image spatial extent) boxes WITHOUT
+// decoding. heic-convert runs libheif SYNCHRONOUSLY and allocates width*height*4 from the
+// HEADER dimensions, so a small file that declares a huge (tiled) image can OOM the whole
+// process before sharp's limitInputPixels or the wall-clock timeout can ever apply. We refuse
+// it here first. A real `ispe` box is exactly 20 bytes (size|type|version+flags|width|height),
+// so we only trust a match whose preceding size field == 20 (near-zero false positives).
+// Returns max(width*height) across boxes, or 0 if none parseable (libheif then can't size it).
+function heifMaxPixels(buf) {
+  let max = 0;
+  for (let i = 4; i + 16 <= buf.length; i++) {
+    if (buf[i] === 0x69 && buf[i + 1] === 0x73 && buf[i + 2] === 0x70 && buf[i + 3] === 0x65) { // 'ispe'
+      if (buf.readUInt32BE(i - 4) !== 20) continue;
+      const w = buf.readUInt32BE(i + 8), h = buf.readUInt32BE(i + 12);
+      if (w > 0 && h > 0) max = Math.max(max, w * h);
+    }
+  }
+  return max;
+}
+
 // Convert any uploaded image to a small web-displayable webp that fits `maxDim`.
 // HEIC is decoded to JPEG first, EXIF orientation is applied, and it's never upscaled.
 async function normalizeImage(buf, mime, maxDim) {
@@ -93,6 +112,9 @@ async function normalizeImage(buf, mime, maxDim) {
   let input = buf;
   if (looksHeic(buf, mime)) {
     if (!_heic) throw new Error("this server build can't read HEIC yet — upload a JPG or PNG");
+    // Refuse a decompression bomb by its DECLARED dimensions before the synchronous libheif
+    // decode allocates the raster (sharp's limitInputPixels only guards the step AFTER this).
+    if (heifMaxPixels(buf) > CFG.profileMaxPixels) throw new Error("image dimensions too large");
     input = Buffer.from(await _heic({ buffer: buf, format: "JPEG", quality: 0.92 }));
   }
   if (_sharp) {
@@ -202,9 +224,12 @@ async function rpcHandle(payload) {
 // from the RIGHT, where N = the number of trusted hops (Caddy alone = 1; Cloudflare→Caddy
 // = 2). We never trust the LEFTMOST entry — it's client-supplied and spoofable. When
 // Cloudflare is in front it also sets CF-Connecting-IP to the true client, which is
-// immune to XFF spoofing, so we prefer that when present.
+// immune to XFF spoofing, so we prefer that when present. OFF by default: the stock deploy
+// is Caddy→indexer with NO Cloudflare, and Caddy forwards a client-supplied CF-Connecting-IP
+// unstripped — so trusting it there would let anyone spoof the rate-limit key. Enable
+// (USE_CF_IP=1) ONLY when Cloudflare genuinely fronts the service.
 const TRUSTED_PROXY_HOPS = Math.max(1, Number(process.env.TRUSTED_PROXY_HOPS) || 1);
-const USE_CF_IP = (process.env.USE_CF_IP ?? "1") !== "0";
+const USE_CF_IP = (process.env.USE_CF_IP ?? "0") !== "0";
 function clientIp(req) {
   if (USE_CF_IP) {
     const cf = String(req.headers["cf-connecting-ip"] || "").trim();
