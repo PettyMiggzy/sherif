@@ -9,8 +9,8 @@ Factory deploy block: **17333890**.
 | **CurvePadFactory** (launch) | `0xF54032C714e186bC6e5D84230c3B25cAC2e238Ed` | ✅ |
 | **PadRouter** (all trades) | `0xCA10a8821aF3D54eA9050A279EDd073654f5Fa1C` | ✅ |
 | **RewardVault** | `0x5Ca5C1D2D10Bf605F9C42c5Baa0a3f897a3E3811` | ✅ |
-| **FloorCoopFactory** | `0x2615120ECbe93D5DC5e9268337f42817a3224102` | ⏳ pending (Blockscout quirk) |
-| **PlatformFeeSplitter** | `0xF56A82476114BDadC425b850d53FEFCb847e7C65` | ⏳ pending (Blockscout quirk) |
+| **FloorCoopFactory** | `0x2615120ECbe93D5DC5e9268337f42817a3224102` | ✅ |
+| **PlatformFeeSplitter** | `0xF56A82476114BDadC425b850d53FEFCb847e7C65` | ✅ |
 | LaunchTokenDeployer | `0x55676403eFB000b8667D0F9C6cEdbBF17b9BdcD3` | ✅ |
 | CurvePoolDeployer | `0x548Fe951F2022c23bF2e896971aFCD83a39852BB` | ✅ |
 | BondDeployer | `0xEe00259A69ab91b9702021571048d1eECbC80eAC` | ✅ |
@@ -22,7 +22,9 @@ Factory deploy block: **17333890**.
 - Explorer: https://robinhoodchain.blockscout.com/address/0xF54032C714e186bC6e5D84230c3B25cAC2e238Ed
 
 ## What's already done
-- ✅ Contracts deployed + 6/8 verified (all core: factory, router, vault, 3 deployers).
+- ✅ Contracts deployed + **all 8 verified** on Blockscout (source readable). The floor factory +
+  splitter needed Blockscout's V2 `standard-input` endpoint — the Etherscan-compat one fails on them;
+  the shared verifier (scripts/lib/blockscout.cjs) now uses V2, so coins verify robustly too.
 - ✅ Website (www.robinlab.io) serving the new addresses (Vercel auto-deployed).
 - ✅ Indexer (droplet) repointed to the new factory (`FACTORY`/`ROUTER`/`START_BLOCK=17333890`/`REWARD_VAULT` set in `indexer/.env`) and the old TEST/SMOKE coins wiped (`docker volume rm indexer_indexer-data`). Board = clean.
 - ✅ Docs / GitBook / Mintlify / SDK / API updated for the new addresses + ceiling-only graduation.
@@ -38,12 +40,11 @@ Factory deploy block: **17333890**.
    node scripts/verify-coin.cjs <ROBIN_token> <ROBIN_curve>
    ```
 
-## The 2 pending verifications (non-blocking)
-`FloorCoopFactory` + `PlatformFeeSplitter` refuse Blockscout verification (autodetect AND explicit
-constructor args both fail — a Blockscout verifier quirk for those two under viaIR; the on-chain
-bytecode is correct since the same compile verified the other 6). They function perfectly; only their
-explorer source display is missing. Options: retry later, verify manually in the Blockscout UI, or
-leave them (non-core: floor-coop vault + not-yet-wired buyback splitter).
+## Verification note (resolved)
+All 8 verified. `FloorCoopFactory` + `PlatformFeeSplitter` initially failed the Etherscan-compat
+`verifysourcecode` path ("Unable to verify") but verified cleanly via Blockscout's V2
+`/api/v2/smart-contracts/{addr}/verification/via/standard-input` endpoint. The shared verifier now
+uses V2 for everything, so launched coins (LaunchToken/CurvePool/Bond) verify by the same robust path.
 
 ## Optional / later
 - 24/7 coin auto-verifier on the droplet: `cd ~/sherif/launchpad && npm install && npx hardhat compile`

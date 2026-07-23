@@ -52,45 +52,35 @@ async function isVerified(addr) {
 async function verifyAddress({ addr, sol, name, label }) {
   const tag = (label || name || addr).toString();
   if (await isVerified(addr)) { console.log(`  ✓ already verified   ${tag}  ${addr}`); return "already"; }
-  const { stdJson, compiler, contractName } = loadInput({ sol, name });
+  const { stdJson, compiler } = loadInput({ sol, name });
 
-  const form = new URLSearchParams();
-  form.set("module", "contract");
-  form.set("action", "verifysourcecode");
-  form.set("codeformat", "solidity-standard-json-input");
-  form.set("contractaddress", addr);
-  form.set("contractname", contractName);
-  form.set("compilerversion", compiler);
-  form.set("sourceCode", stdJson);
-  form.set("autodetectConstructorArguments", "true");
-
-  let guid;
-  for (let a = 0; a < 6 && !guid; a++) {
-    let txt;
+  // Blockscout's V2 standard-input endpoint. We use this rather than the Etherscan-compat
+  // verifysourcecode path because that one fails "Unable to verify" on some contracts here (e.g.
+  // certain viaIR-compiled ones) that this endpoint verifies fine. Constructor args are
+  // auto-detected from the creation tx, so we never encode them.
+  const url = `${BLOCKSCOUT}/api/v2/smart-contracts/${addr}/verification/via/standard-input`;
+  let started = false;
+  for (let a = 0; a < 6 && !started; a++) {
     try {
-      const r = await fetch(API, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: form.toString() });
-      txt = await r.text();
-    } catch (e) { console.log(`  … ${tag} submit error: ${String(e.message).slice(0, 80)} (retry)`); await sleep(6000 * (a + 1)); continue; }
-    let j; try { j = JSON.parse(txt); } catch { j = null; }
-    const result = j && j.result != null ? String(j.result) : "";
-    if (/already verified|already been verified|smart-contract already/i.test(result)) { console.log(`  ✓ already verified   ${tag}  ${addr}`); return "already"; }
-    // Success: status is "1"/1 with a GUID, OR (some Blockscout builds return a numeric status) the
-    // result is GUID-shaped: a long hex blob (address + timestamp), no spaces, not an error sentence.
-    if ((String(j && j.status) === "1" && result) || (/^0x?[0-9a-f]{40,}$/i.test(result) && !/\s/.test(result))) { guid = result; break; }
-    console.log(`  … ${tag} submit: ${(result || txt || "").toString().slice(0, 110)} (retry)`);
+      const fd = new FormData();
+      fd.set("compiler_version", compiler);
+      fd.set("autodetect_constructor_args", "true");
+      fd.set("license_type", "mit");
+      fd.set("files[0]", new Blob([stdJson], { type: "application/json" }), "input.json");
+      const r = await fetch(url, { method: "POST", body: fd });
+      const txt = await r.text();
+      if (/already verified|already been verified/i.test(txt)) { console.log(`  ✓ already verified   ${tag}  ${addr}`); return "already"; }
+      if (r.ok || /verification (started|already)/i.test(txt)) { started = true; break; }
+      console.log(`  … ${tag} submit ${r.status}: ${txt.slice(0, 110)} (retry)`);
+    } catch (e) { console.log(`  … ${tag} submit error: ${String(e.message).slice(0, 80)} (retry)`); }
     await sleep(6000 * (a + 1));
   }
-  if (!guid) { console.log(`  ❌ ${tag} could not submit  ${addr}`); return "fail"; }
+  if (!started) { console.log(`  ❌ ${tag} could not submit  ${addr}`); return "fail"; }
 
+  // The endpoint verifies asynchronously; poll the contract's verified flag.
   for (let i = 0; i < 40; i++) {
     await sleep(4000);
-    let j;
-    try { j = await (await fetch(`${API}?module=contract&action=checkverifystatus&guid=${guid}`)).json(); }
-    catch { continue; }
-    const res = (j && j.result) || "";
-    if (/pass|verified/i.test(res)) { console.log(`  ✅ ${tag.padEnd(16)} verified  ${addr}`); return "ok"; }
-    if (/fail|error|unable|no match|mismatch/i.test(res)) { console.log(`  ❌ ${tag.padEnd(16)} ${res.slice(0, 120)}  ${addr}`); return "fail"; }
-    // "Pending in queue" / "Unknown UID" transient → keep polling
+    if (await isVerified(addr)) { console.log(`  ✅ ${tag.padEnd(16)} verified  ${addr}`); return "ok"; }
   }
   console.log(`  ⏳ ${tag} still pending (will retry next pass)  ${addr}`);
   return "pending";
