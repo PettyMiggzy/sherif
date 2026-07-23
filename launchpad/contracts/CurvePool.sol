@@ -78,6 +78,7 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
 
     event Seeded(int24 curveLo, int24 curveHi, uint128 liquidity);
     event Graduated(address indexed bond, uint256 raisedWeth, uint256 leftoverToken);
+    event FeesCollected(address indexed by, uint256 wethFees, uint256 tokenFees);
 
     /// @param curveWidth_ tick span from start to the curve CEILING (a positive multiple of SPACING). The ceiling
     /// is the ONLY graduation point — a coin graduates only when buys carry price all the way to it (~4.2 ETH).
@@ -182,6 +183,26 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     /// the whole curve (up to the ceiling) but never run past it into empty space.
     function gradSqrtPriceX96() external view returns (uint160) {
         return PoolMath.getSqrtRatioAtTick(gradTick);
+    }
+
+    /// @notice Sweep the curve position's accrued Uniswap swap fees (the 1% fee tier) to the platform — the
+    /// NOXA model: the platform keeps the full 1% on EVERY trade, STREAMED LIVE, instead of only at graduation.
+    /// It doesn't matter where a trade is executed (the pad UI, DexScreener, an aggregator, a raw swap) — every
+    /// swap hits this one pool and pays this single-sided position the fee, so this captures 100% of volume.
+    ///
+    /// Only the FEES move: the curve principal (the accumulating raise that becomes the Bond floor at
+    /// graduation) is left fully intact, because Uniswap accounts swap fees separately from position liquidity.
+    /// `burn(0)` realizes the accrued fees into the position's `tokensOwed` WITHOUT removing any liquidity;
+    /// `collect` then pays them out. Permissionless (a keeper can poke it), and the recipient is the hardcoded
+    /// `platform`, so an untrusted caller can never redirect the funds — they only pay gas to flush them.
+    /// Buys pay the fee in WETH, sells pay it in the token, so both sides may be non-zero.
+    function collectFees() external nonReentrant returns (uint256 wethFees, uint256 tokenFees) {
+        if (!seeded) revert NotSeeded();
+        if (graduated) revert AlreadyGraduated(); // post-grad the position is burned; fees already swept
+        pool.burn(curveLo, curveHi, 0); // poke: moves accrued fees into tokensOwed, principal untouched
+        (uint256 c0, uint256 c1) = pool.collect(platform, curveLo, curveHi, U128_MAX, U128_MAX);
+        (wethFees, tokenFees) = tokenIsToken0 ? (c1, c0) : (c0, c1);
+        emit FeesCollected(msg.sender, wethFees, tokenFees);
     }
 
     /// @notice Progress: is the coin graduatable? The ONLY way to graduate is reaching the full ceiling
