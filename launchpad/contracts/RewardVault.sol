@@ -56,6 +56,10 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
     // ── immutable wiring ──
     address public immutable router; // only PadRouter may accrue
     uint256 public immutable EPOCH; // epoch length in seconds (e.g. 1 days)
+    // Extra grace, BEYOND the full finalize+challenge+claim lifecycle, before an epoch that was NEVER finalized
+    // (poster key lost / indexer permanently down / a veto never re-posted) can have its rewards force-swept to
+    // the coin's floor. Long enough that this can never front-run a legitimate late finalization.
+    uint256 public constant EMERGENCY_GRACE = 180 days;
 
     // ── roles / timing (owner-settable) ──
     address public poster; // indexer operator key — posts roots
@@ -229,6 +233,33 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         uint256 remT = p.traderPot - claimedTraders[coin][epoch];
         uint256 remH = p.holderPot - claimedHolders[coin][epoch];
         // close the headroom so a late claim can never pass the cap after sweep
+        claimedTraders[coin][epoch] = p.traderPot;
+        claimedHolders[coin][epoch] = p.holderPot;
+
+        uint256 rem = remT + remH;
+        if (rem > 0) {
+            IPadRouterFloor(router).donateFloor{value: rem}(coin);
+        }
+        emit Swept(epoch, coin, remT, remH);
+    }
+
+    /// @notice Safety valve for a NEVER-finalized epoch. Normal claim() and sweep() both require a valid,
+    /// non-vetoed root; if the poster permanently fails to post one (key lost, indexer gone) or a veto is never
+    /// re-posted, that epoch's accrued reward ETH would otherwise be stuck forever. This permissionless path
+    /// forwards it to the coin's OWN floor once the epoch is far past ANY legitimate finalize+challenge+claim
+    /// lifecycle — so it can never front-run a real claim, and funds can only ever land on the floor (the router's
+    /// donateFloor), never with the caller. Works regardless of root/veto state (that is the point).
+    function emergencySweep(uint256 epoch, address coin) external nonReentrant {
+        // must be well past the whole normal lifecycle (finalize + challenge + claim) plus a long extra grace
+        if (block.timestamp <= (epoch + 1) * EPOCH + finalityDelay + challengeWindow + claimWindow + EMERGENCY_GRACE) {
+            revert TooEarly();
+        }
+        if (swept[coin][epoch]) revert AlreadyClaimed();
+        swept[coin][epoch] = true;
+
+        Pot storage p = pot[coin][epoch];
+        uint256 remT = p.traderPot - claimedTraders[coin][epoch];
+        uint256 remH = p.holderPot - claimedHolders[coin][epoch];
         claimedTraders[coin][epoch] = p.traderPot;
         claimedHolders[coin][epoch] = p.holderPot;
 
