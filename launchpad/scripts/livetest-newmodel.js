@@ -38,22 +38,21 @@ async function main() {
   const TOK = await ethers.getContractAt("LaunchToken", token);
   console.log("launched token:", token, " curve:", curve, " pool:", poolAddr);
   console.log("DexScreener: https://dexscreener.com/robinhood/" + poolAddr.toLowerCase());
-  await (await curveC.setGradTarget(await curveC.minGradTick())).wait();
-  console.log("dev set gradTarget to the minimum (testing the min-graduation / roll-unsold path)");
 
   // ---- wait out the anti-snipe window ----
   process.stdout.write("waiting for anti-snipe window to close");
   while (await TOK.antiSnipeActive()) { process.stdout.write("."); await sleep(20000); }
   console.log(" clear.");
 
-  // ---- buy up to the MINIMUM graduation price (leaves unsold curve tokens to roll into the Bond) ----
+  // ---- buy up to the CEILING (the ONLY graduation point); any unsold curve tokens roll into the Bond ----
   const probe = await (await ethers.getContractFactory("SwapProbe")).deploy(); await probe.waitForDeployment();
   const wethW = await ethers.getContractAt(
     ["function deposit() payable", "function approve(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"], WETH);
-  await (await wethW.deposit({ value: 6n * ONE / 1000n })).wait(); // 0.006 ETH is plenty for the tiny curve
-  await (await wethW.approve(await probe.getAddress(), 6n * ONE / 1000n)).wait();
-  await (await probe.swapExactInLimit(poolAddr, WETH, 6n * ONE / 1000n, await curveC.minGradSqrtPriceX96(), g(2_000_000))).wait();
-  console.log("bought to min-grad. ready:", await curveC.ready());
+  const buyIn = 6n * ONE; // ~6 ETH — comfortably past the ~4.2 ETH ceiling; the swap caps at gradSqrtPriceX96
+  await (await wethW.deposit({ value: buyIn })).wait();
+  await (await wethW.approve(await probe.getAddress(), buyIn)).wait();
+  await (await probe.swapExactInLimit(poolAddr, WETH, buyIn, await curveC.gradSqrtPriceX96(), g(2_000_000))).wait();
+  console.log("bought to the ceiling. ready:", await curveC.ready());
 
   // ---- graduate ----
   const devWethBefore = await wethW.balanceOf(me.address);

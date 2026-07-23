@@ -7,7 +7,7 @@ import { CFG } from "./config.js";
 import { iface, TOPICS, ERC20, CURVE, POOL } from "./abi.js";
 import {
   db, getCursor, setCursor, setHeadTs, upsertCoin, markGraduated, ungraduateFrom, insertTrade,
-  coinByCurve, purgeTradesFrom, setGeometry, setGradTargetByCurve,
+  coinByCurve, purgeTradesFrom, setGeometry,
   setSnapshot, coinGeom, insertAccrual, purgeAccrualsFrom,
 } from "./db.js";
 
@@ -80,10 +80,10 @@ async function getLogsRange(from, to) {
     provider.getLogs({ fromBlock: from, toBlock: to, address: CFG.factory, topics: [TOPICS.Launched] }), "getLogs.launched");
   const trades = await withRetry(() =>
     provider.getLogs({ fromBlock: from, toBlock: to, address: CFG.router, topics: [[TOPICS.Bought, TOPICS.Sold]] }), "getLogs.trades");
-  // Graduated + GradTargetSet are both curve-emitted with no indexed token, so
-  // we query by topic0 across any address and match back by log.address.
+  // Graduated is curve-emitted with no indexed token, so we query by topic0 across
+  // any address and match back by log.address.
   const grads = await withRetry(() =>
-    provider.getLogs({ fromBlock: from, toBlock: to, topics: [[TOPICS.Graduated, TOPICS.GradTargetSet]] }), "getLogs.grads");
+    provider.getLogs({ fromBlock: from, toBlock: to, topics: [TOPICS.Graduated] }), "getLogs.grads");
   // RewardVault Accrued (0.25% legs) — only when a vault is configured.
   const accruals = CFG.rewardVault
     ? await withRetry(() =>
@@ -111,8 +111,8 @@ async function applyLog(log) {
       launch_block: log.blockNumber, launch_ts: ts, launch_tx: log.transactionHash,
       dev_bought: a.devBought.toString(),
     });
-    // Read the curve geometry once (it never changes except gradTarget) + an
-    // initial snapshot, so the coin shows correct progress the moment it lands.
+    // Read the curve geometry once (start + ceiling never change) + an initial
+    // snapshot, so the coin shows correct progress the moment it lands.
     await readGeometry(token, curve, pool);
     await snapshotToken(token, ts);
     return;
@@ -140,13 +140,6 @@ async function applyLog(log) {
       coin: a.coin.toLowerCase(), epoch: Number(a.epoch), side: Number(a.side),
       amount: a.amount.toString(), block: log.blockNumber, ts,
     });
-    return;
-  }
-
-  if (parsed.name === "GradTargetSet") {
-    const curve = log.address.toLowerCase();
-    if (!coinByCurve.get(curve)) return;
-    setGradTargetByCurve.run({ curve, grad_target: Number(a.targetTick) });
     return;
   }
 

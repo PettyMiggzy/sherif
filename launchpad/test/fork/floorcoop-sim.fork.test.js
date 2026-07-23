@@ -67,11 +67,9 @@ suite("FloorCoop battery — random deposit/withdraw/compound/claim/shove; solve
     const curveC = await ethers.getContractAt("CurvePool", curve);
     const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
     const TOK = await ethers.getContractAt(["function balanceOf(address) view returns (uint256)"], token);
-    await (await curveC.connect(dev).setGradTarget(await curveC.minGradTick())).wait();
     await ethers.provider.send("evm_increaseTime", [400]); await ethers.provider.send("evm_mine", []);
-    const maxS = BigInt(await curveC.gradSqrtPriceX96());
-    const minS = BigInt(await curveC.minGradSqrtPriceX96());
-    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 60n * ONE, minS + ((maxS - minS) * 80n) / 100n)).wait();
+    // buy all the way to the ceiling (the ONLY graduation point), then graduate → a live, liquid pool
+    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 60n * ONE, await curveC.gradSqrtPriceX96())).wait();
     await (await curveC.graduate()).wait();
     expect(await pool.liquidity()).to.be.greaterThan(0n);
 

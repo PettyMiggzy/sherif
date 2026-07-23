@@ -136,13 +136,13 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect(await TOK.balanceOf(await factory.getAddress())).to.equal(0n);
   });
 
-  it("LET IT RIDE: graduating higher up the curve posts a thicker floor", async () => {
+  it("graduating at the ceiling posts a real Bond floor (thick buy-wall)", async () => {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
     const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
-    // production "let it ride" geometry: min grad ~$30k, ceiling ~$76k
+    // production graduation geometry: the coin graduates only at the ceiling (~$76k mcap)
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), 196200, 25800, 16400
@@ -155,35 +155,28 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     await (await wethW.connect(buyer).deposit({ value: 40n * ONE })).wait();
     await (await wethW.connect(buyer).approve(await probe.getAddress(), 40n * ONE)).wait();
 
-    // launch a coin, buy up to `cap` (min-grad price or the ceiling), graduate, return the Bond's floor funding
-    async function run(name, toCeiling) {
-      const rc = await (await factory.launch({ name, symbol: name, dev: dev.address, tax: NOTAX })).wait();
-      const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
-      const { curve, pool: poolAddr } = ev.args;
-      const curveC = await ethers.getContractAt("CurvePool", curve);
-      // allow graduation from the minimum so the "min" run can graduate there (default target is 40% up)
-      await (await curveC.connect(dev).setGradTarget(await curveC.minGradTick())).wait();
-      await ethers.provider.send("evm_increaseTime", [400]);
-      await ethers.provider.send("evm_mine", []);
-      const cap = toCeiling ? await curveC.gradSqrtPriceX96() : await curveC.minGradSqrtPriceX96();
-      await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 20n * ONE, cap)).wait();
-      expect(await curveC.ready()).to.equal(true);
-      const gradRc = await (await curveC.graduate()).wait();
-      const gev = gradRc.logs.map((l) => { try { return curveC.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Graduated");
-      const bond = await ethers.getContractAt("Bond", await curveC.bond());
-      expect(await bond.posted()).to.equal(true);
-      return { raise: gev.args.raisedWeth, bountyL: await bond.bountyL() };
-    }
-
-    const atMin = await run("MIN", false); // graduate at the $30k minimum
-    const rode = await run("RIDE", true);  // let it ride to the ceiling, then graduate
-    // riding up the curve raised strictly more WETH -> a strictly thicker floor
-    expect(rode.raise).to.be.greaterThan(atMin.raise);
-    expect(rode.bountyL).to.be.greaterThan(atMin.bountyL); // a deeper buy-wall
+    // The ONLY graduation point is the ceiling: buy all the way up to it, then graduate and check the Bond floor.
+    const rc = await (await factory.launch({ name: "RIDE", symbol: "RIDE", dev: dev.address, tax: NOTAX })).wait();
+    const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
+    const { curve, pool: poolAddr } = ev.args;
+    const curveC = await ethers.getContractAt("CurvePool", curve);
+    await ethers.provider.send("evm_increaseTime", [400]);
+    await ethers.provider.send("evm_mine", []);
+    // not graduatable until the ceiling is reached
+    expect(await curveC.ready(), "not graduatable before the ceiling").to.equal(false);
+    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 20n * ONE, await curveC.gradSqrtPriceX96())).wait();
+    expect(await curveC.ready(), "graduatable at the ceiling").to.equal(true);
+    const gradRc = await (await curveC.graduate()).wait();
+    const gev = gradRc.logs.map((l) => { try { return curveC.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Graduated");
+    const bond = await ethers.getContractAt("Bond", await curveC.bond());
+    // the raise posted a real Bond with a live buy-wall / floor
+    expect(await bond.posted()).to.equal(true);
+    expect(await bond.bountyL(), "a real buy-wall floor").to.be.greaterThan(0n);
+    expect(gev.args.raisedWeth, "the ceiling raise funds the Bond").to.be.greaterThan(0n);
   });
 
-  it("auto-graduate: the dev sets the target; nobody can graduate before the dev's mark", async () => {
-    const [dep, platform, dev, buyer, mallory] = await ethers.getSigners();
+  it("graduation ONLY at the full ceiling — no early path, no 7-day timeout; below the ceiling it never graduates", async () => {
+    const [dep, platform, dev, buyer] = await ethers.getSigners();
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
     const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
@@ -198,41 +191,42 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { curve, pool: poolAddr } = ev.args;
     const curveC = await ethers.getContractAt("CurvePool", curve);
-
-    // the DEFAULT target is the FULL ceiling: no graduation until the full raise, and the creator earns their
-    // 0.5 reward only by riding all the way there (lowering the target = early graduation = forfeit the 0.5).
-    expect(await curveC.gradTarget(), "default target is the ceiling").to.equal(await curveC.gradTick());
-
-    // access control + bounds
-    await expect(curveC.connect(mallory).setGradTarget(await curveC.gradTick())).to.be.revertedWithCustomError(curveC, "NotDev");
-    await expect(curveC.connect(dev).setGradTarget(0)).to.be.revertedWithCustomError(curveC, "BadTarget"); // outside [min, ceiling]
-
-    // the dev chooses to ride all the way: target = the ceiling
-    await (await curveC.connect(dev).setGradTarget(await curveC.gradTick())).wait();
+    const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
 
     const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
-    const wethW = await ethers.getContractAt(["function deposit() payable", "function approve(address,uint256) returns (bool)"], WETH);
-    await (await wethW.connect(buyer).deposit({ value: 30n * ONE })).wait();
-    await (await wethW.connect(buyer).approve(await probe.getAddress(), 30n * ONE)).wait();
+    const probeAddr = await probe.getAddress();
+    const wethW = await ethers.getContractAt(
+      ["function deposit() payable", "function approve(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"], WETH);
+    await (await wethW.connect(buyer).deposit({ value: 60n * ONE })).wait();
+    await (await wethW.connect(buyer).approve(probeAddr, 60n * ONE)).wait();
     await ethers.provider.send("evm_increaseTime", [400]);
     await ethers.provider.send("evm_mine", []);
 
-    // the default target sits ABOVE the minimum (healthier hands-off structure), and the dev raised it to the ceiling
-    expect(await curveC.gradTarget()).to.equal(await curveC.gradTick());
+    // (a) before any buy the coin is NOT graduatable
+    expect(await curveC.ready(), "not graduatable before the ceiling").to.equal(false);
 
-    // buy only up to the $30k MINIMUM — past the old graduation point but below the dev's target
-    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 30n * ONE, await curveC.minGradSqrtPriceX96())).wait();
-    // ready() is FALSE and graduate() reverts: a sniper can't graduate before the dev's mark
-    expect(await curveC.ready()).to.equal(false);
+    // (b) buy only PART-WAY up the curve (a sqrt limit strictly below the ceiling). The coin stays NOT
+    // graduatable and graduate() reverts — and there is NO timeout/abandon path: warping 7+ days changes nothing.
+    const ceilSqrt = BigInt(await curveC.gradSqrtPriceX96());
+    const curSqrt = BigInt((await pool.slot0()).sqrtPriceX96);
+    const partwaySqrt = curSqrt + (ceilSqrt - curSqrt) / 2n; // halfway to the ceiling in sqrt space (below it)
+    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 30n * ONE, partwaySqrt)).wait();
+    expect(await curveC.ready(), "part-way up the curve is NOT graduatable").to.equal(false);
     await expect(curveC.graduate()).to.be.revertedWithCustomError(curveC, "NotReady");
-
-    // ABANDON-PROOF: after the 7-day timeout, anyone can graduate at the minimum even though the dev set the
-    // target to the ceiling and never moved it — the floor can be delayed but never denied.
+    // no 7-day timeout: still not graduatable after warping well past a week
     await ethers.provider.send("evm_increaseTime", [7 * 24 * 3600 + 1]);
     await ethers.provider.send("evm_mine", []);
-    expect(await curveC.ready()).to.equal(true);
-    await (await curveC.connect(buyer).graduate()).wait(); // buyer (not the dev) can graduate now
+    expect(await curveC.ready(), "no timeout path: still not graduatable after 7+ days").to.equal(false);
+    await expect(curveC.graduate()).to.be.revertedWithCustomError(curveC, "NotReady");
+
+    // (c) buy the REST of the way to the ceiling: now ready() is true and graduate() succeeds (permissionless),
+    // paying the creator the fixed 0.5 WETH.
+    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 30n * ONE, await curveC.gradSqrtPriceX96())).wait();
+    expect(await curveC.ready(), "reaching the ceiling IS graduatable").to.equal(true);
+    const devBefore = await wethW.balanceOf(dev.address);
+    await (await curveC.connect(buyer).graduate()).wait(); // buyer (not the dev) can graduate — it's permissionless
     expect(await curveC.graduated()).to.equal(true);
+    expect((await wethW.balanceOf(dev.address)) - devBefore, "creator earns 0.5 at the ceiling").to.equal(ethers.parseEther("0.5"));
   });
 
   it("graduate() corrects a MANIPULATED post-buyout price back to the ceiling — floor-drain closed, no DoS (CP-1)", async () => {

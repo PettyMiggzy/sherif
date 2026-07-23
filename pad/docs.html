@@ -228,26 +228,22 @@ event Sold(address indexed token, address indexed seller, uint256 tokensIn, uint
 event FeeSplit(address indexed token, uint256 platform, uint256 deferred, uint256 platformCut, uint256 dev, uint256 floor, uint256 burn)</pre></div>
 
   <h2 id="curve"><span class="sec">02 · Contracts &amp; ABI</span>CurvePool</h2>
-  <p>The bonding curve and graduation. Read it for progress and the graduation window; call <span class="m">graduate()</span> (permissionless) to post the Bond, or <span class="m">setGradTarget()</span> (creator-only) to move the auto-graduate price.</p>
+  <p>The bonding curve and graduation. Read it for progress up the curve; call <span class="m">graduate()</span> (permissionless) to post the Bond. Graduation happens at ONE place only — the full ceiling (~4.2 ETH raised). There is no early graduation and no timeout: below the ceiling the coin simply keeps trading, and sellers can always exit.</p>
   <div class="code"><div class="hd"><span class="lang">Solidity ABI · human-readable (ethers)</span><button class="cp">Copy</button></div><pre>function pool() view returns (address)     <span class="c">// the Uniswap v3 pool</span>
 function dev() view returns (address)
 function bond() view returns (address)     <span class="c">// zero until graduated</span>
 function seeded() view returns (bool)
 function graduated() view returns (bool)
-function ready() view returns (bool)       <span class="c">// eligible to graduate right now</span>
+function ready() view returns (bool)       <span class="c">// true only at the full ceiling</span>
 function seedTime() view returns (uint64)
 
 <span class="c">// geometry — ticks along the curve (price rises left→right)</span>
-function startTick() view returns (int24)      <span class="c">// curve start (~$4k FDV)</span>
-function minGradTick() view returns (int24)    <span class="c">// earliest graduation (~$30k)</span>
-function gradTarget() view returns (int24)     <span class="c">// auto-graduate price (dev-settable)</span>
-function gradTick() view returns (int24)       <span class="c">// ceiling (~$76k)</span>
+function startTick() view returns (int24)      <span class="c">// curve start (~$3.4k FDV)</span>
+function gradTick() view returns (int24)       <span class="c">// ceiling — the ONLY graduation point (~4.2 ETH)</span>
 
-function setGradTarget(int24 targetTick)   <span class="c">// creator only, within [min, ceiling]</span>
 function graduate()                        <span class="c">// permissionless once ready()</span>
 
 event Seeded(int24 curveLo, int24 curveHi, uint128 liquidity)
-event GradTargetSet(int24 targetTick)
 event Graduated(address indexed bond, uint256 raisedWeth, uint256 leftoverToken)</pre></div>
 
   <h2 id="bond"><span class="sec">02 · Contracts &amp; ABI</span>Bond</h2>
@@ -361,15 +357,11 @@ console.log(<span class="s">"launched"</span>, token);</pre></div>
   <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">const</span> curve = <span class="k">new</span> ethers.Contract(curveAddr, [
   <span class="s">"function ready() view returns (bool)"</span>,
   <span class="s">"function graduate()"</span>,
-  <span class="s">"function setGradTarget(int24 targetTick)"</span>,
 ], signer);
 
-<span class="c">// Anyone can graduate once ready() — this is the "Graduate" button / a keeper bot.</span>
+<span class="c">// ready() is true ONLY at the full ceiling (~4.2 ETH). Anyone can graduate once</span>
+<span class="c">// ready() — this is the "Graduate" button / a keeper bot. No early path, no timeout.</span>
 <span class="k">if</span> (<span class="k">await</span> curve.ready()) <span class="k">await</span> (<span class="k">await</span> curve.graduate()).wait();
-
-<span class="c">// Creator only: move the auto-graduate price. Lower = graduate sooner;</span>
-<span class="c">// higher = ride longer for a bigger raise + thicker floor.</span>
-<span class="k">await</span> (<span class="k">await</span> curve.setGradTarget(targetTick)).wait();
 
 <span class="c">// Creator only: collect your escrowed sell fees — or buy + burn with them.</span>
 <span class="k">const</span> router = <span class="k">new</span> ethers.Contract(ROUTER, [
@@ -390,14 +382,13 @@ console.log(<span class="s">"launched"</span>, token);</pre></div>
   </table></div>
   <div class="note"><span class="lbl">Creator income</span>1% sell tax + a 0.5 ETH graduation reward + any project share of raised tax. Every share is escrowed and paid by separate permissionless flushers, so a trade can never revert on a payout. Accounting is exact to the wei.</div>
 
-  <h2 id="gradmodel"><span class="sec">04 · Economics</span>Graduation — “let it ride”</h2>
-  <p>Graduation is a <strong>window</strong>, not a line. It becomes eligible at the minimum (~$30k mcap) and can fire anywhere up to the ceiling (~$76k). The longer a coin rides, the bigger the raise and the thicker the floor.</p>
+  <h2 id="gradmodel"><span class="sec">04 · Economics</span>Graduation — one ceiling, no shortcuts</h2>
+  <p>Graduation happens at exactly <strong>one</strong> place: the full ceiling (~4.2 ETH raised, ~$34k mcap). A coin graduates only when buys carry the price all the way to <span class="m">gradTick</span> — there is no early graduation, no creator override, and no timeout fallback. Below the ceiling the coin simply keeps trading on the curve, and sellers can always exit.</p>
   <div class="tw"><table>
     <tr><th>Parameter</th><th>Meaning</th><th>Set by</th></tr>
-    <tr><td><span class="m">minGradTick</span></td><td>Earliest graduation is allowed (~$30k)</td><td>Fixed at launch</td></tr>
-    <tr><td><span class="m">gradTarget</span></td><td>Auto-graduate price. Defaults 40% up the range (~$45k)</td><td>Creator (<span class="m">setGradTarget</span>)</td></tr>
-    <tr><td><span class="m">gradTick</span></td><td>Ceiling (~$76k). Buys can't push past it</td><td>Fixed at launch</td></tr>
-    <tr><td>Timeout</td><td>After 7 days, anyone may graduate at the minimum</td><td>Permissionless fallback</td></tr>
+    <tr><td><span class="m">startTick</span></td><td>Curve start (~$3.4k FDV)</td><td>Fixed at launch</td></tr>
+    <tr><td><span class="m">gradTick</span></td><td>Ceiling — the ONLY graduation point (~4.2 ETH). Buys can't push past it</td><td>Fixed at launch</td></tr>
+    <tr><td><span class="m">ready()</span></td><td>True only once the tick reaches <span class="m">gradTick</span></td><td>On-chain, permissionless</td></tr>
   </table></div>
   <p>On graduation the curve collects the raised WETH + unsold tokens, pays the <strong>creator 0.5 ETH and the platform 0.5 ETH</strong> (each capped at a quarter of the raise), and posts the rest as the Bond: the Sherwood full-range LP, the Bounty WETH floor, and the Ambush token wall.</p>
 
@@ -420,7 +411,7 @@ GET /api/coins?sort=trending&filter=live&q=wood&limit=60
   graduated, raisedWeth, bond,
   progress, mcapEth, lastPriceEth,           <span class="c"># live snapshot — no chain read needed</span>
   tradesAll, trades24h, volAllEth, vol24hEth,
-  startTick, minGradTick, gradTick, gradTarget }</pre></div>
+  startTick, gradTick }</pre></div>
   <div class="note"><span class="lbl">Built for scale</span>The feed is served from precomputed snapshots (progress/mcap refreshed whenever a coin trades), so a page that lists thousands of live coins costs <strong>one</strong> request and <strong>zero</strong> per-coin RPC. Responses are cacheable (<span class="m">max-age=5</span>) — put a CDN in front and a launch-day crowd hits cache, not the database.</div>
 
   <!-- ─────────── SECURITY ─────────── -->

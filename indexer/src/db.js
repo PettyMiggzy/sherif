@@ -188,9 +188,6 @@ UPDATE coins SET start_tick=@start_tick, min_grad_tick=@min_grad_tick,
   grad_tick=@grad_tick, grad_target=@grad_target, token0=@token0 WHERE token=@token
 `);
 
-// Dev changed the auto-graduate target (GradTargetSet), matched by curve.
-export const setGradTargetByCurve = db.prepare("UPDATE coins SET grad_target=@grad_target WHERE curve=@curve");
-
 // A live snapshot from the pool tick — refreshed whenever the coin trades.
 export const setSnapshot = db.prepare(`
 UPDATE coins SET last_tick=@last_tick, progress=@progress, mcap_eth=@mcap_eth, snap_ts=@snap_ts WHERE token=@token

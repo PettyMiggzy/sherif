@@ -31,8 +31,8 @@ async function main() {
   const token = await factory.allTokens(0);
   const rec = await factory.recordOf(token);
   const curve = await ethers.getContractAt([
-    "function minGradTick() view returns (int24)", "function gradTick() view returns (int24)", "function gradTarget() view returns (int24)",
-    "function setGradTarget(int24)", "function ready() view returns (bool)", "function graduated() view returns (bool)",
+    "function gradTick() view returns (int24)",
+    "function ready() view returns (bool)", "function graduated() view returns (bool)",
     "function bond() view returns (address)", "function pool() view returns (address)", "function graduate()",
   ], rec.curve);
   const tok = await ethers.getContractAt(["function windowEndsAt() view returns (uint256)", "function antiSnipeActive() view returns (bool)"], token);
@@ -42,7 +42,7 @@ async function main() {
   await ethers.provider.send("evm_setNextBlockTimestamp", [winEnd + 5]);
   await ethers.provider.send("evm_mine", []);
   console.log("advanced past anti-snipe window; active now=", await tok.antiSnipeActive());
-  console.log("ticks: min=", (await curve.minGradTick()).toString(), "grad=", (await curve.gradTick()).toString(), "target=", (await curve.gradTarget()).toString(), "ready=", await curve.ready());
+  console.log("ticks: ceiling=", (await curve.gradTick()).toString(), "ready=", await curve.ready());
 
   const routerC = await ethers.getContractAt([
     "function buy(address token, uint256 minOut) payable returns (uint256)",
@@ -100,10 +100,8 @@ async function main() {
     if (e.data) console.log("  revert data:", e.data);
   }
 
-  // (B) climb to ready via minOut=0 buys, then graduate
+  // (B) climb to the ceiling via minOut=0 buys (the only graduation path), then graduate
   try {
-    await (await curve.setGradTarget(await curve.minGradTick())).wait();
-    console.log("setGradTarget(min) OK; target=", (await curve.gradTarget()).toString());
     let n = 0;
     while (!(await curve.ready()) && n < 40) { await (await routerC.buy(token, 0n, { value: ethers.parseEther("0.5") })).wait(); n++; }
     console.log("climbed", n, "buys; ready=", await curve.ready());

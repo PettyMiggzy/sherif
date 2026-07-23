@@ -20,7 +20,7 @@ const { ethers } = require("hardhat");
 //   (2) a single whale buys the ENTIRE curve in one tx (graduatable? others still sell?)
 //   (3) sell the ENTIRE bought supply back in one tx
 //   (4) trigger graduation then immediately trade
-//   (5) the 7-day timeout path (warp, graduate at the MINIMUM)
+//   (5) below the ceiling it NEVER graduates — no timeout path — yet sellers can still exit
 //
 // Run: FORK_RPC=<rpc> npx hardhat test test/sim-edge.test.js
 // ============================================================================
@@ -64,14 +64,13 @@ async function freshCoin(name, symbol) {
 
   const tokenIsToken0 = await curveC.tokenIsToken0();
   const gradSqrt = await curveC.gradSqrtPriceX96();
-  const minGradSqrt = await curveC.minGradSqrtPriceX96();
 
   // past the anti-snipe window so this is a normal live coin
   await ethers.provider.send("evm_increaseTime", [400]);
   await ethers.provider.send("evm_mine", []);
 
   return { dep, platform, dev, rest, token, curve, poolAddr, curveC, pool, TOK, wethW,
-           probe, probeAddr, tokenIsToken0, gradSqrt, minGradSqrt };
+           probe, probeAddr, tokenIsToken0, gradSqrt };
 }
 
 // give an actor WETH + max approvals for both tokens
@@ -271,57 +270,36 @@ suite("Edge-case sim — production calibration on a real Uniswap v3 fork", func
   });
 
   // ── CASE 5 ────────────────────────────────────────────────────────────────
-  it("CASE 5: the 7-day timeout path — buy to the MINIMUM, warp, graduate at the floor", async () => {
+  it("CASE 5: below the ceiling it NEVER graduates — no timeout path — yet sellers can still exit", async () => {
     const ctx = await freshCoin("Timeout", "TO");
     const [buyer] = ctx.rest;
     await fund(ctx, buyer, 200n * ONE);
 
-    // buy up to the MINIMUM graduation price (below the dev's default target at min+40% of the band),
-    // so normal graduation is NOT unlocked — only the 7-day abandon-proof fallback can graduate this.
-    await (await ctx.probe.connect(buyer).swapExactInLimit(ctx.poolAddr, WETH, 120n * ONE, ctx.minGradSqrt)).wait();
-    const tickAtMin = (await ctx.pool.slot0()).tick;
+    // buy up to JUST BELOW the ceiling (a sqrt limit strictly under gradSqrt). The ONLY graduation point is
+    // the full ceiling, so this is NOT graduatable and graduate() reverts NotReady.
+    const ceilS = BigInt(ctx.gradSqrt);
+    const curS = BigInt((await ctx.pool.slot0()).sqrtPriceX96);
+    const belowCeil = curS + ((ceilS - curS) * 99n) / 100n; // 99% of the way to the ceiling, still strictly below it
+    await (await ctx.probe.connect(buyer).swapExactInLimit(ctx.poolAddr, WETH, 120n * ONE, belowCeil)).wait();
+    const tickBelow = (await ctx.pool.slot0()).tick;
     const readyBefore = await ctx.curveC.ready();
-    console.log(`\n      CASE 5 — at minimum: tick=${tickAtMin}  ready(before warp)=${readyBefore}`);
-    // must NOT be graduatable yet: we're at the min but below the dev's target and the timeout hasn't passed
-    expect(readyBefore, "at the minimum but pre-timeout it must NOT be graduatable").to.equal(false);
+    console.log(`\n      CASE 5 — just below the ceiling: tick=${tickBelow}  ready(before warp)=${readyBefore}`);
+    expect(readyBefore, "below the ceiling it must NOT be graduatable").to.equal(false);
+    await expect(ctx.curveC.graduate()).to.be.revertedWithCustomError(ctx.curveC, "NotReady");
 
-    // warp past the 7-day GRAD_TIMEOUT
-    await ethers.provider.send("evm_increaseTime", [7 * 24 * 3600 + 60]);
+    // warp 8 days: there is NO timeout / abandon-proof path anymore — it stays NOT graduatable.
+    await ethers.provider.send("evm_increaseTime", [8 * 24 * 3600]);
     await ethers.provider.send("evm_mine", []);
     const readyAfter = await ctx.curveC.ready();
-    console.log(`      CASE 5 — ready(after 7d warp)=${readyAfter}`);
-    expect(readyAfter, "after the 7-day timeout, reaching the minimum is enough").to.equal(true);
+    console.log(`      CASE 5 — ready(after 8d warp)=${readyAfter}`);
+    expect(readyAfter, "no timeout path: still NOT graduatable after 8 days").to.equal(false);
+    await expect(ctx.curveC.graduate()).to.be.revertedWithCustomError(ctx.curveC, "NotReady");
 
-    // graduate at the minimum floor
-    const devBefore = await ctx.wethW.balanceOf(ctx.dev.address);
-    const platBefore = await ctx.wethW.balanceOf(ctx.platform.address);
-    const gradRc = await (await ctx.curveC.graduate()).wait();
-    const gev = gradRc.logs.map((l) => { try { return ctx.curveC.interface.parseLog(l); } catch { return null; } })
-      .find((e) => e && e.name === "Graduated");
-    const bondRaise = gev.args.raisedWeth;
-    const devGain = (await ctx.wethW.balanceOf(ctx.dev.address)) - devBefore;
-    const platGain = (await ctx.wethW.balanceOf(ctx.platform.address)) - platBefore;
-    const grossRaise = bondRaise + 2n * ethers.parseEther("0.5");
-    console.log(`      CASE 5 — timeout graduation: gross=${f(grossRaise).toFixed(4)} ETH into Bond=${f(bondRaise).toFixed(4)} ETH`);
-    console.log(`      CASE 5 — creator=${f(devGain).toFixed(4)} (FORFEITED)  platform=${f(platGain).toFixed(4)}`);
-
-    // Timeout graduation happens at the MINIMUM (below the ceiling) => the creator FORFEITS their 0.5 reward
-    // (an abandoned coin graduated late/thin never earned it); the platform still takes its cut.
-    expect(devGain, "creator forfeits reward on a below-ceiling timeout graduation").to.equal(0n);
-    expect(platGain, "platform reward ≈ 0.5 ETH").to.be.closeTo(ethers.parseEther("0.5"), ethers.parseEther("0.01"));
-    const bond = await ethers.getContractAt("Bond", await ctx.curveC.bond());
-    expect(await bond.posted(), "Bond posted on timeout graduation").to.equal(true);
-    expect(await bond.sherwoodL(), "sherwood LP > 0").to.be.greaterThan(0n);
-    expect(await bond.bountyL(), "bounty floor > 0").to.be.greaterThan(0n);
-    expect(await ctx.wethW.balanceOf(ctx.curve), "no WETH stranded in curve").to.equal(0n);
-    expect(await ctx.TOK.balanceOf(ctx.curve), "no token stranded in curve").to.equal(0n);
-
-    // and the graduated pool trades: a post-timeout sell must pay out
-    const tokBefore = await ctx.TOK.balanceOf(buyer.address);
-    await (await ctx.probe.connect(buyer).swapExactIn(ctx.poolAddr, WETH, ONE / 2n)).wait();
-    const gotTok = (await ctx.TOK.balanceOf(buyer.address)) - tokBefore;
+    // a coin that never reaches the ceiling keeps trading on the curve — sellers can always exit (not a honeypot)
+    const bag = await ctx.TOK.balanceOf(buyer.address);
+    expect(bag, "buyer holds tokens from the below-ceiling buy").to.be.greaterThan(0n);
     const wPre = await ctx.wethW.balanceOf(buyer.address);
-    await (await ctx.probe.connect(buyer).swapExactIn(ctx.poolAddr, ctx.token, gotTok / 2n)).wait();
-    expect((await ctx.wethW.balanceOf(buyer.address)) - wPre, "post-timeout-grad sell pays out").to.be.greaterThan(0n);
+    await (await ctx.probe.connect(buyer).swapExactIn(ctx.poolAddr, ctx.token, bag / 2n)).wait();
+    expect((await ctx.wethW.balanceOf(buyer.address)) - wPre, "a below-ceiling (never-graduated) coin still lets sellers exit").to.be.greaterThan(0n);
   });
 });

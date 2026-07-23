@@ -297,8 +297,8 @@ async function main() {
   if (token && curveAddr) {
     const owner = await node2.getSigner(ACCT); // hardhat account #0 — unlocked on the node
     const curveAbi = [
-      "function minGradTick() view returns (int24)", "function gradTick() view returns (int24)",
-      "function setGradTarget(int24)", "function ready() view returns (bool)",
+      "function gradTick() view returns (int24)",
+      "function ready() view returns (bool)",
       "function graduated() view returns (bool)", "function bond() view returns (address)",
     ];
     const curve = new ethers.Contract(curveAddr, curveAbi, owner);
@@ -367,16 +367,14 @@ async function main() {
       check("creator controls (dev panel) available", false, "dev panel never became visible");
     }
 
-    // (2) setup: aim graduation at the earliest tick, then climb (direct router buys) until ready
-    const minTick = await curve.minGradTick();
-    await (await curve.setGradTarget(minTick)).wait();
+    // (2) setup: climb (direct router buys) until the curve reaches the full ceiling — the ONLY graduation path
     let climbs = 0;
     while (!(await curve.ready()) && climbs < 40) {
       await (await router.buy(token, 0n, { value: ethers.parseEther("0.5"), gasLimit: 5_000_000n })).wait();
       climbs++;
     }
     const ready = await curve.ready();
-    check("curve reaches the graduation window", ready, `ready=${ready} after ${climbs} climb-buys (~${(climbs * 0.5).toFixed(1)} ETH)`);
+    check("curve reaches the graduation ceiling", ready, `ready=${ready} after ${climbs} climb-buys (~${(climbs * 0.5).toFixed(1)} ETH)`);
 
     // (3) prove the GRADUATE button — reload so the UI shows it, then click it (this graduation tx must also
     //     fit the 2^24 per-tx cap — it's the heaviest post-launch call, deploying the Bond).

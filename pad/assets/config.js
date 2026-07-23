@@ -127,7 +127,8 @@ export const ABIS = {
     "function sweepProtocol()",
   ],
   // The CurvePool — the bonding curve + graduation. Read progress, drive the
-  // graduate button + the dev's auto-graduate target.
+  // graduate button + curve geometry for the progress bar. Graduation is ceiling-only (~4.2 ETH):
+  // `ready()` flips true only when the tick reaches gradTick, and `graduate()` is permissionless.
   curve: [
     "function pool() view returns (address)",
     "function dev() view returns (address)",
@@ -137,10 +138,7 @@ export const ABIS = {
     "function ready() view returns (bool)",
     "function seedTime() view returns (uint64)",
     "function startTick() view returns (int24)",
-    "function minGradTick() view returns (int24)",
     "function gradTick() view returns (int24)",
-    "function gradTarget() view returns (int24)",
-    "function setGradTarget(int24 targetTick)",
     "function graduate()",
   ],
   erc20: [

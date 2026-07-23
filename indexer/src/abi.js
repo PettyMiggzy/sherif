@@ -10,7 +10,6 @@ export const EVENTS = [
   "event Sold(address indexed token, address indexed seller, uint256 tokensIn, uint256 fee, uint256 ethOut)",
   // CurvePool (emitted by each curve; matched back to its token by address)
   "event Graduated(address indexed bond, uint256 raisedWeth, uint256 leftoverToken)",
-  "event GradTargetSet(int24 targetTick)",
   // RewardVault — one per trade's 0.25% leg (side: 0=Traders buy leg, 1=Holders sell leg)
   "event Accrued(address indexed coin, uint256 indexed epoch, uint8 side, uint256 amount)",
 ];
@@ -21,8 +20,9 @@ export const ERC20 = [
   "function symbol() view returns (string)",
 ];
 
-// Curve geometry (read once at launch) — the ticks that define the bonding
-// curve's start, minimum-graduation, ceiling and the dev's auto-graduate target.
+// Curve geometry (read once at launch) — the ticks that define the bonding curve's
+// start and ceiling. Graduation is ceiling-only; minGradTick/gradTarget are read as
+// vestigial fields (kept on-chain) purely to fill the legacy DB columns.
 export const CURVE = [
   "function startTick() view returns (int24)",
   "function minGradTick() view returns (int24)",
@@ -45,6 +45,5 @@ export const TOPICS = {
   Bought: iface.getEvent("Bought").topicHash,
   Sold: iface.getEvent("Sold").topicHash,
   Graduated: iface.getEvent("Graduated").topicHash,
-  GradTargetSet: iface.getEvent("GradTargetSet").topicHash,
   Accrued: iface.getEvent("Accrued").topicHash,
 };

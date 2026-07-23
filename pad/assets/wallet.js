@@ -483,23 +483,25 @@ function priceFromSqrt(sqrt, token) {
 /// Read a coin's live graduation state for the trade page + browse cards.
 export async function curveInfo(curve, token) {
   const c = new ethers.Contract(curve, ABIS.curve, _read);
-  const [graduated, ready, startTick, minGradTick, gradTick, gradTarget, poolAddr, bond, dev, seedTime] =
+  // Graduation is ceiling-only: `ready()` (authoritative, on-chain) flips true ONLY when the tick
+  // reaches gradTick (~4.2 ETH). We read startTick + gradTick purely to draw the 0→100% progress bar.
+  const [graduated, ready, startTick, gradTick, poolAddr, bond, dev, seedTime] =
     await Promise.all([
-      c.graduated(), c.ready(), c.startTick(), c.minGradTick(), c.gradTick(),
-      c.gradTarget(), c.pool(), c.bond(), c.dev(), c.seedTime(),
+      c.graduated(), c.ready(), c.startTick(), c.gradTick(),
+      c.pool(), c.bond(), c.dev(), c.seedTime(),
     ]);
   const p = new ethers.Contract(poolAddr, ABIS.pool, _read);
   const slot0 = await p.slot0();
   const tick = Number(slot0.tick);
-  const st = Number(startTick), mn = Number(minGradTick), cl = Number(gradTick), tg = Number(gradTarget);
+  const st = Number(startTick), cl = Number(gradTick);
   const span = Math.abs(cl - st) || 1;
   const frac = (t) => Math.max(0, Math.min(1, Math.abs(t - st) / span)); // 0 at start … 1 at ceiling
   const wethPerToken = priceFromSqrt(slot0.sqrtPriceX96, token);
   return {
     graduated, ready, bond, dev, seedTime: Number(seedTime), pool: poolAddr, tick,
     mcapEth: wethPerToken * 1e9, wethPerToken,
-    progress: frac(tick), minFrac: frac(mn), targetFrac: frac(tg), // positions along the curve (0..1)
-    minGradTick: mn, gradTick: cl, gradTarget: tg, startTick: st,
+    progress: frac(tick), // position along the curve (0..1)
+    gradTick: cl, startTick: st,
   };
 }
 
@@ -514,11 +516,6 @@ export async function graduate(curve) {
   return guardedSend(new ethers.Contract(curve, ABIS.curve, _signer), "graduate", [], 0n, "Graduate");
 }
 
-// ── setGradTarget — the dev picks the auto-graduate price (a tick in [min, ceiling]) ─
-export async function setGradTarget(curve, tick) {
-  if (!_signer) await connect();
-  return guardedSend(new ethers.Contract(curve, ABIS.curve, _signer), "setGradTarget", [Math.round(tick)], 0n, "Set graduation target");
-}
 
 // ── creator fee controls — collect to the wallet, or buy+burn ─────────────────
 export async function withdrawDev(token) {
@@ -876,7 +873,7 @@ if (typeof window !== "undefined") {
     connect, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax,
     setCoinProfile, getCoinProfile, profileMessage,
     estimateDevBuyEth, isDeployed, tokenBalance, holdings, coinHolders,
-    curveInfo, devEscrow, graduate, setGradTarget, withdrawDev, burnDev, listCoins, tokenMeta,
+    curveInfo, devEscrow, graduate, withdrawDev, burnDev, listCoins, tokenMeta,
     feed, stats, recentTrades, hasApi, coin,
     holders, trades, chainTrades, feeTotals,
     rewards, rewardStats, claimReward, claimAllRewards,
