@@ -180,6 +180,24 @@ async function rpcForward(payload) {
   }
   throw lastErr || new Error("no upstream RPC");
 }
+
+// Fallback creator lookup straight from the factory, for the RACE at launch: create.html uploads the coin's
+// profile the instant the launch tx confirms, but the indexer polls every few seconds, so the coin is often
+// NOT in the `coins` table yet. Without this, that upload 404s ("unknown coin") and the image is silently lost
+// (exactly why an early coin launched with no picture). Reading recordOf(token).dev on-chain is authoritative
+// and spam-proof: only a coin THIS factory actually launched has a nonzero dev.
+const _factoryIface = new ethers.Interface([
+  "function recordOf(address) view returns (address token, address curve, address dev, uint256 at)",
+]);
+async function chainDevOf(token) {
+  try {
+    const data = _factoryIface.encodeFunctionData("recordOf", [token]);
+    const resp = await rpcForward({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: CFG.factory, data }, "latest"] });
+    if (!resp || !resp.result || resp.result === "0x") return null;
+    const dev = String(_factoryIface.decodeFunctionResult("recordOf", resp.result).dev || "").toLowerCase();
+    return /^0x0+$/.test(dev) ? null : dev;
+  } catch { return null; }
+}
 async function rpcHandle(payload) {
   const arr = Array.isArray(payload) ? payload : [payload];
   if (arr.length > 20) throw new Error("batch too large");
@@ -463,8 +481,11 @@ export function startApi() {
       if (!metaRateOk(clientIp(req))) return send(res, 429, { error: "rate limited — wait a moment and try again" }, origin);
       try {
         const token = mm[1].toLowerCase();
-        const dev = coinDev.get(token);
-        if (!dev) return send(res, 404, { error: "unknown coin" }, origin);
+        // Creator from the index, else straight from the factory on-chain — so a profile uploaded the instant
+        // a launch confirms (before the indexer has polled the coin in) is NOT dropped with a 404.
+        let devAddr = coinDev.get(token)?.dev;
+        if (!devAddr) devAddr = await chainDevOf(token);
+        if (!devAddr) return send(res, 404, { error: "unknown coin" }, origin);
         const raw = await readBody(req, CFG.profileMaxUploadBytes * 3);
         const body = JSON.parse(raw.toString("utf8"));
         const ts = Number(body.ts);
@@ -475,7 +496,7 @@ export function startApi() {
         let signer;
         try { signer = ethers.verifyMessage(profileMessage(token, body), String(body.signature || "")); }
         catch { return send(res, 400, { error: "bad signature" }, origin); }
-        if (signer.toLowerCase() !== String(dev.dev).toLowerCase())
+        if (signer.toLowerCase() !== String(devAddr).toLowerCase())
           return send(res, 403, { error: "only the coin's creator can set its profile" }, origin);
         // Convert/downscale server-side so ANY format works (incl. iPhone HEIC that phones
         // can't process). These awaits happen before the sync db transaction below.

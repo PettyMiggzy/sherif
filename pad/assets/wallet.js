@@ -209,13 +209,25 @@ export async function setCoinProfile(token, fields = {}) {
     ts: Math.floor(Date.now() / 1000),
   };
   const signature = await _signer.signMessage(profileMessage(token, payload));
-  const res = await fetch(`${API_BASE.replace(/\/+$/, "")}/api/coin/${token}/meta`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...payload, signature }),
-  });
-  const j = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(j.error || `profile save failed (${res.status})`);
-  return j.profile;
+  // Sign ONCE, then retry only the POST on transient/race failures (a just-launched coin the indexer hasn't
+  // polled yet → a brief 404, or a 429/5xx). The signed ts stays valid well within its max-age window, so no
+  // re-prompt. Non-retryable client errors (bad sig, expired, 409 newer) throw immediately.
+  let lastErr;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const res = await fetch(`${API_BASE.replace(/\/+$/, "")}/api/coin/${token}/meta`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...payload, signature }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok) return j.profile;
+      const retryable = res.status === 404 || res.status === 429 || res.status >= 500;
+      lastErr = new Error(j.error || `profile save failed (${res.status})`);
+      if (!retryable) throw lastErr;
+    } catch (e) { lastErr = e; }
+    if (attempt < 4) await new Promise((r) => setTimeout(r, attempt * 1500)); // 1.5s · 3s · 4.5s
+  }
+  throw lastErr || new Error("profile save failed");
 }
 
 /// One coin's full record from the indexer (name, symbol, mcapEth, progress, graduated,

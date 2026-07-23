@@ -309,7 +309,11 @@ $('launchBtn').addEventListener('click', async () => {
         await Pad.setCoinProfile(token, { description: desc, telegram: tg, twitter: tw, website: web, pfp, banner });
         setNote('Launched ✓ and profile saved — your coin is live.', 'ok');
       } catch (e) {
-        setNote('Launched ✓ — profile not saved (' + e.message + '). You can add it later.', 'ok');
+        // Don't silently move on and lose the image — tell them clearly and how to fix it, and DON'T
+        // auto-redirect over the message. They open the coin and add it via Creator controls (free signature).
+        const link = 'token.html?c=' + encodeURIComponent(token);
+        setNote('Launched ✓ — but the image/profile did NOT save (' + e.message + '). Open your coin and use “Creator controls → Profile” to add it (free, no gas): ' + link, 'err');
+        return; // stop here so the error stays on screen
       }
     } else if (wantsProfile && !Pad.hasApi()) {
       setNote('Launched ✓ — your coin is live. (Images & socials save once the indexer API is connected.)', 'ok');
