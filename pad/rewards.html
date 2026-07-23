@@ -288,7 +288,7 @@ function claimRow(r, i){
   return `<div class="rrow" data-eth="${r.eth}">
     ${av(r.sym)}
     <div><div class="nm">${esc(r.name)} <span style="color:var(--dim)">${esc(tsym(r.sym))}</span></div>
-      <div class="meta">Epoch ${r.epoch} · ${esc(r.reason||'')}</div></div>
+      <div class="meta">Epoch ${r.epoch}${r.reason ? ' · ' + esc(r.reason) : ''}</div></div>
     <span class="side ${sideCls}">${esc(side)}</span>
     <div style="display:flex;align-items:center;gap:12px">
       <div class="amt">${fmtEth(r.eth)}<small>claimable</small></div>

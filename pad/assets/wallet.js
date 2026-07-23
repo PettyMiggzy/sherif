@@ -376,12 +376,26 @@ export async function getTax(token) {
   };
 }
 
+// A decimal amount ethers.parseEther/parseUnits will accept. A JS number below ~1e-6
+// stringifies to exponential ("1e-7"), which parseUnits/parseEther reject with a cryptic
+// "invalid FixedNumber string value" BEFORE our friendly() cleanup ever runs — so we
+// normalise to a plain, non-exponential decimal string first. Plain strings pass through
+// untouched (full precision kept for "sell max"); an empty/zero amount stays "0".
+function plainAmount(x) {
+  const s = String(x ?? "").trim();
+  if (!s) return "0";
+  if (!/[eE]/.test(s)) return s;
+  const n = Number(s);
+  if (!Number.isFinite(n) || n === 0) return "0";
+  return n.toFixed(18).replace(/\.?0+$/, "") || "0";
+}
+
 // ── BUY — native ETH in, no ERC20 approval, tokens straight to the buyer [Rule 1]
 // The PadRouter takes the project's buy tax from msg.value, then swaps the rest.
 export async function buy({ token, ethAmount, slippagePct = 8 }) {
   if (!_signer) await connect();
   requireRouter();
-  const value = ethers.parseEther(String(ethAmount));
+  const value = ethers.parseEther(plainAmount(ethAmount));
   const c = await getTax(token);
   // subtract the project fee AND the 0.25% router reward leg (carved before the swap once rewardVault is set);
   // harmless when legs are off (only makes minOut 0.25% more lenient, dwarfed by the slippage haircut).
@@ -411,7 +425,7 @@ export async function sell({ token, tokenAmount, slippagePct = 8 }) {
   if (!_signer) await connect();
   requireRouter();
   const erc = new ethers.Contract(token, ABIS.erc20, _signer);
-  const amountIn = ethers.parseUnits(String(tokenAmount), 18);
+  const amountIn = ethers.parseUnits(plainAmount(tokenAmount), 18);
 
   const allowance = await erc.allowance(_account, CONTRACTS.padRouter);
   if (allowance < amountIn) {
@@ -572,9 +586,12 @@ export async function feed({ sort = "new", filter = "all", q = "", limit = 24, o
   const f = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _read);
   const n = Number(await f.tokenCount());
   const oldestFirst = sort === "old";
-  // With a search query and no indexer, a single page's worth of reads would only ever match
-  // within the current page. Scan the whole factory list instead, then filter + slice below.
-  const scanAll = !!q;
+  // A search query OR a non-"all" filter can't be honoured within a single page's worth of reads
+  // (a match — or a graduated coin — may sit anywhere in the list), so scan the whole factory list
+  // in those cases and filter + slice below. The default (all coins, no query) stays lean and pages
+  // one slice at a time.
+  const applyFilter = filter && filter !== "all";
+  const scanAll = !!q || applyFilter;
   const want = scanAll ? n : limit;
   const base = scanAll ? 0 : offset;
   const idxs = [];
@@ -588,15 +605,28 @@ export async function feed({ sort = "new", filter = "all", q = "", limit = 24, o
     Promise.all(tokens.map((t) => f.recordOf(t))),
     Promise.all(tokens.map((t) => tokenMeta(t).catch(() => ({ name: "Token", symbol: "?" })))),
   ]);
+  // Read each coin's real graduation state (the curve's on-chain flag) so the Live/Graduated tabs
+  // filter correctly during an indexer outage — but only when a filter is active, so the default
+  // board never pays for the extra reads.
+  const grads = applyFilter
+    ? await Promise.all(recs.map((r) => new ethers.Contract(r.curve, ABIS.curve, _read).graduated().catch(() => false)))
+    : null;
   let coins = recs.map((r, i) => ({
     token: r.token, curve: r.curve, dev: r.dev,
     name: metas[i].name, symbol: metas[i].symbol,
-    launchTs: Number(r[3]), graduated: false, // r[3] = Record.at — ethers Result `.at` collides with Array.prototype.at
+    launchTs: Number(r[3]), graduated: grads ? !!grads[i] : false, // r[3] = Record.at — ethers Result `.at` collides with Array.prototype.at
   }));
   let total = n;
-  if (q) {
-    const s = q.toLowerCase();
-    coins = coins.filter((c) => c.name?.toLowerCase().includes(s) || c.symbol?.toLowerCase().includes(s) || c.token.toLowerCase().includes(s));
+  if (scanAll) {
+    if (q) {
+      const s = q.toLowerCase();
+      coins = coins.filter((c) => c.name?.toLowerCase().includes(s) || c.symbol?.toLowerCase().includes(s) || c.token.toLowerCase().includes(s));
+    }
+    // Same filter semantics as the API path: live = still on the curve, graduated = done. "final"
+    // (final stretch) needs curve progress the lean RPC path doesn't read, so it degrades to the
+    // live set here rather than hard-coding every coin visible.
+    if (filter === "live" || filter === "final") coins = coins.filter((c) => !c.graduated);
+    else if (filter === "graduated") coins = coins.filter((c) => c.graduated);
     total = coins.length;                 // total reflects the filtered set, so pagination is correct
     coins = coins.slice(offset, offset + limit); // and we still return just the requested page
   }

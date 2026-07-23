@@ -23,6 +23,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .top-in{display:flex;align-items:center;gap:16px;padding:12px 20px;max-width:1280px;margin:0 auto}
 .brand{display:flex;align-items:center;gap:9px;font-family:var(--disp);font-size:1.5rem;letter-spacing:1px}.brand .tag{color:var(--lime)}.brand svg{width:30px;height:30px}
 .spacer{flex:1}.nlink{color:var(--ink-dim);font-size:.9rem;padding:8px 6px}.nlink:hover{color:var(--ink)}
+@media(max-width:600px){.top-in{gap:8px}.nlink{font-size:.78rem;padding:6px 4px}}
 .btn{display:inline-flex;align-items:center;gap:.5em;font-weight:700;font-size:.92rem;border-radius:10px;padding:11px 20px;cursor:pointer;border:1px solid transparent}
 .btn-lime{background:var(--lime);color:#10140a}.btn-lime[disabled]{opacity:.55;cursor:not-allowed}
 .btn-ghost{border-color:var(--line-strong);color:var(--ink);background:none}
@@ -112,7 +113,6 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
         <div class="field"><label for="tw">Twitter / X <span class="hint">optional</span></label><input class="inp" id="tw" aria-label="Twitter / X link" placeholder="https://x.com/…" /></div>
         <div class="field"><label for="tg">Telegram <span class="hint">optional · link free</span></label>
           <input class="inp" id="tg" aria-label="Telegram link" placeholder="https://t.me/…" />
-          <button type="button" id="linkTg" class="btn btn-ghost" style="margin-top:8px;font-size:.8rem;padding:8px 12px">Link with a free signature</button>
         </div>
       </div>
 
@@ -165,11 +165,11 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
     <aside class="summary">
       <h3 id="sName">Your coin</h3>
       <div class="s-sub" id="sTick">$TICKER · Robinhood Chain</div>
-      <div class="li"><span class="ic"></span><div><b>1,000,000,000</b> supply · fixed, no mint</div></div>
-      <div class="li"><span class="ic"></span><div><b>DEX + DexScreener day one</b> — real Uniswap v3 pool from block one</div></div>
-      <div class="li"><span class="ic"></span><div><b>The Bond</b> — graduates into a protocol-owned floor it can't be rugged below</div></div>
-      <div class="li"><span class="ic"></span><div><b>Clean token</b> — no tax, no blacklist, LP locked forever</div></div>
-      <div class="li"><span class="ic"></span><div><b>Anti-snipe</b> — auto-expiring opening guard, sells never blocked</div></div>
+      <div class="li"><span class="ic">✓</span><div><b>1,000,000,000</b> supply · fixed, no mint</div></div>
+      <div class="li"><span class="ic">✓</span><div><b>DEX + DexScreener day one</b> — real Uniswap v3 pool from block one</div></div>
+      <div class="li"><span class="ic">✓</span><div><b>The Bond</b> — graduates into a protocol-owned floor it can't be rugged below</div></div>
+      <div class="li"><span class="ic">✓</span><div><b>Clean token</b> — no tax, no blacklist, LP locked forever</div></div>
+      <div class="li"><span class="ic">✓</span><div><b>Anti-snipe</b> — auto-expiring opening guard, sells never blocked</div></div>
       <div class="free">✓ Free — just pay gas</div>
     </aside>
   </div>
@@ -267,18 +267,6 @@ async function refreshConnect() {
 $('connectBtn').addEventListener('click', async () => {
   try { await Pad.connect(); await refreshConnect(); }
   catch (e) { setNote(e.message, 'err'); }
-});
-
-// [Link] free ownership signature — kept entirely off the payment path
-$('linkTg').addEventListener('click', async () => {
-  const handle = ($('tg').value || '').trim();
-  if (!handle) return setNote('Add your Telegram link first, then sign.', 'err');
-  try {
-    setNote('Check your wallet — this is a free signature, no funds move…');
-    const { signature } = await Pad.linkTelegram(handle);
-    await refreshConnect();
-    setNote('Telegram linked ✓ — signature ' + signature.slice(0, 10) + '…', 'ok');
-  } catch (e) { setNote(e.message, 'err'); }
 });
 
 // [Launch] one tx: token + real pool + seeded curve + optional dev buy (≤2%)

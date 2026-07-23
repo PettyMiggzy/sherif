@@ -69,7 +69,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .announce .in{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,rgba(220,233,5,.10),rgba(220,233,5,.02));border:1px solid var(--line);border-radius:12px;padding:11px 16px;font-size:.9rem}
 .announce .in .grad{font-weight:800}.announce .in .r{color:var(--lime);font-weight:800}
 .announce .in .sp{flex:1}
-.announce .x{color:var(--faint);cursor:pointer;font-size:1.1rem;background:none;border:none}
+.announce .x{color:var(--faint);cursor:pointer;font-size:1.1rem;background:none;border:none;min-width:40px;min-height:40px;display:inline-flex;align-items:center;justify-content:center}
 
 /* hero — headline left, glowing R-emblem podium right */
 .hero{display:grid;grid-template-columns:1.06fr .94fr;gap:30px;align-items:center;padding:44px 0 30px}
@@ -192,6 +192,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .bsort:hover{border-color:var(--line-strong);color:var(--ink)}
 .bsort>span{color:var(--faint);font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
 .bsort select{appearance:none;-webkit-appearance:none;background:none;border:0;color:var(--ink);font:inherit;font-weight:700;cursor:pointer;padding:0;outline:none}
+.bsort select:focus-visible{outline:2px solid var(--lime);outline-offset:2px;border-radius:4px}
 .bsort select option{background:var(--bg-2);color:var(--ink)}
 .bsort>svg{position:absolute;right:12px;width:15px;height:15px;pointer-events:none;color:var(--dim)}
 @media(max-width:560px){.bsearch .bsort{margin-left:0}}
@@ -215,8 +216,11 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 @keyframes bspin{to{transform:rotate(360deg)}}
 .bend{color:var(--faint);font-family:var(--mono);font-size:.78rem}
 .bend[hidden]{display:none}
-.bcard{display:block;background:var(--bg);border:1px solid var(--line-2);border-radius:13px;padding:12px;transition:transform .14s,border-color .14s}
+.bcard{position:relative;display:block;background:var(--bg);border:1px solid var(--line-2);border-radius:13px;padding:12px;transition:transform .14s,border-color .14s}
 .bcard:hover{transform:translateY(-2px);border-color:var(--line-strong)}
+/* stretched link: covers the whole card so it's fully clickable, while the Quick Buy button
+   below sits on a higher layer as an independent control (no interactive element inside an <a>) */
+.bcard-link{position:absolute;inset:0;z-index:1;border-radius:13px}
 .btop{display:flex;align-items:center;gap:10px}
 .bav{width:42px;height:42px;border-radius:50%;flex:none;object-fit:cover;border:1.5px solid var(--line);background:var(--bg-2)}
 .bid{min-width:0;flex:1}
@@ -233,7 +237,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .bpfill.hot{background:linear-gradient(90deg,var(--lime),#ffb020);box-shadow:0 0 10px rgba(255,176,32,.6)}
 .bppct{font-family:var(--mono);font-size:.74rem;color:var(--dim)}
 .bgrad{margin-bottom:10px}.bok{font-size:.74rem;font-weight:700;color:#8bea3c}
-.bqbuy{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line-strong);background:rgba(220,233,5,.06);color:var(--ink);font-weight:800;font-size:.84rem;padding:9px;border-radius:10px;cursor:pointer;font-family:inherit;transition:.14s}
+.bqbuy{position:relative;z-index:2;width:100%;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line-strong);background:rgba(220,233,5,.06);color:var(--ink);font-weight:800;font-size:.84rem;padding:9px;border-radius:10px;cursor:pointer;font-family:inherit;transition:.14s}
 .bqbuy svg{width:15px;height:15px;color:var(--lime)}
 .bqbuy .bamt{margin-left:auto;font-family:var(--mono);font-size:.76rem;color:var(--dim)}
 .bqbuy:hover{background:var(--lime);color:#0a0e05;box-shadow:0 0 20px rgba(220,233,5,.35)}
@@ -412,7 +416,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
       </label>
       <label class="fsearch">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <input id="fq" type="search" placeholder="Search name, ticker, or contract address…" autocomplete="off" spellcheck="false" />
+        <input id="fq" type="search" aria-label="Search by name, symbol, or contract address" placeholder="Search name, ticker, or contract address…" autocomplete="off" spellcheck="false" />
       </label>
     </div>
     <div class="board" id="board"></div>
@@ -552,12 +556,13 @@ function bcard(c){
   const foot = grad
     ? `<div class="bgrad"><span class="bok">✓ Graduated · live on DEX</span></div>`
     : `<div class="bprog"><div class="bptrack"><div class="bpfill${prog>=70?' hot':''}" style="width:${Math.min(100,prog)}%"></div></div><span class="bppct">${prog}%</span></div>`;
-  return `<a class="bcard" data-tok="${esc(String(c.token).toLowerCase())}" href="${url}">
+  return `<div class="bcard" data-tok="${esc(String(c.token).toLowerCase())}">
+    <a class="bcard-link" href="${url}" aria-label="View ${esc(c.name||'Token')}"></a>
     <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btk">${esc(tsym(c.symbol))}</div></div><span class="bchg ${chgCls}" data-chg title="price change since launch"${chgInner?'':' style="display:none"'}>${chgInner}</span></div>
     <div class="bstats"><div><span class="bk">MC</span><span class="bv" data-mc>${fmtUsd(cMc(c))}</span></div><div><span class="bk">Vol</span><span class="bv" data-vol>${fmtUsd(cVol(c))}</span></div><div><span class="bk">Holders</span><span class="bv">${fmtNum(c.holders!=null?c.holders:(c.tradesAll||0))}</span></div></div>
     ${foot}
-    <button class="bqbuy" type="button" onclick="event.preventDefault();event.stopPropagation();quickBuy('${esc(c.token)}')">${BOLT}<span>Quick Buy</span><span class="bamt">0.1 ETH</span></button>
-  </a>`;
+    <button class="bqbuy" type="button" onclick="quickBuy('${esc(c.token)}')">${BOLT}<span>Quick Buy</span><span class="bamt">0.1 ETH</span></button>
+  </div>`;
 }
 // ── the endless board ────────────────────────────────────────────────────────
 // One server-sorted list per filter, fetched a page at a time by offset. Nothing
@@ -749,6 +754,7 @@ function fillViewport() {
 function renderTicker(list) {
   const bar = $('tickerbar');
   if (!list || !list.length){ if (bar) bar.style.display='none'; return; }
+  if (bar) bar.style.display=''; // re-show after a prior empty poll hid it
   const pill = (c) => {
     const ch = c.chg;
     const chg = ch == null ? '' : `<span class="c ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;

@@ -19,7 +19,7 @@
   a{color:var(--lime);text-decoration:none}
   .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 80px}
   header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
-  .brand{font-family:'Bebas Neue',sans-serif;font-size:1.9rem;letter-spacing:.06em}
+  .brand{font-family:'Bebas Neue',sans-serif;font-size:1.9rem;letter-spacing:.06em;color:inherit}
   .brand b{color:var(--lime)}
   .brand .tag{font-family:var(--mono);font-size:.6rem;letter-spacing:.2em;color:var(--dim);border:1px solid var(--line);padding:2px 6px;border-radius:5px;margin-left:8px;vertical-align:middle}
   button{font-family:inherit;cursor:pointer;border:none;border-radius:9px;font-weight:700}
@@ -66,7 +66,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">ROBIN <b>LABS</b><span class="tag">ADMIN</span></div>
+    <a class="brand" href="index.html">ROBIN <b>LABS</b><span class="tag">ADMIN</span></a>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="pill" id="netPill"><span class="dot" id="netDot"></span><span id="netTxt">read-only</span></span>
       <button class="btn" id="connectBtn">Connect owner wallet</button>
