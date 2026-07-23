@@ -66,4 +66,36 @@ describe("RewardVault.emergencySweep — never-finalized epoch can't strand rewa
     await (await vault.emergencySweep(epoch, coin)).wait();
     expect(await router.donatedTo(coin)).to.equal(ethers.parseEther("0.10"));
   });
+
+  const MAX_POST = 90 * DAY;
+
+  it("postRoot is rejected after MAX_POST_DELAY, so no root can appear after the emergency window opens", async () => {
+    const { poster, router, vault } = await deploy();
+    const epoch = Number(await vault.currentEpoch());
+    await (await router.accrue(coin, 0, { value: ethers.parseEther("0.10") })).wait();
+    // jump past the post deadline (epoch end + finality + 90d)
+    await ethers.provider.send("evm_setNextBlockTimestamp", [(epoch + 1) * EPOCH + FINALITY + MAX_POST + 1]);
+    await ethers.provider.send("evm_mine", []);
+    const root = ethers.keccak256(ethers.toUtf8Bytes("late"));
+    await expect(vault.connect(poster).postRoot(epoch, root, ethers.ZeroHash, "ipfs://x")).to.be.revertedWithCustomError(vault, "TooLate");
+  });
+
+  it("emergencySweep refuses a FINALIZED epoch (valid root) — it must use the normal postedAt-anchored sweep", async () => {
+    const { poster, router, vault } = await deploy();
+    const epoch = Number(await vault.currentEpoch());
+    await (await router.accrue(coin, 0, { value: ethers.parseEther("0.10") })).wait();
+    // post a valid (non-vetoed) root well within the deadline
+    await ethers.provider.send("evm_setNextBlockTimestamp", [(epoch + 1) * EPOCH + FINALITY + 100]);
+    await ethers.provider.send("evm_mine", []);
+    const root = ethers.keccak256(ethers.toUtf8Bytes("valid"));
+    await (await vault.connect(poster).postRoot(epoch, root, ethers.ZeroHash, "ipfs://x")).wait();
+    // even far past the emergency deadline, emergencySweep refuses because a valid root exists
+    const deadline = (epoch + 1) * EPOCH + FINALITY + CHALLENGE + CLAIM + GRACE;
+    await ethers.provider.send("evm_setNextBlockTimestamp", [deadline + 1]);
+    await ethers.provider.send("evm_mine", []);
+    await expect(vault.emergencySweep(epoch, coin)).to.be.revertedWithCustomError(vault, "TooEarly");
+    // the normal sweep still works for it (funds not stranded)
+    await (await vault.sweep(epoch, coin)).wait();
+    expect(await router.donatedTo(coin)).to.equal(ethers.parseEther("0.10"));
+  });
 });

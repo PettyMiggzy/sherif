@@ -60,6 +60,12 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
     // (poster key lost / indexer permanently down / a veto never re-posted) can have its rewards force-swept to
     // the coin's floor. Long enough that this can never front-run a legitimate late finalization.
     uint256 public constant EMERGENCY_GRACE = 180 days;
+    // A root may only be posted within this window after the epoch first becomes finalizable. MUST be strictly
+    // less than EMERGENCY_GRACE: it guarantees postRoot is permanently closed before emergencySweep can ever
+    // open, so a late-recovered poster can't post a root after the pot was already swept to the floor (which
+    // would strand every legitimate claim behind the CapExceeded fuse). A 90-day outage is catastrophic anyway;
+    // past it, that epoch's rewards route to the coin's own floor instead of to claimants.
+    uint256 public constant MAX_POST_DELAY = 90 days;
 
     // ── roles / timing (owner-settable) ──
     address public poster; // indexer operator key — posts roots
@@ -85,6 +91,7 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
     error NoRoot();
     error Vetoed();
     error TooEarly();
+    error TooLate();
     error AlreadyClaimed();
     error BadProof();
     error CapExceeded();
@@ -148,6 +155,9 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         if (root == bytes32(0)) revert NoRoot();
         if (epoch >= currentEpoch()) revert BadEpoch(); // epoch must be fully ended
         if (block.timestamp < (epoch + 1) * EPOCH + finalityDelay) revert TooEarly(); // reorg safety
+        // Upper bound: a root can't be posted absurdly late. Guarantees postRoot is closed before emergencySweep
+        // can ever open (MAX_POST_DELAY < EMERGENCY_GRACE), so a late root can never front-run an already-swept pot.
+        if (block.timestamp > (epoch + 1) * EPOCH + finalityDelay + MAX_POST_DELAY) revert TooLate();
         EpochRoot storage er = epochRoot[epoch];
         // write-once, EXCEPT a vetoed epoch may be re-posted with a corrected root
         if (er.root != bytes32(0) && !er.vetoed) revert RootExists();
@@ -250,7 +260,14 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
     /// lifecycle — so it can never front-run a real claim, and funds can only ever land on the floor (the router's
     /// donateFloor), never with the caller. Works regardless of root/veto state (that is the point).
     function emergencySweep(uint256 epoch, address coin) external nonReentrant {
-        // must be well past the whole normal lifecycle (finalize + challenge + claim) plus a long extra grace
+        // Only ever for a NEVER-finalized (or vetoed-and-abandoned) epoch. If a valid non-vetoed root exists, the
+        // epoch is finalized and MUST use the postedAt-anchored sweep() — emergencySweep's epoch-anchored timer
+        // could otherwise close the pot before that root's claim window even opens.
+        EpochRoot storage er = epochRoot[epoch];
+        if (er.root != bytes32(0) && !er.vetoed) revert TooEarly();
+        // must be well past the whole normal lifecycle (finalize + challenge + claim) plus a long extra grace.
+        // Since MAX_POST_DELAY < EMERGENCY_GRACE, postRoot is already permanently closed by the time we get here,
+        // so no root can appear after this point to be front-run.
         if (block.timestamp <= (epoch + 1) * EPOCH + finalityDelay + challengeWindow + claimWindow + EMERGENCY_GRACE) {
             revert TooEarly();
         }
