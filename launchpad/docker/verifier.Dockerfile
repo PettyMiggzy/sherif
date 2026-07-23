@@ -1,22 +1,24 @@
-# Self-contained image for the coin auto-verifier (scripts/auto-verify.cjs).
-# Bakes in the CURRENT build artifacts, so it verifies contracts compiled from THIS source. Build it
-# AFTER a deploy (i.e. after `npx hardhat compile`) so the artifacts match the deployed bytecode.
-#
-#   build context = the launchpad repo root:
-#     docker build -f docker/verifier.Dockerfile -t robinlabs-verifier .
-FROM node:20-alpine
+# Self-contained coin auto-verifier (scripts/auto-verify.cjs). It COMPILES the contracts inside the
+# image, so it needs NO pre-built artifacts on the host — `docker compose -f docker-compose.verifier.yml
+# up -d --build` just works from a fresh git checkout. Rebuild it after a redeploy so the compiled
+# bytecode matches the deployed contracts (it verifies coins by matching that bytecode on Blockscout).
+FROM node:20
 WORKDIR /app
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Only ethers is needed (no hardhat toolchain) — install first for layer caching.
-COPY docker/verifier.package.json package.json
-RUN npm install --no-audit --no-fund --omit=dev
-
-# The verifier reads its own source + the compiled artifacts (build-info + the token/curve/bond .dbg.json).
+# Install the exact toolchain from the lockfile (hardhat + solc + ethers), then compile — so the
+# artifacts the verifier reads are byte-identical to what was deployed.
+COPY package.json package-lock.json hardhat.config.js ./
+RUN npm ci --no-audit --no-fund
+COPY contracts ./contracts
 COPY scripts ./scripts
-COPY artifacts ./artifacts
+RUN npx hardhat compile
+
+# Deploy manifest → auto-verify reads FACTORY + factoryBlock from it (env vars still override).
+COPY deploy.json ./deploy.json
 
 ENV NODE_ENV=production
-# Persisted scan progress lives here (mount a volume so restarts don't re-scan from block 0).
+# Persisted scan progress (mount a volume so a restart doesn't re-scan from block 0).
 ENV STATE_FILE=/data/auto-verify-state.json
 VOLUME ["/data"]
 

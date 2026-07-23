@@ -81,12 +81,17 @@ async function scan(provider, from, to, state) {
     jobs.push({ addr: a.token, kind: "token", label: "token" });
     jobs.push({ addr: a.curve, kind: "curve", label: "curve" });
   }
-  // Graduated: emitted by each curve (no fixed address) — filter by topic0, then keep only OUR curves.
-  const grads = await provider.getLogs({ fromBlock: from, toBlock: to, topics: [GRADUATED] });
-  for (const lg of grads) {
-    if (!state.curves[lg.address.toLowerCase()]) continue; // not a curve we launched — ignore
-    const a = IFACE.parseLog(lg).args;
-    jobs.push({ addr: a.bond, kind: "bond", label: "bond" });
+  // Graduated: emitted by each curve. Blockscout's RPC rejects an address-array getLogs filter, so we
+  // must scan by topic0 across ALL addresses — which is SLOW over a wide backfill range. Skip it entirely
+  // until we actually know of a curve we launched (no coin can have graduated before it exists), so a
+  // fresh-factory backfill costs nothing here. Once curves exist, the live per-poll ranges are tiny → fast.
+  if (Object.keys(state.curves).length) {
+    const grads = await provider.getLogs({ fromBlock: from, toBlock: to, topics: [GRADUATED] });
+    for (const lg of grads) {
+      if (!state.curves[lg.address.toLowerCase()]) continue; // not a curve we launched — ignore
+      const a = IFACE.parseLog(lg).args;
+      jobs.push({ addr: a.bond, kind: "bond", label: "bond" });
+    }
   }
   return jobs;
 }

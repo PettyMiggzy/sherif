@@ -1,31 +1,31 @@
 # Coin contract auto-verifier — runs 24/7 next to the indexer and verifies every new coin's
 # token / curve / bond on Blockscout automatically.
 #
-#   1) deploy the stack (writes deploy.json) and compile, THEN from the launchpad repo root:
-#   2) set FACTORY + START_BLOCK below (from the deploy output / deploy.json), or leave them blank
-#      to let the container read a mounted deploy.json.
-#   3) docker compose -f docker-compose.verifier.yml up -d --build
+#   From the launchpad repo root, after a deploy (deploy.json is committed + baked into the image):
+#     docker compose -f docker-compose.verifier.yml up -d --build
 #
-# It never touches user funds and needs no private key — read-only chain access + Blockscout's
-# public verify API. Restarts on reboot; scan progress persists in the named volume.
+# FACTORY + START_BLOCK are read automatically from the baked-in deploy.json — you don't need to set
+# anything. (Override via a .env in this dir only if you must.) It never touches user funds and needs
+# no private key — read-only chain access + Blockscout's public verify API. Restarts on reboot; scan
+# progress persists in the named volume. Rebuild (--build) after a redeploy.
 services:
   verifier:
     build:
       context: .
       dockerfile: docker/verifier.Dockerfile
     image: robinlabs-verifier
+    container_name: robinlabs-verifier
     restart: unless-stopped
     environment:
-      # The factory that emits Launched, and the block it was deployed at (skip ancient history).
-      # Leave blank to read them from a mounted deploy.json (see the volume below).
+      # Left blank on purpose → auto-verify falls back to the baked-in deploy.json (factory + block).
+      # Only set these to override. NOTE: a literal "0" here would force a scan from block 0 (very slow),
+      # so leave START_BLOCK blank unless you truly mean a specific block.
       FACTORY: "${FACTORY:-}"
-      START_BLOCK: "${START_BLOCK:-0}"
+      START_BLOCK: "${START_BLOCK:-}"
       RPC_URL: "${RPC_URL:-https://robinhoodchain.blockscout.com/api/eth-rpc}"
       BLOCKSCOUT_URL: "${BLOCKSCOUT_URL:-https://robinhoodchain.blockscout.com}"
       POLL_MS: "${POLL_MS:-15000}"
     volumes:
       - verifier-data:/data
-      # Optional: mount the deploy manifest so FACTORY/START_BLOCK are read automatically.
-      # - ./deploy.json:/app/deploy.json:ro
 volumes:
   verifier-data:

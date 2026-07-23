@@ -46,7 +46,17 @@ All 8 verified. `FloorCoopFactory` + `PlatformFeeSplitter` initially failed the 
 `/api/v2/smart-contracts/{addr}/verification/via/standard-input` endpoint. The shared verifier now
 uses V2 for everything, so launched coins (LaunchToken/CurvePool/Bond) verify by the same robust path.
 
+## Coin auto-verifier — START THIS so coins verify hands-off
+Every launched coin's token/curve (and bond at graduation) auto-verifies on Blockscout, but ONLY while
+this service runs. Start it once on the droplet (it backfills, so it catches coins launched before it
+started — including $ROBIN). The image now compiles the contracts itself; no pre-build needed:
+```
+cd ~/sherif/launchpad
+git pull
+docker compose -f docker-compose.verifier.yml up -d --build   # first build ~2-4 min (npm ci + compile)
+docker logs -f robinlabs-verifier                              # watch it verify coins as they land
+```
+Rebuild (`--build`) after any redeploy so its compiled bytecode matches the live contracts.
+
 ## Optional / later
-- 24/7 coin auto-verifier on the droplet: `cd ~/sherif/launchpad && npm install && npx hardhat compile`
-  then `docker compose -f docker-compose.verifier.yml up -d --build` (it needs compiled artifacts first).
 - If the public GitBook/Mintlify docs sync from `main`, merge this branch to publish the doc updates.

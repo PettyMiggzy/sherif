@@ -1,0 +1,9 @@
+node_modules
+artifacts
+cache
+e2e/.run
+test
+sim
+.env
+.env.*
+scripts/.auto-verify-state.json

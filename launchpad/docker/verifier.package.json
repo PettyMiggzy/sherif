@@ -1,8 +1,0 @@
-{
-  "name": "robinlabs-verifier",
-  "private": true,
-  "description": "Auto-verifies every launched coin's contracts on Blockscout",
-  "dependencies": {
-    "ethers": "6.17.0"
-  }
-}
