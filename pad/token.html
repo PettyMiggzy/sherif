@@ -287,7 +287,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
       <!-- public fees & rewards: what the creator, traders and holders are earning on THIS coin -->
       <div class="panel sec" style="margin-top:16px"><h3>Fees &amp; rewards <span class="meta">this coin · all-time</span></h3>
         <div class="feegrid">
-          <div class="fee"><img src="assets/icons/dev.png" alt="" onerror="this.style.display='none'" /><div><div class="k">Creator earned</div><div class="v" id="feeDev">—</div></div></div>
+          <div class="fee" title="The coin creator's fees to date — their LP-fee share + swap-fee share, summed from on-chain events. Public and verifiable."><img src="assets/icons/dev.png" alt="" onerror="this.style.display='none'" /><div><div class="k">Creator fees to date</div><div class="v" id="feeDev">—</div></div></div>
           <div class="fee"><img src="assets/icons/reward-trader.png" alt="" /><div><div class="k">Trader rewards</div><div class="v" id="feeTraders">—</div></div></div>
           <div class="fee"><img src="assets/icons/reward-holder.png" alt="" /><div><div class="k">Holder rewards</div><div class="v" id="feeHolders">—</div></div></div>
           <div class="fee"><img src="assets/icons/reward-floor.png" alt="" /><div><div class="k">Into the floor</div><div class="v" id="feeFloor">—</div></div></div>
@@ -843,7 +843,14 @@ async function renderFees(coinData){
   // live: creator take + floor from on-chain FeeSplit; the 0.25% trader/holder reward legs
   // are estimated from the coin's real all-time volume (0.25% of buys / of sells) — the pad
   // has no per-coin reward-pool endpoint, and /api/rewards/:addr is a WALLET lookup.
-  try { const f = await Pad.feeTotals(COIN.token); if (f){ setFee('feeDev', Number(f.dev||0)/1e18); if (f.floor!=null) setFee('feeFloor', Number(f.floor)/1e18); } } catch {}
+  // "Creator earned" = the dev's swap-fee share (router FeeSplit) + their LP-fee share (curve FeesCollected).
+  // Public + on-chain-verifiable; anyone loading the page sees the coin's dev fees to date.
+  try {
+    const [f, lp] = await Promise.all([Pad.feeTotals(COIN.token), Pad.lpCreatorFees(COIN.curve)]);
+    const devWei = (f && f.dev != null ? BigInt(f.dev) : 0n) + (lp || 0n);
+    setFee('feeDev', Number(devWei) / 1e18);
+    if (f && f.floor != null) setFee('feeFloor', Number(f.floor) / 1e18);
+  } catch {}
   const volEth = Number(coinData?.volAllEth || 0);
   if (volEth > 0){ setFee('feeTraders', volEth * 0.5 * 0.0025); setFee('feeHolders', volEth * 0.5 * 0.0025); }
 }

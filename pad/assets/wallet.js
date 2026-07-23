@@ -761,6 +761,36 @@ export async function feeTotals(token) {
   } catch { return null; }
 }
 
+// The curve's live LP-fee event (v2). Pre-v2 curves never emit it → the creator LP total is simply 0.
+const _curveEvents = new ethers.Interface([
+  "event FeesCollected(address indexed by, uint256 wethFees, uint256 tokenFees, uint16 creatorBps)",
+]);
+/// The creator's LP-fee earnings to date, in WETH (wei), summed from a coin's curve FeesCollected events.
+/// Each collect paid the creator `creatorBps` of the WETH fee; we sum that share. Reads chain directly (no
+/// indexer needed), so the "Creator earned" stat is public + verifiable by anyone. Returns 0n on any failure.
+export async function lpCreatorFees(curve) {
+  if (!curve || !/^0x[0-9a-fA-F]{40}$/.test(curve)) return 0n;
+  try {
+    const fc = _curveEvents.getEvent("FeesCollected").topicHash;
+    const head = await _read.getBlockNumber();
+    const start = Math.max(0, head - 400000);
+    let logs = [];
+    try { logs = await _read.getLogs({ address: curve, fromBlock: start, toBlock: head, topics: [fc] }); }
+    catch {
+      for (let lo = start; lo <= head; lo += 50000) {
+        const hi = Math.min(lo + 49999, head);
+        try { logs.push(...(await _read.getLogs({ address: curve, fromBlock: lo, toBlock: hi, topics: [fc] }))); } catch {}
+      }
+    }
+    let creator = 0n;
+    for (const l of logs) {
+      const p = _curveEvents.parseLog(l);
+      creator += (p.args.wethFees * BigInt(p.args.creatorBps)) / 10000n;
+    }
+    return creator;
+  } catch { return 0n; }
+}
+
 // ── reward engine (the 0.25% trader + 0.25% holder legs) ────────────────────
 // The chain custodies the ETH and caps it; the indexer computes each wallet's
 // exact net-volume (traders) and balance-seconds (holders) per epoch and serves
