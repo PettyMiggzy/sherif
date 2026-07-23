@@ -86,4 +86,4 @@ async function verifyAddress({ addr, sol, name, label }) {
   return "pending";
 }
 
-module.exports = { BLOCKSCOUT, API, ARTIFACTS, loadInput, isVerified, verifyAddress, sleep };
+module.exports = { BLOCKSCOUT, API, ARTIFACTS, COIN_KINDS, loadInput, isVerified, verifyAddress, sleep };
