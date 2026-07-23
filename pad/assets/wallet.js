@@ -71,6 +71,8 @@ function friendly(err, label) {
     return new Error("You cancelled the signature — nothing was sent.");
   if (s.includes("insufficient funds"))
     return new Error("Not enough ETH to cover this and gas. Top up and try again.");
+  if (s.includes("missing revert data") || s.includes("call_exception") || s.includes("cannot estimate gas"))
+    return new Error("Couldn't simulate this — usually the wallet doesn't have enough ETH for the amount + gas. Lower the amount or top up, then retry.");
   if (s.includes("maxwallet") || s.includes("maxtx") || s.includes("cooldown") || s.includes("antisnip"))
     return new Error("The opening anti-snipe window caps buy size right now. Try a smaller amount or wait a minute.");
   if (s.includes("slippage") || s.includes("too little received") || s.includes("price"))
@@ -268,6 +270,17 @@ const TX_GAS_CAP = 16_000_000n; // just under the 2^24 (16,777,216) per-tx ceili
 
 async function guardedSend(contract, method, args, valueWei, label) {
   const value = valueWei ?? 0n;
+
+  // 0) if the attached ETH alone is more than the wallet holds, the chain's eth_call returns EMPTY
+  //    data ("missing revert data") in the next step instead of a clean error — so catch it here
+  //    first with a message that actually helps (this is the classic "dev buy > my balance" case).
+  if (value > 0n) {
+    const bal0 = await _provider.getBalance(_account);
+    if (bal0 < value + GAS_BUFFER_WEI) {
+      const fmt = (w) => (+ethers.formatEther(w)).toFixed(4);
+      throw new Error(`Not enough ETH for that amount. You're sending ${fmt(value)} ETH (plus gas) but the wallet has ${fmt(bal0)}. Lower the amount or top up this wallet.`);
+    }
+  }
 
   // 1) simulate the exact call (eth_call). Catches contract reverts up-front.
   try { await contract[method].staticCall(...args, { value }); }
