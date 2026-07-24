@@ -2,7 +2,7 @@
 
 `@robinlabs/pad-sdk` is a tiny, **read-only** package that lets you import the pad's data with one line — live [addresses](network.md), typed ABIs, and two clients. It signs nothing and holds no keys.
 
-- **`RobinLabsAPI`** — the [indexer](api.md)'s fast JSON feed (browse, trades, stats, rewards). Uses `fetch` only, so it runs anywhere.
+- **`RobinLabsAPI`** — the [indexer](api.md)'s fast JSON feed (browse, trades, stats). Uses `fetch` only, so it runs anywhere.
 - **`RobinLabsChain`** — direct on-chain reads with no indexer at all. You pass in ethers v6 + a provider.
 
 ```bash
@@ -23,7 +23,6 @@ const { items } = await api.coins({ sort: "trending", filter: "live", limit: 60 
 const coin      = await api.coin(items[0].token);            // enriched: progress, mcap, volume
 const trades    = await api.trades(items[0].token);          // exact-wei recent trades
 const totals    = await api.stats();                         // coins, graduated, 24h volume
-const rewards   = await api.rewards("0xWallet…");            // claimable (with proofs) + pending
 ```
 
 > No indexer host of your own? The pad reads the chain directly as a fallback, and so can you — use the chain client below. Run your own indexer with the [Self-hosting](api.md) steps.
@@ -55,7 +54,7 @@ const off = pad.onLaunch(({ token, curve, pool, dev }) => console.log("new coin"
 | Export | What |
 |--------|------|
 | `CHAIN` | `{ id: 4663, hex, name, rpc, explorer, perTxGasCap }` |
-| `ADDRESSES` | The live, source-verified stack (factory, router, rewardVault, floorCoopFactory, splitter, WETH, v3 factory) |
+| `ADDRESSES` | The live, source-verified stack (factory, router, feeConfig, floorCoopFactory, splitter, WETH, v3 factory) |
 | `ABI` | Human-readable ABIs: `factory`, `router`, `floorCoopFactory`, `erc20` (ethers parses directly) |
 | `explorerUrl(addr)` | Blockscout address link |
 | `RobinLabsAPI` / `RobinLabsChain` | The two read clients above |

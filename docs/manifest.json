@@ -27,8 +27,7 @@
       "pages": [
         { "slug": "fees",        "src": "fees.md",        "title": "Fee Model",            "description": "How the 1%-per-side fee, raised fees, graduation reward and LP-fee compounding flow." },
         { "slug": "graduation",  "src": "graduation.md",  "title": "Graduation",           "description": "Ceiling-only graduation at the top of the curve, and the three positions of the Bond." },
-        { "slug": "floorcoop",   "src": "floorcoop.md",   "title": "Lock Liquidity",       "description": "Stake ETH into a coin's real, locked Uniswap v3 liquidity and earn a share of every trade's fee." },
-        { "slug": "rewards",     "src": "rewards.md",     "title": "Rewards",              "description": "The additive 0.25% trader/holder legs — how they accrue, get scored per epoch, and pay out as capped Merkle claims." }
+        { "slug": "floorcoop",   "src": "floorcoop.md",   "title": "Lock Liquidity",       "description": "Stake ETH into a coin's real, locked Uniswap v3 liquidity and earn a share of every trade's fee." }
       ]
     },
     {

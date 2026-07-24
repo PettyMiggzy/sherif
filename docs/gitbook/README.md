@@ -8,7 +8,6 @@ Robin Labs is a set of audited, non-upgradeable contracts. There are no proxies 
 - **Approval-free buys.** Buying sends native ETH — no token approval. Selling needs one exact-amount approval to the router (never infinite, never to a personal wallet).
 - **Fees ride the protocol.** The 1% is the Uniswap LP fee tier, collected in-protocol — there's never a side-transfer bolted onto your transaction.
 - **Un-ruggable graduation.** At graduation, liquidity is posted to the Bond and locked forever, with a WETH floor that only deepens with volume.
-- **[Rewards](rewards.md).** Two additive 0.25% legs per trade pay a coin's own traders and holders — capped and Merkle-claimed.
 - **[Lock Liquidity / FloorCoop](floorcoop.md).** Anyone can stake ETH into a coin's real, locked LP and earn a share of every trade's fee.
 
 ## Architecture
@@ -18,9 +17,9 @@ A coin's life spans a stack of audited, non-upgradeable contracts:
 | Contract | Owns |
 |----------|------|
 | `CurvePadFactory` | Deploys the token + curve + pool in one tx, registers the coin with the router, runs the anti-snipe opening buy. |
-| `PadRouter` | The only trade path. Applies the 1% fee in-protocol, splits it to escrows, carves the 0.25% reward legs, exposes dev fee controls. |
+| `PadRouter` | The only trade path. Applies the 1% fee in-protocol, splits it to escrows, exposes dev fee controls. |
 | `CurvePool` | The bonding curve — a single-sided v3 position spanning `[startTick → gradTick]`. Owns graduation, which fires at exactly one point: the curve ceiling. |
 | `Bond` | Protocol-owned floor posted at graduation and locked forever — *Sherwood* (full-range LP), *Bounty* (WETH buy-wall), *Ambush* (token sell-wall). Fees compound back in via `poke()`. |
-| `RewardVault` | Custodies the two 0.25% [reward](rewards.md) legs per `(coin, epoch, side)` and pays capped, Merkle-proven claims. |
+| `FeeConfig` | Owner-governed fee dial — the LP creator split and the swap platform/creator/floor split, retunable with no redeploy. |
 | `FloorCoopFactory` (+ per-token `FloorCoop`) | Deploys a per-coin [FloorCoop](floorcoop.md) vault: stake ETH into real locked LP, earn a share of trade fees. |
 | `PlatformFeeSplitter` | Routes the platform's cut (the $ROBIN buy-back split). |
