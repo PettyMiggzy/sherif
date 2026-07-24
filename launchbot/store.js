@@ -83,7 +83,8 @@ function load() {
   }
   try {
     const db = JSON.parse(raw);
-    if (!db || typeof db !== 'object' || typeof db.users !== 'object') throw new Error('bad shape');
+    if (!db || typeof db !== 'object' || Array.isArray(db)
+      || db.users === null || typeof db.users !== 'object' || Array.isArray(db.users)) throw new Error('bad shape');
     return db;
   } catch (e) {
     const bak = `${FILE}.corrupt-${nowSecs()}`;

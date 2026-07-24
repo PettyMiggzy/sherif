@@ -267,7 +267,7 @@ async function doForget(chatId, userId) {
 // ───────────────────────────────────────────── launch wizard (multi-step) ────
 async function launchStart(chatId, userId) {
   if (!await requireAgreed(chatId, userId)) return;
-  const wait = store.cooldownLeft(userId, 'launch', CFG.launchCooldownSecs);
+  const wait = store.cooldownLeft(userId, 'launch');
   if (wait > 0) return send(chatId, `⏳ You just launched — please wait ${wait}s before creating another coin.`);
   store.ensureWallet(userId);
   store.setSession(userId, { flow: 'launch', step: 'name' });
@@ -390,12 +390,14 @@ async function doLaunch(chatId, userId, { name, symbol, pfp, devBuyEth }) {
   }
 
   // Optional on-chain bot fee, charged AFTER a successful launch (NOT via
-  // Telegram Stars — ToS-compliant). A failed fee never harms the user.
+  // Telegram Stars — ToS-compliant). Fire-and-forget with a BOUNDED wait so a
+  // stuck fee tx can never pin this user's exclusive() lock. A failed fee never
+  // harms the user (they already got the coin).
   if (feeWei > 0n && CFG.feeWallet && ethers.isAddress(CFG.feeWallet)) {
-    try {
-      const ov = await chain.legacyOv({ value: feeWei, gasLimit: 21000n });
-      await (await signer.sendTransaction({ to: CFG.feeWallet, ...ov })).wait();
-    } catch (e) { console.error('fee charge failed:', e.message); }
+    chain.legacyOv({ value: feeWei, gasLimit: 21000n })
+      .then((ov) => signer.sendTransaction({ to: CFG.feeWallet, ...ov }))
+      .then((tx) => tx.wait(1, 180_000))
+      .catch((e) => console.error('fee charge failed:', e.message));
   }
 
   announceLaunch({ name, symbol, token: res.token, devBought: res.devBought }).catch((e) => console.error('announce:', e.message));
