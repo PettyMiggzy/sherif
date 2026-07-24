@@ -19,10 +19,10 @@ The API is built to scale — the feed is served from precomputed snapshots, so 
 import { RobinLabsAPI } from "@robinlabs/pad-sdk";
 
 const api = new RobinLabsAPI("https://your-indexer-host");   // self-host: see the API page
-const { items } = await api.coins({ sort: "trending", filter: "live", limit: 60 });
-const coin      = await api.coin(items[0].token);            // enriched: progress, mcap, volume
-const trades    = await api.trades(items[0].token);          // exact-wei recent trades
-const totals    = await api.stats();                         // coins, graduated, 24h volume
+const { coins, total } = await api.coins({ sort: "trending", filter: "live", limit: 60 }); // page with offset
+const { coin }   = await api.coin(coins[0].token);           // enriched: progress, mcap, volume
+const { trades } = await api.trades(coins[0].token);         // exact-wei recent trades
+const totals     = await api.stats();                        // coins, graduated, 24h volume
 ```
 
 > No indexer host of your own? The pad reads the chain directly as a fallback, and so can you — use the chain client below. Run your own indexer with the [Self-hosting](api.md) steps.

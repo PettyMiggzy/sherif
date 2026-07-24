@@ -4,7 +4,7 @@ All ABIs below are human-readable (ethers.js parses them directly).
 
 ## CurvePadFactory
 
-The launch entrypoint. `launch()` is **payable** — any ETH you send is the creator's own opening buy (capped at 2% of supply), executed atomically before public trading opens.
+The launch entrypoint. `launch()` is **payable** — any ETH you send is the creator's own opening buy, executed atomically before public trading opens. It's **uncapped by supply**: it climbs the curve up to the graduation ceiling, and any ETH beyond what fills the curve is refunded.
 
 ```solidity
 // The launch params tuple. tax.projectWallet receives the creator's sell fee.
@@ -21,7 +21,7 @@ function recordOf(address token) view returns (address token, address curve, add
 event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought)
 ```
 
-> **Fee caps (enforced on-chain).** Each side (`buyBps`/`sellBps`) is 1%–4% (`100–400` bps). The baseline 1% is mandatory. The opening dev buy is capped at 2% of supply (`200` bps). Total supply is fixed at `1,000,000,000`.
+> **Fee caps (enforced on-chain).** Each side (`buyBps`/`sellBps`) is 1%–4% (`100–400` bps). The baseline 1% is mandatory. The opening dev buy is **uncapped by supply** — it fills the curve up to the graduation ceiling and refunds any excess ETH. Total supply is fixed at `1,000,000,000`.
 
 ## PadRouter
 

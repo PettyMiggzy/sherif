@@ -95,7 +95,8 @@ export class RobinLabsAPI {
   }
   health() { return this._get("/health"); }
   stats() { return this._get("/api/stats"); }
-  /** opts: { sort:'new'|'trending'|'top'|'graduated', filter:'all'|'live'|'graduated', q, limit, cursor } */
+  /** opts: { sort:'new'|'old'|'trending'|'top'|'volume'|'holders'|'graduated', filter:'all'|'live'|'final'|'graduated', q, limit, offset }.
+   *  Returns { coins, total, sort, filter, limit, offset } — page by bumping offset (total is the filtered count). */
   coins(opts = {}) {
     const q = new URLSearchParams(Object.entries(opts).filter(([, v]) => v != null)).toString();
     return this._get("/api/coins" + (q ? `?${q}` : ""));

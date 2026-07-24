@@ -25,7 +25,7 @@ many calls in one tx. (The [SDK](sdk.md) exports this as `legacyOverrides(provid
 
 ## Launch a coin
 
-One transaction. Send ETH with the call to make the creator's opening buy (≤2%), or send `0` for a clean launch.
+One transaction. Send ETH with the call to make the creator's opening buy (uncapped — excess is refunded), or send `0` for a clean launch.
 
 ```js
 import { ethers } from "ethers";

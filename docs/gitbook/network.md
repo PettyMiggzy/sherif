@@ -35,6 +35,6 @@ The three stateless deployer helpers (reused across launches) are also verified:
 | Pool fee tier | `10000` | 1% — the base fee, collected as Uniswap LP fees |
 | LP creator split | `1000` bps | Creator's share of the 1% LP fee (default 10%; owner cap 5000 = 50%) |
 | Swap split | `4500/4500/1000` | Router swap fee → platform / creator / floor (must sum to 10000) |
-| Max opening dev buy | `200` bps | 2% of supply, anti-snipe |
+| Opening dev buy | uncapped | Fills the curve up to the graduation ceiling; excess ETH refunded |
 | Graduation ceiling | `4.2 ETH` | Ceiling-only graduation trigger |
 | Graduation reward | `0.5 ETH` | paid to the creator AND the platform at graduation (capped at raise/4 each) |
