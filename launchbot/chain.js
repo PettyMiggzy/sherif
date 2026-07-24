@@ -13,8 +13,28 @@ export let provider = new ethers.JsonRpcProvider(CFG.rpc, {
   chainId: CHAIN.id, name: 'robinhood',
 }, { staticNetwork: true });
 
+// READ-ONLY provider that prefers free/public RPCs to save the paid RPC's quota.
+// When FREE_RPCS is set, reads go to a FallbackProvider that tries the free nodes
+// first (priority 1) and only falls back to the paid RPC (priority 2) if they
+// stall or fail — quorum 1, so one good answer suffices. A lying free node can
+// only mis-report a read; it can NEVER sign or broadcast (writes use `provider`).
+// When FREE_RPCS is empty, readProvider === provider (no behavior change).
+export let readProvider = makeReadProvider();
+function makeReadProvider() {
+  if (!CFG.freeRpcs.length) return provider;
+  try {
+    const opts = { chainId: CHAIN.id, name: 'robinhood' };
+    const subs = CFG.freeRpcs.map((url) => ({
+      provider: new ethers.JsonRpcProvider(url, opts, { staticNetwork: true }),
+      priority: 1, weight: 1, stallTimeout: 1500,
+    }));
+    subs.push({ provider, priority: 2, weight: 1, stallTimeout: 2000 }); // paid RPC = reliable backstop
+    return new ethers.FallbackProvider(subs, opts, { quorum: 1 });
+  } catch { return provider; } // any construction issue → just use the paid RPC
+}
+
 // Test seam: swap in a mock provider for offline simulation. No effect in prod.
-export function __setProviderForTests(p) { provider = p; }
+export function __setProviderForTests(p) { provider = p; readProvider = p; }
 
 // Bound how long we wait for a tx to mine. ethers' tx.wait() has NO default
 // timeout, so a stuck/underpriced tx would hang forever and (via the per-user
@@ -41,7 +61,9 @@ export function routerWith(signer) { return new ethers.Contract(ADDRESSES.router
 export const routerRead = new ethers.Contract(ADDRESSES.router, ABI.router, provider);
 export function erc20(addr, runner = provider) { return new ethers.Contract(addr, ABI.erc20, runner); }
 
-export async function ethBalance(addr) { return provider.getBalance(addr); }
+// Balance reads are the bot's highest-frequency call (every /start, /balance,
+// launch precheck) — route them through the free-RPC-preferring read provider.
+export async function ethBalance(addr) { return readProvider.getBalance(addr); }
 
 /**
  * Launch a token from `signer`'s wallet. Optional dev buy via `devBuyWei`.

@@ -85,6 +85,12 @@ export const CFG = {
   // The RPC used to sign & broadcast. MUST accept eth_sendRawTransaction (not the
   // read-only indexer /rpc proxy). A key in the URL is a SECRET — keep it in .env.
   rpc: req('RPC_URL'),
+  // Optional FREE/public RPC endpoints, comma-separated. Cheap high-frequency
+  // READS (balances) prefer these to save your paid RPC's quota; writes ALWAYS
+  // use RPC_URL. Blank = everything uses RPC_URL (no behavior change). Only add
+  // endpoints you trust for chain 4663 — a lying read node can only mis-report a
+  // balance, never move funds (all sends go through RPC_URL).
+  freeRpcs: (process.env.FREE_RPCS || '').split(',').map((s) => s.trim()).filter(Boolean),
   // 32+ char secret that encrypts every custodial private key at rest. If this
   // leaks, every wallet is compromised; if it's lost, every wallet is unrecoverable.
   masterSecret: reqSecret('MASTER_SECRET', 32),

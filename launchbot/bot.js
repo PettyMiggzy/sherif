@@ -12,6 +12,8 @@ import { ethers } from 'ethers';
 import { CFG, CHAIN, tgApi, tgFile, explorerTx, explorerAddr, coinUrl } from './config.js';
 import * as store from './store.js';
 import * as chain from './chain.js';
+import * as modstore from './modstore.js';
+import * as moderation from './moderation.js';
 import { setProfile } from './profile.js';
 
 // ── tiny Telegram HTTP helpers ───────────────────────────────────────────────
@@ -453,9 +455,14 @@ async function extractPhotoDataUrl(msg) {
 
 // ─────────────────────────────────────────────────────── dispatch ────────────
 async function onMessage(msg) {
-  // Opt-in private DMs only; ignore groups/channels (and messages with no sender,
-  // e.g. anonymous group admins) before dereferencing anything.
-  if (!msg.chat || msg.chat.type !== 'private' || !msg.from) return;
+  if (!msg.chat) return;
+  // Group / supergroup chats are handled by the moderation engine — a completely
+  // separate module that shares no code with the custodial wallet flow. The
+  // wallet flow below is private-DM only.
+  if (moderation.isGroup(msg.chat)) { await moderation.onGroupMessage(msg); return; }
+  // Opt-in private DMs only; ignore channels (and messages with no sender)
+  // before dereferencing anything.
+  if (msg.chat.type !== 'private' || !msg.from) return;
   const chatId = msg.chat.id;
   const userId = msg.from.id;
   const text = (msg.text || '').trim();
@@ -497,6 +504,8 @@ async function onMessage(msg) {
 async function onCallback(cb) {
   // Old/inaccessible messages can arrive without a usable chat; bail safely.
   if (!cb.message?.chat) return;
+  // Group keyboards (the new-member captcha) are handled by moderation.
+  if (moderation.isGroup(cb.message.chat)) { await moderation.onCallback(cb); return; }
   if (cb.message.chat.type !== 'private') return; // never act on a group-posted keyboard
   const chatId = cb.message.chat.id;
   const userId = cb.from.id;
@@ -540,6 +549,32 @@ async function setupCommands() {
       { command: 'disclaimer', description: 'Risks & custody' },
       { command: 'forget', description: 'Erase your data' },
     ] });
+    // Group admins get the moderation command list (scoped so it never clutters
+    // the private wallet menu).
+    await tg('setMyCommands', {
+      scope: { type: 'all_chat_administrators' },
+      commands: [
+        { command: 'ban', description: 'Ban the replied user' },
+        { command: 'unban', description: 'Unban a user' },
+        { command: 'kick', description: 'Kick (ban+unban) the replied user' },
+        { command: 'mute', description: 'Mute [10m|2h|1d] the replied user' },
+        { command: 'unmute', description: 'Unmute the replied user' },
+        { command: 'warn', description: 'Warn the replied user' },
+        { command: 'unwarn', description: 'Remove a warn' },
+        { command: 'warns', description: 'Show a user’s warns' },
+        { command: 'del', description: 'Delete the replied message' },
+        { command: 'purge', description: 'Delete a range of messages' },
+        { command: 'pin', description: 'Pin the replied message' },
+        { command: 'unpin', description: 'Unpin' },
+        { command: 'lock', description: 'Anti-raid lockdown on' },
+        { command: 'unlock', description: 'Lockdown off' },
+        { command: 'setrules', description: 'Set the group rules' },
+        { command: 'set', description: 'Configure moderation (captcha/antilink/…)' },
+        { command: 'rules', description: 'Show the rules' },
+        { command: 'report', description: 'Flag a message to admins' },
+        { command: 'modhelp', description: 'Moderation help' },
+      ],
+    });
   } catch (e) { console.error('setMyCommands:', e.message); }
 }
 
@@ -554,6 +589,7 @@ function shutdown(sig) {
   if (_shuttingDown) return; _shuttingDown = true;
   console.log(`${sig} — flushing wallet store…`);
   store.flushSync();
+  modstore.flushSync();
   process.exit(0);
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
@@ -565,8 +601,11 @@ async function main() {
   const me = await tg('getMe').catch((e) => { console.error('getMe failed:', e.message); process.exit(1); });
   const net = await chain.provider.getNetwork().catch((e) => { console.error('RPC failed:', e.message); process.exit(1); });
   console.log(`Launch bot @${me.username} up · chain ${net.chainId} · ${store.userCount()} wallets`);
+  moderation.init({ tg, esc });
   await setupCommands();
   setInterval(() => store.sweepSessions(), 5 * 60 * 1000).unref?.();
+  // Expire unsolved captchas and trim raid/flood counters.
+  setInterval(() => moderation.sweep().catch((e) => console.error('mod sweep:', e?.message)), 30 * 1000).unref?.();
 
   let offset = 0;
   // Ignore backlog on boot so a restart doesn't replay old commands.
