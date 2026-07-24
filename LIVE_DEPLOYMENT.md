@@ -1,11 +1,12 @@
 # Robin Labs — LIVE deployment (Robinhood Chain, chainId 4663)
 
-**v2 — configurable fee stack.** Deployed from the ceiling-only stack with the owner-governed
-`FeeConfig` dial (LP creator split + swap platform/creator/floor split, retunable with a setter — no
-redeploy). Cost ~$3.94. OWNER = the cold wallet.
-Factory deploy block: **17752965**. Deployed: 2026-07-23.
+**v2.1 — configurable fee stack + fast-graduation Bond-exemption fix.** Deployed from the ceiling-only
+stack with the owner-governed `FeeConfig` dial (LP creator split + swap platform/creator/floor split,
+retunable with a setter — no redeploy). v2.1 adds the fix so a coin graduating inside its 300s anti-snipe
+window exempts the Bond it posts, keeping `Bond.poke()` and Bond trading unblocked. Cost ~$3.93.
+OWNER = the cold wallet. Factory deploy block: **17752965**. Deployed: 2026-07-24.
 
-## Live contract addresses (v2)
+## Live contract addresses (v2.1)
 | Contract | Address | Verified on Blockscout |
 |---|---|---|
 | **CurvePadFactory** (launch) | `0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074` | ✅ |
@@ -34,19 +35,35 @@ Factory deploy block: **17752965**. Deployed: 2026-07-23.
 - Retune from `admin.html` → **Fee dials** (owner-only): `setLpCreatorBps`, `setSwapSplit`.
 
 ## What's already done
-- ✅ v2 contracts deployed + **all 8 verified** on Blockscout (source readable) via the V2
-  `standard-input` endpoint (the shared verifier `scripts/lib/blockscout.cjs` uses V2, so coins verify robustly too).
-- ✅ Website (www.robinlab.io / www.robinlabs.fun) serving the v2 addresses (Vercel auto-deployed).
-- ✅ Indexer (droplet) repointed to the v2 factory (`FACTORY`/`ROUTER`/`START_BLOCK=17752965` set in `indexer/.env`) and the volume wiped. Board = clean.
-- ✅ `pad/assets/config.js` + `launchpad/deploy.json` committed & pushed.
-- ✅ Full sim suite + parallel adversarial audit across every contract (see audit run) — clean.
+- ✅ v2.1 contracts deployed + verified on Blockscout (source readable) via the V2 `standard-input`
+  endpoint (the shared verifier `scripts/lib/blockscout.cjs` uses V2, so coins verify robustly too).
+- ✅ On-chain wiring confirmed: `router.factory`/`router.feeConfig` and `factory.router`/`factory.feeConfig`
+  all cross-linked; `FeeConfig` owned directly by the cold wallet with defaults 10/90 LP · 45/45/10 swap.
+- ✅ `pad/assets/config.js` + `launchpad/deploy.json` + all docs updated & pushed (Vercel auto-deploys the
+  site to www.robinlab.io / www.robinlabs.fun on push).
+- ✅ Full sim suite (97 passing) + 4 parallel adversarial audits + a re-audit of the fix — all clean.
 
-## What's left (YOU, from the cold wallet 0xCDD5…)
+## What's left
+**On the droplet (re-point the indexer to v2.1 + wipe the old board):**
+```
+cd ~/sherif && git pull
+# set these in indexer/.env:
+#   FACTORY=0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074
+#   ROUTER=0xA6BaAB820809C7fC8350311776627298f91F07eC
+#   START_BLOCK=17752965
+docker compose -f indexer/docker-compose.api.yml down
+docker volume rm indexer_indexer-data          # wipe the old-factory board (incl. the old test coin)
+docker compose -f indexer/docker-compose.api.yml up -d --build
+```
+The old test coin lived on the *old* factory, so re-pointing to the new factory drops it automatically; the
+volume wipe just clears the DB so the board starts empty. Restart the coin auto-verifier too (`--build`).
+
+**From the cold wallet (0xCDD5…):**
 1. **Accept router ownership:** `admin.html` → connect cold wallet → Ownership → Router → **Accept**.
-   (The router works before this — it just moves admin keys off the hot deployer.)
-2. **Accept FeeConfig ownership** (Ownable2Step) the same way, so you can retune fees from the cold wallet.
-3. **Launch $ROBIN:** `create.html` → name, symbol, socials → optional dev buy → Launch.
-4. **Then verify $ROBIN's contracts** (token + curve; bond exists after graduation):
+   (The router works before this — it just moves admin keys off the hot deployer. FeeConfig + factory are
+   already owned by the cold wallet directly — no accept needed there.)
+2. **Launch $ROBIN:** `create.html` → name, symbol, socials → optional dev buy → Launch.
+3. **Then verify $ROBIN's contracts** (token + curve; bond exists after graduation):
    ```
    cd launchpad && npx hardhat compile      # if artifacts are missing on the box
    node scripts/verify-coin.cjs <ROBIN_token> <ROBIN_curve>
