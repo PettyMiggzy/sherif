@@ -57,7 +57,7 @@ const menuKb = {
 };
 
 // ─────────────────────────────────────────────────────────── copy ────────────
-const termsLine = () => CFG.termsUrl ? `\n• Terms & privacy: ${CFG.termsUrl}` : '';
+const termsLine = () => CFG.termsUrl ? `\n• Terms & privacy: ${esc(CFG.termsUrl)}` : '';
 const DISCLAIMER =
   '<b>Before you start — please read.</b>\n\n' +
   '• This bot creates a <b>custodial wallet</b> for you. The bot holds its key (encrypted). ' +
@@ -475,7 +475,7 @@ async function onMessage(msg) {
       case '/cancel': store.clearSession(userId); return await send(chatId, 'Cancelled.');
       case '/forget': return /confirm/i.test(arg) ? await doForget(chatId, userId) : await cmdForget(chatId, userId);
       case '/paysupport':
-        return await send(chatId, 'Need help or have a dispute? This bot takes no Telegram payments; on-chain actions are final. Contact support: ' + (process.env.SUPPORT_URL || 't.me/robinlabs'));
+        return await send(chatId, 'Need help or have a dispute? This bot takes no Telegram payments; on-chain actions are final. Contact support: ' + esc(process.env.SUPPORT_URL || 't.me/robinlabs'));
       default: return await send(chatId, 'Unknown command. Send /help.');
     }
   } catch (e) {
