@@ -12,7 +12,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_MEDIA = path.join(__dirname, 'media', 'buy.mp4');
+// Buy-alert media: drop a file named buy.<ext> into media/ — the first that
+// exists wins (png/jpg/webp for an image, gif/mp4 for animation). So to change
+// the bot image, just add media/buy.png; no config edit needed.
+const MEDIA_DIR = path.join(__dirname, 'media');
+const DEFAULT_MEDIA = ['buy.png', 'buy.jpg', 'buy.jpeg', 'buy.webp', 'buy.gif', 'buy.mp4']
+  .map((f) => path.join(MEDIA_DIR, f)).find((p) => fs.existsSync(p)) || '';
 
 const cfg = {
   botToken:  req('TELEGRAM_BOT_TOKEN'),
@@ -54,8 +59,8 @@ const usdStr = (n) => (Number(n) >= 1 ? '$' + fmt(n, 2) : '$' + Number(n).toPrec
 const compact = (n) => { n = Number(n) || 0; const a = Math.abs(n); if (a >= 1e9) return (n/1e9).toFixed(2)+'B'; if (a >= 1e6) return (n/1e6).toFixed(2)+'M'; if (a >= 1e3) return (n/1e3).toFixed(1)+'K'; return fmt(n, 0); };
 
 // ---------- persistent state ----------
-function loadState() { try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { return { lastId: 0, seen: [], mediaFileId: null }; } }
-function saveState() { try { fs.writeFileSync(STATE_FILE, JSON.stringify({ lastId: store.lastId, seen: (store.seen||[]).slice(-4000), mediaFileId: store.mediaFileId||null, muted: !!store.muted, minBuyUsd: store.minBuyUsd, buyEmoji: store.buyEmoji, pfpUsed: store.pfpUsed||[] })); } catch (e) { console.error('state', e.message); } }
+function loadState() { try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { return { lastId: 0, seen: [], mediaFileId: null, mediaSrc: null }; } }
+function saveState() { try { fs.writeFileSync(STATE_FILE, JSON.stringify({ lastId: store.lastId, seen: (store.seen||[]).slice(-4000), mediaFileId: store.mediaFileId||null, mediaSrc: store.mediaSrc||null, muted: !!store.muted, minBuyUsd: store.minBuyUsd, buyEmoji: store.buyEmoji, pfpUsed: store.pfpUsed||[] })); } catch (e) { console.error('state', e.message); } }
 const store = loadState();
 const effMin   = () => (store.minBuyUsd ?? cfg.minBuyUsd);
 const effEmoji = () => (store.buyEmoji || cfg.buyEmoji);
@@ -125,6 +130,9 @@ async function sendAlert(text, toChat = cfg.chatId, kb = null) {
   const markup = kb ? { reply_markup: { inline_keyboard: kb } } : {};
   if (!src) return sendText(text, toChat, kb);
   const [method, key] = mediaKind(src);
+  // If the media source changed (e.g. buy.mp4 → buy.png), drop the cached Telegram
+  // file_id so the NEW image is re-uploaded instead of re-posting the old one.
+  if (store.mediaFileId && store.mediaSrc !== src) { store.mediaFileId = null; store.mediaSrc = null; }
   try {
     if (store.mediaFileId) {
       const j = await tg(method, { chat_id: toChat, [key]: store.mediaFileId, caption: text, parse_mode: 'HTML', ...markup });
@@ -143,7 +151,7 @@ async function sendAlert(text, toChat = cfg.chatId, kb = null) {
       j = await r.json().catch(() => ({}));
       if (!j.ok) console.error(`TG ${method}:`, j.description);
     }
-    if (j.ok) { const fid = grabFileId(j.result); if (fid) { store.mediaFileId = fid; saveState(); } return j; }
+    if (j.ok) { const fid = grabFileId(j.result); if (fid) { store.mediaFileId = fid; store.mediaSrc = src; saveState(); } return j; }
   } catch (e) { console.error('media send error:', e.message); }
   return sendText(text, toChat, kb);
 }
