@@ -348,7 +348,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
   <nav class="nav-links">
     <a href="browse.html">Browse</a><a href="#graduates">Graduated</a>
-    <a href="rewards.html">Rewards</a><a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="profile.html">Portfolio</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
+    <a href="rewards.html">Rewards</a><a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="profile.html">Portfolio</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLink" style="display:none">⚙ Admin</a>
   </nav>
   <div class="nav-cta">
     <button class="btn btn-dark" id="connectBtn" type="button">Connect Wallet</button>
@@ -360,7 +360,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 </div>
 <nav class="mobile-menu" id="mobileMenu">
   <a href="browse.html">Browse</a><a href="#graduates">Graduated</a>
-  <a href="rewards.html">Rewards</a><a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="profile.html">Portfolio</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
+  <a href="rewards.html">Rewards</a><a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="profile.html">Portfolio</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLinkM" style="display:none">⚙ Admin</a>
   <a class="btn btn-lime go" href="create.html">Launch Token</a>
 </nav></header>
 
@@ -461,6 +461,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 <script type="module">
 import * as Pad from './assets/wallet.js';
 import { DEMO, DEMO_COINS, DEMO_STATS } from './assets/demo.js';
+import { OWNER } from './assets/config.js';
 
 const $ = (id) => document.getElementById(id);
 const ETH_USD = 1920;
@@ -480,7 +481,12 @@ const fmtNum = (n) => n >= 1e3 ? (n/1e3).toFixed(n>=1e4?0:1) + "K" : String(n||0
 
 // wallet
 const cbtn = $('connectBtn');
-const refreshBtn = () => { const a = Pad.account(); cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; cbtn.title = a ? 'View your profile' : ''; };
+const refreshBtn = () => {
+  const a = Pad.account();
+  cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; cbtn.title = a ? 'View your profile' : '';
+  const isOwner = a && OWNER && a.toLowerCase() === OWNER.toLowerCase(); // reveal the Admin link only for the owner
+  const al = $('adminLink'), alm = $('adminLinkM'); if (al) al.style.display = isOwner ? '' : 'none'; if (alm) alm.style.display = isOwner ? '' : 'none';
+};
 cbtn.addEventListener('click', async () => {
   if (Pad.account()) { location.href = 'profile.html'; return; }   // already connected → open your profile
   try { await Pad.connect(); refreshBtn(); } catch (e) { alert(e.message); }

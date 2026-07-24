@@ -236,6 +236,15 @@ export const ADMIN_ABI = {
     "function setPlatformTreasury(address t)",
     "function transferOwnership(address newOwner)",
   ],
+  feeConfig: [
+    "function owner() view returns (address)",
+    "function lpCreatorBps() view returns (uint16)",
+    "function swapPlatformBps() view returns (uint16)",
+    "function swapCreatorBps() view returns (uint16)",
+    "function swapFloorBps() view returns (uint16)",
+    "function setLpCreatorBps(uint16 bps)",
+    "function setSwapSplit(uint16 platformBps, uint16 creatorBps, uint16 floorBps)",
+  ],
 };
 
 // ── Optional indexer/API (see /indexer) ─────────────────────────────────────
@@ -245,6 +254,10 @@ export const ADMIN_ABI = {
 // "" and everything falls back to reading the chain directly — the pad works
 // either way, the API just makes it fast. No secrets here; the API is read-only.
 export const API_BASE = "https://api.robinlab.io";
+
+// Platform owner (cold wallet). ONLY used to reveal the discreet "Admin" nav link when this wallet connects —
+// every admin action is enforced on-chain by onlyOwner regardless, so this is pure convenience, not auth.
+export const OWNER = "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf";
 
 // ── GoPlus token-security (see /assets/safety.js) ───────────────────────────
 // GoPlus supports Robinhood Chain (4663), so our coins get the same honeypot/tax/mint scan wallets use.

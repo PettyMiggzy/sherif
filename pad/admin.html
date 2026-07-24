@@ -107,6 +107,19 @@
     <div class="hint">Only bonding (not-yet-graduated) coins have collectable live fees — a graduated coin already swept its fees into the Bond at graduation. Needs the v2 factory (the current live coins predate <code>collectFees()</code>).</div>
   </section>
 
+  <!-- FEE DIALS (FeeConfig) -->
+  <section id="secFeeDials">
+    <h2>🎛 Fee dials <span class="mono" style="font-size:.7rem;color:var(--dim)">FeeConfig</span></h2>
+    <p class="desc">Retune WHERE fees go and HOW MUCH — for every coin, going forward — with <b>no redeploy</b>. Owner-only; on-chain caps enforced (platform always keeps ≥50% of the LP fee; the swap split must sum to 100%). Changes apply to all future collections + trades immediately.</p>
+    <div class="row"><div class="lbl"><b>LP fee → creator share</b><span>you (platform) keep the rest · cap 50%</span></div><div class="val" id="valLpCreator">—</div><input class="num" id="inLpCreator" placeholder="bps 0–5000 (1000=10%)" /><button class="btn sm" data-act="setLpCreatorBps" data-arg="inLpCreator">Set</button></div>
+    <div class="row"><div class="lbl"><b>Swap fee split</b><span>platform / creator / floor bps — must sum to 10000</span></div><div class="val" id="valSwapSplit">—</div>
+      <input class="num" id="inSwapP" placeholder="platform" style="max-width:96px" />
+      <input class="num" id="inSwapC" placeholder="creator" style="max-width:96px" />
+      <input class="num" id="inSwapF" placeholder="floor" style="max-width:96px" />
+      <button class="btn sm" id="btnSetSwap">Set split</button></div>
+    <div class="hint">Defaults: LP creator 10% / platform 90% · swap 45% / 45% / 10% (platform / creator / floor).</div>
+  </section>
+
   <!-- REWARDS -->
   <section id="secRewards">
     <h2>🎁 Rewards <span class="pill" style="font-size:.62rem"><span class="dot" id="rwdDot"></span><span id="rwdState">—</span></span></h2>
@@ -191,8 +204,9 @@ const TARGET = {
   setPoster: 'rewardVault', setGuardian: 'rewardVault', setChallengeWindow: 'rewardVault', setClaimWindow: 'rewardVault', veto: 'rewardVault',
   setTreasury: 'floorCoopFactory',
   setRobinShareBps: 'splitter', setRobinSink: 'splitter', setPlatformTreasury: 'splitter',
+  setLpCreatorBps: 'feeConfig',
 };
-const UINT_ACTS = new Set(['setChallengeWindow', 'setClaimWindow', 'setFinalityDelay', 'veto', 'setRobinShareBps']);
+const UINT_ACTS = new Set(['setChallengeWindow', 'setClaimWindow', 'setFinalityDelay', 'veto', 'setRobinShareBps', 'setLpCreatorBps']);
 const NOARG_ACTS = new Set(['withdrawPlatform', 'withdrawPlatformCut', 'acceptOwnership']);
 
 async function connect() {
@@ -272,6 +286,17 @@ async function refresh() {
   else { $('valFloorTreasury').textContent = 'not deployed'; }
   if (isDeployed('splitter')) { try { const s = C('splitter'); const [bps, sink] = await Promise.all([s.robinShareBps(), s.robinSink()]); $('valRobin').textContent = `now ${bps} bps → ${short(sink)}`; } catch {} }
   else { $('valRobin').textContent = 'splitter not deployed'; }
+
+  // ── FeeConfig dials ──
+  if (isDeployed('feeConfig')) {
+    try {
+      const fc = C('feeConfig');
+      const [lpc, sp, sc, sf] = await Promise.all([fc.lpCreatorBps(), fc.swapPlatformBps(), fc.swapCreatorBps(), fc.swapFloorBps()]);
+      const pct = (b) => (Number(b) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
+      $('valLpCreator').textContent = `${pct(lpc)} creator · ${pct(10000 - Number(lpc))} platform`;
+      $('valSwapSplit').textContent = `${pct(sp)} / ${pct(sc)} / ${pct(sf)}`;
+    } catch {}
+  } else { const s = $('secFeeDials'); if (s) s.classList.add('notdeployed'); }
 
   // ── API totals ──
   if (/^https?:\/\//.test(API_BASE)) {
@@ -367,6 +392,24 @@ async function collectAll() {
 }
 $('btnCollectOne').addEventListener('click', collectOne);
 $('btnCollectAll').addEventListener('click', collectAll);
+
+// setSwapSplit takes THREE args, so it can't use the single-arg data-act path — dedicated handler.
+async function setSwapSplit() {
+  if (!signer) { toast('Connect your owner wallet first', true); return; }
+  if (!isDeployed('feeConfig')) { toast('feeConfig not deployed', true); return; }
+  const btn = $('btnSetSwap'), label = btn.textContent;
+  try {
+    const p = BigInt($('inSwapP').value.trim() || '0'), c = BigInt($('inSwapC').value.trim() || '0'), f = BigInt($('inSwapF').value.trim() || '0');
+    if (p + c + f !== 10000n) throw new Error('the three shares must sum to 10000');
+    btn.disabled = true; btn.textContent = 'Signing…';
+    const gp = (await read.getFeeData()).gasPrice; // legacy tx (Robinhood Chain)
+    const tx = await C('feeConfig', true).setSwapSplit(p, c, f, { type: 0, gasPrice: gp });
+    btn.textContent = 'Pending…'; await tx.wait();
+    toast(`swap split set ✓  ${tx.hash.slice(0, 12)}…`); refresh();
+  } catch (e) { toast('✗ ' + (e.shortMessage || e.reason || e.message || 'failed'), true); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+$('btnSetSwap').addEventListener('click', setSwapSplit);
 
 document.querySelectorAll('button[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b)));
 $('connectBtn').addEventListener('click', connect);
