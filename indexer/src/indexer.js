@@ -304,6 +304,15 @@ export const getHead = () => head;
 // One scan pass. Returns the number of logs applied.
 export async function tick() {
   head = await provider.getBlockNumber();
+  // getLogs is served by the (possibly free) logsProvider. NEVER scan past its head: a free
+  // node lagging the paid head could return a clamped range WITHOUT erroring (so the getLogs
+  // fallback wouldn't fire) and we'd advance the cursor over blocks it never returned → missed
+  // trades/accruals. Bounding the head to min(paid, free) means we index slightly behind the free
+  // node's tip at worst, never skipping. If the free head read fails, fall back to the paid head
+  // (a truly erroring node makes getLogs throw → its own fallback covers it).
+  if (logsProvider !== provider) {
+    try { head = Math.min(head, await logsProvider.getBlockNumber()); } catch { /* keep paid head */ }
+  }
   const safeHead = head - CFG.confirmations;
   if (safeHead < CFG.startBlock) return 0;
 
