@@ -29,7 +29,8 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .btn-lime{background:var(--lime);color:#10140a}.btn-lime[disabled]{opacity:.6;cursor:not-allowed}
 .btn-ghost{border-color:var(--line-strong);color:var(--ink);background:none}
 .btn-gold{background:var(--gold);color:#10140a}
-.banner{max-width:1240px;margin:16px auto 0;aspect-ratio:1200/400;max-height:440px;border-radius:16px;background:linear-gradient(120deg,#1a1e10,#0d0f07);position:relative;overflow:hidden;border:1px solid var(--line)}
+/* Fixed Robin Labs promo banner on every coin page — free platform advertising. 1200x400 (3:1). */
+.banner{max-width:1240px;margin:16px auto 0;aspect-ratio:1200/400;border-radius:16px;background:#0a0d06 url("assets/promo-banner.webp") center/cover no-repeat;position:relative;overflow:hidden;border:1px solid var(--line)}
 .banner .art{position:absolute;inset:0;background:radial-gradient(circle at 30% 40%,rgba(220,233,5,.22),transparent 60%),radial-gradient(circle at 80% 60%,rgba(138,99,224,.18),transparent 55%)}
 .banner .bmore{position:absolute;top:14px;left:24px;font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--lime);z-index:2;opacity:.85}
 .banner .bwrap{position:absolute;left:0;right:0;top:52px;bottom:44px;display:flex;align-items:center;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
@@ -195,7 +196,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
   <div class="spacer"></div><a class="nlink" href="browse.html">← All coins</a><a class="nlink" href="profile.html">Portfolio</a><button class="btn btn-ghost" id="connectBtn" type="button">Connect wallet</button>
 </div></header>
 
-<div class="banner"><div class="art"></div></div>
+<div class="banner"></div>
 <main class="wrap">
   <div class="idbar">
     <div class="pfp" id="pfp">?</div>
@@ -279,10 +280,9 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           <div class="tiny" id="devTotal">Lifetime earned: —</div>
 
           <h3 style="margin-top:18px">Coin profile</h3>
-          <div class="sub">Image, banner &amp; socials. One free signature — no gas. Anyone can see it instantly.</div>
+          <div class="sub">Image &amp; socials. One free signature — no gas. Anyone can see it instantly.</div>
           <div class="profedit">
             <label class="pf">Profile image (pfp)<input type="file" id="epfp" accept="image/*"><span class="ihint">Square, best ~400×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
-            <label class="pf">Banner<input type="file" id="ebanner" accept="image/*"><span class="ihint">Wide 3:1, best ~1200×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
             <textarea id="edesc" aria-label="Short description" maxlength="280" rows="2" placeholder="Short description (max 280 chars)"></textarea>
             <input type="text" id="etg" aria-label="Telegram link" placeholder="Telegram link (https://t.me/…)">
             <input type="text" id="etw" aria-label="X / Twitter link" placeholder="Twitter/X link (https://x.com/…)">
@@ -560,27 +560,7 @@ async function imgDataUrl(id, maxDim){
 function applyProfile(prof, symbol){
   if (!prof) return;
   if (prof.image) { const fb = (symbol || '?').replace(/[^\w]/g, '').slice(0, 3) || '?'; $('pfp').innerHTML = `<img src="${esc(prof.image)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" onerror="this.parentNode.textContent='${fb}'" />`; }
-  if (prof.banner) {
-    const b = document.querySelector('.banner');
-    if (b) {
-      // the creator's own banner replaces the "Trending on Robin Labs" marquee — no other
-      // projects plastered over this coin's banner.
-      COIN_HAS_BANNER = true;
-      b.style.backgroundImage = 'none';
-      b.querySelectorAll('.bmore, .bwrap').forEach((el) => { el.style.display = 'none'; });
-      // Fill the card with the banner, and — the key bit — size the card to the image's OWN aspect ratio
-      // (capped by max-height) so the WHOLE banner shows: no top/bottom crop for wide banners, no side
-      // gaps for tall ones. cover then equals contain when the card matches the image.
-      b.querySelectorAll('.art').forEach((el) => { el.style.display = 'none'; });
-      const bimg = b.querySelector('.bimg'); if (bimg) bimg.remove();
-      b.style.backgroundImage = `url("${esc(prof.banner)}")`;
-      b.style.backgroundSize = 'cover';
-      b.style.backgroundPosition = 'center';
-      const probe = new Image();
-      probe.onload = () => { if (probe.naturalWidth && probe.naturalHeight) b.style.aspectRatio = probe.naturalWidth + ' / ' + probe.naturalHeight; };
-      probe.src = prof.banner;
-    }
-  }
+  // Banner is a fixed Robin Labs promo (set in CSS) on every coin page — creators only set a pfp now.
   const who = document.querySelector('.who');
   if (who && (prof.description || prof.telegram || prof.twitter || prof.website)) {
     // Real brand marks as inline SVG (crisp, theme-tinted via currentColor, no external requests).
@@ -664,28 +644,28 @@ $('saveProfile')?.addEventListener('click', async () => {
   try {
     if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
     if (Pad.account().toLowerCase() !== COIN.dev.toLowerCase()) return note('Only the coin creator can set the profile.', 'err');
-    const pickedPfp = ($('epfp').files || []).length, pickedBanner = ($('ebanner').files || []).length;
-    note('Preparing images…');
+    const pickedPfp = ($('epfp').files || []).length;
+    note('Preparing image…');
     // imgDataUrl never throws now — it returns '' if a picked file can't be read. The picked-but-empty
-    // guard below (line: "That image could not be read") warns the user instead of saving a blank.
-    let pfp = '', banner = '';
+    // guard below warns the user instead of saving a blank. (Banners aren't creator-set — every coin page
+    // shows the fixed Robin Labs promo banner.)
+    let pfp = '';
     try { pfp = await imgDataUrl('epfp', 400); } catch (_) {}
-    try { banner = await imgDataUrl('ebanner', 1200); } catch (_) {}
     const desc = ($('edesc').value || '').trim(), tg = ($('etg').value || '').trim(), tw = ($('etw').value || '').trim(), web = ($('eweb').value || '').trim();
     // Don't POST an all-empty profile (that's what created the blank rows before).
-    if (!pfp && !banner && !desc && !tg && !tw && !web && !(PROFILE && PROFILE.image))
+    if (!pfp && !desc && !tg && !tw && !web && !(PROFILE && PROFILE.image))
       return note('Pick an image or add a description first.', 'err');
-    if ((pickedPfp && !pfp) || (pickedBanner && !banner)) return note('That image could not be read — try a JPG or PNG.', 'err');
+    if (pickedPfp && !pfp) return note('That image could not be read — try a JPG or PNG.', 'err');
     note('Sign the message in your wallet (free, no gas)…');
     const saved = await Pad.setCoinProfile(TOKEN, {
       description: desc, telegram: tg, twitter: tw, website: web,
-      pfp, banner, // "" leaves the existing image untouched
+      pfp, // "" leaves the existing image untouched
     });
     // Render the fresh profile straight from the POST response (its image URL is
     // cache-busted with ?v=ts), so it shows immediately without the 5s read-cache lag.
     PROFILE = saved || PROFILE;
     applyProfile(PROFILE, COIN.symbol);
-    $('epfp').value = ''; $('ebanner').value = '';
+    $('epfp').value = '';
     note('Saved ✓ — your profile is live.', 'ok');
   } catch (e) { note(e.message, 'err'); }
 });

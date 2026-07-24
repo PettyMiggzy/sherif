@@ -88,12 +88,6 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
       <h1 class="title">Start a coin</h1>
 
       <div class="field">
-        <label>Banner <span class="hint">wide 3:1, best ~1200×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
-        <label class="banner-up" for="banner"><div><div class="up-ic"><img src="assets/icons/upload.png" alt="" style="width:34px;height:34px;margin:0 auto;opacity:.9" /></div><div class="up-t">Click or drop a banner</div></div></label>
-        <input id="banner" type="file" accept="image/*" hidden onchange="prev(this,'banner')" />
-      </div>
-
-      <div class="field">
         <label>Coin image (pfp) <span class="hint">square, best ~400×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
         <div class="pfp-wrap">
           <label class="pfp-up" for="pfp" id="pfpBox"><div style="text-align:center"><div class="up-ic"><img src="assets/icons/upload.png" alt="" style="width:34px;height:34px;margin:0 auto;opacity:.9" /></div><div class="up-t">Upload</div></div></label>
@@ -321,13 +315,13 @@ $('launchBtn').addEventListener('click', async () => {
     const tg = ($('tg').value || '').trim();
     const tw = ($('tw').value || '').trim();
     const web = ($('web').value || '').trim();
-    const wantsProfile = token && (desc || tg || tw || web || ($('pfp').files || []).length || ($('banner').files || []).length);
+    const wantsProfile = token && (desc || tg || tw || web || ($('pfp').files || []).length);
     if (wantsProfile && Pad.hasApi()) {
-      // Encode each image defensively — a bad/huge one degrades to "" and never aborts the save or the redirect.
-      let pfp = "", banner = "";
+      // Encode the pfp defensively — a bad/huge one degrades to "" and never aborts the save or the redirect.
+      // (Banners are no longer creator-set: every coin page shows the fixed Robin Labs promo banner.)
+      let pfp = "";
       try { pfp = await imgDataUrl('pfp', 400); } catch (_) {}
-      try { banner = await imgDataUrl('banner', 1200); } catch (_) {}
-      const prof = { description: desc, telegram: tg, twitter: tw, website: web, pfp, banner };
+      const prof = { description: desc, telegram: tg, twitter: tw, website: web, pfp };
       // Persist the (downscaled) images to this browser FIRST, so they can NEVER be lost — if the upload is
       // interrupted (missed signature, tab close, hiccup) the coin page auto-finishes it from this stash.
       stashPendingProfile(token, prof);
