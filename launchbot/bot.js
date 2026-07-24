@@ -453,9 +453,11 @@ async function extractPhotoDataUrl(msg) {
 
 // ─────────────────────────────────────────────────────── dispatch ────────────
 async function onMessage(msg) {
+  // Opt-in private DMs only; ignore groups/channels (and messages with no sender,
+  // e.g. anonymous group admins) before dereferencing anything.
+  if (!msg.chat || msg.chat.type !== 'private' || !msg.from) return;
   const chatId = msg.chat.id;
   const userId = msg.from.id;
-  if (msg.chat.type !== 'private') return; // opt-in DMs only; ignore groups (no spam)
   const text = (msg.text || '').trim();
 
   // An in-progress wizard consumes non-command input first.
