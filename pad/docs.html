@@ -171,11 +171,11 @@
   <h4>Contract addresses (live)</h4>
   <div class="tw"><table>
     <tr><th>Contract</th><th>Address</th><th>Role</th></tr>
-    <tr><td><span class="m">CurvePadFactory</span></td><td class="addr">0x59A9Fd6Fdb8B5Ed60ABF889b84d2C2fcc8a1dEDe</td><td>One-call launch entrypoint</td></tr>
-    <tr><td><span class="m">PadRouter</span></td><td class="addr">0xeA5b12Cbba5B1790A3b00C5C5884484bb2AABFaa</td><td>The swap desk — every buy/sell goes through it</td></tr>
-    <tr><td><span class="m">FeeConfig</span></td><td class="addr">0x96a7c260E215853c38aC82c891827e5Dbf50efD8</td><td>Owner-governed fee dial — LP + swap split, retunable with no redeploy</td></tr>
-    <tr><td><span class="m">FloorCoopFactory</span></td><td class="addr">0x8f33ED14d81D7986A708af4C2DAD7DAEe9778D95</td><td>Deploys the per-coin FloorCoop LP vaults</td></tr>
-    <tr><td><span class="m">PlatformFeeSplitter</span></td><td class="addr">0xCADAbB14339BE77a2Fc4D4151B1E453b81940653</td><td>Routes the platform's cut (the $ROBIN buy-back split)</td></tr>
+    <tr><td><span class="m">CurvePadFactory</span></td><td class="addr">0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074</td><td>One-call launch entrypoint</td></tr>
+    <tr><td><span class="m">PadRouter</span></td><td class="addr">0xA6BaAB820809C7fC8350311776627298f91F07eC</td><td>The swap desk — every buy/sell goes through it</td></tr>
+    <tr><td><span class="m">FeeConfig</span></td><td class="addr">0x064D977B66FCC29256510dBCD8cC0C51bBb2De14</td><td>Owner-governed fee dial — LP + swap split, retunable with no redeploy</td></tr>
+    <tr><td><span class="m">FloorCoopFactory</span></td><td class="addr">0x564EDF561Bed46C972d5D44D84f5FAc9C5118668</td><td>Deploys the per-coin FloorCoop LP vaults</td></tr>
+    <tr><td><span class="m">PlatformFeeSplitter</span></td><td class="addr">0xca0EfD87B983CdeF56459051ecBE91aA5C87E17a</td><td>Routes the platform's cut (the $ROBIN buy-back split)</td></tr>
     <tr><td><span class="m">WETH</span></td><td class="addr">0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73</td><td>Canonical wrapped ETH</td></tr>
     <tr><td><span class="m">UniswapV3Factory</span></td><td class="addr">0x1f7d7550b1b028f7571e69a784071f0205fd2efa</td><td>The real v3 factory each pool is created on</td></tr>
   </table></div>
@@ -294,7 +294,7 @@ factory.on(<span class="s">"Launched"</span>, (token, curve, pool, dev) => {
   <p>One transaction. Send ETH with the call to make the creator's opening buy (≤2%), or send <span class="m">0</span> for a clean launch. All snippets use <strong>ethers v6</strong>.</p>
   <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">import</span> { ethers } <span class="k">from</span> <span class="s">"ethers"</span>;
 
-<span class="k">const</span> FACTORY = <span class="s">"0x59A9Fd6Fdb8B5Ed60ABF889b84d2C2fcc8a1dEDe"</span>;
+<span class="k">const</span> FACTORY = <span class="s">"0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074"</span>;
 <span class="k">const</span> abi = [
   <span class="s">"function launch((string name,string symbol,address dev,(uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,address projectWallet) tax) p) payable returns (address token,address curve,address pool)"</span>,
 ];
@@ -320,7 +320,7 @@ console.log(<span class="s">"launched"</span>, token);</pre></div>
   <div class="note warn"><span class="lbl">Opening buy = anti-snipe, not a fee</span>The ETH you send is <em>your own buy</em>, executed inside the launch tx before anyone else can trade — it isn't a platform charge. Capped at 2% of supply.</div>
 
   <h2 id="trade"><span class="sec">03 · Integrate</span>Buy &amp; sell</h2>
-  <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">const</span> ROUTER = <span class="s">"0xeA5b12Cbba5B1790A3b00C5C5884484bb2AABFaa"</span>;
+  <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">const</span> ROUTER = <span class="s">"0xA6BaAB820809C7fC8350311776627298f91F07eC"</span>;
 <span class="k">const</span> rAbi = [
   <span class="s">"function buy(address token,uint256 minOut) payable returns (uint256)"</span>,
   <span class="s">"function sell(address token,uint256 amountIn,uint256 minOutEth) returns (uint256)"</span>,

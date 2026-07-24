@@ -7,7 +7,7 @@ Robin Labs. Everything you need to continue is here.
 
 A creator-first **memecoin launchpad on Robinhood Chain** (Arbitrum Orbit L2,
 EVM, chainId **4663**). One-transaction launches into a real Uniswap v3 pool, a
-bonding curve, a strategic "let it ride" graduation, and a permanently-locked
+bonding curve, a ceiling-only graduation, and a permanently-locked
 protocol-owned floor — **the Bond**. Neon lime (`#dce905`) on black brand.
 
 ## Repo layout (the parts that matter)
@@ -32,17 +32,17 @@ docs/          GitBook- + Mintlify-ready docs generated from docs/src/*.md
 
 | Contract | Address |
 |----------|---------|
-| CurvePadFactory | `0x59A9Fd6Fdb8B5Ed60ABF889b84d2C2fcc8a1dEDe` |
-| PadRouter | `0xeA5b12Cbba5B1790A3b00C5C5884484bb2AABFaa` |
-| FeeConfig | `0x96a7c260E215853c38aC82c891827e5Dbf50efD8` |
-| FloorCoopFactory | `0x8f33ED14d81D7986A708af4C2DAD7DAEe9778D95` |
-| PlatformFeeSplitter | `0xCADAbB14339BE77a2Fc4D4151B1E453b81940653` |
+| CurvePadFactory | `0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074` |
+| PadRouter | `0xA6BaAB820809C7fC8350311776627298f91F07eC` |
+| FeeConfig | `0x064D977B66FCC29256510dBCD8cC0C51bBb2De14` |
+| FloorCoopFactory | `0x564EDF561Bed46C972d5D44D84f5FAc9C5118668` |
+| PlatformFeeSplitter | `0xca0EfD87B983CdeF56459051ecBE91aA5C87E17a` |
 | WETH | `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` |
 | UniswapV3Factory | `0x1f7d7550b1b028f7571e69a784071f0205fd2efa` |
 
 - RPC (public): `https://robinhoodchain.blockscout.com/api/eth-rpc`
 - Explorer: `https://robinhoodchain.blockscout.com`
-- Factory deploy block (for the indexer `START_BLOCK`): **17646568**
+- Factory deploy block (for the indexer `START_BLOCK`): **17752965**
 - Contract owner (all): cold wallet `0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf`
   (two-step transfer — pending accept via `pad/admin.html`; may already be done)
 
@@ -84,7 +84,7 @@ docs/          GitBook- + Mintlify-ready docs generated from docs/src/*.md
 
 - Frontend: `cd pad && python3 -m http.server 8080` → open a page. Works on the
   public RPC with zero backend (the indexer only speeds up the feed).
-- Indexer: `cd indexer && cp .env.example .env` (set `START_BLOCK=12237606`,
+- Indexer: `cd indexer && cp .env.example .env` (set `START_BLOCK=17752965`,
   `RPC_URL`, `SITE_DOMAIN`) → `docker compose up -d`.
 - Docs: edit `docs/src/*.md`, run `node docs/build.mjs`, connect the output
   folder to GitBook or Mintlify.

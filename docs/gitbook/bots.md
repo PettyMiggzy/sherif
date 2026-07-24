@@ -11,7 +11,7 @@ page is the fast path for bot devs: the three things you need and nothing else.
 ```js
 import { ethers } from "ethers";
 const provider = new ethers.JsonRpcProvider("https://robinhoodchain.blockscout.com/api/eth-rpc");
-const FACTORY = "0x59A9Fd6Fdb8B5Ed60ABF889b84d2C2fcc8a1dEDe";
+const FACTORY = "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074";
 
 const factory = new ethers.Contract(FACTORY, [
   "event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought)",
@@ -26,7 +26,7 @@ factory.on("Launched", (token, curve, pool, dev) => {
 **2. Buy** — native ETH in, no approval:
 
 ```js
-const ROUTER = "0xeA5b12Cbba5B1790A3b00C5C5884484bb2AABFaa";
+const ROUTER = "0xA6BaAB820809C7fC8350311776627298f91F07eC";
 const router = new ethers.Contract(ROUTER,
   ["function buy(address token,uint256 minOut) payable returns (uint256)"], signer);
 
