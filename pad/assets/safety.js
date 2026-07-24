@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Robin Labs Pad — safety layer  (GoPlus token security + tx simulation)
+// Robin Labs Pad - safety layer  (GoPlus token security + tx simulation)
 //
 // Goal: users (and their wallets) should never be left guessing whether a coin or
-// a transaction is safe — so we pre-vet BOTH, in the open, before anyone signs.
+// a transaction is safe - so we pre-vet BOTH, in the open, before anyone signs.
 //
 // Two independent sources, because each covers the other's blind spot:
 //
@@ -11,11 +11,11 @@
 //                 so our coins are scanned like any major chain: honeypot, taxes,
 //                 mintability, ownership take-back, pausable transfers, etc. If our
 //                 coins are clean here, wallets have nothing to red-flag.
-//                 Caveat: GoPlus needs time to INDEX a brand-new token — for the
+//                 Caveat: GoPlus needs time to INDEX a brand-new token - for the
 //                 first minutes after launch its result is empty. That's what (2) is for.
 //
 //   2. [Template] Every Robin Labs coin is deployed by our factory from ONE audited
-//                 LaunchToken template — not arbitrary user code. So we can verify a
+//                 LaunchToken template - not arbitrary user code. So we can verify a
 //                 coin is a genuine Robin Labs launch (its record exists in our
 //                 factory) and therefore CANNOT be a honeypot: fixed supply (no mint),
 //                 no owner take-back, no pausable transfers, sells never blocked after
@@ -24,7 +24,7 @@
 //
 //   [Tx sim]      Every state-changing action is simulated with eth_call BEFORE the
 //                 wallet is asked to sign (see wallet.js guardedSend). simulate() here
-//                 exposes that result so the UI can show "simulated ✓ — you'll receive
+//                 exposes that result so the UI can show "simulated ✓ - you'll receive
 //                 ~X" instead of a scary unknown. A tx that would revert never reaches
 //                 the wallet, so the user never sees the wallet's red failure screen.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ function gpHeaders() {
   return h;
 }
 
-// Never let a slow/blocked GoPlus call hang the UI — the template + tx-sim checks stand on their own.
+// Never let a slow/blocked GoPlus call hang the UI - the template + tx-sim checks stand on their own.
 const timeout = (ms) => (typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined);
 
 /// Raw GoPlus token-security record for our chain, or null if unsupported / not-yet-indexed / error.
@@ -65,7 +65,7 @@ export async function goPlusToken(token) {
     const j = await r.json();
     if (j.code !== 1 || !j.result) return null;
     const rec = j.result[token.toLowerCase()] || j.result[token];
-    // GoPlus returns {} for a token it hasn't indexed yet — treat as "no data", not "unsafe".
+    // GoPlus returns {} for a token it hasn't indexed yet - treat as "no data", not "unsafe".
     return rec && Object.keys(rec).length ? rec : null;
   } catch { return null; }
 }
@@ -98,26 +98,26 @@ async function templateAndTax(token) {
 // One check row the UI renders. level: "ok" | "warn" | "info".
 const chk = (level, label, detail) => ({ level, label, detail });
 
-/// Full, normalized safety report for a coin — GoPlus + template + tax, merged and de-jargoned.
+/// Full, normalized safety report for a coin - GoPlus + template + tax, merged and de-jargoned.
 /// Shape: { token, verdict:"safe"|"caution"|"unknown", source, checks:[{level,label,detail}], gp }
 export async function scanToken(token) {
   const [gp, tt] = await Promise.all([goPlusToken(token), templateAndTax(token)]);
   const checks = [];
   let bad = 0, warn = 0;
 
-  // 1) Robin Labs template — the strongest immediate guarantee (works before GoPlus indexes).
+  // 1) Robin Labs template - the strongest immediate guarantee (works before GoPlus indexes).
   if (tt.isOurCoin) {
-    checks.push(chk("ok", "Verified Robin Labs coin", "Our audited LaunchToken template — not custom code. Fixed 1B supply, no mint, no owner kill-switch, LP locked at graduation."));
+    checks.push(chk("ok", "Verified Robin Labs coin", "Our audited LaunchToken template - not custom code. Fixed 1B supply, no mint, no owner kill-switch, LP locked at graduation."));
   } else {
-    checks.push(chk("info", "Not a Robin Labs launch", "This token wasn't launched on Robin Labs, so the template guarantees below don't apply — rely on the GoPlus scan."));
+    checks.push(chk("info", "Not a Robin Labs launch", "This token wasn't launched on Robin Labs, so the template guarantees below don't apply - rely on the GoPlus scan."));
   }
 
-  // 2) Honeypot — can you actually sell? (the scariest red flag)
+  // 2) Honeypot - can you actually sell? (the scariest red flag)
   if (gp && "is_honeypot" in gp) {
     if (truthy(gp.is_honeypot) || truthy(gp.cannot_sell_all)) { checks.push(chk("warn", "Honeypot risk", "GoPlus flags this token as hard/impossible to sell.")); bad++; }
     else checks.push(chk("ok", "Not a honeypot", "GoPlus confirms sells go through."));
   } else if (tt.isOurCoin) {
-    checks.push(chk("ok", "Sells always open", "The template never blocks a holder's sell — the anti-snipe guard is buy-side only and auto-expires."));
+    checks.push(chk("ok", "Sells always open", "The template never blocks a holder's sell - the anti-snipe guard is buy-side only and auto-expires."));
   }
 
   // 3) Trading tax
@@ -125,7 +125,7 @@ export async function scanToken(token) {
     const b = tt.buyBps / 100, s = tt.sellBps / 100;
     const level = (tt.buyBps > 400 || tt.sellBps > 400) ? "warn" : "ok";
     if (level === "warn") warn++;
-    checks.push(chk(level, `Trading fee ${b}% buy / ${s}% sell`, "Set at launch and immutable — the 4% cap is enforced on-chain. No hidden fee-on-transfer (Uniswap v3 forbids it)."));
+    checks.push(chk(level, `Trading fee ${b}% buy / ${s}% sell`, "Set at launch and immutable - the 4% cap is enforced on-chain. No hidden fee-on-transfer (Uniswap v3 forbids it)."));
   } else if (gp && (gp.buy_tax != null || gp.sell_tax != null)) {
     const b = pct(gp.buy_tax), s = pct(gp.sell_tax);
     const level = ((b ?? 0) > 10 || (s ?? 0) > 10) ? "warn" : "ok";
@@ -133,7 +133,7 @@ export async function scanToken(token) {
     checks.push(chk(level, `Trading fee ${b}% buy / ${s}% sell`, "Reported by GoPlus."));
   }
 
-  // 4) Mint / ownership take-back / pausable — GoPlus signals (skipped cleanly for our fixed template).
+  // 4) Mint / ownership take-back / pausable - GoPlus signals (skipped cleanly for our fixed template).
   if (gp) {
     if (truthy(gp.is_mintable)) { checks.push(chk("warn", "Mintable supply", "GoPlus: the owner can mint more tokens.")); warn++; }
     if (truthy(gp.can_take_back_ownership) || truthy(gp.hidden_owner)) { checks.push(chk("warn", "Owner can reclaim control", "GoPlus flags a hidden/recoverable owner.")); bad++; }
@@ -149,7 +149,7 @@ export async function scanToken(token) {
   return { token, verdict, source, checks, gp };
 }
 
-/// Tx SIMULATION preflight — eth_call the exact contract call the user is about to sign. Returns the decoded
+/// Tx SIMULATION preflight - eth_call the exact contract call the user is about to sign. Returns the decoded
 /// result on success, or a friendly reason on revert, WITHOUT ever asking the wallet to sign. This is what keeps
 /// a doomed tx (honeypot sell, slippage, anti-snipe cap) from ever reaching the wallet's scary red screen.
 export async function simulate(contract, method, args, valueWei = 0n, from = undefined) {
@@ -165,9 +165,9 @@ export async function simulate(contract, method, args, valueWei = 0n, from = und
 // ── tiny self-contained UI: a safety panel any page can drop in ──────────────
 const DOT = { ok: "#48d16a", warn: "#f5c542", info: "#7f8570", caution: "#f5c542" };
 const HEAD = {
-  safe: { c: "#48d16a", t: "SAFE", s: "Pre-vetted — clean on every check we run." },
+  safe: { c: "#48d16a", t: "SAFE", s: "Pre-vetted - clean on every check we run." },
   caution: { c: "#f5c542", t: "REVIEW", s: "Mostly clean, but read the flagged items before you trade." },
-  unknown: { c: "#7f8570", t: "UNVERIFIED", s: "We couldn't fully scan this token — trade carefully." },
+  unknown: { c: "#7f8570", t: "UNVERIFIED", s: "We couldn't fully scan this token - trade carefully." },
 };
 
 /// Render the report into an element (or return the HTML string if no element given).

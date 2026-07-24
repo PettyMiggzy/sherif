@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Coin — Robin Labs Pad</title>
+<title>Coin - Robin Labs Pad</title>
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
@@ -29,7 +29,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .btn-lime{background:var(--lime);color:#10140a}.btn-lime[disabled]{opacity:.6;cursor:not-allowed}
 .btn-ghost{border-color:var(--line-strong);color:var(--ink);background:none}
 .btn-gold{background:var(--gold);color:#10140a}
-/* Fixed Robin Labs promo banner on every coin page — free platform advertising. 1200x400 (3:1). */
+/* Fixed Robin Labs promo banner on every coin page - free platform advertising. 1200x400 (3:1). */
 .banner{max-width:1240px;margin:16px auto 0;aspect-ratio:1200/400;border-radius:16px;background:#0a0d06 url("assets/promo-banner.webp") center/cover no-repeat;position:relative;overflow:hidden;border:1px solid var(--line)}
 .banner .art{position:absolute;inset:0;background:radial-gradient(circle at 30% 40%,rgba(220,233,5,.22),transparent 60%),radial-gradient(circle at 80% 60%,rgba(138,99,224,.18),transparent 55%)}
 .banner .bmore{position:absolute;top:14px;left:24px;font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--lime);z-index:2;opacity:.85}
@@ -90,7 +90,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .idbar h1 .tk{color:var(--lime);font-size:1.2rem}
 .idbar .ca{display:inline-flex;align-items:center;gap:8px;margin-top:4px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:8px;padding:5px 8px;font-family:var(--mono);font-size:.74rem;color:var(--ink-dim)}
 .idbar .ca button{background:var(--lime);color:#10140a;border:none;border-radius:6px;padding:0 12px;min-height:40px;display:inline-flex;align-items:center;font-weight:700;cursor:pointer;font-size:.7rem}
-/* Mobile: stack the identity BELOW the banner (pfp overlaps the banner, name + address sit cleanly under it) —
+/* Mobile: stack the identity BELOW the banner (pfp overlaps the banner, name + address sit cleanly under it) -
    otherwise the flex-end + negative margin rides the coin name up onto the banner image. */
 @media(max-width:600px){
   .idbar{flex-direction:column;align-items:flex-start;gap:10px;margin-top:-42px}
@@ -183,7 +183,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .profedit textarea,.profedit input[type=text]{background:var(--bg-2);border:1px solid var(--line-2);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:.82rem;font-family:inherit;width:100%;resize:vertical}
 .profedit .btn{padding:10px}
 .foot{border-top:1px solid var(--line);padding:20px 0 40px;color:var(--ink-faint);font-size:.76rem;text-align:center}
-/* creator social links — icon chips with real brand logos */
+/* creator social links - icon chips with real brand logos */
 .socs{display:flex;gap:8px;margin-top:4px;flex-wrap:wrap}
 .soc{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:var(--bg-3);border:1px solid var(--line-2);color:var(--ink-dim);transition:color .18s,border-color .18s,background .18s,transform .18s}
 .soc:hover{color:var(--lime);border-color:var(--line-strong);background:rgba(220,233,5,.08);transform:translateY(-1px)}
@@ -217,7 +217,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
     <div class="pfp" id="pfp">?</div>
     <div class="who">
       <h1><span id="nm">Loading…</span> <span class="tk" id="tk"></span> <span id="lockBadge" class="lockbadge" style="display:none">🔒 Dev locked</span></h1>
-      <span class="ca"><span id="ca" class="mono">—</span> <button id="copyCa" type="button">Copy</button></span>
+      <span class="ca"><span id="ca" class="mono">-</span> <button id="copyCa" type="button">Copy</button></span>
     </div>
   </div>
   <div id="pendingProfile" style="display:none;margin:14px 0 0;padding:12px 14px;border:1px solid var(--lime);border-radius:12px;background:rgba(220,233,5,.08);font-size:.9rem;align-items:center;gap:12px;justify-content:space-between">
@@ -241,14 +241,14 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           <span id="pHi" class="mono" style="position:absolute;top:8px;left:12px;font-size:.72rem;color:var(--ink-faint)"></span>
           <span id="pLo" class="mono" style="position:absolute;bottom:10px;left:12px;font-size:.72rem;color:var(--ink-faint)"></span>
           <div class="ph" id="chartPh" style="display:none;position:absolute;inset:0">
-            <div class="ph-txt"><div class="big">Live chart</div><div>Chart builds from the first trade — buy to kick it off.</div></div>
+            <div class="ph-txt"><div class="big">Live chart</div><div>Chart builds from the first trade - buy to kick it off.</div></div>
           </div>
         </div>
       </div>
       <div class="statrow">
-        <div class="s"><div class="k">Market cap</div><div class="v" id="stMc">—</div></div>
-        <div class="s"><div class="k">Price</div><div class="v" id="stPx">—</div></div>
-        <div class="s"><div class="k">Stage</div><div class="v" id="stStage">—</div></div>
+        <div class="s"><div class="k">Market cap</div><div class="v" id="stMc">-</div></div>
+        <div class="s"><div class="k">Price</div><div class="v" id="stPx">-</div></div>
+        <div class="s"><div class="k">Stage</div><div class="v" id="stStage">-</div></div>
         <div class="s"><div class="k">Supply</div><div class="v">1B</div></div>
       </div>
       <!-- live trades feed (green buys / red sells) -->
@@ -259,11 +259,11 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 
       <!-- holders (from the chain explorer) -->
       <div class="panel" style="margin-top:16px">
-        <div class="phd"><h3>Holders</h3><span class="meta" id="holderCount">—</span></div>
+        <div class="phd"><h3>Holders</h3><span class="meta" id="holderCount">-</span></div>
         <div class="trades holders" id="holdersBody"><div class="empty">Loading holders…</div></div>
       </div>
 
-      <div class="panel sec"><h3>How this coin works</h3><p>Launched on Robin Labs — a real Uniswap v3 pair from block one. It walks up a bonding curve and, once it reaches the graduation window, posts <b style="color:var(--ink)">the Bond</b>: a protocol-owned floor it can’t be rugged below. Clean token, no transfer tax, LP locked forever.</p></div>
+      <div class="panel sec"><h3>How this coin works</h3><p>Launched on Robin Labs - a real Uniswap v3 pair from block one. It walks up a bonding curve and, once it reaches the graduation window, posts <b style="color:var(--ink)">the Bond</b>: a protocol-owned floor it can’t be rugged below. Clean token, no transfer tax, LP locked forever.</p></div>
     </div>
 
     <div>
@@ -274,7 +274,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           <div class="sellbal" id="sellBal" style="display:none;font-size:.74rem;color:var(--ink-dim);margin:-4px 0 8px;text-align:right"></div>
           <div class="quick" id="quick"></div>
           <button class="btn btn-lime" style="width:100%" id="trade" type="button">Buy</button>
-          <p id="tradeNote" style="color:var(--ink-faint);font-size:.75rem;margin:10px 0 0;text-align:center">Buys send native ETH — no token approval. Simulated and balance-checked before you sign.</p>
+          <p id="tradeNote" style="color:var(--ink-faint);font-size:.75rem;margin:10px 0 0;text-align:center">Buys send native ETH - no token approval. Simulated and balance-checked before you sign.</p>
         </div>
 
         <!-- Bond / graduation panel (JS fills it) -->
@@ -283,10 +283,10 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           <h3 id="bondTitle">Loading…</h3>
           <div class="sub" id="bondSub"></div>
           <div class="bar"><div class="fill" id="bondFill" style="width:0%"></div><div class="mark" id="bondMark" style="left:0%;display:none"></div></div>
-          <div class="bar-lab" id="bondLab"><span>Road to the Bond</span><b>—</b></div>
+          <div class="bar-lab" id="bondLab"><span>Road to the Bond</span><b>-</b></div>
           <button class="btn btn-lime" style="width:100%;margin-top:12px;display:none" id="gradBtn" type="button">Graduate now</button>
           <div class="floorpill" id="floorPill" style="display:none"></div>
-          <div class="tiny" id="gradPerk" style="margin-top:10px;color:var(--ink-dim)">🚀 At graduation (~$34k mcap): the raise locks into the Bond floor forever, the creator and platform each take <b style="color:var(--ink)">0.5 ETH</b>, and <b style="color:var(--ink)">Robin Labs buys the coin a DexScreener 10× Boost</b> — instant promotion the moment it hits the DEX.</div>
+          <div class="tiny" id="gradPerk" style="margin-top:10px;color:var(--ink-dim)">🚀 At graduation (~$34k mcap): the raise locks into the Bond floor forever, the creator and platform each take <b style="color:var(--ink)">0.5 ETH</b>, and <b style="color:var(--ink)">Robin Labs buys the coin a DexScreener 10× Boost</b> - instant promotion the moment it hits the DEX.</div>
         </div>
 
         <!-- Dev-only controls (shown when the connected wallet is the creator) -->
@@ -296,11 +296,11 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
             <button class="btn btn-ghost" id="collectBtn" type="button">Collect fees</button>
             <button class="btn btn-gold" id="burnBtn" type="button">Buy &amp; burn</button>
           </div>
-          <div class="tiny" id="devEsc">Uncollected (current): —</div>
-          <div class="tiny" id="devTotal">Lifetime earned: —</div>
+          <div class="tiny" id="devEsc">Uncollected (current): -</div>
+          <div class="tiny" id="devTotal">Lifetime earned: -</div>
 
           <h3 style="margin-top:18px">Coin profile</h3>
-          <div class="sub">Image &amp; socials. One free signature — no gas. Anyone can see it instantly.</div>
+          <div class="sub">Image &amp; socials. One free signature - no gas. Anyone can see it instantly.</div>
           <div class="profedit">
             <label class="pf">Profile image (pfp)<input type="file" id="epfp" accept="image/*"><span class="ihint">Square, best ~400×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
             <textarea id="edesc" aria-label="Short description" maxlength="280" rows="2" placeholder="Short description (max 280 chars)"></textarea>
@@ -313,20 +313,20 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
         </div>
       </div>
 
-      <!-- dev-bag vesting lock (gold) — shown only when this coin's creator has an on-chain lock -->
+      <!-- dev-bag vesting lock (gold) - shown only when this coin's creator has an on-chain lock -->
       <div class="panel sec devlock" id="devLockPanel" style="margin-top:16px;display:none"><h3>Dev lock <span class="meta">irrevocable</span></h3>
-        <p class="dl-blurb">The creator locked <b id="dlPct">—</b> in an <b>irrevocable</b> cliff+linear vesting lock — no cancel, no owner. It releases over time; anyone can verify it on-chain.</p>
+        <p class="dl-blurb">The creator locked <b id="dlPct">-</b> in an <b>irrevocable</b> cliff+linear vesting lock - no cancel, no owner. It releases over time; anyone can verify it on-chain.</p>
         <div class="bar"><div class="fill dl-fill" id="dlFill" style="width:0%"></div></div>
-        <div class="bar-lab"><span id="dlCountdown">—</span><b id="dlLocked">—</b></div>
+        <div class="bar-lab"><span id="dlCountdown">-</span><b id="dlLocked">-</b></div>
         <button class="btn btn-gold" id="dlRelease" type="button" style="width:100%;margin-top:12px;display:none">Release vested</button>
       </div>
 
-      <!-- holder rewards (violet) — this coin's claimable/pending reward legs -->
+      <!-- holder rewards (violet) - this coin's claimable/pending reward legs -->
       <div class="panel sec rewards" id="rewardsPanel" style="margin-top:16px;display:none"><h3>Holder rewards <span class="meta">real ETH</span></h3>
-        <p class="rw-blurb">Every trade funds two <b>0.25%</b> reward legs in real ETH — for net-volume <b>traders</b> and diamond-hand <b>holders</b> of this coin. Claim what's yours; you keep the ETH.</p>
+        <p class="rw-blurb">Every trade funds two <b>0.25%</b> reward legs in real ETH - for net-volume <b>traders</b> and diamond-hand <b>holders</b> of this coin. Claim what's yours; you keep the ETH.</p>
         <div class="rw-stats">
-          <div><span class="k">Claimable now</span><span class="v" id="rwClaim">—</span></div>
-          <div><span class="k">Pending epoch</span><span class="v" id="rwPend">—</span></div>
+          <div><span class="k">Claimable now</span><span class="v" id="rwClaim">-</span></div>
+          <div><span class="k">Pending epoch</span><span class="v" id="rwPend">-</span></div>
         </div>
         <button class="btn btn-vio" id="rwClaimBtn" type="button" style="width:100%;display:none">Claim rewards</button>
         <a class="feelink" href="rewards.html">How rewards work →</a>
@@ -340,8 +340,8 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
       <!-- public fees: what the creator earns and what deepens the floor on THIS coin -->
       <div class="panel sec" style="margin-top:16px"><h3>Fees <span class="meta">this coin · all-time</span></h3>
         <div class="feegrid">
-          <div class="fee" title="The coin creator's fees to date — their LP-fee share + swap-fee share, summed from on-chain events. Public and verifiable."><img src="assets/icons/dev.png" alt="" onerror="this.style.display='none'" /><div><div class="k">Creator fees to date</div><div class="v" id="feeDev">—</div></div></div>
-          <div class="fee"><img src="assets/icons/reward-floor.png" alt="" /><div><div class="k">Into the floor</div><div class="v" id="feeFloor">—</div></div></div>
+          <div class="fee" title="The coin creator's fees to date - their LP-fee share + swap-fee share, summed from on-chain events. Public and verifiable."><img src="assets/icons/dev.png" alt="" onerror="this.style.display='none'" /><div><div class="k">Creator fees to date</div><div class="v" id="feeDev">-</div></div></div>
+          <div class="fee"><img src="assets/icons/reward-floor.png" alt="" /><div><div class="k">Into the floor</div><div class="v" id="feeFloor">-</div></div></div>
         </div>
       </div>
 
@@ -349,15 +349,15 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
       <div class="panel sec floorcoop" style="margin-top:16px"><h3>Lock liquidity · earn fees <span class="meta">any token · locked</span></h3>
         <p class="fc-blurb">Stake ETH into this coin's <b>real liquidity</b> and earn your <b>share of every trade's fee</b>. It's <b>locked</b> for the term you pick, so it deepens the market and can't be yanked out from under the coin. The longer you lock, the bigger your share.</p>
         <div class="fc-stats">
-          <div><span class="k">Total locked</span><span class="v" id="fcTvl">—</span></div>
-          <div><span class="k">Fees paid out</span><span class="v" id="fcFees">—</span></div>
-          <div><span class="k">Your stake</span><span class="v" id="fcMine">—</span></div>
-          <div><span class="k">Your fees</span><span class="v" id="fcEarned">—</span></div>
+          <div><span class="k">Total locked</span><span class="v" id="fcTvl">-</span></div>
+          <div><span class="k">Fees paid out</span><span class="v" id="fcFees">-</span></div>
+          <div><span class="k">Your stake</span><span class="v" id="fcMine">-</span></div>
+          <div><span class="k">Your fees</span><span class="v" id="fcEarned">-</span></div>
         </div>
         <!-- your active position (shown once you have one) -->
         <div class="fc-pos" id="fcPos" style="display:none">
           <div class="fc-pos-h"><span>Your position</span><span class="fc-lock" id="fcLock"></span></div>
-          <div class="fc-pos-b"><div><span class="k">Staked</span><b id="fcPosAmt">—</b></div><div><span class="k">Pool share</span><b id="fcPosPct">—</b></div><div><span class="k">Fees earned</span><b id="fcPosFees">—</b></div></div>
+          <div class="fc-pos-b"><div><span class="k">Staked</span><b id="fcPosAmt">-</b></div><div><span class="k">Pool share</span><b id="fcPosPct">-</b></div><div><span class="k">Fees earned</span><b id="fcPosFees">-</b></div></div>
         </div>
         <div class="fc-amt"><input id="fcInput" aria-label="Stake amount" placeholder="0.0" value="0.25" inputmode="decimal" oninput="fcPrev()" /><span>ETH</span></div>
         <div class="fc-terms" id="fcTerms" role="radiogroup" aria-label="Lock term"></div>
@@ -369,8 +369,8 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 
       <div class="panel sec" style="margin-top:16px"><h3>Coin info</h3>
         <div class="holders">
-          <div class="h"><span>Buy fee</span><b id="infoBuy">—</b></div>
-          <div class="h"><span>Sell fee</span><b id="infoSell">—</b></div>
+          <div class="h"><span>Buy fee</span><b id="infoBuy">-</b></div>
+          <div class="h"><span>Sell fee</span><b id="infoSell">-</b></div>
           <div class="h"><span>Chain</span><b>Robinhood</b></div>
           <div class="h"><span>LP at graduation</span><b>Locked forever</b></div>
         </div>
@@ -378,7 +378,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
     </div>
   </div>
 </main>
-<div class="foot">Robin Labs on Robinhood Chain — contracts live and audited. Chart via DexScreener. Not financial advice. Not affiliated with Robinhood Markets, Uniswap, or DexScreener.</div>
+<div class="foot">Robin Labs on Robinhood Chain - contracts live and audited. Chart via DexScreener. Not financial advice. Not affiliated with Robinhood Markets, Uniswap, or DexScreener.</div>
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
@@ -410,7 +410,7 @@ let BAL = 0, BAL_STR = '0'; // connected wallet's token balance (Number for %, e
 
 // The quick-amount buttons mean different things per side: ETH amounts to BUY, a
 // percentage of your token balance to SELL (the old code used ETH numbers as token
-// amounts — clicking "1 ETH" tried to sell 1 token).
+// amounts - clicking "1 ETH" tried to sell 1 token).
 function renderQuick(){
   const q = $('quick');
   if (SIDE === 'buy'){
@@ -426,7 +426,7 @@ function renderQuick(){
 function side(s){
   SIDE = s;
   const b = $('tBuy'), se = $('tSell'), tr = $('trade'), c = $('cur');
-  if (s === 'buy'){ b.classList.add('on'); se.classList.remove('on'); c.textContent = 'ETH'; tr.classList.add('btn-lime'); tr.classList.remove('btn-ghost'); tr.textContent = 'Buy ' + disp(COIN?.symbol); $('amtInput').value = '0.1'; $('sellBal').style.display = 'none'; $('tradeNote').textContent = 'Buys send native ETH — no token approval. Simulated and balance-checked before you sign.'; }
+  if (s === 'buy'){ b.classList.add('on'); se.classList.remove('on'); c.textContent = 'ETH'; tr.classList.add('btn-lime'); tr.classList.remove('btn-ghost'); tr.textContent = 'Buy ' + disp(COIN?.symbol); $('amtInput').value = '0.1'; $('sellBal').style.display = 'none'; $('tradeNote').textContent = 'Buys send native ETH - no token approval. Simulated and balance-checked before you sign.'; }
   else { se.classList.add('on'); b.classList.remove('on'); c.textContent = disp(COIN?.symbol) || 'tokens'; tr.classList.remove('btn-lime'); tr.classList.add('btn-ghost'); tr.textContent = 'Sell ' + disp(COIN?.symbol); $('amtInput').value = ''; $('tradeNote').textContent = 'Sells need one exact-amount approval to the router, then the swap. Simulated and balance-checked first.'; loadBal(); }
   renderQuick();
 }
@@ -473,12 +473,12 @@ $('trade').addEventListener('click', async () => {
   try {
     if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
     if (SIDE === 'buy'){
-      setNote('Buying with ' + amount + ' ETH — confirm in your wallet (no approval)…');
+      setNote('Buying with ' + amount + ' ETH - confirm in your wallet (no approval)…');
       const rc = await (await Pad.buy({ token: TOKEN, ethAmount: amount })).wait();
       setNote('Bought ✓ ' + rc.hash.slice(0, 12) + '…', 'ok');
     } else {
       if (BAL && amount > BAL + 1e-9) return setNote(`You only hold ${(+BAL.toFixed(4))} ${disp(COIN.symbol)}.`, 'err');
-      setNote('Selling — one exact-amount approval to the router, then the swap…');
+      setNote('Selling - one exact-amount approval to the router, then the swap…');
       // pass the raw string (not the parsed float) so "Max" sells the exact wei balance
       const rc = await (await Pad.sell({ token: TOKEN, tokenAmount: raw })).wait();
       setNote('Sold ✓ ' + rc.hash.slice(0, 12) + '…', 'ok');
@@ -496,7 +496,7 @@ $('gradBtn').addEventListener('click', async () => {
   if (!COIN) return;
   try {
     if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
-    setNote('Graduating — posting the Bond…');
+    setNote('Graduating - posting the Bond…');
     const rc = await (await Pad.graduate(COIN.curve)).wait();
     setNote('Graduated ✓ the Bond is live. ' + rc.hash.slice(0, 12) + '…', 'ok');
     refreshStatsLive();                          // stage flips to Graduated immediately
@@ -508,7 +508,7 @@ $('gradBtn').addEventListener('click', async () => {
 $('collectBtn').addEventListener('click', async () => {
   try {
     // Your creator income is in two places: the swap-fee escrow (router) AND your share of the 1% LP fee
-    // (on the curve). Collect BOTH. LP first — collectFees() pays your share straight to your wallet.
+    // (on the curve). Collect BOTH. LP first - collectFees() pays your share straight to your wallet.
     let did = false;
     if (COIN && COIN.curve) {
       const lp = await Pad.pendingLpCreatorWeth(COIN.curve);
@@ -558,16 +558,16 @@ async function maybeShowDev(){
 // <img>, then downscales to `maxDim` and encodes webp→jpeg→png (Safari lacks webp
 // encode). If every canvas path fails but the original is already small and a plain
 // type, it sends the raw bytes. Returns '' ONLY when no file was chosen; when a file
-// WAS chosen but can't be processed it THROWS — so we never silently save a blank
+// WAS chosen but can't be processed it THROWS - so we never silently save a blank
 // image (the old code returned '' on failure, which is why "saved ✓" but no picture).
 const IMG_OK = /^data:image\/(webp|png|jpeg|gif);base64,/;
 // Returns a small data-URL for the picked image, or '' if none is chosen or it truly can't be read. NEVER
-// throws — a bad/huge image must never block the profile save (it would take the socials down with it).
+// throws - a bad/huge image must never block the profile save (it would take the socials down with it).
 async function imgDataUrl(id, maxDim){
   const f = ($(id)?.files || [])[0];
   if (!f) return '';                                   // no file chosen → leave existing image
   // Best-effort local downscale (keeps the upload tiny). createImageBitmap streams the decode, so even a
-  // very large photo (iPhone ProRAW/Live Photo, >16MB) becomes a tiny output — no need to reject it up front.
+  // very large photo (iPhone ProRAW/Live Photo, >16MB) becomes a tiny output - no need to reject it up front.
   try {
     let bmp = await createImageBitmap(f, { resizeWidth: maxDim, resizeQuality: 'high' }).catch(() => null);
     if (!bmp) bmp = await createImageBitmap(f).catch(() => null);
@@ -584,7 +584,7 @@ async function imgDataUrl(id, maxDim){
       }
     }
   } catch { /* fall through to raw */ }
-  // Raw fallback — the server downscales/converts (HEIC etc.), but only if it fits the upload limit so we
+  // Raw fallback - the server downscales/converts (HEIC etc.), but only if it fits the upload limit so we
   // never fire a doomed oversized request. FileReader never rejects, so a picked file never errors out.
   try {
     if (f.size <= 16 * 1024 * 1024) {
@@ -595,7 +595,7 @@ async function imgDataUrl(id, maxDim){
       }
     }
   } catch {}
-  return '';                                           // give up gracefully — never block the save
+  return '';                                           // give up gracefully - never block the save
 }
 // Paint a profile onto the page (pfp, banner, description + socials). Reused by the
 // initial load and by the creator's save (so a fresh save shows instantly, without
@@ -603,7 +603,7 @@ async function imgDataUrl(id, maxDim){
 function applyProfile(prof, symbol){
   if (!prof) return;
   if (prof.image) { const fb = (symbol || '?').replace(/[^\w]/g, '').slice(0, 3) || '?'; $('pfp').innerHTML = `<img src="${esc(prof.image)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" onerror="this.parentNode.textContent='${fb}'" />`; }
-  // Banner is a fixed Robin Labs promo (set in CSS) on every coin page — creators only set a pfp now.
+  // Banner is a fixed Robin Labs promo (set in CSS) on every coin page - creators only set a pfp now.
   const who = document.querySelector('.who');
   if (who && (prof.description || prof.telegram || prof.twitter || prof.website)) {
     // Real brand marks as inline SVG (crisp, theme-tinted via currentColor, no external requests).
@@ -623,7 +623,7 @@ function applyProfile(prof, symbol){
 
 // ── auto-finish a coin image the creator launched with but that hasn't saved yet ──────────────
 // create.html stashes the (downscaled) profile in this browser BEFORE uploading. If the upload was
-// interrupted (missed signature, tab close, hiccup) the image lives ONLY here — so on the coin page we
+// interrupted (missed signature, tab close, hiccup) the image lives ONLY here - so on the coin page we
 // complete it: auto-submit when the creator wallet is connected, or a one-click "Finish now" that
 // connects + retries. It self-heals until the image is confirmed on the backend, then clears the stash.
 const PENDING_KEY = 'rl_pending_profile:' + String(TOKEN || '').toLowerCase();
@@ -654,7 +654,7 @@ async function tryCompletePending(){
   if (!PENDING) return;
   const acct = Pad.account && Pad.account();
   if (!acct || !COIN || acct.toLowerCase() !== String(COIN.dev || '').toLowerCase()) {
-    showPending('Your coin image is ready to save — connect the creator wallet to finish (free, no gas).', true);
+    showPending('Your coin image is ready to save - connect the creator wallet to finish (free, no gas).', true);
     return;
   }
   try {
@@ -666,7 +666,7 @@ async function tryCompletePending(){
     localStorage.removeItem(PENDING_KEY); PENDING = null; hidePending();
     try { PROFILE = await Pad.getCoinProfile(TOKEN); applyProfile(PROFILE, COIN.symbol); } catch {}
   } catch (e) {
-    showPending('Image not saved yet (' + (e.message || 'error') + ') — click to retry.', true);
+    showPending('Image not saved yet (' + (e.message || 'error') + ') - click to retry.', true);
   }
 }
 document.getElementById('pendingProfileBtn')?.addEventListener('click', async () => {
@@ -689,8 +689,8 @@ $('saveProfile')?.addEventListener('click', async () => {
     if (Pad.account().toLowerCase() !== COIN.dev.toLowerCase()) return note('Only the coin creator can set the profile.', 'err');
     const pickedPfp = ($('epfp').files || []).length;
     note('Preparing image…');
-    // imgDataUrl never throws now — it returns '' if a picked file can't be read. The picked-but-empty
-    // guard below warns the user instead of saving a blank. (Banners aren't creator-set — every coin page
+    // imgDataUrl never throws now - it returns '' if a picked file can't be read. The picked-but-empty
+    // guard below warns the user instead of saving a blank. (Banners aren't creator-set - every coin page
     // shows the fixed Robin Labs promo banner.)
     let pfp = '';
     try { pfp = await imgDataUrl('epfp', 400); } catch (_) {}
@@ -698,7 +698,7 @@ $('saveProfile')?.addEventListener('click', async () => {
     // Don't POST an all-empty profile (that's what created the blank rows before).
     if (!pfp && !desc && !tg && !tw && !web && !(PROFILE && PROFILE.image))
       return note('Pick an image or add a description first.', 'err');
-    if (pickedPfp && !pfp) return note('That image could not be read — try a JPG or PNG.', 'err');
+    if (pickedPfp && !pfp) return note('That image could not be read - try a JPG or PNG.', 'err');
     note('Sign the message in your wallet (free, no gas)…');
     const saved = await Pad.setCoinProfile(TOKEN, {
       description: desc, telegram: tg, twitter: tw, website: web,
@@ -709,7 +709,7 @@ $('saveProfile')?.addEventListener('click', async () => {
     PROFILE = saved || PROFILE;
     applyProfile(PROFILE, COIN.symbol);
     $('epfp').value = '';
-    note('Saved ✓ — your profile is live.', 'ok');
+    note('Saved ✓ - your profile is live.', 'ok');
   } catch (e) { note(e.message, 'err'); }
 });
 
@@ -720,7 +720,7 @@ async function loadCoin(){
   // FAST PATH: the indexer serves almost the whole page in ONE query (name, symbol,
   // curve, pool, dev, mcap, progress, graduated, ticks). We only make a live call for
   // the trade tax (buy/sell bps, not indexed). Direct-RPC tokenMeta/curveInfo (≈13 calls)
-  // are used ONLY as a fallback when the indexer doesn't have the coin — that's what was
+  // are used ONLY as a fallback when the indexer doesn't have the coin - that's what was
   // making the coin page slow, routing a dozen calls through the RPC per load.
   let info = null, meta, tax;
   const [apiCoin, taxRes] = await Promise.all([
@@ -732,7 +732,7 @@ async function loadCoin(){
     meta = { name: apiCoin.name, symbol: apiCoin.symbol };
     if (!tax) tax = { curve: apiCoin.curve, pool: apiCoin.pool, projectWallet: apiCoin.dev, set: true, buyBps: apiCoin.buyBps ?? 100, sellBps: apiCoin.sellBps ?? 100 };
   } else {
-    // Indexer doesn't know this coin — fall back to reading the chain directly.
+    // Indexer doesn't know this coin - fall back to reading the chain directly.
     try { [meta, tax] = await Promise.all([Pad.tokenMeta(TOKEN), Pad.getTax(TOKEN)]); }
     catch { $('nm').textContent = 'Coin not found'; return; }
   }
@@ -755,23 +755,23 @@ async function loadCoin(){
   $('tk').textContent = disp(meta.symbol);
   $('pfp').textContent = (meta.symbol || '?').slice(0, 3);
   $('ca').textContent = Pad.short(TOKEN);
-  document.title = meta.name + ' — Robin Labs Pad';
+  document.title = meta.name + ' - Robin Labs Pad';
   $('trade').textContent = (SIDE === 'buy' ? 'Buy ' : 'Sell ') + disp(meta.symbol);
   $('infoBuy').textContent = (tax.buyBps / 100) + '%';
   $('infoSell').textContent = (tax.sellBps / 100) + '%';
 
-  // creator profile (image, banner, description, socials) — from the indexer, if saved
+  // creator profile (image, banner, description, socials) - from the indexer, if saved
   try {
     PROFILE = await Pad.getCoinProfile(TOKEN);
     applyProfile(PROFILE, meta.symbol);
-  } catch { /* profiles are cosmetic — never block the coin page */ }
+  } catch { /* profiles are cosmetic - never block the coin page */ }
   finishPendingProfile(); // if this browser launched the coin with an image that hasn't saved yet, complete it
 
   // chart
   if (tax.pool){ const dl = $('dexLink'); if (dl) dl.href = 'https://dexscreener.com/robinhood/' + tax.pool.toLowerCase(); }
   renderPriceChart();
 
-  // stats + bond — from the live read when available, else the indexer snapshot
+  // stats + bond - from the live read when available, else the indexer snapshot
   paintStats(view);
   await maybeShowDev();
   // honor a ?buy=<eth> deep-link from the board's Quick Buy (prefill the buy amount once)
@@ -782,7 +782,7 @@ async function loadCoin(){
   mountSafety(document.getElementById('safetyBody'), TOKEN); // GoPlus + template scan (read-only)
 }
 
-// ── demo preview (?demo=1) — render a sample coin, no chain reads ──
+// ── demo preview (?demo=1) - render a sample coin, no chain reads ──
 function renderDemoCoin(){
   const c = DEMO_COINS.find((x) => x.token === TOKEN) || DEMO_COINS[0];
   COIN = { token: c.token, curve: c.curve, pool: c.pool, dev: c.dev, symbol: c.symbol, name: c.name,
@@ -792,7 +792,7 @@ function renderDemoCoin(){
   else if (c.emoji) { $('pfp').textContent = c.emoji; $('pfp').style.fontSize = '2.6rem'; }
   else $('pfp').textContent = (c.symbol || '?').slice(0, 3);
   $('ca').textContent = Pad.short(c.token);
-  document.title = c.name + ' — Robin Labs';
+  document.title = c.name + ' - Robin Labs';
   $('infoBuy').textContent = '1%';
   $('infoSell').textContent = '1%';
   $('stMc').textContent = fmt(c.mc);
@@ -805,7 +805,7 @@ function renderDemoCoin(){
     gradTick: -170400 });
   loadTrades(); loadHolders(); renderFees(c); renderFloor();
   const sb = document.getElementById('safetyBody');
-  if (sb) sb.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;font-weight:800;color:#10140a;background:var(--green);padding:3px 9px;border-radius:999px">🛡 SAFE</span><span style="color:var(--ink-dim);font-size:.78rem">Sample preview — the live pad scans every coin with GoPlus.</span></div><div style="color:var(--ink-dim);font-size:.8rem;line-height:1.5">Verified Robin Labs coin · not a honeypot · fixed 1B supply, no mint · LP locked at graduation · fee within the 4% cap.</div>`;
+  if (sb) sb.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;font-weight:800;color:#10140a;background:var(--green);padding:3px 9px;border-radius:999px">🛡 SAFE</span><span style="color:var(--ink-dim);font-size:.78rem">Sample preview - the live pad scans every coin with GoPlus.</span></div><div style="color:var(--ink-dim);font-size:.8rem;line-height:1.5">Verified Robin Labs coin · not a honeypot · fixed 1B supply, no mint · LP locked at graduation · fee within the 4% cap.</div>`;
 }
 
 // ── locked community LP: stake ETH into the coin's real liquidity, earn a share of every trade fee ──
@@ -836,7 +836,7 @@ function fcShowPos(f){
   $('fcPos').style.display = has ? 'block' : 'none';
   if (has){
     $('fcPosAmt').textContent = (Math.round(f.mineEth*1e4)/1e4) + ' ETH';
-    $('fcPosPct').textContent = f.tvlEth ? ((f.mineEth/f.tvlEth)*100).toFixed(1)+'%' : '—';
+    $('fcPosPct').textContent = f.tvlEth ? ((f.mineEth/f.tvlEth)*100).toFixed(1)+'%' : '-';
     $('fcPosFees').textContent = (Math.round((f.earnedEth||0)*1e4)/1e4) + ' ETH';
     const nowS = Math.floor(Date.now()/1000);
     const locked = !!f.forever || (f.lockUntil != null && isFinite(f.lockUntil) && f.lockUntil > nowS && !f.unlocked);
@@ -871,7 +871,7 @@ function renderFloor(){
     fcShowPos({ ...f, lockUntil: Math.floor(Date.now()/1000) + 74*86400, forever: false, unlocked: false });
     fcPrev();
   } else if (COIN){
-    ['fcTvl','fcFees','fcMine','fcEarned'].forEach(id=>$(id).textContent='—');
+    ['fcTvl','fcFees','fcMine','fcEarned'].forEach(id=>$(id).textContent='-');
     Pad.floorInfo(COIN.token, Pad.account()).then(f=>{ if(!f) return; FLOOR = f;
       $('fcTvl').textContent = eth(f.tvlEth); $('fcFees').textContent = eth(f.feesPaidEth);
       $('fcMine').textContent = eth(f.mineEth); $('fcEarned').textContent = eth(f.earnedEth);
@@ -879,20 +879,20 @@ function renderFloor(){
     }).catch(()=>{});
   }
 }
-const _fcPreview = (msg) => alert(msg || 'Preview — this is live on the real site.');
+const _fcPreview = (msg) => alert(msg || 'Preview - this is live on the real site.');
 $('fcAdd').addEventListener('click', async () => {
   const amt = parseFloat($('fcInput').value) || 0; if (amt<=0) return setNote('Enter an ETH amount.', 'err');
   const term = fcTerm.days === 0 ? 'forever' : fcTerm.days + ' days';
-  if (DEMO) return _fcPreview(`Preview — on the live site this stakes ${amt} ETH into the coin's real liquidity (a 10% protocol fee applies on open), locked for ${term}, and starts earning your share of every trade's fee (protocol keeps 5%).`);
+  if (DEMO) return _fcPreview(`Preview - on the live site this stakes ${amt} ETH into the coin's real liquidity (a 10% protocol fee applies on open), locked for ${term}, and starts earning your share of every trade's fee (protocol keeps 5%).`);
   try { if(!Pad.account()){await Pad.connect();refreshConnect();} setNote('Locking liquidity…'); await (await Pad.floorDeposit(COIN.token, amt, fcTerm.days)).wait(); setNote('Liquidity locked ✓','ok'); renderFloor(); }
   catch(e){ setNote(e.message,'err'); }
 });
 $('fcClaim').addEventListener('click', async () => {
-  if (DEMO) return _fcPreview('Preview — claims your accrued trade-fee share (real ETH) to your wallet.');
+  if (DEMO) return _fcPreview('Preview - claims your accrued trade-fee share (real ETH) to your wallet.');
   try { setNote('Claiming fees…'); await (await Pad.floorClaim(COIN.token)).wait(); setNote('Claimed ✓','ok'); renderFloor(); } catch(e){ setNote(e.message,'err'); }
 });
 $('fcWithdraw').addEventListener('click', async () => {
-  if (DEMO) return _fcPreview('Preview — after your lock ends you withdraw with no penalty. Before then, early exit returns your stake minus a 15% penalty.');
+  if (DEMO) return _fcPreview('Preview - after your lock ends you withdraw with no penalty. Before then, early exit returns your stake minus a 15% penalty.');
   try { setNote('Withdrawing…'); await (await Pad.floorWithdraw(COIN.token)).wait(); setNote('Withdrawn ✓','ok'); renderFloor(); } catch(e){ setNote(e.message,'err'); }
 });
 buildTerms();
@@ -928,12 +928,12 @@ $('dlRelease').addEventListener('click', async () => {
     if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
     setNote('Releasing vested tokens (permissionless)…');
     for (const id of ids) { await (await Pad.releaseVesting(id)).wait(); }
-    setNote('Released ✓ — vested tokens sent to the creator.', 'ok');
+    setNote('Released ✓ - vested tokens sent to the creator.', 'ok');
     setTimeout(loadDevLock, 1500);
   } catch (e) { setNote(e.shortMessage || e.message, 'err'); }
 });
 
-// Resume a stashed post-launch lock (rl_pending_lock:<token>) — visible when a stash exists;
+// Resume a stashed post-launch lock (rl_pending_lock:<token>) - visible when a stash exists;
 // the "Lock now" button only works for the connected CREATOR wallet. No-op until deployed.
 function readPendingLock(){ try { return JSON.parse(localStorage.getItem(PENDING_LOCK_KEY(TOKEN)) || 'null'); } catch { return null; } }
 function checkPendingLock(){
@@ -945,7 +945,7 @@ function checkPendingLock(){
   const isDev = acct && COIN.dev && acct.toLowerCase() === String(COIN.dev).toLowerCase();
   const durTxt = p.days === 365 ? '1yr' : (p.days + 'd');
   $('pendingLockMsg').textContent = isDev
-    ? `Finish locking ${p.pct}% of your dev bag (${p.mode === 'cliff' ? 'cliff' : 'linear'} · ${durTxt}) — approve + lock.`
+    ? `Finish locking ${p.pct}% of your dev bag (${p.mode === 'cliff' ? 'cliff' : 'linear'} · ${durTxt}) - approve + lock.`
     : 'This coin has a dev-bag lock waiting to be finished by its creator.';
   $('pendingLockBtn').style.display = isDev ? '' : 'none';
   b.style.display = 'flex';
@@ -962,12 +962,12 @@ $('pendingLockBtn').addEventListener('click', async () => {
     if (!done) return setNote('No balance found to lock.', 'err');
     try { localStorage.removeItem(PENDING_LOCK_KEY(TOKEN)); } catch {}
     $('pendingLock').style.display = 'none';
-    setNote('Dev bag locked ✓ — buyers can verify it on-chain.', 'ok');
+    setNote('Dev bag locked ✓ - buyers can verify it on-chain.', 'ok');
     setTimeout(loadDevLock, 1500);
   } catch (e) { setNote(e.shortMessage || e.message, 'err'); }
 });
 
-// ── holder rewards (violet panel) — this coin's claimable/pending legs ─────────
+// ── holder rewards (violet panel) - this coin's claimable/pending legs ─────────
 // STRICT NO-OP until RewardVault is deployed: we early-return when it's unset, and hide
 // the panel when there's nothing for THIS coin.
 async function loadRewards(){
@@ -997,14 +997,14 @@ $('rwClaimBtn').addEventListener('click', async () => {
     if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
     setNote('Claiming your rewards…');
     for (const c of rows) { await (await Pad.claimReward(c)).wait(); }
-    setNote('Claimed ✓ — the ETH is in your wallet.', 'ok');
+    setNote('Claimed ✓ - the ETH is in your wallet.', 'ok');
     setTimeout(loadRewards, 1500);
   } catch (e) { setNote(e.shortMessage || e.message, 'err'); }
 });
 
-// ── native price chart — a clean line/area from OUR OWN trade data ──
+// ── native price chart - a clean line/area from OUR OWN trade data ──
 // Price per trade = eth/tokens (both 18-dec wei, so the ratio is WETH-per-token) × ETH_USD. This renders
-// with the correct scale on any chain — DexScreener mis-reads token decimals on new L2s and shows a garbage
+// with the correct scale on any chain - DexScreener mis-reads token decimals on new L2s and shows a garbage
 // ">999Q" axis, so we chart it ourselves and keep DexScreener as an external link.
 function fmtPrice(v){
   if (!(v > 0)) return '$0';
@@ -1077,7 +1077,7 @@ async function renderFees(coinData){
     return;
   }
   // live: "Creator earned" = the dev's swap-fee share (router FeeSplit) + their LP-fee share (curve
-  // FeesCollected); "Into the floor" = the floor's swap-fee share. Both on-chain-verifiable — anyone
+  // FeesCollected); "Into the floor" = the floor's swap-fee share. Both on-chain-verifiable - anyone
   // loading the page sees the coin's real dev fees to date.
   try {
     const [f, lp] = await Promise.all([Pad.feeTotals(COIN.token), Pad.lpCreatorFees(COIN.curve)]);
@@ -1093,7 +1093,7 @@ async function loadTrades(){
   let rows = [];
   if (DEMO) rows = demoTrades(18);
   else { try { rows = await Pad.trades(TOKEN, 30); } catch {} }
-  if (!rows || !rows.length){ body.innerHTML = '<div class="empty">No trades yet — be the first to buy </div>'; return; }
+  if (!rows || !rows.length){ body.innerHTML = '<div class="empty">No trades yet - be the first to buy </div>'; return; }
   body.innerHTML = rows.map((t) => `<div class="tr">
     <span class="ty ${t.side}">${t.side === 'buy' ? 'BUY' : 'SELL'}</span>
     <a class="who" href="${EXPL}/tx/${t.tx}" target="_blank" rel="noopener">${Pad.short(t.actor)}</a>
@@ -1127,7 +1127,7 @@ async function loadHolders(){
 // refresh the live feed periodically
 setInterval(() => { if (COIN) loadTrades(); }, 12000);
 setInterval(() => { if (COIN) loadHolders(); }, 30000);
-// Keep MC / price / stage live as OTHER people trade — one cheap indexer query every 12s
+// Keep MC / price / stage live as OTHER people trade - one cheap indexer query every 12s
 // (the snapshot is refreshed on every trade, so this tracks the market without a chain read).
 setInterval(async () => { if (!COIN || DEMO) return; const c = await Pad.coin(TOKEN).catch(() => null); if (c) paintStats(viewFromApi(c)); }, 12000);
 
@@ -1163,7 +1163,7 @@ function paintStats(view){
   $('stStage').className = 'v' + (view.graduated ? ' g' : '');
   renderBond(view);
 }
-// Instant refresh from a LIVE chain read — used right after the user trades, before the
+// Instant refresh from a LIVE chain read - used right after the user trades, before the
 // indexer has caught up, so MC/price move the moment their buy/sell confirms.
 async function refreshStatsLive(){
   if (!COIN || !COIN.curve) return;
@@ -1175,7 +1175,7 @@ function renderBond(info){
   if (!info){ t.textContent = 'Loading…'; return; }
   if (info.graduated){
     t.textContent = 'Floor: live';
-    s.textContent = 'Graduated — a protocol-owned floor now stands under this coin.';
+    s.textContent = 'Graduated - a protocol-owned floor now stands under this coin.';
     fill.style.width = '100%'; mark.style.display = 'none';
     lab.innerHTML = '<b>Bond posted</b><span>can’t rug to zero</span>';
     grad.style.display = 'none';
@@ -1189,7 +1189,7 @@ function renderBond(info){
   s.textContent = 'Bonding up the curve. Graduation posts the Bond floor at the full ceiling (~4.2 ETH).';
   if (info.ready){
     t.textContent = 'Ready to graduate';
-    lab.innerHTML = '<b>Ceiling reached</b><span>curve is full — post the Bond</span>';
+    lab.innerHTML = '<b>Ceiling reached</b><span>curve is full - post the Bond</span>';
     grad.style.display = 'block';
   } else {
     t.textContent = pct + '% to the Bond';

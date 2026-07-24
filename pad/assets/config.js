@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Robin Labs Pad — on-chain config (audit this file first)
+// Robin Labs Pad - on-chain config (audit this file first)
 //
 // Everything the front-end needs to talk to the chain lives here, in the open.
 // No secrets: RPC keys stay server-side; this file only holds public addresses.
 //
 // Addresses marked `DEPLOY:` are filled in AFTER we deploy the contracts and
 // have verified them on the explorer. Until then the flows that need them stay
-// GATED (the UI says "opens at launch") — nothing can silently send a tx to a
+// GATED (the UI says "opens at launch") - nothing can silently send a tx to a
 // zero / wrong address. See isDeployed().
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -19,10 +19,10 @@ export const CHAIN = {
   // from the paid RPC server-side with a short cache, so a launch-day crowd hits ONE
   // cached hop instead of each browser hammering the public RPC. The public endpoint is
   // kept as an automatic failover if the proxy is ever unreachable. (Writes never use
-  // these — wallets broadcast their own txs through the user's own RPC.)
+  // these - wallets broadcast their own txs through the user's own RPC.)
   rpc: ["https://api.robinlab.io/rpc", "https://robinhoodchain.blockscout.com/api/eth-rpc"],
   // RPC given to the WALLET when adding the chain (wallet_addEthereumChain). MUST be a
-  // full, write-capable endpoint — the wallet broadcasts the user's txs through it — so
+  // full, write-capable endpoint - the wallet broadcasts the user's txs through it - so
   // it must NEVER include the read-only /rpc proxy (which refuses eth_sendRawTransaction).
   walletRpcUrls: ["https://robinhoodchain.blockscout.com/api/eth-rpc"],
   explorer: "https://robinhoodchain.blockscout.com",
@@ -30,51 +30,51 @@ export const CHAIN = {
 
 export const CONTRACTS = {
   // Known infrastructure on Robinhood Chain (the same addresses the fork tests
-  // run against — real Uniswap v3 + WETH, not mocks).
+  // run against - real Uniswap v3 + WETH, not mocks).
   weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
   v3Factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
 
-  // Our CurvePadFactory (one-call launch) — LIVE on Robinhood Chain.
+  // Our CurvePadFactory (one-call launch) - LIVE on Robinhood Chain.
   padFactory: "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074",
 
-  // Our PadRouter — the swap desk + project fee. Robinhood Chain has no canonical
-  // Uniswap periphery, so THIS is the router every trade goes through — LIVE.
+  // Our PadRouter - the swap desk + project fee. Robinhood Chain has no canonical
+  // Uniswap periphery, so THIS is the router every trade goes through - LIVE.
   padRouter: "0xA6BaAB820809C7fC8350311776627298f91F07eC",
 
-  // Our FeeConfig — the single owner-governed fee dial (LP creator split + swap platform/creator/floor split).
+  // Our FeeConfig - the single owner-governed fee dial (LP creator split + swap platform/creator/floor split).
   // Curves + router read it on-chain; the owner retunes it with a setter (no redeploy). LIVE.
   feeConfig: "0x064D977B66FCC29256510dBCD8cC0C51bBb2De14",
 
-  // Our RewardVault — custodies the additive 0.25% trader + 0.25% holder legs and
+  // Our RewardVault - custodies the additive 0.25% trader + 0.25% holder legs and
   // pays capped, Merkle-proven claims in real ETH. Empty until the reward system
   // ships alongside the next router deploy; the frontend stays inert until it's set.
   rewardVault: "",
 
-  // Our TokenVestingLock — one shared, IRREVOCABLE locker holding many creator dev-bag schedules
+  // Our TokenVestingLock - one shared, IRREVOCABLE locker holding many creator dev-bag schedules
   // (cliff + linear). Empty until deployed + verified; every UI/SDK path is a no-op while unset.
   tokenVestingLock: "",
 
-  // Our FloorCoopFactory — deploys a per-coin community floor vault (add to the buy-wall, earn dip-buy
+  // Our FloorCoopFactory - deploys a per-coin community floor vault (add to the buy-wall, earn dip-buy
   // fees, withdrawable after a cooldown). LIVE.
   floorCoopFactory: "0x564EDF561Bed46C972d5D44D84f5FAc9C5118668",
 
-  // Our PlatformFeeSplitter — routes the platform's cut ($ROBIN buyback split). Standalone; used by the
+  // Our PlatformFeeSplitter - routes the platform's cut ($ROBIN buyback split). Standalone; used by the
   // admin panel to read/set the split. Key MUST be `splitter` to match ADMIN_ABI.splitter and admin.html.
   splitter: "0xca0EfD87B983CdeF56459051ecBE91aA5C87E17a",
 
   // The platform's buy-back token + its WETH pool (for links / a future buy widget).
   // The above-default fee's 25% cut is paid to the platform, which buys+burns the
-  // platform token off-chain — the router does not swap it on-chain. TBD for Robin Labs.
+  // platform token off-chain - the router does not swap it on-chain. TBD for Robin Labs.
   platformToken: "",
   platformPool: "",
 };
 
-// 1% pool tier — the fee is collected as Uniswap LP fees IN-PROTOCOL. There is
+// 1% pool tier - the fee is collected as Uniswap LP fees IN-PROTOCOL. There is
 // never a separate fee-transfer instruction bolted onto a user's tx (Rule 3).
 export const POOL_FEE = 10000;
 
 export const TOTAL_SUPPLY = 1_000_000_000n; // whole tokens (18 decimals added on-chain)
-// (the dev's opening buy is uncapped — it climbs the curve up to the graduation ceiling and refunds any excess)
+// (the dev's opening buy is uncapped - it climbs the curve up to the graduation ceiling and refunds any excess)
 export const DEFAULT_FEE_BPS = 100; // the baseline 1% every coin pays (also the floor)
 export const MAX_TAX_BPS = 400; // contract-enforced 4% cap per side
 export const EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee → platform buy-back
@@ -84,7 +84,7 @@ export const EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee → pla
 // (Rule: guard BEFORE signing). ~0.0008 ETH is generous for an L2.
 export const GAS_BUFFER_WEI = 800_000_000_000_000n; // 0.0008 ETH
 
-// Minimal ABIs (human-readable — ethers parses these). We deliberately keep the
+// Minimal ABIs (human-readable - ethers parses these). We deliberately keep the
 // surface tiny and readable instead of pasting giant JSON blobs.
 export const ABIS = {
   // Our launch entrypoint. Payable: any ETH sent is the dev's OWN opening buy
@@ -97,7 +97,7 @@ export const ABIS = {
     "event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought)",
   ],
   // Our PadRouter. Buys send native ETH (no approval); sells need one exact-amount
-  // approval to the router. The tax split happens inside — no side transfers.
+  // approval to the router. The tax split happens inside - no side transfers.
   padRouter: [
     "function buy(address token, uint256 minOut) payable returns (uint256 tokensOut)",
     "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256 ethOut)",
@@ -107,7 +107,7 @@ export const ABIS = {
     "function withdrawDev(address token)",
     "function burnDev(address token)",
   ],
-  // Our RewardVault — capped, Merkle-proven claims for the 0.25% trader/holder legs.
+  // Our RewardVault - capped, Merkle-proven claims for the 0.25% trader/holder legs.
   // The claim is a pure verify + capped ETH transfer; the indexer serves the proof.
   rewardVault: [
     "function claim(uint256 epoch, address coin, uint8 side, uint256 amount, bytes32[] proof)",
@@ -116,7 +116,7 @@ export const ABIS = {
     "function EPOCH() view returns (uint256)",
     "event Claimed(uint256 indexed epoch, address indexed coin, address indexed user, uint8 side, uint256 amount)",
   ],
-  // TokenVestingLock — creator dev-bag vesting (cliff + linear). `create` needs a prior EXACT-amount
+  // TokenVestingLock - creator dev-bag vesting (cliff + linear). `create` needs a prior EXACT-amount
   // ERC20 approve; `schedules(id)` feeds the countdown/beneficiary, the views feed the badge.
   tokenVestingLock: [
     "function create(address token, address beneficiary, uint256 amount, uint64 start, uint64 cliffDuration, uint64 duration) returns (uint256 id)",
@@ -147,7 +147,7 @@ export const ABIS = {
     "function compound()",
     "function sweepProtocol()",
   ],
-  // The CurvePool — the bonding curve + graduation. Read progress, drive the
+  // The CurvePool - the bonding curve + graduation. Read progress, drive the
   // graduate button + curve geometry for the progress bar. Graduation is ceiling-only (~4.2 ETH):
   // `ready()` flips true only when the tick reaches gradTick, and `graduate()` is permissionless.
   curve: [
@@ -269,18 +269,18 @@ export const ADMIN_ABI = {
 // When set to your indexer host (e.g. "https://api.robinlabs.io"), the browse
 // feed, search, trending/top sorting and per-coin trade history come from the
 // API in ONE request instead of fanning out dozens of RPC calls per page. Leave
-// "" and everything falls back to reading the chain directly — the pad works
+// "" and everything falls back to reading the chain directly - the pad works
 // either way, the API just makes it fast. No secrets here; the API is read-only.
 export const API_BASE = "https://api.robinlab.io";
 
-// Platform owner (cold wallet). ONLY used to reveal the discreet "Admin" nav link when this wallet connects —
+// Platform owner (cold wallet). ONLY used to reveal the discreet "Admin" nav link when this wallet connects -
 // every admin action is enforced on-chain by onlyOwner regardless, so this is pure convenience, not auth.
 export const OWNER = "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf";
 
 // ── GoPlus token-security (see /assets/safety.js) ───────────────────────────
 // GoPlus supports Robinhood Chain (4663), so our coins get the same honeypot/tax/mint scan wallets use.
 // The token_security endpoint works WITHOUT a key (rate-limited); an optional app-key raises the limit.
-// No secret risk if set — it's a public read key — but leave "" to use the free anon tier.
+// No secret risk if set - it's a public read key - but leave "" to use the free anon tier.
 export const GOPLUS_APP_KEY = "";
 
 export const isDeployed = (key) => /^0x[0-9a-fA-F]{40}$/.test(CONTRACTS[key] || "");

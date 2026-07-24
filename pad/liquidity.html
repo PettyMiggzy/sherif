@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Robin Labs — Liquidity</title>
+<title>Robin Labs - Liquidity</title>
 <meta name="description" content="Lock ETH into any token's real liquidity on Robinhood Chain and earn your share of every trade's fee. Staking-style lock terms (30/60/90/365 days or forever); early exit costs 15%. Longer locks earn more." />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
@@ -70,7 +70,7 @@
   @media(max-width:860px){.pool{grid-template-columns:1.4fr .8fr auto;gap:10px}.pool .hidecol{display:none}}
   .colhead{display:grid;grid-template-columns:1.4fr .8fr .8fr .8fr auto;gap:14px;padding:0 16px 2px;font-family:var(--mono);font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
   @media(max-width:860px){.colhead{display:none}}
-  /* Live pools: per-pool APR + lifetime fees aren't computed on-chain yet — hide those two
+  /* Live pools: per-pool APR + lifetime fees aren't computed on-chain yet - hide those two
      columns rather than show fake zeros. Demo mode keeps them (sample data is complete). */
   body.livemode .colhead{grid-template-columns:1.4fr .8fr auto}
   body.livemode .pool{grid-template-columns:1.4fr .8fr auto}
@@ -121,14 +121,14 @@
   <section class="head">
     <div class="eyebrow">Lock liquidity · earn fees · any token on the chain</div>
     <h1>Lock into a coin's liquidity.<br /><span class="g">Earn the fees.</span></h1>
-    <p>Stake ETH into <b>any token's real liquidity</b> on Robinhood Chain and earn your <b>share of every trade's fee</b>. It's <b>locked</b> for the term you pick — 30, 60, 90, 365 days or forever — so it deepens the market and can't be yanked out from under the coin. The longer you lock, the bigger your reward share.</p>
+    <p>Stake ETH into <b>any token's real liquidity</b> on Robinhood Chain and earn your <b>share of every trade's fee</b>. It's <b>locked</b> for the term you pick - 30, 60, 90, 365 days or forever - so it deepens the market and can't be yanked out from under the coin. The longer you lock, the bigger your reward share.</p>
     <div id="live" class="live"><span class="dot"></span><span id="liveTxt">Live locked pools</span></div>
   </section>
 
   <section class="facts">
     <div class="fact"><h4>Real liquidity, not a side bet</h4><p>Your ETH goes into the coin's actual pool, deepening the market everyone trades against. You earn your pro-rata cut of every swap's fee for as long as it's locked.</p></div>
-    <div class="fact"><h4>Locked = it can't be rugged</h4><p>Your stake is locked for your chosen term, so it can only ever help the coin's depth — never pulled out from under it. Longer locks earn a bigger share (up to 3× at forever).</p></div>
-    <div class="fact"><h4>Honest about the risk</h4><p>A 10% fee applies when you open, then you earn a <b>share</b> of each fee (the protocol keeps 5%). Early exit costs a 15% penalty. Like any LP, if the price moves your position rebalances — impermanent loss is real.</p></div>
+    <div class="fact"><h4>Locked = it can't be rugged</h4><p>Your stake is locked for your chosen term, so it can only ever help the coin's depth - never pulled out from under it. Longer locks earn a bigger share (up to 3× at forever).</p></div>
+    <div class="fact"><h4>Honest about the risk</h4><p>A 10% fee applies when you open, then you earn a <b>share</b> of each fee (the protocol keeps 5%). Early exit costs a 15% penalty. Like any LP, if the price moves your position rebalances - impermanent loss is real.</p></div>
   </section>
 
   <!-- ANY-TOKEN CTA -->
@@ -164,23 +164,23 @@ import { DEMO, DEMO_POOLS } from './assets/demo.js';
 const $ = (id) => document.getElementById(id);
 const eth = (n) => (Math.round((n||0)*1e4)/1e4).toLocaleString(undefined,{maximumFractionDigits:4}) + ' ETH';
 const esc = (x) => String(x==null?'':x).replace(/[<>&"]/g,(c)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-// Prefix a single $ — but never a second one for coins whose on-chain symbol already starts with $.
+// Prefix a single $ - but never a second one for coins whose on-chain symbol already starts with $.
 const tsym = (s) => { s = String(s || '?'); return s.startsWith('$') ? s : '$' + s; };
 const imgTag = (p,cls) => `<img class="${cls}" src="${esc(p.image)}" alt="" onerror="this.style.visibility='hidden'" />`;
-// staking-style lock terms — longer lock earns a bigger reward share; forever = 0 days
+// staking-style lock terms - longer lock earns a bigger reward share; forever = 0 days
 const LOCK_TERMS = [ {days:30,label:'30 days'}, {days:60,label:'60 days'}, {days:90,label:'90 days'}, {days:365,label:'1 year'}, {days:0,label:'Forever'} ];
 const termOptions = () => LOCK_TERMS.map(t => `<option value="${t.days}"${t.days===90?' selected':''}>${t.label}</option>`).join('');
 const termLabel = (d) => d===0 ? 'forever' : (d>=365 ? '1 year' : d+' days');
 
-if (DEMO){ $('liveTxt').textContent = 'Preview — sample pools'; }
-// Live pools don't yet expose per-pool APR or lifetime fees on-chain — hide those two
+if (DEMO){ $('liveTxt').textContent = 'Preview - sample pools'; }
+// Live pools don't yet expose per-pool APR or lifetime fees on-chain - hide those two
 // columns (rather than show fake 0s). Demo keeps them, since the sample data is complete.
 document.body.classList.toggle('livemode', !DEMO);
 
 // wallet button
 const cbtn = $('connectBtn');
 const refreshBtn = () => { const a = Pad.account(); cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; };
-cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (DEMO){ alert('Preview build — connect your wallet on the live site.'); return; } try { await Pad.connect(); refreshBtn(); load(); } catch(err){ alert(err.message); } });
+cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (DEMO){ alert('Preview build - connect your wallet on the live site.'); return; } try { await Pad.connect(); refreshBtn(); load(); } catch(err){ alert(err.message); } });
 window.addEventListener('robinpad:ready', ()=>{ refreshBtn(); load(); }); refreshBtn();
 
 function poolRow(p, i){
@@ -225,11 +225,11 @@ function renderPools(){
 function renderMine(){
   const mine = POOLS.filter(p => (p.mineEth||0) > 0);
   $('posSub').textContent = mine.length ? `${mine.length} active` : '';
-  if (!mine.length){ $('myPos').innerHTML = `<div class="empty">No positions yet — lock ETH into a pool below to start earning your share of trade fees.</div>`; return; }
+  if (!mine.length){ $('myPos').innerHTML = `<div class="empty">No positions yet - lock ETH into a pool below to start earning your share of trade fees.</div>`; return; }
   $('myPos').innerHTML = mine.map(p => `<div class="pcard">
     <div class="top">${imgTag(p,'')}<div><div class="nm" style="font-weight:700">${esc(p.name)}</div><div class="tk" style="color:var(--dim);font-size:.8rem">${esc(tsym(p.sym))}</div></div></div>
     <div class="r"><span>Staked</span><b>${eth(p.mineEth)}</b></div>
-    <div class="r"><span>Pool share</span><b>${p.tvlEth?((p.mineEth/p.tvlEth)*100).toFixed(1):'—'}%</b></div>
+    <div class="r"><span>Pool share</span><b>${p.tvlEth?((p.mineEth/p.tvlEth)*100).toFixed(1):'-'}%</b></div>
     <div class="r"><span>Fees earned</span><b class="lime">${eth(p.earnedEth)}</b></div>
     <div class="lock">${p.lockTxt || 'Locked'}</div>
   </div>`).join('');
@@ -239,7 +239,7 @@ async function onCreate(i){
   const inp = document.querySelector('#addrow-'+i+' input'); const amt = parseFloat(inp.value)||0;
   const days = +(document.querySelector('#addrow-'+i+' .termsel')?.value ?? 90);
   if (amt<=0){ alert('Enter an ETH amount.'); return; }
-  if (DEMO){ alert(`Preview — on the live site this stakes ${amt} ETH into ${tsym(POOLS[i].sym)}'s real liquidity (10% protocol fee on open), locked ${termLabel(days)}, and starts earning your share of every trade's fee (protocol keeps 5%).`); return; }
+  if (DEMO){ alert(`Preview - on the live site this stakes ${amt} ETH into ${tsym(POOLS[i].sym)}'s real liquidity (10% protocol fee on open), locked ${termLabel(days)}, and starts earning your share of every trade's fee (protocol keeps 5%).`); return; }
   try { if(!Pad.account()){await Pad.connect();refreshBtn();} await (await Pad.floorDeposit(POOLS[i].token, amt, days)).wait(); load(); } catch(e){ alert(e.message); }
 }
 
@@ -251,7 +251,7 @@ async function load(){
     POOLS = await Promise.all((coins||[]).map(async (c) => {
       const f = await Pad.floorInfo(c.token, Pad.account()).catch(() => null);
       // Carry the real on-chain lock (lockUntil/forever/unlocked) into the pool entry and derive an
-      // honest label — mirrors token.html's fcShowPos. No more hardcoded "unlocks in 74d".
+      // honest label - mirrors token.html's fcShowPos. No more hardcoded "unlocks in 74d".
       const nowS = Math.floor(Date.now()/1000);
       const locked = !!f?.forever || (f?.lockUntil != null && isFinite(f.lockUntil) && f.lockUntil > nowS && !f.unlocked);
       const lockTxt = f?.forever ? 'Locked · forever'

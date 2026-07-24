@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Browse Projects — Robin Labs</title>
-<meta name="description" content="Browse every project on the Robin Labs pad — filter, sort and search live launches by volume, market cap and graduation progress on Robinhood Chain." />
+<title>Browse Projects - Robin Labs</title>
+<meta name="description" content="Browse every project on the Robin Labs pad - filter, sort and search live launches by volume, market cap and graduation progress on Robinhood Chain." />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
 <meta name="theme-color" content="#060803" />
-<meta property="og:title" content="Browse Projects — Robin Labs" />
-<meta property="og:description" content="Browse every live project on the Robin Labs pad — filter, sort and search launches on Robinhood Chain." />
+<meta property="og:title" content="Browse Projects - Robin Labs" />
+<meta property="og:description" content="Browse every live project on the Robin Labs pad - filter, sort and search launches on Robinhood Chain." />
 <meta property="og:image" content="assets/favicon-512.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -71,7 +71,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .announce .in .sp{flex:1}
 .announce .x{color:var(--faint);cursor:pointer;font-size:1.1rem;background:none;border:none;min-width:40px;min-height:40px;display:inline-flex;align-items:center;justify-content:center}
 
-/* hero — headline left, glowing R-emblem podium right */
+/* hero - headline left, glowing R-emblem podium right */
 .hero{display:grid;grid-template-columns:1.06fr .94fr;gap:30px;align-items:center;padding:44px 0 30px}
 .hero h1{font-size:clamp(2.5rem,5.4vw,4.2rem);letter-spacing:-.01em;line-height:.98}
 .hero h1 .g{color:var(--lime)}
@@ -89,7 +89,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
   transform:translate(-50%,-50%);pointer-events:none;filter:blur(18px);opacity:.85;
   background:conic-gradient(from 0deg,transparent 0 28%,rgba(220,233,5,.26) 42%,rgba(138,99,224,.12) 55%,transparent 70% 100%);
   animation:hspin 11s linear infinite}
-/* the real logo — floats above the podium + glow pulse */
+/* the real logo - floats above the podium + glow pulse */
 .hemblem .hlogo{position:absolute;left:50%;top:38%;width:30%;transform:translate(-50%,-50%);
   filter:drop-shadow(0 0 22px rgba(220,233,5,.5)) drop-shadow(0 10px 26px rgba(0,0,0,.55));
   animation:hfloat 5.5s ease-in-out infinite;will-change:transform}
@@ -161,7 +161,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .fsearch svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--dim)}
 @media(max-width:560px){.fsearch{margin-left:0;max-width:none;order:-1;width:100%}.ftabs{width:100%}}
 
-/* trending ticker — auto-scrolling marquee, feels live */
+/* trending ticker - auto-scrolling marquee, feels live */
 .ticker{display:flex;align-items:stretch;border:1px solid var(--line-2);border-radius:12px;background:var(--bg-2);overflow:hidden;margin-bottom:16px}
 .ticker .lbl{flex:none;display:flex;align-items:center;gap:8px;padding:0 15px;font-weight:800;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--lime);border-right:1px solid var(--line-2);background:rgba(220,233,5,.06)}
 .ticker .lbl .dot{width:8px;height:8px;border-radius:50%;background:#8bea3c;box-shadow:0 0 8px #8bea3c;animation:tpulse 1.4s infinite}
@@ -183,11 +183,11 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 @media(prefers-reduced-motion:reduce){.ticker .track{animation:none}}
 @media(max-width:560px){.ticker .lbl .t{display:none}}
 
-/* live board — filter-tabbed, endlessly paginated grid (scales to any # of coins) */
+/* live board - filter-tabbed, endlessly paginated grid (scales to any # of coins) */
 .bsearch{display:flex;align-items:center;gap:12px;margin:14px 0 6px;flex-wrap:wrap}
 .bsearch .bsort{margin-left:auto}
 .bsearch .fsearch{flex:0 1 260px;max-width:300px}
-/* sort dropdown — matches the dark filter chips */
+/* sort dropdown - matches the dark filter chips */
 .bsort{position:relative;display:inline-flex;align-items:center;gap:8px;padding:9px 34px 9px 14px;border-radius:11px;border:1px solid var(--line-2);background:var(--bg-2);color:var(--dim);font-size:.86rem;font-weight:700;cursor:pointer}
 .bsort:hover{border-color:var(--line-strong);color:var(--ink)}
 .bsort>span{color:var(--faint);font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
@@ -367,7 +367,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 <!-- ANNOUNCEMENT -->
 <div class="announce" id="announce" style="display:none"><div class="in">
   <img src="assets/icons/graduated.png" alt="" style="width:22px;height:22px" />
-  <span><b class="grad" id="anName">$—</b> just graduated! Creator rewarded with <span class="r">0.5 ETH</span></span>
+  <span><b class="grad" id="anName">$-</b> just graduated! Creator rewarded with <span class="r">0.5 ETH</span></span>
   <span class="sp"></span>
   <a class="btn btn-ghost" style="padding:7px 16px" id="anView" href="#graduates">View</a>
   <button class="x" onclick="document.getElementById('announce').style.display='none'">✕</button>
@@ -379,7 +379,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <!-- PAGE HEADING -->
   <section class="sec" style="padding-top:34px">
     <h1 style="font-size:clamp(2rem,4.6vw,3rem);letter-spacing:-.01em">Browse <span class="lime">Projects</span></h1>
-    <p style="color:var(--dim);font-size:1.05rem;max-width:60ch;margin:12px 0 4px;line-height:1.5">Every live launch on the Robin Labs pad — filter, sort and search by volume, market cap and graduation progress.</p>
+    <p style="color:var(--dim);font-size:1.05rem;max-width:60ch;margin:12px 0 4px;line-height:1.5">Every live launch on the Robin Labs pad - filter, sort and search by volume, market cap and graduation progress.</p>
     <div class="cta" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px">
       <a class="btn btn-lime" href="create.html">Launch a project →</a>
     </div>
@@ -387,11 +387,11 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 
   <!-- STATS -->
   <section class="stats" id="stats">
-    <div class="s"><img class="ic" src="assets/icons/launch.png" alt="" /><div><div class="v" id="stProj">—</div><div class="k">Projects Launched</div></div></div>
-    <div class="s"><img class="ic" src="assets/icons/graduated.png" alt="" /><div><div class="v" id="stGrad">—</div><div class="k">Graduated</div></div></div>
-    <div class="s"><img class="ic" src="assets/icons/reward.png" alt="" /><div><div class="v" id="stRew">—</div><div class="k">Creator Payouts</div></div></div>
-    <div class="s"><img class="ic" src="assets/icons/growth.png" alt="" /><div><div class="v" id="stMcap">—</div><div class="k">Market Cap Created</div></div></div>
-    <div class="s"><img class="ic" src="assets/icons/buy-robin.png" alt="" /><div><div class="v" id="stVol">—</div><div class="k">Total Volume</div></div></div>
+    <div class="s"><img class="ic" src="assets/icons/launch.png" alt="" /><div><div class="v" id="stProj">-</div><div class="k">Projects Launched</div></div></div>
+    <div class="s"><img class="ic" src="assets/icons/graduated.png" alt="" /><div><div class="v" id="stGrad">-</div><div class="k">Graduated</div></div></div>
+    <div class="s"><img class="ic" src="assets/icons/reward.png" alt="" /><div><div class="v" id="stRew">-</div><div class="k">Creator Payouts</div></div></div>
+    <div class="s"><img class="ic" src="assets/icons/growth.png" alt="" /><div><div class="v" id="stMcap">-</div><div class="k">Market Cap Created</div></div></div>
+    <div class="s"><img class="ic" src="assets/icons/buy-robin.png" alt="" /><div><div class="v" id="stVol">-</div><div class="k">Total Volume</div></div></div>
   </section>
 
   <!-- TRENDING (top by 24h volume) -->
@@ -535,12 +535,12 @@ const cGrad = (c) => c.state === 'done' || c.graduated === true;
 // ── live board: New / Final Stretch / Graduated ─────────────────────────────
 const BOLT = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>';
 const cProg = (c) => c.prog != null ? c.prog : Math.round((c.progress||0)*100);
-// Price change badge — no backend needed. Demo rows carry a signed `chg`; live rows
+// Price change badge - no backend needed. Demo rows carry a signed `chg`; live rows
 // carry the curve's start/last tick. Price change since launch = 1.0001^|startTick-lastTick|-1.
 // We take the ABSOLUTE tick delta on purpose: a bonding curve's price can only sit at or
 // above the launch price (sells walk back down the curve, never below the start), so the
 // change is always an appreciation. Using abs also makes it independent of pool tick
-// orientation — some coins are token0, some token1, which flips the raw tick sign.
+// orientation - some coins are token0, some token1, which flips the raw tick sign.
 const cChg = (c) => {
   if (c.chg != null) return +c.chg;
   const s = +c.startTick, l = +c.lastTick;
@@ -574,7 +574,7 @@ function bcard(c){
 }
 // ── the endless board ────────────────────────────────────────────────────────
 // One server-sorted list per filter, fetched a page at a time by offset. Nothing
-// ever loads "all coins" — a thousand or a million, the client only holds what's
+// ever loads "all coins" - a thousand or a million, the client only holds what's
 // on screen. Each tab is an independent indexer query (sort + filter); search is
 // server-side across the whole set; infinite scroll appends the next page.
 // Filters = WHICH coins (tabs); Sort = HOW they're ordered (dropdown). Independent, both server-side.
@@ -598,7 +598,7 @@ let session = 0, offset = 0, done = false, busy = false;
 
 // Demo universe: the 12 seed coins are real logos; fan them out deterministically
 // into a few hundred so the preview actually demonstrates endless scrolling. Live
-// mode never touches this — it pages the indexer instead.
+// mode never touches this - it pages the indexer instead.
 const UNIVERSE = (() => {
   if (!DEMO) return [];
   const base = DEMO_COINS.map((c) => ({ ...c, mcUsd: c.mc, volUsd: c.vol, phase: c.i }));
@@ -607,7 +607,7 @@ const UNIVERSE = (() => {
   const N = 480;
   for (let i = base.length; i < N; i++) {
     const b = base[i % base.length];
-    const h = (i * 2654435761) >>> 0;            // deterministic hash (no Math.random — keeps builds stable)
+    const h = (i * 2654435761) >>> 0;            // deterministic hash (no Math.random - keeps builds stable)
     const prog = (i % 11 === 0) ? 100 : (4 + (h % 96));
     const grad = prog >= 100;
     const word = words[(h >>> 3) % words.length];
@@ -639,7 +639,7 @@ const SORTERS = {
   progress: (a,b) => cProg(b) - cProg(a),
 };
 // Trending score. Live: real momentum (chg) then volume. Demo: add a per-coin drift keyed to demoPulse
-// so re-polling actually moves the ranks — a stand-in for the volume changing between fetches.
+// so re-polling actually moves the ranks - a stand-in for the volume changing between fetches.
 const trendScore = (c) => nz(c.chg) + (DEMO ? 9 * Math.sin(demoPulse * 0.6 + nz(c.phase) * 0.7) : 0);
 // Emulate the indexer over the demo universe: filter → sort → page slice.
 function demoQuery({ sort, filter, q, offset, limit }) {
@@ -669,7 +669,7 @@ function buildTabs() {
     $('ftabs').querySelectorAll('.ftab').forEach(b => { const on = b === btn; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
     resetBoard();
   }));
-  // sort dropdown — independent of the filter tabs
+  // sort dropdown - independent of the filter tabs
   $('fsort').innerHTML = SORT_OPTS.map(s => `<option value="${s.key}"${s.key===curSort?' selected':''}>${s.label}</option>`).join('');
   $('fsort').addEventListener('change', () => { curSort = $('fsort').value; resetBoard(); });
 }
@@ -685,7 +685,7 @@ function syncFooter() {
 // ── DexScreener enrichment: real 24h change (red/green) + real MC/Vol on each card ──
 // Client-side, no backend. Robinhood Chain pairs ARE indexed by DexScreener
 // (chainId "robinhood"). We batch all of a page's tokens into one request, pick the
-// deepest-liquidity pair per token, and patch the already-rendered cards in place —
+// deepest-liquidity pair per token, and patch the already-rendered cards in place -
 // so the tick-math badge shows instantly and upgrades to the real 24h number when this
 // returns. Failures are swallowed: the card keeps its tick badge and indexer MC/Vol.
 const DS_BASE = 'https://api.dexscreener.com/latest/dex/tokens/';
@@ -736,7 +736,7 @@ async function loadNext() {
   const my = session;
   busy = true; syncFooter();
   const { coins } = await boardQuery({ sort: curSort, filter: curFilter.filter, q: curQ, offset, limit: PAGE });
-  if (my !== session) return;                     // a newer reset superseded this page — drop it
+  if (my !== session) return;                     // a newer reset superseded this page - drop it
   if (offset === 0) $('board').innerHTML = '';    // clear skeleton on first page
   if (!coins.length) {
     if (offset === 0) $('board').innerHTML = `<div class="bempty">${curQ ? 'No coins match your search.' : 'No coins here yet.'}</div>`;
@@ -758,7 +758,7 @@ function fillViewport() {
   if (r.top < window.innerHeight + 200) loadNext();
 }
 
-// trending ticker — its own top-by-trending query, scrolling; duplicated for a seamless loop
+// trending ticker - its own top-by-trending query, scrolling; duplicated for a seamless loop
 function renderTicker(list) {
   const bar = $('tickerbar');
   if (!list || !list.length){ if (bar) bar.style.display='none'; return; }
@@ -774,14 +774,14 @@ function renderTicker(list) {
 
 async function initBoard() {
   buildTabs();
-  // trending strip (top 14 by trending) + graduates rail (top 3 by mcap) — each a
+  // trending strip (top 14 by trending) + graduates rail (top 3 by mcap) - each a
   // bounded query, independent of how many coins exist in total.
   boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:14 }).then(r => renderTicker(r.coins));
-  // TRENDING cards — the top 8 projects by 24h volume, shown as cards at the top of the pad
+  // TRENDING cards - the top 8 projects by 24h volume, shown as cards at the top of the pad
   boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:8 }).then(r => {
     const el = $('trendCards'); if (!el) return;
     const top = r.coins || [];
-    el.innerHTML = top.length ? top.map(tcard).join('') : `<div class="empty" style="padding:14px;grid-column:1/-1">No live projects yet — <a href="create.html">launch the first</a>.</div>`;
+    el.innerHTML = top.length ? top.map(tcard).join('') : `<div class="empty" style="padding:14px;grid-column:1/-1">No live projects yet - <a href="create.html">launch the first</a>.</div>`;
     const sec = document.getElementById('trendsec'); if (sec && !top.length) sec.style.display = 'none'; // hide the whole trending block until there are coins
   });
   boardQuery({ sort:'top', filter:'graduated', q:'', offset:0, limit:3 }).then(r => {
@@ -797,7 +797,7 @@ new IntersectionObserver((es) => { if (es.some(e => e.isIntersecting)) loadNext(
 $('bmore').addEventListener('click', loadNext);
 
 // live trending: re-poll the top strip so ranks shift as volume moves, like a real board. Also softly
-// refresh the grid — but ONLY when the user is idle at the top of the Trending tab with no search open,
+// refresh the grid - but ONLY when the user is idle at the top of the Trending tab with no search open,
 // so we never yank cards out from under an active scroll or a different filter.
 async function refreshTrending() {
   if (document.hidden) return;
@@ -824,10 +824,10 @@ async function loadStats(){
       $('stProj').textContent = (s.coins||0).toLocaleString();
       $('stGrad').textContent = s.graduated||0;
       $('stRew').textContent = (s.graduated ? (s.graduated*0.5).toFixed(1) : '0') + ' ETH';
-      $('stMcap').textContent = '—';
+      $('stMcap').textContent = '-';
       $('stVol').textContent = fmtUsd((s.volAllEth||0)*ETH_USD);
-    } else { ['stProj','stGrad','stRew','stMcap','stVol'].forEach(id=>$(id).textContent='—'); }
-  } catch { ['stProj','stGrad','stRew','stMcap','stVol'].forEach(id=>$(id).textContent='—'); }
+    } else { ['stProj','stGrad','stRew','stMcap','stVol'].forEach(id=>$(id).textContent='-'); }
+  } catch { ['stProj','stGrad','stRew','stMcap','stVol'].forEach(id=>$(id).textContent='-'); }
 }
 
 loadStats(); initBoard();

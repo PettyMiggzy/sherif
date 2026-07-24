@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Demo data — OPT-IN preview. Loads ONLY when the URL has ?demo=1; otherwise every
+// Demo data - OPT-IN preview. Loads ONLY when the URL has ?demo=1; otherwise every
 // visitor sees the honest, live on-chain board. The stack is deployed and coins have
-// launched, so sample data is never the default — just a populated-pad preview.
+// launched, so sample data is never the default - just a populated-pad preview.
 //   Preview:  robinlabs.io/?demo=1   ·   robinlabs.io/token.html?c=<any>&demo=1
-// (Was temporarily ON-by-default during pre-launch review — now flipped to opt-in.)
+// (Was temporarily ON-by-default during pre-launch review - now flipped to opt-in.)
 const _q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
 export const DEMO = typeof location !== "undefined" && ["1","true",""].includes(_q.get("demo"));
 
@@ -15,7 +15,7 @@ if (DEMO && typeof document !== "undefined") {
     el.id = "demo-banner";
     // corner pill + tap-through, so it never covers or blocks the CTA buttons
     el.style.cssText = "position:fixed;bottom:12px;right:12px;left:auto;z-index:9998;pointer-events:none;background:#dce905;color:#0a0e05;font-family:system-ui,-apple-system,sans-serif;font-weight:800;font-size:.72rem;letter-spacing:.02em;padding:7px 13px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.45);white-space:nowrap;opacity:.94";
-    el.textContent = "👁 PREVIEW — sample data";
+    el.textContent = "👁 PREVIEW - sample data";
     document.body.appendChild(el);
   };
   if (document.body) mount(); else addEventListener("DOMContentLoaded", mount);
@@ -30,10 +30,10 @@ const hex = (seed) => {
   return "0x" + s;
 };
 
-// [name, symbol, marketCapUSD, progress%, state] — sample coins for the preview.
+// [name, symbol, marketCapUSD, progress%, state] - sample coins for the preview.
 // Images are real, recognizable project logos (assets/coins/<symbol>.png, pulled
 // once from CoinGecko) so the preview board looks varied and populated for demos.
-// These are sample/PREVIEW data only — real coins carry the creator's own logo.
+// These are sample/PREVIEW data only - real coins carry the creator's own logo.
 const SEED = [
   ["Dogecoin", "DOGE", 980000, 100, "done"],
   ["Shiba Inu", "SHIB", 412000, 100, "done"],
@@ -49,7 +49,7 @@ const SEED = [
   ["dogwifhat", "WIF", 6800, 100, "done"],
 ];
 
-// 24h change per coin (deterministic) — gives the trending ticker green/red life.
+// 24h change per coin (deterministic) - gives the trending ticker green/red life.
 const CHG = [128.4, 42.1, 18.7, 9.3, 64.2, -12.5, 27.8, -6.4, 33.1, 5.2, -9.8, 88.6];
 
 export const DEMO_COINS = SEED.map((c, i) => ({
@@ -79,7 +79,7 @@ export const DEMO_REWARDS = {
   claimWindowH: 48, // challenge window before an ended epoch's rewards open
   // protocol-wide, all-time
   totals: { paidEth: 158.0, tradersEth: 84.3, holdersEth: 73.7, floorGrownEth: 41.2, claimants: 3120 },
-  // the connected wallet's CLAIMABLE rewards (past epochs, finalized) — one row per (coin, side, epoch)
+  // the connected wallet's CLAIMABLE rewards (past epochs, finalized) - one row per (coin, side, epoch)
   claimable: [
     { sym: "PENGU", name: "Pudgy Penguins", token: "", side: "Holders", epoch: 19_629, eth: 0.0412, reason: "held 74M for 22h" },
     { sym: "PENGU", name: "Pudgy Penguins", token: "", side: "Traders", epoch: 19_629, eth: 0.0231, reason: "net +74M bought" },
@@ -87,7 +87,7 @@ export const DEMO_REWARDS = {
     { sym: "BONK", name: "Bonk", token: "", side: "Holders", epoch: 19_630, eth: 0.0093, reason: "held 33M for 15h" },
     { sym: "WIF", name: "dogwifhat", token: "", side: "Holders", epoch: 19_628, eth: 0.0067, reason: "held 6.8M full epoch" },
   ],
-  // the wallet's rewards ACCRUING this (not-yet-finalized) epoch — pending, not claimable until it ends
+  // the wallet's rewards ACCRUING this (not-yet-finalized) epoch - pending, not claimable until it ends
   pending: [
     { sym: "SPX", name: "SPX6900", side: "Traders", eth: 0.0074 },
     { sym: "BONK", name: "Bonk", side: "Holders", eth: 0.0031 },
@@ -98,7 +98,7 @@ export const DEMO_REWARDS = {
 // and earn the dip-buy fees; withdrawable after a cooldown; can't hurt the coin (it sits under the price).
 export const DEMO_FLOOR = { tvlEth: 6.4, feesPaidEth: 1.82, mineEth: 0.25, earnedEth: 0.0074, backers: 38 };
 
-// Floor pools for the Liquidity page — one per graduated coin. Deterministic sample data. `mineEth`>0 means
+// Floor pools for the Liquidity page - one per graduated coin. Deterministic sample data. `mineEth`>0 means
 // the connected sample wallet already has a position in that pool.
 export const DEMO_POOLS = SEED.filter((c) => c[4] === "done").map((c, i) => ({
   sym: c[1], name: c[0], image: "assets/coins/" + c[1].toLowerCase() + ".png",
@@ -110,7 +110,7 @@ export const DEMO_POOLS = SEED.filter((c) => c[4] === "done").map((c, i) => ({
   earnedEth: i === 0 ? 0.0074 : (i === 2 ? 0.0031 : 0),
 }));
 
-// Daily analytics series for the stats page (demo values). Deterministic — a
+// Daily analytics series for the stats page (demo values). Deterministic - a
 // gentle upward trend with a mid-window viral spike, so the preview charts look
 // like a launchpad finding traction. The live pad draws the real series.
 export function demoSeries(days = 30) {
@@ -151,7 +151,7 @@ export function demoTrades(n = 18) {
   return out;
 }
 
-// Top holders — the protocol addresses use the coin's real curve/pool/dev so the
+// Top holders - the protocol addresses use the coin's real curve/pool/dev so the
 // coin page's existing label logic tags them (🏹 curve, 🦄 pool, 👑 creator).
 export function demoHolders(coin) {
   const top = [

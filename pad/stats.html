@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Robin Labs — Analytics</title>
-<meta name="description" content="Live on-chain analytics for Robin Labs on Robinhood Chain: volume, coins launched, graduations, and real ETH paid to creators. Straight from our own index — no third party." />
+<title>Robin Labs - Analytics</title>
+<meta name="description" content="Live on-chain analytics for Robin Labs on Robinhood Chain: volume, coins launched, graduations, and real ETH paid to creators. Straight from our own index - no third party." />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
@@ -116,7 +116,7 @@
   <section class="head">
     <div class="eyebrow">On-chain analytics · Robinhood Chain</div>
     <h1>The numbers <span class="g">don't lie.</span></h1>
-    <p>Every launch, every trade, every graduation — indexed straight off Robinhood Chain by our own node. No third party, no cherry-picking. This is the whole board, live.</p>
+    <p>Every launch, every trade, every graduation - indexed straight off Robinhood Chain by our own node. No third party, no cherry-picking. This is the whole board, live.</p>
     <div id="live" class="live"><span class="dot"></span><span id="liveTxt">Live from the Robin Labs index</span></div>
   </section>
 
@@ -124,32 +124,32 @@
   <section class="cards">
     <div class="card hero">
       <div class="k"><img src="assets/icons/reward.png" alt="" onerror="this.style.display='none'" />Real ETH paid to creators</div>
-      <div class="v" id="mRewards">—</div>
-      <div class="s"><b>0.5 ETH</b> to the creator on every graduation — a payday the chain guarantees.</div>
+      <div class="v" id="mRewards">-</div>
+      <div class="s"><b>0.5 ETH</b> to the creator on every graduation - a payday the chain guarantees.</div>
     </div>
     <div class="card">
       <div class="k"><img src="assets/icons/growth.png" alt="" onerror="this.style.display='none'" />Total volume</div>
-      <div class="v" id="mVol">—</div>
-      <div class="s" id="mVolEth">—</div>
+      <div class="v" id="mVol">-</div>
+      <div class="s" id="mVolEth">-</div>
     </div>
     <div class="card">
       <div class="k"><img src="assets/icons/launch.png" alt="" onerror="this.style.display='none'" />Coins launched</div>
-      <div class="v" id="mLaunched">—</div>
-      <div class="s" id="mLive">—</div>
+      <div class="v" id="mLaunched">-</div>
+      <div class="s" id="mLive">-</div>
     </div>
     <div class="card">
       <div class="k"><img src="assets/icons/graduated.png" alt="" onerror="this.style.display='none'" />Graduated to a floor</div>
-      <div class="v" id="mGrad">—</div>
-      <div class="s" id="mGradRate">—</div>
+      <div class="v" id="mGrad">-</div>
+      <div class="s" id="mGradRate">-</div>
     </div>
     <div class="card">
       <div class="k"><img src="assets/icons/trending.png" alt="" onerror="this.style.display='none'" />Volume · 24h</div>
-      <div class="v" id="mVol24">—</div>
-      <div class="s" id="mVol24Eth">—</div>
+      <div class="v" id="mVol24">-</div>
+      <div class="s" id="mVol24Eth">-</div>
     </div>
     <div class="card">
       <div class="k"><img src="assets/icons/hot.png" alt="" onerror="this.style.display='none'" />Trades · 24h</div>
-      <div class="v" id="mTrades24">—</div>
+      <div class="v" id="mTrades24">-</div>
       <div class="s">buys &amp; sells routed through the desk</div>
     </div>
   </section>
@@ -291,7 +291,7 @@ function paintCards(agg){
   $('mLaunched').textContent = fmtNum(agg.coins);
   $('mLive').textContent = agg.liveTxt;
   $('mGrad').textContent = fmtNum(agg.graduated);
-  $('mGradRate').textContent = agg.coins ? (100*agg.graduated/agg.coins).toFixed(0)+"% reached a floor" : "—";
+  $('mGradRate').textContent = agg.coins ? (100*agg.graduated/agg.coins).toFixed(0)+"% reached a floor" : "-";
   $('mVol24').textContent = fmtUsd(agg.vol24hEth*ETH_USD);
   $('mVol24Eth').innerHTML = "<b>"+fmtEth(agg.vol24hEth)+"</b> today";
   $('mTrades24').textContent = fmtNum(agg.trades24h);
@@ -313,13 +313,13 @@ async function loadSeries(){
 
 async function boot(){
   if (DEMO){
-    $('live').classList.add('demo'); $('liveTxt').textContent = "Preview — sample data";
+    $('live').classList.add('demo'); $('liveTxt').textContent = "Preview - sample data";
     const s = DEMO_STATS;
     paintCards({ rewardsEth:s.rewardsPaidEth, volEth:s.totalVolumeUsd/ETH_USD,
       coins:s.projectsLaunched, graduated:s.graduatedTotal, vol24hEth:s.vol24hEth, trades24h:1900,
       liveTxt:(s.projectsLaunched-s.graduatedTotal).toLocaleString()+" still trading" });
     $('mVolEth').innerHTML = "<b>"+fmtNum(s.projectsLaunched)+"</b> creators, and counting";
-    $('foot-note').textContent = "Preview mode — sample numbers. Remove ?demo to see the live board.";
+    $('foot-note').textContent = "Preview mode - sample numbers. Remove ?demo to see the live board.";
   } else {
     const s = await Pad.stats();
     if (s){
@@ -328,8 +328,8 @@ async function boot(){
         liveTxt:((s.coins||0)-(s.graduated||0)).toLocaleString()+" still trading" });
     } else {
       $('live').style.display="none";
-      $('foot-note').textContent = "No indexer connected — set API_BASE in assets/config.js to serve live analytics.";
-      paintCards({ rewardsEth:0, volEth:0, coins:0, graduated:0, vol24hEth:0, trades24h:0, liveTxt:"—" });
+      $('foot-note').textContent = "No indexer connected - set API_BASE in assets/config.js to serve live analytics.";
+      paintCards({ rewardsEth:0, volEth:0, coins:0, graduated:0, vol24hEth:0, trades24h:0, liveTxt:"-" });
     }
   }
   await loadSeries();

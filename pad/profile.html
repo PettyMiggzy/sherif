@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Wallet profile — Robin Labs Pad</title>
+<title>Wallet profile - Robin Labs Pad</title>
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
@@ -107,9 +107,9 @@ section{margin:0 0 34px}
   </div>
 
   <div class="pstats">
-    <div class="s"><div class="k">Launched</div><div class="v" id="stLaunched">—</div></div>
-    <div class="s"><div class="k">Holdings</div><div class="v" id="stHoldings">—</div></div>
-    <div class="s"><div class="k">Portfolio</div><div class="v" id="stValue">—</div></div>
+    <div class="s"><div class="k">Launched</div><div class="v" id="stLaunched">-</div></div>
+    <div class="s"><div class="k">Holdings</div><div class="v" id="stHoldings">-</div></div>
+    <div class="s"><div class="k">Portfolio</div><div class="v" id="stValue">-</div></div>
   </div>
 
   <section>
@@ -163,7 +163,7 @@ function holdingCard(h){
   return `<a class="pc" href="token.html?c=${encodeURIComponent(c.token)}">
     <div class="pc-top">${coinAva(c,'pc-av')}<div class="pc-id"><div class="pc-nm">${esc(c.name||'Token')}</div><div class="pc-tk">${esc(tsym(c.symbol))}</div></div></div>
     <div class="pc-row"><span class="k">Balance</span><span class="v">${fmtTok(h.bal)}</span></div>
-    <div class="pc-row"><span class="k">Value</span><span class="v">${valUsd>0?fmtUsd(valUsd):'—'}</span></div>
+    <div class="pc-row"><span class="k">Value</span><span class="v">${valUsd>0?fmtUsd(valUsd):'-'}</span></div>
   </a>`;
 }
 
@@ -255,7 +255,7 @@ async function load(addr){
 function showConnectPrompt(){
   $('launched').innerHTML = `<div class="empty">Connect your wallet to see your launched projects.</div>`;
   $('holdings').innerHTML = `<div class="empty">Connect your wallet to see your holdings.</div>`;
-  $('stLaunched').textContent = '—'; $('stHoldings').textContent = '—'; $('stValue').textContent = '—';
+  $('stLaunched').textContent = '-'; $('stHoldings').textContent = '-'; $('stValue').textContent = '-';
 }
 
 let loadedFor = '';
@@ -266,7 +266,7 @@ async function boot(){
   if (isAddr(paramAddr)) { loadOnce(paramAddr); return; }
   const acct = Pad.account();
   if (isAddr(acct)) { loadOnce(acct); return; }
-  // Not connected yet — eagerConnect may still be restoring the session. Show the
+  // Not connected yet - eagerConnect may still be restoring the session. Show the
   // prompt for now; robinpad:ready fires load() below if an account comes back.
   showConnectPrompt();
 }
