@@ -201,11 +201,14 @@ function stashPendingProfile(token, prof){
   } catch {}
 }
 function clearPendingProfile(token){ try { localStorage.removeItem(PENDING_KEY(token)); } catch {} }
+// Returns a small data-URL for the picked image, or "" if it genuinely can't be used. NEVER throws — a bad
+// or huge image must never abort the launch/save flow (that would drop the whole profile, socials included).
 async function imgDataUrl(id, maxDim){
   const f=(document.getElementById(id)?.files||[])[0];
   if(!f) return "";
-  if(f.size>16*1024*1024) throw new Error('image is over 16MB — pick a smaller one');
   try{
+    // Decode + downscale via canvas. createImageBitmap streams the decode, so even a very large photo becomes a
+    // tiny output — no need to reject big files up front (an iPhone ProRAW/Live Photo can be well over 16MB).
     let bmp=await createImageBitmap(f,{resizeWidth:maxDim,resizeQuality:'high'}).catch(()=>null);
     if(!bmp) bmp=await createImageBitmap(f).catch(()=>null);
     if(!bmp) bmp=await new Promise((res)=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>res(null);im.src=URL.createObjectURL(f);});
@@ -217,12 +220,18 @@ async function imgDataUrl(id, maxDim){
       for(const t of ['image/webp','image/jpeg','image/png']){ let url=''; try{url=cv.toDataURL(t,0.85);}catch{} if(IMG_OK.test(url)) return url; }
     }
   }catch{}
-  let raw=await new Promise((res)=>{const r=new FileReader();r.onload=()=>res(String(r.result||''));r.onerror=()=>res('');r.readAsDataURL(f);});
-  if(raw){
-    if(/^data:;?base64,/.test(raw)){ const n=(f.name||'').toLowerCase(); const mm=/\.hei?c$/.test(n)?'image/heic':/\.heif$/.test(n)?'image/heif':'application/octet-stream'; raw=raw.replace(/^data:;?base64,/,`data:${mm};base64,`); }
-    if(/^data:[\w.+/-]+;base64,/.test(raw)) return raw;
-  }
-  throw new Error('could not read that image — please try a JPG or PNG');
+  // Couldn't decode in-browser (e.g. HEIC on Chrome/Android) — hand the raw bytes to the server to convert,
+  // but only if they fit the server's upload limit, so we never fire a doomed oversized request.
+  try{
+    if(f.size<=16*1024*1024){
+      let raw=await new Promise((res)=>{const r=new FileReader();r.onload=()=>res(String(r.result||''));r.onerror=()=>res('');r.readAsDataURL(f);});
+      if(raw){
+        if(/^data:;?base64,/.test(raw)){ const n=(f.name||'').toLowerCase(); const mm=/\.hei?c$/.test(n)?'image/heic':/\.heif$/.test(n)?'image/heif':'application/octet-stream'; raw=raw.replace(/^data:;?base64,/,`data:${mm};base64,`); }
+        if(/^data:[\w.+/-]+;base64,/.test(raw)) return raw;
+      }
+    }
+  }catch{}
+  return ""; // give up gracefully — the coin still launches; the image can be set later from the coin page
 }
 function sync(){
   const n=document.getElementById('name').value||'Your coin';
@@ -314,7 +323,10 @@ $('launchBtn').addEventListener('click', async () => {
     const web = ($('web').value || '').trim();
     const wantsProfile = token && (desc || tg || tw || web || ($('pfp').files || []).length || ($('banner').files || []).length);
     if (wantsProfile && Pad.hasApi()) {
-      const [pfp, banner] = await Promise.all([imgDataUrl('pfp', 400), imgDataUrl('banner', 1200)]);
+      // Encode each image defensively — a bad/huge one degrades to "" and never aborts the save or the redirect.
+      let pfp = "", banner = "";
+      try { pfp = await imgDataUrl('pfp', 400); } catch (_) {}
+      try { banner = await imgDataUrl('banner', 1200); } catch (_) {}
       const prof = { description: desc, telegram: tg, twitter: tw, website: web, pfp, banner };
       // Persist the (downscaled) images to this browser FIRST, so they can NEVER be lost — if the upload is
       // interrupted (missed signature, tab close, hiccup) the coin page auto-finishes it from this stash.

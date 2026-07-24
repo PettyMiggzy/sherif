@@ -490,12 +490,13 @@ async function maybeShowDev(){
 // WAS chosen but can't be processed it THROWS — so we never silently save a blank
 // image (the old code returned '' on failure, which is why "saved ✓" but no picture).
 const IMG_OK = /^data:image\/(webp|png|jpeg|gif);base64,/;
+// Returns a small data-URL for the picked image, or '' if none is chosen or it truly can't be read. NEVER
+// throws — a bad/huge image must never block the profile save (it would take the socials down with it).
 async function imgDataUrl(id, maxDim){
   const f = ($(id)?.files || [])[0];
   if (!f) return '';                                   // no file chosen → leave existing image
-  if (f.size > 16 * 1024 * 1024) throw new Error('image is over 16MB — pick a smaller one');
-  // Best-effort local downscale (keeps the upload tiny). On ANY failure we send the RAW
-  // file and let the server convert + resize it — so it always works, HEIC included.
+  // Best-effort local downscale (keeps the upload tiny). createImageBitmap streams the decode, so even a
+  // very large photo (iPhone ProRAW/Live Photo, >16MB) becomes a tiny output — no need to reject it up front.
   try {
     let bmp = await createImageBitmap(f, { resizeWidth: maxDim, resizeQuality: 'high' }).catch(() => null);
     if (!bmp) bmp = await createImageBitmap(f).catch(() => null);
@@ -512,14 +513,18 @@ async function imgDataUrl(id, maxDim){
       }
     }
   } catch { /* fall through to raw */ }
-  // Raw fallback — the server downscales/converts (HEIC etc.). FileReader never rejects here,
-  // so a picked file never surfaces an "undefined" error.
-  let raw = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(String(r.result || '')); r.onerror = () => res(''); r.readAsDataURL(f); });
-  if (raw) {
-    if (/^data:;?base64,/.test(raw)) { const n = (f.name || '').toLowerCase(); const mm = /\.hei?c$/.test(n) ? 'image/heic' : /\.heif$/.test(n) ? 'image/heif' : 'application/octet-stream'; raw = raw.replace(/^data:;?base64,/, `data:${mm};base64,`); }
-    if (/^data:[\w.+/-]+;base64,/.test(raw)) return raw;
-  }
-  throw new Error('could not read that image — please try a JPG or PNG');
+  // Raw fallback — the server downscales/converts (HEIC etc.), but only if it fits the upload limit so we
+  // never fire a doomed oversized request. FileReader never rejects, so a picked file never errors out.
+  try {
+    if (f.size <= 16 * 1024 * 1024) {
+      let raw = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(String(r.result || '')); r.onerror = () => res(''); r.readAsDataURL(f); });
+      if (raw) {
+        if (/^data:;?base64,/.test(raw)) { const n = (f.name || '').toLowerCase(); const mm = /\.hei?c$/.test(n) ? 'image/heic' : /\.heif$/.test(n) ? 'image/heif' : 'application/octet-stream'; raw = raw.replace(/^data:;?base64,/, `data:${mm};base64,`); }
+        if (/^data:[\w.+/-]+;base64,/.test(raw)) return raw;
+      }
+    }
+  } catch {}
+  return '';                                           // give up gracefully — never block the save
 }
 // Paint a profile onto the page (pfp, banner, description + socials). Reused by the
 // initial load and by the creator's save (so a fresh save shows instantly, without
@@ -622,10 +627,11 @@ $('saveProfile')?.addEventListener('click', async () => {
     if (Pad.account().toLowerCase() !== COIN.dev.toLowerCase()) return note('Only the coin creator can set the profile.', 'err');
     const pickedPfp = ($('epfp').files || []).length, pickedBanner = ($('ebanner').files || []).length;
     note('Preparing images…');
-    // imgDataUrl THROWS if a chosen file can't be encoded — so we never save a blank image.
+    // imgDataUrl never throws now — it returns '' if a picked file can't be read. The picked-but-empty
+    // guard below (line: "That image could not be read") warns the user instead of saving a blank.
     let pfp = '', banner = '';
-    try { pfp = await imgDataUrl('epfp', 400); } catch (e) { return note('Profile image: ' + (e?.message || 'could not read it — try a JPG or PNG'), 'err'); }
-    try { banner = await imgDataUrl('ebanner', 1200); } catch (e) { return note('Banner: ' + (e?.message || 'could not read it — try a JPG or PNG'), 'err'); }
+    try { pfp = await imgDataUrl('epfp', 400); } catch (_) {}
+    try { banner = await imgDataUrl('ebanner', 1200); } catch (_) {}
     const desc = ($('edesc').value || '').trim(), tg = ($('etg').value || '').trim(), tw = ($('etw').value || '').trim(), web = ($('eweb').value || '').trim();
     // Don't POST an all-empty profile (that's what created the blank rows before).
     if (!pfp && !banner && !desc && !tg && !tw && !web && !(PROFILE && PROFILE.image))
