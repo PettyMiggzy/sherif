@@ -427,6 +427,15 @@ export async function onGroupMessage(msg) {
 
   const text = (msg.text || '').trim();
   const isCmd = text.startsWith('/');
+  const admin = await isAdmin(msg.chat.id, msg.from.id);
+
+  // Passive filters (flood + link) run on EVERY non-admin message — commands
+  // INCLUDED — so a leading "/" can't bypass antilink/antiflood, and command-spam
+  // (even OPEN commands like /rules) is counted toward the flood limit. If a filter
+  // acts (deletes/mutes), stop here and don't also dispatch the command.
+  if (!admin) {
+    if (await runFilters(msg, msg.from).catch(() => false)) return true;
+  }
 
   if (isCmd) {
     const [cmdRaw, ...rest] = text.split(/\s+/);
@@ -434,16 +443,12 @@ export async function onGroupMessage(msg) {
     const parts = rest.join(' ');
     if (OPEN_CMDS[cmd]) { try { await OPEN_CMDS[cmd](msg, parts); } catch (e) { console.error('mod open cmd:', e?.message); } return true; }
     if (ADMIN_CMDS[cmd]) {
-      if (!await isAdmin(msg.chat.id, msg.from.id)) { await reply(msg, '🔒 Admins only.'); return true; }
+      if (!admin) { await reply(msg, '🔒 Admins only.'); return true; }
       try { await ADMIN_CMDS[cmd](msg, parts); } catch (e) { console.error('mod admin cmd:', e?.message); }
       return true;
     }
-    return false; // not a mod command — let bot.js ignore it (group DMs aren't wallet commands)
+    return true; // unrecognized command — filters already ran; consume it (not a wallet command)
   }
-
-  // Non-command group message: run passive filters (admins are exempt).
-  if (await isAdmin(msg.chat.id, msg.from.id)) return true;
-  await runFilters(msg, msg.from).catch((e) => console.error('mod filter:', e?.message));
   return true;
 }
 
