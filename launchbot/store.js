@@ -171,7 +171,10 @@ export function hasAgreed(userId) { return !!db.users[String(userId)]?.agreed; }
 /** Record acceptance of the terms gate (durably). Creates no wallet on its own. */
 export function markAgreed(userId) {
   const r = db.users[String(userId)];
-  if (r && !r.agreed) { r.agreed = nowSecs(); try { persistSync(); } catch (e) { console.error('agree persist:', e.message); } }
+  if (r && !r.agreed) {
+    r.agreed = nowSecs();
+    try { persistSync(); } catch (e) { delete r.agreed; throw e; } // keep memory == disk
+  }
 }
 
 /** Per-user cooldown (in-memory). cooldownLeft peeks; stampCooldown starts it. */
@@ -215,14 +218,19 @@ export function forget(userId) {
   const id = String(userId);
   const rec = db.users[id];
   if (!rec) return false;
-  // Evict the derived AES key from the cache too, so nothing about this user
-  // lingers in memory after erasure.
-  if (rec.enc) _keyCache.delete(cacheKey(rec.enc.salt, rec.enc.N || 16384, rec.enc.r || 8, rec.enc.p || 1));
+  // Persist the erasure durably FIRST; if the write fails, roll the record back
+  // so memory stays consistent with disk (otherwise the user is wedged: memory
+  // says no wallet, disk still holds the key). Mirrors ensureWallet's rollback.
   delete db.users[id];
+  try {
+    persistSync();
+  } catch (e) {
+    db.users[id] = rec; // restore — the caller reports failure, user stays usable
+    throw e;
+  }
+  // Only now that the record is durably gone, drop the ephemeral traces.
   sessions.delete(id);
-  // Let a write failure propagate — the caller must NOT tell the user "erased"
-  // if the record is still on disk (it would resurrect on restart).
-  persistSync();
+  if (rec.enc) _keyCache.delete(cacheKey(rec.enc.salt, rec.enc.N || 16384, rec.enc.r || 8, rec.enc.p || 1));
   return true;
 }
 
