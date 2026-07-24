@@ -32,7 +32,16 @@ import { ethers } from "./ethers.min.js";
 import { CHAIN, CONTRACTS, ABIS, GOPLUS_APP_KEY } from "./config.js";
 
 const GOPLUS = "https://api.gopluslabs.io/api/v1";
-const _read = new ethers.JsonRpcProvider(CHAIN.rpc[0], CHAIN.id);
+// Read via a FallbackProvider so a coin's safety verdict survives an indexer outage: it prefers the
+// cached proxy (priority 1) but fails over to the public RPC, instead of silently degrading every coin
+// to "UNVERIFIED" when api.robinlab.io is down but the public RPC is healthy.
+const _read = (() => {
+  const cfgs = CHAIN.rpc.map((url, i) => ({
+    provider: new ethers.JsonRpcProvider(url, CHAIN.id, { staticNetwork: true }),
+    priority: i + 1, stallTimeout: 1500, weight: 1,
+  }));
+  return cfgs.length > 1 ? new ethers.FallbackProvider(cfgs, CHAIN.id, { quorum: 1 }) : cfgs[0].provider;
+})();
 const isAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a || "");
 const truthy = (v) => v === 1 || v === "1" || v === true;
 const pct = (taxStr) => { const n = Number(taxStr); return Number.isFinite(n) ? n * 100 : null; }; // GoPlus tax is a fraction

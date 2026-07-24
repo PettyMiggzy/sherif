@@ -241,6 +241,12 @@
 <script type="module">
 import * as Pad from './assets/wallet.js';
 import { DEMO, DEMO_REWARDS, DEMO_COINS } from './assets/demo.js';
+import { isDeployed } from './assets/config.js';
+
+// The 0.25% trader/holder rewards program is disabled until a RewardVault is deployed. This page is
+// unlinked from the site; if someone reaches it directly (bookmark/old link) with no vault set, bounce
+// them to the board rather than showing a feature that pays nothing. (?demo still previews the design.)
+if (!DEMO && !isDeployed('rewardVault')) { location.replace('browse.html'); throw new Error('rewards disabled'); }
 
 const $ = (id) => document.getElementById(id);
 const fmtEth = (n) => (Math.round((n||0)*1e4)/1e4).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:4}) + " ETH";

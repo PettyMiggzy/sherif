@@ -51,7 +51,7 @@ export const CONTRACTS = {
   rewardVault: "",
 
   // Our FloorCoopFactory — deploys a per-coin community floor vault (add to the buy-wall, earn dip-buy
-  // fees, withdrawable after a cooldown). Empty until it ships with the reward system's deploy.
+  // fees, withdrawable after a cooldown). LIVE.
   floorCoopFactory: "0x564EDF561Bed46C972d5D44D84f5FAc9C5118668",
 
   // Our PlatformFeeSplitter — routes the platform's cut ($ROBIN buyback split). Standalone; used by the

@@ -297,15 +297,12 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
         <div id="safetyBody"><div style="color:var(--ink-faint);font-size:.8rem">🛡 Scanning safety…</div></div>
       </div>
 
-      <!-- public fees & rewards: what the creator, traders and holders are earning on THIS coin -->
-      <div class="panel sec" style="margin-top:16px"><h3>Fees &amp; rewards <span class="meta">this coin · all-time</span></h3>
+      <!-- public fees: what the creator earns and what deepens the floor on THIS coin -->
+      <div class="panel sec" style="margin-top:16px"><h3>Fees <span class="meta">this coin · all-time</span></h3>
         <div class="feegrid">
           <div class="fee" title="The coin creator's fees to date — their LP-fee share + swap-fee share, summed from on-chain events. Public and verifiable."><img src="assets/icons/dev.png" alt="" onerror="this.style.display='none'" /><div><div class="k">Creator fees to date</div><div class="v" id="feeDev">—</div></div></div>
-          <div class="fee"><img src="assets/icons/reward-trader.png" alt="" /><div><div class="k">Trader rewards</div><div class="v" id="feeTraders">—</div></div></div>
-          <div class="fee"><img src="assets/icons/reward-holder.png" alt="" /><div><div class="k">Holder rewards</div><div class="v" id="feeHolders">—</div></div></div>
           <div class="fee"><img src="assets/icons/reward-floor.png" alt="" /><div><div class="k">Into the floor</div><div class="v" id="feeFloor">—</div></div></div>
         </div>
-        <a class="feelink" href="rewards.html">How trader &amp; holder rewards work →</a>
       </div>
 
       <!-- locked community LP: stake ETH into the coin's real liquidity, earn a share of every trade fee -->
@@ -334,7 +331,6 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
         <div class="holders">
           <div class="h"><span>Buy fee</span><b id="infoBuy">—</b></div>
           <div class="h"><span>Sell fee</span><b id="infoSell">—</b></div>
-          <div class="h"><span>Reward legs</span><b>+0.25% traders · +0.25% holders</b></div>
           <div class="h"><span>Chain</span><b>Robinhood</b></div>
           <div class="h"><span>LP at graduation</span><b>Locked forever</b></div>
         </div>
@@ -693,8 +689,8 @@ async function loadCoin(){
   $('ca').textContent = Pad.short(TOKEN);
   document.title = meta.name + ' — Robin Labs Pad';
   $('trade').textContent = (SIDE === 'buy' ? 'Buy ' : 'Sell ') + disp(meta.symbol);
-  $('infoBuy').textContent = (tax.buyBps / 100) + '% + 0.25%';
-  $('infoSell').textContent = (tax.sellBps / 100) + '% + 0.25%';
+  $('infoBuy').textContent = (tax.buyBps / 100) + '%';
+  $('infoSell').textContent = (tax.sellBps / 100) + '%';
 
   // creator profile (image, banner, description, socials) — from the indexer, if saved
   try {
@@ -728,8 +724,8 @@ function renderDemoCoin(){
   else $('pfp').textContent = (c.symbol || '?').slice(0, 3);
   $('ca').textContent = Pad.short(c.token);
   document.title = c.name + ' — Robin Labs';
-  $('infoBuy').textContent = '1% + 0.25%';
-  $('infoSell').textContent = '1% + 0.25%';
+  $('infoBuy').textContent = '1%';
+  $('infoSell').textContent = '1%';
   $('stMc').textContent = fmt(c.mc);
   $('stPx').textContent = '$' + (c.mc / 1e9).toPrecision(2);
   $('stStage').textContent = c.state === 'done' ? 'Graduated' : c.state === 'grad' ? 'Ready' : 'Bonding';
@@ -896,31 +892,25 @@ async function renderBanner(){
   el.innerHTML = html + html; // duplicate → seamless -50% loop
 }
 
-// ── public fees & rewards for this coin (creator / traders / holders / floor) ──
+// ── public fees for this coin (creator take + what deepens the floor) ──
 function setFee(id, eth){ const e = $(id); if (!e) return; const v = eth >= 1 ? eth.toFixed(3) : eth > 0 ? eth.toPrecision(2) : '0'; e.innerHTML = `${v} <small>ETH</small>`; }
 async function renderFees(coinData){
   if (DEMO){
     const c = coinData || DEMO_COINS.find((x) => x.token === (COIN && COIN.token)) || DEMO_COINS[0];
     const volEth = (c.vol || c.mc * 0.4) / ETH_USD;              // this coin's traded volume in ETH
-    setFee('feeDev',     volEth * 0.5 * 0.01);                   // creator: 1% of sells
-    setFee('feeTraders', volEth * 0.5 * 0.0025);                 // 0.25% of buys → traders
-    setFee('feeHolders', volEth * 0.5 * 0.0025);                 // 0.25% of sells → holders
+    setFee('feeDev',     volEth * 0.5 * 0.01);                   // creator: share of the 1% fee
     setFee('feeFloor',   volEth * 0.006);                        // fees compounded into the Bond floor
     return;
   }
-  // live: creator take + floor from on-chain FeeSplit; the 0.25% trader/holder reward legs
-  // are estimated from the coin's real all-time volume (0.25% of buys / of sells) — the pad
-  // has no per-coin reward-pool endpoint, and /api/rewards/:addr is a WALLET lookup.
-  // "Creator earned" = the dev's swap-fee share (router FeeSplit) + their LP-fee share (curve FeesCollected).
-  // Public + on-chain-verifiable; anyone loading the page sees the coin's dev fees to date.
+  // live: "Creator earned" = the dev's swap-fee share (router FeeSplit) + their LP-fee share (curve
+  // FeesCollected); "Into the floor" = the floor's swap-fee share. Both on-chain-verifiable — anyone
+  // loading the page sees the coin's real dev fees to date.
   try {
     const [f, lp] = await Promise.all([Pad.feeTotals(COIN.token), Pad.lpCreatorFees(COIN.curve)]);
     const devWei = (f && f.dev != null ? BigInt(f.dev) : 0n) + (lp || 0n);
     setFee('feeDev', Number(devWei) / 1e18);
     if (f && f.floor != null) setFee('feeFloor', Number(f.floor) / 1e18);
   } catch {}
-  const volEth = Number(coinData?.volAllEth || 0);
-  if (volEth > 0){ setFee('feeTraders', volEth * 0.5 * 0.0025); setFee('feeHolders', volEth * 0.5 * 0.0025); }
 }
 
 // ── live trades feed (green buys / red sells) ──

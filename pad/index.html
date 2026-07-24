@@ -344,7 +344,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
   <nav class="nav-links">
     <a href="browse.html">Browse</a><a href="browse.html#graduates">Graduated</a>
-    <a href="rewards.html">Rewards</a><a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="profile.html">Portfolio</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
+    <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="profile.html">Portfolio</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
   </nav>
   <div class="nav-cta">
     <button class="btn btn-dark" id="connectBtn" type="button">Connect Wallet</button>
@@ -356,7 +356,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 </div>
 <nav class="mobile-menu" id="mobileMenu">
   <a href="browse.html">Browse</a><a href="browse.html#graduates">Graduated</a>
-  <a href="rewards.html">Rewards</a><a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="profile.html">Portfolio</a><a href="#robin">$ROBIN</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
+  <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="profile.html">Portfolio</a><a href="#robin">$ROBIN</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
   <a class="btn btn-lime go" href="create.html">Launch Token</a>
 </nav></header>
 
@@ -399,39 +399,9 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <section class="stats" id="stats">
     <div class="s"><img class="ic" src="assets/icons/launch.png" alt="" /><div><div class="v" id="stProj">—</div><div class="k">Projects Launched</div></div></div>
     <div class="s"><img class="ic" src="assets/icons/graduated.png" alt="" /><div><div class="v" id="stGrad">—</div><div class="k">Graduated</div></div></div>
-    <div class="s"><img class="ic" src="assets/icons/reward.png" alt="" /><div><div class="v" id="stRew">—</div><div class="k">Rewards Paid</div></div></div>
+    <div class="s"><img class="ic" src="assets/icons/reward.png" alt="" /><div><div class="v" id="stRew">—</div><div class="k">Creator Payouts</div></div></div>
     <div class="s"><img class="ic" src="assets/icons/growth.png" alt="" /><div><div class="v" id="stMcap">—</div><div class="k">Market Cap Created</div></div></div>
     <div class="s"><img class="ic" src="assets/icons/buy-robin.png" alt="" /><div><div class="v" id="stVol">—</div><div class="k">Total Volume</div></div></div>
-  </section>
-
-  <!-- REWARD ENGINE — front-and-center so nobody misses it -->
-  <style>
-    .rewband{display:grid;grid-template-columns:1.05fr .95fr;gap:30px;align-items:center;border:1px solid var(--line-strong);border-radius:20px;background:linear-gradient(120deg,rgba(220,233,5,.07),rgba(138,99,224,.05));padding:34px;box-shadow:0 0 60px -20px rgba(220,233,5,.3) inset}
-    .rewband .rbe{color:var(--lime-deep);font-family:var(--mono);font-size:.7rem;letter-spacing:.2em;text-transform:uppercase}
-    .rewband h2{font-size:clamp(1.9rem,4vw,2.8rem);margin:10px 0 12px;letter-spacing:-.02em}
-    .rewband p{color:var(--dim);font-size:1.05rem;line-height:1.55;max-width:52ch;margin:0}
-    .rewband p b{color:var(--ink)}
-    .rbcards{display:flex;flex-direction:column;gap:12px}
-    .rbcard{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line-2);border-radius:14px;padding:13px 16px}
-    .rbcard img{width:48px;height:48px;border-radius:12px;flex:none;object-fit:cover}
-    .rbcard h4{font-size:1.05rem;margin:0}
-    .rbcard span{color:var(--dim);font-size:.84rem}
-    @media(max-width:820px){.rewband{grid-template-columns:1fr;padding:24px}}
-  </style>
-  <section class="sec" id="rewards">
-    <div class="rewband">
-      <div>
-        <div class="rbe">The reward engine · real ETH · no lockups</div>
-        <h2>Get paid to <span class="lime">trade</span>.<br />Get paid to <span class="lime">hold</span>.</h2>
-        <p>Every trade pays it forward: <b>0.25%</b> of buys to a coin's real net-volume traders, <b>0.25%</b> of sells to its diamond-hand holders — claimed as <b>real ETH</b>. Whatever nobody claims deepens a floor that buys every dip, forever.</p>
-        <a class="btn btn-lime" href="rewards.html" style="margin-top:20px">See your rewards →</a>
-      </div>
-      <div class="rbcards">
-        <div class="rbcard"><img src="assets/icons/reward-trader.png" alt="" /><div><h4>Trader rewards</h4><span>+0.25% of every buy · wash-proof</span></div></div>
-        <div class="rbcard"><img src="assets/icons/reward-holder.png" alt="" /><div><h4>Holder rewards</h4><span>+0.25% of every sell · size × time</span></div></div>
-        <div class="rbcard"><img src="assets/icons/reward-floor.png" alt="" /><div><h4>Floor grows forever</h4><span>unclaimed → protocol-owned buy-wall</span></div></div>
-      </div>
-    </div>
   </section>
 
   <!-- WHY -->
@@ -445,7 +415,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
     <div class="wgrid" id="whyGrid" style="transition:opacity .34s ease">
       <div class="card wcard"><img src="assets/icons/reward.png" alt="" /><h3>Get paid to graduate</h3><p>Hit the target and Robin Labs pays you up to <b class="lime">0.5 ETH</b> — straight to your wallet, no strings.</p></div>
       <div class="card wcard"><img src="assets/icons/reward-floor.png" alt="" /><h3>A floor that buys the dip</h3><p>At the Bond your coin gets a <b>protocol-owned floor</b> that buys every dip, forever — and it can't be pulled.</p></div>
-      <div class="card wcard"><img src="assets/icons/reward-trader.png" alt="" /><h3>Traders earn real ETH</h3><p>Every buy pays <b class="lime">0.25%</b> back to a coin's real net-volume traders — wash-proof, claimed as ETH.</p></div>
+      <div class="card wcard"><img src="assets/icons/community.png" alt="" /><h3>Fair launch, real pair</h3><p>No presale, no insiders. One tx spins up a real Uniswap v3 pair with charts on DexScreener from block one.</p></div>
       <div class="card wcard"><img src="assets/icons/locked.png" alt="" /><h3>Earn fees on your own LP</h3><p>Lock liquidity into your graduated coin and keep <b class="lime">95%</b> of every trade's fee — real ETH.</p></div>
     </div>
     <div class="whydots" id="whyDots" aria-hidden="true"></div>
@@ -455,8 +425,6 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
     var FEATS = [
       { i: 'reward.png',        h: 'Get paid to graduate',    p: 'Hit the target and Robin Labs pays you up to <b class="lime">0.5 ETH</b> — straight to your wallet, no strings.' },
       { i: 'reward-floor.png',  h: 'A floor that buys the dip', p: 'At the Bond your coin gets a <b>protocol-owned floor</b> that buys every dip, forever — and it can’t be pulled.' },
-      { i: 'reward-trader.png', h: 'Traders earn real ETH',    p: 'Every buy pays <b class="lime">0.25%</b> back to a coin’s real net-volume traders — wash-proof, claimed as ETH.' },
-      { i: 'reward-holder.png', h: 'Holders get paid to hold', p: 'Every sell sends <b class="lime">0.25%</b> to diamond hands — rewarded by size × time, in real ETH.' },
       { i: 'locked.png',        h: 'Earn fees on your own LP', p: 'Lock liquidity into your graduated coin and keep <b class="lime">95%</b> of every trade’s fee — real ETH.' },
       { i: 'community.png',     h: 'Fair launch, real pair',   p: 'No presale, no insiders. One tx spins up a real Uniswap v3 pair with charts on DexScreener from block one.' },
     ];
@@ -495,7 +463,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
         <div class="steprow">
           <div class="step"><img src="assets/icons/new.png" alt="" /><h4>Create Coin</h4><p>Deploy your token in one tx — a real Uniswap v3 pair, charts on DexScreener from block one.</p></div>
           <div class="step"><img src="assets/icons/community.png" alt="" /><h4>Community Buys</h4><p>Grow volume and holders up the curve.</p></div>
-          <div class="step"><img src="assets/icons/airdrop.png" alt="" /><h4>Everyone Earns</h4><p>Every trade pays 0.25% to traders + 0.25% to holders, in real ETH.</p></div>
+          <div class="step"><img src="assets/icons/airdrop.png" alt="" /><h4>Creator Earns</h4><p>Every trade pays the creator a share of the fee — collect it or buy &amp; burn.</p></div>
           <div class="step"><img src="assets/icons/growth.png" alt="" /><h4>Graduate</h4><p>Hit the target and post the Bond — a floor that can't be pulled.</p></div>
           <div class="step"><img src="assets/icons/reward.png" alt="" /><h4>Receive ~0.5 ETH</h4><p>Your creator reward, paid on graduation.</p></div>
           <div class="step"><img src="assets/icons/locked.png" alt="" /><h4>Floor Grows</h4><p>Fees keep deepening the floor — it buys every dip, forever.</p></div>

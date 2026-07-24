@@ -194,7 +194,7 @@
 
   <!-- ─────────── CONTRACTS & ABI ─────────── -->
   <h2 id="factory"><span class="sec">02 · Contracts &amp; ABI</span>CurvePadFactory</h2>
-  <p>The launch entrypoint. <span class="m">launch()</span> is <strong>payable</strong> — any ETH you send is the creator's own opening buy (capped at 2% of supply), executed atomically before public trading opens.</p>
+  <p>The launch entrypoint. <span class="m">launch()</span> is <strong>payable</strong> — any ETH you send is the creator's own opening buy, executed atomically before public trading opens. It's <strong>uncapped</strong>: it climbs the curve up to the graduation ceiling, and any ETH beyond what fills the curve is refunded.</p>
   <div class="code"><div class="hd"><span class="lang">Solidity ABI · human-readable (ethers)</span><button class="cp">Copy</button></div><pre><span class="c">// The launch params tuple. tax.projectWallet receives the creator's sell fee.</span>
 function launch(
   (string name, string symbol, address dev,
@@ -207,7 +207,7 @@ function allTokens(uint256 index) view returns (address)
 function recordOf(address token) view returns (address token, address curve, address dev, uint256 at)
 
 event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought)</pre></div>
-  <div class="note"><span class="lbl">Fee caps (enforced on-chain)</span>Each side (<span class="m">buyBps</span>/<span class="m">sellBps</span>) is 1%–4% (<span class="m">100–400</span> bps). The baseline 1% is mandatory. The opening dev buy is capped at 2% of supply (<span class="m">200</span> bps). Total supply is fixed at <span class="m">1,000,000,000</span>.</div>
+  <div class="note"><span class="lbl">Fee caps (enforced on-chain)</span>Each side (<span class="m">buyBps</span>/<span class="m">sellBps</span>) is 1%–4% (<span class="m">100–400</span> bps). The baseline 1% is mandatory. The opening dev buy is uncapped — it fills the curve up to the graduation ceiling, and any excess ETH is refunded. Total supply is fixed at <span class="m">1,000,000,000</span>.</div>
 
   <h2 id="router"><span class="sec">02 · Contracts &amp; ABI</span>PadRouter</h2>
   <p>Every trade goes through the router. Buys send native ETH (no approval); sells need one exact-amount approval to the router. The fee split happens inside — no side transfers.</p>
@@ -291,7 +291,7 @@ factory.on(<span class="s">"Launched"</span>, (token, curve, pool, dev) => {
   <p><strong>Ideas that print:</strong> snipe bot (buy on <span class="m">Launched</span>) · buy-alert / trending bot (poll the API → Telegram/X) · keeper (<span class="m">graduate()</span> is permissionless — fire it when <span class="m">ready()</span> flips) · copy-trade (mirror a wallet's <span class="m">Bought</span>/<span class="m">Sold</span>). Nothing to request, no rate limit on-chain — and every trade your bot routes still pays the coin's fee in-protocol, so the floor and the whole ecosystem grow with your volume. <em>Bring the bots.</em></p>
 
   <h2 id="launch"><span class="sec">03 · Integrate</span>Launch a coin</h2>
-  <p>One transaction. Send ETH with the call to make the creator's opening buy (≤2%), or send <span class="m">0</span> for a clean launch. All snippets use <strong>ethers v6</strong>.</p>
+  <p>One transaction. Send ETH with the call to make the creator's opening buy (uncapped — excess is refunded), or send <span class="m">0</span> for a clean launch. All snippets use <strong>ethers v6</strong>.</p>
   <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">import</span> { ethers } <span class="k">from</span> <span class="s">"ethers"</span>;
 
 <span class="k">const</span> FACTORY = <span class="s">"0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074"</span>;
@@ -317,7 +317,7 @@ factory.on(<span class="s">"Launched"</span>, (token, curve, pool, dev) => {
 <span class="k">const</span> tx = <span class="k">await</span> factory.launch(params, { value: ethers.parseEther(<span class="s">"0.02"</span>) }); <span class="c">// opening buy</span>
 <span class="k">await</span> tx.wait();
 console.log(<span class="s">"launched"</span>, token);</pre></div>
-  <div class="note warn"><span class="lbl">Opening buy = anti-snipe, not a fee</span>The ETH you send is <em>your own buy</em>, executed inside the launch tx before anyone else can trade — it isn't a platform charge. Capped at 2% of supply.</div>
+  <div class="note warn"><span class="lbl">Opening buy = anti-snipe, not a fee</span>The ETH you send is <em>your own buy</em>, executed inside the launch tx before anyone else can trade — it isn't a platform charge. It's uncapped: it climbs the curve up to the graduation ceiling, and any excess ETH is refunded.</div>
 
   <h2 id="trade"><span class="sec">03 · Integrate</span>Buy &amp; sell</h2>
   <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">const</span> ROUTER = <span class="s">"0xA6BaAB820809C7fC8350311776627298f91F07eC"</span>;

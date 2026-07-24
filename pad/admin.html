@@ -184,9 +184,29 @@ import { ethers } from './assets/ethers.min.js';
 import { CHAIN, CONTRACTS, ADMIN_ABI, API_BASE, isDeployed } from './assets/config.js';
 
 const $ = (id) => document.getElementById(id);
-const read = new ethers.JsonRpcProvider(CHAIN.rpc[0], CHAIN.id);
+// FallbackProvider so the owner dashboard's reads survive an indexer outage (prefer the cached proxy,
+// fail over to the public RPC) instead of going blank when api.robinlab.io is down.
+const read = (() => {
+  const cfgs = CHAIN.rpc.map((url, i) => ({
+    provider: new ethers.JsonRpcProvider(url, CHAIN.id, { staticNetwork: true }),
+    priority: i + 1, stallTimeout: 1500, weight: 1,
+  }));
+  return cfgs.length > 1 ? new ethers.FallbackProvider(cfgs, CHAIN.id, { quorum: 1 }) : cfgs[0].provider;
+})();
 let signer = null, account = null;
 const fmtEth = (wei) => (wei == null ? '—' : (+ethers.formatEther(wei)).toLocaleString(undefined, { maximumFractionDigits: 4 }) + ' ' + (CHAIN.currency?.symbol || 'ETH'));
+
+// Legacy-tx overrides with a clamped gasLimit. Robinhood Chain has a 2^24 (~16.7M) per-tx gas cap, and its
+// eth_estimateGas can return well above that even for a tx that fits — a wallet that trusts the raw estimate
+// aborts a heavy owner op (a big seedBlocklist, collectFees on a busy curve). Estimate, pad 20%, clamp to
+// the cap; fall back to the cap if estimation fails. Mirrors wallet.js's guardedSend.
+const TX_GAS_CAP = 16_000_000n;
+async function legacyOv(estimate) {
+  const gp = (await read.getFeeData()).gasPrice;
+  let gasLimit = TX_GAS_CAP;
+  try { const e = await estimate(); const padded = (e * 12n) / 10n; gasLimit = padded < TX_GAS_CAP ? padded : TX_GAS_CAP; } catch {}
+  return { type: 0, gasPrice: gp, gasLimit };
+}
 const short = (a) => (!a || /^0x0+$/.test(a) ? '—' : a.slice(0, 6) + '…' + a.slice(-4));
 const secsToDh = (s) => { s = Number(s); const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600); return d ? `${d}d ${h}h` : `${h}h`; };
 const isZero = (a) => !a || /^0x0+$/.test(a);
@@ -331,9 +351,11 @@ async function runAction(btn) {
   try {
     btn.disabled = true; btn.textContent = 'Signing…';
     // Robinhood Chain lacks eth_maxPriorityFeePerGas, so a default type-2 tx throws -32601 and
-    // corrupts the wallet's fee/balance state. Force a fully-priced legacy tx (type:0 + gasPrice).
-    const gp = (await read.getFeeData()).gasPrice;
-    const tx = await C(key, true)[act](...args, { type: 0, gasPrice: gp });
+    // corrupts the wallet's fee/balance state. Force a fully-priced legacy tx (type:0 + gasPrice)
+    // with a gasLimit clamped under the chain's per-tx cap so a heavy op (e.g. seedBlocklist) can't
+    // be aborted by an over-estimate.
+    const ov = await legacyOv(() => C(key, true)[act].estimateGas(...args));
+    const tx = await C(key, true)[act](...args, ov);
     btn.textContent = 'Pending…';
     await tx.wait();
     toast(`${act} ✓  ${tx.hash.slice(0, 12)}…`);
@@ -352,8 +374,8 @@ async function resolveCurve(token) {
   return { curve: c.curve, graduated: !!c.graduated };
 }
 async function collectCurve(curveAddr) {
-  const gp = (await read.getFeeData()).gasPrice; // legacy tx — Robinhood Chain has no priority-fee RPC
-  const tx = await new ethers.Contract(curveAddr, CURVE_ABI, signer).collectFees({ type: 0, gasPrice: gp });
+  const c = new ethers.Contract(curveAddr, CURVE_ABI, signer); // legacy tx — Robinhood Chain has no priority-fee RPC
+  const tx = await c.collectFees(await legacyOv(() => c.collectFees.estimateGas()));
   await tx.wait();
   return tx.hash;
 }
