@@ -144,6 +144,7 @@ export const ABIS = {
     "function startTick() view returns (int24)",
     "function gradTick() view returns (int24)",
     "function graduate()",
+    "function collectFees() returns (uint256 wethFees, uint256 tokenFees)",
   ],
   erc20: [
     "function balanceOf(address) view returns (uint256)",

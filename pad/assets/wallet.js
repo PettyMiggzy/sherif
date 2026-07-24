@@ -519,6 +519,27 @@ function priceFromSqrt(sqrt, token) {
   return token.toLowerCase() < WETH_LC ? p1per0 : (p1per0 > 0 ? 1 / p1per0 : 0); // WETH per token
 }
 
+/// The creator's uncollected LP-fee share (WETH), sitting on the curve. collectFees() splits the accrued
+/// 1% LP fee platform/creator; simulating it (staticCall — a read, no gas) gives the total accrued WETH,
+/// and FeeConfig.lpCreatorBps is the creator's slice. Returns 0n on a graduated coin (already swept).
+export async function pendingLpCreatorWeth(curve) {
+  if (!curve || !/^0x[0-9a-fA-F]{40}$/.test(curve)) return 0n;
+  try {
+    const c = new ethers.Contract(curve, ABIS.curve, _read);
+    const [wethFees] = await c.collectFees.staticCall();
+    let bps = 1000n;
+    try { bps = BigInt(await new ethers.Contract(CONTRACTS.feeConfig, ABIS.feeConfig, _read).lpCreatorBps()); } catch {}
+    return (BigInt(wethFees) * bps) / 10000n;
+  } catch { return 0n; }
+}
+
+/// Collect the LP fee on a curve (permissionless). Pays the creator's + platform's split on-chain. The
+/// creator triggers this to realize their LP-fee share right now instead of waiting for the keeper.
+export async function collectLpFees(curve) {
+  if (!_signer) await connect();
+  return guardedSend(new ethers.Contract(curve, ABIS.curve, _signer), "collectFees", [], 0n, "Collect LP fees");
+}
+
 /// Read a coin's live graduation state for the trade page + browse cards.
 export async function curveInfo(curve, token) {
   const c = new ethers.Contract(curve, ABIS.curve, _read);

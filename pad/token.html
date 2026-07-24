@@ -29,7 +29,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .btn-lime{background:var(--lime);color:#10140a}.btn-lime[disabled]{opacity:.6;cursor:not-allowed}
 .btn-ghost{border-color:var(--line-strong);color:var(--ink);background:none}
 .btn-gold{background:var(--gold);color:#10140a}
-.banner{height:180px;border-radius:0 0 16px 16px;background:linear-gradient(120deg,#1a1e10,#0d0f07);position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
+.banner{max-width:1240px;margin:16px auto 0;height:clamp(140px,23vw,280px);border-radius:16px;background:linear-gradient(120deg,#1a1e10,#0d0f07);position:relative;overflow:hidden;border:1px solid var(--line)}
 .banner .art{position:absolute;inset:0;background:radial-gradient(circle at 30% 40%,rgba(220,233,5,.22),transparent 60%),radial-gradient(circle at 80% 60%,rgba(138,99,224,.18),transparent 55%)}
 .banner .bmore{position:absolute;top:14px;left:24px;font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--lime);z-index:2;opacity:.85}
 .banner .bwrap{position:absolute;left:0;right:0;top:52px;bottom:44px;display:flex;align-items:center;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
@@ -463,8 +463,19 @@ $('gradBtn').addEventListener('click', async () => {
 
 // ── dev controls ──
 $('collectBtn').addEventListener('click', async () => {
-  try { setNote('Collecting your sell fees…'); await (await Pad.withdrawDev(TOKEN)).wait(); setNote('Collected ✓', 'ok'); setTimeout(loadDevEsc, 1200); }
-  catch (e) { setNote(e.message, 'err'); }
+  try {
+    // Your creator income is in two places: the swap-fee escrow (router) AND your share of the 1% LP fee
+    // (on the curve). Collect BOTH. LP first — collectFees() pays your share straight to your wallet.
+    let did = false;
+    if (COIN && COIN.curve) {
+      const lp = await Pad.pendingLpCreatorWeth(COIN.curve);
+      if (lp > 0n) { setNote('Collecting your LP-fee share…'); await (await Pad.collectLpFees(COIN.curve)).wait(); did = true; }
+    }
+    const esc = await Pad.devEscrow(TOKEN);
+    if (BigInt(esc) > 0n) { setNote('Collecting your swap-fee escrow…'); await (await Pad.withdrawDev(TOKEN)).wait(); did = true; }
+    setNote(did ? 'Collected ✓' : 'Nothing to collect yet.', did ? 'ok' : '');
+    setTimeout(loadDevEsc, 1200);
+  } catch (e) { setNote(e.shortMessage || e.message, 'err'); }
 });
 $('burnBtn').addEventListener('click', async () => {
   try { setNote('Buying + burning with your fees…'); await (await Pad.burnDev(TOKEN)).wait(); setNote('Burned ✓', 'ok'); setTimeout(loadDevEsc, 1200); }
@@ -472,8 +483,25 @@ $('burnBtn').addEventListener('click', async () => {
 });
 
 async function loadDevEsc(){
-  try { const w = await Pad.devEscrow(TOKEN); $('devEsc').textContent = 'Uncollected (current): ' + (+ (Number(w) / 1e18).toFixed(5)) + ' ETH'; } catch {}
-  try { const f = await Pad.feeTotals(TOKEN); if (f) $('devTotal').textContent = 'Lifetime earned: ' + (+ (Number(f.dev) / 1e18).toFixed(5)) + ' ETH'; } catch {}
+  try {
+    // "Uncollected" = swap-fee escrow (router) + your uncollected LP-fee share (curve). Both are yours.
+    const [w, lp] = await Promise.all([
+      Pad.devEscrow(TOKEN).catch(() => 0n),
+      (COIN && COIN.curve) ? Pad.pendingLpCreatorWeth(COIN.curve).catch(() => 0n) : Promise.resolve(0n),
+    ]);
+    const total = BigInt(w) + BigInt(lp);
+    $('devEsc').textContent = 'Uncollected (current): ' + (+ (Number(total) / 1e18).toFixed(5)) + ' ETH'
+      + (BigInt(lp) > 0n ? '  (incl. LP-fee share)' : '');
+  } catch {}
+  try {
+    // Lifetime = swap-fee take (router FeeSplit) + LP-fee share already collected (curve FeesCollected).
+    const [f, lpPaid] = await Promise.all([
+      Pad.feeTotals(TOKEN).catch(() => null),
+      (COIN && COIN.curve) ? Pad.lpCreatorFees(COIN.curve).catch(() => 0n) : Promise.resolve(0n),
+    ]);
+    const dev = (f && f.dev != null ? BigInt(f.dev) : 0n) + BigInt(lpPaid || 0n);
+    $('devTotal').textContent = 'Lifetime earned: ' + (+ (Number(dev) / 1e18).toFixed(5)) + ' ETH';
+  } catch {}
 }
 async function maybeShowDev(){
   const a = Pad.account();
@@ -540,14 +568,13 @@ function applyProfile(prof, symbol){
       COIN_HAS_BANNER = true;
       b.style.backgroundImage = 'none';
       b.querySelectorAll('.bmore, .bwrap').forEach((el) => { el.style.display = 'none'; });
-      // Never crop the creator's banner: a blurred, dimmed COVER fill behind (so there are no empty
-      // gaps at any aspect ratio) with the FULL image shown edge-to-edge via CONTAIN on top.
-      const url = esc(prof.banner);
-      const art = b.querySelector('.art');
-      if (art) { art.style.cssText = `position:absolute;inset:0;background:url("${url}") center/cover no-repeat;filter:blur(24px) brightness(.5);transform:scale(1.15)`; art.style.display = ''; }
-      let img = b.querySelector('.bimg');
-      if (!img) { img = document.createElement('div'); img.className = 'bimg'; b.appendChild(img); }
-      img.style.cssText = `position:absolute;inset:0;background:url("${url}") center/contain no-repeat;z-index:1`;
+      // The banner is now a content-width ~4:1 card, so a normal wide banner fills it edge-to-edge with
+      // cover — no crop worth mentioning and no empty gaps.
+      b.querySelectorAll('.art').forEach((el) => { el.style.display = 'none'; });
+      const bimg = b.querySelector('.bimg'); if (bimg) bimg.remove();
+      b.style.backgroundImage = `url("${esc(prof.banner)}")`;
+      b.style.backgroundSize = 'cover';
+      b.style.backgroundPosition = 'center';
     }
   }
   const who = document.querySelector('.who');
