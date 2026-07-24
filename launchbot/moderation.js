@@ -358,10 +358,19 @@ export async function onCallback(cb) {
     await call('answerCallbackQuery', { callback_query_id: cb.id, text: 'This button isn’t for you.', show_alert: false });
     return true;
   }
-  await doUnmute(chatId, targetId);
+  // Only unmute if a captcha is actually pending for this user. Gating on live
+  // state makes the button single-use — a lingering/undeleted button can't later
+  // be tapped to shed a /mute, warn-mute, or flood-mute (it's not an "unmute me"
+  // button, only a "solve my pending captcha" one).
   const key = `${chatId}:${targetId}`;
   const pend = captcha.get(key);
-  if (pend) { await delMsg(chatId, pend.msgId); captcha.delete(key); }
+  if (!pend) {
+    await call('answerCallbackQuery', { callback_query_id: cb.id, text: 'This has expired.', show_alert: false });
+    return true;
+  }
+  captcha.delete(key); // consume first, so a double-tap can't re-trigger
+  await doUnmute(chatId, targetId);
+  await delMsg(chatId, pend.msgId);
   await call('answerCallbackQuery', { callback_query_id: cb.id, text: 'Verified ✅ Welcome!', show_alert: false });
   return true;
 }
