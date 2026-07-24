@@ -8,7 +8,7 @@ import { iface, TOPICS, ERC20, CURVE, POOL } from "./abi.js";
 import {
   db, getCursor, setCursor, setHeadTs, upsertCoin, markGraduated, ungraduateFrom, insertTrade,
   coinByCurve, purgeTradesFrom, setGeometry,
-  setSnapshot, coinGeom, insertAccrual, purgeAccrualsFrom,
+  setSnapshot, coinGeom, insertAccrual, purgeAccrualsFrom, insertDevLock, purgeDevLocksFrom,
   liveCoinsAll, tradeCountForToken, getMeta, setMeta,
 } from "./db.js";
 
@@ -89,8 +89,13 @@ async function getLogsRange(from, to) {
     ? await withRetry(() =>
         provider.getLogs({ fromBlock: from, toBlock: to, address: CFG.rewardVault, topics: [TOPICS.Accrued] }), "getLogs.accruals")
     : [];
+  // TokenVestingLock ScheduleCreated (dev-bag locks) — only when the locker is configured.
+  const vestings = CFG.tokenVestingLock
+    ? await withRetry(() =>
+        provider.getLogs({ fromBlock: from, toBlock: to, address: CFG.tokenVestingLock, topics: [TOPICS.ScheduleCreated] }), "getLogs.vestings")
+    : [];
   // Merge + order by (block, logIndex) for deterministic application.
-  return [...launched, ...grads, ...accruals].sort((a, b) =>
+  return [...launched, ...grads, ...accruals, ...vestings].sort((a, b) =>
     a.blockNumber - b.blockNumber || a.index - b.index);
 }
 
@@ -204,6 +209,17 @@ async function prepareLog(log, geom, curves) {
       amount: a.amount.toString(), block: log.blockNumber, ts,
     };
     writes.push(() => insertAccrual.run(row));
+    return { writes };
+  }
+
+  if (parsed.name === "ScheduleCreated") {
+    // TokenVestingLock dev-bag lock. Schedule fields are immutable; PK on id makes inserts idempotent.
+    const row = {
+      id: Number(a.id), token: a.token.toLowerCase(), beneficiary: a.beneficiary.toLowerCase(),
+      total: a.total.toString(), start: Number(a.start), cliff: Number(a.cliff),
+      duration: Number(a.duration), block: log.blockNumber, ts,
+    };
+    writes.push(() => insertDevLock.run(row));
     return { writes };
   }
 
@@ -339,7 +355,7 @@ export async function tick() {
     // transaction body is pure synchronous better-sqlite3 — all network I/O happened above.
     const doPurge = firstChunk && stored !== null;
     db.transaction(() => {
-      if (doPurge) { purgeTradesFrom.run(from); purgeAccrualsFrom.run(from); ungraduateFrom.run(from); }
+      if (doPurge) { purgeTradesFrom.run(from); purgeAccrualsFrom.run(from); purgeDevLocksFrom.run(from); ungraduateFrom.run(from); }
       for (const w of writes) w();
       setCursor(hi);
     })();

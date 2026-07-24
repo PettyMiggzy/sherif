@@ -12,6 +12,8 @@ export const EVENTS = [
   "event Graduated(address indexed bond, uint256 raisedWeth, uint256 leftoverToken)",
   // RewardVault — one per trade's 0.25% leg (side: 0=Traders buy leg, 1=Holders sell leg)
   "event Accrued(address indexed coin, uint256 indexed epoch, uint8 side, uint256 amount)",
+  // TokenVestingLock — a creator dev-bag lock (cliff+linear). Indexed for the fast dev-lock badge.
+  "event ScheduleCreated(uint256 indexed id, address indexed token, address indexed beneficiary, uint256 total, uint64 start, uint64 cliff, uint64 duration)",
   // Uniswap v3 pool — the COMPLETE trade feed. We index these (not just our router's
   // Bought/Sold) because bots, DexScreener and aggregators swap the pool DIRECTLY,
   // bypassing our router — so router events see only a sliver of the real volume, and
@@ -51,5 +53,6 @@ export const TOPICS = {
   Sold: iface.getEvent("Sold").topicHash,
   Graduated: iface.getEvent("Graduated").topicHash,
   Accrued: iface.getEvent("Accrued").topicHash,
+  ScheduleCreated: iface.getEvent("ScheduleCreated").topicHash,
   Swap: iface.getEvent("Swap").topicHash,
 };

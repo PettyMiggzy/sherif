@@ -8,6 +8,7 @@ import { db } from "./db.js";
 import { CFG } from "./config.js";
 import { getHead } from "./indexer.js";
 import { getRewardRoot, claimsForEpoch, claimsForUser, getRewardClaim } from "./db.js";
+import { devLocksForToken } from "./db.js";
 import {
   coinDev, upsertCoinMetaFields, setCoinPfp, setCoinBanner,
   getCoinMetaLite, getCoinPfp, getCoinBanner,
@@ -611,6 +612,32 @@ export function startApi() {
       if (m) {
         const token = m[1].toLowerCase();
         return send(res, 200, { token, profile: profileOf(token, getCoinMetaLite.get(token), base) }, origin);
+      }
+
+      // A coin's dev lock (creator dev-bag vesting) for the fast badge. `hasLock:false` = indexed, no lock.
+      // Vested is computed with the SAME floor formula as the contract so the numbers match on-chain.
+      m = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/devlock$/);
+      if (m) {
+        const token = m[1].toLowerCase();
+        const dev = coinDev.get(token)?.dev || null;
+        const rows = devLocksForToken.all(token).filter((r) => !dev || r.beneficiary === dev);
+        if (!rows.length) return send(res, 200, { token, hasLock: false }, origin);
+        let locked = 0n, releasable = 0n, total = 0n, end = 0;
+        for (const r of rows) {
+          const T = BigInt(r.total); total += T;
+          const vested = now < r.cliff ? 0n
+            : now >= r.start + r.duration ? T
+            : (T * BigInt(now - r.start)) / BigInt(r.duration || 1);
+          locked += T - vested;
+          releasable += vested; // no on-chain `released` tracked here; only used to show/hide the release button
+          end = Math.max(end, r.start + r.duration);
+        }
+        const lockedPct = total > 0n ? Number((locked * 10000n) / total) : 0;
+        return send(res, 200, {
+          token, hasLock: true, ids: rows.map((r) => r.id),
+          totalWei: total.toString(), lockedWei: locked.toString(), releasableWei: releasable.toString(),
+          lockedPct, end,
+        }, origin);
       }
 
       m = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})$/);

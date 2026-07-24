@@ -126,6 +126,22 @@ CREATE TABLE IF NOT EXISTS reward_claims (
   PRIMARY KEY (epoch, coin, side, user)
 );
 CREATE INDEX IF NOT EXISTS idx_claims_user ON reward_claims(user);
+
+-- Creator dev-bag vesting schedules (TokenVestingLock ScheduleCreated). Immutable once created, so
+-- PK'd by the schedule id; a reorg re-scan purges by block and re-inserts. The badge's time-dependent
+-- locked/releasable are computed at request time from these params (no per-request chain scan).
+CREATE TABLE IF NOT EXISTS dev_locks (
+  id           INTEGER PRIMARY KEY,
+  token        TEXT,
+  beneficiary  TEXT,
+  total        TEXT,      -- wei
+  start        INTEGER,
+  cliff        INTEGER,   -- absolute ts (start + cliffDuration)
+  duration     INTEGER,   -- seconds
+  block        INTEGER,
+  ts           INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_devlocks_token ON dev_locks(token);
 `);
 
 // Defensive migration: add any newer columns a pre-existing db is missing, so
@@ -285,6 +301,15 @@ ON CONFLICT(tx, log_index) DO NOTHING
 `);
 // Purged alongside trades in the reorg re-scan window (same block predicate).
 export const purgeAccrualsFrom = db.prepare("DELETE FROM reward_accruals WHERE block >= ?");
+
+// ── dev-bag vesting (TokenVestingLock ScheduleCreated) ──
+export const insertDevLock = db.prepare(`
+INSERT INTO dev_locks (id, token, beneficiary, total, start, cliff, duration, block, ts)
+VALUES (@id, @token, @beneficiary, @total, @start, @cliff, @duration, @block, @ts)
+ON CONFLICT(id) DO NOTHING
+`);
+export const purgeDevLocksFrom = db.prepare("DELETE FROM dev_locks WHERE block >= ?");
+export const devLocksForToken = db.prepare("SELECT * FROM dev_locks WHERE token = ?");
 
 export const upsertRewardRoot = db.prepare(`
 INSERT INTO reward_roots (epoch, root, algo_hash, uri, n_leaves, per_coin, posted_tx, computed_ts)
