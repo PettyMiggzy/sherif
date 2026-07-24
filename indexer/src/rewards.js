@@ -40,6 +40,13 @@ export const epochLen = () => CFG.epochLen;
 export const epochBounds = (epoch) => ({ t0: epoch * CFG.epochLen, t1: (epoch + 1) * CFG.epochLen });
 export const currentEpoch = (nowSec = Math.floor(Date.now() / 1000)) => Math.floor(nowSec / CFG.epochLen);
 
+// ── reward exclusions + holder min-balance ───────────────────────────────────
+// Supply is fixed by CurvePadFactory at 1e9 whole tokens × 1e18.
+const TOTAL_SUPPLY_WEI = 1_000_000_000n * 10n ** 18n;
+// Min TIME-AVERAGED balance (wei) a wallet must hold across an epoch to accrue HOLDER rewards. Sub-threshold
+// wallets drop out of the weight set → their slice stays unclaimed → swept to the coin's floor. 0 disables it.
+const HOLDER_MIN_WEI = (TOTAL_SUPPLY_WEI * BigInt(CFG.holderMinBps)) / 10000n;
+
 // ── db access (reward-specific; kept here so the feature is self-contained) ──
 // Pots are the SUM of raw Accrued rows for the epoch — DERIVED, not accumulated, so a reorg re-scan (which purges
 // + re-inserts accrual rows like trades) can never double-count. Amounts are uint128 wei (a hot coin's epoch pot
@@ -57,6 +64,22 @@ function potsForEpoch(epoch) {
 // Every trade of a coin up to the epoch end, oldest first — enough to reconstruct balances into and across it.
 const _tradesUpTo = db.prepare(
   "SELECT actor, side, tokens, ts FROM trades WHERE token = ? AND ts < ? ORDER BY ts ASC, block ASC, log_index ASC");
+
+// Per-coin infra addresses (curve, pool/LP, bond), joined with the global sinks to build the exclusion set.
+const _coinAddrs = db.prepare("SELECT curve, pool, bond FROM coins WHERE token = ?");
+// Addresses that must NEVER earn rewards (either side): the token itself, its bonding curve, its Uniswap
+// pool (holds the LP), its Bond; and globally the router, the RewardVault, the factory, the dev vesting-lock,
+// and the zero/dead burn sinks. filter(Boolean) tolerates any unset global.
+function excludedFor(coin) {
+  const s = new Set([
+    coin, CFG.router, CFG.rewardVault, CFG.factory, CFG.tokenVestingLock,
+    "0x0000000000000000000000000000000000000000",
+    "0x000000000000000000000000000000000000dead",
+  ].filter(Boolean).map((a) => String(a).toLowerCase()));
+  const r = _coinAddrs.get(coin) || {};
+  for (const a of [r.curve, r.pool, r.bond]) if (a) s.add(String(a).toLowerCase());
+  return s;
+}
 
 // Distribute `pot` (wei, BigInt) across `weights` (Map<user,BigInt>) proportionally, floor each, so Σ ≤ pot.
 // Returns Map<user, BigInt amount> for the non-zero allocations only. The floored remainder is left unclaimed.
@@ -78,10 +101,12 @@ function allocate(pot, weights) {
 // Returns { trader: Map<user,BigInt net>, holder: Map<user,BigInt balanceSeconds> }.
 function coinWeights(coin, t0, t1) {
   const rows = _tradesUpTo.all(coin, t1);
+  const excl = excludedFor(coin);       // infra + sinks never accrue (either side)
   const balBefore = new Map();          // running balance strictly before t0 (carry-in)
   const events = new Map();             // user -> [{ts, delta}] within [t0, t1)
   const traderNet = new Map();          // user -> net token accumulation within [t0, t1)
   for (const r of rows) {
+    if (excl.has(String(r.actor).toLowerCase())) continue; // skip curve/pool/bond/router/vault/etc.
     const delta = r.side === "buy" ? BigInt(r.tokens) : -BigInt(r.tokens);
     if (r.ts < t0) {
       balBefore.set(r.actor, (balBefore.get(r.actor) || 0n) + delta);
@@ -112,7 +137,8 @@ function coinWeights(coin, t0, t1) {
     }
     const tail = BigInt(t1 - last);
     if (tail > 0n) bs += bal * tail;
-    if (bs > 0n) holder.set(u, bs);
+    // balance-seconds ÷ epoch length = time-avg balance; must clear the min-holding floor to accrue.
+    if (bs > 0n && bs / BigInt(t1 - t0) >= HOLDER_MIN_WEI) holder.set(u, bs);
   }
   return { trader, holder };
 }

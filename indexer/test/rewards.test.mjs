@@ -14,6 +14,7 @@ process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), "rw-")), "t.db");
 process.env.EPOCH_LEN = "1000";
 process.env.FINALITY_DELAY = "0";
 process.env.REWARD_VAULT = ""; // compute-only; no chain
+process.env.HOLDER_MIN_BPS = "0"; // this suite tests balance-seconds ORDERING; gate off (threshold tested separately)
 
 const { db, insertTrade, insertAccrual } = await import("../src/db.js");
 const { computeEpoch, leafHash, SIDE } = await import("../src/rewards.js");
