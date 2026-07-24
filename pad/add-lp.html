@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Robin Labs - Open a locked LP position on any token</title>
-<meta name="description" content="Open a locked liquidity position on ANY token on Robinhood Chain - paste the contract address, choose your lock term, earn your share of every trade's fee. Not just pad coins." />
+<meta name="description" content="Open a locked liquidity position on ANY token on Robinhood Chain: paste the contract address, choose your lock term, earn your share of every trade's fee. Not just pad coins." />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
@@ -118,8 +118,8 @@
   <section class="head">
     <div class="eyebrow">Open a position · any token on the chain</div>
     <h1>Lock into <span class="g">any token.</span></h1>
-    <p>Paste <b>any token's contract address</b> on Robinhood Chain, add to its <b>real pool</b>, and earn your <b>share of every trade's fee</b> - locked so it can never be pulled out from under the coin.</p>
-    <p style="margin-top:10px;color:#cfd6c4"><b class="lime">Safest on graduated coins.</b> A Robin Labs coin must reach <b>the Bond</b> (graduation) before you can lock LP into it - a graduated coin has a <b>protocol-owned floor</b> under its price, so you're far less likely to lose your ETH. Pre-graduation coins can still go to zero, so they're blocked.</p>
+    <p>Paste <b>any token's contract address</b> on Robinhood Chain, add to its <b>real pool</b>, and earn your <b>share of every trade's fee</b>, locked so it can never be pulled out from under the coin.</p>
+    <p style="margin-top:10px;color:#cfd6c4"><b class="lime">Safest on graduated coins.</b> A Robin Labs coin must reach <b>the Bond</b> (graduation) before you can lock LP into it, and a graduated coin has a <b>protocol-owned floor</b> under its price, so you're far less likely to lose your ETH. Pre-graduation coins can still go to zero, so they're blocked.</p>
   </section>
 
   <!-- THE OPENER -->
@@ -153,12 +153,12 @@
 
     <button class="btn btn-lime go" id="openBtn" type="button" disabled>Open position</button>
     <div id="msg"></div>
-    <p class="note">A one-time <b>10% protocol fee</b> is taken when you open; the rest goes into the coin's liquidity. After that the protocol keeps <b>5% of the trading fees</b> your position earns - you keep the other 95%. Longer locks earn a bigger reward share. Withdrawing before your term ends costs a 15% early-exit penalty.</p>
+    <p class="note">A one-time <b>10% protocol fee</b> is taken when you open; the rest goes into the coin's liquidity. After that the protocol keeps <b>5% of the trading fees</b> your position earns; you keep the other 95%. Longer locks earn a bigger reward share. Withdrawing before your term ends costs a 15% early-exit penalty.</p>
   </section>
 
   <section class="facts">
-    <div class="fact"><h4>Works for any coin</h4><p>Any token with a liquidity pool on Robinhood Chain - whether it launched here or anywhere else on the chain. First one to back a coin spins up its vault; everyone after shares it.</p></div>
-    <div class="fact"><h4>Locked = rug-proof</h4><p>Your stake is locked for the term you choose, so it only ever deepens the coin's market - it can't be yanked out from under it. Longer locks earn up to 3×.</p></div>
+    <div class="fact"><h4>Works for any coin</h4><p>Any token with a liquidity pool on Robinhood Chain, whether it launched here or anywhere else on the chain. First one to back a coin spins up its vault; everyone after shares it.</p></div>
+    <div class="fact"><h4>Locked = rug-proof</h4><p>Your stake is locked for the term you choose, so it only ever deepens the coin's market, and it can't be yanked out from under it. Longer locks earn up to 3×.</p></div>
     <div class="fact"><h4>Earn real fees</h4><p>You collect 95% of your pro-rata share of every swap's fee for as long as it's locked, claimable as real ETH (the protocol keeps 5%). Like any LP, price moves rebalance your position (impermanent loss).</p></div>
   </section>
 
@@ -189,7 +189,7 @@ $('term').innerHTML = LOCK_TERMS.map(t => `<option value="${t.days}"${t.days===9
 // wallet button
 const cbtn = $('connectBtn');
 const refreshBtn = () => { const a = Pad.account(); cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; };
-cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (DEMO){ alert('Preview build - connect your wallet on the live site.'); return; } try { await Pad.connect(); refreshBtn(); } catch(err){ alert(err.message); } });
+cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (DEMO){ alert('Preview build, connect your wallet on the live site.'); return; } try { await Pad.connect(); refreshBtn(); } catch(err){ alert(err.message); } });
 window.addEventListener('robinpad:ready', refreshBtn); refreshBtn();
 
 const isAddr = (s) => /^0x[a-fA-F0-9]{40}$/.test((s||'').trim());
@@ -230,7 +230,7 @@ async function onAddr(){
     const isPad = !!c, graduated = !!(c && c.graduated);
     showChip({
       token:a, name, symbol, image:'', hasPool, isPad, graduated,
-      poolTxt: isPad ? (graduated ? 'Graduated · floored ✓' : 'On the curve - not graduated') : (hasPool ? 'WETH pool ✓' : 'no WETH pool'),
+      poolTxt: isPad ? (graduated ? 'Graduated · floored ✓' : 'On the curve, not graduated') : (hasPool ? 'WETH pool ✓' : 'no WETH pool'),
     });
   } catch { showChip({ token:a, name:'Token', symbol:'?', image:'', hasPool:false, isPad:false, graduated:false, poolTxt:'lookup failed' }); }
 }
@@ -260,11 +260,11 @@ function sync(){
   $('openBtn').disabled = !ok;
   const btn = $('openBtn'); const sym = resolved ? tsym(resolved.symbol) : '';
   if (!resolved) { setMsg('Paste a token contract address above to begin.'); btn.textContent = 'Paste a token first'; }
-  else if (padUngraduated) { setMsg(`${sym} hasn’t graduated yet - LP opens at the Bond (graduation), when the coin gets its protocol floor. That floor is what makes locking safer, so it’s blocked until then.`, 'err'); btn.textContent = 'Opens at the Bond (not graduated)'; }
-  else if (!resolved.hasPool) { setMsg('This token has no liquidity pool - nothing to add LP to.', 'err'); btn.textContent = 'No pool for this token'; }
+  else if (padUngraduated) { setMsg(`${sym} hasn’t graduated yet, so LP opens at the Bond (graduation), when the coin gets its protocol floor. That floor is what makes locking safer, so it’s blocked until then.`, 'err'); btn.textContent = 'Opens at the Bond (not graduated)'; }
+  else if (!resolved.hasPool) { setMsg('This token has no liquidity pool, nothing to add LP to.', 'err'); btn.textContent = 'No pool for this token'; }
   else if (amt <= 0) { setMsg('Enter an amount of ETH to add.'); btn.textContent = 'Enter an amount'; }
-  else if (resolved.isPad) { setMsg(`✓ Graduated - the Bond puts a protocol floor under ${sym}, so this is lower-risk than a curve coin. It’s still real LP: value moves with the price (impermanent loss), 10% to open, 15% to exit early. Not a savings account.`, 'ok'); btn.textContent = 'Open position'; }
-  else { setMsg('⚠ Not a graduated Robin Labs coin - no Bond floor, so this is higher-risk. Only lock ETH you’re happy to leave in. Real LP: impermanent loss, 10% open, 15% early exit.', 'err'); btn.textContent = 'Open position (higher risk)'; }
+  else if (resolved.isPad) { setMsg(`✓ Graduated: the Bond puts a protocol floor under ${sym}, so this is lower-risk than a curve coin. It’s still real LP: value moves with the price (impermanent loss), 10% to open, 15% to exit early. Not a savings account.`, 'ok'); btn.textContent = 'Open position'; }
+  else { setMsg('⚠ Not a graduated Robin Labs coin, so no Bond floor and this is higher-risk. Only lock ETH you’re happy to leave in. Real LP: impermanent loss, 10% open, 15% early exit.', 'err'); btn.textContent = 'Open position (higher risk)'; }
   const brk = $('brk');
   if (amt > 0 && resolved){
     brk.classList.add('show');
@@ -288,14 +288,14 @@ $('openBtn').addEventListener('click', async () => {
   if (!resolved || amt <= 0) return;
   const net = (amt * (1 - PROTO_FEE)).toFixed(4);
   if (DEMO){
-    alert(`Preview - on the live site this opens a locked LP position in ${tsym(resolved.symbol)}:\n\n• You open with ${amt} ETH\n• 10% protocol fee: ${(amt*PROTO_FEE).toFixed(4)} ETH\n• Into ${tsym(resolved.symbol)} liquidity: ${net} ETH, locked ${termLabel(days)}\n• Then you keep 95% of your share of every trade's fee (protocol keeps 5%)`);
+    alert(`Preview, on the live site this opens a locked LP position in ${tsym(resolved.symbol)}:\n\n• You open with ${amt} ETH\n• 10% protocol fee: ${(amt*PROTO_FEE).toFixed(4)} ETH\n• Into ${tsym(resolved.symbol)} liquidity: ${net} ETH, locked ${termLabel(days)}\n• Then you keep 95% of your share of every trade's fee (protocol keeps 5%)`);
     return;
   }
   try {
     if (!Pad.account()){ await Pad.connect(); refreshBtn(); }
     setMsg('Opening position…');
     await (await Pad.floorDeposit(resolved.token, amt, days)).wait();
-    setMsg('Position opened ✓ - you’re now earning fees.', 'ok');
+    setMsg('Position opened ✓, you’re now earning fees.', 'ok');
   } catch(e){ setMsg(e.message || 'Failed', 'err'); }
 });
 

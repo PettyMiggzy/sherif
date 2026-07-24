@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Robin Labs - Rewards</title>
-<meta name="description" content="Robin Labs pays you to trade and to hold. Every trade funds real-ETH rewards for net-volume traders and diamond-hand holders - and deepens a floor that buys every dip. Claim on-site; you keep the ETH." />
+<meta name="description" content="Robin Labs pays you to trade and to hold. Every trade funds real-ETH rewards for net-volume traders and diamond-hand holders, and deepens a floor that buys every dip. Claim on-site; you keep the ETH." />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
@@ -153,7 +153,7 @@
   <section class="head">
     <div class="eyebrow">Rewards · Real ETH · No lockups</div>
     <h1>Get paid to trade.<br /><span class="g">Get paid to hold.</span></h1>
-    <p>Every trade on Robin Labs pays a little forward. <b>0.25% of each buy</b> goes to the coin's real, net-volume traders; <b>0.25% of each sell</b> goes to its diamond-hand holders - paid in <b>real ETH</b> you claim right here. Whatever nobody claims deepens a floor that <b>buys every dip, forever</b>.</p>
+    <p>Every trade on Robin Labs pays a little forward. <b>0.25% of each buy</b> goes to the coin's real, net-volume traders; <b>0.25% of each sell</b> goes to its diamond-hand holders, paid in <b>real ETH</b> you claim right here. Whatever nobody claims deepens a floor that <b>buys every dip, forever</b>.</p>
     <div id="live" class="live"><span class="dot"></span><span id="liveTxt">Live reward index</span></div>
   </section>
 
@@ -163,21 +163,21 @@
       <div class="ico"><img src="assets/icons/reward-trader.png" alt="" /></div>
       <h3>Trader rewards</h3>
       <div class="pct">+0.25% OF EVERY BUY</div>
-      <p>Split across everyone who actually <b>net-accumulated</b> the coin this epoch, by size. Buy-and-flip nets to zero, so wash trading earns nothing - only real conviction gets paid.</p>
+      <p>Split across everyone who actually <b>net-accumulated</b> the coin this epoch, by size. Buy-and-flip nets to zero, so wash trading earns nothing, only real conviction gets paid.</p>
       <span class="tag">Wash-proof · net volume</span>
     </div>
     <div class="ecard">
       <div class="ico"><img src="assets/icons/reward-holder.png" alt="" /></div>
       <h3>Holder rewards</h3>
       <div class="pct">+0.25% OF EVERY SELL</div>
-      <p>Split by <b>size × time held</b> (balance-seconds). Hold bigger and longer, earn more. Flash-holding for a snapshot earns almost nothing - the reward is the whole epoch's integral.</p>
+      <p>Split by <b>size × time held</b> (balance-seconds). Hold bigger and longer, earn more. Flash-holding for a snapshot earns almost nothing; the reward is the whole epoch's integral.</p>
       <span class="tag">Diamond hands win</span>
     </div>
     <div class="ecard floor">
       <div class="ico"><img src="assets/icons/reward-floor.png" alt="" /></div>
       <h3>Floor <span class="a">grows forever</span></h3>
       <div class="pct">UNCLAIMED → BOND BOUNTY</div>
-      <p>Rewards nobody claims don't go to us - they top up that coin's <b>protocol-owned buy-wall</b>, a floor that can't be rugged and steps up with every trade. Dead rewards become permanent price support.</p>
+      <p>Rewards nobody claims don't go to us; they top up that coin's <b>protocol-owned buy-wall</b>, a floor that can't be rugged and steps up with every trade. Dead rewards become permanent price support.</p>
       <span class="tag">Can't be pulled</span>
     </div>
   </section>
@@ -203,7 +203,7 @@
     <div class="rows" id="rows"></div>
 
     <div class="pending" id="pendingBox" style="display:none">
-      <div class="ph">Accruing this epoch - claimable once it closes</div>
+      <div class="ph">Accruing this epoch, claimable once it closes</div>
       <div id="pendingRows"></div>
     </div>
   </section>
@@ -212,13 +212,13 @@
   <section class="flow">
     <div class="panel" style="margin:0">
       <h2 style="font-size:1.5rem">Where every trade goes</h2>
-      <div class="sub" style="color:var(--dim);font-size:.9rem;margin-top:4px">Per 1.25% side fee - additive, never a token transfer tax.</div>
+      <div class="sub" style="color:var(--dim);font-size:.9rem;margin-top:4px">Per 1.25% side fee, additive, never a token transfer tax.</div>
       <div class="flowbars">
         <div class="fb"><div class="top"><span>Platform / creator</span><b>1.00%</b></div><div class="track"><div class="fill" style="width:80%;background:linear-gradient(90deg,#6f7a12,#a6e017)"></div></div></div>
         <div class="fb"><div class="top"><span>Trader rewards <i style="color:var(--dim)">(buys)</i></span><b>0.25%</b></div><div class="track"><div class="fill" style="width:20%;background:var(--lime)"></div></div></div>
         <div class="fb"><div class="top"><span>Holder rewards <i style="color:var(--dim)">(sells)</i></span><b>0.25%</b></div><div class="track"><div class="fill" style="width:20%;background:var(--violet)"></div></div></div>
       </div>
-      <p class="note" style="text-align:left;margin-top:16px">The token itself stays clean - no tax in <code style="font-family:var(--mono);color:var(--lime)">transfer()</code>, so it never trips a honeypot flag. The reward legs are carved at the swap desk and paid out separately.</p>
+      <p class="note" style="text-align:left;margin-top:16px">The token itself stays clean, with no tax in <code style="font-family:var(--mono);color:var(--lime)">transfer()</code>, so it never trips a honeypot flag. The reward legs are carved at the swap desk and paid out separately.</p>
     </div>
     <div>
       <div class="totcards" id="totcards"></div>
@@ -258,7 +258,7 @@ const tokFor = (sym) => { const c = DEMO_COINS.find(x => x.symbol === sym); retu
 const esc = (x) => String(x==null?'':x).replace(/[<>&"]/g,(c)=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 
 // demo banner + live pill
-if (DEMO) $('live').classList.add('demo'), $('liveTxt').textContent = 'Preview - sample rewards';
+if (DEMO) $('live').classList.add('demo'), $('liveTxt').textContent = 'Preview, sample rewards';
 
 const av = (sym) => { const s = String(sym || '?'); const src = imgFor(s); return src
   ? `<img class="av" src="${esc(src)}" alt="" onerror="this.style.visibility='hidden'" />`
@@ -329,31 +329,31 @@ function renderPending(list){
 
 async function onClaim(e){
   const btn = e.currentTarget;
-  if (DEMO){ alert('Preview - on the live site this sends a claim transaction (you pay gas) and the ETH lands in your wallet.'); return; }
+  if (DEMO){ alert('Preview, on the live site this sends a claim transaction (you pay gas) and the ETH lands in your wallet.'); return; }
   const c = CLAIMABLE[+btn.dataset.i];
   try { btn.disabled = true; btn.textContent = 'Claiming…'; await Pad.claimReward(c); btn.textContent = '✓ Claimed'; }
   catch(err){ btn.disabled = false; btn.textContent = 'Claim'; alert(err.message || 'Claim failed'); }
 }
 async function onClaimAll(){
-  if (DEMO){ alert('Preview - on the live site this batches all your claims into one signature.'); return; }
+  if (DEMO){ alert('Preview, on the live site this batches all your claims into one signature.'); return; }
   try { await Pad.claimAllRewards(CLAIMABLE); location.reload(); } catch(err){ alert(err.message || 'Claim failed'); }
 }
 
 // wallet button
 const cbtn = $('connectBtn');
 const refreshBtn = () => { const a = Pad.account(); cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; };
-cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (DEMO){ alert('Preview build - connect your wallet on the live site.'); return; } try { await Pad.connect(); refreshBtn(); load(); } catch(err){ alert(err.message); } });
+cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (DEMO){ alert('Preview build, connect your wallet on the live site.'); return; } try { await Pad.connect(); refreshBtn(); load(); } catch(err){ alert(err.message); } });
 window.addEventListener('robinpad:ready', ()=>{ refreshBtn(); load(); }); refreshBtn();
 
 async function load(){
   if (DEMO){
     const d = DEMO_REWARDS;
-    $('subTxt').innerHTML = 'Showing a sample wallet - <b style="color:var(--lime)">5 rewards</b> ready to claim.';
+    $('subTxt').innerHTML = 'Showing a sample wallet, <b style="color:var(--lime)">5 rewards</b> ready to claim.';
     $('epochBox').innerHTML = `Epoch <b>${d.epoch}</b> · closes in <b>${fmtCountdown(d.epochEndsIn)}</b><br />claims open ${d.claimWindowH}h after each epoch ends`;
     renderClaimable(d.claimable);
     renderPending(d.pending);
     renderTotals(d.totals);
-    $('footNote').innerHTML = 'Sample data. On the live pad, rewards are computed from the on-chain index each epoch and claimed with a single signature - <b>you keep 100% of the ETH</b> (minus the gas you pay to claim).';
+    $('footNote').innerHTML = 'Sample data. On the live pad, rewards are computed from the on-chain index each epoch and claimed with a single signature; <b>you keep 100% of the ETH</b> (minus the gas you pay to claim).';
     return;
   }
   // live
@@ -366,7 +366,7 @@ async function load(){
   }
   try {
     const r = await Pad.rewards(a); // { claimable:[], pending:[], epoch, epochEndsIn, claimWindowH, totals }
-    $('subTxt').textContent = r.claimable && r.claimable.length ? 'Ready to claim.' : 'No rewards yet - trade or hold to earn.';
+    $('subTxt').textContent = r.claimable && r.claimable.length ? 'Ready to claim.' : 'No rewards yet, trade or hold to earn.';
     if (r.epoch) $('epochBox').innerHTML = `Epoch <b>${r.epoch}</b> · closes in <b>${fmtCountdown(r.epochEndsIn||0)}</b>`;
     renderClaimable(r.claimable || []);
     renderPending(r.pending || []);

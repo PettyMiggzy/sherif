@@ -88,29 +88,29 @@
   <!-- FEES -->
   <section id="secFees">
     <h2>💰 Fees</h2>
-    <p class="desc">Sweep your accrued platform fees to the owner wallet. Anyone can trigger these - the ETH always goes to <span class="mono" id="feeOwner">owner()</span>.</p>
+    <p class="desc">Sweep your accrued platform fees to the owner wallet. Anyone can trigger these, and the ETH always goes to <span class="mono" id="feeOwner">owner()</span>.</p>
     <div class="row"><div class="lbl"><b>Immediate + deferred escrow</b><span>the 0.9% base cut (+ any claimed 0.1% deferred)</span></div><div class="val" id="valPlatformEscrow">-</div><button class="btn sm" data-act="withdrawPlatform">Withdraw</button></div>
     <div class="row"><div class="lbl"><b>Platform cut escrow</b><span>25% of every above-default fee (the $ROBIN buyback slice)</span></div><div class="val" id="valPlatformCut">-</div><button class="btn sm" data-act="withdrawPlatformCut">Withdraw</button></div>
-    <div class="row"><div class="lbl"><b>Rescue stuck escrow</b><span>a coin that never graduated holds its 0.1% + floor escrow forever - this recovers it to the platform (owner only, refuses graduated coins)</span></div><input class="addr" id="inRescue" placeholder="0x coin that never graduated" /><button class="btn sm" data-act="rescueUngraduated" data-arg="inRescue">Rescue</button></div>
-    <div class="hint">Per-coin escrows (floor / deferred / burn) are pushed to their destinations from the coin page or by any keeper - they aren't owner funds.</div>
+    <div class="row"><div class="lbl"><b>Rescue stuck escrow</b><span>a coin that never graduated holds its 0.1% + floor escrow forever, so this recovers it to the platform (owner only, refuses graduated coins)</span></div><input class="addr" id="inRescue" placeholder="0x coin that never graduated" /><button class="btn sm" data-act="rescueUngraduated" data-arg="inRescue">Rescue</button></div>
+    <div class="hint">Per-coin escrows (floor / deferred / burn) are pushed to their destinations from the coin page or by any keeper, and they aren't owner funds.</div>
   </section>
 
   <!-- LP FEES - collect on demand -->
   <section id="secLpFees">
-    <h2>🪙 LP fees - collect anytime</h2>
-    <p class="desc">Sweep the live Uniswap 1% fee your curves earn on <b>every</b> trade - no need to wait for graduation. Permissionless: the split (your platform share + the creator's) is paid on-chain to the wired wallets. The keeper does this on a schedule; use these to collect <b>right now</b>.</p>
+    <h2>🪙 LP fees: collect anytime</h2>
+    <p class="desc">Sweep the live Uniswap 1% fee your curves earn on <b>every</b> trade, no need to wait for graduation. Permissionless: the split (your platform share + the creator's) is paid on-chain to the wired wallets. The keeper does this on a schedule; use these to collect <b>right now</b>.</p>
     <div class="row"><div class="lbl"><b>Pending LP fees (uncollected)</b><span id="lpPendingSub">accrued across all live coins · your platform share</span></div><div class="val" id="valLpPending">-</div><button class="btn sm ghost" id="btnLpRefresh">Check</button></div>
     <div class="row"><div class="lbl"><b>Collect one coin</b><span>enter the coin's token address</span></div><input class="addr" id="inCollectOne" placeholder="0x coin token" /><button class="btn sm" id="btnCollectOne">Collect</button></div>
     <div class="row"><div class="lbl"><b>Collect every live coin</b><span id="collectAllSub">sweeps fees from all coins still bonding</span></div><div class="val" id="valLiveCoins">-</div><button class="btn sm" id="btnCollectAll">Collect all</button></div>
-    <div class="hint">Only bonding (not-yet-graduated) coins have collectable live fees - a graduated coin already swept its fees into the Bond at graduation. Needs the v2 factory (the current live coins predate <code>collectFees()</code>).</div>
+    <div class="hint">Only bonding (not-yet-graduated) coins have collectable live fees; a graduated coin already swept its fees into the Bond at graduation. Needs the v2 factory (the current live coins predate <code>collectFees()</code>).</div>
   </section>
 
   <!-- FEE DIALS (FeeConfig) -->
   <section id="secFeeDials">
     <h2>🎛 Fee dials <span class="mono" style="font-size:.7rem;color:var(--dim)">FeeConfig</span></h2>
-    <p class="desc">Retune WHERE fees go and HOW MUCH - for every coin, going forward - with <b>no redeploy</b>. Owner-only; on-chain caps enforced (platform always keeps ≥50% of the LP fee; the swap split must sum to 100%). Changes apply to all future collections + trades immediately.</p>
+    <p class="desc">Retune WHERE fees go and HOW MUCH, for every coin, going forward, with <b>no redeploy</b>. Owner-only; on-chain caps enforced (platform always keeps ≥50% of the LP fee; the swap split must sum to 100%). Changes apply to all future collections + trades immediately.</p>
     <div class="row"><div class="lbl"><b>LP fee → creator share</b><span>you (platform) keep the rest · cap 50%</span></div><div class="val" id="valLpCreator">-</div><input class="num" id="inLpCreator" placeholder="bps 0-5000 (1000=10%)" /><button class="btn sm" data-act="setLpCreatorBps" data-arg="inLpCreator">Set</button></div>
-    <div class="row"><div class="lbl"><b>Swap fee split</b><span>platform / creator / floor bps - must sum to 10000</span></div><div class="val" id="valSwapSplit">-</div>
+    <div class="row"><div class="lbl"><b>Swap fee split</b><span>platform / creator / floor bps, must sum to 10000</span></div><div class="val" id="valSwapSplit">-</div>
       <input class="num" id="inSwapP" placeholder="platform" style="max-width:96px" />
       <input class="num" id="inSwapC" placeholder="creator" style="max-width:96px" />
       <input class="num" id="inSwapF" placeholder="floor" style="max-width:96px" />
@@ -122,7 +122,7 @@
   <section id="secRewards">
     <h2>🎁 Rewards <span class="pill" style="font-size:.62rem"><span class="dot" id="rwdDot"></span><span id="rwdState">-</span></span></h2>
     <p class="desc">The RewardVault. The indexer's poster posts one Merkle root per epoch; the guardian can veto a bad root before claims open.</p>
-    <div class="row"><div class="lbl"><b>Poster</b><span>signs postRoot() - the indexer's hot key</span></div><div class="val" id="valPoster">-</div></div>
+    <div class="row"><div class="lbl"><b>Poster</b><span>signs postRoot(), the indexer's hot key</span></div><div class="val" id="valPoster">-</div></div>
     <div class="row"><div class="lbl"><b>Guardian</b><span>veto-only brake</span></div><div class="val" id="valGuardian">-</div></div>
     <div class="row"><div class="lbl"><b>Windows</b><span>challenge (claims open after) · claim (before sweep)</span></div><div class="val" id="valWindows">-</div></div>
     <div class="row"><div class="lbl"><b>Set poster</b></div><input class="addr" id="inPoster" placeholder="0x new poster address" /><button class="btn sm" data-act="setPoster" data-arg="inPoster">Set</button></div>
@@ -147,7 +147,7 @@
   <!-- ANTI-SNIPE -->
   <section id="secSnipe">
     <h2>🎯 Anti-snipe blocklist</h2>
-    <p class="desc">During a coin's ≤300s anti-snipe window, add sniper addresses to its BUY-side blocklist. Add-only, buy-only, auto-frozen after the window - it can never block a holder's sell.</p>
+    <p class="desc">During a coin's ≤300s anti-snipe window, add sniper addresses to its BUY-side blocklist. Add-only, buy-only, auto-frozen after the window, so it can never block a holder's sell.</p>
     <div class="row"><div class="lbl"><b>Coin</b></div><input class="addr" id="inSnipeToken" placeholder="0x coin token" /></div>
     <div class="row"><div class="lbl"><b>Bots (comma-separated)</b></div><input class="addr" id="inSnipeBots" placeholder="0xbot1, 0xbot2, …" /><button class="btn sm danger" data-act="seedBlocklist">Block</button></div>
   </section>
@@ -166,13 +166,13 @@
   <!-- OWNERSHIP -->
   <section id="secDanger" class="danger-zone">
     <h2>☠️ Ownership</h2>
-    <p class="desc">2-step (Ownable2Step): <code>transferOwnership</code> then the new owner <code>acceptOwnership()</code>. If you're the pending owner of a contract, an <b>Accept</b> button appears. Double-check addresses - a wrong one locks you out.</p>
+    <p class="desc">2-step (Ownable2Step): <code>transferOwnership</code> then the new owner <code>acceptOwnership()</code>. If you're the pending owner of a contract, an <b>Accept</b> button appears. Double-check addresses, a wrong one locks you out.</p>
     <div class="row"><div class="lbl"><b>Router</b><span id="pendRouter">pending: -</span></div><div class="val" id="valOwnRouter">-</div><input class="addr" id="inOwnRouter" placeholder="0x new owner" /><button class="btn sm danger" data-act="transferOwnership" data-tgt="padRouter" data-arg="inOwnRouter" data-confirm="1">Transfer</button><button class="btn sm ghost" data-act="acceptOwnership" data-tgt="padRouter" id="accRouter" style="display:none">Accept</button></div>
     <div class="row"><div class="lbl"><b>Factory</b><span id="pendFactory">pending: -</span></div><div class="val" id="valOwnFactory">-</div><input class="addr" id="inOwnFactory" placeholder="0x new owner" /><button class="btn sm danger" data-act="transferOwnership" data-tgt="padFactory" data-arg="inOwnFactory" data-confirm="1">Transfer</button><button class="btn sm ghost" data-act="acceptOwnership" data-tgt="padFactory" id="accFactory" style="display:none">Accept</button></div>
     <div class="row"><div class="lbl"><b>RewardVault</b><span id="pendRv">pending: -</span></div><div class="val" id="valOwnRv">-</div><input class="addr" id="inOwnRv" placeholder="0x new owner" /><button class="btn sm danger" data-act="transferOwnership" data-tgt="rewardVault" data-arg="inOwnRv" data-confirm="1">Transfer</button><button class="btn sm ghost" data-act="acceptOwnership" data-tgt="rewardVault" id="accRv" style="display:none">Accept</button></div>
   </section>
 
-  <p class="hint" style="margin-top:22px">Every action here is enforced on-chain (<code>onlyOwner</code> / poster / guardian). This page holds no keys and needs no login - the chain is the auth. Set <code>API_BASE</code> in <code>assets/config.js</code> for the volume/coins/reward totals.</p>
+  <p class="hint" style="margin-top:22px">Every action here is enforced on-chain (<code>onlyOwner</code> / poster / guardian). This page holds no keys and needs no login, the chain is the auth. Set <code>API_BASE</code> in <code>assets/config.js</code> for the volume/coins/reward totals.</p>
 </div>
 
 <div id="toast"></div>
@@ -228,7 +228,7 @@ const UINT_ACTS = new Set(['setChallengeWindow', 'setClaimWindow', 'setFinalityD
 const NOARG_ACTS = new Set(['withdrawPlatform', 'withdrawPlatformCut', 'acceptOwnership']);
 
 async function connect() {
-  if (!window.ethereum && !window.phantom?.ethereum) { toast('No wallet found - open in a wallet browser or install one.', true); return; }
+  if (!window.ethereum && !window.phantom?.ethereum) { toast('No wallet found, open in a wallet browser or install one.', true); return; }
   const eip = window.phantom?.ethereum || window.ethereum;
   try {
     await eip.request({ method: 'eth_requestAccounts' });
@@ -290,7 +290,7 @@ async function refresh() {
       const bal = await read.getBalance(poster);
       $('posterBal').textContent = fmtEth(bal);
       const low = bal < ethers.parseEther('0.01');
-      $('posterSub').innerHTML = low ? '<span class="bad">⚠ low - top up gas</span>' : 'ok · signs postRoot each epoch';
+      $('posterSub').innerHTML = low ? '<span class="bad">⚠ low, top up gas</span>' : 'ok · signs postRoot each epoch';
       let posted = 0, pending = 0; const prev = Number(ep) - 1;
       for (let e = Math.max(0, prev - 3); e <= prev; e++) { try { const er = await v.epochRoot(e); if (!isZero(er.root)) posted++; else pending++; } catch {} }
       $('epochSub').textContent = `${posted} posted · ${pending} pending (last 4)`;
@@ -409,7 +409,7 @@ async function collectOne() {
     if (!ethers.isAddress(token)) throw new Error('enter a coin token address');
     btn.disabled = true; btn.textContent = 'Resolving…';
     const { curve, graduated } = await resolveCurve(token);
-    if (graduated) throw new Error('coin graduated - its fees were already swept at graduation');
+    if (graduated) throw new Error('coin graduated, its fees were already swept at graduation');
     btn.textContent = 'Signing…';
     const hash = await collectCurve(curve);
     toast(`collected ✓  ${hash.slice(0, 12)}…`);

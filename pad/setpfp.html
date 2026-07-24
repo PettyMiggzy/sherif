@@ -48,12 +48,12 @@
   </div>
 
   <div class="card">
-    <label>Coin image (pfp) - square, any format/size</label>
+    <label>Coin image (pfp), square, any format/size</label>
     <div class="row">
       <input type="file" id="pfp" accept="image/*" />
       <img class="prev" id="pfpPrev" style="display:none" />
     </div>
-    <label style="margin-top:14px">Banner (optional) - wide</label>
+    <label style="margin-top:14px">Banner (optional), wide</label>
     <div class="row">
       <input type="file" id="banner" accept="image/*" />
       <img class="prev" id="bannerPrev" style="display:none" />
@@ -93,19 +93,19 @@ async function loadDev(){
     const j = await r.json();
     dev = (j.coin && j.coin.dev || '').toLowerCase();
     if(dev){ $('devAddr').textContent = dev; $('devInfo').style.display='block'; log(`Coin creator (required wallet): <b>${dev}</b>`); }
-    else log('Could not find this coin - check the address.', 'bad');
+    else log('Could not find this coin, check the address.', 'bad');
   }catch(e){ log('Could not reach the API to look up the coin: '+e.message,'bad'); }
   refreshMatch();
 }
 function refreshMatch(){
   const m=$('match');
   if(!account||!dev){ m.textContent=''; m.className='big'; $('save').disabled = !(account&&dev&&account===dev); return; }
-  if(account===dev){ m.textContent='✓ Correct wallet - you can save.'; m.className='big ok'; $('save').disabled=false; }
+  if(account===dev){ m.textContent='✓ Correct wallet, you can save.'; m.className='big ok'; $('save').disabled=false; }
   else { m.innerHTML='✗ WRONG WALLET.<br>Switch MetaMask to the creator wallet above, then reconnect.'; m.className='big bad'; $('save').disabled=true; }
 }
 
 $('connect').addEventListener('click', async () => {
-  if(!window.ethereum){ log('No wallet found - install MetaMask.','bad'); return; }
+  if(!window.ethereum){ log('No wallet found, install MetaMask.','bad'); return; }
   try{
     const accts = await window.ethereum.request({ method:'eth_requestAccounts' });
     account = (accts[0]||'').toLowerCase();
@@ -147,7 +147,7 @@ async function imgDataUrl(inputId, maxDim){
       if(/^data:[\w.+/-]+;base64,/.test(raw)){ log('  → sending raw for the server to convert ('+Math.round(raw.length/1024)+' KB)'); return raw; }
     }
   }
-  log(`  → could not read ${inputId} - try a JPG or PNG`,'bad');
+  log(`  → could not read ${inputId}, try a JPG or PNG`,'bad');
   return "";
 }
 // live preview
@@ -164,7 +164,7 @@ $('save').addEventListener('click', async () => {
   const token = $('token').value.trim().toLowerCase();
   const res = $('result'); res.style.display='none';
   if(!account){ log('Connect your wallet first.','bad'); return; }
-  if(account!==dev){ log('Wrong wallet - switch to the creator wallet.','bad'); return; }
+  if(account!==dev){ log('Wrong wallet, switch to the creator wallet.','bad'); return; }
   $('save').disabled=true;
   try{
     const pfp = await imgDataUrl('pfp', 400);
@@ -179,7 +179,7 @@ $('save').addEventListener('click', async () => {
     log('Signed. Uploading…');
     const r = await fetch(`${API_BASE}/api/coin/${token}/meta`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...payload, signature }) });
     const body = await r.text();
-    log(`Server: HTTP ${r.status} - ${body.slice(0,300)}`, r.ok?'ok':'bad');
+    log(`Server: HTTP ${r.status}, ${body.slice(0,300)}`, r.ok?'ok':'bad');
     if(r.ok){ res.textContent='✅ SAVED! Your image is live. Open your coin page.'; res.className='big ok'; res.style.display='block'; }
     else { res.textContent='❌ Not saved (HTTP '+r.status+'). See the log above.'; res.className='big bad'; res.style.display='block'; }
   }catch(e){ log('Failed: '+(e.message||e),'bad'); res.textContent='❌ '+(e.message||e); res.className='big bad'; res.style.display='block'; }
