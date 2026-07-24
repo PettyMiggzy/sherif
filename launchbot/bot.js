@@ -250,7 +250,15 @@ async function cmdSell(chatId, userId, args) {
 async function cmdForget(chatId, userId) {
   const addr = store.addressOf(userId);
   if (!addr) return send(chatId, 'You have no data stored. Nothing to erase.');
-  const bal = await chain.ethBalance(addr).catch(() => 0n);
+  // Fail CLOSED: if we can't read the balance, do NOT erase (the key deletion is
+  // irreversible). A swallowed error must never look like "empty wallet" here.
+  let bal;
+  try { bal = await chain.ethBalance(addr); }
+  catch {
+    return send(chatId,
+      '⚠️ I couldn’t check your balance just now, so I won’t erase yet (in case funds are at risk).\n' +
+      'Try /forget again in a moment, or — if you’re sure — send <code>/forget confirm</code> to erase regardless.');
+  }
   if (bal > 0n) {
     return send(chatId,
       `⚠️ Your wallet still holds <b>${fmtEth(bal)} ETH</b>. If you /forget now, the key is deleted and the funds are <b>gone forever</b>.\n\n` +
