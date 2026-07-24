@@ -92,13 +92,16 @@ export async function buy(signer, token, ethWei) {
   const value = BigInt(ethWei);
   // Quote first. If the simulation reverts, the real tx would revert too — abort
   // with a clear message instead of sending a trade with ZERO slippage protection.
-  let minOut;
+  let quoted;
   try {
-    const quoted = await router.buy.staticCall(token, 0n, { value });
-    minOut = withSlippage(quoted);
+    quoted = await router.buy.staticCall(token, 0n, { value });
   } catch {
     throw new Error("couldn't price this buy — the token may be in its anti-snipe window or illiquid. Try a smaller amount or wait a minute.");
   }
+  // A 0 (or dust) quote means the trade would net ~nothing — abort rather than
+  // send a real tx with a 0 slippage floor (some curves return 0 vs reverting).
+  if (quoted <= 0n) throw new Error("this buy would return ~0 tokens right now (anti-snipe window or too small) — try again shortly or with more ETH.");
+  const minOut = withSlippage(quoted);
   const ov = await legacyOv({ value });
   const tx = await router.buy(token, minOut, ov);
   const rc = await waitFor(tx);
@@ -117,13 +120,14 @@ export async function sell(signer, token, amountWei) {
     await waitFor(atx);
   }
   const router = routerWith(signer);
-  let minOutEth;
+  let quotedEth;
   try {
-    const quoted = await router.sell.staticCall(token, amount, 0n);
-    minOutEth = withSlippage(quoted);
+    quotedEth = await router.sell.staticCall(token, amount, 0n);
   } catch {
     throw new Error("couldn't price this sell — the token may be illiquid or paused. Try a smaller amount.");
   }
+  if (quotedEth <= 0n) throw new Error("this sell would return ~0 ETH right now — the curve may be illiquid or paused. Try later.");
+  const minOutEth = withSlippage(quotedEth);
   const ov = await legacyOv();
   const tx = await router.sell(token, amount, minOutEth, ov);
   const rc = await waitFor(tx);

@@ -137,5 +137,14 @@ class MockProvider extends ethers.JsonRpcProvider {
   try { await chain.buy(wallet, res.token, ethers.parseEther('0.05')); } catch { aborted = true; }
   ok(aborted, 'buy ABORTS when the quote reverts (never trades with 0 slippage protection)');
 
+  // 7) quote RETURNS 0 (not a revert) → still abort (no zero-floor trade)
+  mock._dispatch = ((orig) => function (m, p) {
+    if (m === 'eth_call') return ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [0]);
+    return orig.call(this, m, p);
+  })(mock._dispatch);
+  let abortedZero = false;
+  try { await chain.buy(wallet, res.token, ethers.parseEther('0.05')); } catch { abortedZero = true; }
+  ok(abortedZero, 'buy ABORTS when the quote returns 0 (not just on revert)');
+
   console.log(`\n${pass} simulation checks passed`);
 })().catch((e) => { console.error('SIM FAILED:', e); process.exit(1); });

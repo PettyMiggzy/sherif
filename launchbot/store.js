@@ -220,7 +220,9 @@ export function forget(userId) {
   if (rec.enc) _keyCache.delete(cacheKey(rec.enc.salt, rec.enc.N || 16384, rec.enc.r || 8, rec.enc.p || 1));
   delete db.users[id];
   sessions.delete(id);
-  try { persistSync(); } catch (e) { console.error('forget persist:', e.message); }
+  // Let a write failure propagate — the caller must NOT tell the user "erased"
+  // if the record is still on disk (it would resurrect on restart).
+  persistSync();
   return true;
 }
 
