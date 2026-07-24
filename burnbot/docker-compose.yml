@@ -1,0 +1,12 @@
+services:
+  burnbot:
+    build: .
+    container_name: robinlabs-burnbot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DATA_DIR=/app/data
+    volumes:
+      - burnbot-data:/app/data
+volumes:
+  burnbot-data:

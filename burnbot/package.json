@@ -1,0 +1,18 @@
+{
+  "name": "robinlabs-burnbot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Robin Labs buyback & burn bot — buys $ROBIN via the live router and sends it to the dead address. No contract deploy.",
+  "main": "index.js",
+  "scripts": {
+    "status": "node index.js --status",
+    "once": "node index.js --once",
+    "start": "node index.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.2"
+  }
+}
