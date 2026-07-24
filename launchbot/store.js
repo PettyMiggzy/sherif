@@ -22,15 +22,25 @@ import { CFG } from './config.js';
 const DATA_DIR = path.resolve(CFG.dataDir);
 const FILE = path.join(DATA_DIR, 'wallets.json');
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+// 0700 dir so other local accounts can't traverse to the keystore.
+fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+try { fs.chmodSync(DATA_DIR, 0o700); } catch { /* best effort */ }
 
-// scrypt is deliberately slow; cache derived keys per salt so signing stays snappy.
+// scrypt cost. Raised from N=2^14 to 2^16 to make an offline brute force of a
+// leaked keystore materially harder; maxmem must clear ~128*N*r bytes. The
+// params are stored per-record so they can change without breaking old wallets.
+const SCRYPT = { N: 65536, r: 8, p: 1, maxmem: 192 * 1024 * 1024 };
+
+// scrypt is deliberately slow; cache derived keys per (salt+params) so signing
+// stays snappy (one derivation per user per process).
 const _keyCache = new Map();
-function deriveKey(saltHex) {
-  let k = _keyCache.get(saltHex);
+function cacheKey(salt, N, r, p) { return `${salt}:${N}:${r}:${p}`; }
+function deriveKey(saltHex, N = SCRYPT.N, r = SCRYPT.r, p = SCRYPT.p) {
+  const ck = cacheKey(saltHex, N, r, p);
+  let k = _keyCache.get(ck);
   if (!k) {
-    k = crypto.scryptSync(CFG.masterSecret, Buffer.from(saltHex, 'hex'), 32, { N: 16384, r: 8, p: 1 });
-    _keyCache.set(saltHex, k);
+    k = crypto.scryptSync(CFG.masterSecret, Buffer.from(saltHex, 'hex'), 32, { N, r, p, maxmem: SCRYPT.maxmem });
+    _keyCache.set(ck, k);
   }
   return k;
 }
@@ -42,34 +52,58 @@ function encrypt(plaintext) {
   const c = crypto.createCipheriv('aes-256-gcm', key, iv);
   const ct = Buffer.concat([c.update(plaintext, 'utf8'), c.final()]);
   const tag = c.getAuthTag();
-  return { salt: salt.toString('hex'), iv: iv.toString('hex'), tag: tag.toString('hex'), ct: ct.toString('hex') };
+  return {
+    v: 1, salt: salt.toString('hex'), iv: iv.toString('hex'), tag: tag.toString('hex'), ct: ct.toString('hex'),
+    N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p,
+  };
 }
 
 function decrypt(rec) {
-  const key = deriveKey(rec.salt);
+  // Fall back to the legacy params for any record written before they were stored.
+  const key = deriveKey(rec.salt, rec.N || 16384, rec.r || 8, rec.p || 1);
   const d = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(rec.iv, 'hex'));
   d.setAuthTag(Buffer.from(rec.tag, 'hex'));
   return Buffer.concat([d.update(Buffer.from(rec.ct, 'hex')), d.final()]).toString('utf8');
 }
 
-// ── persistence (atomic write) ───────────────────────────────────────────────
+// ── persistence ──────────────────────────────────────────────────────────────
+// A custodial key MUST reach disk before its address is handed out, so key
+// creation and erasure persist SYNCHRONOUSLY and durably (fsync + atomic
+// rename). Only low-stakes updates (noteCoin) use the debounced path.
 function load() {
   try { return JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { return { users: {} }; }
 }
 let db = load();
 let saveTimer = null;
+
+function writeDurable(data) {
+  const tmp = FILE + '.tmp';
+  const fd = fs.openSync(tmp, 'w', 0o600);
+  try { fs.writeSync(fd, data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  fs.renameSync(tmp, FILE);
+  // fsync the directory so the rename itself is durable across a power loss.
+  try { const dfd = fs.openSync(DATA_DIR, 'r'); try { fs.fsyncSync(dfd); } finally { fs.closeSync(dfd); } } catch { /* dir fsync unsupported */ }
+  try { fs.chmodSync(FILE, 0o600); } catch { /* best effort */ }
+}
+
+/** Write NOW, durably. Throws on failure — critical writes must fail loud. */
+function persistSync() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  writeDurable(JSON.stringify(db));
+}
+
+/** Debounced durable write for low-stakes updates. Errors are logged, not thrown. */
 function persist() {
-  // debounce bursty writes; always flush atomically via a temp file + rename.
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    try {
-      const tmp = FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(db), { mode: 0o600 });
-      fs.renameSync(tmp, FILE);
-      fs.chmodSync(FILE, 0o600);
-    } catch (e) { console.error('wallet persist failed:', e.message); }
+    try { writeDurable(JSON.stringify(db)); } catch (e) { console.error('wallet persist failed:', e.message); }
   }, 250);
+}
+
+/** Flush any pending write synchronously — call from shutdown handlers. */
+export function flushSync() {
+  try { persistSync(); } catch (e) { console.error('flush failed:', e.message); }
 }
 
 // ── public API ───────────────────────────────────────────────────────────────
@@ -77,19 +111,50 @@ function persist() {
 /** Whether a Telegram user already has a wallet. */
 export function has(userId) { return !!db.users[String(userId)]; }
 
-/** Create a wallet for a user if absent; return its public address. Idempotent. */
+/**
+ * Create a wallet for a user if absent; return its public address. Idempotent.
+ * The new key is persisted SYNCHRONOUSLY and durably before the address is
+ * returned — so we never reveal a deposit address whose key isn't safely on
+ * disk. If the write fails we roll back and throw, rather than hand out an
+ * unbacked address (which would make any deposit unrecoverable).
+ */
 export function ensureWallet(userId) {
   const id = String(userId);
   if (!db.users[id]) {
     const w = ethers.Wallet.createRandom();
     db.users[id] = { address: w.address, enc: encrypt(w.privateKey), createdTs: nowSecs() };
-    persist();
+    try {
+      persistSync();
+    } catch (e) {
+      delete db.users[id]; // don't keep an in-memory-only wallet
+      throw new Error('could not save your wallet — try again in a moment');
+    }
   }
   return db.users[id].address;
 }
 
 /** A user's deposit/public address, or null. */
 export function addressOf(userId) { return db.users[String(userId)]?.address || null; }
+
+/** Whether a user has accepted the terms/age/jurisdiction gate. */
+export function hasAgreed(userId) { return !!db.users[String(userId)]?.agreed; }
+
+/** Record acceptance of the terms gate (durably). Creates no wallet on its own. */
+export function markAgreed(userId) {
+  const r = db.users[String(userId)];
+  if (r && !r.agreed) { r.agreed = nowSecs(); try { persistSync(); } catch (e) { console.error('agree persist:', e.message); } }
+}
+
+/** Per-user cooldown (in-memory). cooldownLeft peeks; stampCooldown starts it. */
+const _cooldowns = new Map();
+export function cooldownLeft(userId, action) {
+  const until = _cooldowns.get(`${userId}:${action}`) || 0;
+  const now = Date.now();
+  return now < until ? Math.ceil((until - now) / 1000) : 0;
+}
+export function stampCooldown(userId, action, secs) {
+  _cooldowns.set(`${userId}:${action}`, Date.now() + secs * 1000);
+}
 
 /** An ethers Wallet connected to `provider`, for signing. Throws if no wallet. */
 export function signer(userId, provider) {
@@ -119,10 +184,14 @@ export function coinsOf(userId) {
 /** Delete every trace of a user (Telegram ToS §4.2 right-to-erasure). */
 export function forget(userId) {
   const id = String(userId);
-  if (!db.users[id]) return false;
+  const rec = db.users[id];
+  if (!rec) return false;
+  // Evict the derived AES key from the cache too, so nothing about this user
+  // lingers in memory after erasure.
+  if (rec.enc) _keyCache.delete(cacheKey(rec.enc.salt, rec.enc.N || 16384, rec.enc.r || 8, rec.enc.p || 1));
   delete db.users[id];
-  persist();
   sessions.delete(id);
+  try { persistSync(); } catch (e) { console.error('forget persist:', e.message); }
   return true;
 }
 
@@ -143,5 +212,11 @@ export function setSession(userId, data) {
   sessions.set(String(userId), { ...data, _t: Date.now() });
 }
 export function clearSession(userId) { sessions.delete(String(userId)); }
+
+/** Drop expired wizard sessions (abandoned /launch flows). Call periodically. */
+export function sweepSessions() {
+  const now = Date.now();
+  for (const [id, s] of sessions) if (now - s._t > SESSION_TTL_MS) sessions.delete(id);
+}
 
 function nowSecs() { return Math.floor(Date.now() / 1000); }

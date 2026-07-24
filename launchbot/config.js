@@ -62,23 +62,45 @@ function req(name) {
   return v;
 }
 
+// MASTER_SECRET protects every custodial key; a weak value makes a leaked
+// keystore brute-forceable offline. Demand real entropy.
+function reqSecret(name, minLen) {
+  const v = req(name);
+  if (v.length < minLen) {
+    console.error(`${name} is too weak (${v.length} chars). Use a high-entropy random value: openssl rand -hex 32`);
+    process.exit(1);
+  }
+  return v;
+}
+
+// Parse a bounded number env with a safe default (NaN/out-of-range → default).
+function numEnv(name, def, min, max) {
+  let n = Number(process.env[name]);
+  if (!Number.isFinite(n)) n = def;
+  return Math.min(max, Math.max(min, n));
+}
+
 export const CFG = {
   botToken: req('TELEGRAM_BOT_TOKEN'),
   // The RPC used to sign & broadcast. MUST accept eth_sendRawTransaction (not the
   // read-only indexer /rpc proxy). A key in the URL is a SECRET — keep it in .env.
   rpc: req('RPC_URL'),
-  // 32+ byte secret that encrypts every custodial private key at rest. If this
+  // 32+ char secret that encrypts every custodial private key at rest. If this
   // leaks, every wallet is compromised; if it's lost, every wallet is unrecoverable.
-  masterSecret: req('MASTER_SECRET'),
+  masterSecret: reqSecret('MASTER_SECRET', 32),
   apiBase: (process.env.API_BASE || 'https://api.robinlab.io').replace(/\/+$/, ''),
   siteBase: (process.env.SITE_BASE || 'https://robinlab.io').replace(/\/+$/, ''),
+  // Public Terms/Privacy URL, shown in /start and /disclaimer (Telegram §4/§9.1).
+  termsUrl: (process.env.TERMS_URL || '').trim(),
+  // Min seconds between one user's launches (anti-spam; Telegram §5.2b/f).
+  launchCooldownSecs: numEnv('LAUNCH_COOLDOWN_SECS', 60, 0, 86400),
   adminId: (process.env.ADMIN_ID || '').trim(),
   // Optional group/channel to announce new launches into (free promo). The bot
   // must be a member/admin. Blank = disabled. Posting to your own channel is
   // fine under Telegram ToS; we never DM users unsolicited.
   announceChatId: (process.env.ANNOUNCE_CHAT_ID || '').trim(),
-  // Slippage tolerance for /buy and /sell (percent).
-  slippagePct: Number(process.env.SLIPPAGE_PCT || 12),
+  // Slippage tolerance for /buy and /sell (percent), clamped to [0, 99].
+  slippagePct: numEnv('SLIPPAGE_PCT', 12, 0, 99),
   // Optional flat bot fee (in ETH) taken from a user's balance per launch — extra
   // revenue on top of trade fees. 0 = off. Sent to FEE_WALLET.
   launchFeeEth: (process.env.LAUNCH_FEE_ETH || '0').trim(),

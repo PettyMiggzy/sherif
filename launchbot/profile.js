@@ -39,6 +39,7 @@ export async function setProfile(signer, token, { pfpDataUrl = '', description =
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ...payload, signature }),
+    signal: AbortSignal.timeout(20000), // never let a slow indexer hang the launch flow
   });
   const body = await r.json().catch(() => ({}));
   if (!r.ok || body.error) throw new Error(body.error || `profile upload ${r.status}`);

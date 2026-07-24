@@ -15,10 +15,16 @@ export const provider = new ethers.JsonRpcProvider(CFG.rpc, {
 
 const iface = { factory: new ethers.Interface(ABI.factory) };
 
+/** Current legacy gas price, guarded against a null from the RPC. */
+export async function gasPriceNow() {
+  const fee = await provider.getFeeData();
+  if (fee.gasPrice == null) throw new Error('RPC returned no gasPrice (a legacy chain must supply one)');
+  return fee.gasPrice;
+}
+
 /** Legacy tx overrides (type-0 + explicit gasPrice). Robinhood Chain has no 1559. */
 export async function legacyOv(extra = {}) {
-  const fee = await provider.getFeeData();
-  return { type: 0, gasPrice: fee.gasPrice, ...extra };
+  return { type: 0, gasPrice: await gasPriceNow(), ...extra };
 }
 
 export function factoryWith(signer) { return new ethers.Contract(ADDRESSES.factory, ABI.factory, signer); }
@@ -49,7 +55,7 @@ export async function launch(signer, { name, symbol, devBuyWei = 0n }) {
   try {
     const est = await factory.launch.estimateGas(params, { value });
     gasLimit = (est * 12n) / 10n;
-  } catch { gasLimit = 12_000_000n; }
+  } catch { gasLimit = BigInt(CHAIN.perTxGasCap) - 1n; } // estimate hiccup → give it headroom (unused gas is refunded)
   if (gasLimit > BigInt(CHAIN.perTxGasCap)) gasLimit = BigInt(CHAIN.perTxGasCap) - 1n;
 
   const ov = await legacyOv({ value, gasLimit });
@@ -75,11 +81,15 @@ export async function launch(signer, { name, symbol, devBuyWei = 0n }) {
 export async function buy(signer, token, ethWei) {
   const router = routerWith(signer);
   const value = BigInt(ethWei);
-  let minOut = 0n;
+  // Quote first. If the simulation reverts, the real tx would revert too — abort
+  // with a clear message instead of sending a trade with ZERO slippage protection.
+  let minOut;
   try {
     const quoted = await router.buy.staticCall(token, 0n, { value });
     minOut = withSlippage(quoted);
-  } catch { /* fall back to 0 (curve may be near a bound) */ }
+  } catch {
+    throw new Error("couldn't price this buy — the token may be in its anti-snipe window or illiquid. Try a smaller amount or wait a minute.");
+  }
   const ov = await legacyOv({ value });
   const tx = await router.buy(token, minOut, ov);
   const rc = await tx.wait();
@@ -98,11 +108,13 @@ export async function sell(signer, token, amountWei) {
     await atx.wait();
   }
   const router = routerWith(signer);
-  let minOutEth = 0n;
+  let minOutEth;
   try {
     const quoted = await router.sell.staticCall(token, amount, 0n);
     minOutEth = withSlippage(quoted);
-  } catch { /* fall back to 0 */ }
+  } catch {
+    throw new Error("couldn't price this sell — the token may be illiquid or paused. Try a smaller amount.");
+  }
   const ov = await legacyOv();
   const tx = await router.sell(token, amount, minOutEth, ov);
   const rc = await tx.wait();
@@ -113,8 +125,7 @@ export async function sell(signer, token, amountWei) {
 export async function withdrawAll(signer, to) {
   const from = await signer.getAddress();
   const bal = await provider.getBalance(from);
-  const fee = await provider.getFeeData();
-  const gasPrice = fee.gasPrice;
+  const gasPrice = await gasPriceNow();
   const gasLimit = 21000n;
   const cost = gasPrice * gasLimit;
   if (bal <= cost) return null; // nothing to sweep after gas
