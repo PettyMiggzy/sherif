@@ -82,8 +82,8 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .fc-pos-b > div{flex:1}
 .fc-pos-b .k{display:block;font-size:.64rem;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em}
 .fc-pos-b b{font-family:var(--disp);font-size:1.15rem;font-weight:400}
-.idbar{display:flex;gap:16px;align-items:flex-end;margin-top:-46px;position:relative;z-index:2}
-.idbar .pfp{width:92px;height:92px;border-radius:18px;border:3px solid var(--bg);flex:none;display:grid;place-items:center;font-size:2rem;font-weight:800;color:#10140a;background:linear-gradient(135deg,#dce905,#8a63e0)}
+.idbar{display:flex;gap:16px;align-items:flex-end;margin-top:12px;position:relative;z-index:2}
+.idbar .pfp{width:92px;height:92px;margin-top:-56px;border-radius:18px;border:3px solid var(--bg);flex:none;display:grid;place-items:center;font-size:2rem;font-weight:800;color:#10140a;background:linear-gradient(135deg,#dce905,#8a63e0);box-shadow:0 6px 20px rgba(0,0,0,.5)}
 .idbar .who{padding-bottom:6px;flex:1;min-width:0}
 .idbar h1{font-size:2rem;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
 .idbar h1 .tk{color:var(--lime);font-size:1.2rem}
@@ -93,7 +93,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
    otherwise the flex-end + negative margin rides the coin name up onto the banner image. */
 @media(max-width:600px){
   .idbar{flex-direction:column;align-items:flex-start;gap:10px;margin-top:-42px}
-  .idbar .pfp{width:78px;height:78px}
+  .idbar .pfp{width:78px;height:78px;margin-top:0}
   .idbar .who{padding-bottom:0;width:100%}
   .idbar h1{font-size:1.55rem}
   .idbar h1 .tk{font-size:1rem}
@@ -535,11 +535,19 @@ function applyProfile(prof, symbol){
   if (prof.banner) {
     const b = document.querySelector('.banner');
     if (b) {
-      b.style.backgroundImage = `url("${esc(prof.banner)}")`; b.style.backgroundSize = 'cover'; b.style.backgroundPosition = 'center';
       // the creator's own banner replaces the "Trending on Robin Labs" marquee — no other
       // projects plastered over this coin's banner.
       COIN_HAS_BANNER = true;
-      b.querySelectorAll('.art, .bmore, .bwrap').forEach((el) => { el.style.display = 'none'; });
+      b.style.backgroundImage = 'none';
+      b.querySelectorAll('.bmore, .bwrap').forEach((el) => { el.style.display = 'none'; });
+      // Never crop the creator's banner: a blurred, dimmed COVER fill behind (so there are no empty
+      // gaps at any aspect ratio) with the FULL image shown edge-to-edge via CONTAIN on top.
+      const url = esc(prof.banner);
+      const art = b.querySelector('.art');
+      if (art) { art.style.cssText = `position:absolute;inset:0;background:url("${url}") center/cover no-repeat;filter:blur(24px) brightness(.5);transform:scale(1.15)`; art.style.display = ''; }
+      let img = b.querySelector('.bimg');
+      if (!img) { img = document.createElement('div'); img.className = 'bimg'; b.appendChild(img); }
+      img.style.cssText = `position:absolute;inset:0;background:url("${url}") center/contain no-repeat;z-index:1`;
     }
   }
   const who = document.querySelector('.who');
