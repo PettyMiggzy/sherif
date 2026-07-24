@@ -1,0 +1,16 @@
+{
+  "name": "robinlabs-launchbot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Robin Labs Telegram launch bot — create & trade tokens on Robinhood Chain from a custodial wallet",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.2"
+  }
+}

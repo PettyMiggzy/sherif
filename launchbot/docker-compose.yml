@@ -1,0 +1,17 @@
+# Runs the launch bot next to the indexer on the droplet.
+#   docker compose up -d --build
+# Config comes from ./.env (never committed). The encrypted wallet store persists
+# in the named volume `launchbot-data`.
+services:
+  launchbot:
+    build: .
+    container_name: robinlabs-launchbot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DATA_DIR=/app/data
+    volumes:
+      - launchbot-data:/app/data
+
+volumes:
+  launchbot-data:
