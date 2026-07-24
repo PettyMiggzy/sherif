@@ -108,11 +108,14 @@ const WORD = [
   'official', 'verified', 'binance', 'coinbase', 'robinhoodmarkets', 'telegram', 'tether', 'usdt', 'usdc',
   ...String(process.env.BLOCKED_WORDS || '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean),
 ];
+// Precompile the whole-word matchers once, escaping regex metacharacters so an
+// operator-supplied BLOCKED_WORDS entry like "a(" can't crash the matcher.
+const WORD_RE = WORD.map((w) => ({ w, re: new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`) }));
 function fieldReason(s) {
   const norm = String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
   for (const w of HARD) if (norm.includes(w)) return w;
   const low = String(s).toLowerCase();
-  for (const w of WORD) if (new RegExp(`\\b${w}\\b`).test(low)) return w;
+  for (const { w, re } of WORD_RE) if (re.test(low)) return w;
   return null;
 }
 export function moderationReason(name, symbol) {
