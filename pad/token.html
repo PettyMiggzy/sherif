@@ -89,6 +89,15 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .idbar h1 .tk{color:var(--lime);font-size:1.2rem}
 .idbar .ca{display:inline-flex;align-items:center;gap:8px;margin-top:4px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:8px;padding:5px 8px;font-family:var(--mono);font-size:.74rem;color:var(--ink-dim)}
 .idbar .ca button{background:var(--lime);color:#10140a;border:none;border-radius:6px;padding:0 12px;min-height:40px;display:inline-flex;align-items:center;font-weight:700;cursor:pointer;font-size:.7rem}
+/* Mobile: stack the identity BELOW the banner (pfp overlaps the banner, name + address sit cleanly under it) —
+   otherwise the flex-end + negative margin rides the coin name up onto the banner image. */
+@media(max-width:600px){
+  .idbar{flex-direction:column;align-items:flex-start;gap:10px;margin-top:-42px}
+  .idbar .pfp{width:78px;height:78px}
+  .idbar .who{padding-bottom:0;width:100%}
+  .idbar h1{font-size:1.55rem}
+  .idbar h1 .tk{font-size:1rem}
+}
 .layout{display:grid;grid-template-columns:1fr 340px;gap:20px;margin:20px 0 70px}
 @media(max-width:900px){.layout{grid-template-columns:1fr}}
 .panel{border:1px solid var(--line-2);border-radius:14px;background:var(--panel)}
