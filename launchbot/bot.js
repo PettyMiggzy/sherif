@@ -282,6 +282,21 @@ async function doLaunch(chatId, userId, { name, symbol, pfp, devBuyEth }) {
     `<a href="${coinUrl(res.token)}">📈 Chart / trade</a> · <a href="${explorerAddr(res.token)}">explorer</a>\n\n` +
     `Share the chart link to bring in buyers. Trade more with <code>/buy ${short(res.token)} 0.1</code>.`,
     { reply_markup: { inline_keyboard: [[{ text: '📈 Open chart', url: coinUrl(res.token) }]] } });
+
+  announceLaunch({ name, symbol, token: res.token, devBought: res.devBought }).catch((e) => console.error('announce:', e.message));
+}
+
+// Post a new launch into the announce group/channel (free promo). Best-effort.
+async function announceLaunch({ name, symbol, token, devBought }) {
+  if (!CFG.announceChatId) return;
+  const firstBuy = devBought && devBought > 0n
+    ? `\n💸 Dev opened with the first buy.` : '';
+  await send(CFG.announceChatId,
+    `🚀 <b>New launch on Robin Labs</b>\n\n` +
+    `<b>${esc(name)}</b> ($${esc(symbol)})${firstBuy}\n` +
+    `<code>${token}</code>\n\n` +
+    `<a href="${coinUrl(token)}">📈 Chart / trade</a> · <a href="${explorerAddr(token)}">explorer</a>`,
+    { reply_markup: { inline_keyboard: [[{ text: '📈 Trade it', url: coinUrl(token) }]] } });
 }
 
 // Download a Telegram photo → base64 data URL (server downscales any format).

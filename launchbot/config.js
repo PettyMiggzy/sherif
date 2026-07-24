@@ -73,6 +73,10 @@ export const CFG = {
   apiBase: (process.env.API_BASE || 'https://api.robinlab.io').replace(/\/+$/, ''),
   siteBase: (process.env.SITE_BASE || 'https://robinlab.io').replace(/\/+$/, ''),
   adminId: (process.env.ADMIN_ID || '').trim(),
+  // Optional group/channel to announce new launches into (free promo). The bot
+  // must be a member/admin. Blank = disabled. Posting to your own channel is
+  // fine under Telegram ToS; we never DM users unsolicited.
+  announceChatId: (process.env.ANNOUNCE_CHAT_ID || '').trim(),
   // Slippage tolerance for /buy and /sell (percent).
   slippagePct: Number(process.env.SLIPPAGE_PCT || 12),
   // Optional flat bot fee (in ETH) taken from a user's balance per launch — extra
