@@ -174,6 +174,7 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         pool = ICurvePool(curve).pool();
 
         IERC20(token).safeTransfer(curve, TOTAL_SUPPLY);
+        LaunchToken(token).setCurve(curve); // lets the curve exempt the Bond it posts at graduation
         LaunchToken(token).enableTrading(pool, curve, uint64(block.timestamp));
         LaunchToken(token).exemptAddress(router); // router receives tokens on burnDev/flushBurn — never a sniper
         ICurvePool(curve).seed();

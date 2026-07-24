@@ -126,7 +126,7 @@
     <a href="#graduate">Graduate &amp; dev controls</a>
     <div class="grp">Economics</div>
     <a href="#fees">Fee model</a>
-    <a href="#gradmodel">Graduation (“let it ride”)</a>
+    <a href="#gradmodel">Graduation (ceiling-only)</a>
     <div class="grp">Build on it</div>
     <a href="#api">Indexer API</a>
     <a href="#security">Security model</a>
@@ -144,7 +144,7 @@
   </div>
 
   <h1 class="title">Developer Docs</h1>
-  <p class="lede">Everything you need to launch, trade and build on <strong>Robin Labs Pad</strong> — a creator-first memecoin launchpad on Robinhood Chain. One-transaction launches into a real Uniswap&nbsp;v3 pool, a bonding-curve, a “let it ride” graduation, and a permanently-locked floor: <em>the Bond</em>.</p>
+  <p class="lede">Everything you need to launch, trade and build on <strong>Robin Labs Pad</strong> — a creator-first memecoin launchpad on Robinhood Chain. One-transaction launches into a real Uniswap&nbsp;v3 pool, a bonding-curve, a ceiling-only graduation, and a permanently-locked floor: <em>the Bond</em>.</p>
 
   <!-- OVERVIEW -->
   <h2 id="overview"><span class="sec">01 · Start here</span>Overview</h2>
@@ -171,8 +171,11 @@
   <h4>Contract addresses (live)</h4>
   <div class="tw"><table>
     <tr><th>Contract</th><th>Address</th><th>Role</th></tr>
-    <tr><td><span class="m">CurvePadFactory</span></td><td class="addr">0x44855d49E73Ad103Df51871A072FEe8709E6A2d6</td><td>One-call launch entrypoint</td></tr>
-    <tr><td><span class="m">PadRouter</span></td><td class="addr">0xAEFE708e04D3E2e9609e6bC987903b31818C2a46</td><td>The swap desk — every buy/sell goes through it</td></tr>
+    <tr><td><span class="m">CurvePadFactory</span></td><td class="addr">0x59A9Fd6Fdb8B5Ed60ABF889b84d2C2fcc8a1dEDe</td><td>One-call launch entrypoint</td></tr>
+    <tr><td><span class="m">PadRouter</span></td><td class="addr">0xeA5b12Cbba5B1790A3b00C5C5884484bb2AABFaa</td><td>The swap desk — every buy/sell goes through it</td></tr>
+    <tr><td><span class="m">FeeConfig</span></td><td class="addr">0x96a7c260E215853c38aC82c891827e5Dbf50efD8</td><td>Owner-governed fee dial — LP + swap split, retunable with no redeploy</td></tr>
+    <tr><td><span class="m">FloorCoopFactory</span></td><td class="addr">0x8f33ED14d81D7986A708af4C2DAD7DAEe9778D95</td><td>Deploys the per-coin FloorCoop LP vaults</td></tr>
+    <tr><td><span class="m">PlatformFeeSplitter</span></td><td class="addr">0xCADAbB14339BE77a2Fc4D4151B1E453b81940653</td><td>Routes the platform's cut (the $ROBIN buy-back split)</td></tr>
     <tr><td><span class="m">WETH</span></td><td class="addr">0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73</td><td>Canonical wrapped ETH</td></tr>
     <tr><td><span class="m">UniswapV3Factory</span></td><td class="addr">0x1f7d7550b1b028f7571e69a784071f0205fd2efa</td><td>The real v3 factory each pool is created on</td></tr>
   </table></div>
@@ -184,7 +187,7 @@
   <div class="tw"><table>
     <tr><th>Contract</th><th>Owns</th></tr>
     <tr><td><span class="m">CurvePadFactory</span></td><td>Deploys the token + curve + pool in one tx, registers the coin with the router, runs the anti-snipe opening buy.</td></tr>
-    <tr><td><span class="m">CurvePool</span></td><td>The bonding curve — a single-sided v3 position spanning <span class="m">[startTick → gradTick]</span>. Owns graduation and the “let it ride” logic.</td></tr>
+    <tr><td><span class="m">CurvePool</span></td><td>The bonding curve — a single-sided v3 position spanning <span class="m">[startTick → gradTick]</span>. Owns graduation (ceiling-only at ~4.2 ETH).</td></tr>
     <tr><td><span class="m">PadRouter</span></td><td>The only trade path. Applies the 1% fee in-protocol, splits it to escrows, exposes dev fee controls.</td></tr>
     <tr><td><span class="m">Bond</span></td><td>Protocol-owned floor posted at graduation and locked forever — <em>Sherwood</em> (full-range LP), <em>Bounty</em> (WETH buy-wall), <em>Ambush</em> (token sell-wall). Fees compound back in via <span class="m">poke()</span>.</td></tr>
   </table></div>
@@ -261,7 +264,6 @@ event Poked(int24 tick, uint128 bountyL, uint128 ambushL, uint256 sherwoodFees0,
     <tr><td><span class="m">Bought</span></td><td>Router</td><td>A buy: ETH in, fee, tokens out</td></tr>
     <tr><td><span class="m">Sold</span></td><td>Router</td><td>A sell: tokens in, fee, ETH out</td></tr>
     <tr><td><span class="m">FeeSplit</span></td><td>Router</td><td>Exact fee routing per trade (platform/deferred/cut/dev/floor/burn)</td></tr>
-    <tr><td><span class="m">GradTargetSet</span></td><td>Curve</td><td>Creator moved the auto-graduate price</td></tr>
     <tr><td><span class="m">Graduated</span></td><td>Curve</td><td>Graduation: raised WETH, the Bond address</td></tr>
     <tr><td><span class="m">Posted</span> / <span class="m">Poked</span></td><td>Bond</td><td>Floor posted / fees compounded</td></tr>
   </table></div>
@@ -292,7 +294,7 @@ factory.on(<span class="s">"Launched"</span>, (token, curve, pool, dev) => {
   <p>One transaction. Send ETH with the call to make the creator's opening buy (≤2%), or send <span class="m">0</span> for a clean launch. All snippets use <strong>ethers v6</strong>.</p>
   <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">import</span> { ethers } <span class="k">from</span> <span class="s">"ethers"</span>;
 
-<span class="k">const</span> FACTORY = <span class="s">"0x44855d49E73Ad103Df51871A072FEe8709E6A2d6"</span>;
+<span class="k">const</span> FACTORY = <span class="s">"0x59A9Fd6Fdb8B5Ed60ABF889b84d2C2fcc8a1dEDe"</span>;
 <span class="k">const</span> abi = [
   <span class="s">"function launch((string name,string symbol,address dev,(uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,address projectWallet) tax) p) payable returns (address token,address curve,address pool)"</span>,
 ];
@@ -318,7 +320,7 @@ console.log(<span class="s">"launched"</span>, token);</pre></div>
   <div class="note warn"><span class="lbl">Opening buy = anti-snipe, not a fee</span>The ETH you send is <em>your own buy</em>, executed inside the launch tx before anyone else can trade — it isn't a platform charge. Capped at 2% of supply.</div>
 
   <h2 id="trade"><span class="sec">03 · Integrate</span>Buy &amp; sell</h2>
-  <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">const</span> ROUTER = <span class="s">"0xAEFE708e04D3E2e9609e6bC987903b31818C2a46"</span>;
+  <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">const</span> ROUTER = <span class="s">"0xeA5b12Cbba5B1790A3b00C5C5884484bb2AABFaa"</span>;
 <span class="k">const</span> rAbi = [
   <span class="s">"function buy(address token,uint256 minOut) payable returns (uint256)"</span>,
   <span class="s">"function sell(address token,uint256 amountIn,uint256 minOutEth) returns (uint256)"</span>,
@@ -371,16 +373,15 @@ console.log(<span class="s">"launched"</span>, token);</pre></div>
 
   <!-- ─────────── ECONOMICS ─────────── -->
   <h2 id="fees"><span class="sec">04 · Economics</span>Fee model</h2>
-  <p>Every coin pays a mandatory <strong>1% per side</strong>. A creator may set a side higher (up to 4%); the amount <em>above</em> 1% is the “raised” fee and splits 25% platform / 75% project.</p>
+  <p>Two fee streams, both governed by the on-chain <span class="m">FeeConfig</span> dial. The platform owner retunes the splits with a setter — <strong>no redeploy</strong>. Curves and the router read the ratios live.</p>
   <div class="tw"><table>
-    <tr><th>Flow</th><th>Goes to</th><th>Detail</th></tr>
-    <tr><td>Buy 1% base</td><td><strong>Platform</strong></td><td>0.9% immediately, 0.1% released at graduation</td></tr>
-    <tr><td>Sell 1% base</td><td><strong>Creator</strong></td><td>Escrowed; collect to wallet or buy+burn</td></tr>
-    <tr><td>Above-1% (raised)</td><td>25% platform / 75% project</td><td>Project 75% splits by <span class="m">walletBps/floorBps/burnBps</span></td></tr>
-    <tr><td>Graduation reward</td><td><strong>Creator + Platform</strong></td><td><strong>0.5 ETH each</strong> at graduation; the rest funds the floor</td></tr>
+    <tr><th>Stream</th><th>Split (default)</th><th>Detail</th></tr>
+    <tr><td>LP fee — the in-protocol 1%</td><td><strong>Platform 90% / Creator 10%</strong></td><td>The Uniswap v3 pool's own 1% fee, swept by <span class="m">CurvePool.collectFees()</span>; creator's cut is <span class="m">lpCreatorBps</span> (owner cap 50%)</td></tr>
+    <tr><td>Swap-desk fee — the router's cut</td><td><strong>Platform 45% / Creator 45% / Floor 10%</strong></td><td><span class="m">FeeConfig.swapSplit()</span>; the three shares must sum to 100%. Floor deepens the coin's Bond</td></tr>
+    <tr><td>Graduation reward</td><td><strong>Creator + Platform</strong></td><td><strong>0.5 ETH each</strong> at the ceiling (capped at raise/4); the rest funds the floor</td></tr>
     <tr><td>Sherwood LP fees</td><td><strong>The floor</strong></td><td>Compound back into the locked Bond via <span class="m">poke()</span></td></tr>
   </table></div>
-  <div class="note"><span class="lbl">Creator income</span>1% sell tax + a 0.5 ETH graduation reward + any project share of raised tax. Every share is escrowed and paid by separate permissionless flushers, so a trade can never revert on a payout. Accounting is exact to the wei.</div>
+  <div class="note"><span class="lbl">Creator income</span>a 10% share of the 1% LP fee + a 45% share of the swap-desk fee + a 0.5 ETH graduation reward. Every share is escrowed and paid by separate permissionless flushers, so a trade can never revert on a payout. Accounting is exact to the wei.</div>
 
   <h2 id="gradmodel"><span class="sec">04 · Economics</span>Graduation — one ceiling, no shortcuts</h2>
   <p>Graduation happens at exactly <strong>one</strong> place: the full ceiling (~4.2 ETH raised, ~$34k mcap). A coin graduates only when buys carry the price all the way to <span class="m">gradTick</span> — there is no early graduation, no creator override, and no timeout fallback. Below the ceiling the coin simply keeps trading on the curve, and sellers can always exit.</p>

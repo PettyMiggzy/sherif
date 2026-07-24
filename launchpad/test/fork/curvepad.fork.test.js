@@ -229,6 +229,58 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect((await wethW.balanceOf(dev.address)) - devBefore, "creator earns 0.5 at the ceiling").to.equal(ethers.parseEther("0.5"));
   });
 
+  it("fast graduation INSIDE the anti-snipe window exempts the Bond — poke() works, floor recycles (CP-2)", async () => {
+    // Regression: a big dev buy fills the whole curve in the launch tx, so the coin graduates at t≈launchTime,
+    // deep inside the 300s anti-snipe window. Bond.poke()'s pool.collect() moves the ~25% Ambush reserve back to
+    // the Bond (reads as a "buy": from == pool). Before the fix the Bond was NOT guard-exempt, so that transfer
+    // tripped maxTx/maxWallet and poke() reverted for the rest of the window. The fix exempts the Bond at
+    // graduation. This proves the Bond is exempt AND poke() succeeds while the window is still active.
+    const [dep, platform, dev] = await ethers.getSigners();
+    const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
+    const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
+    const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
+      WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 196200, 25800, 16400
+    );
+    await (await router.setFactory(await factory.getAddress())).wait();
+    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+
+    // dev buy big enough to walk the whole curve to the ceiling in the launch tx (excess ETH is refunded)
+    const rc = await (await factory.connect(dev).launch(
+      { name: "Fast", symbol: "FAST", dev: dev.address, tax: NOTAX }, { value: 40n * ONE }
+    )).wait();
+    const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
+    const { token, curve } = ev.args;
+    const TOK = await ethers.getContractAt("LaunchToken", token);
+    const curveC = await ethers.getContractAt("CurvePool", curve);
+
+    // the dev buy filled the curve to the ceiling — graduatable immediately, and we're still inside the window
+    expect(await curveC.ready(), "ceiling reached by the dev buy").to.equal(true);
+    expect(await TOK.antiSnipeActive(), "still inside the anti-snipe window").to.equal(true);
+
+    // graduate INSIDE the window
+    await (await curveC.graduate()).wait();
+    expect(await curveC.graduated()).to.equal(true);
+    const bondAddr = await curveC.bond();
+    const bond = await ethers.getContractAt("Bond", bondAddr);
+    expect(await bond.posted()).to.equal(true);
+
+    // THE FIX: the freshly-posted Bond is guard-exempt
+    expect(await TOK.isExempt(bondAddr), "Bond exempted from the anti-snipe guard at graduation").to.equal(true);
+
+    // let the 15s poke TWAP build, but stay INSIDE the 300s window
+    await ethers.provider.send("evm_increaseTime", [30]);
+    await ethers.provider.send("evm_mine", []);
+    expect(await TOK.antiSnipeActive(), "poke happens while the guard is still active").to.equal(true);
+
+    // poke() moves the Ambush reserve (pool -> Bond) — would have reverted MaxTx/MaxWallet without the exemption
+    await (await bond.poke()).wait();
+    expect(await bond.bountyL()).to.be.greaterThan(0n);
+    expect(await bond.ambushL()).to.be.greaterThan(0n);
+  });
+
   it("graduate() corrects a MANIPULATED post-buyout price back to the ceiling — floor-drain closed, no DoS (CP-1)", async () => {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
 

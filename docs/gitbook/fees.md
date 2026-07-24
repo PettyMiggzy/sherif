@@ -1,22 +1,52 @@
 # Fee Model
 
-Every coin pays a mandatory **1% per side**. A creator may set a side higher (up to 4%); the amount *above* 1% is the "raised" fee and splits 25% platform / 75% project.
+Robin Labs runs two fee streams, both governed by the on-chain [`FeeConfig`](network.md) dial. The owner
+retunes the splits with a setter — **no redeploy, no per-coin migration**. Curves and the router read the
+ratios live.
 
-| Flow | Goes to | Detail |
-|------|---------|--------|
-| Buy 1% base | **Platform** | 0.9% immediately, 0.1% released at graduation |
-| Sell 1% base | **Creator** | Escrowed; collect to wallet or buy+burn |
-| Above-1% (raised) | 25% platform / 75% project | Project 75% splits by `walletBps` / `floorBps` / `burnBps` |
-| **Buy 0.25% reward leg** | **[Traders](rewards.md)** | Additive, on top of the fee above — funds the coin's trader pot (net accumulation) |
-| **Sell 0.25% reward leg** | **[Holders](rewards.md)** | Additive — funds the coin's holder pot (balance-seconds) |
-| Graduation reward | **Creator + Platform** | **0.5 ETH each** at graduation (capped at a quarter of the raise); the rest funds the floor |
-| Sherwood LP fees | **The floor** | Compound back into the locked Bond via `poke()` |
+## 1. LP fee — the in-protocol 1%
 
-> **Creator income** = the 1% sell tax + a 0.5 ETH graduation reward + any project share of raised tax. Every share is escrowed and paid by separate permissionless flushers, so a trade can never revert on a payout. Accounting is exact to the wei.
+Every coin trades in a real Uniswap v3 pool at the **1% fee tier**. That 1% is collected *in-protocol* as
+Uniswap LP fees on the curve's own position — never as an extra transfer bolted onto the user's tx. When
+`CurvePool.collectFees()` sweeps those accrued fees, `FeeConfig.lpCreatorBps` decides the split:
 
-## Reward legs
+| Share | Default | Detail |
+|-------|---------|--------|
+| Platform | **90%** | The pad's platform wallet |
+| Creator | **10%** | The coin's own dev — `lpCreatorBps = 1000` |
 
-On top of everything above, every trade pays **two additive 0.25% legs**: a buy funds the coin's **Traders** pot, a sell funds its **Holders** pot. They're carved on top of the swap fee, forwarded to the `RewardVault`, and paid back out to that coin's own traders and holders as capped, Merkle-proven claims. See [Rewards](rewards.md) for the scoring and claim flow. The legs are off until a vault is wired, and a trade can never revert on them.
+The owner may raise the creator's cut up to **50%** (`LP_CREATOR_MAX = 5000`); it can never exceed that.
+
+## 2. Swap-desk fee — the router's cut
+
+Trades placed through the pad UI route through `PadRouter`, which takes its own swap fee and splits it three
+ways per `FeeConfig.swapSplit()`. The three shares must always sum to exactly **100%** (10000 bps):
+
+| Share | Default | Goes to |
+|-------|---------|---------|
+| Platform | **45%** | `swapPlatformBps = 4500` |
+| Creator | **45%** | `swapCreatorBps = 4500` — the coin's dev |
+| Floor | **10%** | `swapFloorBps = 1000` — deepens the coin's Bond floor |
+
+If `FeeConfig` is unset (or ever returns an invalid split), the router safely routes the whole fee to the
+platform — a bad config can never brick a swap.
+
+## 3. Graduation
+
+Graduation is **ceiling-only at 4.2 ETH raised**. At graduation the creator and the platform each receive
+**0.5 ETH** (capped at a quarter of the raise each); the remaining reserve seeds the locked Bond floor.
+Pending LP fees are swept and split first, then the principal migrates.
+
+> **Creator income** = a 10% share of the 1% LP fee + a 45% share of the swap-desk fee + a 0.5 ETH
+> graduation reward. Every share is escrowed and paid by permissionless flushers, so a trade can never revert
+> on a payout. Accounting is exact to the wei.
+
+## Retuning (owner only)
+
+From `admin.html` → **Fee dials** (visible only to the owner wallet):
+
+- `setLpCreatorBps(uint16)` — the creator's share of the LP fee (≤ 5000).
+- `setSwapSplit(uint16 platform, uint16 creator, uint16 floor)` — must sum to 10000.
 
 ## FloorCoop economics
 
@@ -28,6 +58,13 @@ On top of everything above, every trade pays **two additive 0.25% legs**: a buy 
 | LP fees earned | The pool's 1% trade fee accrues to the vault pro-rata — **you keep 95%, the protocol keeps 5%** |
 | Early-exit penalty | Withdrawing before your lock ends costs a penalty (from 15%, scaled by lock tier) that stays with the remaining stakers |
 
+## Rewards program — disabled
+
+The additive 0.25% trader/holder reward legs and the `RewardVault` described in [Rewards](rewards.md) are
+**not enabled in production**. No reward leg is carved on any trade.
+
 ## Why fees ride the protocol
 
-The base 1% *is* the Uniswap v3 pool's fee tier — it's collected in-protocol as LP fees, not as an extra transfer bolted onto the user's transaction. This keeps every trade a clean, single-recipient swap: no fan-out, no side transfers, nothing for a wallet's transaction scanner to flag.
+The base 1% *is* the Uniswap v3 pool's fee tier — collected in-protocol as LP fees, not as an extra transfer
+bolted onto the user's transaction. This keeps every trade a clean, single-recipient swap: no fan-out, no
+side transfers, nothing for a wallet's transaction scanner to flag.

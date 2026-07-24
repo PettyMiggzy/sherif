@@ -53,6 +53,28 @@ event Sold(address indexed token, address indexed seller, uint256 tokensIn, uint
 event FeeSplit(address indexed token, uint256 platform, uint256 deferred, uint256 platformCut, uint256 dev, uint256 floor, uint256 burn)
 ```
 
+The router reads its swap-fee split live from `FeeConfig` (see below). An unset or invalid config safely
+routes the whole fee to the platform — a bad split can never brick a swap.
+
+## FeeConfig
+
+The single owner-governed fee dial (`Ownable2Step`). It holds only ratios — never funds. `CurvePool` reads
+the LP creator split; `PadRouter` reads the swap split. Retune with a setter, no redeploy.
+
+```solidity
+// LP fee (the in-protocol 1%) — creator's share of collected LP fees
+function lpCreatorBps() view returns (uint16)        // default 1000 (10%); rest to platform
+function LP_CREATOR_MAX() view returns (uint16)      // 5000 — hard cap (50%)
+function setLpCreatorBps(uint16 bps)                 // owner only, bps <= 5000
+
+// router swap-fee split — the three shares sum to exactly 10000
+function swapSplit() view returns (uint16 platformBps, uint16 creatorBps, uint16 floorBps)  // default 4500/4500/1000
+function setSwapSplit(uint16 platformBps, uint16 creatorBps, uint16 floorBps)   // owner only, must sum to 10000
+
+event LpSplitChanged(uint16 creatorBps)
+event SwapSplitChanged(uint16 platformBps, uint16 creatorBps, uint16 floorBps)
+```
+
 ## CurvePool
 
 The bonding curve and graduation. Read it for progress; call `graduate()` (permissionless) to post the Bond once the curve reaches its ceiling.
@@ -71,8 +93,12 @@ function gradTick() view returns (int24)       // the ceiling (~$34k FDV) — th
 
 function graduate()                        // permissionless once ready()
 
+// sweep the accrued in-protocol 1% LP fees and split them platform/creator per FeeConfig.lpCreatorBps
+function collectFees()                     // permissionless; principal is never touched
+
 event Seeded(int24 curveLo, int24 curveHi, uint128 liquidity)
 event Graduated(address indexed bond, uint256 raisedWeth, uint256 leftoverToken)
+event FeesCollected(address indexed by, uint256 wethFees, uint256 tokenFees, uint16 creatorBps)
 ```
 
 > Graduation is **ceiling-only**: a coin graduates at exactly one point, the top of the curve. There's no creator-settable target, no minimum, and no timeout. (`gradTarget`/`minGradTick`/`seedTime` remain on the contract as vestigial storage but no longer gate graduation — don't treat them as controls.)
@@ -89,6 +115,8 @@ event Poked(int24 tick, uint128 bountyL, uint128 ambushL, uint256 sherwoodFees0,
 ```
 
 ## RewardVault
+
+> **Not deployed in production** (`rewardVault == 0`) — the rewards program is disabled. Documented for completeness.
 
 Custody for the two additive 0.25% [reward](rewards.md) legs. The router `accrue`s each leg per `(coin, epoch, side)`; users `claim()` with a Merkle proof, capped by the per-side pot. Poster/guardian/admin surface below is gated on-chain.
 

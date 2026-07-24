@@ -35,6 +35,7 @@ contract LaunchToken is ERC20 {
 
     bool public tradingEnabled;
     address public pool;
+    address public curve; // the CurvePool; may exempt the Bond it deploys at graduation
     uint64 public launchTime;
 
     mapping(address => bool) public isExempt; // factory, pool, vault — holders/routers, not snipers
@@ -81,10 +82,20 @@ contract LaunchToken is ERC20 {
         _mint(factory_, supply_);
     }
 
-    /// @notice Factory-only: mark an infrastructure address (e.g. the PadRouter, which receives tokens on
-    /// burnDev/flushBurn buys) as guard-exempt, so those protocol buys don't trip maxTx/maxWallet/deadWindow
-    /// during the anti-snipe window. Only the trusted factory can call this; it is never used for user wallets.
-    function exemptAddress(address a) external onlyFactory {
+    /// @notice Factory-only: record the CurvePool so it can exempt the Bond it deploys at graduation. One-way.
+    function setCurve(address curve_) external onlyFactory {
+        require(curve == address(0), "curve set");
+        require(curve_ != address(0), "curve=0");
+        curve = curve_;
+    }
+
+    /// @notice Mark an infrastructure address as guard-exempt, so protocol-internal token moves don't trip
+    /// maxTx/maxWallet/deadWindow during the anti-snipe window. Callable by the trusted factory (e.g. the
+    /// PadRouter, which receives tokens on burnDev/flushBurn buys) and by the CurvePool (the Bond it posts at
+    /// graduation — Bond.poke()'s pool.collect() moves the Ambush reserve back to the Bond, which reads as a
+    /// "buy" and would otherwise trip the cap when a coin graduates inside the window). Never used for user wallets.
+    function exemptAddress(address a) external {
+        if (msg.sender != factory && msg.sender != curve) revert NotFactory();
         if (a != address(0)) isExempt[a] = true;
     }
 

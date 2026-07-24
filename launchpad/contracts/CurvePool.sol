@@ -22,6 +22,10 @@ interface IFeeConfig {
     function lpCreatorBps() external view returns (uint16);
 }
 
+interface ILaunchTokenGuard {
+    function exemptAddress(address a) external;
+}
+
 /// @title CurvePool — a bonding curve that IS a real Uniswap v3 pool (DEX + DexScreener from block one)
 /// @notice Instead of a math curve holding ETH off-DEX, the launch seeds the token as a single-sided
 /// concentrated v3 position spanning [start, grad] price. That position behaves like a bonding curve — buyers
@@ -337,6 +341,12 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
 
         address b = ICurveBondDeployer(bondDeployer).deploy(address(token), WETH, address(v3Factory), platform, address(this));
         bond = b;
+        // Exempt the Bond from the token's anti-snipe guard. Bond.poke()'s pool.collect() moves the Ambush
+        // reserve from the pool back to the Bond, which reads as a "buy" (from == pool); without this exemption a
+        // coin that graduates INSIDE the anti-snipe window would trip maxTx/maxWallet and brick poke() (and cap
+        // buys from the fresh Bond) until the window expires. try/catch so a token that doesn't expose the hook
+        // (e.g. a future variant) can never brick graduation — the exemption is best-effort hardening.
+        try ILaunchTokenGuard(address(token)).exemptAddress(b) {} catch {}
         IERC20(WETH).safeTransfer(b, raisedWeth);
         IERC20(token).safeTransfer(b, tokenPool); // = sherwoodTokens + ambushForBond
         ICurveBond(b).post(sherwoodWeth, sherwoodTokens, bountyWeth, ambushForBond);

@@ -1,5 +1,9 @@
 # Rewards
 
+> **Status: disabled in production.** No `RewardVault` is deployed (`rewardVault == 0`), so **no reward leg
+> is carved on any trade** — trades behave exactly as if this page didn't exist. The mechanism below is
+> documented for completeness and can be enabled later by deploying a vault and pointing the router at it.
+
 On top of the existing fee model, **every trade pays two additive 0.25% reward legs**. A **buy** routes 0.25% of its ETH to that coin's **Traders** pot; a **sell** routes 0.25% of its ETH-out to that coin's **Holders** pot. The legs are carved *on top* of the project's swap fee and forwarded to the `RewardVault` as raw ETH — they never touch the platform or creator escrows.
 
 > Two 0.25% legs, keyed by `(coin, epoch, side)`. Buy → **Traders** (rewards net accumulation). Sell → **Holders** (rewards size × time). Rewards are per-coin: a coin's legs only ever pay that coin's own traders and holders.

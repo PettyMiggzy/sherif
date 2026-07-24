@@ -32,26 +32,33 @@ docs/          GitBook- + Mintlify-ready docs generated from docs/src/*.md
 
 | Contract | Address |
 |----------|---------|
-| CurvePadFactory | `0x44855d49E73Ad103Df51871A072FEe8709E6A2d6` |
-| PadRouter | `0xAEFE708e04D3E2e9609e6bC987903b31818C2a46` |
+| CurvePadFactory | `0x59A9Fd6Fdb8B5Ed60ABF889b84d2C2fcc8a1dEDe` |
+| PadRouter | `0xeA5b12Cbba5B1790A3b00C5C5884484bb2AABFaa` |
+| FeeConfig | `0x96a7c260E215853c38aC82c891827e5Dbf50efD8` |
+| FloorCoopFactory | `0x8f33ED14d81D7986A708af4C2DAD7DAEe9778D95` |
+| PlatformFeeSplitter | `0xCADAbB14339BE77a2Fc4D4151B1E453b81940653` |
 | WETH | `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` |
 | UniswapV3Factory | `0x1f7d7550b1b028f7571e69a784071f0205fd2efa` |
 
 - RPC (public): `https://robinhoodchain.blockscout.com/api/eth-rpc`
 - Explorer: `https://robinhoodchain.blockscout.com`
-- Factory deploy block (for the indexer `START_BLOCK`): **12237606**
-- Contract owner (both): platform wallet `0xCD04919a51bc0866BbA48c300465425d8fF83160`
+- Factory deploy block (for the indexer `START_BLOCK`): **17646568**
+- Contract owner (all): cold wallet `0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf`
   (two-step transfer — pending accept via `pad/admin.html`; may already be done)
 
 ## Economics (already implemented in the contracts)
 
-- Total supply per coin: 1,000,000,000. Base fee: 1% per side (100 bps), max 4%.
-- **Buy 1% → platform.** **Sell 1% → creator** (escrowed; collect or buy+burn).
-- Above-1% "raised" fee splits 25% platform / 75% project.
-- **Graduation reward: 0.5 ETH → creator + 0.5 ETH → platform** (each capped at raise/4; rest funds the floor). Sherwood LP fees compound
-  back into the Bond via `poke()`.
-- Graduation "let it ride": eligible ~$30k mcap, ceiling ~$76k, dev-settable
-  target (default 40% up), 7-day abandon-proof timeout.
+- Total supply per coin: 1,000,000,000. Base fee: 1% per side (100 bps) — the Uniswap v3 pool's own fee tier.
+- **LP fee (the in-protocol 1%)** splits **platform 90% / creator 10%** by default, via `FeeConfig.lpCreatorBps`
+  (owner-tunable, creator cap 50%). Swept by `CurvePool.collectFees()`; principal never touched.
+- **Swap-desk fee (router)** splits **platform 45% / creator 45% / floor 10%** by default, via
+  `FeeConfig.swapSplit()` (owner-tunable, must sum to 100%).
+- **Graduation reward: 0.5 ETH → creator + 0.5 ETH → platform** (each capped at raise/4; rest funds the floor).
+  Sherwood LP fees compound back into the Bond via `poke()`.
+- **Graduation is ceiling-only at 4.2 ETH raised** (~$34k FDV). No dev-settable target, no timeout, no
+  "let it ride" — a coin graduates at exactly one price, the top of the curve.
+- **Rewards program disabled** — no `RewardVault` deployed; no reward legs on any trade.
+- Fees are all owner-tunable live via `FeeConfig` (`pad/admin.html` → Fee dials) — no redeploy.
 
 ## Status
 
