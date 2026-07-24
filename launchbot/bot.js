@@ -254,8 +254,10 @@ async function cmdForget(chatId, userId) {
   if (!addr) return send(chatId, 'You have no data stored. Nothing to erase.');
   // Fail CLOSED: if we can't read the balance, do NOT erase (the key deletion is
   // irreversible). A swallowed error must never look like "empty wallet" here.
+  // Use the STRICT (paid-RPC) balance — a lying free node reporting 0 must never
+  // be able to trigger permanent key deletion while funds are still on-chain.
   let bal;
-  try { bal = await chain.ethBalance(addr); }
+  try { bal = await chain.ethBalanceStrict(addr); }
   catch {
     return send(chatId,
       '⚠️ I couldn’t check your balance just now, so I won’t erase yet (in case funds are at risk).\n' +
@@ -618,10 +620,11 @@ async function main() {
     try {
       // fetch timeout must exceed the 50s long-poll, or idle polls abort early
       // (log spam + added latency). Give it 10s of headroom.
-      const updates = await tg('getUpdates', { timeout: 50, offset, allowed_updates: ['message', 'callback_query'] }, 60000);
+      const updates = await tg('getUpdates', { timeout: 50, offset, allowed_updates: ['message', 'edited_message', 'callback_query'] }, 60000);
       for (const u of updates) {
         offset = u.update_id + 1;
         if (u.message) onMessage(u.message).catch((e) => console.error('onMessage:', e.message));
+        else if (u.edited_message && moderation.isGroup(u.edited_message.chat)) moderation.onEditedGroupMessage(u.edited_message).catch((e) => console.error('onEdited:', e.message));
         else if (u.callback_query) onCallback(u.callback_query).catch((e) => console.error('onCallback:', e.message));
       }
     } catch (e) {

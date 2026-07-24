@@ -65,6 +65,13 @@ export function erc20(addr, runner = provider) { return new ethers.Contract(addr
 // launch precheck) — route them through the free-RPC-preferring read provider.
 export async function ethBalance(addr) { return readProvider.getBalance(addr); }
 
+// STRICT balance from the PAID RPC only. Use this for any IRREVERSIBLE decision
+// gated on balance (e.g. /forget deleting a custodial key): a lying/stale free
+// node reporting 0 must never be able to trigger permanent key deletion while
+// funds are on-chain. Reads/writes that the chain itself validates can use the
+// cheaper ethBalance; this one cannot.
+export async function ethBalanceStrict(addr) { return provider.getBalance(addr); }
+
 /**
  * Launch a token from `signer`'s wallet. Optional dev buy via `devBuyWei`.
  * Returns { hash, token, curve, pool, devBought }.

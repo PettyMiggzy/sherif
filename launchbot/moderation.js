@@ -407,6 +407,15 @@ async function runFilters(msg, sender) {
 }
 
 // ─────────────────────────────────────────────────── entrypoints ─────────────
+// An edited group message: re-run the passive spam filters only (so you can't post
+// benign text then edit a link/scam in). Never re-executes commands.
+export async function onEditedGroupMessage(msg) {
+  if (!isGroup(msg.chat) || !msg.from) return false;
+  if (await isAdmin(msg.chat.id, msg.from.id)) return true; // admins exempt
+  await runFilters(msg, msg.from).catch((e) => console.error('mod edit filter:', e?.message));
+  return true;
+}
+
 // Returns true if the message was a group event we handled (so bot.js stops).
 export async function onGroupMessage(msg) {
   if (!isGroup(msg.chat)) return false;
