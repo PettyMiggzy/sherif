@@ -954,6 +954,80 @@ function requireFloor() {
     throw new Error("The community floor opens when the Pad goes live (pre-deploy audit).");
 }
 
+// ── creator dev-bag vesting (TokenVestingLock) ────────────────────────────────
+// One shared, irrevocable locker. The creator escrows their just-bought dev bag with a
+// cliff+linear release so buyers can verify on-chain the dev can't dump. Two txs: an
+// EXACT-amount approve (Rule 1 — never infinite, to our verified lock only) then create.
+const VEST_DAY = 86400;
+function requireVesting() {
+  if (!isDeployed("tokenVestingLock"))
+    throw new Error("Dev-bag locking opens when the Pad goes live — the vesting lock isn't set yet.");
+}
+
+/// Approve + create an IRREVOCABLE vesting schedule for `beneficiary` (the dev). `amount` is a
+/// decimal token string (18-dp) — pass the EXACT bought balance for a full lock. linear:
+/// cliffDays=0. hard cliff: cliffDays=durationDays (nothing until the end, then 100%).
+export async function createVestingLock(token, beneficiary, amount, startTs = 0, cliffDays = 0, durationDays = 30) {
+  requireVesting();
+  if (!_signer) await connect();
+  const amt = ethers.parseUnits(plainAmount(amount), 18);
+  if (amt <= 0n) throw new Error("Nothing to lock.");
+  const lock = CONTRACTS.tokenVestingLock;
+  const erc = new ethers.Contract(token, ABIS.erc20, _signer);
+  const allowance = await erc.allowance(_account, lock);
+  if (allowance < amt) {
+    const atx = await erc.approve(lock, amt, await legacyOverrides()); // exact amount, our lock only, legacy tx
+    await atx.wait();
+  }
+  const dur = BigInt(Math.max(1, Math.round(durationDays * VEST_DAY)));
+  const cliff = BigInt(Math.max(0, Math.round(cliffDays * VEST_DAY)));
+  const c = new ethers.Contract(lock, ABIS.tokenVestingLock, _signer);
+  return guardedSend(c, "create", [token, beneficiary || _account, amt, BigInt(startTs || 0), cliff, dur], 0n, "Lock dev bag");
+}
+
+/// Release all currently-vested tokens of a schedule to its (fixed) beneficiary. Permissionless.
+export async function releaseVesting(id) {
+  requireVesting();
+  if (!_signer) await connect();
+  const c = new ethers.Contract(CONTRACTS.tokenVestingLock, ABIS.tokenVestingLock, _signer);
+  return guardedSend(c, "release", [BigInt(id)], 0n, "Release vested tokens");
+}
+
+/// Read a coin's dev lock for the badge/panel. Prefers the indexer (fast); falls back to a
+/// direct on-chain scan. Returns null when the lock isn't deployed or the coin has no dev lock
+/// (callers treat null as "no badge"). Sums the dev's schedules for this token.
+export async function devLockOf(token, dev) {
+  if (!isDeployed("tokenVestingLock")) return null;
+  if (hasApi()) {
+    try {
+      const j = await apiGet(`/api/coin/${token}/devlock`);
+      if (j && j.hasLock) return {
+        locked: BigInt(j.lockedWei || "0"), releasable: BigInt(j.releasableWei || "0"),
+        total: BigInt(j.totalWei || "0"), lockedPercent: Number(j.lockedPct || 0),
+        ids: j.ids || [], end: Number(j.end || 0),
+      };
+      if (j && j.hasLock === false) return null;
+    } catch { /* fall through to chain */ }
+  }
+  try {
+    const c = new ethers.Contract(CONTRACTS.tokenVestingLock, ABIS.tokenVestingLock, _read);
+    const ids = (await c.idsOfToken(token)).map((x) => Number(x));
+    if (!ids.length) return null;
+    const devLc = (dev || "").toLowerCase();
+    let locked = 0n, releasable = 0n, total = 0n, end = 0; const kept = [];
+    for (const id of ids) {
+      const s = await c.schedules(id);
+      if (devLc && s.beneficiary.toLowerCase() !== devLc) continue;
+      const [lk, rel] = await Promise.all([c.locked(id), c.releasable(id)]);
+      locked += BigInt(lk); releasable += BigInt(rel); total += BigInt(s.total);
+      end = Math.max(end, Number(s.start) + Number(s.duration));
+      kept.push(id);
+    }
+    if (!kept.length || total === 0n) return null;
+    return { locked, releasable, total, lockedPercent: Number((locked * 10000n) / total), ids: kept, end };
+  } catch { return null; }
+}
+
 // Restore an existing wallet session WITHOUT a popup (eth_accounts is silent), so the
 // connection persists across page navigations instead of forcing a reconnect every page.
 async function eagerConnect() {
@@ -984,6 +1058,7 @@ if (typeof window !== "undefined") {
     holders, trades, chainTrades, feeTotals,
     rewards, rewardStats, claimReward, claimAllRewards,
     floorInfo, floorDeposit, floorClaim, floorWithdraw,
+    createVestingLock, releaseVesting, devLockOf,
   };
   window.SheriffPad = window.RobinPad; // back-compat alias for existing pages
   window.dispatchEvent(new Event("robinpad:ready"));

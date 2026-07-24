@@ -50,6 +50,10 @@ export const CONTRACTS = {
   // ships alongside the next router deploy; the frontend stays inert until it's set.
   rewardVault: "",
 
+  // Our TokenVestingLock — one shared, IRREVOCABLE locker holding many creator dev-bag schedules
+  // (cliff + linear). Empty until deployed + verified; every UI/SDK path is a no-op while unset.
+  tokenVestingLock: "",
+
   // Our FloorCoopFactory — deploys a per-coin community floor vault (add to the buy-wall, earn dip-buy
   // fees, withdrawable after a cooldown). LIVE.
   floorCoopFactory: "0x564EDF561Bed46C972d5D44D84f5FAc9C5118668",
@@ -111,6 +115,19 @@ export const ABIS = {
     "function currentEpoch() view returns (uint256)",
     "function EPOCH() view returns (uint256)",
     "event Claimed(uint256 indexed epoch, address indexed coin, address indexed user, uint8 side, uint256 amount)",
+  ],
+  // TokenVestingLock — creator dev-bag vesting (cliff + linear). `create` needs a prior EXACT-amount
+  // ERC20 approve; `schedules(id)` feeds the countdown/beneficiary, the views feed the badge.
+  tokenVestingLock: [
+    "function create(address token, address beneficiary, uint256 amount, uint64 start, uint64 cliffDuration, uint64 duration) returns (uint256 id)",
+    "function release(uint256 id) returns (uint256 amount)",
+    "function releasable(uint256 id) view returns (uint256)",
+    "function locked(uint256 id) view returns (uint256)",
+    "function lockedPercent(uint256 id) view returns (uint256)",
+    "function idsOfBeneficiary(address who) view returns (uint256[])",
+    "function idsOfToken(address token) view returns (uint256[])",
+    "function schedules(uint256) view returns (address token, address beneficiary, uint128 total, uint128 released, uint64 start, uint64 cliff, uint64 duration)",
+    "event ScheduleCreated(uint256 indexed id, address indexed token, address indexed beneficiary, uint256 total, uint64 start, uint64 cliff, uint64 duration)",
   ],
   // Community floor vault: add ETH to the below-price buy-wall, earn dip-buy fees, withdraw after cooldown.
   floorCoopFactory: [
