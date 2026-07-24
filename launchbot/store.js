@@ -71,15 +71,41 @@ function decrypt(rec) {
 // creation and erasure persist SYNCHRONOUSLY and durably (fsync + atomic
 // rename). Only low-stakes updates (noteCoin) use the debounced path.
 function load() {
-  try { return JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { return { users: {} }; }
+  // Distinguish "file absent" (fresh install → empty db is correct) from "file
+  // present but unparseable" (corruption → we must NOT silently start empty and
+  // then overwrite every real wallet). On corruption, preserve the bad file and
+  // fail loud.
+  let raw;
+  try { raw = fs.readFileSync(FILE, 'utf8'); }
+  catch (e) {
+    if (e.code === 'ENOENT') return { users: {} };
+    throw e; // permissions/IO error — don't proceed blind
+  }
+  try {
+    const db = JSON.parse(raw);
+    if (!db || typeof db !== 'object' || typeof db.users !== 'object') throw new Error('bad shape');
+    return db;
+  } catch (e) {
+    const bak = `${FILE}.corrupt-${nowSecs()}`;
+    try { fs.renameSync(FILE, bak); } catch { /* keep original if rename fails */ }
+    console.error(`FATAL: ${FILE} is unreadable/corrupt (kept at ${bak}). Refusing to start empty and wipe wallets.`);
+    process.exit(1);
+  }
 }
 let db = load();
 let saveTimer = null;
 
 function writeDurable(data) {
   const tmp = FILE + '.tmp';
+  const buf = Buffer.from(data, 'utf8');
   const fd = fs.openSync(tmp, 'w', 0o600);
-  try { fs.writeSync(fd, data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try {
+    // writeSync can short-write (interrupt / near-full disk) — loop until the
+    // whole buffer is on the fd, or the keystore would be silently truncated.
+    let off = 0;
+    while (off < buf.length) off += fs.writeSync(fd, buf, off, buf.length - off);
+    fs.fsyncSync(fd);
+  } finally { fs.closeSync(fd); }
   fs.renameSync(tmp, FILE);
   // fsync the directory so the rename itself is durable across a power loss.
   try { const dfd = fs.openSync(DATA_DIR, 'r'); try { fs.fsyncSync(dfd); } finally { fs.closeSync(dfd); } } catch { /* dir fsync unsupported */ }
@@ -122,11 +148,13 @@ export function ensureWallet(userId) {
   const id = String(userId);
   if (!db.users[id]) {
     const w = ethers.Wallet.createRandom();
-    db.users[id] = { address: w.address, enc: encrypt(w.privateKey), createdTs: nowSecs() };
+    const enc = encrypt(w.privateKey);
+    db.users[id] = { address: w.address, enc, createdTs: nowSecs() };
     try {
       persistSync();
     } catch (e) {
       delete db.users[id]; // don't keep an in-memory-only wallet
+      _keyCache.delete(cacheKey(enc.salt, enc.N, enc.r, enc.p)); // and don't leave its derived key behind
       throw new Error('could not save your wallet — try again in a moment');
     }
   }

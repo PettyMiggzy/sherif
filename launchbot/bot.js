@@ -96,16 +96,27 @@ function feeLine() {
 // Basic content moderation for user-supplied coin name/ticker, so the bot can't
 // be used to mint slurs or brand-impersonation coins that would get it reported.
 // Not exhaustive — a first-line filter, extendable via BLOCKED_WORDS env.
-const BASE_BLOCK = [
-  'nigger', 'nigga', 'faggot', 'retard', 'kike', 'spic', 'chink', 'tranny', 'rape', 'cp',
-  'childporn', 'pedo', 'isis', 'nazi', 'hitler',
+//
+// HARD terms are matched against the normalized (punctuation/space-stripped) text
+// so "n i g g e r" is still caught; they're specific enough that false-positive
+// substrings are unlikely. WORD terms are short or brand-ish (would over-block as
+// substrings — "cp"→TCP, "rape"→Grape, "usdt"→a longer ticker) so they're matched
+// only as whole words. Name and ticker are checked separately.
+const HARD = ['nigger', 'nigga', 'faggot', 'kike', 'chink', 'tranny', 'childporn', 'nazi', 'hitler'];
+const WORD = [
+  'cp', 'rape', 'spic', 'retard', 'pedo', 'isis',
   'official', 'verified', 'binance', 'coinbase', 'robinhoodmarkets', 'telegram', 'tether', 'usdt', 'usdc',
+  ...String(process.env.BLOCKED_WORDS || '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean),
 ];
-const BLOCKLIST = [...BASE_BLOCK, ...String(process.env.BLOCKED_WORDS || '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean)];
-export function moderationReason(name, symbol) {
-  const hay = `${name} ${symbol}`.toLowerCase().replace(/[^a-z0-9]/g, '');
-  for (const w of BLOCKLIST) if (w && hay.includes(w)) return w;
+function fieldReason(s) {
+  const norm = String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const w of HARD) if (norm.includes(w)) return w;
+  const low = String(s).toLowerCase();
+  for (const w of WORD) if (new RegExp(`\\b${w}\\b`).test(low)) return w;
   return null;
+}
+export function moderationReason(name, symbol) {
+  return fieldReason(name || '') || fieldReason(symbol || '');
 }
 
 // Require the terms/age gate before any wallet action.
@@ -180,6 +191,7 @@ async function cmdMycoins(chatId, userId) {
 }
 
 async function cmdWithdraw(chatId, userId, arg) {
+  if (!await requireAgreed(chatId, userId)) return;
   const addr = store.addressOf(userId);
   if (!addr) return cmdStart(chatId, userId);
   const to = (arg || '').trim();
@@ -196,11 +208,12 @@ async function cmdWithdraw(chatId, userId, arg) {
 }
 
 async function cmdBuy(chatId, userId, args) {
+  if (!await requireAgreed(chatId, userId)) return;
   const addr = store.addressOf(userId);
   if (!addr) return cmdStart(chatId, userId);
   const [token, amt] = (args || '').trim().split(/\s+/);
-  if (!ethers.isAddress(token || '') || !(Number(amt) > 0)) {
-    return send(chatId, 'Usage: <code>/buy 0xToken 0.05</code>');
+  if (!ethers.isAddress(token || '') || !/^\d{1,9}(\.\d{1,18})?$/.test(amt || '') || !(Number(amt) > 0)) {
+    return send(chatId, 'Usage: <code>/buy 0xToken 0.05</code>  (plain ETH amount)');
   }
   const signer = store.signer(userId, chain.provider);
   await send(chatId, `⏳ Buying ${esc(amt)} ETH of ${short(token)}…`);
@@ -211,11 +224,12 @@ async function cmdBuy(chatId, userId, args) {
 }
 
 async function cmdSell(chatId, userId, args) {
+  if (!await requireAgreed(chatId, userId)) return;
   const addr = store.addressOf(userId);
   if (!addr) return cmdStart(chatId, userId);
   const [token, pctRaw] = (args || '').trim().split(/\s+/);
   const pct = Number(pctRaw);
-  if (!ethers.isAddress(token || '') || !(pct > 0 && pct <= 100)) {
+  if (!ethers.isAddress(token || '') || !/^\d{1,3}(\.\d{1,4})?$/.test(pctRaw || '') || !(pct > 0 && pct <= 100)) {
     return send(chatId, 'Usage: <code>/sell 0xToken 100</code>  (percent of your holding)');
   }
   const signer = store.signer(userId, chain.provider);
@@ -314,8 +328,11 @@ function askDevBuy(chatId) {
 }
 
 async function doLaunch(chatId, userId, { name, symbol, pfp, devBuyEth }) {
-  const addr = store.addressOf(userId);
-  const signer = store.signer(userId, chain.provider);
+  let addr, signer;
+  try {
+    addr = store.addressOf(userId);
+    signer = store.signer(userId, chain.provider); // throws if the wallet was /forget'd mid-wizard
+  } catch { return send(chatId, 'Your wallet isn’t available — run /start to set it up, then /launch again.'); }
   const bal = await chain.ethBalance(addr).catch(() => 0n);
 
   // devBuyEth is a validated decimal string; parse safely.
@@ -324,7 +341,7 @@ async function doLaunch(chatId, userId, { name, symbol, pfp, devBuyEth }) {
   catch { return send(chatId, 'That dev-buy amount wasn’t valid. Start over with /launch.'); }
 
   const feeEth = Number(CFG.launchFeeEth || 0);
-  const feeWei = feeEth > 0 ? ethers.parseEther(String(feeEth)) : 0n;
+  const feeWei = ethers.parseEther(CFG.launchFeeEth || '0'); // config guarantees a valid decimal string
 
   // Account for the WORST-CASE launch gas (the 2^24 cap) plus the fee tx gas, so
   // we never charge a fee and then fail the launch for want of gas. Gas on this

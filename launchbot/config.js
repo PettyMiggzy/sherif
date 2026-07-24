@@ -101,9 +101,13 @@ export const CFG = {
   announceChatId: (process.env.ANNOUNCE_CHAT_ID || '').trim(),
   // Slippage tolerance for /buy and /sell (percent), clamped to [0, 99].
   slippagePct: numEnv('SLIPPAGE_PCT', 12, 0, 99),
-  // Optional flat bot fee (in ETH) taken from a user's balance per launch — extra
-  // revenue on top of trade fees. 0 = off. Sent to FEE_WALLET.
-  launchFeeEth: (process.env.LAUNCH_FEE_ETH || '0').trim(),
+  // Optional flat bot fee (in ETH) per launch — extra revenue on top of trade
+  // fees. 0 = off. Sent to FEE_WALLET. Validated to a plain decimal string so it
+  // can never throw in parseEther (a sci-notation value would).
+  launchFeeEth: (() => {
+    const v = (process.env.LAUNCH_FEE_ETH || '0').trim();
+    return /^\d{1,9}(\.\d{1,18})?$/.test(v) ? v : '0';
+  })(),
   feeWallet: (process.env.FEE_WALLET || '').trim(),
   dataDir: (process.env.DATA_DIR || './data').trim(),
 };

@@ -9,9 +9,18 @@
 import { ethers } from 'ethers';
 import { CFG, CHAIN, ADDRESSES, ABI, DEFAULT_TAX } from './config.js';
 
-export const provider = new ethers.JsonRpcProvider(CFG.rpc, {
+export let provider = new ethers.JsonRpcProvider(CFG.rpc, {
   chainId: CHAIN.id, name: 'robinhood',
 }, { staticNetwork: true });
+
+// Test seam: swap in a mock provider for offline simulation. No effect in prod.
+export function __setProviderForTests(p) { provider = p; }
+
+// Bound how long we wait for a tx to mine. ethers' tx.wait() has NO default
+// timeout, so a stuck/underpriced tx would hang forever and (via the per-user
+// lock) lock that user out until a restart. 3 minutes is plenty for this L2.
+const WAIT_TIMEOUT_MS = 180_000;
+function waitFor(tx) { return tx.wait(1, WAIT_TIMEOUT_MS); }
 
 const iface = { factory: new ethers.Interface(ABI.factory) };
 
@@ -56,11 +65,11 @@ export async function launch(signer, { name, symbol, devBuyWei = 0n }) {
     const est = await factory.launch.estimateGas(params, { value });
     gasLimit = (est * 12n) / 10n;
   } catch { gasLimit = BigInt(CHAIN.perTxGasCap) - 1n; } // estimate hiccup → give it headroom (unused gas is refunded)
-  if (gasLimit > BigInt(CHAIN.perTxGasCap)) gasLimit = BigInt(CHAIN.perTxGasCap) - 1n;
+  if (gasLimit >= BigInt(CHAIN.perTxGasCap)) gasLimit = BigInt(CHAIN.perTxGasCap) - 1n;
 
   const ov = await legacyOv({ value, gasLimit });
   const tx = await factory.launch(params, ov);
-  const rc = await tx.wait();
+  const rc = await waitFor(tx);
 
   // Parse the Launched event for the deterministic addresses.
   let token, curve, pool, devBought = 0n;
@@ -92,7 +101,7 @@ export async function buy(signer, token, ethWei) {
   }
   const ov = await legacyOv({ value });
   const tx = await router.buy(token, minOut, ov);
-  const rc = await tx.wait();
+  const rc = await waitFor(tx);
   return { hash: tx.hash, receipt: rc };
 }
 
@@ -105,7 +114,7 @@ export async function sell(signer, token, amountWei) {
   if (allowance < amount) {
     const ov = await legacyOv();
     const atx = await t.approve(ADDRESSES.router, ethers.MaxUint256, ov);
-    await atx.wait();
+    await waitFor(atx);
   }
   const router = routerWith(signer);
   let minOutEth;
@@ -117,7 +126,7 @@ export async function sell(signer, token, amountWei) {
   }
   const ov = await legacyOv();
   const tx = await router.sell(token, amount, minOutEth, ov);
-  const rc = await tx.wait();
+  const rc = await waitFor(tx);
   return { hash: tx.hash, receipt: rc };
 }
 
@@ -131,7 +140,7 @@ export async function withdrawAll(signer, to) {
   if (bal <= cost) return null; // nothing to sweep after gas
   const value = bal - cost;
   const tx = await signer.sendTransaction({ to, value, type: 0, gasPrice, gasLimit });
-  await tx.wait();
+  await waitFor(tx);
   return { hash: tx.hash, sent: value };
 }
 
