@@ -577,7 +577,9 @@ async function main() {
 
   for (;;) {
     try {
-      const updates = await tg('getUpdates', { timeout: 50, offset, allowed_updates: ['message', 'callback_query'] });
+      // fetch timeout must exceed the 50s long-poll, or idle polls abort early
+      // (log spam + added latency). Give it 10s of headroom.
+      const updates = await tg('getUpdates', { timeout: 50, offset, allowed_updates: ['message', 'callback_query'] }, 60000);
       for (const u of updates) {
         offset = u.update_id + 1;
         if (u.message) onMessage(u.message).catch((e) => console.error('onMessage:', e.message));
