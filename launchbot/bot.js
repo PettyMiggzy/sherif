@@ -42,7 +42,7 @@ export const esc = (s) => String(s)
 const inFlight = new Set();
 async function exclusive(userId, chatId, fn) {
   const id = String(userId);
-  if (inFlight.has(id)) { await send(chatId, '⏳ Still processing your last action — give it a few seconds.'); return; }
+  if (inFlight.has(id)) { await send(chatId, '⏳ Still processing your last action, give it a few seconds.'); return; }
   inFlight.add(id);
   try { await fn(); } finally { inFlight.delete(id); }
 }
@@ -61,10 +61,10 @@ const menuKb = {
 // ─────────────────────────────────────────────────────────── copy ────────────
 const termsLine = () => CFG.termsUrl ? `\n• Terms & privacy: ${esc(CFG.termsUrl)}` : '';
 const DISCLAIMER =
-  '<b>Before you start — please read.</b>\n\n' +
+  '<b>Before you start, please read.</b>\n\n' +
   '• This bot creates a <b>custodial wallet</b> for you. The bot holds its key (encrypted). ' +
   'Anything in it is at risk if the bot server is compromised. <b>Keep only what you plan to use, and /withdraw the rest.</b>\n' +
-  '• Coins here are <b>experimental, extremely high risk</b> tokens with no intrinsic value — you can lose everything. ' +
+  '• Coins here are <b>experimental, extremely high risk</b> tokens with no intrinsic value, you can lose everything. ' +
   'This is <b>not an offer of securities, not investment advice</b>, and nothing here is a promise of profit.\n' +
   '• You are solely responsible for what you create and trade. Do <b>not</b> launch coins that impersonate people/brands, ' +
   'mislead buyers, or are illegal where you are.\n' +
@@ -74,20 +74,20 @@ const DISCLAIMER =
   termsLine();
 
 const HELP =
-  '<b>Robin Labs Launch Bot</b> — launch & trade on Robinhood Chain.\n\n' +
+  '<b>Robin Labs Launch Bot</b>: launch & trade on Robinhood Chain.\n\n' +
   '<b>Commands</b>\n' +
-  '/start — set up your wallet + menu\n' +
-  '/launch — create a new coin (name → ticker → image → optional dev-buy)\n' +
-  '/balance — your ETH + coins\n' +
-  '/deposit — show your deposit address\n' +
-  '/withdraw &lt;address&gt; — send your ETH out\n' +
-  '/buy &lt;token&gt; &lt;eth&gt; — buy a coin\n' +
-  '/sell &lt;token&gt; &lt;percent&gt; — sell part of a holding\n' +
-  '/mycoins — coins you launched\n' +
-  '/cancel — abort the current step\n' +
-  '/disclaimer — risks &amp; how custody works\n' +
-  '/forget — erase all your data (withdraw first!)\n' +
-  '/paysupport — support & disputes\n\n' +
+  '/start: set up your wallet + menu\n' +
+  '/launch: create a new coin (name → ticker → image → optional dev-buy)\n' +
+  '/balance: your ETH + coins\n' +
+  '/deposit: show your deposit address\n' +
+  '/withdraw &lt;address&gt;: send your ETH out\n' +
+  '/buy &lt;token&gt; &lt;eth&gt;: buy a coin\n' +
+  '/sell &lt;token&gt; &lt;percent&gt;: sell part of a holding\n' +
+  '/mycoins: coins you launched\n' +
+  '/cancel: abort the current step\n' +
+  '/disclaimer: risks &amp; how custody works\n' +
+  '/forget: erase all your data (withdraw first!)\n' +
+  '/paysupport: support & disputes\n\n' +
   `<i>Fees: every coin pays the pad's baseline 1% per trade. ${feeLine()}</i>`;
 
 function feeLine() {
@@ -127,7 +127,7 @@ export function moderationReason(name, symbol) {
 // Require the terms/age gate before any wallet action.
 async function requireAgreed(chatId, userId) {
   if (store.hasAgreed(userId)) return true;
-  await send(chatId, 'Please run /start and tap <b>“I agree”</b> first — it takes one tap.',
+  await send(chatId, 'Please run /start and tap <b>“I agree”</b> first, it takes one tap.',
     { reply_markup: { inline_keyboard: [[{ text: '✅ Review & agree', callback_data: 'review' }]] } });
   return false;
 }
@@ -141,7 +141,7 @@ async function cmdStart(chatId, userId) {
       `👋 <b>Welcome to Robin Labs.</b>\n\n${DISCLAIMER}\n\n` +
       `Tap <b>“I agree”</b> to confirm you’re 18+, in a permitted jurisdiction, and accept the risks. ` +
       `I’ll create your wallet after that.`,
-      { reply_markup: { inline_keyboard: [[{ text: '✅ I agree — create my wallet', callback_data: 'agree' }]] } });
+      { reply_markup: { inline_keyboard: [[{ text: '✅ I agree, create my wallet', callback_data: 'agree' }]] } });
   }
   return showWallet(chatId, userId, '👋 <b>Welcome back.</b>');
 }
@@ -154,7 +154,7 @@ async function showWallet(chatId, userId, head) {
     `<b>Your deposit address</b>\n<code>${addr}</code>\n` +
     `Balance: <b>${fmtEth(bal)} ETH</b>\n\n` +
     `Send ETH (Robinhood Chain) to that address, then tap <b>Launch a coin</b>. ` +
-    `Keep only what you’ll use — /withdraw the rest.`,
+    `Keep only what you’ll use, and /withdraw the rest.`,
     { reply_markup: menuKb });
 }
 
@@ -162,7 +162,7 @@ async function showWallet(chatId, userId, head) {
 async function cmdAgree(chatId, userId) {
   store.ensureWallet(userId);
   store.markAgreed(userId);
-  await showWallet(chatId, userId, '✅ <b>Thanks — you’re set.</b> Wallet created.');
+  await showWallet(chatId, userId, '✅ <b>Thanks, you’re set.</b> Wallet created.');
 }
 
 async function cmdBalance(chatId, userId) {
@@ -173,7 +173,7 @@ async function cmdBalance(chatId, userId) {
   let body = `💰 <b>Your wallet</b>\n<code>${addr}</code>\nBalance: <b>${fmtEth(bal)} ETH</b>`;
   if (coins.length) {
     body += '\n\n<b>Coins you launched</b>\n' + coins.slice(0, 10)
-      .map((c) => `• $${esc(c.symbol)} — <a href="${coinUrl(c.token)}">chart</a> · <code>${short(c.token)}</code>`).join('\n');
+      .map((c) => `• $${esc(c.symbol)}: <a href="${coinUrl(c.token)}">chart</a> · <code>${short(c.token)}</code>`).join('\n');
   }
   await send(chatId, body, { reply_markup: menuKb });
 }
@@ -183,7 +183,7 @@ async function cmdDeposit(chatId, userId) {
   const addr = store.ensureWallet(userId);
   await send(chatId,
     `📥 <b>Deposit address</b> (Robinhood Chain only)\n<code>${addr}</code>\n\n` +
-    `Send ETH here, then /launch or /buy. Only send assets on <b>Robinhood Chain (id 4663)</b> — ` +
+    `Send ETH here, then /launch or /buy. Only send assets on <b>Robinhood Chain (id 4663)</b>, ` +
     `other chains will be lost.`);
 }
 
@@ -261,7 +261,7 @@ async function cmdForget(chatId, userId) {
   catch {
     return send(chatId,
       '⚠️ I couldn’t check your balance just now, so I won’t erase yet (in case funds are at risk).\n' +
-      'Try /forget again in a moment, or — if you’re sure — send <code>/forget confirm</code> to erase regardless.');
+      'Try /forget again in a moment, or, if you’re sure, send <code>/forget confirm</code> to erase regardless.');
   }
   if (bal > 0n) {
     return send(chatId,
@@ -273,17 +273,17 @@ async function cmdForget(chatId, userId) {
 }
 async function doForget(chatId, userId) {
   store.forget(userId);
-  await send(chatId, '🗑️ Done — your wallet key, address and launch history have been erased from the bot. (On-chain history is public and can’t be deleted.)');
+  await send(chatId, '🗑️ Done. Your wallet key, address and launch history have been erased from the bot. (On-chain history is public and can’t be deleted.)');
 }
 
 // ───────────────────────────────────────────── launch wizard (multi-step) ────
 async function launchStart(chatId, userId) {
   if (!await requireAgreed(chatId, userId)) return;
   const wait = store.cooldownLeft(userId, 'launch');
-  if (wait > 0) return send(chatId, `⏳ You just launched — please wait ${wait}s before creating another coin.`);
+  if (wait > 0) return send(chatId, `⏳ You just launched, please wait ${wait}s before creating another coin.`);
   store.ensureWallet(userId);
   store.setSession(userId, { flow: 'launch', step: 'name' });
-  await send(chatId, '🚀 <b>New coin</b> — step 1 of 4\n\nSend the <b>name</b> (e.g. <i>My Coin</i>). /cancel to stop.');
+  await send(chatId, '🚀 <b>New coin</b>: step 1 of 4\n\nSend the <b>name</b> (e.g. <i>My Coin</i>). /cancel to stop.');
 }
 
 async function handleLaunchStep(chatId, userId, msg) {
@@ -295,7 +295,7 @@ async function handleLaunchStep(chatId, userId, msg) {
     if (!text || text.length > 32) { await send(chatId, 'Send a name up to 32 characters.'); return true; }
     if (moderationReason(text, '')) { await send(chatId, 'That name isn’t allowed (impersonation or prohibited content). Pick another.'); return true; }
     store.setSession(userId, { ...s, step: 'symbol', name: text });
-    await send(chatId, `Name: <b>${esc(text)}</b> ✓\n\nStep 2 of 4 — send the <b>ticker</b> (2–10 letters, e.g. <i>ROBIN</i>).`);
+    await send(chatId, `Name: <b>${esc(text)}</b> ✓\n\nStep 2 of 4: send the <b>ticker</b> (2–10 letters, e.g. <i>ROBIN</i>).`);
     return true;
   }
   if (s.step === 'symbol') {
@@ -303,7 +303,7 @@ async function handleLaunchStep(chatId, userId, msg) {
     if (!/^[A-Z0-9]{2,10}$/.test(sym)) { await send(chatId, 'Ticker must be 2–10 letters/numbers, e.g. ROBIN.'); return true; }
     if (moderationReason(s.name || '', sym)) { await send(chatId, 'That ticker isn’t allowed. Pick another.'); return true; }
     store.setSession(userId, { ...s, step: 'image', symbol: sym });
-    await send(chatId, `Ticker: <b>$${esc(sym)}</b> ✓\n\nStep 3 of 4 — send an <b>image</b> for the coin (photo), or type <b>skip</b>.`);
+    await send(chatId, `Ticker: <b>$${esc(sym)}</b> ✓\n\nStep 3 of 4: send an <b>image</b> for the coin (photo), or type <b>skip</b>.`);
     return true;
   }
   if (s.step === 'image') {
@@ -338,7 +338,7 @@ async function handleLaunchStep(chatId, userId, msg) {
 
 function askDevBuy(chatId) {
   return send(chatId,
-    'Step 4 of 4 — how much ETH for your <b>first buy</b> (optional)?\n' +
+    'Step 4 of 4: how much ETH for your <b>first buy</b> (optional)?\n' +
     'Send an amount like <b>0.1</b>, or <b>0</b> to skip. You need enough ETH in your wallet for this + gas.');
 }
 
@@ -347,7 +347,7 @@ async function doLaunch(chatId, userId, { name, symbol, pfp, devBuyEth }) {
   try {
     addr = store.addressOf(userId);
     signer = store.signer(userId, chain.provider); // throws if the wallet was /forget'd mid-wizard
-  } catch { return send(chatId, 'Your wallet isn’t available — run /start to set it up, then /launch again.'); }
+  } catch { return send(chatId, 'Your wallet isn’t available. Run /start to set it up, then /launch again.'); }
   const bal = await chain.ethBalance(addr).catch(() => 0n);
 
   // devBuyEth is a validated decimal string; parse safely.
@@ -398,7 +398,7 @@ async function doLaunch(chatId, userId, { name, symbol, pfp, devBuyEth }) {
   // Best-effort pfp upload (the custodial key is the coin's dev, so it can sign).
   if (pfp) {
     try { await setProfile(signer, res.token, { pfpDataUrl: pfp }); await send(chatId, '🖼️ Image set.'); }
-    catch (e) { await send(chatId, `(couldn’t set the image right now — ${esc(shortErr(e))}. You can set it later on the site.)`); }
+    catch (e) { await send(chatId, `(couldn’t set the image right now, ${esc(shortErr(e))}. You can set it later on the site.)`); }
   }
 
   // Optional on-chain bot fee, charged AFTER a successful launch (NOT via

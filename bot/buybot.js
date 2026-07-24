@@ -229,7 +229,7 @@ async function dashboard(info, trades) {
   const vol = trades ? volumeUsd(trades, price) : null;
   await holderCount().catch(() => {});
   const L = [];
-  L.push(`<b>🐺 $${meta.symbol}</b> — ${meta.name}`);
+  L.push(`<b>🐺 $${meta.symbol}</b>, ${meta.name}`);
   L.push(`📊 Price: <b>${usdStr(price)}</b>`);
   L.push(`🏦 Market Cap: <b>$${fmt(info.marketCap || 0, 0)}</b>`);
   if (info.token?.price1H != null || info.token?.price24H != null)
@@ -269,7 +269,7 @@ async function buildBuyMsg(t, info, seenSet) {
 
 // ---------- command router ----------
 const HELP = [
-  '<b>🐺 Sheriff Bot — commands</b>', '',
+  '<b>🐺 Sheriff Bot: commands</b>', '',
   '📊 <b>Market</b>',
   '/price · /mc · /stats · /curve · /king · /vol · /supply · /holders',
   '🏆 <b>Community</b>',
@@ -312,13 +312,13 @@ async function handleCommand(cmd, args, m) {
       const tb = topBuyers(trades||[], Number(info.currentPrice)||0);
       if (!tb.length) return sendText('No buys in the recent window yet.', chat);
       const medals = ['🥇','🥈','🥉','4️⃣','5️⃣'];
-      const rows = tb.map((b,i)=>`${medals[i]||'▫️'} <a href="${cfg.explorer}/address/${b.a}">${short(b.a)}</a> — ${compact(b.tok)} ${meta.symbol} (${usdStr(b.usd)})`);
+      const rows = tb.map((b,i)=>`${medals[i]||'▫️'} <a href="${cfg.explorer}/address/${b.a}">${short(b.a)}</a>: ${compact(b.tok)} ${meta.symbol} (${usdStr(b.usd)})`);
       return sendText(`🏆 <b>Top buyers</b> (recent)\n`+rows.join('\n'), chat, linkKb()); }
     case 'recent': case 'trades': { if (!info) return apiDown(chat);
       const price = Number(info.currentPrice)||0;
       const buys = (trades||[]).filter(isBuy).sort((a,b)=>b.id-a.id).slice(0,5);
       if (!buys.length) return sendText('No recent buys.', chat);
-      const rows = buys.map(t=>`🟢 ${compact(Math.abs(+t.tokenChange))} ${meta.symbol} · ${usdStr(Math.abs(+t.tokenChange)*price)} — ${short(String(t.to).toLowerCase())}`);
+      const rows = buys.map(t=>`🟢 ${compact(Math.abs(+t.tokenChange))} ${meta.symbol} · ${usdStr(Math.abs(+t.tokenChange)*price)} by ${short(String(t.to).toLowerCase())}`);
       return sendText(`🧾 <b>Recent buys</b>\n`+rows.join('\n'), chat, linkKb()); }
     case 'info': { if (!info) return apiDown(chat);
       await holderCount().catch(() => {});
@@ -335,10 +335,10 @@ async function handleCommand(cmd, args, m) {
     case 'buy': return sendText(`🪙 Buy $${meta.symbol} on ape.store:\n${cfg.apePage}`, chat, linkKb());
     case 'links': case 'socials': return sendText(
       `🔗 <b>$${meta.symbol} links</b>\n📈 Chart: ${cfg.apePage}\n𝕏 ${cfg.x}\n✈️ ${cfg.tg}${cfg.web?`\n🌐 ${cfg.web}`:''}`, chat, linkKb());
-    case 'quote': return sendText(`🐺 <i>"${pick(QUOTES)}"</i>\n— The Sheriff`, chat);
+    case 'quote': return sendText(`🐺 The Sheriff says:\n<i>"${pick(QUOTES)}"</i>`, chat);
     case 'gm': return sendText(`☀️ GM, tax collectors. Another day to protect the rich. 🐺💰`, chat);
     case 'shill': return sendAlert(
-      `🐺 <b>$${meta.symbol} — Sheriff of Nottingham</b>\n<i>Takes from the poor. Feeds his greed.</i>\n\n`+
+      `🐺 <b>$${meta.symbol}, Sheriff of Nottingham</b>\n<i>Takes from the poor. Feeds his greed.</i>\n\n`+
       `The taxman meme on Robinhood Chain. He keeps ALL the taxes.\n\n`+
       `📜 <code>${cfg.token}</code>\n📈 ${cfg.apePage}`, chat, linkKb());
 
@@ -348,14 +348,14 @@ async function handleCommand(cmd, args, m) {
       const uid = String(m.from.id);
       const claimed = (store.pfpUsed || []).includes(uid);
       if (claimed && !isAdmin)
-        return sendText(`🐺 You already claimed your free Sheriff PFP, ${uname(m.from)}. One per outlaw — now go buy some $${meta.symbol}.`, chat, linkKb());
+        return sendText(`🐺 You already claimed your free Sheriff PFP, ${uname(m.from)}. One per outlaw. Now go buy some $${meta.symbol}.`, chat, linkKb());
       sendText(`🎨 Deputizing you… minting a 1-of-1 <b>Sheriff PFP</b>, ${uname(m.from)}. Give it ~30–60s. 🐺🏹`, chat);
       generatePfp(m.from.id)
         .then(async (buf) => {
-          await sendPhotoBytes(chat, buf, `🐺 <b>Your Sheriff PFP</b>, ${uname(m.from)} — right-click / long-press to save.\nOne free per member. 📈 $${meta.symbol}`, linkKb());
+          await sendPhotoBytes(chat, buf, `🐺 <b>Your Sheriff PFP</b>, ${uname(m.from)}. Right-click / long-press to save.\nOne free per member. 📈 $${meta.symbol}`, linkKb());
           if (!isAdmin) { store.pfpUsed = [...new Set([...(store.pfpUsed || []), uid])]; saveState(); }
         })
-        .catch((e) => { console.error('pfp', e.message); sendText('⚠️ PFP forge jammed — try /pfp again in a moment.', chat); });
+        .catch((e) => { console.error('pfp', e.message); sendText('⚠️ PFP forge jammed. Try /pfp again in a moment.', chat); });
       return;
     }
 
@@ -380,7 +380,7 @@ async function handleCommand(cmd, args, m) {
     default: return; // unknown command: ignore
   }
 }
-const apiDown = (chat) => sendText('⚠️ Could not reach ape.store right now — try again in a moment.', chat);
+const apiDown = (chat) => sendText('⚠️ Could not reach ape.store right now. Try again in a moment.', chat);
 
 async function commandLoop() {
   if (!cfg.enableCommands) return;

@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Browse Projects - Robin Labs</title>
-<meta name="description" content="Browse every project on the Robin Labs pad - filter, sort and search live launches by volume, market cap and graduation progress on Robinhood Chain." />
+<title>Browse Projects: Robin Labs</title>
+<meta name="description" content="Browse every project on the Robin Labs pad, filter, sort and search live launches by volume, market cap and graduation progress on Robinhood Chain." />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
 <meta name="theme-color" content="#060803" />
-<meta property="og:title" content="Browse Projects - Robin Labs" />
-<meta property="og:description" content="Browse every live project on the Robin Labs pad - filter, sort and search launches on Robinhood Chain." />
+<meta property="og:title" content="Browse Projects: Robin Labs" />
+<meta property="og:description" content="Browse every live project on the Robin Labs pad, filter, sort and search launches on Robinhood Chain." />
 <meta property="og:image" content="assets/favicon-512.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -379,7 +379,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <!-- PAGE HEADING -->
   <section class="sec" style="padding-top:34px">
     <h1 style="font-size:clamp(2rem,4.6vw,3rem);letter-spacing:-.01em">Browse <span class="lime">Projects</span></h1>
-    <p style="color:var(--dim);font-size:1.05rem;max-width:60ch;margin:12px 0 4px;line-height:1.5">Every live launch on the Robin Labs pad - filter, sort and search by volume, market cap and graduation progress.</p>
+    <p style="color:var(--dim);font-size:1.05rem;max-width:60ch;margin:12px 0 4px;line-height:1.5">Every live launch on the Robin Labs pad, filter, sort and search by volume, market cap and graduation progress.</p>
     <div class="cta" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px">
       <a class="btn btn-lime" href="create.html">Launch a project →</a>
     </div>
@@ -781,7 +781,7 @@ async function initBoard() {
   boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:8 }).then(r => {
     const el = $('trendCards'); if (!el) return;
     const top = r.coins || [];
-    el.innerHTML = top.length ? top.map(tcard).join('') : `<div class="empty" style="padding:14px;grid-column:1/-1">No live projects yet - <a href="create.html">launch the first</a>.</div>`;
+    el.innerHTML = top.length ? top.map(tcard).join('') : `<div class="empty" style="padding:14px;grid-column:1/-1">No live projects yet, <a href="create.html">launch the first</a>.</div>`;
     const sec = document.getElementById('trendsec'); if (sec && !top.length) sec.style.display = 'none'; // hide the whole trending block until there are coins
   });
   boardQuery({ sort:'top', filter:'graduated', q:'', offset:0, limit:3 }).then(r => {

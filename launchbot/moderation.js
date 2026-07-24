@@ -149,7 +149,7 @@ async function delMsg(chatId, msgId) { return call('deleteMessage', { chat_id: c
 async function cmdBan(msg, parts) {
   const t = targetFromMessage(msg, parts);
   if (!t) return reply(msg, 'Reply to a user (or pass their numeric id) to ban: <code>/ban</code> (as a reply).');
-  if (await isAdmin(msg.chat.id, t.id)) return reply(msg, 'That user is an admin — I won’t ban an admin.');
+  if (await isAdmin(msg.chat.id, t.id)) return reply(msg, 'That user is an admin, I won’t ban an admin.');
   const err = enforceErr(await doBan(msg.chat.id, t.id, 0, true));
   if (err) return reply(msg, `❌ ${err}`);
   mod.resetWarns(msg.chat.id, t.id);
@@ -160,12 +160,12 @@ async function cmdUnban(msg, parts) {
   if (!t) return reply(msg, 'Reply to (or pass the id of) the user to unban.');
   const err = enforceErr(await doUnban(msg.chat.id, t.id));
   if (err) return reply(msg, `❌ ${err}`);
-  return reply(msg, `♻️ Unbanned ${mention(t)} — they can rejoin.`);
+  return reply(msg, `♻️ Unbanned ${mention(t)}. They can rejoin.`);
 }
 async function cmdKick(msg, parts) {
   const t = targetFromMessage(msg, parts);
   if (!t) return reply(msg, 'Reply to a user to kick.');
-  if (await isAdmin(msg.chat.id, t.id)) return reply(msg, 'That user is an admin — I won’t kick an admin.');
+  if (await isAdmin(msg.chat.id, t.id)) return reply(msg, 'That user is an admin, I won’t kick an admin.');
   const err = enforceErr(await doBan(msg.chat.id, t.id, 0, false));
   if (err) return reply(msg, `❌ ${err}`);
   await doUnban(msg.chat.id, t.id); // ban→unban = kick (they may rejoin)
@@ -174,7 +174,7 @@ async function cmdKick(msg, parts) {
 async function cmdMute(msg, parts) {
   const t = targetFromMessage(msg, parts);
   if (!t) return reply(msg, 'Reply to a user to mute: <code>/mute 2h</code> (optional duration).');
-  if (await isAdmin(msg.chat.id, t.id)) return reply(msg, 'That user is an admin — I can’t mute an admin.');
+  if (await isAdmin(msg.chat.id, t.id)) return reply(msg, 'That user is an admin, I can’t mute an admin.');
   // First non-target token may be a duration; the rest is a reason.
   const firstTok = msg.reply_to_message ? (parts || '').trim().split(/\s+/)[0] : (parts || '').trim().split(/\s+/).slice(1)[0];
   const until = parseUntil(firstTok);
@@ -202,7 +202,7 @@ async function cmdWarn(msg, parts) {
     await doMute(msg.chat.id, t.id, nowSecs() + muteMins * 60);
     return reply(msg, `⚠️ ${mention(t)} hit ${warnLimit}/${warnLimit} warns → muted ${muteMins}m.${reason ? `\nReason: ${esc(reason)}` : ''}`);
   }
-  return reply(msg, `⚠️ Warned ${mention(t)} — ${n}/${warnLimit}.${reason ? ` (${esc(reason)})` : ''}`);
+  return reply(msg, `⚠️ Warned ${mention(t)}: ${n}/${warnLimit}.${reason ? ` (${esc(reason)})` : ''}`);
 }
 async function cmdUnwarn(msg, parts) {
   const t = targetFromMessage(msg, parts);
@@ -261,7 +261,7 @@ async function cmdSetRules(msg, parts) {
   mod.setRules(msg.chat.id, text);
   return reply(msg, '📜 Rules updated.');
 }
-async function cmdLock(msg) { mod.setLockdown(msg.chat.id, true); return reply(msg, '🔒 Lockdown ON — new joiners are muted on entry. <code>/unlock</code> to lift.'); }
+async function cmdLock(msg) { mod.setLockdown(msg.chat.id, true); return reply(msg, '🔒 Lockdown ON. New joiners are muted on entry. <code>/unlock</code> to lift.'); }
 async function cmdUnlock(msg) { mod.setLockdown(msg.chat.id, false); return reply(msg, '🔓 Lockdown OFF.'); }
 
 async function cmdSettings(msg, parts) {
@@ -293,16 +293,16 @@ async function cmdSettings(msg, parts) {
 const MODHELP =
   '<b>🛡️ Group moderation</b>\n\n' +
   '<b>Admins</b> (reply to a user, or pass their numeric id):\n' +
-  '/ban · /unban · /kick — remove a user\n' +
-  '/mute [10m|2h|1d] · /unmute — timed silence\n' +
-  '/warn [reason] · /unwarn · /warns — strikes (auto-mute at the limit)\n' +
-  '/del · /purge — delete the replied message / a range\n' +
-  '/pin · /unpin — manage the pinned message\n' +
-  '/lock · /unlock — anti-raid lockdown\n' +
-  '/setrules … · /set … — configure (see <code>/set</code>)\n\n' +
+  '/ban · /unban · /kick: remove a user\n' +
+  '/mute [10m|2h|1d] · /unmute: timed silence\n' +
+  '/warn [reason] · /unwarn · /warns: strikes (auto-mute at the limit)\n' +
+  '/del · /purge: delete the replied message / a range\n' +
+  '/pin · /unpin: manage the pinned message\n' +
+  '/lock · /unlock: anti-raid lockdown\n' +
+  '/setrules … · /set …: configure (see <code>/set</code>)\n\n' +
   '<b>Anyone</b>:\n' +
-  '/rules — show the rules\n' +
-  '/report — reply to flag a message to admins\n\n' +
+  '/rules: show the rules\n' +
+  '/report: reply to flag a message to admins\n\n' +
   '<i>Auto: new-member captcha, flood limiter, link filter, join-spike lockdown. I must be an admin (Ban + Delete) to enforce.</i>';
 
 // Admin-only command set.
@@ -329,7 +329,7 @@ async function onNewMembers(msg) {
   joins.set(String(chatId), recent);
   if (recent.length >= JOIN_BURST && !mod.isLockdown(chatId)) {
     mod.setLockdown(chatId, true);
-    await say(chatId, `🚨 <b>Join spike detected</b> (${recent.length} in ${JOIN_WINDOW}s) — <b>lockdown ON</b>. New members are muted until an admin runs <code>/unlock</code>.`);
+    await say(chatId, `🚨 <b>Join spike detected</b> (${recent.length} in ${JOIN_WINDOW}s), <b>lockdown ON</b>. New members are muted until an admin runs <code>/unlock</code>.`);
   }
 
   for (const u of members) {
@@ -341,7 +341,7 @@ async function onNewMembers(msg) {
     const r = await doMute(chatId, u.id, 0);
     if (r.__err) continue; // not admin → can't gate; leave them be
     const sent = await say(chatId,
-      `👋 Welcome ${mention(u)} — tap below within ${Math.round(CAPTCHA_SECS / 60) || 1} min to verify you’re human.`,
+      `👋 Welcome ${mention(u)}, tap below within ${Math.round(CAPTCHA_SECS / 60) || 1} min to verify you’re human.`,
       { reply_markup: { inline_keyboard: [[{ text: '✅ I’m human', callback_data: `cap:${u.id}` }]] } });
     if (sent && sent.message_id) captcha.set(`${chatId}:${u.id}`, { msgId: sent.message_id, at: Date.now() });
   }
@@ -408,7 +408,7 @@ async function runFilters(msg, sender) {
     if (!r.__err) {
       const n = mod.addWarn(chatId, sender.id);
       if (n >= s.warnLimit) { mod.resetWarns(chatId, sender.id); await doMute(chatId, sender.id, nowSecs() + s.muteMins * 60); await say(chatId, `🔗 ${mention(sender)} muted ${s.muteMins}m (links after ${s.warnLimit} warns).`); }
-      else await say(chatId, `🔗 Link removed — ${mention(sender)} please don’t post links. Warn ${n}/${s.warnLimit}.`);
+      else await say(chatId, `🔗 Link removed. ${mention(sender)} please don’t post links. Warn ${n}/${s.warnLimit}.`);
     }
     return true;
   }
