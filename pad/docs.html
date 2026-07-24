@@ -271,7 +271,11 @@ event Poked(int24 tick, uint128 bountyL, uint128 ambushL, uint256 sherwoodFees0,
   <!-- ─────────── INTEGRATE ─────────── -->
   <h2 id="bots"><span class="sec">03 · Integrate</span>Build a bot</h2>
   <p>Everything here is <strong>permissionless and public</strong> — no API key, no allow-list, no sign-up. If you can send a transaction, you can integrate. Three calls get you a working trade bot: watch launches, buy, sell.</p>
-  <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="c">// 1) WATCH new launches — one event on the factory</span>
+  <div class="note warn"><span class="lbl">Legacy transactions — required</span>Robinhood Chain has <strong>no EIP-1559</strong>, so a default ethers write (type-2) is rejected with <span class="m">-32601</span>. <strong>Every write must be a legacy (type-0) tx with an explicit <span class="m">gasPrice</span>.</strong> Define <span class="m">legacy()</span> once and spread it into every send — single trades stay far under the <span class="m">16,777,216</span> (2²⁴) per-tx gas cap.</div>
+  <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="c">// legacy overrides — spread into EVERY write (buy/sell/launch/graduate)</span>
+<span class="k">async function</span> legacy(provider){ <span class="k">const</span> { gasPrice } = <span class="k">await</span> provider.getFeeData(); <span class="k">return</span> { type: <span class="s">0</span>, gasPrice }; }
+
+<span class="c">// 1) WATCH new launches — one event on the factory</span>
 <span class="k">const</span> factory = <span class="k">new</span> ethers.Contract(FACTORY, [
   <span class="s">"event Launched(address indexed token,address indexed curve,address indexed pool,address dev,uint256 devBought)"</span>,
 ], provider);
@@ -282,11 +286,11 @@ factory.on(<span class="s">"Launched"</span>, (token, curve, pool, dev) => {
 <span class="c">// 2) BUY — native ETH in, no approval</span>
 <span class="k">const</span> value = ethers.parseEther(<span class="s">"0.1"</span>);
 <span class="k">const</span> q = <span class="k">await</span> router.buy.staticCall(token, <span class="s">0n</span>, { value });
-<span class="k">await</span> (<span class="k">await</span> router.buy(token, q * <span class="s">99n</span> / <span class="s">100n</span>, { value })).wait();
+<span class="k">await</span> (<span class="k">await</span> router.buy(token, q * <span class="s">99n</span> / <span class="s">100n</span>, { value, ...(<span class="k">await</span> legacy(signer.provider)) })).wait();
 
 <span class="c">// 3) SELL — one exact-amount approval, then sell</span>
-<span class="k">await</span> (<span class="k">await</span> erc20.approve(ROUTER, amountIn)).wait();
-<span class="k">await</span> (<span class="k">await</span> router.sell(token, amountIn, minOutEth)).wait();</pre></div>
+<span class="k">await</span> (<span class="k">await</span> erc20.approve(ROUTER, amountIn, <span class="k">await</span> legacy(signer.provider))).wait();
+<span class="k">await</span> (<span class="k">await</span> router.sell(token, amountIn, minOutEth, <span class="k">await</span> legacy(signer.provider))).wait();</pre></div>
   <div class="note"><span class="lbl">Skip the RPC crawl</span>For discovery, don't poll the chain — hit the <a href="#api">indexer API</a>: <span class="m">GET /api/coins?sort=new</span> for a snipe feed, <span class="m">?sort=trending</span> for what's hot, <span class="m">/api/trades/{token}</span> for a coin's flow. Every coin comes back with progress, mcap, price and 24h volume — no per-coin reads.</div>
   <p><strong>Ideas that print:</strong> snipe bot (buy on <span class="m">Launched</span>) · buy-alert / trending bot (poll the API → Telegram/X) · keeper (<span class="m">graduate()</span> is permissionless — fire it when <span class="m">ready()</span> flips) · copy-trade (mirror a wallet's <span class="m">Bought</span>/<span class="m">Sold</span>). Nothing to request, no rate limit on-chain — and every trade your bot routes still pays the coin's fee in-protocol, so the floor and the whole ecosystem grow with your volume. <em>Bring the bots.</em></p>
 
@@ -327,15 +331,19 @@ console.log(<span class="s">"launched"</span>, token);</pre></div>
 ];
 <span class="k">const</span> router = <span class="k">new</span> ethers.Contract(ROUTER, rAbi, signer);
 
+<span class="c">// legacy() = { type:0, gasPrice } — REQUIRED on every write (no EIP-1559 on Robinhood Chain)</span>
+<span class="k">async function</span> legacy(p){ <span class="k">const</span> { gasPrice } = <span class="k">await</span> p.getFeeData(); <span class="k">return</span> { type: <span class="s">0</span>, gasPrice }; }
+
 <span class="c">// BUY — native ETH in, no approval. Quote first, then apply slippage.</span>
-<span class="k">const</span> quoted = <span class="k">await</span> router.buy.staticCall(token, <span class="s">0n</span>, { value: ethers.parseEther(<span class="s">"0.1"</span>) });
+<span class="k">const</span> value = ethers.parseEther(<span class="s">"0.1"</span>);
+<span class="k">const</span> quoted = <span class="k">await</span> router.buy.staticCall(token, <span class="s">0n</span>, { value });
 <span class="k">const</span> minOut = quoted * <span class="s">99n</span> / <span class="s">100n</span>; <span class="c">// 1% slippage</span>
-<span class="k">await</span> (<span class="k">await</span> router.buy(token, minOut, { value: ethers.parseEther(<span class="s">"0.1"</span>) })).wait();
+<span class="k">await</span> (<span class="k">await</span> router.buy(token, minOut, { value, ...(<span class="k">await</span> legacy(signer.provider)) })).wait();
 
 <span class="c">// SELL — one EXACT-amount approval to the router, then sell.</span>
 <span class="k">const</span> erc20 = <span class="k">new</span> ethers.Contract(token, [<span class="s">"function approve(address,uint256) returns (bool)"</span>], signer);
-<span class="k">await</span> (<span class="k">await</span> erc20.approve(ROUTER, amountIn)).wait();
-<span class="k">await</span> (<span class="k">await</span> router.sell(token, amountIn, minOutEth)).wait();</pre></div>
+<span class="k">await</span> (<span class="k">await</span> erc20.approve(ROUTER, amountIn, <span class="k">await</span> legacy(signer.provider))).wait();
+<span class="k">await</span> (<span class="k">await</span> router.sell(token, amountIn, minOutEth, <span class="k">await</span> legacy(signer.provider))).wait();</pre></div>
 
   <h2 id="read"><span class="sec">03 · Integrate</span>Read curve state</h2>
   <p>The curve's ticks + the pool's current tick give you progress and market cap. (Or skip all of this and hit the <a href="#api">indexer API</a>, which precomputes it.)</p>

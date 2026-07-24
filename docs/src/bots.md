@@ -4,6 +4,23 @@ Everything on Robin Labs is **permissionless and public** — no API key, no
 allow-list, no sign-up. If you can send a transaction, you can integrate. This
 page is the fast path for bot devs: the three things you need and nothing else.
 
+## One gotcha first: legacy transactions
+
+Robinhood Chain has **no EIP-1559** — it doesn't implement `eth_maxPriorityFeePerGas`. A default ethers v6
+write sends a type-2 tx and the node rejects it with `-32601`, so **every write must be a legacy (type-0) tx
+with an explicit `gasPrice`.** Get it right once with a helper and reuse it on every send:
+
+```js
+// spread this into the overrides of every buy / sell / launch / graduate
+async function legacy(provider) {
+  const { gasPrice } = await provider.getFeeData();
+  return { type: 0, gasPrice };
+}
+```
+
+A single trade sits far under the chain's `16,777,216` (2²⁴) per-tx gas cap, so you only need a `gasLimit`
+if you batch many calls into one tx. (The [SDK](sdk.md) exports this as `legacyOverrides(provider)`.)
+
 ## The three calls
 
 **1. Watch for new launches** — subscribe to one event on the factory:
@@ -31,17 +48,19 @@ const router = new ethers.Contract(ROUTER,
   ["function buy(address token,uint256 minOut) payable returns (uint256)"], signer);
 
 const value = ethers.parseEther("0.1");
-const quoted = await router.buy.staticCall(token, 0n, { value });
-await (await router.buy(token, quoted * 99n / 100n, { value })).wait(); // 1% slippage
+const quoted = await router.buy.staticCall(token, 0n, { value });        // quote (no gas)
+const ov = await legacy(signer.provider);                                // legacy overrides — REQUIRED
+await (await router.buy(token, quoted * 99n / 100n, { value, ...ov })).wait(); // 1% slippage
 ```
 
 **3. Sell** — one exact-amount approval, then sell:
 
 ```js
 const erc20 = new ethers.Contract(token, ["function approve(address,uint256) returns (bool)"], signer);
-await (await erc20.approve(ROUTER, amountIn)).wait();
+const ov = await legacy(signer.provider);
+await (await erc20.approve(ROUTER, amountIn, ov)).wait();                 // approve is a write too — legacy
 const r = new ethers.Contract(ROUTER, ["function sell(address token,uint256 amountIn,uint256 minOutEth) returns (uint256)"], signer);
-await (await r.sell(token, amountIn, minOutEth)).wait();
+await (await r.sell(token, amountIn, minOutEth, await legacy(signer.provider))).wait();
 ```
 
 That's a working trade bot. See the [Integration Guide](integration.md) for the

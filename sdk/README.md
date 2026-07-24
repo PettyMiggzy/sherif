@@ -3,8 +3,9 @@
 Read the [Robin Labs Pad](https://robinlabs.io) with one import — live addresses,
 typed ABIs, and two read clients. **Read-only; it signs nothing.**
 
-- `RobinLabsAPI` — the indexer's fast JSON feed (browse, trades, stats, rewards). `fetch` only.
+- `RobinLabsAPI` — the indexer's fast JSON feed (browse, trades, stats). `fetch` only.
 - `RobinLabsChain` — direct on-chain reads (no indexer needed). Pass ethers v6 + a provider.
+- `legacyOverrides(provider)` — the one helper writes need (Robinhood Chain has no EIP-1559).
 
 ## Install
 
@@ -25,7 +26,6 @@ const { items } = await api.coins({ sort: "trending", filter: "live", limit: 60 
 const one       = await api.coin(items[0].token);            // enriched: progress, mcap, volume
 const trades    = await api.trades(items[0].token);          // exact-wei recent trades
 const totals    = await api.stats();                         // coins, graduated, 24h volume
-const rewards   = await api.rewards("0xWallet…");            // claimable (w/ proofs) + pending
 ```
 
 ## Read on-chain (no indexer)
@@ -48,10 +48,30 @@ const off = pad.onLaunch(({ token, curve, pool, dev }) => console.log("new coin"
 // off() to unsubscribe
 ```
 
+## Trade from a bot (write)
+
+The clients are read-only, but the SDK ships the addresses, the router ABI, and the one override every
+write needs. Bring your own signer — the SDK never touches your keys.
+
+```js
+import { ethers } from "ethers";
+import { ADDRESSES, ABI, CHAIN, legacyOverrides } from "@robinlabs/pad-sdk";
+
+const wallet = new ethers.Wallet(process.env.PK, new ethers.JsonRpcProvider(CHAIN.rpc));
+const router = new ethers.Contract(ADDRESSES.padRouter, ABI.router, wallet);
+
+const value  = ethers.parseEther("0.1");
+const quoted = await router.buy.staticCall(token, 0n, { value });
+await (await router.buy(token, quoted * 99n / 100n, { value, ...(await legacyOverrides(wallet.provider)) })).wait();
+```
+
+`legacyOverrides(provider)` → `{ type: 0, gasPrice }` is **required on every write** — Robinhood Chain has
+no EIP-1559, so a default type-2 tx is rejected with `-32601`.
+
 ## Also exported
 
 `CHAIN` (id 4663, rpc, explorer), `ADDRESSES` (the live verified stack), `ABI`
-(human-readable factory / router / floorCoopFactory / erc20), and `explorerUrl(addr)`.
+(human-readable factory / router / floorCoopFactory / erc20), `legacyOverrides(provider)`, and `explorerUrl(addr)`.
 
 Every contract is source-verified on [Blockscout](https://robinhoodchain.blockscout.com)
 and [Sourcify](https://sourcify.dev) — you can also pull ABIs straight from the explorer.

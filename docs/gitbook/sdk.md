@@ -49,6 +49,32 @@ const coop  = await pad.coop(token);      // per-coin FloorCoop LP vault (0x0 if
 const off = pad.onLaunch(({ token, curve, pool, dev }) => console.log("new coin", token));
 ```
 
+## Trade from a bot (write)
+
+The clients are read-only, but the SDK ships the addresses, the router ABI, and the one override every write
+needs — so a trading bot is a few lines. Bring your own signer; the SDK never touches your keys.
+
+```js
+import { ethers } from "ethers";
+import { ADDRESSES, ABI, CHAIN, legacyOverrides } from "@robinlabs/pad-sdk";
+
+const wallet = new ethers.Wallet(process.env.PK, new ethers.JsonRpcProvider(CHAIN.rpc));
+const router = new ethers.Contract(ADDRESSES.padRouter, ABI.router, wallet);
+
+// BUY — quote, then send as a legacy tx (Robinhood Chain has no EIP-1559)
+const value  = ethers.parseEther("0.1");
+const quoted = await router.buy.staticCall(token, 0n, { value });
+await (await router.buy(token, quoted * 99n / 100n, { value, ...(await legacyOverrides(wallet.provider)) })).wait();
+
+// SELL — one exact-amount approval to the router, then sell
+const erc20 = new ethers.Contract(token, ABI.erc20.concat("function approve(address,uint256) returns (bool)"), wallet);
+await (await erc20.approve(ADDRESSES.padRouter, amountIn, await legacyOverrides(wallet.provider))).wait();
+await (await router.sell(token, amountIn, minOutEth, await legacyOverrides(wallet.provider))).wait();
+```
+
+`legacyOverrides(provider)` returns `{ type: 0, gasPrice }` — **required on every write**, or the node rejects
+a default type-2 tx with `-32601`. See the [Integration Guide](integration.md) for launch/graduate/dev-fee flows.
+
 ## Exports
 
 | Export | What |
@@ -56,6 +82,7 @@ const off = pad.onLaunch(({ token, curve, pool, dev }) => console.log("new coin"
 | `CHAIN` | `{ id: 4663, hex, name, rpc, explorer, perTxGasCap }` |
 | `ADDRESSES` | The live, source-verified stack (factory, router, feeConfig, floorCoopFactory, splitter, WETH, v3 factory) |
 | `ABI` | Human-readable ABIs: `factory`, `router`, `floorCoopFactory`, `erc20` (ethers parses directly) |
+| `legacyOverrides(provider)` | `{ type: 0, gasPrice }` — spread into every write (Robinhood Chain has no EIP-1559) |
 | `explorerUrl(addr)` | Blockscout address link |
 | `RobinLabsAPI` / `RobinLabsChain` | The two read clients above |
 

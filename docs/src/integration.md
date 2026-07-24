@@ -2,6 +2,22 @@
 
 All snippets use **ethers v6**.
 
+## Legacy transactions (read this first)
+
+Robinhood Chain has **no EIP-1559**. A default ethers write sends a type-2 tx and the node rejects it with
+`-32601` (`eth_maxPriorityFeePerGas` unsupported), so **every write below must be a legacy (type-0) tx with an
+explicit `gasPrice`.** Define this once and spread it into every write's overrides:
+
+```js
+async function legacy(provider) {
+  const { gasPrice } = await provider.getFeeData();
+  return { type: 0, gasPrice };
+}
+```
+
+Single txs sit far under the chain's `16,777,216` (2²⁴) per-tx gas cap — only add a `gasLimit` if you batch
+many calls in one tx. (The [SDK](sdk.md) exports this as `legacyOverrides(provider)`.)
+
 ## Launch a coin
 
 One transaction. Send ETH with the call to make the creator's opening buy (≤2%), or send `0` for a clean launch.
@@ -29,12 +45,12 @@ const params = {
 
 // staticCall first to get addresses without spending gas, then send.
 const [token] = await factory.launch.staticCall(params, { value: 0n });
-const tx = await factory.launch(params, { value: ethers.parseEther("0.02") }); // opening buy
+const tx = await factory.launch(params, { value: ethers.parseEther("0.02"), ...(await legacy(signer.provider)) }); // opening buy
 await tx.wait();
 console.log("launched", token);
 ```
 
-> **The opening buy is anti-snipe, not a fee.** The ETH you send is *your own buy*, executed inside the launch tx before anyone else can trade — it isn't a platform charge. Capped at 2% of supply.
+> **The opening buy is anti-snipe, not a fee.** The ETH you send is *your own buy*, executed inside the launch tx before anyone else can trade — it isn't a platform charge. It's uncapped: it climbs the curve up to the graduation ceiling, and any ETH beyond what fills the curve is refunded.
 
 ## Buy & sell
 
@@ -47,14 +63,15 @@ const rAbi = [
 const router = new ethers.Contract(ROUTER, rAbi, signer);
 
 // BUY — native ETH in, no approval. Quote first, then apply slippage.
-const quoted = await router.buy.staticCall(token, 0n, { value: ethers.parseEther("0.1") });
+const value = ethers.parseEther("0.1");
+const quoted = await router.buy.staticCall(token, 0n, { value });
 const minOut = quoted * 99n / 100n; // 1% slippage
-await (await router.buy(token, minOut, { value: ethers.parseEther("0.1") })).wait();
+await (await router.buy(token, minOut, { value, ...(await legacy(signer.provider)) })).wait();
 
 // SELL — one EXACT-amount approval to the router, then sell.
 const erc20 = new ethers.Contract(token, ["function approve(address,uint256) returns (bool)"], signer);
-await (await erc20.approve(ROUTER, amountIn)).wait();
-await (await router.sell(token, amountIn, minOutEth)).wait();
+await (await erc20.approve(ROUTER, amountIn, await legacy(signer.provider))).wait();
+await (await router.sell(token, amountIn, minOutEth, await legacy(signer.provider))).wait();
 ```
 
 ## Read curve state
@@ -90,13 +107,13 @@ const curve = new ethers.Contract(curveAddr, [
 // Graduation is ceiling-only: ready() flips to true only once the curve fills to
 // gradTick. There's no creator target, no minimum, and no timeout. Anyone can then
 // graduate — this is the "Graduate" button / a keeper bot.
-if (await curve.ready()) await (await curve.graduate()).wait();
+if (await curve.ready()) await (await curve.graduate(await legacy(signer.provider))).wait();
 
 // Creator only: collect your escrowed sell fees — or buy + burn with them.
 const router = new ethers.Contract(ROUTER, [
   "function withdrawDev(address)", "function burnDev(address)",
 ], signer);
-await (await router.withdrawDev(token)).wait();
+await (await router.withdrawDev(token, await legacy(signer.provider))).wait();
 ```
 
 ## SDK reference (`assets/wallet.js`)

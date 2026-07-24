@@ -93,8 +93,9 @@ docs/          GitBook- + Mintlify-ready docs generated from docs/src/*.md
 
 - **Never commit secrets.** Real `.env` files are gitignored; only `.env.example`
   placeholders are tracked. Never commit an RPC key or private key.
-- **No AI fingerprints** in any public artifact (contracts, docs, frontend). The
-  audit write-ups were scrubbed of tooling references — keep it that way.
+- **Keep public artifacts clean and first-party.** Contracts, docs and frontend
+  should read as Robin Labs' own voice — no build-tool references, watermarks, or
+  internal notes in anything shipped publicly.
 - Keep `AUDIT.md` and `pad/overview.html` **private** (they detail attack
   surface) — share directly with an auditor, don't host them.
 - Brand: logo mark is `pad/assets/logo-mark.png`; brand color `#dce905`.

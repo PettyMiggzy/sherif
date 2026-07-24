@@ -3,7 +3,7 @@
 //
 // One import to read the pad's data: live addresses, typed (human-readable) ABIs,
 // and two read clients:
-//   • RobinLabsAPI   — the indexer's fast JSON feed (browse, trades, stats, rewards)
+//   • RobinLabsAPI   — the indexer's fast JSON feed (browse, trades, stats)
 //   • RobinLabsChain — direct on-chain reads (no indexer needed; ethers v6 provider)
 //
 // Zero build. ESM. The API client uses `fetch` only; the chain client needs ethers
@@ -35,6 +35,21 @@ export const ADDRESSES = {
 
 // Explorer link helper.
 export const explorerUrl = (addr) => `${CHAIN.explorer}/address/${addr}`;
+
+// ── The one gotcha for writes: legacy transactions ────────────────────────────
+// Robinhood Chain has NO EIP-1559 — it doesn't implement eth_maxPriorityFeePerGas. A default ethers v6
+// write sends a type-2 tx and the node rejects it with -32601 (and can corrupt the wallet's fee state),
+// so EVERY buy/sell/launch/graduate MUST be a legacy (type-0) tx with an explicit gasPrice. Spread this
+// into the overrides of every write and your bot just works:
+//   const ov = await legacyOverrides(provider);
+//   await router.buy(token, minOut, { value, ...ov });
+//   await router.sell(token, amountIn, minOut, ov);
+// Single trades sit far under the chain's 2^24 (~16.7M) per-tx gas cap, so no gasLimit clamp is needed
+// for a normal buy/sell — only mind the cap if you batch many calls into one tx.
+export async function legacyOverrides(provider) {
+  const fee = await provider.getFeeData();
+  return { type: 0, gasPrice: fee.gasPrice };
+}
 
 // Human-readable ABIs — ethers v6 parses these directly. Read + core write fns.
 export const ABI = {
@@ -93,9 +108,6 @@ export class RobinLabsAPI {
   holders(token, limit = 20) { return this._get(`/api/coin/${token}/holders?limit=${limit}`); }
   /** A coin's creator-set profile: { description, telegram, twitter, website, image, banner, updatedTs } or null. */
   profile(token) { return this._get(`/api/coin/${token}/meta`).then((r) => r.profile || null); }
-  /** A wallet's claimable (with Merkle proofs) + pending rewards. */
-  rewards(addr) { return this._get(`/api/rewards/${addr}`); }
-  rewardsStats() { return this._get("/api/rewards/stats"); }
 }
 
 // ── On-chain read client — works with no indexer; pass ethers v6 + a provider ──
@@ -126,4 +138,4 @@ export class RobinLabsChain {
   }
 }
 
-export default { CHAIN, ADDRESSES, ABI, explorerUrl, RobinLabsAPI, RobinLabsChain };
+export default { CHAIN, ADDRESSES, ABI, explorerUrl, legacyOverrides, RobinLabsAPI, RobinLabsChain };
