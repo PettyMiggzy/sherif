@@ -1,20 +1,20 @@
 # Indexer API
 
-An optional read API reads the on-chain events into a database and serves a fast browse feed, trending/top sorting, search, per-coin trades and volume — so you don't fan out dozens of RPC calls per page. It's read-only and signs nothing; the pad falls back to direct-RPC when it isn't configured.
+An optional read API reads the on-chain events into a database and serves a fast browse feed, trending/top sorting, search, per-coin trades and volume, so you don't fan out dozens of RPC calls per page. It's read-only and signs nothing; the pad falls back to direct-RPC when it isn't configured.
 
 | Route | Returns |
 |-------|---------|
 | `GET /health` | `{ ok, head, cursor, coins, trades }` |
 | `GET /api/stats` | Totals: coins, graduated, 24h volume & trades |
-| `GET /api/coins` | Browse feed — params below |
-| `GET /api/coin/:token` | One coin, fully enriched (progress, mcap, volume) — includes the profile |
+| `GET /api/coins` | Browse feed: params below |
+| `GET /api/coin/:token` | One coin, fully enriched (progress, mcap, volume), includes the profile |
 | `GET /api/trades/:token` | Recent trades (exact wei) |
-| `GET /api/holdings/:addr` | A wallet's [holdings](#holdings--holders) — coins it launched or holds, with card metadata |
+| `GET /api/holdings/:addr` | A wallet's [holdings](#holdings--holders): coins it launched or holds, with card metadata |
 | `GET /api/coin/:token/holders` | A coin's [top holders + count](#holdings--holders) |
 | `GET /api/coin/:token/meta` | The coin's creator-set [profile](#coin-profiles) (image/banner URLs + socials) |
-| `POST /api/coin/:token/meta` | Set the profile — **creator-signed** (only the coin's `dev`) |
+| `POST /api/coin/:token/meta` | Set the profile: **creator-signed** (only the coin's `dev`) |
 | `GET /media/:token/:kind` | The coin's image bytes (`kind` = `pfp` \| `banner`) |
-| `POST /rpc` | [Read-only JSON-RPC proxy](#read-proxy-rpc) — the pad's live reads, served + cached from the paid RPC |
+| `POST /rpc` | [Read-only JSON-RPC proxy](#read-proxy-rpc): the pad's live reads, served + cached from the paid RPC |
 
 ```http
 # sort: new | trending | top | graduated   filter: all | live | graduated
@@ -29,11 +29,11 @@ GET /api/coins?sort=trending&filter=live&q=wood&limit=60
   image, banner, description, telegram, twitter, website }   # joined from the profile (null until set)
 ```
 
-> **Built for scale.** The feed is served from precomputed snapshots (progress/mcap refreshed whenever a coin trades), so a page that lists thousands of live coins costs **one** request and **zero** per-coin RPC. Responses are cacheable (`max-age=5`) — put a CDN in front and a launch-day crowd hits cache, not the database.
+> **Built for scale.** The feed is served from precomputed snapshots (progress/mcap refreshed whenever a coin trades), so a page that lists thousands of live coins costs **one** request and **zero** per-coin RPC. Responses are cacheable (`max-age=5`). Put a CDN in front and a launch-day crowd hits cache, not the database.
 
 ## Coin profiles
 
-Names and symbols live on-chain, but a coin's **image, banner, description and socials** are off-chain, held here. A profile is **creator-signed**: only the wallet that launched the coin (its `dev`) can set it — no login, no funds move.
+Names and symbols live on-chain, but a coin's **image, banner, description and socials** are off-chain, held here. A profile is **creator-signed**: only the wallet that launched the coin (its `dev`) can set it, no login, no funds move.
 
 ```http
 # Read a coin's profile (null until one is set). image/banner are absolute URLs.
@@ -50,7 +50,7 @@ POST /api/coin/:token/meta      Content-Type: application/json
 }
 ```
 
-Images are converted **server-side**: HEIC/HEIF is decoded, EXIF orientation is applied, the image is downscaled (pfp to ~400 px, banner to ~1200 px) and stored as a small WebP, then served from `GET /media/:token/:kind`. So any format a phone produces just works — the client sends the file, the server does the rest. The signature is verified **before** conversion, over the exact bytes uploaded.
+Images are converted **server-side**: HEIC/HEIF is decoded, EXIF orientation is applied, the image is downscaled (pfp to ~400 px, banner to ~1200 px) and stored as a small WebP, then served from `GET /media/:token/:kind`. So any format a phone produces just works: the client sends the file, the server does the rest. The signature is verified **before** conversion, over the exact bytes uploaded.
 
 The signed message binds the token and every field (images by keccak digest) so a signature can't be replayed to another coin or an altered payload:
 
@@ -61,11 +61,11 @@ ts: <ts>
 digest: keccak256( JSON.stringify({description,telegram,twitter,website,pfp,banner,ts}) )
 ```
 
-The pad does all of this for you — the create page uploads the profile with one extra free signature right after launch (`Pad.setCoinProfile(token, {...})` in `assets/wallet.js`; the same `profileMessage` is exported from the [SDK's](sdk.md) source). The client downscales when it can (tiny upload) and otherwise sends the raw file for the server to convert; images are served back from `GET /media/:token/:kind` (cacheable). Everything here is **cosmetic** — a missing profile never affects trading, and the whole layer is optional (no indexer ⇒ coins simply show name + symbol).
+The pad does all of this for you: the create page uploads the profile with one extra free signature right after launch (`Pad.setCoinProfile(token, {...})` in `assets/wallet.js`; the same `profileMessage` is exported from the [SDK's](sdk.md) source). The client downscales when it can (tiny upload) and otherwise sends the raw file for the server to convert; images are served back from `GET /media/:token/:kind` (cacheable). Everything here is **cosmetic**: a missing profile never affects trading, and the whole layer is optional (no indexer ⇒ coins simply show name + symbol).
 
 ## Holdings & holders
 
-Balances are **derived by query** from the same reorg-safe trade data — a wallet's net of every PadRouter buy/sell, plus the creator's launch allocation (`devBought`) for coins it launched. No extra event indexing, no per-token `Transfer` scan, reorg-safe for free. It reflects **bonding-curve activity**: it does not see wallet-to-wallet ERC-20 transfers or post-graduation DEX trades, so it's a fast candidate list the client refines with a live `balanceOf`. Both responses carry `approx: true`.
+Balances are **derived by query** from the same reorg-safe trade data: a wallet's net of every PadRouter buy/sell, plus the creator's launch allocation (`devBought`) for coins it launched. No extra event indexing, no per-token `Transfer` scan, reorg-safe for free. It reflects **bonding-curve activity**: it does not see wallet-to-wallet ERC-20 transfers or post-graduation DEX trades, so it's a fast candidate list the client refines with a live `balanceOf`. Both responses carry `approx: true`.
 
 ```http
 # Coins a wallet launched or holds, with enough metadata to render a card
@@ -88,8 +88,8 @@ POST /rpc      Content-Type: application/json
 { "jsonrpc":"2.0", "id":1, "method":"eth_call", "params":[…] }     # single or a batch array
 ```
 
-- **Reads only.** A method allowlist (`eth_call`, `eth_getLogs`, `eth_getBalance`, `eth_estimateGas`, `eth_blockNumber`, …) is enforced; writes like `eth_sendRawTransaction` are refused with a JSON-RPC error. Wallets broadcast their own transactions through the user's own RPC — never through here.
-- **Cached + deduped.** Identical reads are cached briefly (per-method TTL; `eth_call`/`eth_getLogs` ~4 s, static reads longer, `eth_estimateGas` never), so a crowd loading the same coin collapses to one upstream call. Batches are split — cached items are served from RAM, only misses are forwarded, then merged by `id`.
+- **Reads only.** A method allowlist (`eth_call`, `eth_getLogs`, `eth_getBalance`, `eth_estimateGas`, `eth_blockNumber`, …) is enforced; writes like `eth_sendRawTransaction` are refused with a JSON-RPC error. Wallets broadcast their own transactions through the user's own RPC, never through here.
+- **Cached + deduped.** Identical reads are cached briefly (per-method TTL; `eth_call`/`eth_getLogs` ~4 s, static reads longer, `eth_estimateGas` never), so a crowd loading the same coin collapses to one upstream call. Batches are split: cached items are served from RAM, only misses are forwarded, then merged by `id`.
 - **Failover + rate limit.** Upstream fails over `RPC_URL → RPC_FALLBACK`; a light per-IP cap keeps the open proxy from being used to drain the upstream.
 
 The pad points its read provider at `[/rpc, public RPC]` as a `FallbackProvider`, so it prefers the proxy and automatically falls back to the public RPC if the proxy ever stalls.

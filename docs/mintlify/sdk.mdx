@@ -5,10 +5,10 @@ description: "Import the pad's data in one line: live addresses, typed ABIs, and
 
 # JavaScript SDK
 
-`@robinlabs/pad-sdk` is a tiny, **read-only** package that lets you import the pad's data with one line — live [addresses](network.md), typed ABIs, and two clients. It signs nothing and holds no keys.
+`@robinlabs/pad-sdk` is a tiny, **read-only** package that lets you import the pad's data with one line: live [addresses](network.md), typed ABIs, and two clients. It signs nothing and holds no keys.
 
-- **`RobinLabsAPI`** — the [indexer](api.md)'s fast JSON feed (browse, trades, stats). Uses `fetch` only, so it runs anywhere.
-- **`RobinLabsChain`** — direct on-chain reads with no indexer at all. You pass in ethers v6 + a provider.
+- **`RobinLabsAPI`**: the [indexer](api.md)'s fast JSON feed (browse, trades, stats). Uses `fetch` only, so it runs anywhere.
+- **`RobinLabsChain`**: direct on-chain reads with no indexer at all. You pass in ethers v6 + a provider.
 
 ```bash
 npm i @robinlabs/pad-sdk ethers   # ethers is an optional peer — only the chain client needs it
@@ -18,7 +18,7 @@ It's a single dependency-free file (`sdk/robinlabs.mjs`), so you can also just d
 
 ## Import feed data (indexer API)
 
-The API is built to scale — the feed is served from precomputed snapshots, so a page listing thousands of coins costs **one** request and **zero** per-coin RPC calls.
+The API is built to scale: the feed is served from precomputed snapshots, so a page listing thousands of coins costs **one** request and **zero** per-coin RPC calls.
 
 ```js
 import { RobinLabsAPI } from "@robinlabs/pad-sdk";
@@ -30,7 +30,7 @@ const { trades } = await api.trades(coins[0].token);         // exact-wei recent
 const totals     = await api.stats();                        // coins, graduated, 24h volume
 ```
 
-> No indexer host of your own? The pad reads the chain directly as a fallback, and so can you — use the chain client below. Run your own indexer with the [Self-hosting](api.md) steps.
+> No indexer host of your own? The pad reads the chain directly as a fallback, and so can you. Use the chain client below. Run your own indexer with the [Self-hosting](api.md) steps.
 
 ## Read on-chain (no indexer)
 
@@ -57,7 +57,7 @@ const off = pad.onLaunch(({ token, curve, pool, dev }) => console.log("new coin"
 ## Trade from a bot (write)
 
 The clients are read-only, but the SDK ships the addresses, the router ABI, and the one override every write
-needs — so a trading bot is a few lines. Bring your own signer; the SDK never touches your keys.
+needs, so a trading bot is a few lines. Bring your own signer; the SDK never touches your keys.
 
 ```js
 import { ethers } from "ethers";
@@ -77,7 +77,7 @@ await (await erc20.approve(ADDRESSES.padRouter, amountIn, await legacyOverrides(
 await (await router.sell(token, amountIn, minOutEth, await legacyOverrides(wallet.provider))).wait();
 ```
 
-`legacyOverrides(provider)` returns `{ type: 0, gasPrice }` — **required on every write**, or the node rejects
+`legacyOverrides(provider)` returns `{ type: 0, gasPrice }`, **required on every write**, or the node rejects
 a default type-2 tx with `-32601`. See the [Integration Guide](integration.md) for launch/graduate/dev-fee flows.
 
 ## Exports
@@ -87,7 +87,7 @@ a default type-2 tx with `-32601`. See the [Integration Guide](integration.md) f
 | `CHAIN` | `{ id: 4663, hex, name, rpc, explorer, perTxGasCap }` |
 | `ADDRESSES` | The live, source-verified stack (factory, router, feeConfig, floorCoopFactory, splitter, WETH, v3 factory) |
 | `ABI` | Human-readable ABIs: `factory`, `router`, `floorCoopFactory`, `erc20` (ethers parses directly) |
-| `legacyOverrides(provider)` | `{ type: 0, gasPrice }` — spread into every write (Robinhood Chain has no EIP-1559) |
+| `legacyOverrides(provider)` | `{ type: 0, gasPrice }`, spread into every write (Robinhood Chain has no EIP-1559) |
 | `explorerUrl(addr)` | Blockscout address link |
 | `RobinLabsAPI` / `RobinLabsChain` | The two read clients above |
 

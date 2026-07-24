@@ -15,12 +15,12 @@ async function legacy(provider) {
 }
 ```
 
-Single txs sit far under the chain's `16,777,216` (2²⁴) per-tx gas cap — only add a `gasLimit` if you batch
+Single txs sit far under the chain's `16,777,216` (2²⁴) per-tx gas cap. Only add a `gasLimit` if you batch
 many calls in one tx. (The [SDK](sdk.md) exports this as `legacyOverrides(provider)`.)
 
 ## Launch a coin
 
-One transaction. Send ETH with the call to make the creator's opening buy (uncapped — excess is refunded), or send `0` for a clean launch.
+One transaction. Send ETH with the call to make the creator's opening buy (uncapped, excess is refunded), or send `0` for a clean launch.
 
 ```js
 import { ethers } from "ethers";
@@ -50,7 +50,7 @@ await tx.wait();
 console.log("launched", token);
 ```
 
-> **The opening buy is anti-snipe, not a fee.** The ETH you send is *your own buy*, executed inside the launch tx before anyone else can trade — it isn't a platform charge. It's uncapped: it climbs the curve up to the graduation ceiling, and any ETH beyond what fills the curve is refunded.
+> **The opening buy is anti-snipe, not a fee.** The ETH you send is *your own buy*, executed inside the launch tx before anyone else can trade. It isn't a platform charge. It's uncapped: it climbs the curve up to the graduation ceiling, and any ETH beyond what fills the curve is refunded.
 
 ## Buy & sell
 

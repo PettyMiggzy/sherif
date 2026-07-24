@@ -1,12 +1,12 @@
 # Build a Bot
 
-Everything on Robin Labs is **permissionless and public** — no API key, no
+Everything on Robin Labs is **permissionless and public**: no API key, no
 allow-list, no sign-up. If you can send a transaction, you can integrate. This
 page is the fast path for bot devs: the three things you need and nothing else.
 
 ## One gotcha first: legacy transactions
 
-Robinhood Chain has **no EIP-1559** — it doesn't implement `eth_maxPriorityFeePerGas`. A default ethers v6
+Robinhood Chain has **no EIP-1559**. It doesn't implement `eth_maxPriorityFeePerGas`. A default ethers v6
 write sends a type-2 tx and the node rejects it with `-32601`, so **every write must be a legacy (type-0) tx
 with an explicit `gasPrice`.** Get it right once with a helper and reuse it on every send:
 
@@ -23,7 +23,7 @@ if you batch many calls into one tx. (The [SDK](sdk.md) exports this as `legacyO
 
 ## The three calls
 
-**1. Watch for new launches** — subscribe to one event on the factory:
+**1. Watch for new launches** (subscribe to one event on the factory):
 
 ```js
 import { ethers } from "ethers";
@@ -40,7 +40,7 @@ factory.on("Launched", (token, curve, pool, dev) => {
 });
 ```
 
-**2. Buy** — native ETH in, no approval:
+**2. Buy** (native ETH in, no approval):
 
 ```js
 const ROUTER = "0xA6BaAB820809C7fC8350311776627298f91F07eC";
@@ -53,7 +53,7 @@ const ov = await legacy(signer.provider);                                // lega
 await (await router.buy(token, quoted * 99n / 100n, { value, ...ov })).wait(); // 1% slippage
 ```
 
-**3. Sell** — one exact-amount approval, then sell:
+**3. Sell** (one exact-amount approval, then sell):
 
 ```js
 const erc20 = new ethers.Contract(token, ["function approve(address,uint256) returns (bool)"], signer);
@@ -66,7 +66,7 @@ await (await r.sell(token, amountIn, minOutEth, await legacy(signer.provider))).
 That's a working trade bot. See the [Integration Guide](integration.md) for the
 full surface (quotes, reading curve progress, graduation).
 
-## Skip the RPC crawl — use the API
+## Skip the RPC crawl: use the API
 
 Don't poll the chain for discovery. The [Indexer API](api.md) hands you every
 coin, sorted and enriched, in one request:
@@ -77,18 +77,18 @@ GET /api/coins?sort=trending             # what's hot in the last 24h
 GET /api/trades/{token}?limit=100        # a coin's recent flow
 ```
 
-Each coin comes back with `progress`, `mcapEth`, `vol24hEth` and price — no
+Each coin comes back with `progress`, `mcapEth`, `vol24hEth` and price, no
 per-coin chain reads. Perfect for an alert bot or a trending scanner.
 
 ## Ideas that print
 
-- **Snipe bot** — buy on the `Launched` event, inside the same block the dev opens.
-- **Buy-alert / trending bot** — poll `/api/coins?sort=trending`, post to Telegram/X.
-- **Keeper** — `graduate()` is permissionless; fire it the moment `ready()` flips.
-- **Copy-trade** — watch `Bought`/`Sold` for a wallet, mirror it.
+- **Snipe bot**: buy on the `Launched` event, inside the same block the dev opens.
+- **Buy-alert / trending bot**: poll `/api/coins?sort=trending`, post to Telegram/X.
+- **Keeper**: `graduate()` is permissionless; fire it the moment `ready()` flips.
+- **Copy-trade**: watch `Bought`/`Sold` for a wallet, mirror it.
 
 ## No gatekeeping
 
 There is nothing to request and no rate limit on-chain. Build it, ship it, and
-every trade your bot routes still pays the coin's fee in-protocol — so the whole
+every trade your bot routes still pays the coin's fee in-protocol, so the whole
 ecosystem (and the coin's floor) grows with your volume. Bring the bots.

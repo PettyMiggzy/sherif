@@ -10,15 +10,15 @@ dev who will dump on them. The **`TokenVestingLock`** fixes it. It's one shared,
 holds many creators' dev bags on a **cliff + linear** release schedule, so buyers can verify **on-chain** that
 the dev can't dump.
 
-> One shared locker · **irrevocable** — no cancel, no owner, no admin claw-back. Once a schedule is created,
+> One shared locker · **irrevocable**: no cancel, no owner, no admin claw-back. Once a schedule is created,
 > the tokens release *only* on the timeline it was created with, straight to the fixed beneficiary.
 
 ## What it guarantees
 
 - **Irrevocable.** There is no `cancel`, no `revoke`, and no owner able to pull a schedule. The lock cannot be
-  unwound early by anyone — not the creator, not the platform.
+  unwound early by anyone, not the creator, not the platform.
 - **Fixed beneficiary.** Each schedule pays a single, immutable beneficiary (the creator's wallet). Releases
-  can be triggered by anyone (**permissionless**) but always pay the beneficiary — never the caller.
+  can be triggered by anyone (**permissionless**) but always pay the beneficiary, never the caller.
 - **Anti-snipe safe.** The lock is created *after* launch from the creator's real, just-bought balance, so it
   never touches the launch transaction. The launch stays a single clean tx and the opening anti-snipe guard is
   never delayed or weakened by locking.
@@ -56,7 +56,7 @@ Read paths for the badge and countdown:
 
 ## Creating a lock (SDK)
 
-Locking is a **two-transaction** flow — an **exact-amount** ERC-20 approve (never infinite, and only to our
+Locking is a **two-transaction** flow: an **exact-amount** ERC-20 approve (never infinite, and only to our
 verified lock), then `create`:
 
 ```js
@@ -77,7 +77,7 @@ const lock = await Pad.devLockOf(token, dev);
 ```
 
 `createVestingLock(token, beneficiary, amountDecimalStr, startTs = 0, cliffDays, durationDays)` reads the
-**real on-chain balance** to size the lock — the creator only holds tokens *after* launch, and the opening buy
+**real on-chain balance** to size the lock. The creator only holds tokens *after* launch, and the opening buy
 refunds any excess above the graduation ceiling, so the form estimate is never used.
 
 ## Resumable after launch
@@ -94,7 +94,7 @@ Once a schedule exists, the coin page shows a gold **🔒 Dev locked** badge nex
 lock** panel with a live release-progress bar, a countdown to full unlock, the amount still locked, and a
 permissionless **Release vested** button whenever anything has vested. It's fed by `devLockOf(token, dev)` and
 reads straight from the chain (or the indexer's `/api/coin/:token/devlock`), so it's public and verifiable by
-anyone — no wallet required to see it.
+anyone, no wallet required to see it.
 
 ## Gated until deployed
 

@@ -5,13 +5,13 @@ description: "What Robin Labs Pad is and how the contract stack fits together."
 
 # Overview
 
-**Robin Labs Pad** is a creator-first memecoin launchpad on **Robinhood Chain**. One-transaction launches into a real Uniswap v3 pool, a bonding-curve for price discovery, a single ceiling graduation, and a permanently-locked floor — **the Bond**.
+**Robin Labs Pad** is a creator-first memecoin launchpad on **Robinhood Chain**. One-transaction launches into a real Uniswap v3 pool, a bonding-curve for price discovery, a single ceiling graduation, and a permanently-locked floor: **the Bond**.
 
-Robin Labs is a set of audited, non-upgradeable contracts. There are no proxies and no admin backdoors — the platform owner can point new launches at a fee wallet and nothing else. A launch is a single transaction that deploys the token, seeds the bonding curve, opens trading, and (optionally) executes the creator's own opening buy — atomically.
+Robin Labs is a set of audited, non-upgradeable contracts. There are no proxies and no admin backdoors. The platform owner can point new launches at a fee wallet and nothing else. A launch is a single transaction that deploys the token, seeds the bonding curve, opens trading, and (optionally) executes the creator's own opening buy, atomically.
 
 - **Real DEX from block one.** Every coin is a genuine Uniswap v3 pool, so it's chartable on DexScreener the moment it launches.
-- **Approval-free buys.** Buying sends native ETH — no token approval. Selling needs one exact-amount approval to the router (never infinite, never to a personal wallet).
-- **Fees ride the protocol.** The 1% is the Uniswap LP fee tier, collected in-protocol — there's never a side-transfer bolted onto your transaction.
+- **Approval-free buys.** Buying sends native ETH, no token approval. Selling needs one exact-amount approval to the router (never infinite, never to a personal wallet).
+- **Fees ride the protocol.** The 1% is the Uniswap LP fee tier, collected in-protocol. There's never a side-transfer bolted onto your transaction.
 - **Un-ruggable graduation.** At graduation, liquidity is posted to the Bond and locked forever, with a WETH floor that only deepens with volume.
 - **[Lock Liquidity / FloorCoop](floorcoop.md).** Anyone can stake ETH into a coin's real, locked LP and earn a share of every trade's fee.
 
@@ -23,8 +23,8 @@ A coin's life spans a stack of audited, non-upgradeable contracts:
 |----------|------|
 | `CurvePadFactory` | Deploys the token + curve + pool in one tx, registers the coin with the router, runs the anti-snipe opening buy. |
 | `PadRouter` | The only trade path. Applies the 1% fee in-protocol, splits it to escrows, exposes dev fee controls. |
-| `CurvePool` | The bonding curve — a single-sided v3 position spanning `[startTick → gradTick]`. Owns graduation, which fires at exactly one point: the curve ceiling. |
-| `Bond` | Protocol-owned floor posted at graduation and locked forever — *Sherwood* (full-range LP), *Bounty* (WETH buy-wall), *Ambush* (token sell-wall). Fees compound back in via `poke()`. |
-| `FeeConfig` | Owner-governed fee dial — the LP creator split and the swap platform/creator/floor split, retunable with no redeploy. |
+| `CurvePool` | The bonding curve, a single-sided v3 position spanning `[startTick → gradTick]`. Owns graduation, which fires at exactly one point: the curve ceiling. |
+| `Bond` | Protocol-owned floor posted at graduation and locked forever: *Sherwood* (full-range LP), *Bounty* (WETH buy-wall), *Ambush* (token sell-wall). Fees compound back in via `poke()`. |
+| `FeeConfig` | Owner-governed fee dial: the LP creator split and the swap platform/creator/floor split, retunable with no redeploy. |
 | `FloorCoopFactory` (+ per-token `FloorCoop`) | Deploys a per-coin [FloorCoop](floorcoop.md) vault: stake ETH into real locked LP, earn a share of trade fees. |
 | `PlatformFeeSplitter` | Routes the platform's cut (the $ROBIN buy-back split). |

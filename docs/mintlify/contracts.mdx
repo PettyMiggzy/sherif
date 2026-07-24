@@ -9,7 +9,7 @@ All ABIs below are human-readable (ethers.js parses them directly).
 
 ## CurvePadFactory
 
-The launch entrypoint. `launch()` is **payable** — any ETH you send is the creator's own opening buy, executed atomically before public trading opens. It's **uncapped by supply**: it climbs the curve up to the graduation ceiling, and any ETH beyond what fills the curve is refunded.
+The launch entrypoint. `launch()` is **payable**: any ETH you send is the creator's own opening buy, executed atomically before public trading opens. It's **uncapped by supply**: it climbs the curve up to the graduation ceiling, and any ETH beyond what fills the curve is refunded.
 
 ```solidity
 // The launch params tuple. tax.projectWallet receives the creator's sell fee.
@@ -26,11 +26,11 @@ function recordOf(address token) view returns (address token, address curve, add
 event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought)
 ```
 
-> **Fee caps (enforced on-chain).** Each side (`buyBps`/`sellBps`) is 1%–4% (`100–400` bps). The baseline 1% is mandatory. The opening dev buy is **uncapped by supply** — it fills the curve up to the graduation ceiling and refunds any excess ETH. Total supply is fixed at `1,000,000,000`.
+> **Fee caps (enforced on-chain).** Each side (`buyBps`/`sellBps`) is 1%–4% (`100–400` bps). The baseline 1% is mandatory. The opening dev buy is **uncapped by supply**: it fills the curve up to the graduation ceiling and refunds any excess ETH. Total supply is fixed at `1,000,000,000`.
 
 ## PadRouter
 
-Every trade goes through the router. Buys send native ETH (no approval); sells need one exact-amount approval to the router. The fee split happens inside — no side transfers.
+Every trade goes through the router. Buys send native ETH (no approval); sells need one exact-amount approval to the router. The fee split happens inside, no side transfers.
 
 ```solidity
 function buy(address token, uint256 minOut) payable returns (uint256 tokensOut)
@@ -54,11 +54,11 @@ event FeeSplit(address indexed token, uint256 platform, uint256 deferred, uint25
 ```
 
 The router reads its swap-fee split live from `FeeConfig` (see below). An unset or invalid config safely
-routes the whole fee to the platform — a bad split can never brick a swap.
+routes the whole fee to the platform: a bad split can never brick a swap.
 
 ## FeeConfig
 
-The single owner-governed fee dial (`Ownable2Step`). It holds only ratios — never funds. `CurvePool` reads
+The single owner-governed fee dial (`Ownable2Step`). It holds only ratios, never funds. `CurvePool` reads
 the LP creator split; `PadRouter` reads the swap split. Retune with a setter, no redeploy.
 
 ```solidity
@@ -101,11 +101,11 @@ event Graduated(address indexed bond, uint256 raisedWeth, uint256 leftoverToken)
 event FeesCollected(address indexed by, uint256 wethFees, uint256 tokenFees, uint16 creatorBps)
 ```
 
-> Graduation is **ceiling-only**: a coin graduates at exactly one point, the top of the curve. There's no creator-settable target, no minimum, and no timeout. (`gradTarget`/`minGradTick`/`seedTime` remain on the contract as vestigial storage but no longer gate graduation — don't treat them as controls.)
+> Graduation is **ceiling-only**: a coin graduates at exactly one point, the top of the curve. There's no creator-settable target, no minimum, and no timeout. (`gradTarget`/`minGradTick`/`seedTime` remain on the contract as vestigial storage but no longer gate graduation; don't treat them as controls.)
 
 ## Bond
 
-The floor, posted once at graduation and locked forever. Anyone can call `poke()` to sweep the Sherwood LP's accrued Uniswap fees and compound them back into the locked position — fees never leave to a wallet.
+The floor, posted once at graduation and locked forever. Anyone can call `poke()` to sweep the Sherwood LP's accrued Uniswap fees and compound them back into the locked position. Fees never leave to a wallet.
 
 ```solidity
 function poke()   // permissionless: compound Sherwood LP fees back into the floor
@@ -136,7 +136,7 @@ function totalNav() view returns (uint256)              // vault value in WETH, 
 
 ## PlatformFeeSplitter
 
-Routes the platform's cut — the $ROBIN buy-back split. Standalone; the admin panel reads/sets the split.
+Routes the platform's cut, the $ROBIN buy-back split. Standalone; the admin panel reads/sets the split.
 
 ```solidity
 function robinShareBps() view returns (uint16)          // portion routed to the $ROBIN sink
@@ -149,7 +149,7 @@ function setPlatformTreasury(address t)                  // owner only
 
 ## Events reference
 
-These are everything the [indexer](api.md) consumes — enough to reconstruct the full state of the pad.
+These are everything the [indexer](api.md) consumes, enough to reconstruct the full state of the pad.
 
 | Event | Emitter | Meaning |
 |-------|---------|---------|
