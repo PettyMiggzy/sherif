@@ -54,13 +54,85 @@ const _read = (() => {
 })();
 const REWARD_LEG_BPS = 25; // 0.25% router reward leg (buy→traders / sell→holders), carved before the swap when the vault is set
 
-// ── provider detection: prefer Phantom's EVM provider, then any injected wallet ─
-function injected() {
-  if (typeof window === "undefined") return null;
-  // Phantom exposes its EVM provider at window.phantom.ethereum
-  if (window.phantom?.ethereum) return window.phantom.ethereum;
-  if (window.ethereum) return window.ethereum;
-  return null;
+// ── wallet discovery (EIP-6963) — let people PICK their wallet ────────────────
+// Multiple wallets fight over window.ethereum (Phantom in particular forces itself
+// there), so grabbing window.ethereum silently locks users onto whichever won. Instead
+// we discover EVERY installed wallet via the EIP-6963 announce protocol and, when there's
+// more than one, show a picker. Legacy wallets that only expose window.ethereum still work.
+const _wallets = new Map(); // rdns -> { info:{uuid,name,icon,rdns}, provider }
+let _eip = null;            // the currently-connected provider
+const WALLET_KEY = "rl_wallet_rdns";
+if (typeof window !== "undefined") {
+  window.addEventListener("eip6963:announceProvider", (e) => {
+    const d = e.detail;
+    if (d?.info?.rdns && d.provider) _wallets.set(d.info.rdns, { info: d.info, provider: d.provider });
+  });
+  try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch { /* SSR/no-window */ }
+}
+const escHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+// Only render a wallet-supplied icon if it's a safe data:/https: image (never javascript:).
+const safeIcon = (u) => (typeof u === "string" && /^(data:image\/|https:\/\/)/i.test(u)) ? u : "";
+
+// Legacy fallback: wallets that predate 6963, or an aggregator exposing .providers[].
+function legacyProviders() {
+  const out = [];
+  const eth = typeof window !== "undefined" ? window.ethereum : null;
+  if (eth?.providers?.length) for (const p of eth.providers) out.push(p);
+  else if (eth) out.push(eth);
+  const ph = typeof window !== "undefined" ? window.phantom?.ethereum : null;
+  if (ph && !out.includes(ph)) out.push(ph);
+  return out;
+}
+// Every wallet we can offer, de-duped: 6963-announced first (real name + icon), then legacy.
+function availableWallets() {
+  const list = Array.from(_wallets.values());
+  const seen = new Set(list.map((w) => w.provider));
+  for (const p of legacyProviders()) {
+    if (seen.has(p)) continue;
+    const name = p.isMetaMask ? "MetaMask" : p.isCoinbaseWallet ? "Coinbase Wallet"
+      : p.isPhantom ? "Phantom" : p.isRabby ? "Rabby" : "Injected wallet";
+    list.push({ info: { rdns: "legacy:" + name, name, icon: "" }, provider: p });
+  }
+  return list;
+}
+function requestAnnounce() { try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch { /* ignore */ } }
+function rememberedWallet() {
+  try {
+    const r = localStorage.getItem(WALLET_KEY);
+    return r ? (availableWallets().find((w) => w.info.rdns === r) || null) : null;
+  } catch { return null; }
+}
+// Back-compat shim (unused internally now): first available provider or null.
+function injected() { const w = availableWallets(); return w.length ? w[0].provider : null; }
+
+// Desktop picker modal. Resolves to a wallet object, or null if dismissed.
+function pickWallet(wallets) {
+  return new Promise((resolve) => {
+    if (typeof document === "undefined") return resolve(wallets[0] || null);
+    document.getElementById("rl-wallet-modal")?.remove();
+    const wrap = document.createElement("div");
+    wrap.id = "rl-wallet-modal";
+    wrap.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)";
+    wrap.innerHTML = `<div style="background:#0c1107;border:1px solid rgba(220,233,5,.3);border-radius:18px;max-width:400px;width:calc(100% - 32px);padding:22px 20px 24px;font-family:system-ui,-apple-system,sans-serif;color:#f4f7ee;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+        <div style="font-weight:800;font-size:1.12rem;margin-bottom:4px">Choose your wallet</div>
+        <div style="color:#93a382;font-size:.9rem;line-height:1.45;margin-bottom:16px">You have more than one wallet installed. Pick which one to connect.</div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          ${wallets.map((w, i) => {
+            const ic = safeIcon(w.info.icon);
+            const badge = ic ? `<img src="${ic}" alt="" style="width:26px;height:26px;border-radius:7px" />`
+              : `<span style="width:26px;height:26px;border-radius:7px;background:rgba(220,233,5,.16);display:inline-block"></span>`;
+            return `<button data-i="${i}" style="display:flex;align-items:center;gap:12px;text-align:left;background:#121a0b;border:1px solid rgba(255,255,255,.08);color:#f4f7ee;font-weight:700;padding:12px 14px;border-radius:12px;cursor:pointer;font-size:.98rem">${badge}<span>${escHtml(w.info.name)}</span></button>`;
+          }).join("")}
+        </div>
+        <button id="rl-wallet-cancel" style="width:100%;margin-top:12px;background:none;border:1px solid rgba(255,255,255,.15);color:#93a382;padding:11px;border-radius:12px;font-weight:600;cursor:pointer">Cancel</button>
+      </div>`;
+    document.body.appendChild(wrap);
+    const done = (val) => { wrap.remove(); resolve(val); };
+    wrap.addEventListener("click", (e) => { if (e.target === wrap) done(null); });
+    wrap.querySelector("#rl-wallet-cancel").addEventListener("click", () => done(null));
+    wrap.querySelectorAll("[data-i]").forEach((b) =>
+      b.addEventListener("click", () => done(wallets[Number(b.dataset.i)])));
+  });
 }
 
 function friendly(err, label) {
@@ -89,8 +161,8 @@ function isMobile() {
 function walletDeepLinks() {
   const url = location.href, hostPath = location.host + location.pathname + location.search;
   return [
-    { name: "Phantom", href: `https://phantom.app/ul/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(location.origin)}` },
     { name: "MetaMask", href: `https://metamask.app.link/dapp/${hostPath}` },
+    { name: "Phantom", href: `https://phantom.app/ul/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(location.origin)}` },
     { name: "Coinbase Wallet", href: `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(url)}` },
   ];
 }
@@ -116,20 +188,33 @@ function showMobileWalletPrompt() {
 
 // ── connect + chain guard ───────────────────────────────────────────────────
 export async function connect() {
-  const eip = injected();
-  if (!eip) {
+  requestAnnounce();
+  await new Promise((r) => setTimeout(r, 60)); // let 6963 wallets announce (event-driven, async)
+  const wallets = availableWallets();
+  if (!wallets.length) {
     // Mobile browser with no injected wallet → guide them into the wallet app
     // instead of a dead-end error. Returns null (no throw) so the UI stays calm.
     if (isMobile()) { showMobileWalletPrompt(); return null; }
-    throw new Error("No wallet found. Install Phantom or another EVM wallet, then reload.");
+    throw new Error("No wallet found. Install MetaMask, Phantom, or another EVM wallet, then reload.");
   }
+  // Use the remembered choice if it's still available; else one wallet = use it; else PICK.
+  let wallet = rememberedWallet();
+  if (!wallet) wallet = wallets.length === 1 ? wallets[0] : await pickWallet(wallets);
+  if (!wallet) return null; // user dismissed the picker — no error, UI stays calm
+  return connectWith(wallet);
+}
 
+// Connect through a specific chosen wallet and wire up the session.
+async function connectWith(wallet) {
+  const eip = wallet.provider;
   await eip.request({ method: "eth_requestAccounts" });
   await ensureChain(eip);
 
+  _eip = eip;
   _provider = new ethers.BrowserProvider(eip, "any");
   _signer = await _provider.getSigner();
   _account = await _signer.getAddress();
+  try { localStorage.setItem(WALLET_KEY, wallet.info.rdns); } catch { /* private mode */ }
 
   // keep UI in sync if the user switches account/chain in their wallet
   eip.removeAllListeners?.("accountsChanged");
@@ -137,6 +222,9 @@ export async function connect() {
   eip.on?.("chainChanged", () => location.reload());
   return _account;
 }
+
+/** Forget the remembered wallet so the next Connect re-shows the picker. */
+export function forgetWallet() { try { localStorage.removeItem(WALLET_KEY); } catch { /* ignore */ } }
 
 async function ensureChain(eip) {
   const current = await eip.request({ method: "eth_chainId" });
@@ -1072,10 +1160,16 @@ export async function devLockOf(token, dev) {
 // connection persists across page navigations instead of forcing a reconnect every page.
 async function eagerConnect() {
   try {
-    const eip = injected();
-    if (!eip) return;
+    requestAnnounce();
+    await new Promise((r) => setTimeout(r, 60)); // let 6963 wallets announce first
+    // Restore the SAME wallet the user picked last time; if none remembered and there's
+    // exactly one wallet, use it. When it's ambiguous, don't auto-pick — let them click Connect.
+    const wallet = rememberedWallet() || (availableWallets().length === 1 ? availableWallets()[0] : null);
+    if (!wallet) return;
+    const eip = wallet.provider;
     const accts = await eip.request({ method: "eth_accounts" }); // silent: returns [] if not authorized
     if (!accts || !accts.length) return;
+    _eip = eip;
     _provider = new ethers.BrowserProvider(eip, "any");
     _signer = await _provider.getSigner();
     _account = await _signer.getAddress();
@@ -1090,7 +1184,7 @@ async function eagerConnect() {
 // expose a tiny global for the plain-HTML pages (no bundler)
 if (typeof window !== "undefined") {
   window.RobinPad = {
-    connect, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax,
+    connect, forgetWallet, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax,
     setCoinProfile, getCoinProfile, profileMessage,
     estimateDevBuyEth, isDeployed, tokenBalance, holdings, coinHolders,
     curveInfo, devEscrow, graduate, withdrawDev, burnDev, listCoins, tokenMeta,
