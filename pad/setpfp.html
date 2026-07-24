@@ -1,0 +1,190 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Set Coin Image — Robin Labs</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<style>
+  :root{--bg:#060803;--panel:#0c1108;--ink:#f4f7ee;--dim:#93a382;--lime:#dce905;--red:#ff5a52;--green:#5fd16a;--line:rgba(220,233,5,.2)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,sans-serif;line-height:1.5;padding:20px}
+  .wrap{max-width:640px;margin:0 auto}
+  h1{font-size:1.5rem;margin:0 0 4px}
+  .sub{color:var(--dim);margin:0 0 20px;font-size:.9rem}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
+  label{display:block;font-weight:600;margin:0 0 6px;font-size:.9rem}
+  input[type=text]{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0a0d06;color:var(--ink);font-family:ui-monospace,monospace;font-size:.85rem}
+  input[type=file]{width:100%;color:var(--dim);font-size:.85rem}
+  button{background:var(--lime);color:#0a0e05;border:none;border-radius:10px;padding:12px 18px;font-weight:800;cursor:pointer;font-size:.95rem}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .mono{font-family:ui-monospace,monospace;font-size:.82rem;word-break:break-all}
+  .big{font-size:1.05rem;font-weight:800;padding:12px;border-radius:10px;text-align:center;margin-top:10px}
+  .ok{background:rgba(95,209,106,.12);color:var(--green);border:1px solid rgba(95,209,106,.4)}
+  .bad{background:rgba(255,90,82,.12);color:var(--red);border:1px solid rgba(255,90,82,.4)}
+  .prev{width:72px;height:72px;border-radius:12px;object-fit:cover;border:1px solid var(--line);background:#0a0d06}
+  #log{background:#0a0d06;border:1px solid var(--line);border-radius:10px;padding:12px;font-family:ui-monospace,monospace;font-size:.78rem;white-space:pre-wrap;max-height:280px;overflow:auto;margin-top:12px}
+  .step{color:var(--dim)}.step b{color:var(--ink)}
+  a{color:var(--lime)}
+</style>
+<div class="wrap">
+  <h1>Set Coin Image</h1>
+  <p class="sub">A no-nonsense tool to set a coin's pfp + banner. It shows you exactly what happens at each step.</p>
+
+  <div class="card">
+    <label>Coin token address</label>
+    <input type="text" id="token" placeholder="0x…" />
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button id="connect">Connect wallet</button>
+      <div class="mono" id="acct" style="color:var(--dim)">not connected</div>
+    </div>
+    <div id="devInfo" style="margin-top:10px;display:none">
+      <div class="step">This coin can ONLY be edited by its creator wallet:</div>
+      <div class="mono" id="devAddr" style="color:var(--lime)">—</div>
+      <div id="match" class="big"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Coin image (pfp) — square, any format/size</label>
+    <div class="row">
+      <input type="file" id="pfp" accept="image/*" />
+      <img class="prev" id="pfpPrev" style="display:none" />
+    </div>
+    <label style="margin-top:14px">Banner (optional) — wide</label>
+    <div class="row">
+      <input type="file" id="banner" accept="image/*" />
+      <img class="prev" id="bannerPrev" style="display:none" />
+    </div>
+  </div>
+
+  <button id="save" disabled>Sign &amp; save image</button>
+  <div id="result" class="big" style="display:none"></div>
+  <div id="log"></div>
+  <p class="sub" style="margin-top:14px">Done? Go back to your <a id="coinLink" href="#">coin page →</a></p>
+</div>
+
+<script type="module">
+import { ethers } from "./assets/ethers.min.js";
+
+const API_BASE = "https://api.robinlab.io";
+const CHAIN_ID = 4663, CHAIN_HEX = "0x1237";
+const $ = (id) => document.getElementById(id);
+const IMG_OK = /^data:image\/[\w.+-]+;base64,/;
+let account = null, dev = null;
+
+function log(msg, cls){ const d=document.createElement('div'); d.className='step'; d.innerHTML=msg; if(cls)d.style.color=cls==='ok'?'var(--green)':cls==='bad'?'var(--red)':''; $('log').appendChild(d); $('log').scrollTop=1e9; }
+
+// token from ?c= or ?token=
+const q = new URLSearchParams(location.search);
+$('token').value = q.get('c') || q.get('token') || '';
+const syncLink = () => { const t=$('token').value.trim(); $('coinLink').href = t ? ('token.html?c='+encodeURIComponent(t)) : '#'; };
+syncLink(); $('token').addEventListener('input', () => { syncLink(); loadDev(); });
+
+// resolve the coin's creator (dev) — the ONLY wallet the server accepts
+async function loadDev(){
+  const token = $('token').value.trim().toLowerCase();
+  dev = null; $('devInfo').style.display='none'; refreshMatch();
+  if(!/^0x[0-9a-fA-F]{40}$/.test(token)) return;
+  try{
+    const r = await fetch(`${API_BASE}/api/coin/${token}`);
+    const j = await r.json();
+    dev = (j.coin && j.coin.dev || '').toLowerCase();
+    if(dev){ $('devAddr').textContent = dev; $('devInfo').style.display='block'; log(`Coin creator (required wallet): <b>${dev}</b>`); }
+    else log('Could not find this coin — check the address.', 'bad');
+  }catch(e){ log('Could not reach the API to look up the coin: '+e.message,'bad'); }
+  refreshMatch();
+}
+function refreshMatch(){
+  const m=$('match');
+  if(!account||!dev){ m.textContent=''; m.className='big'; $('save').disabled = !(account&&dev&&account===dev); return; }
+  if(account===dev){ m.textContent='✓ Correct wallet — you can save.'; m.className='big ok'; $('save').disabled=false; }
+  else { m.innerHTML='✗ WRONG WALLET.<br>Switch MetaMask to the creator wallet above, then reconnect.'; m.className='big bad'; $('save').disabled=true; }
+}
+
+$('connect').addEventListener('click', async () => {
+  if(!window.ethereum){ log('No wallet found — install MetaMask.','bad'); return; }
+  try{
+    const accts = await window.ethereum.request({ method:'eth_requestAccounts' });
+    account = (accts[0]||'').toLowerCase();
+    $('acct').textContent = account; $('acct').style.color='var(--ink)';
+    log(`Connected: <b>${account}</b>`);
+    // make sure we're on Robinhood Chain
+    const cid = await window.ethereum.request({ method:'eth_chainId' });
+    if(cid !== CHAIN_HEX){
+      log('Switching to Robinhood Chain…');
+      try{ await window.ethereum.request({ method:'wallet_switchEthereumChain', params:[{chainId:CHAIN_HEX}] }); }catch(e){ log('Could not switch chain: '+(e.message||e),'bad'); }
+    }
+    if(!dev) await loadDev();
+    refreshMatch();
+  }catch(e){ log('Connect failed: '+(e.message||e),'bad'); }
+});
+window.ethereum && window.ethereum.on && window.ethereum.on('accountsChanged', () => location.reload());
+
+// resize an image to a data URL — NEVER throws; returns "" if unusable
+async function imgDataUrl(inputId, maxDim){
+  const f = ($(inputId).files||[])[0];
+  if(!f) return "";
+  log(`Encoding ${inputId}: ${f.name} (${(f.size/1024/1024).toFixed(1)} MB, ${f.type||'unknown type'})…`);
+  try{
+    let bmp = await createImageBitmap(f,{resizeWidth:maxDim,resizeQuality:'high'}).catch(()=>null);
+    if(!bmp) bmp = await createImageBitmap(f).catch(()=>null);
+    if(!bmp) bmp = await new Promise((res)=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>res(null);im.src=URL.createObjectURL(f);});
+    const iw=bmp&&(bmp.width||bmp.naturalWidth), ih=bmp&&(bmp.height||bmp.naturalHeight);
+    if(bmp&&iw&&ih){
+      const s=Math.min(1,maxDim/Math.max(iw,ih,1));
+      const cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(iw*s)); cv.height=Math.max(1,Math.round(ih*s));
+      cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height);
+      for(const t of ['image/webp','image/jpeg','image/png']){ let url=''; try{url=cv.toDataURL(t,0.85);}catch{} if(IMG_OK.test(url)){ log(`  → resized ok (${Math.round(url.length/1024)} KB)`,'ok'); return url; } }
+    }
+  }catch(e){ log('  → in-browser resize failed ('+e.message+'), trying raw…'); }
+  if(f.size<=16*1024*1024){
+    let raw=await new Promise((res)=>{const r=new FileReader();r.onload=()=>res(String(r.result||''));r.onerror=()=>res('');r.readAsDataURL(f);});
+    if(raw){
+      if(/^data:;?base64,/.test(raw)){ const n=(f.name||'').toLowerCase(); const mm=/\.hei?c$/.test(n)?'image/heic':/\.heif$/.test(n)?'image/heif':'application/octet-stream'; raw=raw.replace(/^data:;?base64,/,`data:${mm};base64,`); }
+      if(/^data:[\w.+/-]+;base64,/.test(raw)){ log('  → sending raw for the server to convert ('+Math.round(raw.length/1024)+' KB)'); return raw; }
+    }
+  }
+  log(`  → could not read ${inputId} — try a JPG or PNG`,'bad');
+  return "";
+}
+// live preview
+for(const [id,prev] of [['pfp','pfpPrev'],['banner','bannerPrev']]){
+  $(id).addEventListener('change', async () => { const u=await imgDataUrl(id, id==='pfp'?400:1200); if(u){ $(prev).src=u; $(prev).style.display='block'; } });
+}
+
+function profileMessage(token, p){
+  const canon = JSON.stringify({ description:p.description||"", telegram:p.telegram||"", twitter:p.twitter||"", website:p.website||"", pfp:p.pfp||"", banner:p.banner||"", ts:p.ts });
+  return `Robin Labs — set coin profile\ntoken: ${String(token).toLowerCase()}\nts: ${p.ts}\ndigest: ${ethers.id(canon)}`;
+}
+
+$('save').addEventListener('click', async () => {
+  const token = $('token').value.trim().toLowerCase();
+  const res = $('result'); res.style.display='none';
+  if(!account){ log('Connect your wallet first.','bad'); return; }
+  if(account!==dev){ log('Wrong wallet — switch to the creator wallet.','bad'); return; }
+  $('save').disabled=true;
+  try{
+    const pfp = await imgDataUrl('pfp', 400);
+    const banner = await imgDataUrl('banner', 1200);
+    if(!pfp && !banner){ log('Pick at least a pfp image.','bad'); $('save').disabled=false; return; }
+    const ts = Math.floor(Date.now()/1000);
+    const payload = { description:"", telegram:"", twitter:"", website:"", pfp, banner, ts };
+    log('Requesting signature in your wallet (free, no gas)…');
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const signature = await signer.signMessage(profileMessage(token, payload));
+    log('Signed. Uploading…');
+    const r = await fetch(`${API_BASE}/api/coin/${token}/meta`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...payload, signature }) });
+    const body = await r.text();
+    log(`Server: HTTP ${r.status} — ${body.slice(0,300)}`, r.ok?'ok':'bad');
+    if(r.ok){ res.textContent='✅ SAVED! Your image is live. Open your coin page.'; res.className='big ok'; res.style.display='block'; }
+    else { res.textContent='❌ Not saved (HTTP '+r.status+'). See the log above.'; res.className='big bad'; res.style.display='block'; }
+  }catch(e){ log('Failed: '+(e.message||e),'bad'); res.textContent='❌ '+(e.message||e); res.className='big bad'; res.style.display='block'; }
+  $('save').disabled=false;
+});
+
+loadDev();
+</script>
