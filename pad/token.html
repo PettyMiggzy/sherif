@@ -13,7 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
 :root{--bg:#0d0f07;--bg-2:#12150a;--bg-3:#1a1e10;--panel:#15180d;--line:rgba(220,233,5,.14);--line-2:rgba(255,255,255,.08);
-  --line-strong:rgba(220,233,5,.34);--ink:#f6f7f1;--ink-dim:#a7ad97;--ink-faint:#7f8570;--lime:#dce905;--lime-soft:#e4ff7a;--lime-deep:#a8d600;--green:#48d16a;--red:#ff5a52;--gold:#f5c542;
+  --line-strong:rgba(220,233,5,.34);--ink:#f6f7f1;--ink-dim:#a7ad97;--ink-faint:#7f8570;--lime:#dce905;--lime-soft:#e4ff7a;--lime-deep:#a8d600;--green:#48d16a;--red:#ff5a52;--gold:#f5c542;--violet:#8a63e0;
   --disp:"Bebas Neue",Impact,sans-serif;--sans:"Plus Jakarta Sans",system-ui,sans-serif;--mono:ui-monospace,Menlo,monospace}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 a{color:inherit;text-decoration:none}svg,img,iframe{display:block}
@@ -188,12 +188,27 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .soc{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:var(--bg-3);border:1px solid var(--line-2);color:var(--ink-dim);transition:color .18s,border-color .18s,background .18s,transform .18s}
 .soc:hover{color:var(--lime);border-color:var(--line-strong);background:rgba(220,233,5,.08);transform:translateY(-1px)}
 .soc svg{width:17px;height:17px;display:block}
+/* dev-bag vesting lock (gold) */
+.lockbadge{font-family:var(--mono);font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;background:rgba(245,197,66,.14);border:1px solid var(--gold);color:var(--gold);border-radius:999px;padding:3px 8px;white-space:nowrap;align-self:center}
+.devlock{border-color:var(--gold);background:linear-gradient(180deg,rgba(245,197,66,.06),var(--panel))}
+.devlock h3 .meta{color:var(--gold)}
+.dl-blurb{color:var(--ink-dim);font-size:.84rem;line-height:1.5;margin:0 0 12px}.dl-blurb b{color:var(--ink)}
+.dl-fill{background:linear-gradient(90deg,#b8860b,var(--gold))!important}
+/* holder rewards (violet) */
+.rewards{border-color:var(--violet);background:linear-gradient(180deg,rgba(138,99,224,.08),var(--panel))}
+.rewards h3 .meta{color:var(--violet)}
+.rw-blurb{color:var(--ink-dim);font-size:.84rem;line-height:1.5;margin:0 0 12px}.rw-blurb b{color:var(--ink)}
+.rw-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.rw-stats > div{background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:9px 11px}
+.rw-stats .k{display:block;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint)}
+.rw-stats .v{display:block;font-family:var(--disp);font-size:1.35rem;margin-top:2px}
+.btn-vio{background:var(--violet);color:#fff}.btn-vio[disabled]{opacity:.6;cursor:not-allowed}
 </style>
 </head>
 <body>
 <header class="top"><div class="top-in">
   <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" style="height:30px;width:auto" onerror="this.style.display='none'" /><span>ROBIN <span class="tag">LABS</span></span></a>
-  <div class="spacer"></div><a class="nlink" href="browse.html">← All coins</a><a class="nlink" href="profile.html">Portfolio</a><button class="btn btn-ghost" id="connectBtn" type="button">Connect wallet</button>
+  <div class="spacer"></div><a class="nlink" href="browse.html">← All coins</a><a class="nlink" href="rewards.html" id="rewardsNav" style="display:none">Rewards</a><a class="nlink" href="profile.html">Portfolio</a><button class="btn btn-ghost" id="connectBtn" type="button">Connect wallet</button>
 </div></header>
 
 <div class="banner"></div>
@@ -201,13 +216,17 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
   <div class="idbar">
     <div class="pfp" id="pfp">?</div>
     <div class="who">
-      <h1><span id="nm">Loading…</span> <span class="tk" id="tk"></span></h1>
+      <h1><span id="nm">Loading…</span> <span class="tk" id="tk"></span> <span id="lockBadge" class="lockbadge" style="display:none">🔒 Dev locked</span></h1>
       <span class="ca"><span id="ca" class="mono">—</span> <button id="copyCa" type="button">Copy</button></span>
     </div>
   </div>
   <div id="pendingProfile" style="display:none;margin:14px 0 0;padding:12px 14px;border:1px solid var(--lime);border-radius:12px;background:rgba(220,233,5,.08);font-size:.9rem;align-items:center;gap:12px;justify-content:space-between">
     <span id="pendingProfileMsg">Your coin image is still finishing…</span>
     <button id="pendingProfileBtn" class="btn" style="flex:none">Finish now</button>
+  </div>
+  <div id="pendingLock" style="display:none;margin:14px 0 0;padding:12px 14px;border:1px solid var(--gold);border-radius:12px;background:rgba(245,197,66,.08);font-size:.9rem;align-items:center;gap:12px;justify-content:space-between">
+    <span id="pendingLockMsg">Finish locking your dev bag…</span>
+    <button id="pendingLockBtn" class="btn btn-gold" style="flex:none">Lock now</button>
   </div>
 
   <div class="layout">
@@ -293,6 +312,26 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
           </div>
         </div>
       </div>
+
+      <!-- dev-bag vesting lock (gold) — shown only when this coin's creator has an on-chain lock -->
+      <div class="panel sec devlock" id="devLockPanel" style="margin-top:16px;display:none"><h3>Dev lock <span class="meta">irrevocable</span></h3>
+        <p class="dl-blurb">The creator locked <b id="dlPct">—</b> in an <b>irrevocable</b> cliff+linear vesting lock — no cancel, no owner. It releases over time; anyone can verify it on-chain.</p>
+        <div class="bar"><div class="fill dl-fill" id="dlFill" style="width:0%"></div></div>
+        <div class="bar-lab"><span id="dlCountdown">—</span><b id="dlLocked">—</b></div>
+        <button class="btn btn-gold" id="dlRelease" type="button" style="width:100%;margin-top:12px;display:none">Release vested</button>
+      </div>
+
+      <!-- holder rewards (violet) — this coin's claimable/pending reward legs -->
+      <div class="panel sec rewards" id="rewardsPanel" style="margin-top:16px;display:none"><h3>Holder rewards <span class="meta">real ETH</span></h3>
+        <p class="rw-blurb">Every trade funds two <b>0.25%</b> reward legs in real ETH — for net-volume <b>traders</b> and diamond-hand <b>holders</b> of this coin. Claim what's yours; you keep the ETH.</p>
+        <div class="rw-stats">
+          <div><span class="k">Claimable now</span><span class="v" id="rwClaim">—</span></div>
+          <div><span class="k">Pending epoch</span><span class="v" id="rwPend">—</span></div>
+        </div>
+        <button class="btn btn-vio" id="rwClaimBtn" type="button" style="width:100%;display:none">Claim rewards</button>
+        <a class="feelink" href="rewards.html">How rewards work →</a>
+      </div>
+
       <!-- safety scan: GoPlus token-security + Robin Labs template verification + tx simulation -->
       <div class="panel sec" style="margin-top:16px"><h3>Safety <span class="meta">GoPlus · verified</span></h3>
         <div id="safetyBody"><div style="color:var(--ink-faint);font-size:.8rem">🛡 Scanning safety…</div></div>
@@ -345,7 +384,10 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 import * as Pad from './assets/wallet.js';
 import { mountSafety } from './assets/safety.js';
 import { DEMO, DEMO_COINS, demoTrades, demoHolders, DEMO_FLOOR } from './assets/demo.js';
+import { isDeployed } from './assets/config.js';
 const $ = (id) => document.getElementById(id);
+const PENDING_LOCK_KEY = (t) => 'rl_pending_lock:' + String(t).toLowerCase();
+const fmtDur = (s) => { s = Math.max(0, s | 0); const d = Math.floor(s/86400), h = Math.floor((s%86400)/3600); return d > 0 ? (d + 'd' + (h > 0 ? ' ' + h + 'h' : '')) : h > 0 ? h + 'h' : Math.max(1, Math.floor(s/60)) + 'm'; };
 // Escape untrusted strings (coin symbol/name from the chain, explorer tags) before any innerHTML.
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const ETH_USD = 1920;
@@ -357,7 +399,7 @@ const fmtEth = (wei) => { const n = Number(wei) / 1e18; return n >= 1 ? n.toFixe
 const fmtTok = (wei) => { const n = Number(wei) / 1e18; return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : Math.round(n); };
 const agoS = (ts) => { if (!ts) return ''; const s = Math.max(0, Math.floor(Date.now()/1000) - ts); return s<60?s+'s':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h':Math.floor(s/86400)+'d'; };
 const setNote = (m, kind) => { const n = $('tradeNote'); n.textContent = m; n.style.color = kind === 'err' ? 'var(--red)' : kind === 'ok' ? 'var(--green)' : 'var(--ink-faint)'; };
-const refreshConnect = () => { const a = Pad.account(); const b = $('connectBtn'); b.textContent = a ? Pad.short(a) : 'Connect wallet'; b.title = a ? 'View your profile' : ''; };
+const refreshConnect = () => { const a = Pad.account(); const b = $('connectBtn'); b.textContent = a ? Pad.short(a) : 'Connect wallet'; b.title = a ? 'View your profile' : ''; const rn = $('rewardsNav'); if (rn) rn.style.display = isDeployed('rewardVault') ? '' : 'none'; };
 
 let SIDE = 'buy', COIN = null, PROFILE = null, COIN_HAS_BANNER = false;
 
@@ -415,7 +457,7 @@ $('quick').addEventListener('click', (e) => {
 $('copyCa').addEventListener('click', () => { if (TOKEN && navigator.clipboard) navigator.clipboard.writeText(TOKEN); });
 $('connectBtn').addEventListener('click', async () => {
   if (Pad.account()) { location.href = 'profile.html'; return; }   // already connected → open your profile
-  try { await Pad.connect(); refreshConnect(); await maybeShowDev(); if (SIDE === 'sell') loadBal(); } catch (e) { setNote(e.message, 'err'); }
+  try { await Pad.connect(); refreshConnect(); await maybeShowDev(); loadRewards(); checkPendingLock(); if (SIDE === 'sell') loadBal(); } catch (e) { setNote(e.message, 'err'); }
 });
 renderQuick(); // paint the buy presets on first load (before any side toggle)
 window.addEventListener('robinpad:ready', refreshConnect);
@@ -736,6 +778,7 @@ async function loadCoin(){
   const preBuy = parseFloat(q.get('buy'));
   if (Number.isFinite(preBuy) && preBuy > 0 && !window.__preBuyDone) { window.__preBuyDone = true; if (SIDE !== 'buy') side('buy'); $('amtInput').value = String(preBuy); }
   loadTrades(); loadHolders(); renderFees(apiCoin); renderFloor();
+  loadDevLock(); loadRewards(); checkPendingLock(); // no-ops until the vesting lock / reward vault are deployed
   mountSafety(document.getElementById('safetyBody'), TOKEN); // GoPlus + template scan (read-only)
 }
 
@@ -853,6 +896,111 @@ $('fcWithdraw').addEventListener('click', async () => {
   try { setNote('Withdrawing…'); await (await Pad.floorWithdraw(COIN.token)).wait(); setNote('Withdrawn ✓','ok'); renderFloor(); } catch(e){ setNote(e.message,'err'); }
 });
 buildTerms();
+
+// ── dev-bag vesting lock (gold panel + 🔒 badge) ──────────────────────────────
+// STRICT NO-OP until TokenVestingLock is deployed: devLockOf() returns null while the
+// address is unset (or when this coin has no dev lock), and we hide the panel + badge.
+async function loadDevLock(){
+  const panel = $('devLockPanel'), badge = $('lockBadge'), rel = $('dlRelease');
+  const hide = () => { if (panel) panel.style.display = 'none'; if (badge) badge.style.display = 'none'; if (rel) rel.style.display = 'none'; };
+  if (DEMO || !COIN) return hide();
+  let d = null;
+  try { d = await Pad.devLockOf(COIN.token, COIN.dev); } catch { d = null; }
+  if (!d || !d.total || BigInt(d.total) === 0n) return hide(); // not deployed / no lock → nothing shows
+  const sym = disp(COIN.symbol);
+  const pctLocked = Math.max(0, Math.min(100, (Number(d.lockedPercent) || 0) / 100)); // bps of total still locked → %
+  const releasedPct = Math.max(0, Math.min(100, 100 - pctLocked));
+  badge.style.display = '';
+  panel.style.display = '';
+  $('dlPct').textContent = fmtTok(d.total) + ' ' + sym;
+  $('dlFill').style.width = releasedPct.toFixed(1) + '%';
+  $('dlLocked').textContent = fmtTok(d.locked) + ' still locked';
+  const now = Math.floor(Date.now()/1000), left = (Number(d.end) || 0) - now;
+  $('dlCountdown').textContent = d.end ? (left <= 0 ? 'Fully unlocked' : 'Unlocks in ' + fmtDur(left)) : 'Vesting';
+  if (BigInt(d.releasable || 0n) > 0n){ rel.style.display = ''; rel.textContent = 'Release ' + fmtTok(d.releasable) + ' vested'; }
+  else rel.style.display = 'none';
+}
+$('dlRelease').addEventListener('click', async () => {
+  if (!COIN) return;
+  let d = null; try { d = await Pad.devLockOf(COIN.token, COIN.dev); } catch {}
+  const ids = (d && d.ids) || []; if (!ids.length) return;
+  try {
+    if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
+    setNote('Releasing vested tokens (permissionless)…');
+    for (const id of ids) { await (await Pad.releaseVesting(id)).wait(); }
+    setNote('Released ✓ — vested tokens sent to the creator.', 'ok');
+    setTimeout(loadDevLock, 1500);
+  } catch (e) { setNote(e.shortMessage || e.message, 'err'); }
+});
+
+// Resume a stashed post-launch lock (rl_pending_lock:<token>) — visible when a stash exists;
+// the "Lock now" button only works for the connected CREATOR wallet. No-op until deployed.
+function readPendingLock(){ try { return JSON.parse(localStorage.getItem(PENDING_LOCK_KEY(TOKEN)) || 'null'); } catch { return null; } }
+function checkPendingLock(){
+  const b = $('pendingLock'); if (!b) return;
+  if (DEMO || !COIN || !isDeployed('tokenVestingLock')) { b.style.display = 'none'; return; }
+  const p = readPendingLock();
+  if (!p) { b.style.display = 'none'; return; }
+  const acct = Pad.account();
+  const isDev = acct && COIN.dev && acct.toLowerCase() === String(COIN.dev).toLowerCase();
+  const durTxt = p.days === 365 ? '1yr' : (p.days + 'd');
+  $('pendingLockMsg').textContent = isDev
+    ? `Finish locking ${p.pct}% of your dev bag (${p.mode === 'cliff' ? 'cliff' : 'linear'} · ${durTxt}) — approve + lock.`
+    : 'This coin has a dev-bag lock waiting to be finished by its creator.';
+  $('pendingLockBtn').style.display = isDev ? '' : 'none';
+  b.style.display = 'flex';
+}
+$('pendingLockBtn').addEventListener('click', async () => {
+  const p = readPendingLock(); if (!p || !COIN) return;
+  try {
+    if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
+    if (Pad.account().toLowerCase() !== String(COIN.dev).toLowerCase()) return setNote('Only the coin creator can finish this lock.', 'err');
+    setNote('Locking your dev bag (approve + lock)…');
+    const bal = await Pad.tokenBalance(COIN.token);
+    const amount = (Number(bal) || 0) * Math.max(0, Math.min(100, p.pct)) / 100;
+    if (!(amount > 0)) return setNote('No balance found to lock.', 'err');
+    await Pad.createVestingLock(COIN.token, Pad.account(), String(amount), 0, p.mode === 'cliff' ? p.days : 0, p.days);
+    try { localStorage.removeItem(PENDING_LOCK_KEY(TOKEN)); } catch {}
+    $('pendingLock').style.display = 'none';
+    setNote('Dev bag locked ✓ — buyers can verify it on-chain.', 'ok');
+    setTimeout(loadDevLock, 1500);
+  } catch (e) { setNote(e.shortMessage || e.message, 'err'); }
+});
+
+// ── holder rewards (violet panel) — this coin's claimable/pending legs ─────────
+// STRICT NO-OP until RewardVault is deployed: we early-return when it's unset, and hide
+// the panel when there's nothing for THIS coin.
+async function loadRewards(){
+  const panel = $('rewardsPanel'), btn = $('rwClaimBtn');
+  const hide = () => { if (panel) panel.style.display = 'none'; if (btn) btn.style.display = 'none'; };
+  if (DEMO || !COIN || !isDeployed('rewardVault')) return hide();
+  let r = null; try { r = await Pad.rewards(Pad.account()); } catch { r = null; }
+  if (!r) return hide();
+  const tk = COIN.token.toLowerCase();
+  const symOf = (x) => String(x.sym || '').replace(/^\$/, '').toLowerCase();
+  const coinSym = String(COIN.symbol || '').replace(/^\$/, '').toLowerCase();
+  const mine = (x) => x.coin ? String(x.coin).toLowerCase() === tk : symOf(x) === coinSym;
+  const claimable = (r.claimable || []).filter(mine);
+  const pending = (r.pending || []).filter(mine);
+  if (!claimable.length && !pending.length) return hide();
+  const ethOf = (x) => Number(x.eth) || (Number(x.amount || 0) / 1e18) || 0;
+  const sum = (arr) => arr.reduce((a, x) => a + ethOf(x), 0);
+  panel.style.display = '';
+  $('rwClaim').textContent = (Math.round(sum(claimable) * 1e4) / 1e4) + ' ETH';
+  $('rwPend').textContent = (Math.round(sum(pending) * 1e4) / 1e4) + ' ETH';
+  if (claimable.length){ btn.style.display = ''; window.__rwRows = claimable; }
+  else { btn.style.display = 'none'; window.__rwRows = []; }
+}
+$('rwClaimBtn').addEventListener('click', async () => {
+  const rows = window.__rwRows || []; if (!rows.length) return;
+  try {
+    if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
+    setNote('Claiming your rewards…');
+    for (const c of rows) { await (await Pad.claimReward(c)).wait(); }
+    setNote('Claimed ✓ — the ETH is in your wallet.', 'ok');
+    setTimeout(loadRewards, 1500);
+  } catch (e) { setNote(e.shortMessage || e.message, 'err'); }
+});
 
 // ── native price chart — a clean line/area from OUR OWN trade data ──
 // Price per trade = eth/tokens (both 18-dec wei, so the ratio is WETH-per-token) × ETH_USD. This renders

@@ -1,0 +1,98 @@
+# Holder & Trader Rewards
+
+Robin Labs pays you to *trade* and to *hold*. On top of the two [fee streams](fees.md), every trade
+carves **two additive 0.25% legs** in real ETH into the [`RewardVault`](network.md): one for **net-volume
+traders**, one for **diamond-hand holders**. The chain custodies and caps the ETH; an off-chain scorer
+computes each wallet's exact share per epoch and publishes a Merkle root; you claim your leaf on-site and
+keep the ETH.
+
+> The reward legs are **additive** — they are carved on top of a trade, not skimmed out of the base fee. A
+> buy funds the trader pot; a sell funds the holder pot. Both are per-coin and paid in ETH.
+
+## The two legs
+
+| Leg | Funded by | Scored on | Who it rewards |
+|-----|-----------|-----------|----------------|
+| **Traders** | **0.25% of each buy** | **Net accumulation** — your net ETH bought, minus sold, over the epoch | Real net buyers, not wash-traders |
+| **Holders** | **0.25% of each sell** | **Balance-seconds** — how much you held × how long, across the epoch | Holding through the epoch, not flipping |
+
+The trader leg scores **net** accumulation, so buying and immediately dumping nets to zero — you cannot farm
+it by churning volume. The holder leg scores **balance-seconds**, so a bigger balance held for longer earns a
+bigger slice; a balance that leaves mid-epoch stops accruing the moment it moves.
+
+## Minimum-holding threshold
+
+To keep dust wallets and Sybil swarms from diluting real holders, a wallet must hold at least
+**0.02% of supply** (200,000 tokens on the fixed 1,000,000,000 supply) to accrue the **holder** leg for an
+epoch. Below the threshold your balance-seconds are not counted. The trader leg has no threshold — it is
+scored purely on net ETH flow.
+
+## Excluded addresses
+
+Protocol and infrastructure addresses never earn either leg — their balances and flows are removed from
+both scores so rewards flow only to real users:
+
+- the **coin token** contract itself
+- its **bonding curve**
+- its **Uniswap v3 pool**
+- **the Bond** (the graduated protocol-owned floor)
+- the **PadRouter**
+- the **RewardVault**
+- the **CurvePadFactory** (and any registered factory)
+- the **TokenVestingLock** (a locked dev bag is not a "holder")
+- the **dead / zero** burn address
+
+## The epoch lifecycle
+
+Rewards settle in **daily-ish epochs**. Each epoch walks through four gates before ETH can leave the vault:
+
+1. **Epoch closes.** The scorer reads the full epoch of trades and balances, computes each wallet's trader
+   and holder share, and builds a Merkle tree of `(epoch, coin, side, user, amount)` leaves.
+2. **Finality delay.** The root is posted only after a **finality delay** (`finalityDelay`), so a reorg near
+   the epoch boundary can never lock in a wrong root.
+3. **Challenge window.** Once posted, the root sits in a **challenge window** (`challengeWindow`) during which
+   the **guardian** can [veto](#guardian-veto) a bad root before any claim is possible.
+4. **Claim window → sweep.** After the challenge window the root is live and wallets **claim** their leaves
+   for the **claim window** (`claimWindow`). Anything unclaimed when the window ends is **swept** back into the
+   pot so it is never stranded.
+
+The vault exposes `currentEpoch()`, `EPOCH()` (the epoch length), and per-coin pots via
+`pot(coin, epoch) → (traderPot, holderPot)`.
+
+## Claiming
+
+A claim is a pure **verify + capped transfer**. The indexer serves your proof; you sign one clean tx:
+
+```solidity
+function claim(uint256 epoch, address coin, uint8 side, uint256 amount, bytes32[] proof) external;
+// side: 0 = Traders, 1 = Holders
+```
+
+The vault verifies the leaf against the epoch's Merkle root and pays **capped** ETH — a claim can never draw
+more than the epoch's pot for that coin and side, so a bad or forged proof simply reverts. You pay your own
+gas; the ETH lands in your wallet. From the app, the per-coin **Holder rewards** panel on each coin page and
+the **Rewards** hub claim every available leaf for you.
+
+## Guardian veto
+
+Each posted root carries an `algoHash` (a commitment to the scoring algorithm) and its own challenge window.
+Within that window a dedicated **guardian** key can `veto(epoch)` a root — freezing claims against it — if the
+scorer ever publishes a wrong or manipulated root. The guardian can only **stop** a bad payout; it cannot mint,
+redirect, or claim rewards for itself. After the challenge window passes clean, the root is immutable.
+
+## Honest disclosure
+
+> **Rewards are variable, not guaranteed, and not a security.** Each leg is funded only by the 0.25% carved
+> from actual trades on a coin — no trading, no rewards. Your share depends on your net buying (traders) or
+> your balance-seconds above the threshold (holders) relative to everyone else that epoch, so it moves with
+> real market activity and can be zero. Rewards are a usage rebate of protocol fees paid in ETH; they are not
+> dividends, not interest, not a promise of profit, and confer no ownership, equity, or governance rights in
+> Robin Labs, any coin, or any pool. Nothing here is financial advice. Not affiliated with Robinhood Markets,
+> Uniswap, or DexScreener.
+
+## Gated until deployed
+
+The reward system ships alongside the reward-enabled router. Until the `RewardVault` address is set and
+verified in [config](network.md), every reward path is a **no-op**: the on-site panels and the Rewards nav
+link stay hidden, `rewards()` returns empty, and `claim()` is unreachable. Nothing can send a tx to an unset
+vault.

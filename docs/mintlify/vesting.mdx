@@ -1,0 +1,104 @@
+---
+title: "Dev-Bag Vesting Lock"
+description: "The irrevocable cliff+linear locker creators use to prove on-chain they can't dump their opening bag."
+---
+
+# Dev-Bag Vesting Lock
+
+A creator's biggest trust problem is their own opening bag: buyers can't tell a long-term founder from a
+dev who will dump on them. The **`TokenVestingLock`** fixes it. It's one shared, **irrevocable** locker that
+holds many creators' dev bags on a **cliff + linear** release schedule, so buyers can verify **on-chain** that
+the dev can't dump.
+
+> One shared locker · **irrevocable** — no cancel, no owner, no admin claw-back. Once a schedule is created,
+> the tokens release *only* on the timeline it was created with, straight to the fixed beneficiary.
+
+## What it guarantees
+
+- **Irrevocable.** There is no `cancel`, no `revoke`, and no owner able to pull a schedule. The lock cannot be
+  unwound early by anyone — not the creator, not the platform.
+- **Fixed beneficiary.** Each schedule pays a single, immutable beneficiary (the creator's wallet). Releases
+  can be triggered by anyone (**permissionless**) but always pay the beneficiary — never the caller.
+- **Anti-snipe safe.** The lock is created *after* launch from the creator's real, just-bought balance, so it
+  never touches the launch transaction. The launch stays a single clean tx and the opening anti-snipe guard is
+  never delayed or weakened by locking.
+
+## The schedule model
+
+A schedule is `cliff + linear` over a duration:
+
+```solidity
+function create(
+  address token,
+  address beneficiary,
+  uint256 amount,
+  uint64  start,          // 0 = "now" (block time)
+  uint64  cliffDuration,  // seconds with nothing releasable
+  uint64  duration        // total vesting length in seconds
+) external returns (uint256 id);
+```
+
+- **Linear unlock:** `cliffDuration = 0`. Tokens vest smoothly from `start` to `start + duration`; at any
+  moment `releasable = total × elapsed / duration`.
+- **Hard cliff:** `cliffDuration = duration`. Nothing is releasable until the very end, then 100% unlocks at
+  once.
+- Any in-between cliff is allowed: nothing releases until the cliff passes, then it vests linearly to the end.
+
+Read paths for the badge and countdown:
+
+| View | Returns |
+|------|---------|
+| `releasable(id)` | Tokens vested and claimable right now |
+| `locked(id)` | Tokens still locked (not yet vested) |
+| `lockedPercent(id)` | Basis points of the schedule still locked |
+| `schedules(id)` | `(token, beneficiary, total, released, start, cliff, duration)` |
+| `idsOfToken(token)` / `idsOfBeneficiary(who)` | All schedule ids for a coin / a wallet |
+
+## Creating a lock (SDK)
+
+Locking is a **two-transaction** flow — an **exact-amount** ERC-20 approve (never infinite, and only to our
+verified lock), then `create`:
+
+```js
+import * as Pad from "./assets/wallet.js";
+
+// Lock the creator's whole just-bought bag, linear over 90 days:
+await Pad.createVestingLock(token, Pad.account(), amountTokens, 0, /*cliffDays*/ 0, /*durationDays*/ 90);
+
+// Hard cliff (nothing for 180 days, then 100%): cliffDays === durationDays
+await Pad.createVestingLock(token, Pad.account(), amountTokens, 0, 180, 180);
+
+// Anyone can push vested tokens to the beneficiary:
+await Pad.releaseVesting(id);
+
+// Read a coin's dev lock for the badge/panel (null when unset or no lock):
+const lock = await Pad.devLockOf(token, dev);
+// → { locked, releasable, total, lockedPercent, ids, end }
+```
+
+`createVestingLock(token, beneficiary, amountDecimalStr, startTs = 0, cliffDays, durationDays)` reads the
+**real on-chain balance** to size the lock — the creator only holds tokens *after* launch, and the opening buy
+refunds any excess above the graduation ceiling, so the form estimate is never used.
+
+## Resumable after launch
+
+Because the lock is set up *after* the coin is live, the flow is designed to never strand a half-done lock.
+When a creator opts in on the launch page, the pad stashes the intent to `localStorage`
+(`rl_pending_lock:<token>`) **before** sending any transaction. If the two-tx flow is interrupted (a missed
+signature, a closed tab), the coin page shows a **"Finish locking"** prompt to the connected creator wallet and
+completes it from the same stash. The coin is always live regardless; the lock is a strictly additive follow-up.
+
+## The badge
+
+Once a schedule exists, the coin page shows a gold **🔒 Dev locked** badge next to the coin name and a **Dev
+lock** panel with a live release-progress bar, a countdown to full unlock, the amount still locked, and a
+permissionless **Release vested** button whenever anything has vested. It's fed by `devLockOf(token, dev)` and
+reads straight from the chain (or the indexer's `/api/coin/:token/devlock`), so it's public and verifiable by
+anyone — no wallet required to see it.
+
+## Gated until deployed
+
+The `TokenVestingLock` address is empty until the contract is deployed and verified in [config](network.md).
+Until then every path is a **strict no-op**: `isDeployed('tokenVestingLock')` is false, the "Lock your dev bag"
+card and the badge/panel stay hidden, `devLockOf()` returns `null`, and `createVestingLock()` / `releaseVesting()`
+throw a clear "opens at launch" error instead of touching an unset address.

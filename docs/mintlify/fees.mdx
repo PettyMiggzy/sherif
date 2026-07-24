@@ -63,10 +63,27 @@ From `admin.html` → **Fee dials** (visible only to the owner wallet):
 | LP fees earned | The pool's 1% trade fee accrues to the vault pro-rata — **you keep 95%, the protocol keeps 5%** |
 | Early-exit penalty | Withdrawing before your lock ends costs a penalty (from 15%, scaled by lock tier) that stays with the remaining stakers |
 
-## Rewards program — disabled
+## 4. Rewards program — two additive legs
 
-There is no additive trader/holder reward leg and no `RewardVault` in production. Every trade carries only
-the two fee streams above — nothing else is carved on top.
+On top of the two fee streams above, every trade carves **two additive 0.25% legs** in real ETH into the
+[`RewardVault`](network.md) — one for **net-volume traders**, one for **diamond-hand holders** of the coin:
+
+| Leg | Funded by | Scored on |
+|-----|-----------|-----------|
+| Traders | **0.25% of each buy** | Net ETH accumulation over the epoch (buy-then-dump nets to zero) |
+| Holders | **0.25% of each sell** | Balance-seconds held, above a 0.02%-of-supply minimum |
+
+These legs are **additive** — carved on top of a trade, not skimmed out of the base fee. The chain custodies
+and caps the ETH; a daily-ish epoch settles into a Merkle root and wallets claim their leaf on-site in one
+clean tx and keep the ETH. Protocol addresses (the token, curve, pool, Bond, router, vault, factory,
+vesting-lock and dead address) are excluded so rewards flow only to real users. Rewards are **variable, not
+guaranteed, and not a security**.
+
+See the full mechanics — scoring, the minimum-holding threshold, the epoch lifecycle, capped Merkle claims and
+the guardian veto — in **[Holder & Trader Rewards](rewards.md)**.
+
+> The reward system is **gated until the `RewardVault` is deployed** and verified in
+> [config](network.md). Until then no leg is carved and every reward path is a no-op.
 
 ## Why fees ride the protocol
 

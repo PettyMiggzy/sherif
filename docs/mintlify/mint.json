@@ -32,6 +32,8 @@
       "group": "Economics",
       "pages": [
         "fees",
+        "rewards",
+        "vesting",
         "graduation",
         "floorcoop"
       ]

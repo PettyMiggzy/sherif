@@ -56,8 +56,9 @@ textarea.inp{resize:vertical;min-height:88px}
 input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
 .devbuy .sc{display:flex;justify-content:space-between;color:var(--ink-faint);font-size:.72rem}
 .devbuy p{color:var(--ink-dim);font-size:.8rem;margin:8px 0 0}
-#dbPresets button{background:var(--bg);border:1px solid var(--line-2);border-radius:9px;padding:8px 6px;color:var(--ink-dim);font-weight:700;font-size:.82rem;cursor:pointer;font-family:var(--sans);transition:.14s}
-#dbPresets button:hover{border-color:var(--line-strong);color:var(--ink);background:rgba(220,233,5,.06)}
+#dbPresets button,#lockDurs button,#lockModes button{background:var(--bg);border:1px solid var(--line-2);border-radius:9px;padding:8px 6px;color:var(--ink-dim);font-weight:700;font-size:.82rem;cursor:pointer;font-family:var(--sans);transition:.14s}
+#dbPresets button:hover,#lockDurs button:hover,#lockModes button:hover{border-color:var(--line-strong);color:var(--ink);background:rgba(220,233,5,.06)}
+#lockDurs button.on,#lockModes button.on{background:rgba(220,233,5,.14);border-color:var(--lime);color:var(--ink)}
 .alloc-row{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:.82rem}
 .alloc-row span{flex:0 0 168px}.alloc-row input[type=range]{flex:1;margin:0}.alloc-row b{flex:0 0 42px;text-align:right;color:var(--lime)}
 .tax-tot.bad{color:var(--red)}.tax-tot.ok{color:var(--green)}
@@ -126,6 +127,28 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
             <button type="button" data-eth="2" style="flex:1">2 ETH</button>
           </div>
           <p id="dbNote">Paid in ETH, in the same transaction, before trading opens — so you're never sniped on your own coin. Buys as far up the curve as your ETH reaches; anything past the graduation ceiling is refunded automatically.</p>
+        </div>
+      </div>
+
+      <!-- Advanced: lock the dev bag (only useful when you're doing a dev buy). Shown when Dev buy > 0.
+           The lock itself is set up right after launch, from the coin page, so it can never delay the launch tx. -->
+      <div class="field" id="lockCard" style="display:none">
+        <label>Advanced: Lock your dev bag <span class="hint">optional · prove on-chain you can't dump</span></label>
+        <div class="devbuy">
+          <div class="hd"><span style="font-weight:700">Lock of your dev buy</span><span class="amt" id="lockPctAmt">0%</span></div>
+          <input type="range" id="lockPct" aria-label="Percent of dev bag to lock" min="0" max="100" step="5" value="0" oninput="lockSync()" />
+          <div class="sc"><span>0% · off</span><span>100%</span></div>
+          <div class="sc" id="lockDurs" style="gap:8px;margin-top:12px">
+            <button type="button" data-d="30" style="flex:1">30d</button>
+            <button type="button" data-d="90" class="on" style="flex:1">90d</button>
+            <button type="button" data-d="180" style="flex:1">180d</button>
+            <button type="button" data-d="365" style="flex:1">1yr</button>
+          </div>
+          <div class="sc" id="lockModes" style="gap:8px;margin-top:8px">
+            <button type="button" data-m="linear" class="on" style="flex:1">Linear unlock</button>
+            <button type="button" data-m="cliff" style="flex:1">Cliff · all at end</button>
+          </div>
+          <p id="lockNote">Off — you keep your bag liquid.</p>
         </div>
       </div>
 
@@ -241,9 +264,31 @@ function dbSync(){
   document.getElementById('dbNote').textContent= v===0
     ? 'No dev buy — you start with 0 tokens, same as everyone.'
     : `Buying ≈ ${v} ETH of your own coin in the same transaction, before trading opens — so you're never sniped. No cap: it climbs the curve as far as your ETH reaches, and anything past the graduation ceiling is refunded.`;
+  // The "Lock your dev bag" card only makes sense when there's a bag to lock.
+  const lc=document.getElementById('lockCard'); if(lc) lc.style.display = v>0 ? 'block' : 'none';
 }
 document.getElementById('dbPresets').addEventListener('click',(e)=>{const b=e.target.closest('button[data-eth]');if(!b)return;document.getElementById('db').value=b.dataset.eth;dbSync();});
 dbSync();
+
+// ── Dev-bag lock spec (top-level `let`s aren't window props, so bridge the chosen spec
+// out to the module launch handler via window.__lockSpec). The lock itself is created
+// AFTER launch (from the module handler / coin page) so it can never delay the launch tx. ──
+let __lockDays = 90, __lockMode = 'linear';
+window.__lockSpec = () => ({
+  pct: Math.max(0, Math.min(100, parseInt(document.getElementById('lockPct').value, 10) || 0)),
+  days: __lockDays, mode: __lockMode,
+});
+function lockSync(){
+  const pct = Math.max(0, Math.min(100, parseInt(document.getElementById('lockPct').value, 10) || 0));
+  document.getElementById('lockPctAmt').textContent = pct + '%';
+  const dur = __lockDays === 365 ? '1 year' : __lockDays + ' days';
+  document.getElementById('lockNote').textContent = pct === 0
+    ? 'Off — you keep your bag liquid. Slide to lock a share of your dev buy in an irrevocable cliff+linear vesting lock, so buyers can verify on-chain that you can’t dump.'
+    : `Locking ${pct}% of your dev buy for ${dur}, ${__lockMode === 'cliff' ? 'released all at once at the end (hard cliff)' : 'unlocking linearly over the term'}. Irrevocable — no cancel, no owner. It’s set up right after your coin launches (approve + lock), so it never delays the launch.`;
+}
+document.getElementById('lockDurs').addEventListener('click',(e)=>{const b=e.target.closest('button[data-d]');if(!b)return;__lockDays=+b.dataset.d;[...b.parentNode.children].forEach(x=>x.classList.toggle('on',x===b));lockSync();});
+document.getElementById('lockModes').addEventListener('click',(e)=>{const b=e.target.closest('button[data-m]');if(!b)return;__lockMode=b.dataset.m;[...b.parentNode.children].forEach(x=>x.classList.toggle('on',x===b));lockSync();});
+lockSync();
 function taxSync(){
   const bt=parseFloat(document.getElementById('buyTax').value);
   const st=parseFloat(document.getElementById('sellTax').value);
@@ -267,8 +312,10 @@ taxSync();
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
+import { isDeployed } from './assets/config.js';
 
 const $ = (id) => document.getElementById(id);
+const PENDING_LOCK_KEY = (token) => 'rl_pending_lock:' + String(token).toLowerCase();
 const note = $('launchNote');
 const setNote = (msg, kind) => {
   note.textContent = msg;
@@ -338,7 +385,32 @@ $('launchBtn').addEventListener('click', async () => {
     } else if (wantsProfile && !Pad.hasApi()) {
       setNote('Launched ✓ — your coin is live. (Images & socials save once the indexer API is connected.)', 'ok');
     }
-    // Send the creator straight to their new coin's page (which completes any pending image).
+
+    // Optional: lock the dev bag. Only after the coin is confirmed live, only when the vesting lock
+    // is deployed, and NEVER blocking the redirect — the coin is already live if any of this fails.
+    try {
+      const spec = (typeof window.__lockSpec === 'function') ? window.__lockSpec() : null;
+      const lockPct = spec ? Math.max(0, Math.min(100, spec.pct | 0)) : 0;
+      if (token && lockPct > 0 && isDeployed('tokenVestingLock')) {
+        // Stash the intent FIRST so the coin page can resume the lock if this is interrupted.
+        try { localStorage.setItem(PENDING_LOCK_KEY(token), JSON.stringify({ pct: lockPct, days: spec.days, mode: spec.mode, _ts: Date.now() })); } catch {}
+        setNote('Launched ✓ — locking your dev bag (2 signatures: approve + lock)…', 'ok');
+        // Read the REAL bought balance on-chain: the dev only holds tokens AFTER launch, and the buy
+        // refunds any excess — the form estimate would over-lock. Compute the chosen % of that balance.
+        const bal = await Pad.tokenBalance(token);
+        const amount = (Number(bal) || 0) * lockPct / 100;
+        if (amount > 0) {
+          await Pad.createVestingLock(token, Pad.account(), String(amount), 0, spec.mode === 'cliff' ? spec.days : 0, spec.days);
+          try { localStorage.removeItem(PENDING_LOCK_KEY(token)); } catch {} // done — clear the stash
+          setNote('Launched ✓ and dev bag locked — buyers can verify it on-chain.', 'ok');
+        }
+      }
+    } catch (_) {
+      // Keep the coin live; the stash lets the creator finish the lock from the coin page.
+      setNote('Launched ✓ — finish locking your dev bag on your coin page.', 'ok');
+    }
+
+    // Send the creator straight to their new coin's page (which completes any pending image + lock).
     if (token) location.href = 'token.html?c=' + encodeURIComponent(token);
   } catch (e) {
     // pre-deploy this surfaces the honest "not live yet" message; post-deploy it

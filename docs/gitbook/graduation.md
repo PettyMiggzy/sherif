@@ -12,6 +12,10 @@ There is **no early graduation, no creator-settable target, and no timeout.** `r
 
 On graduation the curve collects the raised WETH + unsold tokens, pays the **creator 0.5 ETH and the platform 0.5 ETH** (each capped at a quarter of the raise), and posts the **rest (~3.2 ETH)** as the Bond: the Sherwood full-range LP, the Bounty WETH floor, and the Ambush token wall. `graduate()` is **permissionless** — anyone can call it the moment `ready()` is true (the pad's "Graduate" button, or a keeper bot).
 
+## Graduation perk — a DexScreener boost, on us
+
+Every coin that graduates gets a **DexScreener 10× Boost**, funded by Robin Labs out of the platform's fee revenue. The moment a coin hits the DEX it also gets promoted on DexScreener — free distribution at the exact point it needs it most. This is a platform reward, not a contract mechanic: it's paid from fees off-chain, so it applies to graduated coins automatically with nothing for the creator to do. (Robin Labs is not affiliated with DexScreener.)
+
 ## The Bond — three positions
 
 The raise is split **60% Sherwood full-range LP / 40% Bounty floor**, plus the Ambush token wall.

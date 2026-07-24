@@ -26,6 +26,8 @@
       "group": "Economics",
       "pages": [
         { "slug": "fees",        "src": "fees.md",        "title": "Fee Model",            "description": "How the 1%-per-side fee, raised fees, graduation reward and LP-fee compounding flow." },
+        { "slug": "rewards",     "src": "rewards.md",     "title": "Holder & Trader Rewards", "description": "Two additive 0.25% legs paid in real ETH — net-volume traders and diamond-hand holders — settled per epoch and claimed with a capped Merkle proof." },
+        { "slug": "vesting",     "src": "vesting.md",     "title": "Dev-Bag Vesting Lock", "description": "The irrevocable cliff+linear locker creators use to prove on-chain they can't dump their opening bag." },
         { "slug": "graduation",  "src": "graduation.md",  "title": "Graduation",           "description": "Ceiling-only graduation at the top of the curve, and the three positions of the Bond." },
         { "slug": "floorcoop",   "src": "floorcoop.md",   "title": "Lock Liquidity",       "description": "Stake ETH into a coin's real, locked Uniswap v3 liquidity and earn a share of every trade's fee." }
       ]

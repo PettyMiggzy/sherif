@@ -348,7 +348,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
   <nav class="nav-links">
     <a href="browse.html">Browse</a><a href="#graduates">Graduated</a>
-    <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="profile.html">Portfolio</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLink" style="display:none">⚙ Admin</a>
+    <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="profile.html">Portfolio</a><a href="rewards.html" id="rewardsNav" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLink" style="display:none">⚙ Admin</a>
   </nav>
   <div class="nav-cta">
     <button class="btn btn-dark" id="connectBtn" type="button">Connect Wallet</button>
@@ -360,7 +360,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 </div>
 <nav class="mobile-menu" id="mobileMenu">
   <a href="browse.html">Browse</a><a href="#graduates">Graduated</a>
-  <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="profile.html">Portfolio</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLinkM" style="display:none">⚙ Admin</a>
+  <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="profile.html">Portfolio</a><a href="rewards.html" id="rewardsNavM" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLinkM" style="display:none">⚙ Admin</a>
   <a class="btn btn-lime go" href="create.html">Launch Token</a>
 </nav></header>
 
@@ -461,7 +461,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 <script type="module">
 import * as Pad from './assets/wallet.js';
 import { DEMO, DEMO_COINS, DEMO_STATS } from './assets/demo.js';
-import { OWNER } from './assets/config.js';
+import { OWNER, isDeployed } from './assets/config.js';
 
 const $ = (id) => document.getElementById(id);
 const ETH_USD = 1920;
@@ -486,6 +486,8 @@ const refreshBtn = () => {
   cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; cbtn.title = a ? 'View your profile' : '';
   const isOwner = a && OWNER && a.toLowerCase() === OWNER.toLowerCase(); // reveal the Admin link only for the owner
   const al = $('adminLink'), alm = $('adminLinkM'); if (al) al.style.display = isOwner ? '' : 'none'; if (alm) alm.style.display = isOwner ? '' : 'none';
+  // Reveal the Rewards link only once the RewardVault is deployed (strict no-op while unset).
+  const rewardsOn = isDeployed('rewardVault'); const rn = $('rewardsNav'), rnm = $('rewardsNavM'); if (rn) rn.style.display = rewardsOn ? '' : 'none'; if (rnm) rnm.style.display = rewardsOn ? '' : 'none';
 };
 cbtn.addEventListener('click', async () => {
   if (Pad.account()) { location.href = 'profile.html'; return; }   // already connected → open your profile

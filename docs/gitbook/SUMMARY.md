@@ -15,6 +15,8 @@
 ## Economics
 
 * [Fee Model](fees.md)
+* [Holder & Trader Rewards](rewards.md)
+* [Dev-Bag Vesting Lock](vesting.md)
 * [Graduation](graduation.md)
 * [Lock Liquidity](floorcoop.md)
 
