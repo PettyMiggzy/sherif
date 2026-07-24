@@ -57,7 +57,23 @@ async function main() {
   const bal = await ethers.provider.getBalance(deployer.address);
   log(`  deployer=${deployer.address}  balance=${(+ethers.formatEther(bal)).toFixed(4)} ETH  gas=${ethers.formatUnits(gasPrice, "gwei")} gwei`);
 
+  // Snapshot the live router's owner + code up front — the after-guard proves on-chain
+  // (not just in the JSON file) that nothing about the live pad changed.
+  const routerOwnerBefore = await new ethers.Contract(LIVE.padRouter, ["function owner() view returns (address)"], ethers.provider).owner().catch(() => null);
+  const routerCodeBefore = await ethers.provider.getCode(LIVE.padRouter);
+
   const alreadyDeployed = async (addr) => addr && ethers.isAddress(addr) && (await ethers.provider.getCode(addr)) !== "0x";
+
+  // Crash-safe checkpoint: persist an address to deploy.json the instant it's deployed, so a
+  // process death before the end can't orphan a contract (a re-run would otherwise redeploy it
+  // and burn more of the scarce deployer ETH).
+  const checkpoint = (key, addr) => {
+    if (!addr) return;
+    const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    m.contracts[key] = addr;
+    fs.writeFileSync(manifestPath, JSON.stringify(m, null, 2) + "\n");
+    log(`  ✓ checkpointed ${key}=${addr} → deploy.json`);
+  };
 
   // ── 1) TokenVestingLock (standalone, zero deps) ──────────────────────────────
   hr();
@@ -72,6 +88,7 @@ async function main() {
     await lock.deploymentTransaction().wait();
     vesting = await lock.getAddress();
     log(`  ✓ TokenVestingLock: ${vesting}`);
+    checkpoint("tokenVestingLock", vesting); // persist immediately (crash-safe)
   }
 
   // ── 2) RewardVault (references the LIVE router read-only) ─────────────────────
@@ -90,12 +107,20 @@ async function main() {
     if (!ethers.isAddress(poster || "") || !ethers.isAddress(guardian || "")) log(`  [dry] NOTE: set POSTER and GUARDIAN (guardian = a multisig) before a real run.`);
   } else {
     if (!ethers.isAddress(poster || "") || !ethers.isAddress(guardian || "")) throw new Error("Set POSTER and GUARDIAN addresses in env (guardian should be a multisig).");
+    // The guardian is the only backstop against a compromised poster minting a bad root, so it must
+    // NOT be a plain EOA. Require a contract (multisig) unless the operator explicitly overrides.
+    if (process.env.ALLOW_EOA_GUARDIAN !== "1") {
+      const gcode = await ethers.provider.getCode(guardian);
+      if (gcode === "0x") throw new Error(`GUARDIAN ${guardian} has no code — it must be a multisig contract. Set ALLOW_EOA_GUARDIAN=1 to override (NOT recommended).`);
+      if (guardian.toLowerCase() === deployer.address.toLowerCase()) throw new Error("GUARDIAN must not be the deployer.");
+    }
     log(`  Deploying RewardVault (references the live router read-only)…`);
     const rv = await (await ethers.getContractFactory("RewardVault")).deploy(
       LIVE.padRouter, poster, guardian, epochLen, finality, challenge, claim, owner, ov);
     await rv.deploymentTransaction().wait();
     vault = await rv.getAddress();
     log(`  ✓ RewardVault: ${vault}`);
+    checkpoint("rewardVault", vault); // persist immediately (crash-safe)
   }
 
   // ── 3) HARD GUARD: the live pad must be byte-for-byte unchanged ───────────────
@@ -103,10 +128,14 @@ async function main() {
   const after = JSON.parse(fs.readFileSync(manifestPath, "utf8")).contracts;
   if (after.padFactory !== LIVE.padFactory || after.padRouter !== LIVE.padRouter)
     throw new Error("GUARD TRIPPED: the live factory/router address changed. Aborting — nothing was wired.");
-  // Sanity that the router is still the same live contract (read-only call).
-  const routerCode = await ethers.provider.getCode(LIVE.padRouter);
-  if (routerCode === "0x") throw new Error("GUARD TRIPPED: live router has no code. Aborting.");
-  log(`  ✓ GUARD PASSED: live factory + router untouched (byte-identical, code intact).`);
+  // On-chain proof (not just a JSON re-read): the live router's code and owner must be identical to
+  // the pre-run snapshot. This catches a real change to the pad, which the file compare cannot.
+  const routerCodeAfter = await ethers.provider.getCode(LIVE.padRouter);
+  if (routerCodeAfter === "0x") throw new Error("GUARD TRIPPED: live router has no code. Aborting.");
+  if (routerCodeAfter !== routerCodeBefore) throw new Error("GUARD TRIPPED: live router code changed during the run. Aborting.");
+  const routerOwnerAfter = await new ethers.Contract(LIVE.padRouter, ["function owner() view returns (address)"], ethers.provider).owner().catch(() => null);
+  if (routerOwnerBefore && routerOwnerAfter !== routerOwnerBefore) throw new Error("GUARD TRIPPED: live router owner changed during the run. Aborting.");
+  log(`  ✓ GUARD PASSED: live factory + router untouched (code + owner identical on-chain).`);
 
   if (DRY) {
     hr();

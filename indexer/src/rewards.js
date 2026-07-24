@@ -82,13 +82,18 @@ function excludedFor(coin) {
 }
 
 // Distribute `pot` (wei, BigInt) across `weights` (Map<user,BigInt>) proportionally, floor each, so Σ ≤ pot.
-// Returns Map<user, BigInt amount> for the non-zero allocations only. The floored remainder is left unclaimed.
-function allocate(pot, weights) {
+// Returns Map<user, BigInt amount> for the non-zero allocations only.
+//
+// `totalOverride`, when given, is used as the denominator instead of Σ(weights). This is how the holder
+// leg routes sub-threshold wallets' slice to the floor: `weights` holds only ELIGIBLE holders, but the
+// denominator is the balance-seconds of ALL holders — so the eligible set receives only its true pro-rata
+// share and the sub-threshold remainder is never allocated (stays unclaimed → swept to the coin's floor).
+function allocate(pot, weights, totalOverride) {
   const out = new Map();
   if (pot <= 0n) return out;
-  let total = 0n;
-  for (const w of weights.values()) total += w;
-  if (total <= 0n) return out; // nobody eligible → whole pot stays unclaimed → swept to floor
+  let total = totalOverride != null ? totalOverride : 0n;
+  if (totalOverride == null) for (const w of weights.values()) total += w;
+  if (total <= 0n) return out; // nobody → whole pot stays unclaimed → swept to floor
   for (const [user, w] of weights) {
     if (w <= 0n) continue;
     const amt = (pot * w) / total; // floor
@@ -120,7 +125,11 @@ function coinWeights(coin, t0, t1) {
   for (const [u, net] of traderNet) if (net > 0n) trader.set(u, net);
 
   // Holder weight = balance-seconds. Integrate balance over [t0, t1) for every user who held or traded.
+  // `holder` holds only wallets that clear the min-holding floor; `holderTotal` is the balance-seconds of
+  // ALL holders (incl. sub-threshold), used as the allocation denominator so the sub-threshold share is
+  // routed to the floor rather than redistributed to whales.
   const holder = new Map();
+  let holderTotal = 0n;
   const users = new Set([...balBefore.keys(), ...events.keys()]);
   for (const u of users) {
     let bal = balBefore.get(u) || 0n;
@@ -137,10 +146,12 @@ function coinWeights(coin, t0, t1) {
     }
     const tail = BigInt(t1 - last);
     if (tail > 0n) bs += bal * tail;
-    // balance-seconds ÷ epoch length = time-avg balance; must clear the min-holding floor to accrue.
-    if (bs > 0n && bs / BigInt(t1 - t0) >= HOLDER_MIN_WEI) holder.set(u, bs);
+    if (bs <= 0n) continue;
+    holderTotal += bs;                  // every holder counts toward the denominator…
+    // …but only those clearing the min-holding floor (balance-seconds ÷ epoch length = time-avg balance) earn.
+    if (bs / BigInt(t1 - t0) >= HOLDER_MIN_WEI) holder.set(u, bs);
   }
-  return { trader, holder };
+  return { trader, holder, holderTotal };
 }
 
 // Compute the full allocation set for one finalized epoch. Returns:
@@ -156,9 +167,9 @@ export function computeEpoch(epoch) {
     const traderPot = pot.trader;
     const holderPot = pot.holder;
     if (traderPot === 0n && holderPot === 0n) continue;
-    const { trader, holder } = coinWeights(coin, t0, t1);
+    const { trader, holder, holderTotal } = coinWeights(coin, t0, t1);
     const traderAlloc = allocate(traderPot, trader);
-    const holderAlloc = allocate(holderPot, holder);
+    const holderAlloc = allocate(holderPot, holder, holderTotal); // sub-threshold share → floor
     let tSum = 0n, hSum = 0n;
     for (const [u, a] of traderAlloc) { leafValues.push([BigInt(epoch), coin, SIDE.Traders, u, a]); tSum += a; }
     for (const [u, a] of holderAlloc) { leafValues.push([BigInt(epoch), coin, SIDE.Holders, u, a]); hSum += a; }
@@ -196,9 +207,9 @@ export function userAllocations(user, epoch) {
   const { t0, t1 } = epochBounds(epoch);
   const out = [];
   for (const [coin, pot] of potsForEpoch(epoch)) {
-    const { trader, holder } = coinWeights(coin, t0, t1);
+    const { trader, holder, holderTotal } = coinWeights(coin, t0, t1);
     const ta = allocate(pot.trader, trader).get(user);
-    const ha = allocate(pot.holder, holder).get(user);
+    const ha = allocate(pot.holder, holder, holderTotal).get(user);
     if (ta && ta > 0n) out.push({ coin, side: SIDE.Traders, amount: ta.toString() });
     if (ha && ha > 0n) out.push({ coin, side: SIDE.Holders, amount: ha.toString() });
   }

@@ -15,6 +15,10 @@ const fs = require("fs");
 const path = require("path");
 
 async function main() {
+  // Refuse the wrong chain — this vault references the router in deploy.json, which only
+  // exists on 4663; a stray --network would deploy a dead vault and waste ETH.
+  const net = await ethers.provider.getNetwork();
+  if (Number(net.chainId) !== 4663) throw new Error(`Wrong chain: connected to ${net.chainId}, expected 4663 (Robinhood). Aborting.`);
   const [deployer] = await ethers.getSigners();
   const gasPrice = (await ethers.provider.getFeeData()).gasPrice;
   if (gasPrice == null) throw new Error("RPC returned no gasPrice (legacy chain expected)");
@@ -34,6 +38,12 @@ async function main() {
   const claim = Number(process.env.CLAIM_WINDOW || 2592000); // 30 days
   if (!ethers.isAddress(poster) || !ethers.isAddress(guardian)) {
     throw new Error("set POSTER and GUARDIAN addresses in env (guardian should be a multisig)");
+  }
+  // The guardian is the sole backstop against a compromised poster — require a contract (multisig),
+  // not an EOA, unless explicitly overridden.
+  if (process.env.ALLOW_EOA_GUARDIAN !== "1") {
+    if ((await ethers.provider.getCode(guardian)) === "0x") throw new Error(`GUARDIAN ${guardian} has no code — use a multisig, or set ALLOW_EOA_GUARDIAN=1 to override (NOT recommended).`);
+    if (guardian.toLowerCase() === deployer.address.toLowerCase()) throw new Error("GUARDIAN must not be the deployer.");
   }
 
   console.log(`network=${network.name}  deployer=${deployer.address}`);

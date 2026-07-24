@@ -8,6 +8,10 @@
 const { ethers, network } = require("hardhat");
 
 async function main() {
+  // Refuse to run against the wrong chain (a stray --network would waste ETH on a chain
+  // where this contract isn't wanted).
+  const net = await ethers.provider.getNetwork();
+  if (Number(net.chainId) !== 4663) throw new Error(`Wrong chain: connected to ${net.chainId}, expected 4663 (Robinhood). Aborting.`);
   const [deployer] = await ethers.getSigners();
   // Robinhood Chain has no EIP-1559 — deploy as a legacy (type-0) tx with explicit gasPrice.
   const gasPrice = (await ethers.provider.getFeeData()).gasPrice;

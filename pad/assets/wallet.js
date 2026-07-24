@@ -443,6 +443,16 @@ export async function tokenBalance(token, who) {
   } catch { return "0"; }
 }
 
+/// EXACT balance in wei (BigInt). Use this — never Number(tokenBalance) — whenever
+/// the value feeds a transaction amount (e.g. locking a % of the dev bag), so a
+/// float can't round the amount above the real balance and revert the tx.
+export async function tokenBalanceWei(token, who) {
+  const addr = who || _account;
+  if (!addr) return 0n;
+  const erc = new ethers.Contract(token, ABIS.erc20, _read);
+  return await erc.balanceOf(addr);
+}
+
 // EVM has no approval-free way to sell a standard ERC20 through an AMM, so this
 // is the ONE approval in the app: exact amount (never MaxUint), to our own
 // PadRouter only, simulated first. The sell tax comes off the ETH out.
@@ -964,13 +974,16 @@ function requireVesting() {
     throw new Error("Dev-bag locking opens when the Pad goes live — the vesting lock isn't set yet.");
 }
 
-/// Approve + create an IRREVOCABLE vesting schedule for `beneficiary` (the dev). `amount` is a
-/// decimal token string (18-dp) — pass the EXACT bought balance for a full lock. linear:
-/// cliffDays=0. hard cliff: cliffDays=durationDays (nothing until the end, then 100%).
+/// Approve + create an IRREVOCABLE vesting schedule for `beneficiary` (the dev). `amount` may be a
+/// BigInt of wei (preferred — exact, e.g. a % of the on-chain balance) or a decimal token string
+/// (18-dp). Pass the EXACT bought balance for a full lock. linear: cliffDays=0. hard cliff:
+/// cliffDays=durationDays (nothing until the end, then 100%). startTs 0 => the contract uses now.
 export async function createVestingLock(token, beneficiary, amount, startTs = 0, cliffDays = 0, durationDays = 30) {
   requireVesting();
   if (!_signer) await connect();
-  const amt = ethers.parseUnits(plainAmount(amount), 18);
+  // Accept wei BigInt directly so callers can pass an exact balance-derived amount
+  // without a lossy Number()/formatUnits round-trip.
+  const amt = typeof amount === "bigint" ? amount : ethers.parseUnits(plainAmount(amount), 18);
   if (amt <= 0n) throw new Error("Nothing to lock.");
   const lock = CONTRACTS.tokenVestingLock;
   const erc = new ethers.Contract(token, ABIS.erc20, _signer);
@@ -983,6 +996,20 @@ export async function createVestingLock(token, beneficiary, amount, startTs = 0,
   const cliff = BigInt(Math.max(0, Math.round(cliffDays * VEST_DAY)));
   const c = new ethers.Contract(lock, ABIS.tokenVestingLock, _signer);
   return guardedSend(c, "create", [token, beneficiary || _account, amt, BigInt(startTs || 0), cliff, dur], 0n, "Lock dev bag");
+}
+
+/// Lock `pct`% (1–100) of `beneficiary`'s CURRENT balance of `token`, computed in exact wei so a
+/// 100% lock locks the true balance (never a float that rounds above it and reverts). Returns null
+/// if there's nothing to lock. Used by the post-launch dev-bag lock + its resume path.
+export async function lockDevBagPct(token, beneficiary, pct, cliffDays = 0, durationDays = 30) {
+  requireVesting();
+  if (!_signer) await connect();
+  const who = beneficiary || _account;
+  const p = Math.max(1, Math.min(100, Math.round(Number(pct) || 0)));
+  const balWei = await tokenBalanceWei(token, who);
+  const amt = (balWei * BigInt(p)) / 100n;
+  if (amt <= 0n) return null;
+  return createVestingLock(token, who, amt, 0, cliffDays, durationDays);
 }
 
 /// Release all currently-vested tokens of a schedule to its (fixed) beneficiary. Permissionless.
@@ -1001,11 +1028,24 @@ export async function devLockOf(token, dev) {
   if (hasApi()) {
     try {
       const j = await apiGet(`/api/coin/${token}/devlock`);
-      if (j && j.hasLock) return {
-        locked: BigInt(j.lockedWei || "0"), releasable: BigInt(j.releasableWei || "0"),
-        total: BigInt(j.totalWei || "0"), lockedPercent: Number(j.lockedPct || 0),
-        ids: j.ids || [], end: Number(j.end || 0),
-      };
+      if (j && j.hasLock) {
+        const ids = j.ids || [];
+        // locked/total/pct come from the fast indexer badge. `releasable` must be EXACT (vested − released),
+        // which the indexer can't know — read it on-chain over the (usually single) schedule id. Fall back to
+        // the cumulative vested figure only if the chain read fails.
+        let releasable = BigInt(j.vestedWei || "0");
+        try {
+          const c = new ethers.Contract(CONTRACTS.tokenVestingLock, ABIS.tokenVestingLock, _read);
+          let sum = 0n;
+          for (const id of ids) sum += BigInt(await c.releasable(id));
+          releasable = sum;
+        } catch { /* keep the vested upper-bound */ }
+        return {
+          locked: BigInt(j.lockedWei || "0"), releasable,
+          total: BigInt(j.totalWei || "0"), lockedPercent: Number(j.lockedPct || 0),
+          ids, end: Number(j.end || 0),
+        };
+      }
       if (j && j.hasLock === false) return null;
     } catch { /* fall through to chain */ }
   }

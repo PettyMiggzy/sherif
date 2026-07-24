@@ -395,12 +395,11 @@ $('launchBtn').addEventListener('click', async () => {
         // Stash the intent FIRST so the coin page can resume the lock if this is interrupted.
         try { localStorage.setItem(PENDING_LOCK_KEY(token), JSON.stringify({ pct: lockPct, days: spec.days, mode: spec.mode, _ts: Date.now() })); } catch {}
         setNote('Launched ✓ — locking your dev bag (2 signatures: approve + lock)…', 'ok');
-        // Read the REAL bought balance on-chain: the dev only holds tokens AFTER launch, and the buy
-        // refunds any excess — the form estimate would over-lock. Compute the chosen % of that balance.
-        const bal = await Pad.tokenBalance(token);
-        const amount = (Number(bal) || 0) * lockPct / 100;
-        if (amount > 0) {
-          await Pad.createVestingLock(token, Pad.account(), String(amount), 0, spec.mode === 'cliff' ? spec.days : 0, spec.days);
+        // Lock the chosen % of the REAL post-launch balance, computed in exact wei (not a float),
+        // so a 100% lock locks the true balance instead of rounding above it and reverting. The dev
+        // only holds tokens AFTER launch and the buy refunds any excess, so this reads on-chain.
+        const done = await Pad.lockDevBagPct(token, Pad.account(), lockPct, spec.mode === 'cliff' ? spec.days : 0, spec.days);
+        if (done) {
           try { localStorage.removeItem(PENDING_LOCK_KEY(token)); } catch {} // done — clear the stash
           setNote('Launched ✓ and dev bag locked — buyers can verify it on-chain.', 'ok');
         }

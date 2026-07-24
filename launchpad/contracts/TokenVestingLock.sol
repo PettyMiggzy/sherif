@@ -76,6 +76,11 @@ contract TokenVestingLock is ReentrancyGuard {
         if (duration == 0 || cliffDuration > duration) revert BadDuration();
 
         uint64 start_ = start == 0 ? uint64(block.timestamp) : start;
+        // Reject a start/duration whose sum overflows uint64. `_vestedAmount` computes
+        // `start + duration`; if that wrapped, every view (and release) would revert and
+        // permanently strand the escrow. Rejecting here keeps a created schedule always
+        // releasable. (Bounds are absurdly large — ~584 billion years — so no real lock hits this.)
+        if (uint256(start_) + duration > type(uint64).max) revert BadDuration();
 
         // Measure the ACTUAL received amount so the schedule is honest even for a skimming token.
         uint256 before = IERC20(token).balanceOf(address(this));
@@ -152,6 +157,47 @@ contract TokenVestingLock is ReentrancyGuard {
 
     function idsOfToken(address token) external view returns (uint256[] memory) {
         return _byToken[token];
+    }
+
+    // Paginated variants. `create` is permissionless, so anyone can inflate a
+    // beneficiary's/token's id list with junk 1-wei schedules; the full-array
+    // getters above can then exceed a node's eth_call response limit. These let a
+    // frontend page instead. `release(id)` is unaffected — it takes the id directly.
+    function beneficiaryIdCount(address who) external view returns (uint256) {
+        return _byBeneficiary[who].length;
+    }
+
+    function tokenIdCount(address token) external view returns (uint256) {
+        return _byToken[token].length;
+    }
+
+    function idsOfBeneficiaryPaged(address who, uint256 offset, uint256 limit)
+        external
+        view
+        returns (uint256[] memory page)
+    {
+        return _page(_byBeneficiary[who], offset, limit);
+    }
+
+    function idsOfTokenPaged(address token, uint256 offset, uint256 limit)
+        external
+        view
+        returns (uint256[] memory page)
+    {
+        return _page(_byToken[token], offset, limit);
+    }
+
+    function _page(uint256[] storage arr, uint256 offset, uint256 limit)
+        private
+        view
+        returns (uint256[] memory page)
+    {
+        uint256 len = arr.length;
+        if (offset >= len) return new uint256[](0);
+        uint256 end = offset + limit;
+        if (end > len) end = len;
+        page = new uint256[](end - offset);
+        for (uint256 i = offset; i < end; i++) page[i - offset] = arr[i];
     }
 
     // ─────────────────────────────────────────────────────── internal ──

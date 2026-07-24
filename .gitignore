@@ -18,3 +18,4 @@ launchpad/artifacts/
 launchpad/cache/
 launchpad/.env
 launchpad/typechain-types/
+*.env.bak-*

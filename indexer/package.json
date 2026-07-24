@@ -11,7 +11,8 @@
     "start": "node src/server.js",
     "index": "node src/server.js --no-api",
     "api": "node src/server.js --no-index",
-    "backfill": "node src/server.js --once --no-api"
+    "backfill": "node src/server.js --once --no-api",
+    "test": "node --test 'test/*.test.mjs'"
   },
   "dependencies": {
     "@openzeppelin/merkle-tree": "^1.0.8",

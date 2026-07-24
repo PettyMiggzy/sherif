@@ -69,3 +69,19 @@ test("conservation: Σ holder allocations ≤ the holder pot (floored, remainder
   const sum = res.entries.filter((l) => l.side === SIDE.Holders).reduce((s, l) => s + BigInt(l.amount), 0n);
   assert.ok(sum <= pot, `Σ alloc ${sum} must be ≤ pot ${pot}`);
 });
+
+test("floor routing: sub-threshold share is NOT redistributed to the whale", () => {
+  // Whale 600k + dust 100k both hold the full epoch. The denominator is ALL holder
+  // balance-seconds (700k), so the whale gets pot·600/700 and the dust's 100/700 slice
+  // is left UNALLOCATED (→ swept to the coin's floor), not handed to the whale.
+  const res = computeEpoch(5);
+  const pot = 1_000_000n;
+  const whaleAmt = res.entries
+    .filter((l) => l.side === SIDE.Holders && l.user.toLowerCase() === WHALE.toLowerCase())
+    .reduce((s, l) => s + BigInt(l.amount), 0n);
+  const expected = (pot * 600_000n) / 700_000n; // whale's true pro-rata share of the FULL denominator
+  assert.equal(whaleAmt, expected, `whale should get ${expected} (600/700 of pot), not the whole pot`);
+  assert.ok(whaleAmt < pot, "whale must NOT absorb the sub-threshold dust's slice");
+  const sum = res.entries.filter((l) => l.side === SIDE.Holders).reduce((s, l) => s + BigInt(l.amount), 0n);
+  assert.ok(pot - sum >= (pot * 100_000n) / 700_000n - 1n, "the dust's ~100/700 slice must remain for the floor");
+});

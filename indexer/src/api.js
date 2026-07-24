@@ -629,13 +629,15 @@ export function startApi() {
             : now >= r.start + r.duration ? T
             : (T * BigInt(now - r.start)) / BigInt(r.duration || 1);
           locked += T - vested;
-          releasable += vested; // no on-chain `released` tracked here; only used to show/hide the release button
+          releasable += vested; // CUMULATIVE vested — the indexer doesn't track on-chain `released`
           end = Math.max(end, r.start + r.duration);
         }
         const lockedPct = total > 0n ? Number((locked * 10000n) / total) : 0;
         return send(res, 200, {
           token, hasLock: true, ids: rows.map((r) => r.id),
-          totalWei: total.toString(), lockedWei: locked.toString(), releasableWei: releasable.toString(),
+          // `vestedWei` is CUMULATIVE vested (honest — we don't index Released). The client derives the
+          // exact still-claimable amount on-chain (vested − released). `lockedWei`/`lockedPct` are exact.
+          totalWei: total.toString(), lockedWei: locked.toString(), vestedWei: releasable.toString(),
           lockedPct, end,
         }, origin);
       }

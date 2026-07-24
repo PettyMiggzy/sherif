@@ -31,6 +31,16 @@ function frac(tick, startTick, gradTick) {
 }
 
 const provider = new ethers.JsonRpcProvider(CFG.rpcUrl, undefined, { staticNetwork: true });
+
+// eth_getLogs is ~90% of this indexer's RPC compute. Route it to a FREE logs RPC
+// (Blockscout by default) and keep the paid RPC (CFG.rpcUrl) only as a fallback,
+// so continuous log polling never burns the paid provider's quota. Contract/block
+// reads stay on the paid provider (small volume, and we want them reliable). Set
+// LOGS_RPC="" to force everything back onto the paid RPC.
+const LOGS_RPC = process.env.LOGS_RPC ?? "https://robinhoodchain.blockscout.com/api/eth-rpc";
+const logsProvider = (LOGS_RPC && LOGS_RPC !== CFG.rpcUrl)
+  ? new ethers.JsonRpcProvider(LOGS_RPC, undefined, { staticNetwork: true })
+  : provider;
 const tsCache = new Map(); // block -> unix ts, so we don't re-fetch a block repeatedly
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -47,6 +57,17 @@ async function withRetry(fn, label, tries = 5) {
       await sleep(wait);
       wait = Math.min(wait * 2, 8000);
     }
+  }
+}
+
+// getLogs against the free logs RPC first; if it fails after retries, fall back to
+// the paid RPC ONCE so a Blockscout hiccup can never stall the indexer.
+async function getLogs(filter, label) {
+  try { return await withRetry(() => logsProvider.getLogs(filter), label); }
+  catch (e) {
+    if (logsProvider === provider) throw e;
+    console.warn(`[indexer] ${label} free logs-RPC failed, falling back to paid RPC: ${e.shortMessage || e.message || e}`);
+    return await withRetry(() => provider.getLogs(filter), `${label}.fallback`);
   }
 }
 
@@ -78,21 +99,17 @@ async function nameSymbol(token) {
 async function getLogsRange(from, to) {
   // Sequential (not parallel) — Blockscout 500s if you fan out too many getLogs
   // at once. Each call is retried independently.
-  const launched = await withRetry(() =>
-    provider.getLogs({ fromBlock: from, toBlock: to, address: CFG.factory, topics: [TOPICS.Launched] }), "getLogs.launched");
+  const launched = await getLogs({ fromBlock: from, toBlock: to, address: CFG.factory, topics: [TOPICS.Launched] }, "getLogs.launched");
   // Graduated is curve-emitted with no indexed token, so we query by topic0 across
   // any address and match back by log.address.
-  const grads = await withRetry(() =>
-    provider.getLogs({ fromBlock: from, toBlock: to, topics: [TOPICS.Graduated] }), "getLogs.grads");
+  const grads = await getLogs({ fromBlock: from, toBlock: to, topics: [TOPICS.Graduated] }, "getLogs.grads");
   // RewardVault Accrued (0.25% legs) — only when a vault is configured.
   const accruals = CFG.rewardVault
-    ? await withRetry(() =>
-        provider.getLogs({ fromBlock: from, toBlock: to, address: CFG.rewardVault, topics: [TOPICS.Accrued] }), "getLogs.accruals")
+    ? await getLogs({ fromBlock: from, toBlock: to, address: CFG.rewardVault, topics: [TOPICS.Accrued] }, "getLogs.accruals")
     : [];
   // TokenVestingLock ScheduleCreated (dev-bag locks) — only when the locker is configured.
   const vestings = CFG.tokenVestingLock
-    ? await withRetry(() =>
-        provider.getLogs({ fromBlock: from, toBlock: to, address: CFG.tokenVestingLock, topics: [TOPICS.ScheduleCreated] }), "getLogs.vestings")
+    ? await getLogs({ fromBlock: from, toBlock: to, address: CFG.tokenVestingLock, topics: [TOPICS.ScheduleCreated] }, "getLogs.vestings")
     : [];
   // Merge + order by (block, logIndex) for deterministic application.
   return [...launched, ...grads, ...accruals, ...vestings].sort((a, b) =>
@@ -105,8 +122,7 @@ async function getLogsRange(from, to) {
 async function getPoolSwaps(pools, from, to) {
   const out = [];
   for (const p of pools) {
-    const logs = await withRetry(() =>
-      provider.getLogs({ fromBlock: from, toBlock: to, address: p.pool, topics: [TOPICS.Swap] }),
+    const logs = await getLogs({ fromBlock: from, toBlock: to, address: p.pool, topics: [TOPICS.Swap] },
       `getLogs.swap.${p.pool.slice(0, 10)}`);
     for (const l of logs) out.push(l);
   }

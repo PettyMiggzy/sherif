@@ -956,10 +956,10 @@ $('pendingLockBtn').addEventListener('click', async () => {
     if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
     if (Pad.account().toLowerCase() !== String(COIN.dev).toLowerCase()) return setNote('Only the coin creator can finish this lock.', 'err');
     setNote('Locking your dev bag (approve + lock)…');
-    const bal = await Pad.tokenBalance(COIN.token);
-    const amount = (Number(bal) || 0) * Math.max(0, Math.min(100, p.pct)) / 100;
-    if (!(amount > 0)) return setNote('No balance found to lock.', 'err');
-    await Pad.createVestingLock(COIN.token, Pad.account(), String(amount), 0, p.mode === 'cliff' ? p.days : 0, p.days);
+    // Exact-wei % of the on-chain balance (never a float) so a 100% lock can't round
+    // above the real balance and revert.
+    const done = await Pad.lockDevBagPct(COIN.token, Pad.account(), p.pct, p.mode === 'cliff' ? p.days : 0, p.days);
+    if (!done) return setNote('No balance found to lock.', 'err');
     try { localStorage.removeItem(PENDING_LOCK_KEY(TOKEN)); } catch {}
     $('pendingLock').style.display = 'none';
     setNote('Dev bag locked ✓ — buyers can verify it on-chain.', 'ok');
@@ -977,9 +977,9 @@ async function loadRewards(){
   let r = null; try { r = await Pad.rewards(Pad.account()); } catch { r = null; }
   if (!r) return hide();
   const tk = COIN.token.toLowerCase();
-  const symOf = (x) => String(x.sym || '').replace(/^\$/, '').toLowerCase();
-  const coinSym = String(COIN.symbol || '').replace(/^\$/, '').toLowerCase();
-  const mine = (x) => x.coin ? String(x.coin).toLowerCase() === tk : symOf(x) === coinSym;
+  // Match strictly on coin ADDRESS. Dropping the old symbol fallback avoids two coins
+  // that share a ticker surfacing each other's claim rows on the wrong page.
+  const mine = (x) => x.coin && String(x.coin).toLowerCase() === tk;
   const claimable = (r.claimable || []).filter(mine);
   const pending = (r.pending || []).filter(mine);
   if (!claimable.length && !pending.length) return hide();
