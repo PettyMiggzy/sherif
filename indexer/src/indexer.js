@@ -32,12 +32,15 @@ function frac(tick, startTick, gradTick) {
 
 const provider = new ethers.JsonRpcProvider(CFG.rpcUrl, undefined, { staticNetwork: true });
 
-// eth_getLogs is ~90% of this indexer's RPC compute. Route it to a FREE logs RPC
-// (Blockscout by default) and keep the paid RPC (CFG.rpcUrl) only as a fallback,
-// so continuous log polling never burns the paid provider's quota. Contract/block
-// reads stay on the paid provider (small volume, and we want them reliable). Set
-// LOGS_RPC="" to force everything back onto the paid RPC.
-const LOGS_RPC = process.env.LOGS_RPC ?? "https://robinhoodchain.blockscout.com/api/eth-rpc";
+// eth_getLogs is ~90% of this indexer's RPC compute. If you have a SECOND, reliable
+// endpoint for it (a self-hosted node, or a PAID Blockscout/alt plan), set LOGS_RPC
+// to route log polling there and keep the primary RPC only as a fallback — cutting
+// the primary's quota. Contract/block reads always use the primary (small volume).
+// DEFAULT is empty = everything on the primary RPC (do NOT point this at the public
+// Blockscout endpoint: it rate-limits the indexer's per-pool getLogs burst, which
+// just forces the fallback and adds latency. To cut cost on one provider, raise
+// POLL_MS instead — that reduces getLogs frequency proportionally.)
+const LOGS_RPC = (process.env.LOGS_RPC || "").trim();
 const logsProvider = (LOGS_RPC && LOGS_RPC !== CFG.rpcUrl)
   ? new ethers.JsonRpcProvider(LOGS_RPC, undefined, { staticNetwork: true })
   : provider;
