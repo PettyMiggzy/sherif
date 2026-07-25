@@ -4,10 +4,54 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Coin: Robin Labs Pad</title>
+<meta name="description" content="Live price, chart, holders and trades for a memecoin on Robin Labs, the fair launch launchpad on Robinhood Chain. Buy and sell on real Uniswap v3 liquidity." />
+<link rel="canonical" href="https://robinlab.io/token.html" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<link rel="manifest" href="/site.webmanifest" />
 <meta name="theme-color" content="#080a04" />
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Robin Labs" />
+<meta property="og:title" content="Coin: Robin Labs Pad" />
+<meta property="og:description" content="Live price, chart, holders and trades for a memecoin on Robin Labs, the fair launch launchpad on Robinhood Chain." />
+<meta property="og:url" content="https://robinlab.io/token.html" />
+<meta property="og:image" content="https://robinlab.io/assets/og.jpg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Coin: Robin Labs Pad" />
+<meta name="twitter:description" content="Live price, chart, holders and trades for a memecoin on Robin Labs, the fair launch launchpad on Robinhood Chain." />
+<meta name="twitter:image" content="https://robinlab.io/assets/og.jpg" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "name": "Coin: Robin Labs Pad",
+      "url": "https://robinlab.io/token.html",
+      "description": "Live price, chart, holders and trades for a memecoin on the Robin Labs launchpad on Robinhood Chain.",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "Robin Labs",
+        "url": "https://robinlab.io/"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://robinlab.io/" },
+        { "@type": "ListItem", "position": 2, "name": "Browse", "item": "https://robinlab.io/browse.html" },
+        { "@type": "ListItem", "position": 3, "name": "Coin", "item": "https://robinlab.io/token.html" }
+      ]
+    }
+  ]
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -403,6 +447,14 @@ const refreshConnect = () => { const a = Pad.account(); const b = $('connectBtn'
 
 let SIDE = 'buy', COIN = null, PROFILE = null, COIN_HAS_BANNER = false;
 
+// Sync the social preview tags (og/twitter title + image) to the loaded coin, so a shared
+// coin link unfurls with its own name and pfp instead of the generic template card.
+function setSocialMeta(name, image){
+  const set = (sel, val) => { const el = document.querySelector(sel); if (el && val) el.setAttribute('content', val); };
+  if (name){ const t = name + ': Robin Labs'; set('meta[property="og:title"]', t); set('meta[name="twitter:title"]', t); }
+  if (image){ set('meta[property="og:image"]', image); set('meta[name="twitter:image"]', image); }
+}
+
 // Symbol with exactly one leading $ (some coins' on-chain symbol already includes it,
 // which was producing "Sell $$TEST3").
 const disp = (s) => { s = String(s || '').trim(); return s ? (s.startsWith('$') ? s : '$' + s) : ''; };
@@ -756,6 +808,7 @@ async function loadCoin(){
   $('pfp').textContent = (meta.symbol || '?').slice(0, 3);
   $('ca').textContent = Pad.short(TOKEN);
   document.title = meta.name + ': Robin Labs Pad';
+  setSocialMeta(meta.name);
   $('trade').textContent = (SIDE === 'buy' ? 'Buy ' : 'Sell ') + disp(meta.symbol);
   $('infoBuy').textContent = (tax.buyBps / 100) + '%';
   $('infoSell').textContent = (tax.sellBps / 100) + '%';
@@ -764,6 +817,7 @@ async function loadCoin(){
   try {
     PROFILE = await Pad.getCoinProfile(TOKEN);
     applyProfile(PROFILE, meta.symbol);
+    if (PROFILE && PROFILE.image) setSocialMeta(meta.name, PROFILE.image);
   } catch { /* profiles are cosmetic - never block the coin page */ }
   finishPendingProfile(); // if this browser launched the coin with an image that hasn't saved yet, complete it
 
@@ -793,6 +847,7 @@ function renderDemoCoin(){
   else $('pfp').textContent = (c.symbol || '?').slice(0, 3);
   $('ca').textContent = Pad.short(c.token);
   document.title = c.name + ': Robin Labs';
+  setSocialMeta(c.name, c.image);
   $('infoBuy').textContent = '1%';
   $('infoSell').textContent = '1%';
   $('stMc').textContent = fmt(c.mc);
