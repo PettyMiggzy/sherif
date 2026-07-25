@@ -51,8 +51,10 @@ async function main() {
   log(`  LIVE router  (read-only, never touched): ${LIVE.padRouter}`);
 
   const [deployer] = await ethers.getSigners();
-  const gasPrice = (await ethers.provider.getFeeData()).gasPrice;
+  let gasPrice = (await ethers.provider.getFeeData()).gasPrice;
   if (gasPrice == null) throw new Error("RPC returned no gasPrice (legacy chain expected).");
+  // Floor above the chain's moving base fee so a tick-up can't underprice the deploy tx.
+  try { const blk = await ethers.provider.getBlock("latest"); const floor = ((blk?.baseFeePerGas ?? 0n) * 12n) / 10n; if (floor > gasPrice) gasPrice = floor; } catch {}
   const ov = { type: 0, gasPrice }; // legacy tx (Robinhood has no EIP-1559)
   const bal = await ethers.provider.getBalance(deployer.address);
   log(`  deployer=${deployer.address}  balance=${(+ethers.formatEther(bal)).toFixed(4)} ETH  gas=${ethers.formatUnits(gasPrice, "gwei")} gwei`);

@@ -48,7 +48,16 @@ const iface = { factory: new ethers.Interface(ABI.factory) };
 export async function gasPriceNow() {
   const fee = await provider.getFeeData();
   if (fee.gasPrice == null) throw new Error('RPC returned no gasPrice (a legacy chain must supply one)');
-  return fee.gasPrice;
+  let gp = fee.gasPrice;
+  // This chain has a MOVING base fee; getFeeData() can return a value a hair below it,
+  // which the node rejects ("max fee per gas less than block base fee"). Floor at 1.2x
+  // the latest base fee so a tick-up between quote and mining can't underprice the tx.
+  try {
+    const blk = await provider.getBlock('latest');
+    const floor = ((blk?.baseFeePerGas ?? 0n) * 12n) / 10n;
+    if (floor > gp) gp = floor;
+  } catch { /* keep the suggested price if the block read fails */ }
+  return gp;
 }
 
 /** Legacy tx overrides (type-0 + explicit gasPrice). Robinhood Chain has no 1559. */

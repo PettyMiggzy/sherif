@@ -397,12 +397,8 @@ async function guardedSend(contract, method, args, valueWei, label) {
   let gasLimit = (gas * 12n) / 10n;
   if (gasLimit > TX_GAS_CAP) gasLimit = TX_GAS_CAP;
 
-  // 3) legacy gas price (never eth_maxPriorityFeePerGas - the chain lacks it). getFeeData()
-  // works on both JsonRpcProvider and FallbackProvider; the raw eth_gasPrice call is only a
-  // secondary and only when the provider actually exposes .send() (FallbackProvider doesn't).
-  let gasPrice = 0n;
-  try { gasPrice = (await _read.getFeeData()).gasPrice ?? 0n; } catch {}
-  if (gasPrice <= 0n && typeof _read.send === "function") { try { gasPrice = BigInt(await _read.send("eth_gasPrice", [])); } catch {} }
+  // 3) legacy gas price, floored above the moving base fee (see safeGasPrice).
+  const gasPrice = await safeGasPrice();
 
   // 4) balance check - the whole point: refuse locally, kindly, if it won't fit.
   const bal = await _provider.getBalance(_account);
@@ -427,12 +423,28 @@ async function guardedSend(contract, method, args, valueWei, label) {
 // throws -32601 and corrupts the wallet's fee/balance state. Force a fully-priced
 // legacy tx (type:0 + explicit gasPrice) exactly like guardedSend.
 async function legacyOverrides() {
-  let gasPrice = 0n;
-  try { gasPrice = (await _read.getFeeData()).gasPrice ?? 0n; } catch {}
-  if (gasPrice <= 0n && typeof _read.send === "function") { try { gasPrice = BigInt(await _read.send("eth_gasPrice", [])); } catch {} }
+  const gasPrice = await safeGasPrice();
   const o = { type: 0 };
   if (gasPrice > 0n) o.gasPrice = gasPrice;
   return o;
+}
+
+// Legacy gas price with a base-fee floor. This chain has a MOVING base fee, and
+// getFeeData()/eth_gasPrice can hand back a value a hair BELOW the current base fee,
+// which makes the node reject the tx ("max fee per gas less than block base fee") and
+// intermittently fails a user's buy/sell. Floor the price at 1.2x the latest block's
+// base fee so a tick-up between quote and mining can't underprice the trade. (Gas here
+// is ~0.07 gwei, so the headroom costs effectively nothing.)
+async function safeGasPrice() {
+  let gp = 0n;
+  try { gp = (await _read.getFeeData()).gasPrice ?? 0n; } catch {}
+  if (gp <= 0n && typeof _read.send === "function") { try { gp = BigInt(await _read.send("eth_gasPrice", [])); } catch {} }
+  try {
+    const blk = await _read.getBlock("latest");
+    const floor = ((blk?.baseFeePerGas ?? 0n) * 12n) / 10n; // 1.2x base fee
+    if (floor > gp) gp = floor;
+  } catch {}
+  return gp;
 }
 
 // ── LAUNCH - one call, one recipient, optional dev buy, approval-free [Rule 1] ─

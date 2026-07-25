@@ -14,8 +14,9 @@ async function main() {
   if (Number(net.chainId) !== 4663) throw new Error(`Wrong chain: connected to ${net.chainId}, expected 4663 (Robinhood). Aborting.`);
   const [deployer] = await ethers.getSigners();
   // Robinhood Chain has no EIP-1559 — deploy as a legacy (type-0) tx with explicit gasPrice.
-  const gasPrice = (await ethers.provider.getFeeData()).gasPrice;
+  let gasPrice = (await ethers.provider.getFeeData()).gasPrice;
   if (gasPrice == null) throw new Error("RPC returned no gasPrice (legacy chain expected)");
+  try { const blk = await ethers.provider.getBlock("latest"); const floor = ((blk?.baseFeePerGas ?? 0n) * 12n) / 10n; if (floor > gasPrice) gasPrice = floor; } catch {}
   const ov = { type: 0, gasPrice };
 
   console.log(`network=${network.name}  deployer=${deployer.address}`);

@@ -20,8 +20,9 @@ async function main() {
   const net = await ethers.provider.getNetwork();
   if (Number(net.chainId) !== 4663) throw new Error(`Wrong chain: connected to ${net.chainId}, expected 4663 (Robinhood). Aborting.`);
   const [deployer] = await ethers.getSigners();
-  const gasPrice = (await ethers.provider.getFeeData()).gasPrice;
+  let gasPrice = (await ethers.provider.getFeeData()).gasPrice;
   if (gasPrice == null) throw new Error("RPC returned no gasPrice (legacy chain expected)");
+  try { const blk = await ethers.provider.getBlock("latest"); const floor = ((blk?.baseFeePerGas ?? 0n) * 12n) / 10n; if (floor > gasPrice) gasPrice = floor; } catch {}
   const ov = { type: 0, gasPrice };
 
   // The LIVE router — READ from deploy.json, never redeployed.

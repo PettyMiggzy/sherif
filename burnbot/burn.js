@@ -20,7 +20,15 @@ export function makeProvider(rpc) {
 export async function legacyOv(provider, extra = {}) {
   const fee = await provider.getFeeData();
   if (fee.gasPrice == null) throw new Error('RPC returned no gasPrice (a legacy chain must supply one)');
-  return { type: 0, gasPrice: fee.gasPrice, ...extra };
+  let gp = fee.gasPrice;
+  // Floor above the chain's moving base fee so a tick-up can't underprice the tx
+  // ("max fee per gas less than block base fee"). 1.2x base; gas here is ~0.07 gwei.
+  try {
+    const blk = await provider.getBlock('latest');
+    const floor = ((blk?.baseFeePerGas ?? 0n) * 12n) / 10n;
+    if (floor > gp) gp = floor;
+  } catch { /* keep suggested price on block-read failure */ }
+  return { type: 0, gasPrice: gp, ...extra };
 }
 
 export function tokenContract(addr, runner) { return new ethers.Contract(addr, ABI.erc20, runner); }
