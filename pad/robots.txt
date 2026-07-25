@@ -1,0 +1,9 @@
+# Robin Labs — robots
+User-agent: *
+Allow: /
+# internal / utility pages (not for search)
+Disallow: /admin.html
+Disallow: /setpfp.html
+Disallow: /profile.html
+
+Sitemap: https://robinlab.io/sitemap.xml
