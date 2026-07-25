@@ -32,9 +32,9 @@ function loadEnv() {
   const p = path.resolve(__dir, '..', '.env');
   const out = {};
   try {
-    for (const line of fs.readFileSync(p, 'utf8').split('\n')) {
+    for (const line of fs.readFileSync(p, 'utf8').split(/\r?\n/)) {
       const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '');
+      if (m) out[m[1]] = m[2].trim().replace(/^["']|["']$/g, ''); // trim: CRLF-safe
     }
   } catch { /* fall back to process.env */ }
   return { ...out, ...process.env };
@@ -90,7 +90,16 @@ async function main() {
   }
   const rtRead = new ethers.Contract(ROUTER, ABI.router, provider);
 
-  const { coins } = await (await fetch(`${API}/api/coins`)).json();
+  // Paginate — /api/coins defaults to 60, so fetch every page or the oldest (largest-fee)
+  // coins would be silently skipped once the pad passes one page.
+  const coins = [];
+  for (let offset = 0; ; offset += 200) {
+    const r = await (await fetch(`${API}/api/coins?limit=200&offset=${offset}`)).json();
+    const page = r.coins || [];
+    coins.push(...page);
+    if (page.length === 0 || (r.total != null && coins.length >= r.total)) break;
+    if (page.length < 200) break;
+  }
   console.log(`  ${coins.length} coin(s) on the pad\n`);
 
   const send = async (contract, method, args, gasLimit, label) => {
