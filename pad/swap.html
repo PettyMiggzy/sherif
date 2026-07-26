@@ -209,7 +209,7 @@ window.addEventListener("robinpad:ready", refreshBtn); refreshBtn();
 // retries in 12s so a cold start recovers quickly without hammering DexScreener.
 let boardTimer;
 async function tick() {
-  await load();
+  try { await load(); } catch (e) { /* keep the refresh loop alive even if a render throws */ }
   clearTimeout(boardTimer);
   const empty = !document.getElementById("grid").children.length;
   boardTimer = setTimeout(tick, empty ? 12000 : 60000);
