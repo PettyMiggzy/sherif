@@ -9,7 +9,11 @@ async function main() {
 
   console.log(`Deployer : ${wallet.address}`);
   const factory = new ethers.ContractFactory(art.abi, art.bytecode, wallet);
-  const ov = await baseFeeOverrides(provider);
+  // This chain's RPC can't eth_estimateGas a deploy ("missing revert data"), so
+  // we set an explicit gasLimit — ethers then skips estimation and just sends.
+  // Disperse deploys in ~1.02M gas; 2M is a safe ceiling, well under the cap.
+  const gasLimit = BigInt(process.env.DEPLOY_GAS_LIMIT || 2_000_000);
+  const ov = await baseFeeOverrides(provider, { gasLimit });
   const c = await factory.deploy(ov);
   console.log(`Deploy tx: ${c.deploymentTransaction().hash}  @ ${ethers.formatUnits(ov.gasPrice, "gwei")} gwei`);
   await c.waitForDeployment();
