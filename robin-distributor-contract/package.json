@@ -1,0 +1,29 @@
+{
+  "name": "robin-distributor-contract",
+  "version": "1.0.0",
+  "private": true,
+  "description": "On-chain even-split ETH distributor for Robinhood Chain (chainId 4663).",
+  "scripts": {
+    "build:recipients": "node scripts/build-recipients.cjs",
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "estimate": "hardhat run scripts/estimate-gas.js",
+    "deploy:disperse": "node scripts/deploy-disperse.js",
+    "watch": "node scripts/watch.js",
+    "disperse:once": "node scripts/disperse-once.js",
+    "address": "node scripts/address.js",
+    "deploy": "hardhat run scripts/deploy.js --network robinhood",
+    "load": "node scripts/load-recipients.js",
+    "set-unit": "node scripts/set-unit.js",
+    "plan": "node scripts/plan.js",
+    "distribute": "node scripts/distribute.js"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.10"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.2"
+  }
+}

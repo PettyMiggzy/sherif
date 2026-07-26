@@ -1,0 +1,23 @@
+# systemd unit for the auto-watcher — disperses on every deposit.
+#   sudo cp deploy/robin-watcher.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now robin-watcher
+#   journalctl -u robin-watcher -f
+# Adjust User/WorkingDirectory to match your droplet.
+
+[Unit]
+Description=Robin Disperse watcher (Robinhood Chain)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/robin-distributor-contract
+ExecStart=/usr/bin/node scripts/watch.js
+Restart=on-failure
+RestartSec=10
+# .env in WorkingDirectory supplies PRIVATE_KEY, DISPERSE_ADDRESS, etc.
+
+[Install]
+WantedBy=multi-user.target
