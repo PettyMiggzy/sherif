@@ -15,7 +15,7 @@ require("dotenv").config();
 const fs = require("node:fs");
 const path = require("node:path");
 const { getProvider, getWallet, getDisperse, baseFeeGasPrice, safeGetBalance, getEthUsd, ethers, CHAIN } = require("./lib");
-const { drainWalletBuys, buyOnce, BUY_GAS_LIMIT } = require("./buy-core");
+const { drainWalletBuys, buyOnce, pickAmount, reserveWei, BUY_METHOD, BUY_GAS_LIMIT } = require("./buy-core");
 
 const ROOT = path.join(__dirname, "..");
 const STATE_FILE = path.join(ROOT, "autopilot-state.json");
@@ -122,9 +122,9 @@ async function buyPaced(provider, walletKeys, gasPrice, intervalMs, log) {
     for (;;) {
       let bal;
       try { bal = await provider.getBalance(wallet.address, "latest"); } catch { break; }
-      if (bal < BUY_GAS_LIMIT * gasPrice + AMOUNT_IN) break; // this wallet can't afford another
+      if (bal < reserveWei(gasPrice, AMOUNT_IN)) break; // this wallet can't afford another
       try {
-        const tx = await buyOnce(wallet, AMOUNT_IN, gasPrice);
+        const tx = await buyOnce(wallet, pickAmount(AMOUNT_IN), gasPrice);
         await tx.wait();
         total++;
       } catch (e) {
@@ -146,7 +146,7 @@ async function main() {
 
   log(`AUTOPILOT up on ${CHAIN.name}`);
   log(`funder(distributor)=${funder.address}  disperse=${await disperse.getAddress()}  pool=${keys.length} wallets`);
-  log(`buy amount=${ethers.formatEther(AMOUNT_IN)} ETH  buyGasLimit=${BUY_GAS_LIMIT}  cursor=${state.cursor}  lifetime buys=${state.totalBuys}`);
+  log(`buy method=${BUY_METHOD}  amount=${process.env.BUY_AMOUNT_MIN_WEI && process.env.BUY_AMOUNT_MAX_WEI ? "random " + ethers.formatEther(process.env.BUY_AMOUNT_MIN_WEI) + "–" + ethers.formatEther(process.env.BUY_AMOUNT_MAX_WEI) : ethers.formatEther(AMOUNT_IN)} ETH  buyGasLimit=${BUY_GAS_LIMIT}  cursor=${state.cursor}  lifetime buys=${state.totalBuys}`);
   log(`Send ETH to ${funder.address} anytime — it funds wallets and buys automatically. Ctrl-C to stop.\n`);
 
   // Throttle setup: convert the $/hr target into an ETH/hr outflow cap.
@@ -173,7 +173,7 @@ async function main() {
     try {
       const bal = await safeGetBalance(provider, funder.address);
       const gasPrice = await baseFeeGasPrice(provider);
-      const perBuyNeed = BUY_GAS_LIMIT * gasPrice + AMOUNT_IN;
+      const perBuyNeed = reserveWei(gasPrice, AMOUNT_IN); // covers the largest (randomized) buy + gas
       const fundPerWallet = perBuyNeed + (perBuyNeed * FUND_BUFFER_BP) / 10000n;
       // The funder ALSO pays gas to send ETH to each wallet (~35k fresh, ~10k once it
       // exists). Reserve it per wallet or the disperse tx underfunds. GAS_PER_RECIPIENT
