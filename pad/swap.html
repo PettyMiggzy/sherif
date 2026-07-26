@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Robin Labs - Top 10 on Robinhood Chain</title>
+<meta name="description" content="The top coins on Robinhood Chain. Swap them on Robin Labs soon, 1.25% a side and most of it flows back to the traders and holders who use our swap." />
+<link rel="canonical" href="https://robinlab.io/swap.html" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="manifest" href="/site.webmanifest" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Robin Labs" />
+<meta property="og:title" content="Top 10 on Robinhood Chain - trading soon on Robin" />
+<meta property="og:description" content="Swap the top coins on Robinhood Chain on Robin Labs soon, and get paid: most of every fee flows back to traders and holders." />
+<meta property="og:url" content="https://robinlab.io/swap.html" />
+<meta property="og:image" content="https://robinlab.io/assets/og.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@robinlabzz" />
+<meta name="twitter:image" content="https://robinlab.io/assets/og.jpg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#060803;--bg-2:#0a0e05;--ink:#f4f7ee;--dim:#93a382;--lime:#dce905;--lime-2:#a6e017;--lime-deep:#7fae00;
+  --up:#8bea3c;--down:#ff6b57;--violet:#8a63e0;--glow:0 0 22px rgba(220,233,5,.45);
+  --line:rgba(220,233,5,.28);--line-2:rgba(220,233,5,.14);--line-strong:rgba(220,233,5,.4);
+  --panel:#0b0f06;--disp:"Bebas Neue",Oswald,Impact,sans-serif;--sans:"Plus Jakarta Sans",system-ui,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
+a{color:inherit;text-decoration:none}svg,img{display:block}
+.wrap{max-width:1120px;margin:0 auto;padding:0 22px;width:100%}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:800;font-size:.95rem;border-radius:12px;padding:13px 22px;cursor:pointer;border:1px solid transparent;transition:.16s;font-family:var(--sans)}
+.btn-lime{background:var(--lime);color:#0a0e05;box-shadow:var(--glow)}
+.btn-lime:hover{transform:translateY(-2px);box-shadow:0 0 30px rgba(220,233,5,.75)}
+.mark{display:inline-flex;align-items:center;gap:12px}
+.mark img{width:34px;height:34px;filter:drop-shadow(var(--glow))}
+.mark .wm{font-family:var(--disp);font-size:1.35rem;letter-spacing:.2em;padding-left:.1em}
+.mark .wm small{display:block;font-size:.5em;letter-spacing:.5em;color:var(--lime);margin-top:-4px}
+.nav{position:sticky;top:0;z-index:30;backdrop-filter:blur(10px);background:rgba(6,8,3,.72);border-bottom:1px solid var(--line-2)}
+.nav-in{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;max-width:1120px;margin:0 auto}
+.nav .links{display:flex;gap:20px;align-items:center;font-size:.9rem;color:var(--dim)}
+.nav .links a:hover{color:var(--lime)}.nav .links a.on{color:var(--lime)}
+main{flex:1}
+.hero{text-align:center;padding:56px 0 8px}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--lime-2);margin-bottom:14px}
+.hero h1{font-family:var(--disp);font-size:clamp(2.4rem,6.5vw,4.2rem);line-height:.94}
+.hero h1 .g{color:var(--lime);text-shadow:var(--glow)}
+.hero p{max-width:640px;margin:14px auto 0;color:var(--dim);font-size:1.02rem}
+.paybar{display:inline-flex;flex-wrap:wrap;gap:8px 14px;justify-content:center;margin:18px auto 0;background:rgba(220,233,5,.05);border:1px solid var(--line-2);border-radius:14px;padding:12px 18px;font-size:.85rem;color:var(--dim)}
+.paybar b{color:var(--ink)}.paybar .hl{color:var(--lime);font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;padding:26px 0 44px}
+.tok{display:flex;align-items:center;gap:14px;background:linear-gradient(180deg,#0c1006,var(--panel));border:1px solid var(--line-2);border-radius:16px;padding:15px 16px;position:relative;transition:.16s}
+.tok:hover{border-color:var(--line);transform:translateY(-2px)}
+.tok .rk{font-family:var(--disp);font-size:1.3rem;color:var(--dim);width:26px;text-align:center;flex:none}
+.tok .lg{width:44px;height:44px;border-radius:50%;flex:none;background:conic-gradient(from 210deg,var(--lime),var(--violet),var(--lime-deep));object-fit:cover}
+.tok .meta{flex:1;min-width:0}
+.tok .nm{font-weight:800;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tok .sy{font-family:var(--mono);font-size:.74rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+.tok .num{text-align:right;flex:none}
+.tok .px{font-weight:700;font-variant-numeric:tabular-nums}
+.tok .vol{font-size:.74rem;color:var(--dim);font-variant-numeric:tabular-nums}
+.soon{position:absolute;top:10px;right:12px;font-family:var(--mono);font-size:.56rem;letter-spacing:.1em;text-transform:uppercase;background:rgba(220,233,5,.12);border:1px solid var(--line);color:var(--lime);border-radius:999px;padding:3px 8px}
+.state{text-align:center;color:var(--dim);padding:40px 0;font-size:.9rem}
+footer{border-top:1px solid var(--line-2);margin-top:10px}
+.foot-in{display:flex;align-items:center;justify-content:space-between;padding:20px 22px;font-size:.85rem;color:var(--dim);flex-wrap:wrap;gap:10px}
+.foot-in .mid b{color:var(--lime)}.foot-in .socs a{color:var(--dim)}.foot-in .socs a:hover{color:var(--lime)}
+@media(max-width:640px){.nav-in{flex-wrap:wrap}.nav .links{order:3;width:100%;justify-content:flex-start;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:.85rem}}
+</style>
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="mark" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" /><span class="wm">ROBIN<small>LABS</small></span></a>
+  <div class="links">
+    <a href="browse.html">Browse</a>
+    <a href="rewards.html">Rewards</a>
+    <a href="swap.html" class="on">Top 10</a>
+    <a href="bridge.html">Buy Cross-Chain</a>
+    <a href="docs.html">Docs</a>
+    <a class="btn btn-lime" id="connectBtn" href="#">Connect Wallet</a>
+  </div>
+</div></header>
+
+<main>
+  <section class="hero wrap">
+    <div class="eyebrow">The chain's top coins · trading soon on Robin</div>
+    <h1>SWAP THE <span class="g">TOP 10</span><br>AND GET PAID</h1>
+    <p>The biggest coins on Robinhood Chain, all in one place. Soon you'll swap them right here, and most of every fee flows back to the traders and holders who use our swap.</p>
+    <div class="paybar">
+      <span><b>1.25%</b> a side</span> <span>·</span>
+      <span><span class="hl">most of it</span> to traders &amp; holders</span> <span>·</span>
+      <span>a slice to <b>Robin LP</b></span> <span>·</span>
+      <span>$ROBIN holders earn <span class="hl">2×</span></span>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <div class="grid" id="grid"></div>
+    <div class="state" id="state">Loading the top coins on Robinhood Chain…</div>
+  </section>
+</main>
+
+<footer><div class="wrap foot-in">
+  <span>robinlabs.io</span>
+  <span class="mid">Trade. Hold. <b>Get paid.</b></span>
+  <span class="socs">
+    <a href="https://x.com/robinlabzz" target="_blank" rel="noopener" aria-label="X (Twitter)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+    <span>@robinlabzz</span>
+  </span>
+</div></footer>
+
+<script>
+// Curated top-of-chain candidates (by live 24h volume). The board fetches LIVE from
+// DexScreener and shows the top 10, so prices/volume stay current. Refine this list as
+// the chain moves. Everything is marked "Trading soon" until RobinSwap goes live.
+const CANDIDATES = [
+  "0x020bfC650A365f8BB26819deAAbF3E21291018b4", // CashCat
+  "0x0339f5459FC690aC85F1782e15782A151b4A9E1b", // WALLET
+  "0x45F82AC5d507e988f7406935da8eEfe495a360e0", // BRODIE
+  "0x1541B925f0948c6d91bE8B52320687Ba62D30b64", // Catecoin
+  "0x499dC58539BA6869EE15b6c2a3c3c07F1AC4995F", // HOOD4663
+  "0x2286397228be256529BE1ae9ed8D7d16549e9C6A", // Real World Impact
+  "0x9E94C8b5a0CAEdA5d0471C3a9F5eD4f3519d88c7", // ROCKET
+  "0x5266eeafF092D6136AB63D18B975A60a0Cc0C8f7", // REPE
+  "0x8f100e99dDF699320724e37Cb866770381d47382", // ROBINHOOD
+  "0xC42cF61C16aaC797b991cf9C1ac8Ae70bA74A286", // ROBINHOODS
+  "0x38bb87Cf3E7344A82be7CD671c191f015b97eEe6", // SANTAHOOD
+  "0x86E5aC7eC60EEec0a8989F1F1D617AE18c15FA0c", // button
+  "0x41F41F7B849A25e027876c485544c8088f447A11", // Catcoin
+];
+
+const fmtUsd = (n) => {
+  n = Number(n) || 0;
+  if (n >= 1e9) return "$" + (n / 1e9).toFixed(1) + "B";
+  if (n >= 1e6) return "$" + (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return "$" + (n / 1e3).toFixed(1) + "k";
+  return "$" + n.toFixed(0);
+};
+const fmtPx = (p) => {
+  p = Number(p) || 0;
+  if (p === 0) return "$0";
+  if (p >= 1) return "$" + p.toFixed(3);
+  return "$" + p.toPrecision(3);
+};
+const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function load() {
+  const uniq = [...new Set(CANDIDATES.map((a) => a.toLowerCase()))];
+  let best = new Map();
+  try {
+    // DexScreener tokens endpoint (up to 30 addresses); keep each token's highest-volume pair.
+    const r = await fetch("https://api.dexscreener.com/latest/dex/tokens/" + uniq.join(","));
+    const j = await r.json();
+    for (const p of (j.pairs || [])) {
+      if (p.chainId !== "robinhood") continue;
+      const a = (p.baseToken && p.baseToken.address || "").toLowerCase();
+      if (!a) continue;
+      const vol = (p.volume && p.volume.h24) || 0;
+      const cur = best.get(a);
+      if (!cur || vol > cur.vol) best.set(a, {
+        addr: p.baseToken.address, sym: p.baseToken.symbol, name: p.baseToken.name,
+        vol, liq: (p.liquidity && p.liquidity.usd) || 0, price: p.priceUsd, mcap: p.marketCap || p.fdv || 0,
+        img: (p.info && p.info.imageUrl) || null,
+        ch: (p.priceChange && p.priceChange.h24) || 0,
+      });
+    }
+  } catch (e) { /* fall through to error state */ }
+
+  // Rank by LIQUIDITY, not raw 24h volume — several coins on the chain wash-trade huge
+  // volume on near-zero liquidity, and we don't want those topping the board.
+  const rows = [...best.values()].sort((a, b) => b.liq - a.liq).slice(0, 10);
+  const grid = document.getElementById("grid"), state = document.getElementById("state");
+  if (!rows.length) { state.textContent = "Could not load the board right now. Refresh in a moment."; return; }
+  state.style.display = "none";
+  grid.innerHTML = rows.map((t, i) => `
+    <div class="tok">
+      <span class="soon">Trading soon</span>
+      <span class="rk">${i + 1}</span>
+      ${t.img ? `<img class="lg" src="${esc(t.img)}" alt="" onerror="this.style.background='';this.removeAttribute('src')" />` : `<span class="lg"></span>`}
+      <div class="meta">
+        <div class="nm">${esc(t.name || t.sym)}</div>
+        <div class="sy">${esc(t.sym)}</div>
+      </div>
+      <div class="num">
+        <div class="px">${fmtPx(t.price)}</div>
+        <div class="vol">${fmtUsd(t.liq)} liq · ${fmtUsd(t.vol)} vol</div>
+      </div>
+    </div>`).join("");
+}
+
+window.addEventListener("robinpad:ready", function () {
+  try { const a = window.RobinPad && window.RobinPad.account && window.RobinPad.account(); if (a) document.getElementById("connectBtn").textContent = window.RobinPad.short(a); } catch (e) {}
+});
+load();
+</script>
+</body>
+</html>
