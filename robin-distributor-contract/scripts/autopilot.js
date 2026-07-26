@@ -86,47 +86,43 @@ async function main() {
   log(`buy amount=${ethers.formatEther(AMOUNT_IN)} ETH  buyGasLimit=${BUY_GAS_LIMIT}  cursor=${state.cursor}  lifetime buys=${state.totalBuys}`);
   log(`Send ETH to ${funder.address} anytime — it funds wallets and buys automatically. Ctrl-C to stop.\n`);
 
-  let last = -1n;
+  // Spend whatever the funder holds down to dust. Each pass funds up to the whole
+  // pool (one buy's worth each) and buys from them, then loops immediately. A small
+  // pool (e.g. 200) just gets CYCLED many times per deposit — reusing warm wallets,
+  // which is the cheapest way to rack up the most transactions. A big pool gets
+  // funded in one pass. When nothing's left to fund, idle until the next deposit.
   // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
       const bal = await safeGetBalance(provider, funder.address);
-      const grew = last < 0n ? bal > 0n : bal > last;
-      if (grew && bal >= MIN_DEPOSIT) {
-        const gasPrice = await baseFeeGasPrice(provider);
-        const perBuyNeed = BUY_GAS_LIMIT * gasPrice + AMOUNT_IN;      // reservable up front for one buy
-        const fundPerWallet = perBuyNeed + (perBuyNeed * FUND_BUFFER_BP) / 10000n;
-        // The funder ALSO pays gas to send ETH to each wallet (~32k for a fresh
-        // account, ~9k once it exists). Reserve it per wallet or the disperse
-        // tx underfunds. GAS_PER_RECIPIENT (45k) is a safe ceiling for the fresh case.
-        const costPerWallet = fundPerWallet + GAS_PER_RECIPIENT * gasPrice;
-        let n = Number(bal / costPerWallet);
-        if (n > keys.length) n = keys.length; // one buy per wallet per round; extra stays for next round
-        if (n < 1) {
-          log(`balance ${ethers.formatEther(bal)} ETH — not enough to fund one wallet (need ${ethers.formatEther(fundPerWallet)} ETH). Waiting.`);
-          last = bal;
-        } else {
-          const picks = [];
-          for (let i = 0; i < n; i++) picks.push(keys[(state.cursor + i) % keys.length]);
-          const addrs = picks.map((k) => k.address);
-          log(`+deposit ${ethers.formatEther(bal)} ETH → funding ${n} wallets @ ${ethers.formatEther(fundPerWallet)} ETH each (${ethers.formatUnits(gasPrice, "gwei")} gwei)`);
-          await fundWallets(disperse, addrs, fundPerWallet, gasPrice);
-          log(`  buying from ${n} wallets (${BUY_CONCURRENCY} at a time)…`);
-          const buys = await buyFromAll(provider, picks, gasPrice);
-          state.cursor = (state.cursor + n) % keys.length;
-          state.totalBuys += buys;
-          state.rounds += 1;
-          saveState(state);
-          log(`✓ round ${state.rounds}: ${buys} buys from ${n} wallets. Lifetime ${state.totalBuys} buys. cursor=${state.cursor}\n`);
-          last = await safeGetBalance(provider, funder.address);
-        }
-      } else {
-        last = bal;
-      }
+      const gasPrice = await baseFeeGasPrice(provider);
+      const perBuyNeed = BUY_GAS_LIMIT * gasPrice + AMOUNT_IN;
+      const fundPerWallet = perBuyNeed + (perBuyNeed * FUND_BUFFER_BP) / 10000n;
+      // The funder ALSO pays gas to send ETH to each wallet (~35k fresh, ~10k once it
+      // exists). Reserve it per wallet or the disperse tx underfunds. GAS_PER_RECIPIENT
+      // (45k) is a safe ceiling.
+      const costPerWallet = fundPerWallet + GAS_PER_RECIPIENT * gasPrice;
+      if (bal < costPerWallet || bal < MIN_DEPOSIT) { await sleep(POLL_MS); continue; }
+
+      let n = Number(bal / costPerWallet);
+      if (n > keys.length) n = keys.length; // one buy per wallet per pass; the loop reuses the pool
+      const picks = [];
+      for (let i = 0; i < n; i++) picks.push(keys[(state.cursor + i) % keys.length]);
+      const addrs = picks.map((k) => k.address);
+      log(`balance ${ethers.formatEther(bal)} ETH → funding ${n} wallets @ ${ethers.formatEther(fundPerWallet)} ETH each (${ethers.formatUnits(gasPrice, "gwei")} gwei)`);
+      await fundWallets(disperse, addrs, fundPerWallet, gasPrice);
+      log(`  buying from ${n} wallets (${BUY_CONCURRENCY} at a time)…`);
+      const buys = await buyFromAll(provider, picks, gasPrice);
+      state.cursor = (state.cursor + n) % keys.length;
+      state.totalBuys += buys;
+      state.rounds += 1;
+      saveState(state);
+      log(`✓ round ${state.rounds}: ${buys} buys from ${n} wallets. Lifetime ${state.totalBuys} buys. cursor=${state.cursor}\n`);
+      if (buys === 0) { log("  no buys landed — backing off (RPC/router hiccup?)"); await sleep(POLL_MS); }
     } catch (e) {
       log(`loop error: ${e.shortMessage || e.message}`);
+      await sleep(POLL_MS);
     }
-    await sleep(POLL_MS);
   }
 }
 

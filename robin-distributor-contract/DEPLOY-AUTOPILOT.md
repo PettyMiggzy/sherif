@@ -7,14 +7,23 @@ babysitting. It cycles through the wallet pool and reuses it on later deposits.
 
 **What each buy costs, all-in (measured on-chain):**
 - ~$0.0134 to make the swap (fixed chain gas — can't go lower)
-- ~$0.0033 to send ETH to a **fresh** wallet the first time (account creation), or
-  ~$0.0009 once that wallet already exists (reused)
+- ~$0.0035 to send ETH to a **fresh** wallet the first time (account creation), or
+  ~$0.0010 once that wallet already exists (reused = "warm")
 - ~$0.0002 for the token itself (the floor `amountIn`)
 
-So **~$0.019/buy for brand-new wallets → a $100 deposit ≈ ~5,300 buys** (≈5,300
-distinct buyers). As wallets get reused on later deposits the funding cost drops and
-it settles around **~6,000 buys per $100**. Using a smaller pool (more reuse, fewer
-distinct addresses) trades distinct buyers for ~10–15% more total buys.
+**Fewer wallets = more total transactions**, because each wallet is reused warm
+instead of paying the new-wallet tax every time:
+
+| Pool size | Total tx per $100 | Distinct buyers |
+|---|---|---|
+| 8,000 | ~5,240 | 5,240 |
+| 2,000 | ~5,750 | 2,000 |
+| **200 (default)** | **~6,030** | 200 |
+| 50 | ~6,055 | 50 |
+
+**200 is the sweet spot** — ~99% of the max tx count, still 200 distinct buyers, and
+good parallelism. Raise `WALLET_COUNT` only if you want more distinct addresses (it
+costs ~15% of your tx count). ($20 ≈ ~1,180 tx at 200 wallets.)
 
 ---
 
@@ -30,11 +39,11 @@ npm run compile              # builds the Disperse ABI the autopilot needs
 
 ### 1. Generate the wallet pool (keys stay on this server)
 ```bash
-WALLET_COUNT=8000 npm run generate
+WALLET_COUNT=200 npm run generate
 ```
 Writes `keys.json` (SECRET, gitignored) and `pool-addresses.json`. **Back up
-`keys.json`** — it holds the private keys for every trading wallet. 8,000 wallets
-covers ~$100 at one buy each; they're reused for every future deposit.
+`keys.json`** — it holds the private keys for every trading wallet. 200 wallets are
+reused ("cycled") across every deposit, which is what maximizes total transactions.
 
 ### 2. Point `.env` at the settings
 Your `.env` already has `PRIVATE_KEY` (the distributor), `ROBINHOOD_RPC` (Alchemy),
