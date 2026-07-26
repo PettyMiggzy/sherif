@@ -42,6 +42,7 @@ contract RobinZap {
     error NothingToZap();
     error RefundFailed();
     error NotSpokePool();
+    error NotWeth();
     error Reentrant();
 
     event Zapped(address indexed recipient, address indexed coin, uint256 ethIn, uint256 coinsOut);
@@ -81,32 +82,41 @@ contract RobinZap {
         nonReentrant
     {
         if (msg.sender != acrossSpokePool) revert NotSpokePool();
+        // We configure Across to deliver WETH, so require it: guarantees the contract actually holds
+        // `amount` after the unwrap (no underflow in _zap's residue math) and blocks any path where a
+        // stray token would make buy{value:amount} spend RESIDENT ETH.
+        if (tokenSent != weth) revert NotWeth();
         (address coin, uint256 minOut, address recipient) = abi.decode(message, (address, uint256, address));
-        uint256 ethAmount = amount;
-        // If Across delivered WETH, unwrap it to native ETH so we can buy with msg.value.
-        if (tokenSent == weth) {
-            IWETH9(weth).withdraw(amount);
-        }
-        _zap(coin, minOut, recipient, ethAmount);
+        IWETH9(weth).withdraw(amount); // WETH → native ETH so we can buy with msg.value
+        _zap(coin, minOut, recipient, amount);
     }
 
-    // ── Core: buy `coin` with `ethAmount`, forward to `recipient`, refund dust ────
-    // On a buy revert (e.g. slippage), refund the ETH to the recipient — never strand it.
+    // ── Core: buy `coin` with `ethAmount`, forward to `recipient`, refund leftover ────
+    // Moves ONLY funds attributable to this call. Anything already resident (donations, leftovers,
+    // an async rail pre-delivering) is snapshotted as `residue` and never paid out, so a permissionless
+    // zap can't sweep it to an attacker's recipient. On a buy revert, the input is refunded.
     function _zap(address coin, uint256 minOut, address recipient, uint256 ethAmount) internal {
         if (recipient == address(0)) revert BadRecipient();
         if (ethAmount == 0) revert NothingToZap();
+        uint256 ethResidue = address(this).balance - ethAmount;      // pre-existing ETH, not ours to move
+        uint256 coinResidue = IERC20Min(coin).balanceOf(address(this)); // pre-existing coin, not ours
 
         try IPadRouter(router).buy{value: ethAmount}(coin, minOut) returns (uint256) {
-            uint256 got = IERC20Min(coin).balanceOf(address(this));
-            if (got > 0) IERC20Min(coin).transfer(recipient, got);
-            // Refund any leftover ETH (PadRouter refunds anything past the graduation ceiling).
-            uint256 dust = address(this).balance;
-            if (dust > 0) _send(recipient, dust);
+            uint256 got = IERC20Min(coin).balanceOf(address(this)) - coinResidue; // this call's coins only
+            if (got > 0) {
+                bool sent = IERC20Min(coin).transfer(recipient, got);
+                if (!sent) revert RefundFailed();
+            }
+            // Refund only THIS call's leftover ETH (PadRouter refunds past the graduation ceiling).
+            // Best-effort so undeliverable dust can't undo an otherwise-successful buy.
+            uint256 back = address(this).balance - ethResidue;
+            if (back > 0) { (bool ok, ) = recipient.call{value: back}(""); ok; }
             emit Zapped(recipient, coin, ethAmount, got);
         } catch {
-            // Buy failed — return the full input to the user rather than lock it here.
-            _send(recipient, address(this).balance);
-            emit Refunded(recipient, coin, ethAmount);
+            // Buy failed — return exactly this call's input (never any resident funds).
+            uint256 refundable = address(this).balance - ethResidue;
+            _send(recipient, refundable);
+            emit Refunded(recipient, coin, refundable);
         }
     }
 

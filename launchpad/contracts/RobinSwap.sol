@@ -180,16 +180,38 @@ contract RobinSwap is Ownable2Step, ReentrancyGuard {
     }
 
     /// Defensive read of the fee dial: a bad/broken config can never revert or over-tax a trade.
+    /// The read is done with a HARD gas cap + FIXED 96-byte output buffer and the three fields are decoded as
+    /// uint256s, so neither a returndata bomb nor dirty high bits (which Solidity's strict uintN abi.decode would
+    /// revert on, in THIS frame, uncaught) can brick a buy/sell. On any failure we fall back to the safe default.
     function _rates(bool isBuy) internal view returns (uint256 total, uint16 platShare, uint16 lpShare) {
-        if (feeConfig != address(0)) {
-            (bool ok, bytes memory ret) = feeConfig.staticcall(
-                abi.encodeWithSelector(IRobinSwapFeeConfig.rates.selector, isBuy));
-            if (ok && ret.length >= 96) {
-                (uint256 t, uint16 p, uint16 l) = abi.decode(ret, (uint256, uint16, uint16));
-                if (t <= MAX_TOTAL && uint256(p) + l <= BPS) return (t, p, l);
+        address fc = feeConfig;
+        if (fc != address(0)) {
+            (bool ok, uint256 t, uint256 p, uint256 l) = _readRatesRaw(fc, isBuy);
+            // Bound each share BEFORE summing so a lying config can't overflow the sum, then range-check the split.
+            if (ok && t <= MAX_TOTAL && p <= BPS && l <= BPS && p + l <= BPS) {
+                return (t, uint16(p), uint16(l));
             }
         }
         return (DEF_TOTAL, DEF_PLAT, DEF_LP);
+    }
+
+    /// @dev Low-level read of RobinSwapFeeConfig.rates(bool): 50k gas cap bounds a griefing callee, a FIXED 0x60
+    /// output buffer copies at most 3 words no matter how large the return data is (returndata-bomb proof), and
+    /// decoding as uint256 never reverts on dirty high bits. NEVER reverts — returns ok=false on any failure.
+    function _readRatesRaw(address fc, bool isBuy) private view returns (bool ok, uint256 t, uint256 p, uint256 l) {
+        bytes4 sel = IRobinSwapFeeConfig.rates.selector;
+        assembly {
+            let m := mload(0x40)
+            mstore(m, sel)              // 4-byte selector, left-aligned
+            mstore(add(m, 0x04), isBuy) // the bool argument
+            // staticcall(gas, addr, inPtr, inSize=0x24, outPtr, outSize=0x60): fixed 3-word buffer, 50k gas cap
+            ok := staticcall(50000, fc, m, 0x24, m, 0x60)
+            if lt(returndatasize(), 0x60) { ok := 0 } // require a full 3-word answer, else treat as failure
+            t := mload(m)
+            p := mload(add(m, 0x20))
+            l := mload(add(m, 0x40))
+        }
+        if (!ok) return (false, 0, 0, 0); // never let stale scratch bytes look like a valid split
     }
 
     // ── permissionless payouts ─────────────────────────────────────────────────────
@@ -242,10 +264,30 @@ contract RobinSwap is Ownable2Step, ReentrancyGuard {
     // ── owner config ───────────────────────────────────────────────────────────────
 
     function setCurator(address who, bool on) external onlyOwner { isCurator[who] = on; }
-    function setFeeConfig(address fc) external onlyOwner { feeConfig = fc; }
-    function setRewardVault(address v) external onlyOwner { rewardVault = v; }
+    // Must be a CONTRACT: a code-size check stops an EOA/typo that would silently misdirect the reward leg (a
+    // value-call to a codeless account succeeds and swallows the ETH, so the try/catch → LP fallback never fires).
+    function setFeeConfig(address fc) external onlyOwner {
+        if (fc != address(0)) require(fc.code.length > 0, "not a contract");
+        feeConfig = fc;
+    }
+    function setRewardVault(address v) external onlyOwner {
+        if (v != address(0)) require(v.code.length > 0, "not a contract");
+        rewardVault = v;
+    }
     function setLpSinkDefault(address s) external onlyOwner { lpSinkDefault = s; }
     function setPlatformWallet(address w) external onlyOwner { platformWallet = w; }
+
+    /// Ownership is load-bearing — platformEscrow/lpEscrow fall back to owner() when their sinks are unset, so
+    /// renouncing would let a flush burn escrowed ETH to address(0) and permanently brick curation/config.
+    /// Disabled; transfer via Ownable2Step's transferOwnership/acceptOwnership instead.
+    function renounceOwnership() public pure override { revert("disabled"); }
+
+    /// Keep curator rights in sync with ownership: a new owner (via acceptOwnership) is automatically a curator,
+    /// so control never lands with an owner who can't list/pause. The prior owner's rights persist until revoked.
+    function _transferOwnership(address newOwner) internal override {
+        super._transferOwnership(newOwner);
+        if (newOwner != address(0)) isCurator[newOwner] = true;
+    }
 
     receive() external payable {} // WETH.withdraw sends ETH here
 }

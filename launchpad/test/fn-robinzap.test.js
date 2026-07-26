@@ -66,6 +66,38 @@ describe("RobinZap", () => {
     ).to.be.revertedWithCustomError(zap, "NotSpokePool");
   });
 
+  it("handleV3AcrossMessage: rejects a non-WETH delivery token (guards the residue math)", async () => {
+    const msgData = ethers.AbiCoder.defaultAbiCoder().encode(
+      ["address", "uint256", "address"], [await coin.getAddress(), 0, user.address]);
+    // The SpokePool calls with a token that isn't our WETH -> reverted, so buy{value} can't spend resident ETH.
+    await expect(
+      zap.connect(spoke).handleV3AcrossMessage(await coin.getAddress(), 1n, other.address, msgData)
+    ).to.be.revertedWithCustomError(zap, "NotWeth");
+  });
+
+  // The core of the CRITICAL fix: zap is permissionless, so anything resident in the handler (a donation, a
+  // rail pre-delivering, leftover dust) must NOT be sweepable to a caller-chosen recipient. _zap snapshots the
+  // residue at entry and forwards only this call's own deltas.
+  it("zap: a resident donation can't be swept — only this call's coins/ETH reach the recipient", async () => {
+    const donatedEth = ethers.parseEther("5");
+    const donatedCoins = 1000n * 10n ** 18n;
+    await deployer.sendTransaction({ to: await zap.getAddress(), value: donatedEth }); // ETH sitting in the handler
+    await coin.mint(await zap.getAddress(), donatedCoins);                              // coins sitting in the handler
+
+    const val = ethers.parseEther("1");
+    const attacker = other;
+    const ethBefore = await ethers.provider.getBalance(attacker.address);
+    await zap.connect(user).zap(await coin.getAddress(), 0, attacker.address, { value: val });
+
+    // Attacker's recipient gets ONLY the coins this 1-ETH buy produced — not the 1000 donated coins.
+    expect(await coin.balanceOf(attacker.address)).to.equal(val * RATE);
+    // No refund configured, so the attacker's ETH balance is unchanged (the 5 donated ETH is not swept).
+    expect(await ethers.provider.getBalance(attacker.address)).to.equal(ethBefore);
+    // The donation is still sitting untouched in the handler.
+    expect(await ethers.provider.getBalance(await zap.getAddress())).to.equal(donatedEth);
+    expect(await coin.balanceOf(await zap.getAddress())).to.equal(donatedCoins);
+  });
+
   it("zap: rejects a zero recipient and a zero value", async () => {
     await expect(zap.connect(user).zap(await coin.getAddress(), 0, ethers.ZeroAddress, { value: 1n }))
       .to.be.revertedWithCustomError(zap, "BadRecipient");

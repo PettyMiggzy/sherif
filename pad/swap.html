@@ -109,7 +109,9 @@ footer{border-top:1px solid var(--line-2);margin-top:10px}
   </span>
 </div></footer>
 
-<script>
+<script type="module">
+import * as Pad from './assets/wallet.js';
+
 // Curated top-of-chain candidates (by live 24h volume). The board fetches LIVE from
 // DexScreener and shows the top 10, so prices/volume stay current. Refine this list as
 // the chain moves. Everything is marked "Trading soon" until RobinSwap goes live.
@@ -170,7 +172,12 @@ async function load() {
   // volume on near-zero liquidity, and we don't want those topping the board.
   const rows = [...best.values()].sort((a, b) => b.liq - a.liq).slice(0, 10);
   const grid = document.getElementById("grid"), state = document.getElementById("state");
-  if (!rows.length) { state.textContent = "Could not load the board right now. Refresh in a moment."; return; }
+  if (!rows.length) {
+    // Only show the empty state if we have nothing on screen yet; a live refresh that briefly fails
+    // shouldn't blank out a board that's already populated. Retry sooner than the steady cadence.
+    if (!grid.children.length) { state.style.display = ""; state.textContent = "Could not load the board right now. Retrying…"; }
+    return;
+  }
   state.style.display = "none";
   grid.innerHTML = rows.map((t, i) => `
     <div class="tok">
@@ -188,10 +195,26 @@ async function load() {
     </div>`).join("");
 }
 
-window.addEventListener("robinpad:ready", function () {
-  try { const a = window.RobinPad && window.RobinPad.account && window.RobinPad.account(); if (a) document.getElementById("connectBtn").textContent = window.RobinPad.short(a); } catch (e) {}
+// ── wallet: same behavior as the rest of the site (connect, or open your profile if already on) ──
+const cbtn = document.getElementById("connectBtn");
+const refreshBtn = () => { const a = Pad.account(); cbtn.textContent = a ? Pad.short(a) : "Connect Wallet"; cbtn.title = a ? "View your profile" : ""; };
+cbtn.addEventListener("click", async (e) => {
+  e.preventDefault();
+  if (Pad.account()) { location.href = "profile.html"; return; }
+  try { await Pad.connect(); refreshBtn(); } catch (err) { alert(err.message || String(err)); }
 });
-load();
+window.addEventListener("robinpad:ready", refreshBtn); refreshBtn();
+
+// Load now, then keep the board fresh. Steady 60s cadence; a failed fetch that left the board empty
+// retries in 12s so a cold start recovers quickly without hammering DexScreener.
+let boardTimer;
+async function tick() {
+  await load();
+  clearTimeout(boardTimer);
+  const empty = !document.getElementById("grid").children.length;
+  boardTimer = setTimeout(tick, empty ? 12000 : 60000);
+}
+tick();
 </script>
 </body>
 </html>

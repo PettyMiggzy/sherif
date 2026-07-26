@@ -104,4 +104,34 @@ describe("RobinSwap", () => {
     await expect(swap.connect(user).buy(await token.getAddress(), E("2"), { value: E("1") }))
       .to.be.reverted; // mock router reverts "Too little received"
   });
+
+  // A hostile/broken feeConfig must never brick or over-tax a trade: _rates reads it with a gas cap + fixed
+  // buffer and decodes as uint256, then falls back to the 1.25% / 40-20 default on anything out of range.
+  for (const [label, mode] of [["dirty high bits", 0], ["returndata bomb", 1], ["revert", 2], ["over-cap total", 3]]) {
+    it(`hostile feeConfig (${label}) can't revert the trade — falls back to the default split`, async () => {
+      const bad = await (await ethers.getContractFactory("HostileFeeConfig")).deploy(mode);
+      await swap.setFeeConfig(await bad.getAddress());
+      await swap.connect(user).buy(await token.getAddress(), 0, { value: E("1") });
+      // default: fee 0.0125, platform 40% = 0.005, lp 20% = 0.0025, reward 0.005 — trade succeeds, safe split.
+      expect(await swap.platformEscrow()).to.equal(E("0.005"));
+      expect(await swap.lpEscrow(await token.getAddress())).to.equal(E("0.0025"));
+      expect(await vault.accrued(await token.getAddress(), 0)).to.equal(E("0.005"));
+      expect(await token.balanceOf(user.address)).to.equal(E("0.9875"));
+    });
+  }
+
+  it("renounceOwnership is disabled; acceptOwnership grants the new owner curator rights", async () => {
+    await expect(swap.renounceOwnership()).to.be.revertedWith("disabled");
+    await swap.transferOwnership(other.address);
+    expect(await swap.isCurator(other.address)).to.equal(false); // not until accepted
+    await swap.connect(other).acceptOwnership();
+    expect(await swap.owner()).to.equal(other.address);
+    expect(await swap.isCurator(other.address)).to.equal(true); // now a curator, can list
+  });
+
+  it("setRewardVault / setFeeConfig reject an EOA (code-size guard)", async () => {
+    await expect(swap.setRewardVault(other.address)).to.be.revertedWith("not a contract");
+    await expect(swap.setFeeConfig(other.address)).to.be.revertedWith("not a contract");
+    await expect(swap.setRewardVault(ethers.ZeroAddress)).to.not.be.reverted; // zero disables, allowed
+  });
 });

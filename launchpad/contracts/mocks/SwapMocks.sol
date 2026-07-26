@@ -78,3 +78,34 @@ contract MockRewardVault {
     function accrue(address coin, uint8 side) external payable { require(!failNext, "vault fail"); accrued[coin][side] += msg.value; }
     receive() external payable {}
 }
+
+// Fee configs that misbehave, to prove RobinSwap's defensive _rates read can't be bricked or over-taxed.
+// mode 0 = dirty high bits in the share words (would revert Solidity's strict uintN abi.decode, in-frame);
+// mode 1 = returndata bomb (huge return, would OOG a high-level staticcall's mem-copy);
+// mode 2 = plain revert; mode 3 = over-cap total (t > MAX_TOTAL) that must be rejected → default used.
+contract HostileFeeConfig {
+    uint8 public mode;
+    constructor(uint8 m) { mode = m; }
+    // selector-agnostic: any call (rates(bool)) hits the fallback and returns the nasty payload.
+    fallback() external {
+        uint8 md = mode;
+        if (md == 2) revert("boom");
+        assembly {
+            let p := mload(0x40)
+            if eq(md, 0) {
+                mstore(p, 125)                 // total = 1.25% (in range)
+                mstore(add(p, 0x20), shl(200, 1)) // platformShare with dirty high bits set
+                mstore(add(p, 0x40), shl(200, 1)) // lpShare with dirty high bits set
+                return(p, 0x60)
+            }
+            if eq(md, 3) {
+                mstore(p, 100000)              // total way over MAX_TOTAL (400)
+                mstore(add(p, 0x20), 4000)
+                mstore(add(p, 0x40), 2000)
+                return(p, 0x60)
+            }
+            // md == 1: returndata bomb — return a very large buffer
+            return(p, 0x40000)
+        }
+    }
+}

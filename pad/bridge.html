@@ -160,23 +160,38 @@ footer{border-top:1px solid var(--line-2);margin-top:20px}
   </span>
 </div></footer>
 
-<script>
+<script type="module">
+import * as Pad from './assets/wallet.js';
 // Lightweight interactivity for the shell. The live routing engine (LI.FI SDK, themed to
 // these tokens, + RobinZap on Robinhood Chain) wires into #swapCard next; this keeps the
 // page on-brand and interactive in the meantime, never redirecting off robinlab.io.
 (function(){
   var cbtn = document.getElementById('connectBtn');
   var cta = document.getElementById('buyCta');
-  // If the wallet lib is present on the site, reflect connection state.
-  window.addEventListener('robinpad:ready', function(){
-    try {
-      var a = window.RobinPad && window.RobinPad.account && window.RobinPad.account();
-      if (a) { cbtn.textContent = window.RobinPad.short(a); cta.textContent = 'Buy'; }
-    } catch(e){}
+  // Wallet button: connect, or open your profile if already connected — same behavior as every page.
+  var refresh = function(){
+    var a = Pad.account();
+    cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet';
+    if (a) cta.textContent = 'Buy';
+  };
+  cbtn.addEventListener('click', async function(e){
+    e.preventDefault();
+    if (Pad.account()) { location.href = 'profile.html'; return; }
+    try { await Pad.connect(); refresh(); } catch(err){ alert(err.message || String(err)); }
   });
+  window.addEventListener('robinpad:ready', refresh); refresh();
   // Preselect a coin from ?token= so the coin page can deep-link into the cross-chain buy.
+  // Only accept a well-formed EVM address, and build the label via textContent so nothing from the
+  // query string can ever reach innerHTML.
   var p = new URLSearchParams(location.search).get('token');
-  if (p) document.getElementById('getToken').innerHTML = '<span class="chip"></span> ' + p.slice(0,6) + '…' + p.slice(-4) + ' <span class="chev">▼</span>';
+  if (p && /^0x[0-9a-fA-F]{40}$/.test(p)) {
+    var el = document.getElementById('getToken');
+    el.textContent = '';
+    var chip = document.createElement('span'); chip.className = 'chip';
+    var label = document.createTextNode(' ' + p.slice(0,6) + '…' + p.slice(-4) + ' ');
+    var chev = document.createElement('span'); chev.className = 'chev'; chev.textContent = '▼';
+    el.appendChild(chip); el.appendChild(label); el.appendChild(chev);
+  }
 })();
 </script>
 </body>
