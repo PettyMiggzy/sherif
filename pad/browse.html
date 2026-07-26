@@ -286,6 +286,11 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .bqbuy .bamt{margin-left:auto;font-family:var(--mono);font-size:.76rem;color:var(--dim)}
 .bqbuy:hover{background:var(--lime);color:#0a0e05;box-shadow:0 0 20px rgba(220,233,5,.35)}
 .bqbuy:hover svg,.bqbuy:hover .bamt{color:#0a0e05}
+/* external "trading soon" tokens blended into the board */
+.bext{opacity:.97}
+.bsoon{position:absolute;top:9px;right:9px;z-index:3;font-family:var(--mono,ui-monospace,monospace);font-size:.55rem;letter-spacing:.09em;text-transform:uppercase;background:rgba(220,233,5,.12);border:1px solid var(--line);color:var(--lime);border-radius:999px;padding:3px 8px}
+.bqsoon{opacity:.65;cursor:default;justify-content:center;font-weight:700}
+.bqsoon:hover{background:rgba(220,233,5,.06);color:var(--ink);box-shadow:none}
 
 /* trending cards */
 .tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
@@ -391,7 +396,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 <header class="nav"><div class="nav-in">
   <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
   <nav class="nav-links">
-    <a href="browse.html">Browse</a><a href="swap.html">Top 10</a><a href="bridge.html">Bridge</a><a href="#graduates">Graduated</a>
+    <a href="browse.html">Browse</a><a href="bridge.html">Bridge</a><a href="#graduates">Graduated</a>
     <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="profile.html">Portfolio</a><a href="rewards.html" id="rewardsNav" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLink" style="display:none">⚙ Admin</a>
   </nav>
   <div class="nav-cta">
@@ -403,7 +408,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   </div>
 </div>
 <nav class="mobile-menu" id="mobileMenu">
-  <a href="browse.html">Browse</a><a href="swap.html">Top 10</a><a href="bridge.html">Bridge</a><a href="#graduates">Graduated</a>
+  <a href="browse.html">Browse</a><a href="bridge.html">Bridge</a><a href="#graduates">Graduated</a>
   <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="profile.html">Portfolio</a><a href="rewards.html" id="rewardsNavM" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLinkM" style="display:none">⚙ Admin</a>
   <a class="btn btn-lime go" href="create.html">Launch Token</a>
 </nav></header>
@@ -544,8 +549,81 @@ const avatar = (c, cls) => c.image
   ? `<img class="${cls}" src="${esc(c.image)}" alt="" onerror="this.style.visibility='hidden'" />`
   : `<div class="${cls}" style="display:grid;place-items:center;font-weight:800;color:#0a0e05;background:linear-gradient(135deg,#dce905,#8a63e0)">${esc((c.symbol||'?').slice(0,2))}</div>`;
 
+// ── external top tokens, BLENDED INTO the board so the pad looks busy even with few native launches ──
+// The biggest coins on Robinhood Chain (live from DexScreener). They are NOT pad coins: they show a
+// "Trading soon" badge (our RobinSwap desk is not live yet) and are non-interactive, sorted in with the
+// pad's own coins by volume so the board reads full instead of empty. Never links off-site.
+const EXT_CANDIDATES = [
+  "0x020bfC650A365f8BB26819deAAbF3E21291018b4","0x0339f5459FC690aC85F1782e15782A151b4A9E1b",
+  "0x45F82AC5d507e988f7406935da8eEfe495a360e0","0x1541B925f0948c6d91bE8B52320687Ba62D30b64",
+  "0x499dC58539BA6869EE15b6c2a3c3c07F1AC4995F","0x2286397228be256529BE1ae9ed8D7d16549e9C6A",
+  "0x9E94C8b5a0CAEdA5d0471C3a9F5eD4f3519d88c7","0x5266eeafF092D6136AB63D18B975A60a0Cc0C8f7",
+  "0x8f100e99dDF699320724e37Cb866770381d47382","0xC42cF61C16aaC797b991cf9C1ac8Ae70bA74A286",
+  "0x38bb87Cf3E7344A82be7CD671c191f015b97eEe6","0x86E5aC7eC60EEec0a8989F1F1D617AE18c15FA0c",
+  "0x41F41F7B849A25e027876c485544c8088f447A11",
+];
+let EXTERNAL = []; // card-shaped external tokens, populated once by loadExternal()
+async function loadExternal(){
+  if (DEMO) { EXTERNAL = []; return EXTERNAL; }
+  try {
+    const uniq = [...new Set(EXT_CANDIDATES.map((a) => a.toLowerCase()))];
+    const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + uniq.join(','));
+    const j = await r.json();
+    const best = new Map();
+    for (const p of (j.pairs || [])) {
+      if (p.chainId !== 'robinhood') continue;
+      const a = (p.baseToken && p.baseToken.address || '').toLowerCase(); if (!a) continue;
+      const vol = (p.volume && p.volume.h24) || 0, cur = best.get(a);
+      if (!cur || vol > cur._vol) best.set(a, {
+        token: p.baseToken.address, name: p.baseToken.name, symbol: p.baseToken.symbol,
+        mcUsd: p.marketCap || p.fdv || 0, volUsd: vol, liqUsd: (p.liquidity && p.liquidity.usd) || 0,
+        image: (p.info && p.info.imageUrl) || null, chg: (p.priceChange && p.priceChange.h24),
+        _vol: vol, external: true,
+      });
+    }
+    EXTERNAL = [...best.values()].sort((a, b) => b.liqUsd - a.liqUsd).slice(0, 10);
+  } catch { EXTERNAL = []; }
+  return EXTERNAL;
+}
+// blend external tokens in with a page of pad coins, sorted by volume, de-duped against the pad coins
+function blendExternal(padCoins){
+  if (!EXTERNAL.length) return padCoins;
+  const have = new Set((padCoins || []).map((c) => String(c.token || '').toLowerCase()));
+  const ext = EXTERNAL.filter((e) => !have.has(String(e.token || '').toLowerCase()));
+  return [...(padCoins || []), ...ext].sort((a, b) => cVol(b) - cVol(a));
+}
+// only blend on the open, unsearched board (All / Live), not on pad-specific tabs or a search
+const showExternal = () => !DEMO && !curQ && (curFilter.key === 'all' || curFilter.key === 'live') && EXTERNAL.length > 0;
+
+function tcardExt(c){
+  const ch = cChg(c);
+  const chgInner = (ch == null || Math.abs(ch) < 0.05) ? '' : `<span class="tk" style="color:${ch>=0?'#8bea3c':'#ff6b57'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
+  return `<div class="card tcard bext" title="Top Robinhood Chain token, trading on Robin soon">
+    <span class="bsoon">Trading soon</span>
+    <div class="row">${avatar(c,'av')}<div><div class="nm">${esc(c.name||'Token')}</div><div class="tk">${esc(tsym(c.symbol))} ${chgInner}</div></div></div>
+    <div class="g3">
+      <div><div class="k">MC</div><div class="val">${fmtUsd(cMc(c))}</div></div>
+      <div><div class="k">Volume</div><div class="val">${fmtUsd(cVol(c))}</div></div>
+      <div><div class="k">Liquidity</div><div class="val">${fmtUsd(c.liqUsd||0)}</div></div>
+    </div>
+    <div class="buy bqsoon">Trading soon on Robin</div>
+  </div>`;
+}
+function bcardExt(c){
+  const ch = cChg(c);
+  const chgInner = (ch == null || Math.abs(ch) < 0.05) ? '' : `${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%`;
+  const chgCls = (ch != null && ch < 0) ? 'dn' : 'up';
+  return `<div class="bcard bext" title="Top Robinhood Chain token, trading on Robin soon">
+    <span class="bsoon">Trading soon</span>
+    <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btk">${esc(tsym(c.symbol))}</div></div><span class="bchg ${chgCls}"${chgInner?'':' style="display:none"'}>${chgInner}</span></div>
+    <div class="bstats"><div><span class="bk">MC</span><span class="bv">${fmtUsd(cMc(c))}</span></div><div><span class="bk">Vol</span><span class="bv">${fmtUsd(cVol(c))}</span></div><div><span class="bk">Liq</span><span class="bv">${fmtUsd(c.liqUsd||0)}</span></div></div>
+    <div class="bqbuy bqsoon">Trading soon on Robin</div>
+  </div>`;
+}
+
 // trending cards
 function tcard(c){
+  if (c.external) return tcardExt(c);
   const mc = c.mcUsd != null ? c.mcUsd : (c.mcapEth ? c.mcapEth*ETH_USD : c.mc||0);
   const vol = c.volUsd != null ? c.volUsd : (c.vol!=null ? c.vol : (c.vol24hEth||0)*ETH_USD);
   const holders = c.holders != null ? c.holders : (c.tradesAll||0);
@@ -599,6 +677,7 @@ window.quickBuy = (token) => {
 // Symbol with exactly one leading $ (some coins' on-chain symbol already carries it → "$$").
 const tsym = (s) => { s = String(s || '?'); return s.startsWith('$') ? s : '$' + s; };
 function bcard(c){
+  if (c.external) return bcardExt(c);
   const grad = cGrad(c), prog = cProg(c), ch = cChg(c);
   // Instant badge from tick math (change since launch). enrichBoard() upgrades it to
   // DexScreener's real 24h change (red/green) once its batch call returns.
@@ -781,13 +860,17 @@ async function loadNext() {
   busy = true; syncFooter();
   const { coins } = await boardQuery({ sort: curSort, filter: curFilter.filter, q: curQ, offset, limit: PAGE });
   if (my !== session) return;                     // a newer reset superseded this page - drop it
-  if (offset === 0) $('board').innerHTML = '';    // clear skeleton on first page
-  if (!coins.length) {
-    if (offset === 0) $('board').innerHTML = `<div class="bempty">${curQ ? 'No coins match your search.' : 'No coins here yet.'}</div>`;
+  const first = offset === 0;
+  if (first) $('board').innerHTML = '';           // clear skeleton on first page
+  // Blend the top external Robinhood Chain tokens in on the first page of the open board, sorted with the
+  // pad's own coins by volume, so the board looks busy. They only render once (first page), never paginated.
+  const render = (first && showExternal()) ? blendExternal(coins) : coins;
+  if (!render.length) {
+    if (first) $('board').innerHTML = `<div class="bempty">${curQ ? 'No coins match your search.' : 'No coins here yet.'}</div>`;
     done = true; busy = false; syncFooter(); return;
   }
-  $('board').insertAdjacentHTML('beforeend', coins.map(bcard).join(''));
-  enrichBoard(coins);                             // async: real 24h change + MC/Vol from DexScreener
+  $('board').insertAdjacentHTML('beforeend', render.map(bcard).join(''));
+  enrichBoard(coins);                             // async: real 24h change + MC/Vol from DexScreener (pad coins)
   offset += coins.length;
   if (coins.length < PAGE) done = true;
   busy = false; syncFooter();
@@ -808,6 +891,8 @@ let TK_COINS = [], TK_BUYS = [], TK_STATS = null;
 function coinPill(c) {
   const ch = c.chg;
   const chg = ch == null ? '' : `<span class="c ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
+  // external tokens are non-interactive (trading soon), so their pill is a span, not a link off to a pad page
+  if (c.external) return `<span class="tpill" title="Trading on Robin soon">${avatar(c,'ti')}<span class="s">${esc(tsym(c.symbol))}</span><span class="v">${fmtUsd(cVol(c))}</span>${chg}</span>`;
   return `<a class="tpill" href="token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}">${avatar(c,'ti')}<span class="s">${esc(tsym(c.symbol))}</span><span class="v">${fmtUsd(cVol(c))}</span>${chg}</a>`;
 }
 function buyPill(a) {
@@ -855,13 +940,14 @@ setInterval(refreshActivity, 12000); refreshActivity();
 
 async function initBoard() {
   buildTabs();
+  await loadExternal(); // top external Robinhood Chain tokens, blended into the strips below so the pad reads full
   // trending strip (top 14 by trending) + graduates rail (top 3 by mcap) - each a
   // bounded query, independent of how many coins exist in total.
-  boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:14 }).then(r => renderTicker(r.coins));
-  // TRENDING cards - the top 8 projects by 24h volume, shown as cards at the top of the pad
+  boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:14 }).then(r => renderTicker(blendExternal(r.coins)));
+  // TRENDING cards - the top projects by 24h volume (pad coins + external), shown as cards at the top
   boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:8 }).then(r => {
     const el = $('trendCards'); if (!el) return;
-    const top = r.coins || [];
+    const top = blendExternal(r.coins || []).slice(0, 12);
     el.innerHTML = top.length ? top.map(tcard).join('') : `<div class="empty" style="padding:14px;grid-column:1/-1">No live projects yet, <a href="create.html">launch the first</a>.</div>`;
     const sec = document.getElementById('trendsec'); if (sec && !top.length) sec.style.display = 'none'; // hide the whole trending block until there are coins
   });
@@ -884,7 +970,7 @@ async function refreshTrending() {
   if (document.hidden) return;
   demoPulse++;
   const r = await boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:14 });
-  renderTicker(r.coins);
+  renderTicker(blendExternal(r.coins));
   if (curSort === 'trending' && !curQ && !busy && window.scrollY < 240) resetBoard({ soft:true });
 }
 setInterval(refreshTrending, 20000);
