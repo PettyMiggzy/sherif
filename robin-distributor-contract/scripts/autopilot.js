@@ -33,6 +33,21 @@ const MIN_DEPOSIT = BigInt(process.env.MIN_DEPOSIT_WEI || 0);
 // out over time instead of in one burst. 0 = burst (spend as fast as possible).
 const SPEND_USD_PER_HOUR = Number(process.env.SPEND_USD_PER_HOUR || 0);
 const THROTTLE_MINUTES = Number(process.env.THROTTLE_MINUTES || 2); // budget funded per round when throttling
+// Telegram alerts (optional): set TG_BOT_TOKEN + TG_CHAT_ID to get pinged.
+const TG_TOKEN = (process.env.TG_BOT_TOKEN || "").trim();
+const TG_CHAT = (process.env.TG_CHAT_ID || "").trim();
+const ALERT_HOURS = Number(process.env.ALERT_HOURS || 1); // warn when this many hours of funds remain
+
+async function tg(text) {
+  if (!TG_TOKEN || !TG_CHAT) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: TG_CHAT, text, parse_mode: "HTML", disable_web_page_preview: true }),
+    });
+  } catch (e) { console.log(`telegram send failed: ${e.message}`); }
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (m) => console.log(`[${new Date().toISOString()}] ${m}`);
@@ -122,6 +137,12 @@ async function main() {
     log(`THROTTLE ON: ~$${SPEND_USD_PER_HOUR}/hr (ETH ~$${ethUsd.toFixed(0)} → ${ethers.formatEther(targetWeiPerHour)} ETH/hr). A $30 deposit lasts ~${(30 / SPEND_USD_PER_HOUR).toFixed(1)}h; $100 ~${(100 / SPEND_USD_PER_HOUR).toFixed(0)}h.\n`);
   }
 
+  let alertedLow = false, alertedIdle = false;
+  if (TG_TOKEN && TG_CHAT) {
+    log(`Telegram alerts on → chat ${TG_CHAT}`);
+    await tg(`🟢 <b>Autopilot live</b> · ${keys.length} wallets\nRate: ${SPEND_USD_PER_HOUR > 0 ? "~$" + SPEND_USD_PER_HOUR + "/hr" : "burst"}\nFund the distributor to buy 👇\n<code>${funder.address}</code>`);
+  }
+
   // Spend whatever the funder holds down to dust. Each pass funds up to the whole
   // pool (one buy's worth each) and buys from them, then loops immediately. A small
   // pool (e.g. 200) just gets CYCLED many times per deposit — reusing warm wallets,
@@ -138,6 +159,25 @@ async function main() {
       // exists). Reserve it per wallet or the disperse tx underfunds. GAS_PER_RECIPIENT
       // (45k) is a safe ceiling.
       const costPerWallet = fundPerWallet + GAS_PER_RECIPIENT * gasPrice;
+
+      // Telegram runway alerts: warn ~1h before empty, ping when it goes idle,
+      // re-arm once it's topped up again.
+      if (TG_TOKEN && TG_CHAT && SPEND_USD_PER_HOUR > 0 && ethUsd > 0) {
+        const balUsd = Number(ethers.formatEther(bal)) * ethUsd;
+        const runwayH = balUsd / SPEND_USD_PER_HOUR;
+        if (bal < costPerWallet) {
+          if (!alertedIdle) { await tg(`💤 <b>Out of funds</b> — buying paused.\nSend ETH to resume the trend 👇\n<code>${funder.address}</code>`); alertedIdle = true; alertedLow = true; }
+        } else {
+          alertedIdle = false;
+          if (runwayH <= ALERT_HOURS && !alertedLow) {
+            await tg(`⚠️ <b>~${runwayH.toFixed(1)}h of funds left</b> ($${balUsd.toFixed(2)} @ $${SPEND_USD_PER_HOUR}/hr)\nTop up to keep it going 👇\n<code>${funder.address}</code>`);
+            alertedLow = true;
+          } else if (runwayH > ALERT_HOURS * 1.25) {
+            alertedLow = false; // topped up well above the line → re-arm the warning
+          }
+        }
+      }
+
       if (bal < costPerWallet || bal < MIN_DEPOSIT) { await sleep(POLL_MS); continue; }
 
       let n = Number(bal / costPerWallet);
