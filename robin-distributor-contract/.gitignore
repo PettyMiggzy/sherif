@@ -7,4 +7,5 @@ typechain-types/
 keys.json
 keys.json.bak-*
 pool-addresses.json
+used-wallets.jsonl
 autopilot-state.json

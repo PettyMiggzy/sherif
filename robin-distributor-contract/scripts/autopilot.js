@@ -33,6 +33,11 @@ const MIN_DEPOSIT = BigInt(process.env.MIN_DEPOSIT_WEI || 0);
 // out over time instead of in one burst. 0 = burst (spend as fast as possible).
 const SPEND_USD_PER_HOUR = Number(process.env.SPEND_USD_PER_HOUR || 0);
 const THROTTLE_MINUTES = Number(process.env.THROTTLE_MINUTES || 2); // budget funded per round when throttling
+// FRESH_WALLETS=1 → generate a brand-new wallet for EVERY buy (never reuse), so each
+// buy is a new unique maker + holder. keys are appended to used-wallets.jsonl so you
+// can sweep them later. No keys.json / pool needed in this mode.
+const FRESH_WALLETS = process.env.FRESH_WALLETS === "1" || (process.env.WALLET_MODE || "").toLowerCase() === "fresh";
+const USED_KEYS_FILE = path.join(ROOT, "used-wallets.jsonl");
 // Telegram alerts (optional): set TG_BOT_TOKEN + TG_CHAT_ID to get pinged.
 const TG_TOKEN = (process.env.TG_BOT_TOKEN || "").trim();
 const TG_CHAT = (process.env.TG_CHAT_ID || "").trim();
@@ -137,15 +142,24 @@ async function buyPaced(provider, walletKeys, gasPrice, intervalMs, log) {
   return total;
 }
 
+// A brand-new random wallet, its key appended to used-wallets.jsonl so funds/tokens
+// in it are never lost (sweep later from that file).
+function newFreshWallet() {
+  let w;
+  for (;;) { try { w = new ethers.Wallet(ethers.hexlify(ethers.randomBytes(32))); break; } catch { /* retry */ } }
+  fs.appendFileSync(USED_KEYS_FILE, JSON.stringify({ address: w.address, privateKey: w.privateKey }) + "\n");
+  return { address: w.address, privateKey: w.privateKey };
+}
+
 async function main() {
   const provider = getProvider();
   const funder = getWallet(provider);
   const disperse = getDisperse(null, funder);
-  const keys = loadKeys();
+  const keys = FRESH_WALLETS ? [] : loadKeys();
   const state = loadState();
 
   log(`AUTOPILOT up on ${CHAIN.name}`);
-  log(`funder(distributor)=${funder.address}  disperse=${await disperse.getAddress()}  pool=${keys.length} wallets`);
+  log(`funder(distributor)=${funder.address}  disperse=${await disperse.getAddress()}  wallets=${FRESH_WALLETS ? "FRESH (new one per buy)" : keys.length + " (pool)"}`);
   log(`buy method=${BUY_METHOD}  amount=${process.env.BUY_AMOUNT_MIN_WEI && process.env.BUY_AMOUNT_MAX_WEI ? "random " + ethers.formatEther(process.env.BUY_AMOUNT_MIN_WEI) + "–" + ethers.formatEther(process.env.BUY_AMOUNT_MAX_WEI) : ethers.formatEther(AMOUNT_IN)} ETH  buyGasLimit=${BUY_GAS_LIMIT}  cursor=${state.cursor}  lifetime buys=${state.totalBuys}`);
   log(`Send ETH to ${funder.address} anytime — it funds wallets and buys automatically. Ctrl-C to stop.\n`);
 
@@ -160,7 +174,7 @@ async function main() {
   let alertedLow = false, alertedIdle = false;
   if (TG_TOKEN && TG_CHAT) {
     log(`Telegram alerts on → chat ${TG_CHAT}${fs.existsSync(TG_VIDEO) ? " (with video)" : ""}`);
-    await tgAnnounce(`🟢 <b>Autopilot live</b> · ${keys.length} wallets\nRate: ${SPEND_USD_PER_HOUR > 0 ? "~$" + SPEND_USD_PER_HOUR + "/hr" : "burst"}\nFund the distributor to buy 👇\n<code>${funder.address}</code>`);
+    await tgAnnounce(`🟢 <b>Autopilot live</b> · ${FRESH_WALLETS ? "fresh wallet / buy" : keys.length + " wallets"}\nRate: ${SPEND_USD_PER_HOUR > 0 ? "~$" + SPEND_USD_PER_HOUR + "/hr" : "burst"}\nFund the distributor to buy 👇\n<code>${funder.address}</code>`);
   }
 
   // Spend whatever the funder holds down to dust. Each pass funds up to the whole
@@ -201,15 +215,17 @@ async function main() {
       if (bal < costPerWallet || bal < MIN_DEPOSIT) { await sleep(POLL_MS); continue; }
 
       let n = Number(bal / costPerWallet);
-      if (n > keys.length) n = keys.length; // one buy per wallet per pass; the loop reuses the pool
+      if (!FRESH_WALLETS && n > keys.length) n = keys.length; // pool mode: one buy per wallet per pass
       // throttle: fund only ~THROTTLE_MINUTES worth of the target spend per round
       if (targetWeiPerHour > 0n) {
         const perRoundWei = (targetWeiPerHour * BigInt(Math.round(THROTTLE_MINUTES * 100))) / 6000n;
         const capN = Number(perRoundWei / costPerWallet);
         n = capN < 1 ? 1 : Math.min(n, capN);
       }
+      // FRESH mode: mint a brand-new wallet for each buy this round (never reused).
+      // Pool mode: take the next n from the pool, advancing the cursor.
       const picks = [];
-      for (let i = 0; i < n; i++) picks.push(keys[(state.cursor + i) % keys.length]);
+      for (let i = 0; i < n; i++) picks.push(FRESH_WALLETS ? newFreshWallet() : keys[(state.cursor + i) % keys.length]);
       const addrs = picks.map((k) => k.address);
       log(`balance ${ethers.formatEther(bal)} ETH → funding ${n} wallets @ ${ethers.formatEther(fundPerWallet)} ETH each (${ethers.formatUnits(gasPrice, "gwei")} gwei)`);
       await fundWallets(disperse, addrs, fundPerWallet, gasPrice);
@@ -226,7 +242,7 @@ async function main() {
         buys = await buyFromAll(provider, picks, gasPrice);
       }
       const balAfter = await safeGetBalance(provider, funder.address);
-      state.cursor = (state.cursor + n) % keys.length;
+      if (!FRESH_WALLETS) state.cursor = (state.cursor + n) % keys.length;
       state.totalBuys += buys;
       state.rounds += 1;
       saveState(state);
