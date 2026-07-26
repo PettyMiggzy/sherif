@@ -54,9 +54,10 @@ async function main() {
   const what = (process.argv[2] || '').toLowerCase();
   if (!['vesting','rewardvault'].includes(what)) throw new Error('usage: node scripts/deploy-live.mjs <vesting|rewardvault>');
   const env = loadEnv();
-  if (!env.RPC) throw new Error('no RPC in launchpad/.env');
+  const rpc = env.RPC || env.ROBINHOOD_RPC || env.FORK_RPC;
+  if (!rpc) throw new Error('no RPC/ROBINHOOD_RPC/FORK_RPC in launchpad/.env');
   if (!env.PRIVATE_KEY) throw new Error('no PRIVATE_KEY in launchpad/.env');
-  const provider = new ethers.JsonRpcProvider(env.RPC, { chainId: CHAIN_ID, name: 'robinhood' }, { staticNetwork: true, batchMaxCount: 1 });
+  const provider = new ethers.JsonRpcProvider(rpc, { chainId: CHAIN_ID, name: 'robinhood' }, { staticNetwork: true, batchMaxCount: 1 });
   const net = await provider.getNetwork();
   if (Number(net.chainId) !== CHAIN_ID) throw new Error(`wrong chain ${net.chainId}, expected ${CHAIN_ID}`);
   const signer = new ethers.Wallet(env.PRIVATE_KEY, provider);
