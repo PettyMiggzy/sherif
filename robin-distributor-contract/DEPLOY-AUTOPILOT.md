@@ -50,7 +50,7 @@ Your `.env` already has `PRIVATE_KEY` (the distributor), `ROBINHOOD_RPC` (Alchem
 and `DISPERSE_ADDRESS`. Add / confirm the autopilot lines:
 ```ini
 BUY_AMOUNT_IN_WEI=100000000000   # 1e-7 ETH — the floor (lowest worth going)
-BUY_GAS_LIMIT=135000
+BUY_GAS_LIMIT=200000             # fresh wallet's first buy needs ~171k; don't go below 185k
 FUND_BUFFER_BP=300
 BUY_CONCURRENCY=8
 GAS_BUFFER=1.05

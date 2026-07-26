@@ -10,7 +10,11 @@ const ROUTER = process.env.ROUTER || "0xCaf681a66D020601342297493863E78C959E5cb2
 const WETH = process.env.WETH || "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 const TOKEN_OUT = process.env.TOKEN_OUT || "0x6696FE29288B586017E6f264c0091DBA6C5ebeaf";
 const POOL_FEE = Number(process.env.POOL_FEE || 10000);
-const BUY_GAS_LIMIT = BigInt(process.env.BUY_GAS_LIMIT || 135000);
+// A fresh wallet's FIRST buy (creating its ROBIN balance cold) costs ~171k gas;
+// warm re-buys are ~129k. Cap generously — you only pay for gas USED, not the limit,
+// so a high ceiling never costs more on a successful buy; too LOW a ceiling makes the
+// tx run out of gas and revert, which burns the gas for nothing.
+const BUY_GAS_LIMIT = BigInt(process.env.BUY_GAS_LIMIT || 200000);
 
 const ROUTER_ABI = [
   "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) payable returns (uint256)",
