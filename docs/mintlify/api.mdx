@@ -65,10 +65,10 @@ Images are converted **server-side**: HEIC/HEIF is decoded, EXIF orientation is 
 The signed message binds the token and every field (images by keccak digest) so a signature can't be replayed to another coin or an altered payload:
 
 ```
-Robin Labs — set coin profile
+Robin Labs - set coin profile
 token: <token, lowercased>
 ts: <ts>
-digest: keccak256( JSON.stringify({description,telegram,twitter,website,pfp,banner,ts}) )
+digest: keccak256( JSON.stringify({description,telegram,twitter,website,migratedFrom,pfp,banner,ts}) )
 ```
 
 The pad does all of this for you: the create page uploads the profile with one extra free signature right after launch (`Pad.setCoinProfile(token, {...})` in `assets/wallet.js`; the same `profileMessage` is exported from the [SDK's](sdk.md) source). The client downscales when it can (tiny upload) and otherwise sends the raw file for the server to convert; images are served back from `GET /media/:token/:kind` (cacheable). Everything here is **cosmetic**: a missing profile never affects trading, and the whole layer is optional (no indexer ⇒ coins simply show name + symbol).

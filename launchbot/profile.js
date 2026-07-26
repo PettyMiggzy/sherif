@@ -19,11 +19,12 @@ export function profileMessage(token, p) {
     telegram: p.telegram || '',
     twitter: p.twitter || '',
     website: p.website || '',
+    migratedFrom: p.migratedFrom || '', // "chain|oldToken" provenance, or "" (must match the indexer + frontend)
     pfp: p.pfp || '',
     banner: p.banner || '',
     ts: p.ts,
   });
-  return `Robin Labs — set coin profile\ntoken: ${token.toLowerCase()}\nts: ${p.ts}\ndigest: ${ethers.id(canon)}`;
+  return `Robin Labs - set coin profile\ntoken: ${token.toLowerCase()}\nts: ${p.ts}\ndigest: ${ethers.id(canon)}`;
 }
 
 /**

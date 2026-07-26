@@ -41,7 +41,7 @@ export function profileMessage(token, p) {
     banner: p.banner || "", // data: URL or ""
     ts: p.ts,
   });
-  return `Robin Labs — set coin profile\ntoken: ${token.toLowerCase()}\nts: ${p.ts}\ndigest: ${ethers.id(canon)}`;
+  return `Robin Labs - set coin profile\ntoken: ${token.toLowerCase()}\nts: ${p.ts}\ndigest: ${ethers.id(canon)}`;
 }
 
 // Decode a base64 data: URL to { buf, mime } — accepts ANY image type (incl. HEIC/HEIF)
