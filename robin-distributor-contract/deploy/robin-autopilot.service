@@ -1,0 +1,23 @@
+# systemd unit for the AUTOPILOT — funds wallets and buys on every deposit.
+#   sudo cp deploy/robin-autopilot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now robin-autopilot
+#   journalctl -u robin-autopilot -f
+# Adjust User/WorkingDirectory to match your droplet (e.g. /root/robin-dist/robin-distributor-contract).
+
+[Unit]
+Description=Robin Autopilot (Robinhood Chain) — auto-fund + auto-buy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/robin-dist/robin-distributor-contract
+ExecStart=/usr/bin/node scripts/autopilot.js
+Restart=on-failure
+RestartSec=10
+# .env in WorkingDirectory supplies PRIVATE_KEY, ROBINHOOD_RPC, DISPERSE_ADDRESS, etc.
+
+[Install]
+WantedBy=multi-user.target

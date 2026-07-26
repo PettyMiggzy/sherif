@@ -4,3 +4,7 @@ artifacts/
 cache/
 typechain-types/
 *.log
+keys.json
+keys.json.bak-*
+pool-addresses.json
+autopilot-state.json
