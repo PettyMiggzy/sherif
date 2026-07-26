@@ -21,7 +21,7 @@ export let provider = new ethers.JsonRpcProvider(CFG.rpc, {
 // When FREE_RPCS is empty, readProvider === provider (no behavior change).
 export let readProvider = makeReadProvider();
 function makeReadProvider() {
-  if (!CFG.freeRpcs.length) return provider;
+  if (!CFG.freeRpcs.length && !CFG.backupRpcs.length) return provider;
   try {
     const opts = { chainId: CHAIN.id, name: 'robinhood' };
     const subs = CFG.freeRpcs.map((url) => ({
@@ -29,6 +29,12 @@ function makeReadProvider() {
       priority: 1, weight: 1, stallTimeout: 1500,
     }));
     subs.push({ provider, priority: 2, weight: 1, stallTimeout: 2000 }); // paid RPC = reliable backstop
+    // BACKUP_RPCS: additional backstops at the same priority-2 tier as the paid RPC (used only if a
+    // priority-1 read stalls/fails). NOT preferred like FREE_RPCS. Reads only; writes use `provider`.
+    for (const url of CFG.backupRpcs) subs.push({
+      provider: new ethers.JsonRpcProvider(url, opts, { staticNetwork: true }),
+      priority: 2, weight: 1, stallTimeout: 2000,
+    });
     return new ethers.FallbackProvider(subs, opts, { quorum: 1 });
   } catch { return provider; } // any construction issue → just use the paid RPC
 }

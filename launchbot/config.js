@@ -91,6 +91,10 @@ export const CFG = {
   // endpoints you trust for chain 4663 — a lying read node can only mis-report a
   // balance, never move funds (all sends go through RPC_URL).
   freeRpcs: (process.env.FREE_RPCS || '').split(',').map((s) => s.trim()).filter(Boolean),
+  // Optional BACKUP read RPC(s), comma-separated (e.g. a QuikNode/paid endpoint; key in URL = SECRET).
+  // Unlike FREE_RPCS these are NOT preferred: they sit at the same priority-2 backstop tier as the paid
+  // RPC and are only used when a primary/free read stalls or fails. Writes ALWAYS use RPC_URL. Blank = none.
+  backupRpcs: (process.env.BACKUP_RPCS || '').split(',').map((s) => s.trim()).filter(Boolean),
   // 32+ char secret that encrypts every custodial private key at rest. If this
   // leaks, every wallet is compromised; if it's lost, every wallet is unrecoverable.
   masterSecret: reqSecret('MASTER_SECRET', 32),

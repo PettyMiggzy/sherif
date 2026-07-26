@@ -30,7 +30,24 @@ function frac(tick, startTick, gradTick) {
   return Math.max(0, Math.min(1, Math.abs(tick - startTick) / span));
 }
 
-const provider = new ethers.JsonRpcProvider(CFG.rpcUrl, undefined, { staticNetwork: true });
+// The primary RPC does all the work. When a DISTINCT backup is configured (RPC_BACKUP), wrap both in a
+// FallbackProvider so a primary outage or stall fails over to the backup instead of stalling the indexer.
+// The backup is priority 2 (quorum 1 = one good answer wins), so it is only touched when the primary
+// errors/stalls. When no backup is set, this returns the exact same single provider as before.
+function makeProvider() {
+  const bk = CFG.rpcBackup;
+  if (!bk || bk === CFG.rpcUrl) return new ethers.JsonRpcProvider(CFG.rpcUrl, undefined, { staticNetwork: true });
+  try {
+    const net = { chainId: CFG.chainId, name: "robinhood" };
+    const primary = new ethers.JsonRpcProvider(CFG.rpcUrl, net, { staticNetwork: true });
+    const backup = new ethers.JsonRpcProvider(bk, net, { staticNetwork: true });
+    return new ethers.FallbackProvider([
+      { provider: primary, priority: 1, weight: 1, stallTimeout: 2000 },
+      { provider: backup, priority: 2, weight: 1, stallTimeout: 2000 },
+    ], net, { quorum: 1 });
+  } catch { return new ethers.JsonRpcProvider(CFG.rpcUrl, undefined, { staticNetwork: true }); }
+}
+const provider = makeProvider();
 
 // eth_getLogs is ~90% of this indexer's RPC compute. If you have a SECOND, reliable
 // endpoint for it (a self-hosted node, or a PAID Blockscout/alt plan), set LOGS_RPC

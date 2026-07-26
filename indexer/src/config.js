@@ -28,6 +28,13 @@ export const CFG = {
   rpcUrl: process.env.RPC_URL || "https://robinhoodchain.blockscout.com/api/eth-rpc",
   // Upstream fallback for the /rpc read-proxy if the primary (paid) RPC errors.
   rpcFallback: process.env.RPC_FALLBACK || "https://robinhoodchain.blockscout.com/api/eth-rpc",
+  // Optional BACKUP RPC (e.g. a QuikNode/paid endpoint, key in URL = SECRET, keep in .env). When set
+  // and distinct from RPC_URL it becomes a priority-2 backstop for BOTH the core poller (failover so a
+  // primary outage doesn't stall indexing) and the /rpc proxy (tried before the blockscout fallback).
+  // Blank (default) = no change: single primary provider, exactly as before. Reads only; the poster
+  // always signs/broadcasts on RPC_URL.
+  rpcBackup: (process.env.RPC_BACKUP || "").trim(),
+  chainId: num("CHAIN_ID", 4663), // Robinhood Chain; used to pin the FallbackProvider network
   rpcProxy: (process.env.RPC_PROXY ?? "1") !== "0",   // expose POST /rpc (read-only JSON-RPC proxy)
   rpcProxyMaxPerSec: num("RPC_PROXY_MAX_PER_SEC", 40), // per-IP/sec cap on upstream calls (a batch counts by its method count)
   factory: (process.env.FACTORY || "0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2").toLowerCase(),

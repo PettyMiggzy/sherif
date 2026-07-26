@@ -171,7 +171,8 @@ function rpcTtl(method) {
   }
 }
 async function rpcForward(payload) {
-  const urls = [CFG.rpcUrl, CFG.rpcFallback].filter((u, i, a) => u && a.indexOf(u) === i);
+  // primary → optional backup (RPC_BACKUP, e.g. QuikNode) → last-resort fallback (blockscout). Deduped.
+  const urls = [CFG.rpcUrl, CFG.rpcBackup, CFG.rpcFallback].filter((u, i, a) => u && a.indexOf(u) === i);
   let lastErr;
   for (const u of urls) {
     try {
