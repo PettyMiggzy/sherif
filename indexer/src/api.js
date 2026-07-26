@@ -410,6 +410,9 @@ const oneCoinStmt = db.prepare(`
 `);
 const tradesStmt = db.prepare(
   "SELECT tx, log_index, side, actor, eth, tokens, fee, block, ts FROM trades WHERE token=? ORDER BY block DESC, log_index DESC LIMIT ?");
+// Global recent activity across ALL coins (for the homepage live ticker). Joined to coins for name/symbol.
+const recentActivityStmt = db.prepare(
+  "SELECT t.token, t.side, t.eth, t.tokens, t.ts, c.symbol, c.name FROM trades t JOIN coins c ON c.token = t.token ORDER BY t.block DESC, t.log_index DESC LIMIT ?");
 
 // ── rewards ──
 const coinNameStmt = db.prepare("SELECT name, symbol FROM coins WHERE token = ?");
@@ -647,6 +650,16 @@ export function startApi() {
         const r = oneCoinStmt.get({ token: m[1].toLowerCase(), since });
         if (!r) return send(res, 404, { error: "not found" }, origin);
         return send(res, 200, { coin: shapeCoin(r, base) }, origin);
+      }
+
+      // Global recent activity across all coins — powers the homepage live ticker.
+      if (path === "/api/activity") {
+        const limit = intParam(url.searchParams.get("limit"), 30, 1, 100);
+        const rows = recentActivityStmt.all(limit).map((t) => ({
+          token: t.token, side: t.side, sym: t.symbol, name: t.name,
+          eth: t.eth, tokens: t.tokens, ts: t.ts,
+        }));
+        return send(res, 200, { activity: rows }, origin);
       }
 
       m = path.match(/^\/api\/trades\/(0x[0-9a-fA-F]{40})$/);

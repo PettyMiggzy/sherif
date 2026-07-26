@@ -811,6 +811,13 @@ export async function recentTrades(token, limit = 50) {
   catch { return []; }
 }
 
+/// Global recent activity across ALL coins (buys/sells) for the homepage live ticker.
+/// Indexer only; [] without one.
+export async function activity(limit = 30) {
+  try { const { activity } = await apiGet(`/api/activity?limit=${limit}`); return activity || []; }
+  catch { return []; }
+}
+
 /// Token metadata (name / symbol) for a card or the trade header.
 export async function tokenMeta(token) {
   const t = new ethers.Contract(token, ABIS.erc20, _read);
@@ -1242,7 +1249,7 @@ if (typeof window !== "undefined") {
     setCoinProfile, getCoinProfile, profileMessage,
     estimateDevBuyEth, isDeployed, tokenBalance, holdings, coinHolders,
     curveInfo, devEscrow, graduate, withdrawDev, burnDev, listCoins, tokenMeta,
-    feed, stats, recentTrades, hasApi, coin,
+    feed, stats, recentTrades, activity, hasApi, coin,
     holders, trades, chainTrades, feeTotals,
     rewards, rewardStats, claimReward, claimAllRewards,
     floorInfo, floorDeposit, floorClaim, floorWithdraw,

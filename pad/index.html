@@ -237,6 +237,9 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .tpill .v{color:var(--dim);font-size:.8rem}
 .tpill .c{font-size:.8rem;font-weight:700}
 .tpill .c.up{color:#8bea3c}.tpill .c.dn{color:#ff6b57}
+.tpill .act{font-family:var(--mono);font-size:.64rem;letter-spacing:.06em;text-transform:uppercase}
+.tpill.buy .act{color:#8bea3c}.tpill.sell .act{color:#ff6b57}
+.tpill.info{color:var(--dim);font-size:.82rem;gap:6px}.tpill.info b{color:var(--ink)}
 @media(prefers-reduced-motion:reduce){.ticker .track{animation:none}}
 @media(max-width:560px){.ticker .lbl .t{display:none}}
 
@@ -401,7 +404,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
   <nav class="nav-links">
     <a href="browse.html">Browse</a><a href="browse.html#graduates">Graduated</a>
-    <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="profile.html">Portfolio</a><a href="rewards.html" id="rewardsNav" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
+    <a href="swap.html">Top&nbsp;10</a><a href="bridge.html">Bridge</a><a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="profile.html">Portfolio</a><a href="rewards.html" id="rewardsNav" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
   </nav>
   <div class="nav-cta">
     <button class="btn btn-dark" id="connectBtn" type="button">Connect Wallet</button>
@@ -413,7 +416,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 </div>
 <nav class="mobile-menu" id="mobileMenu">
   <a href="browse.html">Browse</a><a href="browse.html#graduates">Graduated</a>
-  <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="profile.html">Portfolio</a><a href="#robin">$ROBIN</a><a href="rewards.html" id="rewardsNavM" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
+  <a href="swap.html">Top 10</a><a href="bridge.html">Bridge</a><a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="profile.html">Portfolio</a><a href="#robin">$ROBIN</a><a href="rewards.html" id="rewardsNavM" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
   <a class="btn btn-lime go" href="create.html">Launch Token</a>
 </nav></header>
 
@@ -711,18 +714,57 @@ async function boardQuery(args) {
   catch { return { coins: [], total: null }; }
 }
 
-// ── hero projects ticker - top-by-trending strip, scrolling; duplicated for a seamless loop ──
-function renderTicker(list) {
-  const bar = $('tickerbar');
-  if (!list || !list.length){ if (bar) bar.style.display='none'; return; }
-  const pill = (c) => {
-    const ch = c.chg;
-    const chg = ch == null ? '' : `<span class="c ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
-    return `<a class="tpill" href="token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}">${avatar(c,'ti')}<span class="s">${esc(tsym(c.symbol))}</span><span class="v">${fmtUsd(cVol(c))}</span>${chg}</a>`;
-  };
-  const html = list.map(pill).join('');
-  const track = $('ticker'); if (track) track.innerHTML = html + html; // two copies → -50% loop is seamless
-  if (bar) bar.style.display = ''; // reveal once populated
+// ── hero live ticker - live buys + trending coins + rotating info, interleaved so it
+//    always feels alive (never a dead, static strip). Scrolling, duplicated for a seamless loop. ──
+let TK_COINS = [], TK_BUYS = [], TK_STATS = null;
+
+function coinPill(c) {
+  const ch = c.chg;
+  const chg = ch == null ? '' : `<span class="c ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
+  return `<a class="tpill" href="token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}">${avatar(c,'ti')}<span class="s">${esc(tsym(c.symbol))}</span><span class="v">${fmtUsd(cVol(c))}</span>${chg}</a>`;
+}
+function buyPill(a) {
+  const sell = a.side === 'sell';
+  const eth = Number(a.eth) / 1e18;
+  const amt = eth >= 0.0005 ? `<span class="v">${eth.toFixed(eth >= 1 ? 2 : 3)} ETH</span>` : '';
+  return `<a class="tpill ${sell?'sell':'buy'}" href="token.html?c=${encodeURIComponent(a.token)}"><span class="act">${sell?'sold':'bought'}</span><span class="s">${esc(tsym(a.sym))}</span>${amt}</a>`;
+}
+function infoPills() {
+  const out = [];
+  if (TK_STATS) {
+    if (TK_STATS.coins)     out.push(`🚀 <b>${Number(TK_STATS.coins).toLocaleString()}</b> projects launched`);
+    if (TK_STATS.graduated) out.push(`🎓 <b>${TK_STATS.graduated}</b> graduated`);
+    if (TK_STATS.volAllEth) out.push(`💰 <b>${fmtUsd(TK_STATS.volAllEth * ETH_USD)}</b> traded all-time`);
+  }
+  out.push('💚 get paid to trade &amp; hold', '🔒 lock your bag on-chain', '🌉 buy with any token on any chain',
+           '🏹 free to launch, LP locked forever', '⚖️ 1% buy / 1% sell, most back to you');
+  return out.map((t) => `<span class="tpill info">${t}</span>`);
+}
+// round-robin interleave so buys / coins / info alternate down the strip
+function interleave(groups) {
+  const out = [], max = Math.max(...groups.map((g) => g.length), 0);
+  for (let i = 0; i < max; i++) for (const g of groups) if (i < g.length) out.push(g[i]);
+  return out;
+}
+function buildTicker() {
+  const bar = $('tickerbar'), track = $('ticker');
+  if (!bar || !track) return;
+  const items = interleave([
+    TK_BUYS.slice(0, 14).map(buyPill),
+    TK_COINS.slice(0, 12).map(coinPill),
+    infoPills(),
+  ]);
+  if (!items.length) { bar.style.display = 'none'; return; }
+  track.innerHTML = items.join('') + items.join(''); // two copies → -50% loop is seamless
+  bar.style.display = '';
+}
+// keep renderTicker's old signature (trending source) but route through the new builder
+function renderTicker(list) { TK_COINS = list || []; buildTicker(); }
+
+// Poll the global activity feed so real buys stream across the strip.
+async function refreshActivity() {
+  if (document.hidden || DEMO) return;
+  try { const a = await Pad.activity(30); if (a && a.length) { TK_BUYS = a; buildTicker(); } } catch {}
 }
 
 async function loadStats(){
@@ -732,6 +774,7 @@ async function loadStats(){
     $('stRew').textContent = DEMO_STATS.rewardsPaidEth + ' ETH';
     $('stMcap').textContent = fmtUsd(DEMO_STATS.mcapCreatedUsd);
     $('stVol').textContent = fmtUsd(DEMO_STATS.totalVolumeUsd);
+    TK_STATS = { coins: DEMO_STATS.projectsLaunched, graduated: DEMO_STATS.graduatedTotal, volAllEth: 0 }; buildTicker();
     return;
   }
   try {
@@ -739,6 +782,7 @@ async function loadStats(){
     if (s){
       $('stProj').textContent = (s.coins||0).toLocaleString();
       $('stGrad').textContent = s.graduated||0;
+      TK_STATS = { coins: s.coins||0, graduated: s.graduated||0, volAllEth: s.volAllEth||0 }; buildTicker();
       $('stRew').textContent = (s.graduated ? (s.graduated*0.5).toFixed(1) : '0') + ' ETH';
       $('stMcap').textContent = '-';
       $('stVol').textContent = fmtUsd((s.volAllEth||0)*ETH_USD);
@@ -769,6 +813,7 @@ async function refreshTrending() {
   renderTicker(r.coins);
 }
 setInterval(refreshTrending, 20000);
+refreshActivity(); setInterval(refreshActivity, 12000); // live buys stream across the ticker
 
 loadStats(); initHero();
 </script>
