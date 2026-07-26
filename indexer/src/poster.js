@@ -10,7 +10,7 @@ import { ethers } from "ethers";
 import { db } from "./db.js";
 import { CFG } from "./config.js";
 import {
-  upsertRewardRoot, setRewardRootPostedTx, getRewardRoot,
+  upsertRewardRoot, setRewardRootPostedTx, setRewardRootPostedTs, getRewardRoot,
   deleteClaimsForEpoch, insertRewardClaim, getHeadTs,
 } from "./db.js";
 import { computeEpoch, currentEpoch, epochBounds, ALGO_HASH } from "./rewards.js";
@@ -122,6 +122,7 @@ export async function postPending() {
       const tx = await vault.postRoot(epoch, row.root, row.algo_hash || ALGO_HASH, row.uri || uriFor(epoch));
       const rc = await tx.wait();
       setRewardRootPostedTx.run({ epoch, posted_tx: rc.hash });
+      setRewardRootPostedTs.run({ epoch, posted_ts: Math.floor(Date.now() / 1000) });
       posted.push({ epoch, tx: rc.hash });
       console.log(`[poster] posted epoch ${epoch} root ${row.root.slice(0, 10)}… (${row.n_leaves} leaves) tx ${rc.hash}`);
     } catch (e) {

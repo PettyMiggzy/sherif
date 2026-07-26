@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS reward_roots (
   n_leaves   INTEGER,
   per_coin   TEXT,     -- JSON: per-coin pot vs allocated, for transparency
   posted_tx  TEXT,     -- postRoot() tx hash (null until posted on-chain)
+  posted_ts  INTEGER,  -- ~unix time the root went on-chain; claims open at posted_ts + challengeWindow
   computed_ts INTEGER
 );
 
@@ -155,6 +156,9 @@ for (const [name, decl] of [
 ]) {
   if (!_cols.has(name)) db.exec(`ALTER TABLE coins ADD COLUMN ${name} ${decl}`);
 }
+// Same defensive migration for reward_roots (posted_ts added after the reward pipeline shipped).
+const _rrCols = new Set(db.prepare("PRAGMA table_info(reward_roots)").all().map((r) => r.name));
+if (!_rrCols.has("posted_ts")) db.exec("ALTER TABLE reward_roots ADD COLUMN posted_ts INTEGER");
 
 // ── cursor (last fully-processed block) ─────────────────────────────────────
 const _getMeta = db.prepare("SELECT v FROM meta WHERE k = ?");
@@ -320,6 +324,9 @@ ON CONFLICT(epoch) DO UPDATE SET
   posted_tx=COALESCE(excluded.posted_tx, reward_roots.posted_tx), computed_ts=excluded.computed_ts
 `);
 export const setRewardRootPostedTx = db.prepare("UPDATE reward_roots SET posted_tx=@posted_tx WHERE epoch=@epoch");
+// Stamp the ~time a root went on-chain, so the claim API can gate on posted_ts + challengeWindow
+// (the contract reverts claims until the challenge window elapses).
+export const setRewardRootPostedTs = db.prepare("UPDATE reward_roots SET posted_ts=@posted_ts WHERE epoch=@epoch");
 export const getRewardRoot = db.prepare("SELECT * FROM reward_roots WHERE epoch = ?");
 
 export const deleteClaimsForEpoch = db.prepare("DELETE FROM reward_claims WHERE epoch = ?");

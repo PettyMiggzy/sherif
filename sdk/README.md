@@ -22,9 +22,9 @@ Or just drop `robinlabs.mjs` into your project and import it — it's a single d
 import { RobinLabsAPI } from "@robinlabs/pad-sdk";
 
 const api = new RobinLabsAPI("https://your-indexer-host");   // see docs/api.md to self-host
-const { items } = await api.coins({ sort: "trending", filter: "live", limit: 60 });
-const one       = await api.coin(items[0].token);            // enriched: progress, mcap, volume
-const trades    = await api.trades(items[0].token);          // exact-wei recent trades
+const { coins } = await api.coins({ sort: "trending", filter: "live", limit: 60 });
+const one       = await api.coin(coins[0].token);            // enriched: progress, mcap, volume
+const trades    = await api.trades(coins[0].token);          // exact-wei recent trades
 const totals    = await api.stats();                         // coins, graduated, 24h volume
 ```
 

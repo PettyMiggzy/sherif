@@ -69,6 +69,18 @@ async function main() {
   console.log(`  target: ${what}   deployer: ${signer.address}   balance: ${fE(bal)} ETH`);
   console.log('─'.repeat(64));
 
+  // Re-run guard: if this contract is already recorded in deploy.json, refuse unless
+  // REDEPLOY=1. Without this, a careless second run deploys a fresh EMPTY contract at the
+  // next nonce — and for rewardvault with ENABLE_LEGS=1 it would then repoint the live
+  // router's reward legs at that empty vault while printing a green success.
+  const existingKey = what === 'vesting' ? 'tokenVestingLock' : 'rewardVault';
+  const existing = manifest.contracts && manifest.contracts[existingKey];
+  if (existing && ethers.isAddress(existing) && process.env.REDEPLOY !== '1') {
+    console.log(`\n  ✗ ${existingKey} is already deployed in deploy.json: ${existing}`);
+    console.log(`    Refusing to deploy a new one. Set REDEPLOY=1 to override (only if you truly mean to replace it).`);
+    return;
+  }
+
   const gp = await safeGasPrice(provider);
   console.log(`  gas price: ${ethers.formatUnits(gp, 'gwei')} gwei\n`);
 

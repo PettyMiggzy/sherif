@@ -351,12 +351,19 @@ async function onClaim(e){
   const btn = e.currentTarget;
   if (DEMO){ alert('Preview, on the live site this sends a claim transaction (you pay gas) and the ETH lands in your wallet.'); return; }
   const c = CLAIMABLE[+btn.dataset.i];
-  try { btn.disabled = true; btn.textContent = 'Claiming…'; await Pad.claimReward(c); btn.textContent = '✓ Claimed'; }
+  // Wait for the claim to CONFIRM before showing success — a broadcast can still revert.
+  try { btn.disabled = true; btn.textContent = 'Claiming…'; await (await Pad.claimReward(c)).wait(); btn.textContent = '✓ Claimed'; }
   catch(err){ btn.disabled = false; btn.textContent = 'Claim'; alert(err.message || 'Claim failed'); }
 }
 async function onClaimAll(){
   if (DEMO){ alert('Preview, on the live site this batches all your claims into one signature.'); return; }
-  try { await Pad.claimAllRewards(CLAIMABLE); location.reload(); } catch(err){ alert(err.message || 'Claim failed'); }
+  const btn = $('claimAll');
+  // Disable to block a double-submit that would re-prompt every signature; only reload
+  // once all claims have confirmed (claimAllRewards awaits each .wait()).
+  if (btn.disabled) return;
+  const label = btn.textContent;
+  try { btn.disabled = true; btn.textContent = 'Claiming…'; await Pad.claimAllRewards(CLAIMABLE); location.reload(); }
+  catch(err){ btn.disabled = false; btn.textContent = label; alert(err.message || 'Claim failed'); }
 }
 
 // wallet button

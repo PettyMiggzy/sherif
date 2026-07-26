@@ -119,6 +119,47 @@ async function getLogsRange(from, to) {
     a.blockNumber - b.blockNumber || a.index - b.index);
 }
 
+// Side-channel: map (tx, token, side) -> the REAL trader, from the router's own
+// Bought/Sold events.
+//
+// Why this exists: a pad sell routes tokens INTO the router (`sell()` swaps into
+// address(this) before unwrapping WETH->ETH back to the seller), so the pool Swap's
+// `recipient` is the ROUTER, not the seller. The router is an excluded address, so scoring
+// sells purely off the Swap `recipient` drops EVERY pad sell from reward weights (buys keep
+// msg.sender as recipient, so only sells are affected). The router's Sold(token, seller, …)
+// event carries the true seller; we index it ONLY to correct the actor. We deliberately do
+// NOT insert trades from these events — the pool Swap stays the single trade feed so direct
+// DEX/bot/aggregator volume is still captured exactly once (see abi.js).
+async function routerActorMap(from, to) {
+  const map = new Map();
+  if (!CFG.router) return map;
+  const logs = await getLogs(
+    { fromBlock: from, toBlock: to, address: CFG.router, topics: [[TOPICS.Bought, TOPICS.Sold]] },
+    "getLogs.routerTrades");
+  for (const log of logs) {
+    let parsed; try { parsed = iface.parseLog(log); } catch { continue; }
+    if (!parsed || (parsed.name !== "Bought" && parsed.name !== "Sold")) continue;
+    const buy = parsed.name === "Bought";
+    const token = parsed.args.token.toLowerCase();
+    const actor = (buy ? parsed.args.buyer : parsed.args.seller).toLowerCase();
+    map.set(`${log.transactionHash}:${token}:${buy ? "buy" : "sell"}`, actor);
+  }
+  return map;
+}
+
+// Correct a decoded pool-Swap trade whose recipient is the router (every pad sell, plus
+// internal buybacks) to the real EOA from the router-event side-channel. Falls back to the
+// router (an excluded address) when there's no matching router event — e.g. the platform
+// buyback, which must NOT score as a user trade. Exported for regression testing.
+export function correctRouterActor(row, routerActor) {
+  if (!row) return row;
+  if (row.actor === CFG.router) {
+    const real = routerActor.get(`${row.tx}:${String(row.token).toLowerCase()}:${row.side}`);
+    if (real) return { ...row, actor: real };
+  }
+  return row;
+}
+
 // Scan the Uniswap Swap events for a set of pools over [from,to]. One getLogs per
 // pool (Robinhood's RPC rejects address arrays; a topic0-only scan would pull every
 // unrelated pool on the chain). Sequential to avoid Blockscout 500s under fan-out.
@@ -359,10 +400,13 @@ export async function tick() {
     // The real trade feed: every Swap on every known pool this window (buys/sells that
     // bypass our router included). Decode -> trade rows; flag each pool touched.
     const swapLogs = await getPoolSwaps([...poolMap.values()], lo, hi);
+    // The true trader for a router-mediated sell (recipient == router) comes from the
+    // router's Sold event, not the pool Swap recipient. Fetch that side-channel once.
+    const routerActor = await routerActorMap(lo, hi);
     for (const sl of swapLogs) {
       const coin = poolMap.get(sl.address.toLowerCase());
       if (!coin) continue;
-      const row = decodeSwap(sl, coin);
+      const row = correctRouterActor(decodeSwap(sl, coin), routerActor);
       if (!row) continue;
       row.ts = await blockTs(sl.blockNumber);
       writes.push(() => insertTrade.run(row));

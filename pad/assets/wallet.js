@@ -368,7 +368,7 @@ export async function getCoinProfile(token) {
 // charged what it actually burns; the unused gas headroom is refunded.
 const TX_GAS_CAP = 16_000_000n; // just under the 2^24 (16,777,216) per-tx ceiling; ~13M launch fits with headroom
 
-async function guardedSend(contract, method, args, valueWei, label) {
+async function guardedSend(contract, method, args, valueWei, label, fallbackGas = TX_GAS_CAP) {
   const value = valueWei ?? 0n;
 
   // 0) if the attached ETH alone is more than the wallet holds, the chain's eth_call returns EMPTY
@@ -389,7 +389,11 @@ async function guardedSend(contract, method, args, valueWei, label) {
   // 2) gas limit - estimate for a tight fit, but CLAMP hard to the per-tx cap and fall back to it when the
   //    estimate over-shoots or fails (the L2's estimate is unreliable on our heavy calls). Estimate via the
   //    read provider so a wallet-side estimateGas fault (-32603) can't abort us here.
-  let gas = TX_GAS_CAP;
+  // On estimate failure, fall back to `fallbackGas` (default = the full cap). Light,
+  // bounded calls (claim/release) pass a realistic hint so a transient estimate miss (e.g.
+  // the read proxy's cache lacking a just-posted root at epoch finalization) doesn't make
+  // the balance check demand the full-cap gas and wrongly reject a well-funded claim.
+  let gas = fallbackGas;
   try {
     const rc = contract.connect(_read);
     gas = await rc[method].estimateGas(...args, { value, from: _account });
@@ -963,7 +967,7 @@ export async function claimReward(c) {
   requireRewardVault();
   if (!_signer) await connect();
   const vault = new ethers.Contract(CONTRACTS.rewardVault, ABIS.rewardVault, _signer);
-  return guardedSend(vault, "claim", [c.epoch, c.coin, c.side, c.amount, c.proof], 0n, "Claim reward");
+  return guardedSend(vault, "claim", [c.epoch, c.coin, c.side, c.amount, c.proof], 0n, "Claim reward", 350000n);
 }
 
 /// Claim EVERY available leaf. Sends them sequentially (one signature each) -
@@ -972,7 +976,9 @@ export async function claimAllRewards(list) {
   requireRewardVault();
   const rows = list || (await rewards(_account)).claimable || [];
   let n = 0;
-  for (const c of rows) { await claimReward(c); n++; }
+  // Wait for each claim to CONFIRM, not just broadcast — callers reload the feed right
+  // after, and the indexer only drops a leaf once the claim is mined.
+  for (const c of rows) { const r = await claimReward(c); if (r && r.wait) await r.wait(); n++; }
   return n;
 }
 
@@ -1045,7 +1051,7 @@ export async function floorClaim(token) {
   requireFloor();
   if (!_signer) await connect();
   const coop = await coopFor(token);
-  return guardedSend(new ethers.Contract(coop, ABIS.floorCoop, _signer), "claim", [], 0n, "Claim floor fees");
+  return guardedSend(new ethers.Contract(coop, ABIS.floorCoop, _signer), "claim", [], 0n, "Claim floor fees", 350000n);
 }
 
 /// Withdraw the caller's whole stake (after the cooldown).
@@ -1117,7 +1123,7 @@ export async function releaseVesting(id) {
   requireVesting();
   if (!_signer) await connect();
   const c = new ethers.Contract(CONTRACTS.tokenVestingLock, ABIS.tokenVestingLock, _signer);
-  return guardedSend(c, "release", [BigInt(id)], 0n, "Release vested tokens");
+  return guardedSend(c, "release", [BigInt(id)], 0n, "Release vested tokens", 250000n);
 }
 
 /// Read a coin's dev lock for the badge/panel. Prefers the indexer (fast); falls back to a

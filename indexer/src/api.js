@@ -747,7 +747,12 @@ export function startApi() {
         const ep = rewardsEpoch(now);
         const sideName = (s) => (s === 0 ? "trader" : "holder");
         const claimable = claimsForUser.all(who)
-          .filter((c) => (getRewardRoot.get(c.epoch) || {}).posted_tx) // only epochs whose root is actually on-chain
+          .filter((c) => {
+            const r = getRewardRoot.get(c.epoch) || {};
+            if (!r.posted_tx) return false;                         // root not on-chain yet
+            if (r.posted_ts == null) return true;                   // posted but un-stamped (legacy) — best effort
+            return now >= r.posted_ts + CFG.challengeWindow;        // claims only open AFTER the challenge window (contract reverts otherwise)
+          })
           .map((c) => ({
             epoch: c.epoch, coin: c.coin, side: c.side, sideName: sideName(c.side),
             amount: c.amount, eth: ethOf(c.amount), proof: JSON.parse(c.proof), ...enrich(c.coin),

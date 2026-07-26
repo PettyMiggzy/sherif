@@ -29,6 +29,8 @@ export const ADDRESSES = {
   feeConfig:        "0x064D977B66FCC29256510dBCD8cC0C51bBb2De14", // owner-governed fee dial (LP + swap split)
   floorCoopFactory: "0x564EDF561Bed46C972d5D44D84f5FAc9C5118668", // per-coin LP vaults
   platformSplitter: "0xca0EfD87B983CdeF56459051ecBE91aA5C87E17a",
+  rewardVault:      "0x03d5d26E492B288e62D897E7dde91af3CceB4347", // 0.25% trader + 0.25% holder legs; Merkle claims in ETH
+  tokenVestingLock: "0x7453856c3E5f6832dc660e48c7Daa6f46f3355DF", // irrevocable dev-bag cliff+linear locker
   weth:             "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
   uniswapV3Factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
 };
@@ -47,8 +49,18 @@ export const explorerUrl = (addr) => `${CHAIN.explorer}/address/${addr}`;
 // Single trades sit far under the chain's 2^24 (~16.7M) per-tx gas cap, so no gasLimit clamp is needed
 // for a normal buy/sell — only mind the cap if you batch many calls into one tx.
 export async function legacyOverrides(provider) {
-  const fee = await provider.getFeeData();
-  return { type: 0, gasPrice: fee.gasPrice };
+  let gp = 0n;
+  try { gp = (await provider.getFeeData()).gasPrice ?? 0n; } catch {}
+  // Robinhood Chain has a MOVING base fee, and eth_gasPrice can hand back a value a hair
+  // BELOW it — the node then rejects the tx ("max fee per gas less than block base fee").
+  // Floor at 1.2x the latest block's base fee so a tick-up can't underprice the write.
+  // Gas here is ~0.07 gwei, so the headroom costs effectively nothing.
+  try {
+    const blk = await provider.getBlock("latest");
+    const floor = ((blk?.baseFeePerGas ?? 0n) * 12n) / 10n;
+    if (floor > gp) gp = floor;
+  } catch {}
+  return { type: 0, gasPrice: gp };
 }
 
 // Human-readable ABIs — ethers v6 parses these directly. Read + core write fns.
@@ -71,6 +83,28 @@ export const ABI = {
   ],
   floorCoopFactory: [
     "function coopOf(address token) view returns (address)", // 0x0 if none yet
+  ],
+  // RewardVault — the 0.25% trader + 0.25% holder legs, claimed with a Merkle proof the
+  // indexer serves (GET /api/rewards/:addr). `side` is 0=Traders, 1=Holders. Legacy tx.
+  rewardVault: [
+    "function claim(uint256 epoch, address coin, uint8 side, uint256 amount, bytes32[] proof)",
+    "function pot(address coin, uint256 epoch) view returns (uint128 traderPot, uint128 holderPot)",
+    "function currentEpoch() view returns (uint256)",
+    "function EPOCH() view returns (uint256)",
+    "event Claimed(uint256 indexed epoch, address indexed coin, address indexed user, uint8 side, uint256 amount)",
+  ],
+  // TokenVestingLock — irrevocable dev-bag lock (cliff + linear). `create` needs a prior
+  // EXACT-amount ERC20 approve; the views feed the "% locked, unlocks in N days" badge.
+  tokenVestingLock: [
+    "function create(address token, address beneficiary, uint256 amount, uint64 start, uint64 cliffDuration, uint64 duration) returns (uint256 id)",
+    "function release(uint256 id) returns (uint256 amount)",
+    "function releasable(uint256 id) view returns (uint256)",
+    "function locked(uint256 id) view returns (uint256)",
+    "function lockedPercent(uint256 id) view returns (uint256)",
+    "function idsOfBeneficiary(address who) view returns (uint256[])",
+    "function idsOfToken(address token) view returns (uint256[])",
+    "function schedules(uint256) view returns (address token, address beneficiary, uint128 total, uint128 released, uint64 start, uint64 cliff, uint64 duration)",
+    "event ScheduleCreated(uint256 indexed id, address indexed token, address indexed beneficiary, uint256 total, uint64 start, uint64 cliff, uint64 duration)",
   ],
   erc20: [
     "function name() view returns (string)",
