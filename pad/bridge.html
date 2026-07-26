@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Robin Labs - Buy with any token</title>
+<meta name="description" content="Buy any Robin Labs coin with any token on any chain. Pay from Ethereum, Base, Arbitrum, Solana and more, and land on Robinhood Chain in one step. Non-custodial, best-price routing." />
+<link rel="canonical" href="https://robinlab.io/bridge.html" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="manifest" href="/site.webmanifest" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Robin Labs" />
+<meta property="og:title" content="Buy any Robin coin with any token" />
+<meta property="og:description" content="Pay from any EVM chain or Solana and land on Robinhood Chain in one step. Non-custodial, best-price routing." />
+<meta property="og:url" content="https://robinlab.io/bridge.html" />
+<meta property="og:image" content="https://robinlab.io/assets/og.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@robinlabzz" />
+<meta name="twitter:image" content="https://robinlab.io/assets/og.jpg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#060803;--bg-2:#0a0e05;--ink:#f4f7ee;--dim:#93a382;--lime:#dce905;--lime-2:#a6e017;--lime-deep:#7fae00;
+  --up:#8bea3c;--down:#ff6b57;--violet:#8a63e0;--glow:0 0 22px rgba(220,233,5,.45);
+  --line:rgba(220,233,5,.28);--line-2:rgba(220,233,5,.14);--line-strong:rgba(220,233,5,.4);
+  --panel:#0b0f06;--disp:"Bebas Neue",Oswald,Impact,sans-serif;--sans:"Plus Jakarta Sans",system-ui,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
+a{color:inherit;text-decoration:none}svg,img{display:block}
+.wrap{max-width:1120px;margin:0 auto;padding:0 22px;width:100%}
+/* nav */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:800;font-size:.95rem;border-radius:12px;padding:13px 22px;cursor:pointer;border:1px solid transparent;transition:.16s;font-family:var(--sans)}
+.btn-lime{background:var(--lime);color:#0a0e05;box-shadow:var(--glow)}
+.btn-lime:hover{transform:translateY(-2px);box-shadow:0 0 30px rgba(220,233,5,.75)}
+.btn-ghost{border-color:var(--line);color:var(--ink)}
+.btn-ghost:hover{background:rgba(220,233,5,.08);border-color:var(--lime)}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+.mark{display:inline-flex;align-items:center;gap:12px}
+.mark img{width:34px;height:34px;filter:drop-shadow(var(--glow))}
+.mark .wm{font-family:var(--disp);font-size:1.35rem;letter-spacing:.2em;padding-left:.1em}
+.mark .wm small{display:block;font-size:.5em;letter-spacing:.5em;color:var(--lime);margin-top:-4px}
+.nav{position:sticky;top:0;z-index:30;backdrop-filter:blur(10px);background:rgba(6,8,3,.72);border-bottom:1px solid var(--line-2)}
+.nav-in{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;max-width:1120px;margin:0 auto}
+.nav .links{display:flex;gap:20px;align-items:center;font-size:.9rem;color:var(--dim)}
+.nav .links a:hover{color:var(--lime)}.nav .links a.on{color:var(--lime)}
+/* hero */
+main{flex:1}
+.hero{text-align:center;padding:64px 0 26px}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--lime-2);margin-bottom:14px}
+.hero h1{font-family:var(--disp);font-size:clamp(2.6rem,7vw,4.6rem);line-height:.94;letter-spacing:.01em}
+.hero h1 .g{color:var(--lime);text-shadow:var(--glow)}
+.hero p{max-width:620px;margin:16px auto 0;color:var(--dim);font-size:1.05rem}
+/* swap card */
+.stage{display:flex;justify-content:center;padding:8px 0 40px}
+.card{width:100%;max-width:480px;background:linear-gradient(180deg,#0c1006,var(--panel));border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.leg{background:var(--bg);border:1px solid var(--line-2);border-radius:14px;padding:14px 16px}
+.leg .lab{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
+.leg .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px}
+.leg input{background:none;border:0;color:var(--ink);font-size:1.7rem;font-weight:700;width:60%;outline:none;font-family:var(--sans)}
+.pill{display:inline-flex;align-items:center;gap:8px;background:rgba(220,233,5,.08);border:1px solid var(--line-2);border-radius:999px;padding:7px 12px;cursor:pointer;transition:.14s;font-weight:700;font-size:.9rem;white-space:nowrap}
+.pill:hover{border-color:var(--lime);background:rgba(220,233,5,.14)}
+.pill .chip{width:22px;height:22px;border-radius:50%;background:conic-gradient(from 210deg,var(--lime),var(--violet),var(--lime-deep));flex:none}
+.pill .chev{color:var(--dim);font-size:.7rem}
+.sub{font-size:.78rem;color:var(--dim);margin-top:8px}
+.swapmid{display:flex;justify-content:center;margin:-8px 0;position:relative;z-index:2}
+.swapmid .ic{width:38px;height:38px;border-radius:11px;background:var(--panel);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--lime);font-size:1.1rem}
+.chain-strip{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 2px;justify-content:center}
+.chain-strip span{font-size:.72rem;color:var(--dim);border:1px solid var(--line-2);border-radius:999px;padding:4px 10px;font-family:var(--mono)}
+.cta{width:100%;margin-top:16px;font-size:1.05rem;padding:15px}
+.route{margin-top:12px;font-size:.76rem;color:var(--dim);text-align:center;line-height:1.6}
+.route b{color:var(--ink)}
+.trust{display:flex;flex-wrap:wrap;gap:8px 18px;justify-content:center;margin-top:22px}
+.trust span{font-size:.8rem;color:var(--dim);display:inline-flex;align-items:center;gap:7px}
+.trust .d{color:var(--lime)}
+.note{max-width:480px;margin:26px auto 0;font-size:.82rem;color:var(--dim);text-align:center;line-height:1.6;border-top:1px solid var(--line-2);padding-top:18px}
+/* footer */
+footer{border-top:1px solid var(--line-2);margin-top:20px}
+.foot-in{display:flex;align-items:center;justify-content:space-between;padding:20px 22px;font-size:.85rem;color:var(--dim);flex-wrap:wrap;gap:10px}
+.foot-in .mid b{color:var(--lime)}
+.foot-in .socs{display:flex;align-items:center;gap:12px}
+.foot-in .socs a{color:var(--dim)}.foot-in .socs a:hover{color:var(--lime)}
+@media(max-width:640px){.nav-in{flex-wrap:wrap}.nav .links{order:3;width:100%;justify-content:flex-start;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:.85rem}}
+</style>
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="mark" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" /><span class="wm">ROBIN<small>LABS</small></span></a>
+  <div class="links">
+    <a href="browse.html">Browse</a>
+    <a href="rewards.html">Rewards</a>
+    <a href="bridge.html" class="on">Buy Cross-Chain</a>
+    <a href="profile.html">Portfolio</a>
+    <a href="docs.html">Docs</a>
+    <a class="btn btn-lime" id="connectBtn" href="#">Connect Wallet</a>
+  </div>
+</div></header>
+
+<main>
+  <section class="hero wrap">
+    <div class="eyebrow">Pay with anything · land on Robinhood Chain</div>
+    <h1>BUY ANY ROBIN COIN<br>WITH <span class="g">ANY TOKEN</span></h1>
+    <p>Bring ETH, USDC, SOL, whatever you hold, from Ethereum, Base, Arbitrum, Solana and more. One step, best price, straight into the coin. You never leave Robin Labs.</p>
+  </section>
+
+  <section class="stage wrap">
+    <div class="card" id="swapCard">
+      <!-- The reskinned cross-chain buy card. The routing engine (LI.FI/Relay, best price)
+           mounts here, themed to Robin Labs and served from this page - never a redirect. -->
+      <div class="leg">
+        <div class="lab">You pay</div>
+        <div class="row">
+          <input id="payAmt" inputmode="decimal" placeholder="0.0" value="0.5" aria-label="Amount to pay" />
+          <button class="pill" id="payToken" type="button"><span class="chip"></span> ETH <span class="chev">▼</span></button>
+        </div>
+        <div class="sub" id="payChain">from Ethereum · any chain, any token</div>
+      </div>
+
+      <div class="swapmid"><div class="ic">↓</div></div>
+
+      <div class="leg">
+        <div class="lab">You get</div>
+        <div class="row">
+          <input id="getAmt" placeholder="0.0" value="" aria-label="Estimated amount received" readonly />
+          <button class="pill" id="getToken" type="button"><span class="chip"></span> Pick a coin <span class="chev">▼</span></button>
+        </div>
+        <div class="sub">on <b style="color:var(--lime)">Robinhood Chain</b> · the Robin Labs coin you want</div>
+      </div>
+
+      <button class="btn btn-lime cta" id="buyCta" type="button">Connect wallet to buy</button>
+
+      <div class="route">
+        Best-price routing across <b>Across</b>, <b>deBridge</b> &amp; <b>Relay</b>, settled on-chain into
+        <b>RobinZap</b>, which buys the coin and sends it to your wallet. Non-custodial, one signature.
+      </div>
+    </div>
+  </section>
+
+  <div class="trust wrap">
+    <span><span class="d">●</span> Non-custodial, your keys the whole way</span>
+    <span><span class="d">●</span> 26+ EVM chains + Solana</span>
+    <span><span class="d">●</span> Best price, auto-routed</span>
+    <span><span class="d">●</span> Lands in one step</span>
+  </div>
+
+  <p class="note">
+    Powered by open, audited bridges and Robin Labs' own on-chain handler, all inside robinlab.io.
+    Amounts and routes are quoted live; you approve exactly one transaction and the coin arrives on Robinhood Chain.
+  </p>
+</main>
+
+<footer><div class="wrap foot-in">
+  <span>robinlabs.io</span>
+  <span class="mid">Trade. Hold. <b>Get paid.</b></span>
+  <span class="socs">
+    <a href="https://x.com/robinlabzz" target="_blank" rel="noopener" aria-label="X (Twitter)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+    <span>@robinlabzz</span>
+  </span>
+</div></footer>
+
+<script>
+// Lightweight interactivity for the shell. The live routing engine (LI.FI SDK, themed to
+// these tokens, + RobinZap on Robinhood Chain) wires into #swapCard next; this keeps the
+// page on-brand and interactive in the meantime, never redirecting off robinlab.io.
+(function(){
+  var cbtn = document.getElementById('connectBtn');
+  var cta = document.getElementById('buyCta');
+  // If the wallet lib is present on the site, reflect connection state.
+  window.addEventListener('robinpad:ready', function(){
+    try {
+      var a = window.RobinPad && window.RobinPad.account && window.RobinPad.account();
+      if (a) { cbtn.textContent = window.RobinPad.short(a); cta.textContent = 'Buy'; }
+    } catch(e){}
+  });
+  // Preselect a coin from ?token= so the coin page can deep-link into the cross-chain buy.
+  var p = new URLSearchParams(location.search).get('token');
+  if (p) document.getElementById('getToken').innerHTML = '<span class="chip"></span> ' + p.slice(0,6) + '…' + p.slice(-4) + ' <span class="chev">▼</span>';
+})();
+</script>
+</body>
+</html>
