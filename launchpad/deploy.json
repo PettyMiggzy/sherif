@@ -8,12 +8,13 @@
   "contracts": {
     "padRouter": "0xA6BaAB820809C7fC8350311776627298f91F07eC",
     "padFactory": "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074",
-    "rewardVault": null,
+    "rewardVault": "0x03d5d26E492B288e62D897E7dde91af3CceB4347",
     "floorCoopFactory": "0x564EDF561Bed46C972d5D44D84f5FAc9C5118668",
     "platformSplitter": "0xca0EfD87B983CdeF56459051ecBE91aA5C87E17a",
     "feeConfig": "0x064D977B66FCC29256510dBCD8cC0C51bBb2De14",
     "launchTokenDeployer": "0xb3748cB6ba4e47b885f8333aCa8C004A4657383d",
     "curvePoolDeployer": "0x020524511aD8B99828b19DA0FD3Bb7BE919A080c",
-    "bondDeployer": "0x8B04d9e55C904d6D371eA6e81ecb2a0911843AD3"
+    "bondDeployer": "0x8B04d9e55C904d6D371eA6e81ecb2a0911843AD3",
+    "tokenVestingLock": "0x7453856c3E5f6832dc660e48c7Daa6f46f3355DF"
   }
 }

@@ -46,13 +46,13 @@ export const CONTRACTS = {
   feeConfig: "0x064D977B66FCC29256510dBCD8cC0C51bBb2De14",
 
   // Our RewardVault - custodies the additive 0.25% trader + 0.25% holder legs and
-  // pays capped, Merkle-proven claims in real ETH. Empty until the reward system
-  // ships alongside the next router deploy; the frontend stays inert until it's set.
-  rewardVault: "",
+  // pays capped, Merkle-proven claims in real ETH. LIVE: router.setRewardVault wired
+  // to this address, so the reward legs are on for every trade.
+  rewardVault: "0x03d5d26E492B288e62D897E7dde91af3CceB4347",
 
   // Our TokenVestingLock - one shared, IRREVOCABLE locker holding many creator dev-bag schedules
-  // (cliff + linear). Empty until deployed + verified; every UI/SDK path is a no-op while unset.
-  tokenVestingLock: "",
+  // (cliff + linear). LIVE: creators opt in by locking their own tokens; UI/SDK paths active.
+  tokenVestingLock: "0x7453856c3E5f6832dc660e48c7Daa6f46f3355DF",
 
   // Our FloorCoopFactory - deploys a per-coin community floor vault (add to the buy-wall, earn dip-buy
   // fees, withdrawable after a cooldown). LIVE.
