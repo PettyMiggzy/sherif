@@ -18,6 +18,11 @@ An optional read API reads the on-chain events into a database and serves a fast
 | `GET /api/coin/:token/holders` | A coin's [top holders + count](#holdings--holders) |
 | `GET /api/coin/:token/meta` | The coin's creator-set [profile](#coin-profiles) (image/banner URLs + socials) |
 | `POST /api/coin/:token/meta` | Set the profile: **creator-signed** (only the coin's `dev`) |
+| `GET /api/coin/:token/devlock` | The coin's [vesting lock](#rewards--vesting-locks): locked %, unlock time (creator's dev bag) |
+| `GET /api/rewards/:addr` | A wallet's [claimable + pending rewards](#rewards--vesting-locks), with Merkle proofs |
+| `GET /api/rewards/stats` | Global [reward totals](#rewards--vesting-locks): paid, claimants, per-side splits |
+| `GET /api/rewards/epoch/:n` | An epoch's full leaf set + root (the transparency artifact the on-chain `uri` points at) |
+| `GET /api/rewards/claim/:epoch/:coin/:side/:user` | One claim's exact args + Merkle proof |
 | `GET /media/:token/:kind` | The coin's image bytes (`kind` = `pfp` \| `banner`) |
 | `POST /rpc` | [Read-only JSON-RPC proxy](#read-proxy-rpc): the pad's live reads, served + cached from the paid RPC |
 
@@ -98,6 +103,35 @@ POST /rpc      Content-Type: application/json
 - **Failover + rate limit.** Upstream fails over `RPC_URL → RPC_FALLBACK`; a light per-IP cap keeps the open proxy from being used to drain the upstream.
 
 The pad points its read provider at `[/rpc, public RPC]` as a `FallbackProvider`, so it prefers the proxy and automatically falls back to the public RPC if the proxy ever stalls.
+
+## Rewards & vesting locks
+
+These endpoints back the [rewards](rewards.md) and [vesting](vesting.md) UIs. All amounts are exact wei strings; `eth` fields are convenience floats.
+
+```http
+# A wallet's reward feed: claimable now (finalized + posted epochs, with proofs) and pending (this open epoch, no proof yet).
+GET /api/rewards/:addr
+→ { epoch, epochEndsIn, claimWindowH,
+    claimable: [ { epoch, coin, side, sideName, amount, eth, proof:[…], name, sym } ],
+    pending:   [ { epoch, coin, side, sideName, amount, eth, name, sym } ],
+    totals: { claimableEth, pendingEth } }
+```
+
+A leaf is only listed in `claimable` once its root is on-chain **and** the challenge window has elapsed (the contract reverts an early `claim`). Feed the `claimable` fields straight into `RewardVault.claim(epoch, coin, side, amount, proof)`; `side` is `0` = traders, `1` = holders.
+
+```http
+GET /api/rewards/claim/:epoch/:coin/:side/:user   # re-fetch one leaf's exact args + proof
+GET /api/rewards/epoch/:n                          # an epoch's full leaf set + root (transparency artifact)
+GET /api/rewards/stats                             # global totals: paidEth, claimants, tradersEth, holdersEth, epochsPosted
+```
+
+```http
+# A coin's vesting lock (the creator's dev bag). hasLock:false = indexed, nothing locked.
+GET /api/coin/:token/devlock
+→ { token, hasLock, ids:[…], totalWei, lockedWei, lockedPct, vestedWei, end }
+```
+
+`lockedWei` / `lockedPct` are exact. `vestedWei` is **cumulative** vested (the indexer doesn't track on-chain `released`), so a client derives the exact still-claimable amount on-chain as `vested − released`. This endpoint reports the creator's lock for the fast badge; **every** lock on a coin (creator, team, whales) is enumerable on-chain via `TokenVestingLock.idsOfToken(token)` → `schedules(id)` (see [Vesting](vesting.md)).
 
 ## Self-hosting
 

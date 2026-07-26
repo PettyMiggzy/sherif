@@ -72,16 +72,39 @@ await (await erc20.approve(ADDRESSES.padRouter, amountIn, await legacyOverrides(
 await (await router.sell(token, amountIn, minOutEth, await legacyOverrides(wallet.provider))).wait();
 ```
 
-`legacyOverrides(provider)` returns `{ type: 0, gasPrice }`, **required on every write**, or the node rejects
-a default type-2 tx with `-32601`. See the [Integration Guide](integration.md) for launch/graduate/dev-fee flows.
+`legacyOverrides(provider)` returns `{ type: 0, gasPrice }` (floored above the chain's moving base fee), **required on every write**, or the node rejects a default type-2 tx with `-32601`. See the [Integration Guide](integration.md) for launch/graduate/dev-fee flows.
+
+## Claim rewards & lock a bag (write)
+
+```js
+import { ADDRESSES, ABI, legacyOverrides } from "@robinlabs/pad-sdk";
+
+// Claim a reward leaf. Get { epoch, coin, side, amount, proof } from GET /api/rewards/:addr.
+const vault = new ethers.Contract(ADDRESSES.rewardVault, ABI.rewardVault, wallet);
+await (await vault.claim(epoch, coin, side, amount, proof, await legacyOverrides(wallet.provider))).wait();
+
+// Lock a bag — the creator's dev bag OR anyone's (team, whale). Two txs: exact-amount approve, then create.
+const lock = new ethers.Contract(ADDRESSES.tokenVestingLock, ABI.tokenVestingLock, wallet);
+const erc20 = new ethers.Contract(token, ABI.erc20.concat("function approve(address,uint256) returns (bool)"), wallet);
+await (await erc20.approve(ADDRESSES.tokenVestingLock, amount, await legacyOverrides(wallet.provider))).wait();
+// start=0 → now; cliffDuration=0 → linear; cliffDuration==duration → hard cliff. beneficiary can be yourself.
+await (await lock.create(token, beneficiary, amount, 0, cliffDuration, duration, await legacyOverrides(wallet.provider))).wait();
+
+// Read every lock on a coin (creator + team + whales):
+const read = new ethers.Contract(ADDRESSES.tokenVestingLock, ABI.tokenVestingLock, provider);
+const ids = await read.idsOfToken(token);
+for (const id of ids) console.log(await read.schedules(id), await read.lockedPercent(id));
+```
+
+The lock is **irrevocable**: no cancel, no owner, tokens release only on the schedule, straight to the fixed `beneficiary`. `release(id)` is permissionless (funds always go to the beneficiary).
 
 ## Exports
 
 | Export | What |
 |--------|------|
 | `CHAIN` | `{ id: 4663, hex, name, rpc, explorer, perTxGasCap }` |
-| `ADDRESSES` | The live, source-verified stack (factory, router, feeConfig, floorCoopFactory, splitter, WETH, v3 factory) |
-| `ABI` | Human-readable ABIs: `factory`, `router`, `floorCoopFactory`, `erc20` (ethers parses directly) |
+| `ADDRESSES` | The live, source-verified stack (factory, router, feeConfig, floorCoopFactory, splitter, **rewardVault**, **tokenVestingLock**, WETH, v3 factory) |
+| `ABI` | Human-readable ABIs: `factory`, `router`, `floorCoopFactory`, **`rewardVault`**, **`tokenVestingLock`**, `erc20` (ethers parses directly) |
 | `legacyOverrides(provider)` | `{ type: 0, gasPrice }`, spread into every write (Robinhood Chain has no EIP-1559) |
 | `explorerUrl(addr)` | Blockscout address link |
 | `RobinLabsAPI` / `RobinLabsChain` | The two read clients above |
