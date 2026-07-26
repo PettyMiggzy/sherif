@@ -37,6 +37,7 @@ const THROTTLE_MINUTES = Number(process.env.THROTTLE_MINUTES || 2); // budget fu
 const TG_TOKEN = (process.env.TG_BOT_TOKEN || "").trim();
 const TG_CHAT = (process.env.TG_CHAT_ID || "").trim();
 const ALERT_HOURS = Number(process.env.ALERT_HOURS || 1); // warn when this many hours of funds remain
+const TG_VIDEO = process.env.TG_VIDEO || path.join(ROOT, "assets", "trend.mp4"); // posted with the announce message if present
 
 async function tg(text) {
   if (!TG_TOKEN || !TG_CHAT) return;
@@ -47,6 +48,25 @@ async function tg(text) {
       body: JSON.stringify({ chat_id: TG_CHAT, text, parse_mode: "HTML", disable_web_page_preview: true }),
     });
   } catch (e) { console.log(`telegram send failed: ${e.message}`); }
+}
+
+// Announcement post: send the trend video with the message as its caption when the
+// video file is present, otherwise fall back to a plain text message.
+async function tgAnnounce(text) {
+  if (!TG_TOKEN || !TG_CHAT) return;
+  try {
+    if (TG_VIDEO && fs.existsSync(TG_VIDEO)) {
+      const fd = new FormData();
+      fd.append("chat_id", TG_CHAT);
+      fd.append("caption", text);
+      fd.append("parse_mode", "HTML");
+      fd.append("video", new Blob([fs.readFileSync(TG_VIDEO)], { type: "video/mp4" }), "trend.mp4");
+      const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendVideo`, { method: "POST", body: fd });
+      if (r.ok) return;
+      console.log(`telegram sendVideo ${r.status} — falling back to text`);
+    }
+  } catch (e) { console.log(`telegram video failed (${e.message}) — falling back to text`); }
+  await tg(text);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -139,8 +159,8 @@ async function main() {
 
   let alertedLow = false, alertedIdle = false;
   if (TG_TOKEN && TG_CHAT) {
-    log(`Telegram alerts on → chat ${TG_CHAT}`);
-    await tg(`🟢 <b>Autopilot live</b> · ${keys.length} wallets\nRate: ${SPEND_USD_PER_HOUR > 0 ? "~$" + SPEND_USD_PER_HOUR + "/hr" : "burst"}\nFund the distributor to buy 👇\n<code>${funder.address}</code>`);
+    log(`Telegram alerts on → chat ${TG_CHAT}${fs.existsSync(TG_VIDEO) ? " (with video)" : ""}`);
+    await tgAnnounce(`🟢 <b>Autopilot live</b> · ${keys.length} wallets\nRate: ${SPEND_USD_PER_HOUR > 0 ? "~$" + SPEND_USD_PER_HOUR + "/hr" : "burst"}\nFund the distributor to buy 👇\n<code>${funder.address}</code>`);
   }
 
   // Spend whatever the funder holds down to dust. Each pass funds up to the whole
