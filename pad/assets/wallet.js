@@ -1118,6 +1118,42 @@ export async function lockDevBagPct(token, beneficiary, pct, cliffDays = 0, dura
   return createVestingLock(token, who, amt, 0, cliffDays, durationDays);
 }
 
+/// Lock pct% of the CONNECTED wallet's OWN balance of `token` to itself. Anyone (team,
+/// whale, treasury, not just the creator) can prove on-chain they won't dump. Same
+/// irrevocable cliff+linear lock. linear: cliffDays=0; hard cliff: cliffDays=durationDays.
+export async function lockMyBag(token, pct, cliffDays = 0, durationDays = 30) {
+  requireVesting();
+  if (!_signer) await connect();
+  return lockDevBagPct(token, _account, pct, cliffDays, durationDays);
+}
+
+/// Every vesting lock on `token` (creator + team + whales), read straight on-chain via
+/// idsOfToken → schedules. Returns [{ id, beneficiary, total, released, releasable,
+/// lockedPct, start, end }], newest ids last. [] when the lock isn't deployed.
+export async function allLocksOf(token) {
+  if (!isDeployed("tokenVestingLock")) return [];
+  const c = new ethers.Contract(CONTRACTS.tokenVestingLock, ABIS.tokenVestingLock, _read);
+  let ids = [];
+  try { ids = await c.idsOfToken(token); } catch { return []; }
+  const out = [];
+  for (const idRaw of ids.slice(0, 100)) { // cap: a coin with 100+ locks is already well past "proven"
+    const id = Number(idRaw);
+    try {
+      const s = await c.schedules(idRaw);
+      const [releasable, lockedPct] = await Promise.all([
+        c.releasable(idRaw).catch(() => 0n),
+        c.lockedPercent(idRaw).catch(() => 0n),
+      ]);
+      out.push({
+        id, beneficiary: String(s.beneficiary), total: s.total, released: s.released,
+        releasable, lockedPct: Number(lockedPct),
+        start: Number(s.start), end: Number(s.start) + Number(s.duration),
+      });
+    } catch { /* skip an unreadable schedule */ }
+  }
+  return out;
+}
+
 /// Release all currently-vested tokens of a schedule to its (fixed) beneficiary. Permissionless.
 export async function releaseVesting(id) {
   requireVesting();
@@ -1210,7 +1246,7 @@ if (typeof window !== "undefined") {
     holders, trades, chainTrades, feeTotals,
     rewards, rewardStats, claimReward, claimAllRewards,
     floorInfo, floorDeposit, floorClaim, floorWithdraw,
-    createVestingLock, releaseVesting, devLockOf,
+    createVestingLock, lockDevBagPct, lockMyBag, allLocksOf, releaseVesting, devLockOf, tokenBalanceWei,
   };
   window.SheriffPad = window.RobinPad; // back-compat alias for existing pages
   window.dispatchEvent(new Event("robinpad:ready"));

@@ -240,6 +240,13 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .devlock h3 .meta{color:var(--gold)}
 .dl-blurb{color:var(--ink-dim);font-size:.84rem;line-height:1.5;margin:0 0 12px}.dl-blurb b{color:var(--ink)}
 .dl-fill{background:linear-gradient(90deg,#b8860b,var(--gold))!important}
+.lk-row button{flex:1;background:var(--bg);border:1px solid var(--line-2);border-radius:8px;padding:7px 5px;color:var(--ink-dim);font-weight:700;font-size:.78rem;cursor:pointer;font-family:inherit;transition:.14s}
+.lk-row button:hover{border-color:var(--gold);color:var(--ink)}
+.lk-row button.on{background:rgba(245,197,66,.14);border-color:var(--gold);color:var(--gold)}
+.lockrow{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:8px 0;border-top:1px solid var(--line-2);font-size:.82rem}
+.lockrow:first-child{border-top:0}.lockrow .who{font-family:var(--mono);color:var(--ink)}.lockrow .who .tag{color:var(--gold);font-weight:700}
+.lockrow .amt{color:var(--ink-dim)}.lockrow .amt b{color:var(--ink)}.lockrow .when{color:var(--ink-faint);font-size:.76rem;white-space:nowrap}
+.relbtn{margin-left:8px;background:rgba(245,197,66,.14);border:1px solid var(--gold);color:var(--gold);border-radius:7px;padding:2px 8px;font-size:.72rem;font-weight:700;cursor:pointer;font-family:inherit}.relbtn:hover{background:rgba(245,197,66,.24)}.relbtn:disabled{opacity:.6;cursor:default}
 /* holder rewards (violet) */
 .rewards{border-color:var(--violet);background:linear-gradient(180deg,rgba(138,99,224,.08),var(--panel))}
 .rewards h3 .meta{color:var(--violet)}
@@ -365,6 +372,26 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
         <div class="bar"><div class="fill dl-fill" id="dlFill" style="width:0%"></div></div>
         <div class="bar-lab"><span id="dlCountdown">-</span><b id="dlLocked">-</b></div>
         <button class="btn btn-gold" id="dlRelease" type="button" style="width:100%;margin-top:12px;display:none">Release vested</button>
+      </div>
+
+      <!-- lock YOUR bag (gold) - anyone holding the coin (team, whale, treasury) can self-lock -->
+      <div class="panel sec devlock" id="lockBagPanel" style="margin-top:16px;display:none"><h3>Lock your bag <span class="meta">irrevocable</span></h3>
+        <p class="dl-blurb">Not just the dev, <b>anyone</b> can prove they won't dump. Lock a share of <b>your own</b> $<span id="lbSym">-</span> in the same irrevocable cliff+linear vesting lock. No cancel, no owner; buyers verify it on-chain.</p>
+        <div class="bar-lab" style="margin-top:2px"><span>Lock of your balance</span><b id="lbPctAmt">50%</b></div>
+        <input type="range" id="lbPct" min="5" max="100" step="5" value="50" style="width:100%;accent-color:var(--gold)" aria-label="Percent of your balance to lock" />
+        <div class="lk-row" id="lbDurs" style="display:flex;gap:6px;margin-top:10px">
+          <button type="button" data-d="30">30d</button><button type="button" data-d="90" class="on">90d</button><button type="button" data-d="180">180d</button><button type="button" data-d="365">1yr</button>
+        </div>
+        <div class="lk-row" id="lbModes" style="display:flex;gap:6px;margin-top:6px">
+          <button type="button" data-m="linear" class="on" style="flex:1">Linear unlock</button><button type="button" data-m="cliff" style="flex:1">Cliff · all at end</button>
+        </div>
+        <button class="btn btn-gold" id="lbLock" type="button" style="width:100%;margin-top:12px">Lock my bag</button>
+        <div class="tiny" id="lbNote" style="margin-top:8px"></div>
+      </div>
+
+      <!-- every lock on this coin (creator + team + whales), read on-chain -->
+      <div class="panel sec" id="locksPanel" style="margin-top:16px;display:none"><h3>Locked bags <span class="meta" id="locksMeta"></span></h3>
+        <div id="locksList"></div>
       </div>
 
       <!-- holder rewards (violet) - this coin's claimable/pending reward legs -->
@@ -511,7 +538,7 @@ $('quick').addEventListener('click', (e) => {
 $('copyCa').addEventListener('click', () => { if (TOKEN && navigator.clipboard) navigator.clipboard.writeText(TOKEN); });
 $('connectBtn').addEventListener('click', async () => {
   if (Pad.account()) { location.href = 'profile.html'; return; }   // already connected → open your profile
-  try { await Pad.connect(); refreshConnect(); await maybeShowDev(); loadRewards(); checkPendingLock(); if (SIDE === 'sell') loadBal(); } catch (e) { setNote(e.message, 'err'); }
+  try { await Pad.connect(); refreshConnect(); await maybeShowDev(); loadLocks(); loadRewards(); checkPendingLock(); if (SIDE === 'sell') loadBal(); } catch (e) { setNote(e.message, 'err'); }
 });
 renderQuick(); // paint the buy presets on first load (before any side toggle)
 window.addEventListener('robinpad:ready', refreshConnect);
@@ -834,7 +861,7 @@ async function loadCoin(){
   const preBuy = parseFloat(q.get('buy'));
   if (Number.isFinite(preBuy) && preBuy > 0 && !window.__preBuyDone) { window.__preBuyDone = true; if (SIDE !== 'buy') side('buy'); $('amtInput').value = String(preBuy); }
   loadTrades(); loadHolders(); renderFees(apiCoin); renderFloor();
-  loadDevLock(); loadRewards(); checkPendingLock(); // no-ops until the vesting lock / reward vault are deployed
+  loadDevLock(); loadLocks(); loadRewards(); checkPendingLock(); // no-ops until the vesting lock / reward vault are deployed
   mountSafety(document.getElementById('safetyBody'), TOKEN); // GoPlus + template scan (read-only)
 }
 
@@ -988,6 +1015,71 @@ $('dlRelease').addEventListener('click', async () => {
     setNote('Released ✓, vested tokens sent to the creator.', 'ok');
     setTimeout(loadDevLock, 1500);
   } catch (e) { setNote(e.shortMessage || e.message, 'err'); }
+});
+
+// ── all locks on this coin + self-serve "lock your bag" (anyone: team, whale) ──────
+// STRICT NO-OP until TokenVestingLock is deployed (allLocksOf returns []).
+let LB_DAYS = 90, LB_MODE = 'linear';
+async function loadLocks(){
+  const panel = $('locksPanel'), self = $('lockBagPanel');
+  const hideSelf = () => { if (self) self.style.display = 'none'; };
+  if (DEMO || !COIN || !isDeployed('tokenVestingLock')){ if (panel) panel.style.display = 'none'; return hideSelf(); }
+  let locks = [];
+  try { locks = await Pad.allLocksOf(COIN.token); } catch { locks = []; }
+  if (locks.length){
+    const dev = String(COIN.dev || '').toLowerCase();
+    const me = String(Pad.account() || '').toLowerCase();
+    const now = Math.floor(Date.now()/1000);
+    $('locksList').innerHTML = locks.map((l) => {
+      const who = l.beneficiary.toLowerCase() === dev ? '<span class="tag">Creator</span>' : Pad.short(l.beneficiary);
+      const left = (l.end || 0) - now;
+      const when = left <= 0 ? 'unlocked' : 'unlocks in ' + fmtDur(left);
+      // Release is permissionless (tokens always go to the beneficiary), but only surface the
+      // button to the beneficiary themselves when they have something vested to pull.
+      const canRel = me && l.beneficiary.toLowerCase() === me && BigInt(l.releasable || 0n) > 0n;
+      const relBtn = canRel ? ` <button class="relbtn" data-id="${l.id}" type="button">Release ${fmtTok(l.releasable)}</button>` : '';
+      return `<div class="lockrow"><span class="who">${who}</span><span class="amt"><b>${fmtTok(l.total)}</b> ${disp(COIN.symbol)} · ${Math.round((l.lockedPct||0)/100)}% locked${relBtn}</span><span class="when">${when}</span></div>`;
+    }).join('');
+    $('locksMeta').textContent = locks.length + (locks.length === 1 ? ' lock' : ' locks');
+    panel.style.display = '';
+  } else { panel.style.display = 'none'; }
+  // self-serve: any connected wallet that actually holds this coin can lock its own bag
+  const acct = Pad.account();
+  if (!acct) return hideSelf();
+  let bal = 0n; try { bal = await Pad.tokenBalanceWei(COIN.token, acct); } catch {}
+  if (bal <= 0n) return hideSelf();
+  $('lbSym').textContent = disp(COIN.symbol);
+  self.style.display = '';
+}
+// release a own-lock's vested portion straight from the list (permissionless)
+$('locksList').addEventListener('click', async (e) => {
+  const b = e.target.closest('.relbtn'); if (!b) return;
+  try {
+    if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
+    b.disabled = true; b.textContent = 'Releasing…';
+    await (await Pad.releaseVesting(+b.dataset.id)).wait();
+    setTimeout(loadLocks, 1500);
+  } catch (err) { b.disabled = false; alert(err.shortMessage || err.message || 'Release failed'); }
+});
+// slider + term/mode toggles for the self-lock panel
+$('lbPct').addEventListener('input', (e) => { $('lbPctAmt').textContent = e.target.value + '%'; });
+$('lbDurs').addEventListener('click', (e) => { const b = e.target.closest('button[data-d]'); if (!b) return; $('lbDurs').querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); LB_DAYS = +b.dataset.d; });
+$('lbModes').addEventListener('click', (e) => { const b = e.target.closest('button[data-m]'); if (!b) return; $('lbModes').querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); LB_MODE = b.dataset.m; });
+$('lbLock').addEventListener('click', async () => {
+  if (!COIN) return;
+  const pct = +$('lbPct').value, note = $('lbNote');
+  const set = (t, cls) => { note.textContent = t; note.className = 'tiny' + (cls ? ' ' + cls : ''); };
+  try {
+    if (!Pad.account()) { await Pad.connect(); refreshConnect(); }
+    $('lbLock').disabled = true;
+    set(`Locking ${pct}% of your bag (approve + lock)…`);
+    // cliff mode = nothing until the end then 100% (cliffDays = durationDays); linear = cliffDays 0.
+    const done = await Pad.lockMyBag(COIN.token, pct, LB_MODE === 'cliff' ? LB_DAYS : 0, LB_DAYS);
+    if (!done) { set('No balance found to lock.', 'err'); $('lbLock').disabled = false; return; }
+    await done.wait();
+    set('Locked ✓, anyone can verify it on-chain.', 'ok');
+    setTimeout(() => { loadLocks(); loadDevLock(); $('lbLock').disabled = false; }, 1500);
+  } catch (e) { set(e.shortMessage || e.message || 'Lock failed', 'err'); $('lbLock').disabled = false; }
 });
 
 // Resume a stashed post-launch lock (rl_pending_lock:<token>) - visible when a stash exists;
