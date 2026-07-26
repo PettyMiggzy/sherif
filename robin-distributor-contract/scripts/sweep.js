@@ -24,8 +24,10 @@ const ROBIN_USD = Number(process.env.ROBIN_USD || 0.00001417);
 function loadAllKeys() {
   const seen = new Set(), out = [];
   const add = (k) => { if (k && k.privateKey && k.address && !seen.has(k.address.toLowerCase())) { seen.add(k.address.toLowerCase()); out.push(k); } };
-  const kj = path.join(ROOT, "keys.json");
-  if (fs.existsSync(kj)) { try { JSON.parse(fs.readFileSync(kj, "utf8")).forEach(add); } catch {} }
+  // current pool + every regeneration backup (keys.json.bak-*) so no old pool is missed
+  for (const f of fs.readdirSync(ROOT)) {
+    if (f === "keys.json" || /^keys\.json\.bak-/.test(f)) { try { JSON.parse(fs.readFileSync(path.join(ROOT, f), "utf8")).forEach(add); } catch {} }
+  }
   const uw = path.join(ROOT, "used-wallets.jsonl");
   if (fs.existsSync(uw)) fs.readFileSync(uw, "utf8").trim().split("\n").filter(Boolean).forEach((l) => { try { add(JSON.parse(l)); } catch {} });
   return out;
