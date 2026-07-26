@@ -247,6 +247,12 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .lockrow:first-child{border-top:0}.lockrow .who{font-family:var(--mono);color:var(--ink)}.lockrow .who .tag{color:var(--gold);font-weight:700}
 .lockrow .amt{color:var(--ink-dim)}.lockrow .amt b{color:var(--ink)}.lockrow .when{color:var(--ink-faint);font-size:.76rem;white-space:nowrap}
 .relbtn{margin-left:8px;background:rgba(245,197,66,.14);border:1px solid var(--gold);color:var(--gold);border-radius:7px;padding:2px 8px;font-size:.72rem;font-weight:700;cursor:pointer;font-family:inherit}.relbtn:hover{background:rgba(245,197,66,.24)}.relbtn:disabled{opacity:.6;cursor:default}
+/* collapsible side panels (accordion) - keeps the long token page tidy */
+.panel.sec.collapsible>h3{cursor:pointer;position:relative;padding-right:24px;user-select:none;margin-bottom:0;transition:margin .15s}
+.panel.sec.collapsible.open>h3{margin-bottom:12px}
+.panel.sec.collapsible>h3::after{content:'';position:absolute;right:4px;top:9px;width:7px;height:7px;border-right:2px solid var(--ink-faint);border-bottom:2px solid var(--ink-faint);transform:rotate(45deg);transition:transform .18s}
+.panel.sec.collapsible.open>h3::after{transform:rotate(-135deg);top:12px}
+.panel.sec.collapsible:not(.open)>*:not(h3){display:none!important}
 /* holder rewards (violet) */
 .rewards{border-color:var(--violet);background:linear-gradient(180deg,rgba(138,99,224,.08),var(--panel))}
 .rewards h3 .meta{color:var(--violet)}
@@ -543,6 +549,25 @@ $('connectBtn').addEventListener('click', async () => {
 renderQuick(); // paint the buy presets on first load (before any side toggle)
 window.addEventListener('robinpad:ready', refreshConnect);
 refreshConnect();
+
+// Collapse the secondary side panels into a clean accordion (Buy/Sell + Bond stay open).
+// Remembers which sections you opened, keyed by title, so it survives a reload.
+(function initAccordion(){
+  const CKEY = 'rl_open_sections';
+  let open; try { open = new Set(JSON.parse(localStorage.getItem(CKEY) || '[]')); } catch { open = new Set(); }
+  const save = () => { try { localStorage.setItem(CKEY, JSON.stringify([...open])); } catch {} };
+  document.querySelectorAll('.panel.sec').forEach((p) => {
+    const h = p.querySelector(':scope > h3'); if (!h) return;
+    const key = (h.textContent || '').trim().split('\n')[0].trim();
+    p.classList.add('collapsible');
+    if (open.has(key)) p.classList.add('open');
+    h.addEventListener('click', () => {
+      const nowOpen = p.classList.toggle('open');
+      if (nowOpen) open.add(key); else open.delete(key);
+      save();
+    });
+  });
+})();
 
 // ── trade ──
 $('trade').addEventListener('click', async () => {
