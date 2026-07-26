@@ -36,6 +36,7 @@ export function profileMessage(token, p) {
     telegram: p.telegram || "",
     twitter: p.twitter || "",
     website: p.website || "",
+    migratedFrom: p.migratedFrom || "", // "chain|oldToken" provenance, or ""
     pfp: p.pfp || "",       // data: URL or ""
     banner: p.banner || "", // data: URL or ""
     ts: p.ts,
@@ -292,6 +293,7 @@ function mediaBase(req) {
 const profileOf = (token, m, base) => (m ? {
   description: m.description || null, telegram: m.telegram || null,
   twitter: m.twitter || null, website: m.website || null,
+  migratedFrom: m.migrated_from || null,
   image: m.has_pfp ? `${base}/media/${token}/pfp?v=${m.updated_ts}` : null,
   banner: m.has_banner ? `${base}/media/${token}/banner?v=${m.updated_ts}` : null,
   updatedTs: m.updated_ts || null,
@@ -335,6 +337,7 @@ const coinsStmt = (sort, filter, hasQ) => {
       (SELECT CAST(t.eth AS REAL)/NULLIF(CAST(t.tokens AS REAL),0)
          FROM trades t WHERE t.token=c.token ORDER BY t.block DESC, t.log_index DESC LIMIT 1) AS last_price,
       cm.description AS meta_desc, cm.telegram AS meta_tg, cm.twitter AS meta_tw, cm.website AS meta_web,
+      cm.migrated_from AS meta_migrated,
       cm.updated_ts AS meta_ts, (cm.pfp IS NOT NULL) AS has_pfp, (cm.banner IS NOT NULL) AS has_banner
     FROM coins c
     LEFT JOIN coin_meta cm ON cm.token = c.token
@@ -355,6 +358,7 @@ const shapeCoin = (r, base = "") => ({
   banner: r.has_banner ? `${base}/media/${r.token}/banner?v=${r.meta_ts}` : null,
   description: r.meta_desc || null,
   telegram: r.meta_tg || null, twitter: r.meta_tw || null, website: r.meta_web || null,
+  migratedFrom: r.meta_migrated || null,
   launchBlock: r.launch_block, launchTs: r.launch_ts, launchTx: r.launch_tx,
   devBought: r.dev_bought,
   graduated: !!r.graduated,
@@ -405,6 +409,7 @@ const oneCoinStmt = db.prepare(`
     (SELECT CAST(t.eth AS REAL)/NULLIF(CAST(t.tokens AS REAL),0)
        FROM trades t WHERE t.token=c.token ORDER BY t.block DESC, t.log_index DESC LIMIT 1) AS last_price,
     cm.description AS meta_desc, cm.telegram AS meta_tg, cm.twitter AS meta_tw, cm.website AS meta_web,
+    cm.migrated_from AS meta_migrated,
     cm.updated_ts AS meta_ts, (cm.pfp IS NOT NULL) AS has_pfp, (cm.banner IS NOT NULL) AS has_banner
   FROM coins c LEFT JOIN coin_meta cm ON cm.token = c.token WHERE c.token=@token
 `);
@@ -514,6 +519,7 @@ export function startApi() {
           telegram: String(body.telegram || "").slice(0, 200),
           twitter: String(body.twitter || "").slice(0, 200),
           website: String(body.website || "").slice(0, 200),
+          migrated_from: String(body.migratedFrom || "").trim().slice(0, 120),
           updated_ts: ts, updated_by: signer.toLowerCase(),
         };
         db.transaction(() => {

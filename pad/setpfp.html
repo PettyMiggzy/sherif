@@ -159,7 +159,7 @@ for(const [id,prev] of [['pfp','pfpPrev'],['banner','bannerPrev']]){
 }
 
 function profileMessage(token, p){
-  const canon = JSON.stringify({ description:p.description||"", telegram:p.telegram||"", twitter:p.twitter||"", website:p.website||"", pfp:p.pfp||"", banner:p.banner||"", ts:p.ts });
+  const canon = JSON.stringify({ description:p.description||"", telegram:p.telegram||"", twitter:p.twitter||"", website:p.website||"", migratedFrom:p.migratedFrom||"", pfp:p.pfp||"", banner:p.banner||"", ts:p.ts });
   return `Robin Labs - set coin profile\ntoken: ${String(token).toLowerCase()}\nts: ${p.ts}\ndigest: ${ethers.id(canon)}`;
 }
 
@@ -174,7 +174,7 @@ $('save').addEventListener('click', async () => {
     const banner = await imgDataUrl('banner', 1200);
     if(!pfp && !banner){ log('Pick at least a pfp image.','bad'); $('save').disabled=false; return; }
     const ts = Math.floor(Date.now()/1000);
-    const payload = { description:"", telegram:"", twitter:"", website:"", pfp, banner, ts };
+    const payload = { description:"", telegram:"", twitter:"", website:"", migratedFrom:"", pfp, banner, ts };
     log('Requesting signature in your wallet (free, no gas)…');
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();

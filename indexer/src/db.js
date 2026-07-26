@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS coin_meta (
   telegram    TEXT,
   twitter     TEXT,
   website     TEXT,
+  migrated_from TEXT,     -- provenance: "chain|oldToken" when the project moved here from another chain/pad
   pfp         BLOB,
   pfp_mime    TEXT,
   banner      BLOB,
@@ -159,6 +160,9 @@ for (const [name, decl] of [
 // Same defensive migration for reward_roots (posted_ts added after the reward pipeline shipped).
 const _rrCols = new Set(db.prepare("PRAGMA table_info(reward_roots)").all().map((r) => r.name));
 if (!_rrCols.has("posted_ts")) db.exec("ALTER TABLE reward_roots ADD COLUMN posted_ts INTEGER");
+// Same for coin_meta (migrated_from added with the project-migration feature).
+const _cmCols = new Set(db.prepare("PRAGMA table_info(coin_meta)").all().map((r) => r.name));
+if (!_cmCols.has("migrated_from")) db.exec("ALTER TABLE coin_meta ADD COLUMN migrated_from TEXT");
 
 // ── cursor (last fully-processed block) ─────────────────────────────────────
 const _getMeta = db.prepare("SELECT v FROM meta WHERE k = ?");
@@ -243,17 +247,21 @@ export const coinDev = db.prepare("SELECT token, dev FROM coins WHERE token = ?"
 // ── coin profiles (creator-signed off-chain metadata) ──────────────────────────
 // Text fields upsert every time; images are updated only when a new one is supplied
 // (so re-saving text keeps the existing pfp/banner). Blobs are read on demand only.
+// migrated_from is STICKY: a non-empty value sets it, but an empty one is treated as "no change" so a
+// later text/image edit (or a client that predates the feature) can never wipe a coin's provenance badge.
 export const upsertCoinMetaFields = db.prepare(`
-  INSERT INTO coin_meta (token, description, telegram, twitter, website, updated_ts, updated_by)
-  VALUES (@token, @description, @telegram, @twitter, @website, @updated_ts, @updated_by)
+  INSERT INTO coin_meta (token, description, telegram, twitter, website, migrated_from, updated_ts, updated_by)
+  VALUES (@token, @description, @telegram, @twitter, @website, @migrated_from, @updated_ts, @updated_by)
   ON CONFLICT(token) DO UPDATE SET
     description=excluded.description, telegram=excluded.telegram, twitter=excluded.twitter,
-    website=excluded.website, updated_ts=excluded.updated_ts, updated_by=excluded.updated_by`);
+    website=excluded.website, updated_ts=excluded.updated_ts, updated_by=excluded.updated_by,
+    migrated_from=CASE WHEN excluded.migrated_from IS NOT NULL AND excluded.migrated_from<>''
+                       THEN excluded.migrated_from ELSE coin_meta.migrated_from END`);
 export const setCoinPfp = db.prepare("UPDATE coin_meta SET pfp=@blob, pfp_mime=@mime WHERE token=@token");
 export const setCoinBanner = db.prepare("UPDATE coin_meta SET banner=@blob, banner_mime=@mime WHERE token=@token");
 // Lite = no blobs (for the feed join + the meta JSON); has_* flags say whether an image exists.
 export const getCoinMetaLite = db.prepare(`
-  SELECT token, description, telegram, twitter, website, updated_ts, updated_by,
+  SELECT token, description, telegram, twitter, website, migrated_from, updated_ts, updated_by,
          (pfp IS NOT NULL) AS has_pfp, (banner IS NOT NULL) AS has_banner
   FROM coin_meta WHERE token = ?`);
 export const getCoinPfp = db.prepare("SELECT pfp AS blob, pfp_mime AS mime FROM coin_meta WHERE token = ?");

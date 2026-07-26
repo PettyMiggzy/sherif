@@ -274,6 +274,7 @@ export function profileMessage(token, p) {
     telegram: p.telegram || "",
     twitter: p.twitter || "",
     website: p.website || "",
+    migratedFrom: p.migratedFrom || "", // "chain|oldToken" provenance, or ""
     pfp: p.pfp || "",
     banner: p.banner || "",
     ts: p.ts,
@@ -292,6 +293,7 @@ export async function setCoinProfile(token, fields = {}) {
     telegram: String(fields.telegram || "").trim().slice(0, 200),
     twitter: String(fields.twitter || "").trim().slice(0, 200),
     website: String(fields.website || "").trim().slice(0, 200),
+    migratedFrom: String(fields.migratedFrom || "").trim().slice(0, 120),
     pfp: fields.pfp || "",
     banner: fields.banner || "",
     ts: Math.floor(Date.now() / 1000),

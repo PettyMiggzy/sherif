@@ -133,6 +133,30 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
       <span class="eyebrow">New coin</span>
       <h1 class="title">Start a coin</h1>
 
+      <details class="field mig-panel" id="migPanel" style="border:1px solid var(--line-2,rgba(220,233,5,.14));border-radius:12px;padding:12px 14px;margin-bottom:14px;background:rgba(220,233,5,.03)">
+        <summary style="cursor:pointer;font-weight:800;list-style:none;display:flex;align-items:center;gap:8px">🌉 Coming from another chain or pad? <span class="hint" style="font-weight:500">import your details</span></summary>
+        <div style="margin-top:12px">
+          <p class="hint" style="margin:0 0 10px">Relaunching on Robin? Paste your existing token and we pull the name, ticker, and logo so you do not retype anything. Your coin gets a "Migrated from" badge, and your community can buy in from any chain.</p>
+          <div class="row2">
+            <div class="field"><label for="migChain">Where from</label>
+              <select class="inp" id="migChain" aria-label="Origin chain or pad">
+                <option value="">Select chain or pad</option>
+                <option value="ethereum">Ethereum</option>
+                <option value="base">Base</option>
+                <option value="arbitrum">Arbitrum</option>
+                <option value="solana">Solana</option>
+                <option value="bsc">BNB Chain</option>
+                <option value="robinhood">Another Robinhood Chain pad</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="field"><label for="migAddr">Old token address</label><input class="inp" id="migAddr" aria-label="Old token contract or mint" placeholder="0x… or Solana mint" autocomplete="off" spellcheck="false" /></div>
+          </div>
+          <button type="button" class="btn btn-ghost" id="migImport" style="margin-top:2px">Import name, ticker &amp; logo</button>
+          <div class="hint" id="migNote" style="margin-top:8px" aria-live="polite"></div>
+        </div>
+      </details>
+
       <div class="field">
         <label>Coin image (pfp) <span class="hint">square, best ~400×400 px · JPG/PNG/HEIC · up to 16MB (we resize it)</span></label>
         <div class="pfp-wrap">
@@ -371,6 +395,66 @@ async function refreshConnect() {
   const a = Pad.account();
   $('connectBtn').textContent = a ? Pad.short(a) : 'Connect wallet';
 }
+
+// ── migrate-in: pull an existing token's name/ticker/logo from DexScreener so a project relaunching
+//    on Robin does not retype anything. The chain + address also become the coin's "Migrated from" badge. ──
+const isEvmAddr = (s) => /^0x[0-9a-fA-F]{40}$/.test(s);
+// EVM addresses normalize to lowercase; Solana mints are base58 (case-sensitive) so leave them as typed.
+function migProvenance() {
+  const chain = ($('migChain') && $('migChain').value || '').trim();
+  const addrRaw = ($('migAddr') && $('migAddr').value || '').trim();
+  if (!chain || !addrRaw) return '';
+  const addr = isEvmAddr(addrRaw) ? addrRaw.toLowerCase() : addrRaw;
+  return chain + '|' + addr;
+}
+async function urlToDataUrl(u) {
+  // Best-effort: DexScreener image CDN may or may not allow cross-origin fetch. On any failure we just
+  // skip the logo (name/ticker still import) rather than block the flow.
+  try {
+    const r = await fetch(u, { mode: 'cors' });
+    if (!r.ok) return '';
+    const blob = await r.blob();
+    if (!/^image\//.test(blob.type) || blob.size > 2 * 1024 * 1024) return '';
+    return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result || '')); fr.onerror = () => res(''); fr.readAsDataURL(blob); });
+  } catch (_) { return ''; }
+}
+const migImportBtn = $('migImport');
+if (migImportBtn) migImportBtn.addEventListener('click', async () => {
+  const addr = ($('migAddr').value || '').trim();
+  const chain = ($('migChain').value || '').trim();
+  const setMig = (m, kind) => { const el = $('migNote'); el.textContent = m; el.style.color = kind === 'err' ? 'var(--red)' : kind === 'ok' ? 'var(--green)' : ''; };
+  if (!addr) { setMig('Paste your existing token address first.', 'err'); return; }
+  migImportBtn.disabled = true; setMig('Looking up your token…');
+  try {
+    const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + encodeURIComponent(addr));
+    const j = await r.json();
+    const pairs = (j && j.pairs) || [];
+    if (!pairs.length) { setMig('Could not find that token on DexScreener. You can still fill the details by hand.', 'err'); migImportBtn.disabled = false; return; }
+    // Prefer a pair whose base token matches the pasted address; else the most liquid one.
+    const want = addr.toLowerCase();
+    const match = pairs.filter((p) => (p.baseToken && p.baseToken.address || '').toLowerCase() === want);
+    const pool = (match.length ? match : pairs).sort((a, b) => ((b.liquidity && b.liquidity.usd) || 0) - ((a.liquidity && a.liquidity.usd) || 0))[0];
+    const bt = pool.baseToken || {};
+    if (bt.name && !$('name').value) { $('name').value = String(bt.name).slice(0, 32); }
+    if (bt.symbol && !$('ticker').value) { $('ticker').value = String(bt.symbol).replace(/^\$+/, '').toUpperCase().slice(0, 10); }
+    if (!chain && pool.chainId) { const opt = [...$('migChain').options].find((o) => o.value === pool.chainId); $('migChain').value = opt ? pool.chainId : 'other'; }
+    if (typeof sync === 'function') sync();
+    let gotLogo = false;
+    const img = pool.info && pool.info.imageUrl;
+    if (img && !($('pfp').files || []).length) {
+      const dataUrl = await urlToDataUrl(img);
+      if (dataUrl) {
+        // Preview it the same way prev() does for an uploaded file, and stash it for the profile save.
+        const box = $('pfpBox'); if (box) { box.style.backgroundImage = `url(${dataUrl})`; box.style.backgroundSize = 'cover'; box.style.backgroundPosition = 'center'; box.innerHTML = ''; }
+        window.__migPfp = dataUrl; gotLogo = true;
+      }
+    }
+    setMig('Imported ✓ name and ticker' + (gotLogo ? ' and logo' : '') + '. Review, then launch. Your coin will show a "Migrated from" badge.', 'ok');
+  } catch (e) {
+    setMig('Lookup failed, please fill the details by hand.', 'err');
+  }
+  migImportBtn.disabled = false;
+});
 $('connectBtn').addEventListener('click', async () => {
   try { await Pad.connect(); await refreshConnect(); }
   catch (e) { setNote(e.message, 'err'); }
@@ -408,13 +492,15 @@ $('launchBtn').addEventListener('click', async () => {
     const tg = ($('tg').value || '').trim();
     const tw = ($('tw').value || '').trim();
     const web = ($('web').value || '').trim();
-    const wantsProfile = token && (desc || tg || tw || web || ($('pfp').files || []).length);
+    const migratedFrom = migProvenance();
+    const wantsProfile = token && (desc || tg || tw || web || migratedFrom || ($('pfp').files || []).length || window.__migPfp);
     if (wantsProfile && Pad.hasApi()) {
       // Encode the pfp defensively - a bad/huge one degrades to "" and never aborts the save or the redirect.
       // (Banners are no longer creator-set: every coin page shows the fixed Robin Labs promo banner.)
       let pfp = "";
       try { pfp = await imgDataUrl('pfp', 400); } catch (_) {}
-      const prof = { description: desc, telegram: tg, twitter: tw, website: web, pfp };
+      if (!pfp && window.__migPfp) pfp = window.__migPfp; // fall back to the logo imported from the old chain/pad
+      const prof = { description: desc, telegram: tg, twitter: tw, website: web, migratedFrom, pfp };
       // Persist the (downscaled) images to this browser FIRST, so they can NEVER be lost - if the upload is
       // interrupted (missed signature, tab close, hiccup) the coin page auto-finishes it from this stash.
       stashPendingProfile(token, prof);
