@@ -95,9 +95,11 @@ redirect, or claim rewards for itself. After the challenge window passes clean, 
 > Robin Labs, any coin, or any pool. Nothing here is financial advice. Not affiliated with Robinhood Markets,
 > Uniswap, or DexScreener.
 
-## Gated until deployed
+## Live
 
-The reward system ships alongside the reward-enabled router. Until the `RewardVault` address is set and
-verified in [config](network.md), every reward path is a **no-op**: the on-site panels and the Rewards nav
-link stay hidden, `rewards()` returns empty, and `claim()` is unreachable. Nothing can send a tx to an unset
-vault.
+The reward system is **live**. The `RewardVault` at
+[`0x03d5d26E492B288e62D897E7dde91af3CceB4347`](https://robinhoodchain.blockscout.com/address/0x03d5d26E492B288e62D897E7dde91af3CceB4347)
+is wired into the router (`setRewardVault`), so every trade carves the 0.25% trader + 0.25% holder legs into it.
+The indexer scores each epoch and posts a Merkle root; `claim()` pays the proven amount in ETH once the epoch's
+challenge window closes. (In a fresh config the address is empty and every reward path is a strict no-op, so
+nothing can send a tx to an unset vault.)

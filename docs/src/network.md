@@ -20,6 +20,8 @@
 | `FeeConfig` | `0x064D977B66FCC29256510dBCD8cC0C51bBb2De14` | Owner-governed fee dial: LP creator split + swap platform/creator/floor split, retunable with no redeploy |
 | `FloorCoopFactory` | `0x564EDF561Bed46C972d5D44D84f5FAc9C5118668` | Deploys the per-coin [FloorCoop](floorcoop.md) LP vaults |
 | `PlatformFeeSplitter` | `0xca0EfD87B983CdeF56459051ecBE91aA5C87E17a` | Routes the platform's cut (the $ROBIN buy-back split) |
+| `RewardVault` | `0x03d5d26E492B288e62D897E7dde91af3CceB4347` | Custodies the 0.25% trader + 0.25% holder [reward](rewards.md) legs; pays Merkle-proven claims in ETH |
+| `TokenVestingLock` | `0x7453856c3E5f6832dc660e48c7Daa6f46f3355DF` | Irrevocable [dev-bag lock](vesting.md): cliff + linear vesting a buyer can verify on-chain |
 | `WETH` | `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` | Canonical wrapped ETH |
 | `UniswapV3Factory` | `0x1f7d7550b1b028f7571e69a784071f0205fd2efa` | The real v3 factory each pool is created on |
 

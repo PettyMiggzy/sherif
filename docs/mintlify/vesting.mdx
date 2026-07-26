@@ -96,9 +96,10 @@ permissionless **Release vested** button whenever anything has vested. It's fed 
 reads straight from the chain (or the indexer's `/api/coin/:token/devlock`), so it's public and verifiable by
 anyone, no wallet required to see it.
 
-## Gated until deployed
+## Live
 
-The `TokenVestingLock` address is empty until the contract is deployed and verified in [config](network.md).
-Until then every path is a **strict no-op**: `isDeployed('tokenVestingLock')` is false, the "Lock your dev bag"
-card and the badge/panel stay hidden, `devLockOf()` returns `null`, and `createVestingLock()` / `releaseVesting()`
-throw a clear "opens at launch" error instead of touching an unset address.
+The `TokenVestingLock` is **live** on Robinhood Chain at
+[`0x7453856c3E5f6832dc660e48c7Daa6f46f3355DF`](https://robinhoodchain.blockscout.com/address/0x7453856c3E5f6832dc660e48c7Daa6f46f3355DF).
+The "Lock your dev bag" card, the locked-% badge, and the release panel are all active; `devLockOf()` reads the
+schedule straight from the contract. (The address is empty in a fresh config until set: `isDeployed('tokenVestingLock')`
+gates every path as a strict no-op, so a fork without the address wired never touches an unset contract.)
