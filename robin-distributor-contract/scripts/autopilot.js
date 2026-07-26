@@ -15,7 +15,7 @@ require("dotenv").config();
 const fs = require("node:fs");
 const path = require("node:path");
 const { getProvider, getWallet, getDisperse, baseFeeGasPrice, safeGetBalance, getEthUsd, ethers, CHAIN } = require("./lib");
-const { drainWalletBuys, BUY_GAS_LIMIT } = require("./buy-core");
+const { drainWalletBuys, buyOnce, BUY_GAS_LIMIT } = require("./buy-core");
 
 const ROOT = path.join(__dirname, "..");
 const STATE_FILE = path.join(ROOT, "autopilot-state.json");
@@ -78,6 +78,30 @@ async function buyFromAll(provider, walletKeys, gasPrice) {
   return totalBuys;
 }
 
+// Drip mode: buy ONE at a time, sleeping `intervalMs` after each buy so the buys
+// land spread across many blocks instead of all at once. Used when throttling.
+async function buyPaced(provider, walletKeys, gasPrice, intervalMs, log) {
+  let total = 0;
+  for (const k of walletKeys) {
+    const wallet = new ethers.Wallet(k.privateKey, provider);
+    for (;;) {
+      let bal;
+      try { bal = await provider.getBalance(wallet.address, "latest"); } catch { break; }
+      if (bal < BUY_GAS_LIMIT * gasPrice + AMOUNT_IN) break; // this wallet can't afford another
+      try {
+        const tx = await buyOnce(wallet, AMOUNT_IN, gasPrice);
+        await tx.wait();
+        total++;
+      } catch (e) {
+        log(`    buy failed ${wallet.address.slice(0, 10)}…: ${e.shortMessage || e.message}`);
+        break;
+      }
+      if (intervalMs > 0) await sleep(intervalMs); // space every single buy apart
+    }
+  }
+  return total;
+}
+
 async function main() {
   const provider = getProvider();
   const funder = getWallet(provider);
@@ -91,7 +115,7 @@ async function main() {
   log(`Send ETH to ${funder.address} anytime — it funds wallets and buys automatically. Ctrl-C to stop.\n`);
 
   // Throttle setup: convert the $/hr target into an ETH/hr outflow cap.
-  let targetWeiPerHour = 0n, ethUsd = 0;
+  let targetWeiPerHour = 0n, ethUsd = 0, calibUsdPerBuy = 0; // calibUsdPerBuy learned from actual spend
   if (SPEND_USD_PER_HOUR > 0) {
     try { ethUsd = (await getEthUsd()).price; } catch { ethUsd = Number(process.env.ETH_USD || 1900); }
     targetWeiPerHour = BigInt(Math.round((SPEND_USD_PER_HOUR / ethUsd) * 1e18));
@@ -124,29 +148,36 @@ async function main() {
         const capN = Number(perRoundWei / costPerWallet);
         n = capN < 1 ? 1 : Math.min(n, capN);
       }
-      const roundStart = Date.now();
       const picks = [];
       for (let i = 0; i < n; i++) picks.push(keys[(state.cursor + i) % keys.length]);
       const addrs = picks.map((k) => k.address);
       log(`balance ${ethers.formatEther(bal)} ETH → funding ${n} wallets @ ${ethers.formatEther(fundPerWallet)} ETH each (${ethers.formatUnits(gasPrice, "gwei")} gwei)`);
       await fundWallets(disperse, addrs, fundPerWallet, gasPrice);
-      log(`  buying from ${n} wallets (${BUY_CONCURRENCY} at a time)…`);
-      const buys = await buyFromAll(provider, picks, gasPrice);
+      let buys;
+      if (targetWeiPerHour > 0n) {
+        // drip: space each buy so the round's buys spread evenly at the target rate,
+        // instead of firing them all into one block.
+        const estUsdPerBuy = calibUsdPerBuy > 0 ? calibUsdPerBuy : (Number(ethers.formatEther(costPerWallet)) * ethUsd) / 1.5;
+        const intervalMs = Math.max(0, Math.round((estUsdPerBuy / SPEND_USD_PER_HOUR) * 3600000));
+        log(`  dripping buys from ${n} wallets, ~${(intervalMs / 1000).toFixed(1)}s apart…`);
+        buys = await buyPaced(provider, picks, gasPrice, intervalMs, log);
+      } else {
+        log(`  buying from ${n} wallets (${BUY_CONCURRENCY} at a time)…`);
+        buys = await buyFromAll(provider, picks, gasPrice);
+      }
       const balAfter = await safeGetBalance(provider, funder.address);
       state.cursor = (state.cursor + n) % keys.length;
       state.totalBuys += buys;
       state.rounds += 1;
       saveState(state);
-      log(`✓ round ${state.rounds}: ${buys} buys from ${n} wallets. Lifetime ${state.totalBuys} buys. cursor=${state.cursor}`);
-      // pace to the target spend rate (drip mode)
-      if (targetWeiPerHour > 0n) {
+      // learn the real $/buy from actual outflow so the spacing self-corrects next round
+      if (targetWeiPerHour > 0n && buys > 0) {
         const spent = bal > balAfter ? bal - balAfter : 0n;
-        const waitMs = Number((spent * 3600000n) / targetWeiPerHour) - (Date.now() - roundStart);
-        if (waitMs > 0) {
-          log(`  ⏳ throttle: spent ~$${(Number(ethers.formatEther(spent)) * ethUsd).toFixed(3)} — holding ${Math.round(waitMs / 1000)}s to keep ~$${SPEND_USD_PER_HOUR}/hr`);
-          await sleep(waitMs);
-        }
+        calibUsdPerBuy = (Number(ethers.formatEther(spent)) * ethUsd) / buys;
       }
+      const paceNote = targetWeiPerHour > 0n && calibUsdPerBuy > 0
+        ? `  (~$${SPEND_USD_PER_HOUR}/hr, ~${Math.round((calibUsdPerBuy / SPEND_USD_PER_HOUR) * 3600)}s/buy)` : "";
+      log(`✓ round ${state.rounds}: ${buys} buys from ${n} wallets. Lifetime ${state.totalBuys} buys. cursor=${state.cursor}${paceNote}\n`);
       if (buys === 0) { log("  no buys landed — backing off (RPC/router hiccup?)"); await sleep(POLL_MS); }
     } catch (e) {
       log(`loop error: ${e.shortMessage || e.message}`);
