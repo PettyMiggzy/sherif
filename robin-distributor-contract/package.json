@@ -12,6 +12,7 @@
     "watch": "node scripts/watch.js",
     "generate": "node scripts/generate-wallets.js",
     "autopilot": "node scripts/autopilot.js",
+    "sweep": "node scripts/sweep.js",
     "disperse:once": "node scripts/disperse-once.js",
     "address": "node scripts/address.js",
     "deploy": "hardhat run scripts/deploy.js --network robinhood",
