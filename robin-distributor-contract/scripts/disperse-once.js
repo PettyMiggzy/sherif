@@ -9,7 +9,8 @@ async function main() {
   const wallet = getWallet(provider);
   const disperse = getDisperse(null, wallet);
   const recipients = loadRecipients();
-  const amountEach = await resolveUnitWei();
+  const mode = (process.env.DISPERSE_MODE || "fixed").toLowerCase();
+  const amountEach = mode === "even" ? 0n : await resolveUnitWei(); // price only needed for fixed
   await distributeOnce({ provider, wallet, disperse, recipients, amountEach, log: (m) => console.log(m) });
 }
 

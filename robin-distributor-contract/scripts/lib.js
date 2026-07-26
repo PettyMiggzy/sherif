@@ -81,7 +81,10 @@ function loadRecipients() {
   if (!fs.existsSync(file)) throw new Error("recipients.json missing — run `npm run build:recipients` first.");
   const arr = JSON.parse(fs.readFileSync(file, "utf8"));
   if (!Array.isArray(arr) || arr.length === 0) throw new Error("recipients.json is empty.");
-  return arr.map((a) => ethers.getAddress(a));
+  let list = arr.map((a) => ethers.getAddress(a));
+  const max = Number(process.env.MAX_WALLETS || 0);   // 0 = all; else fund only the first N
+  if (max > 0 && list.length > max) list = list.slice(0, max);
+  return list;
 }
 
 function loadArtifact() {

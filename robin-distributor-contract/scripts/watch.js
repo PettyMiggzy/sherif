@@ -27,7 +27,8 @@ async function main() {
       const balance = await safeGetBalance(provider, wallet.address);
       const grew = last < 0n ? balance > 0n : balance > last;
       if (grew && balance > 0n && balance >= MIN_DEPOSIT) {
-        const amountEach = await resolveUnitWei();
+        const mode = (process.env.DISPERSE_MODE || "fixed").toLowerCase();
+        const amountEach = mode === "even" ? 0n : await resolveUnitWei(); // price only needed for fixed
         log(`\n[${new Date().toISOString()}] +funds → balance ${ethers.formatEther(balance)} ETH`);
         await distributeOnce({ provider, wallet, disperse, recipients, amountEach, log });
         last = await safeGetBalance(provider, wallet.address);
