@@ -19,6 +19,8 @@ An optional read API reads the on-chain events into a database and serves a fast
 | `GET /api/rewards/epoch/:n` | An epoch's full leaf set + root (the transparency artifact the on-chain `uri` points at) |
 | `GET /api/rewards/claim/:epoch/:coin/:side/:user` | One claim's exact args + Merkle proof |
 | `GET /media/:token/:kind` | The coin's image bytes (`kind` = `pfp` \| `banner`) |
+| `GET /coin/:token` | A [share landing](#share-cards): per-coin `og:`/`twitter:` tags for crawlers, then redirects a human to the coin page |
+| `GET /og/:token.png` | The coin's [share-card image](#share-cards) (pfp + name + live stats), used as its `og:image` |
 | `POST /rpc` | [Read-only JSON-RPC proxy](#read-proxy-rpc): the pad's live reads, served + cached from the paid RPC |
 
 ```http
@@ -83,6 +85,20 @@ GET /api/holdings/:addr
 GET /api/coin/:token/holders?limit=20
 { token, approx: true, holders, top: [{ holder, balance }] }
 ```
+
+## Share cards
+
+Social crawlers (X, Telegram, Discord, Slack) don't run JavaScript, so they only ever read the **static** `og:`/`twitter:` tags in a page's raw HTML. That's why a bare coin link used to unfurl as one generic site image. The indexer renders a real per-coin card instead:
+
+```http
+GET /coin/:token      # tiny HTML doc: THIS coin's og:/twitter: tags, then redirects a human to the coin page
+GET /og/:token.png    # the card image (1200x630): coin pfp + name + ticker + live mcap / 24h volume / trades + status
+```
+
+- `GET /coin/:token` is what you **share**. A crawler reads its tags (title, description, `og:image` = the coin's card); a person who clicks is bounced straight to `https://robinlab.io/token.html?c=:token`. The pad's coin-page share buttons already point here.
+- `GET /og/:token.png` is the card, composited with `sharp` and memory-cached with a short TTL so the stats stay fresh. If the pfp can't be composited it degrades to the coin's raw pfp; an unknown coin falls back to the site's generic image.
+
+Everything here is **cosmetic**: it changes how a link looks when shared, never trading.
 
 ## Read proxy (`/rpc`)
 
