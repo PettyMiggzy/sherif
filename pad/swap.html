@@ -483,7 +483,7 @@ async function balOf(t, acct){
 function paintFirewall(){
   const el = $('fwBadge');
   if (!firewall || MODE !== 'swap' || SIDE !== 'buy'){ el.className = 'fwbadge'; el.innerHTML = ''; return; }
-  if (firewall.code === 'scanning'){ el.className = 'fwbadge amber'; el.innerHTML = '<span style="color:var(--faint);font-size:.76rem">Checking this coin is safe to sell…</span>'; return; }
+  if (firewall.code === 'scanning' || firewall.code === 'probing'){ el.className = 'fwbadge amber'; el.innerHTML = '<span style="color:var(--faint);font-size:.76rem">Checking this coin is safe to sell…</span>'; return; }
   el.className = 'fwbadge ' + (firewall.level === 'red' ? 'red' : firewall.level === 'amber' ? 'amber' : '');
   el.innerHTML = Safety.firewallBadge(firewall);
 }
@@ -523,9 +523,12 @@ async function upgradeFirewall(resp){
   if (fwProbed.has(addr)) return;
   fwProbed.add(addr);
   const seq = fwSeq;
+  // While the round-trip probe runs, mark the verdict 'probing' so a Guard-on buy is BLOCKED until it
+  // resolves - a pending probe must not read as safe (closes the GoPlus-unindexed one-way-trap window).
+  if (firewall && firewall.level !== 'red'){ firewall = { ...firewall, code: 'probing' }; paintFirewall(); syncAction(); }
   try {
     const v = await Safety.preTradeFirewall({ token: addr, side: 'buy', sellProbe: makeSellProbe(addr, readOut(resp).out) });
-    if (seq !== fwSeq) return;
+    if (seq !== fwSeq){ fwProbed.delete(addr); return; } // token switched mid-probe: release so a re-select re-probes
     // A transient probe failure is not a verdict: don't persist it as "probed" so it retries on the next quote.
     if (v.sellRoute && v.sellRoute.ok === false && v.sellRoute.transient) fwProbed.delete(addr);
     fwCache.set(addr, v); firewall = v; paintFirewall(); syncAction();
@@ -624,7 +627,7 @@ function syncAction(){
   if (!quoteResp){ setAction('Fetching best price…', true); return; }
   // While Guard is on, don't let a buy fire until the safety scan has a REAL verdict - a 'scanning'
   // (pending) state must not read as safe, or a honeypot slips through in the scan window.
-  if (SIDE === 'buy' && GUARD && firewall && firewall.code === 'scanning'){ setAction('Checking safety…', true); return; }
+  if (SIDE === 'buy' && GUARD && firewall && (firewall.code === 'scanning' || firewall.code === 'probing')){ setAction('Checking safety…', true); return; }
   if (SIDE === 'buy' && GUARD && firewall && firewall.level === 'red'){ setAction('Blocked - sell route unsafe', true); return; }
   setAction((SIDE === 'buy' ? 'Buy ' : 'Sell ') + tsym(TOKEN.symbol), false);
 }
@@ -636,8 +639,8 @@ async function doAction(){
   const amtWei = toUnits($('payAmt').value, payDecimals());
   // Refuse to execute a quote that no longer matches the on-screen amount/token/side (debounce race).
   if (amtWei == null || amtWei <= 0n || !quoteMatches(amtWei)){ resetQuote(); syncAction(); scheduleQuote(); return; }
-  // Don't execute a buy while Guard is on and the safety scan is still pending - wait for a real verdict.
-  if (SIDE === 'buy' && GUARD && firewall && firewall.code === 'scanning'){ setStatus('Still checking this coin is safe to sell, one moment.', ''); syncAction(); return; }
+  // Don't execute a buy while Guard is on and the safety scan/probe is still pending - wait for a real verdict.
+  if (SIDE === 'buy' && GUARD && firewall && (firewall.code === 'scanning' || firewall.code === 'probing')){ setStatus('Still checking this coin is safe to sell, one moment.', ''); syncAction(); return; }
   // Pre-trade firewall gate (buys only). Guard on = hard block on a red verdict; Guard off = explicit override.
   if (SIDE === 'buy' && firewall && firewall.level === 'red'){
     if (GUARD){ setStatus('Robin Guard blocked this trade. ' + Safety.firewallReason(firewall) + ' Turn Guard off in settings to override at your own risk.', 'err'); syncAction(); return; }

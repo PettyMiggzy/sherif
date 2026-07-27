@@ -168,10 +168,18 @@ const MAX_LOGS_SPAN = 100000n;
 function getLogsRangeOk(params) {
   const p = Array.isArray(params) ? params[0] : null;
   if (!p || typeof p !== "object") return true; // malformed -> let upstream reject it
+  if (typeof p.blockHash === "string") return true; // EIP-234 single-block query - never a range
   const headish = (b) => b === undefined || b === "latest" || b === "pending" || b === "safe" || b === "finalized";
   const num = (b) => { if (headish(b)) return null; if (b === "earliest") return 0n; try { return BigInt(b); } catch { return null; } };
   const from = num(p.fromBlock), to = num(p.toBlock);
   if ((p.fromBlock === undefined || p.fromBlock === "earliest" || from === 0n) && headish(p.toBlock)) return false; // earliest..head
+  // A NUMERIC fromBlock with a head-ish toBlock is an open-ended upper bound: bound it against the indexer's
+  // synced head (a close-enough estimate of chain head). Reject only when that span is too wide, so a
+  // legitimate "recent block N .. latest" tail still works but "block 1 .. latest" does not.
+  if (from !== null && headish(p.toBlock)) {
+    let head = 0n; try { head = BigInt(getHead() || 0); } catch { head = 0n; }
+    if (head > from && head - from > MAX_LOGS_SPAN) return false;
+  }
   if (from !== null && to !== null && to - from > MAX_LOGS_SPAN) return false; // explicit span too wide
   return true;
 }
@@ -680,11 +688,19 @@ export function startApi() {
           if (r.has_pfp) t.logoURI = `${base}/media/${r.token}/pfp?v=${r.meta_ts || 0}`;
           tokens.push(t);
         }
+        // Content hash over each token's mutable detail, so a logo/name/symbol edit bumps `patch`
+        // (additions bump `minor`); version-gating consumers then see metadata-only changes too.
+        let _ph = 5381 >>> 0;
+        for (const t of tokens) {
+          const s = `${t.symbol}|${t.name}|${t.logoURI || ""}`;
+          for (let i = 0; i < s.length; i++) _ph = (((_ph * 33) >>> 0) ^ s.charCodeAt(i)) >>> 0;
+        }
         return send(res, 200, {
           name: "Robin Labs",
           timestamp: new Date().toISOString(),
-          // Token-list semver: additions bump MINOR (major is reserved for removals / breaking changes).
-          version: { major: 1, minor: tokens.length, patch: 0 },
+          // Token-list semver: additions bump MINOR (major is reserved for removals / breaking changes),
+          // and PATCH tracks a content hash so a metadata-only edit is still a version change.
+          version: { major: 1, minor: tokens.length, patch: _ph % 1000000 },
           logoURI: "https://robinlab.io/assets/favicon-512.png",
           keywords: ["robinlabs", "robinhood chain", "memecoin", "launchpad"],
           tokens,

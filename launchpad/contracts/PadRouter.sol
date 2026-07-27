@@ -518,20 +518,20 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         platformEscrow += amt;
     }
 
-    /// @notice Owner recovery for a coin that NEVER graduates. The deferred 0.1% and floor escrow are otherwise
-    /// only released by claimDeferred/flushFloor, which require a graduated Bond — so for a coin that never reaches
-    /// graduation (the common memecoin outcome) that protocol ETH would be stranded forever. This is the only lever
-    /// that can move those escrows without a Bond: it is owner-gated, it REFUSES a graduated coin (which uses the
-    /// normal release path), and the funds only ever move to the platform escrow (the owner). It cannot touch a
-    /// live/graduated coin, and it moves no user, creator, dev or burn funds.
+    /// @notice Owner recovery for a coin that NEVER graduates. Sweeps ONLY the platform's own deferred 0.1%
+    /// (deferredEscrow), which is otherwise released solely by claimDeferred and would be stranded forever for
+    /// a coin that never reaches graduation. It deliberately DOES NOT touch floorEscrow: that bucket holds
+    /// community money (the per-trade floor share) and RewardVault-swept unclaimed USER rewards, which must
+    /// never reach the platform (RewardVault's invariant is that swept rewards only ever back the coin's own
+    /// floor). Owner-gated, REFUSES a graduated coin, moves no user/creator/dev/burn funds, and never the
+    /// community floor. floorEscrow for a never-graduating coin stays locked here rather than being swept.
     function rescueUngraduated(address token) external onlyOwner nonReentrant {
         address b = bondOf[token];
         if (b == address(0)) b = syncBond(token);
         require(b == address(0), "graduated"); // a graduated coin releases via claimDeferred / flushFloor
-        uint256 amt = deferredEscrow[token] + floorEscrow[token];
+        uint256 amt = deferredEscrow[token]; // ONLY the platform's own deferred 0.1% — never the community floor / swept rewards
         require(amt > 0, "nothing");
         deferredEscrow[token] = 0;
-        floorEscrow[token] = 0;
         platformEscrow += amt;
         emit RescuedUngraduated(token, amt);
     }

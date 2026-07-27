@@ -86,13 +86,17 @@ test("feeInCalldata enforces PAY_PORTION recipient + exact bips + a real leg tok
     return iface.encodeFunctionData("execute", args);
   };
   // buy leg: tokenIn = native, tokenOut = CASHCAT -> allowed fee tokens {CASHCAT, WETH}
-  assert.equal(feeInCalldata(exec(iface2, WETH, FEE_LC, 125), NATIVE, CASHCAT), true);      // fee on WETH leg
+  // BUY leg (tokenIn=native, tokenOut=CASHCAT): fee must be on the OUTPUT token only.
   assert.equal(feeInCalldata(exec(iface2, CASHCAT, FEE_LC, 125), NATIVE, CASHCAT), true);   // fee on the output leg
-  assert.equal(feeInCalldata(exec(iface3, WETH, FEE_LC, 125), NATIVE, CASHCAT), true);      // 3-arg variant decodes
-  assert.equal(feeInCalldata(exec(iface2, WETH, FEE_LC, 1), NATIVE, CASHCAT), false);       // bips reduced ~125x
-  assert.equal(feeInCalldata(exec(iface2, WETH, SWAPPER, 125), NATIVE, CASHCAT), false);    // fee redirected
-  assert.equal(feeInCalldata(exec(iface2, OFFLIST, FEE_LC, 125), NATIVE, CASHCAT), false);  // DECOY token (router holds ~0) -> reject
+  assert.equal(feeInCalldata(exec(iface3, CASHCAT, FEE_LC, 125), NATIVE, CASHCAT), true);   // 3-arg variant decodes
+  assert.equal(feeInCalldata(exec(iface2, WETH, FEE_LC, 125), NATIVE, CASHCAT), false);     // WETH decoy on a BUY -> reject (~0-balance strip)
+  assert.equal(feeInCalldata(exec(iface2, CASHCAT, FEE_LC, 1), NATIVE, CASHCAT), false);    // bips reduced ~125x
+  assert.equal(feeInCalldata(exec(iface2, CASHCAT, SWAPPER, 125), NATIVE, CASHCAT), false); // fee redirected
+  assert.equal(feeInCalldata(exec(iface2, OFFLIST, FEE_LC, 125), NATIVE, CASHCAT), false);  // decoy token -> reject
   assert.equal(feeInCalldata("0xdeadbeef", NATIVE, CASHCAT), false);                        // unparseable -> reject
+  // SELL leg (tokenIn=CASHCAT, tokenOut=native): fee is on WETH (pre-unwrap).
+  assert.equal(feeInCalldata(exec(iface2, WETH, FEE_LC, 125), CASHCAT, NATIVE), true);      // fee on WETH -> accept
+  assert.equal(feeInCalldata(exec(iface2, OFFLIST, FEE_LC, 125), CASHCAT, NATIVE), false);  // decoy on a sell -> reject
 });
 
 test("validateSwapQuote re-checks chain, allowlist, one-native-leg, and fee presence", () => {

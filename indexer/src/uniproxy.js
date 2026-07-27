@@ -101,9 +101,18 @@ function feeInCalldata(data, tokenIn, tokenOut) {
   let commands, inputs;
   try { commands = ethers.getBytes(parsed.args.commands); inputs = parsed.args.inputs; } catch { return false; }
   if (!inputs || commands.length !== inputs.length) return false;
-  // The fee is legitimately taken on a real leg: the non-native output token (a buy), or WETH (a sell,
-  // before unwrap). Bind to {tokenIn, tokenOut, WETH} minus the native sentinel so a decoy leg can't qualify.
-  const allowedFeeTokens = new Set([lc(tokenIn), lc(tokenOut), WETH].filter((t) => t && t !== NATIVE));
+  // The fee is legitimately taken on ONE specific leg, by direction:
+  //   native-in BUY  -> the OUTPUT token only (fee taken on what the user receives, AFTER the swap).
+  //   native-out SELL -> WETH (or the input token) before the unwrap.
+  // Binding to the OUTPUT-only for a buy is what closes the WETH-decoy strip: a PAY_PORTION on WETH after
+  // the router already swapped its WETH away pays 125 bips * ~0 = ~0, so WETH must NOT be an accepted buy leg.
+  const tin = lc(tokenIn), tout = lc(tokenOut);
+  let allowedFeeTokens;
+  if (tin === NATIVE) allowedFeeTokens = new Set([tout]);              // buy: output token only
+  else if (tout === NATIVE) allowedFeeTokens = new Set([tin, WETH]);   // sell: input token or WETH (pre-unwrap)
+  else allowedFeeTokens = new Set([tin, tout, WETH]);                  // (guarded elsewhere to one native leg)
+  allowedFeeTokens.delete(NATIVE);
+  allowedFeeTokens.delete("");
   const coder = ethers.AbiCoder.defaultAbiCoder();
   for (let i = 0; i < commands.length; i++) {
     if ((commands[i] & COMMAND_TYPE_MASK) !== PAY_PORTION) continue;

@@ -120,16 +120,15 @@ contract RobinZap {
             }
             emit Zapped(recipient, coin, ethAmount, got);
         } catch {
-            // Buy failed — return exactly this call's input (never any resident funds).
+            // Buy failed — return exactly this call's input (never any resident funds). Mirror the
+            // success-path hardening: if the recipient can't take native ETH, deliver it as WETH rather
+            // than reverting (which would trap the whole refund).
             uint256 refundable = address(this).balance - ethResidue;
-            _send(recipient, refundable);
+            if (refundable > 0) {
+                (bool ok, ) = recipient.call{value: refundable}("");
+                if (!ok) { IWETH9(weth).deposit{value: refundable}(); IWETH9(weth).transfer(recipient, refundable); }
+            }
             emit Refunded(recipient, coin, refundable);
         }
-    }
-
-    function _send(address to, uint256 amount) private {
-        if (amount == 0) return;
-        (bool ok, ) = to.call{value: amount}("");
-        if (!ok) revert RefundFailed();
     }
 }
