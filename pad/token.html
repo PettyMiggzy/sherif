@@ -136,6 +136,13 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .idbar h1 .tk{color:var(--lime);font-size:1.2rem}
 .idbar .ca{display:inline-flex;align-items:center;gap:8px;margin-top:4px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:8px;padding:5px 8px;font-family:var(--mono);font-size:.74rem;color:var(--ink-dim)}
 .idbar .ca button{background:var(--lime);color:#10140a;border:none;border-radius:6px;padding:0 12px;min-height:40px;display:inline-flex;align-items:center;font-weight:700;cursor:pointer;font-size:.7rem}
+.sharebar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.sharebtn{display:inline-flex;align-items:center;gap:6px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 13px;font-family:var(--mono);font-size:.7rem;font-weight:700;color:var(--ink-dim);cursor:pointer;text-decoration:none;transition:border-color .15s,color .15s}
+.sharebtn:hover{border-color:var(--lime);color:var(--ink)}
+.sharebtn svg{width:14px;height:14px;flex:none}
+.sharebtn.x:hover{border-color:#e7e7e7;color:#fff}
+.sharebtn.tg:hover{border-color:#2AABEE;color:#7ecbf0}
+.sharebtn.ok{border-color:var(--lime);color:var(--lime)}
 /* Mobile: stack the identity BELOW the banner (pfp overlaps the banner, name + address sit cleanly under it) -
    otherwise the flex-end + negative margin rides the coin name up onto the banner image. */
 @media(max-width:600px){
@@ -283,6 +290,11 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
     <div class="who">
       <h1><span id="nm">Loading…</span> <span class="tk" id="tk"></span> <span id="lockBadge" class="dlockpill" style="display:none" title="Dev bag locked on-chain, this dev cannot dump"><svg class="dl-fl" viewBox="0 0 24 24" fill="url(#dlGrn)" aria-hidden="true"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg><svg class="dl-lock" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#bfff7a" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#bfff7a" stroke-width="2"/></svg>DEV LOCKED</span> <a id="migBadge" class="lockbadge" style="display:none;text-decoration:none"></a> <a id="migBridge" class="lockbadge" style="display:none;text-decoration:none" title="Bring your holders across from any chain">Buy from any chain</a></h1>
       <span class="ca"><span id="ca" class="mono">-</span> <button id="copyCa" type="button">Copy</button></span>
+      <div class="sharebar" id="sharebar" style="display:none">
+        <a class="sharebtn x" id="shareX" href="#" target="_blank" rel="noopener" title="Share this coin on X"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Post on X</a>
+        <a class="sharebtn tg" id="shareTg" href="#" target="_blank" rel="noopener" title="Share this coin on Telegram"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>Telegram</a>
+        <button class="sharebtn" id="shareCopy" type="button" title="Copy the coin's share link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span id="shareCopyTxt">Copy link</span></button>
+      </div>
     </div>
   </div>
   <div id="pendingProfile" style="display:none;margin:14px 0 0;padding:12px 14px;border:1px solid var(--lime);border-radius:12px;background:rgba(220,233,5,.08);font-size:.9rem;align-items:center;gap:12px;justify-content:space-between">
@@ -548,6 +560,28 @@ $('quick').addEventListener('click', (e) => {
   }
 });
 $('copyCa').addEventListener('click', () => { if (TOKEN && navigator.clipboard) navigator.clipboard.writeText(TOKEN); });
+
+// ── share this coin: one-click X / Telegram posts + copy-link, so a coin's link travels ──
+// The link is the coin page itself; when it unfurls it uses the og/twitter tags (name + image)
+// synced by setSocialMeta, so a shared coin looks like a product card, not a bare URL.
+function setShareLinks(name, symbol){
+  const bar = $('sharebar'); if (!bar) return;
+  const url = location.origin + location.pathname + '?c=' + encodeURIComponent(TOKEN);
+  const tk  = symbol ? ('$' + String(symbol).replace(/^\$+/, '').toUpperCase()) : '';
+  const nm  = name || 'this coin';
+  const text = `${nm} ${tk} is live on Robin Labs, the fair-launch pad on Robinhood Chain. Ape in:`.replace(/\s+/g, ' ').trim();
+  $('shareX').href  = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(url) + '&via=robinlabzz';
+  $('shareTg').href = 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(text);
+  bar.dataset.url = url;
+  bar.style.display = 'flex';
+}
+$('shareCopy').addEventListener('click', async () => {
+  const url = $('sharebar').dataset.url || location.href;
+  try { await navigator.clipboard.writeText(url); } catch { return; }
+  const btn = $('shareCopy'), txt = $('shareCopyTxt'), was = txt.textContent;
+  btn.classList.add('ok'); txt.textContent = 'Link copied';
+  setTimeout(() => { btn.classList.remove('ok'); txt.textContent = was; }, 1600);
+});
 $('connectBtn').addEventListener('click', async () => {
   if (Pad.account()) { location.href = 'profile.html'; return; }   // already connected → open your profile
   try { await Pad.connect(); refreshConnect(); await maybeShowDev(); loadLocks(); loadRewards(); checkPendingLock(); if (SIDE === 'sell') loadBal(); } catch (e) { setNote(e.message, 'err'); }
@@ -902,6 +936,7 @@ async function loadCoin(){
   $('ca').textContent = Pad.short(TOKEN);
   document.title = meta.name + ': Robin Labs Pad';
   setSocialMeta(meta.name);
+  setShareLinks(meta.name, meta.symbol);
   $('trade').textContent = (SIDE === 'buy' ? 'Buy ' : 'Sell ') + disp(meta.symbol);
   $('infoBuy').textContent = (tax.buyBps / 100) + '%';
   $('infoSell').textContent = (tax.sellBps / 100) + '%';
@@ -941,6 +976,7 @@ function renderDemoCoin(){
   $('ca').textContent = Pad.short(c.token);
   document.title = c.name + ': Robin Labs';
   setSocialMeta(c.name, c.image);
+  setShareLinks(c.name, c.symbol);
   $('infoBuy').textContent = '1%';
   $('infoSell').textContent = '1%';
   $('stMc').textContent = fmt(c.mc);
