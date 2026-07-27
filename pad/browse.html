@@ -391,7 +391,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .news .soc a:hover{color:var(--lime);border-color:var(--line-strong)}
 footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 .foot-grid{display:grid;grid-template-columns:1.6fr repeat(5,1fr);gap:20px}
-@media(max-width:860px){.foot-grid{grid-template-columns:1fr 1fr 1fr}}
+@media(max-width:860px){.foot-grid{grid-template-columns:1fr 1fr 1fr}}@media(max-width:520px){.foot-grid{grid-template-columns:1fr 1fr}.foot-brand{grid-column:1/-1}}
 .foot-grid h5{font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--lime-deep);margin:0 0 10px}
 .foot-grid a{display:block;color:var(--dim);font-size:.85rem;padding:3px 0}
 .foot-grid a:hover{color:var(--ink)}
@@ -981,7 +981,7 @@ async function initBoard() {
   });
   boardQuery({ sort:'top', filter:'graduated', q:'', offset:0, limit:3 }).then(r => {
     const grads = r.coins || [];
-    $('glist').innerHTML = grads.length ? grads.map(grow).join('') : `<div class="empty" style="padding:14px">None yet</div>`;
+    $('glist').innerHTML = grads.length ? grads.map(grow).join('') : `<div class="empty" style="padding:14px">No graduates yet. <a href="create.html">Be the first to hit the Bond.</a></div>`;
     if (grads.length){ $('anName').textContent = tsym(grads[0].symbol); $('anView').href = `token.html?c=${encodeURIComponent(grads[0].token)}${DEMO?'&demo=1':''}`; $('announce').style.display='block'; }
   });
   resetBoard();
@@ -1018,9 +1018,16 @@ async function loadStats(){
     const s = await Pad.stats();
     if (s){
       $('stProj').textContent = (s.coins||0).toLocaleString();
-      $('stGrad').textContent = s.graduated||0;
+      // Never show a dead "0 graduated / 0 ETH" under the pitch. Until the first graduation, repurpose these
+      // two cells to live, always-growing numbers (total trades) and the forward payout promise.
+      if (s.graduated) {
+        $('stGrad').textContent = s.graduated; $('stGrad').nextElementSibling.textContent = 'Graduated';
+        $('stRew').textContent = (s.graduated*0.5).toFixed(1) + ' ETH';
+      } else {
+        $('stGrad').textContent = (s.tradesAll||0).toLocaleString(); $('stGrad').nextElementSibling.textContent = 'Trades';
+        $('stRew').textContent = 'Up to 0.5 ETH';
+      }
       TK_STATS = { coins: s.coins||0, graduated: s.graduated||0, volAllEth: s.volAllEth||0 }; buildTicker();
-      $('stRew').textContent = (s.graduated ? (s.graduated*0.5).toFixed(1) : '0') + ' ETH';
       $('stMcap').textContent = (UNI_TOKENS.length + (s.coins||0)).toLocaleString();
       $('stVol').textContent = fmtUsd((s.volAllEth||0)*ETH_USD);
     } else { ['stProj','stGrad','stRew','stMcap','stVol'].forEach(id=>$(id).textContent='-'); }

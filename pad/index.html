@@ -385,7 +385,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .news .soc a:hover{color:var(--lime);border-color:var(--line-strong)}
 footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 .foot-grid{display:grid;grid-template-columns:1.6fr repeat(5,1fr);gap:20px}
-@media(max-width:860px){.foot-grid{grid-template-columns:1fr 1fr 1fr}}
+@media(max-width:860px){.foot-grid{grid-template-columns:1fr 1fr 1fr}}@media(max-width:520px){.foot-grid{grid-template-columns:1fr 1fr}.foot-brand{grid-column:1/-1}}
 .foot-grid h5{font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--lime-deep);margin:0 0 10px}
 .foot-grid a{display:block;color:var(--dim);font-size:.85rem;padding:3px 0}
 .foot-grid a:hover{color:var(--ink)}
@@ -575,10 +575,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <!-- NEWSLETTER -->
   <section class="card news">
     <div class="t"><b>Stay in the loop</b><div>Latest launches, rewards and platform updates.</div></div>
-    <form onsubmit="event.preventDefault();this.reset();alert('Thanks, you are on the list!')">
-      <input type="email" aria-label="Email address" placeholder="Enter your email" required />
-      <button class="btn btn-lime" type="submit">Subscribe</button>
-    </form>
+    <a class="btn btn-lime" href="https://t.me/RobinLabs" target="_blank" rel="noopener">Join us on Telegram</a>
     <div class="soc">
       <a href="https://x.com/robinlabzz" target="_blank" rel="noopener" aria-label="X (Twitter)"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a><a href="https://t.me/RobinLabs" target="_blank" rel="noopener" aria-label="Telegram"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.329-.913.489-1.302.481-.428-.009-1.252-.242-1.865-.44-.752-.244-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg></a><a href="docs.html" aria-label="Docs">❮❯</a>
     </div>
@@ -781,9 +778,16 @@ async function loadStats(){
     const s = await Pad.stats();
     if (s){
       $('stProj').textContent = (s.coins||0).toLocaleString();
-      $('stGrad').textContent = s.graduated||0;
+      // Never show a dead "0 graduated / 0 ETH" under the pitch. Until the first graduation, repurpose these
+      // two cells to live, always-growing numbers (total trades) and the forward payout promise.
+      if (s.graduated) {
+        $('stGrad').textContent = s.graduated; $('stGrad').nextElementSibling.textContent = 'Graduated';
+        $('stRew').textContent = (s.graduated*0.5).toFixed(1) + ' ETH';
+      } else {
+        $('stGrad').textContent = (s.tradesAll||0).toLocaleString(); $('stGrad').nextElementSibling.textContent = 'Trades';
+        $('stRew').textContent = 'Up to 0.5 ETH';
+      }
       TK_STATS = { coins: s.coins||0, graduated: s.graduated||0, volAllEth: s.volAllEth||0 }; buildTicker();
-      $('stRew').textContent = (s.graduated ? (s.graduated*0.5).toFixed(1) : '0') + ' ETH';
       $('stMcap').textContent = (UNI_TOKENS.length + (s.coins||0)).toLocaleString();
       $('stVol').textContent = fmtUsd((s.volAllEth||0)*ETH_USD);
     } else { ['stProj','stGrad','stRew','stMcap','stVol'].forEach(id=>$(id).textContent='-'); }

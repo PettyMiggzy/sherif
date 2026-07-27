@@ -346,6 +346,8 @@ async function boot(){
       paintCards({ rewardsEth:(s.graduated||0)*0.5, volEth:s.volAllEth||0, coins:s.coins||0,
         graduated:s.graduated||0, vol24hEth:s.vol24hEth||0, trades24h:s.trades24h||0,
         liveTxt:((s.coins||0)-(s.graduated||0)).toLocaleString()+" still trading" });
+      // Before the first graduation these two read as a dead "0 ETH / 0%". Show the forward promise instead.
+      if (!s.graduated) { $('mRewards').textContent = 'Up to 0.5 ETH'; $('mGradRate').textContent = 'No graduates yet'; }
     } else {
       $('live').style.display="none";
       $('foot-note').textContent = "No indexer connected, set API_BASE in assets/config.js to serve live analytics.";
