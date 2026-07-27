@@ -481,7 +481,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 import * as Pad from './assets/wallet.js';
 import { mountSafety } from './assets/safety.js';
 import { DEMO, DEMO_COINS, demoTrades, demoHolders, DEMO_FLOOR } from './assets/demo.js';
-import { isDeployed } from './assets/config.js';
+import { isDeployed, API_BASE } from './assets/config.js';
 const $ = (id) => document.getElementById(id);
 const PENDING_LOCK_KEY = (t) => 'rl_pending_lock:' + String(t).toLowerCase();
 const fmtDur = (s) => { s = Math.max(0, s | 0); const d = Math.floor(s/86400), h = Math.floor((s%86400)/3600); return d > 0 ? (d + 'd' + (h > 0 ? ' ' + h + 'h' : '')) : h > 0 ? h + 'h' : Math.max(1, Math.floor(s/60)) + 'm'; };
@@ -566,7 +566,13 @@ $('copyCa').addEventListener('click', () => { if (TOKEN && navigator.clipboard) 
 // synced by setSocialMeta, so a shared coin looks like a product card, not a bare URL.
 function setShareLinks(name, symbol){
   const bar = $('sharebar'); if (!bar) return;
-  const url = location.origin + location.pathname + '?c=' + encodeURIComponent(TOKEN);
+  // Share the indexer's /coin/:token unfurl link: crawlers (X, Telegram) don't run JS, so
+  // this server-rendered page carries THIS coin's og:image (its live card) + title. A human
+  // who clicks it is bounced straight on to this coin page. Falls back to the raw page URL
+  // (demo/preview, where there's no real token).
+  const valid = /^0x[0-9a-fA-F]{40}$/.test(TOKEN);
+  const url = valid ? (API_BASE + '/coin/' + TOKEN)
+                    : (location.origin + location.pathname + (TOKEN ? '?c=' + encodeURIComponent(TOKEN) : ''));
   const tk  = symbol ? ('$' + String(symbol).replace(/^\$+/, '').toUpperCase()) : '';
   const nm  = name || 'this coin';
   const text = `${nm} ${tk} is live on Robin Labs, the fair-launch pad on Robinhood Chain. Ape in:`.replace(/\s+/g, ' ').trim();

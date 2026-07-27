@@ -17,6 +17,7 @@ import {
 import { currentEpoch as rewardsEpoch, userAllocations as rewardsUserAlloc } from "./rewards.js";
 import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleApproval as uniHandleApproval } from "./uniproxy.js";
 import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes, stats as lifiUsage } from "./lifiproxy.js";
+import { renderCard, coinOgHtml } from "./og.js";
 
 const DAY = 86400;
 
@@ -332,6 +333,8 @@ const mediaRateOk = makeRateLimiter(CFG.mediaMaxPerSec);   // per-IP cap on /med
 // distinct-unknown-address meta POSTs can't each fire a paid eth_call.
 const CHAIN_DEV_MISS = new Map(); // addr -> exp(ms)
 const MEDIA_CACHE = new Map();    // token:kind:v -> { blob, mime } (immutable per ?v, so no TTL needed)
+const OG_CACHE = new Map();       // og:token -> { blob, exp } (share card PNG; short TTL so stats stay fresh)
+const OG_TTL_MS = Number(process.env.OG_CACHE_MS || 300000); // 5 min: crawlers refetch rarely; stats needn't be to-the-second
 
 // Absolute base for media links, derived from the request (works behind Caddy/any proxy).
 function mediaBase(req) {
@@ -808,6 +811,54 @@ export function startApi() {
           MEDIA_CACHE.set(ckey, hit);
         }
         return sendMedia(res, hit.blob, hit.mime, origin);
+      }
+
+      // ── social share card image: GET /og/:token.png ──────────────────────────
+      // A per-coin Open Graph / Twitter card (pfp + name + live stats), so a shared coin
+      // link unfurls as a product instead of the one generic site image. Rate-limited +
+      // memory-cached (render is CPU work on the loop). Falls back to the coin's own pfp,
+      // then a 404, so a render hiccup never hard-fails the unfurl.
+      m = path.match(/^\/og\/(0x[0-9a-fA-F]{40})\.png$/);
+      if (m) {
+        if (!mediaRateOk(clientIp(req))) return send(res, 429, { error: "rate limited" }, origin);
+        const token = m[1].toLowerCase();
+        const ck = "og:" + token;
+        let hit = OG_CACHE.get(ck);
+        if (!hit || hit.exp < Date.now()) {
+          const r = oneCoinStmt.get({ token, since });
+          if (!r) return send(res, 404, { error: "no coin" }, origin);
+          try {
+            const png = await renderCard(shapeCoin(r, base), getCoinPfp.get(token));
+            if (OG_CACHE.size > 500) OG_CACHE.clear();
+            hit = { blob: png, exp: Date.now() + OG_TTL_MS };
+            OG_CACHE.set(ck, hit);
+          } catch {
+            const pf = getCoinPfp.get(token); // degrade to the raw pfp if compositing failed
+            if (pf && pf.blob) return sendMedia(res, pf.blob, pf.mime, origin);
+            return send(res, 404, { error: "card unavailable" }, origin);
+          }
+        }
+        return sendMedia(res, hit.blob, "image/png", origin);
+      }
+
+      // ── share landing: GET /coin/:token (and /og/:token) ─────────────────────
+      // Tiny HTML doc carrying THIS coin's real og:/twitter: tags for crawlers, then it
+      // bounces a human to the pad coin page. Share buttons point here so a link finally
+      // unfurls with the coin's own card. Unknown coins still resolve (generic image).
+      m = path.match(/^\/(?:coin|og)\/(0x[0-9a-fA-F]{40})$/);
+      if (m) {
+        if (!mediaRateOk(clientIp(req))) return send(res, 429, { error: "rate limited" }, origin);
+        const token = m[1].toLowerCase();
+        const r = oneCoinStmt.get({ token, since });
+        const coin = r ? shapeCoin(r, base) : { token, name: "Coin", symbol: "", graduated: false };
+        const img = r ? `${base}/og/${token}.png` : `${CFG.siteBase}/assets/og.jpg`;
+        const body = coinOgHtml(coin, img, CFG.siteBase);
+        res.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "access-control-allow-origin": origin,
+          "cache-control": "public, max-age=120",
+        });
+        return res.end(body);
       }
 
       // A coin's profile (creator-set metadata + image URLs). `profile` is null until set.

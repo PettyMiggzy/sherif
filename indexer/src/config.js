@@ -50,6 +50,8 @@ export const CFG = {
   confirmations: num("CONFIRMATIONS", 3),
   dbPath: process.env.DB_PATH || resolve(__dir, "..", "data", "robinlabs.db"),
   corsOrigin: process.env.CORS_ORIGIN || "*",
+  // Pad origin a shared /coin/:token link bounces a human visitor to (the coin page).
+  siteBase: (process.env.SITE_BASE || "https://robinlab.io").replace(/\/+$/, ""),
 
   // ── coin profiles (creator-signed off-chain metadata: image, banner, socials) ──
   profileMaxImageBytes: num("PROFILE_MAX_IMAGE_BYTES", 800 * 1024), // per STORED image (after server downscale)
