@@ -88,6 +88,22 @@ export const CFG = {
   uniCorsOrigins: (process.env.UNISWAP_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinslab.fun")
     .split(",").map((s) => s.trim()).filter(Boolean),
 
+  // ── Photo-to-meme proxy (turn a snapshot into a coin's meme pfp) ──
+  // /api/meme is OFF unless MEME_API_KEY is set. The key is a SECRET (gitignored .env), injected
+  // server-side into the provider call and NEVER sent to the browser. Provider-agnostic: defaults
+  // to OpenAI's image edit endpoint but any compatible {base, model} works. Spend is bounded by the
+  // per-IP + global rate caps below (each image costs a few cents), so a leaked endpoint can't run up a bill.
+  memeApiKey: process.env.MEME_API_KEY || "",
+  memeApiBase: (process.env.MEME_API_BASE || "https://api.openai.com/v1").replace(/\/+$/, ""),
+  memeModel: process.env.MEME_MODEL || "gpt-image-1",
+  memeSize: process.env.MEME_SIZE || "1024x1024",
+  memeQuality: process.env.MEME_QUALITY || "low",       // low ≈ 2-4c/image on gpt-image-1; "medium"/"high" cost more
+  memeRatePerSec: num("MEME_RATE_PER_SEC", 1),          // per-IP cap (image gen is slow + costs money)
+  memeGlobalPerMin: num("MEME_GLOBAL_PER_MIN", 20),     // TOTAL images/min across all IPs — the hard spend bound
+  memeMaxUploadBytes: num("MEME_MAX_UPLOAD_BYTES", 8 * 1024 * 1024),
+  memeCorsOrigins: (process.env.MEME_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinslab.fun")
+    .split(",").map((s) => s.trim()).filter(Boolean),
+
   // ── LI.FI cross-chain proxy (the bridge) ──
   // /api/lifi/* is OFF unless LIFI_API_KEY is set. The key is a SECRET (gitignored .env), injected
   // server-side into the x-lifi-api-key header so it NEVER reaches the browser, which also moves us off

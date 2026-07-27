@@ -164,6 +164,11 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
           <input id="pfp" type="file" accept="image/*" hidden onchange="prev(this,'pfp')" />
           <div class="txt">JPG / PNG / HEIC.<br>This is what shows in the trending grid.</div>
         </div>
+        <div id="memeRow" style="display:none;margin-top:10px;align-items:center;gap:10px;flex-wrap:wrap">
+          <button type="button" id="memeBtn" class="btn btn-ghost" style="font-size:.82rem">Turn a photo into a meme character</button>
+          <input id="memeStyle" class="inp" style="max-width:210px;font-size:.8rem;padding:8px 10px" placeholder="optional vibe (e.g. neon fox)" maxlength="60" />
+          <span id="memeStatus" style="font-size:.78rem;color:var(--ink-faint)"></span>
+        </div>
       </div>
 
       <div class="row2">
@@ -381,7 +386,7 @@ taxSync();
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
-import { isDeployed } from './assets/config.js';
+import { isDeployed, API_BASE } from './assets/config.js';
 
 const $ = (id) => document.getElementById(id);
 const PENDING_LOCK_KEY = (token) => 'rl_pending_lock:' + String(token).toLowerCase();
@@ -562,6 +567,57 @@ $('launchBtn').addEventListener('click', async () => {
 
 window.addEventListener('robinpad:ready', refreshConnect);
 refreshConnect();
+
+// ── photo-to-meme: turn a snapshot into a meme character and use it as the coin's pfp ──
+// The button only appears if the indexer's generator is configured (probe /api/meme/enabled).
+// The generated image is fed back into the #pfp file input, so the normal preview + save path
+// (imgDataUrl('pfp') / the profile upload) picks it up with no other changes.
+(async function initMeme(){
+  const row = $('memeRow'), btn = $('memeBtn'), style = $('memeStyle'), st = $('memeStatus');
+  if (!row || !btn || !API_BASE) return;
+  try {
+    const r = await fetch(API_BASE + '/api/meme/enabled', { signal: AbortSignal.timeout(6000) });
+    const j = await r.json().catch(() => null);
+    if (!j || !j.enabled) return; // stays hidden until the generator is turned on
+  } catch { return; }
+  row.style.display = 'flex';
+
+  const readFile = (f) => new Promise((res, rej) => {
+    const rd = new FileReader(); rd.onload = () => res(String(rd.result || '')); rd.onerror = () => rej(new Error('read failed')); rd.readAsDataURL(f);
+  });
+  // Put a data: URL back into the #pfp input as a File so the rest of the page treats it as the upload.
+  async function useAsPfp(dataUrl){
+    const blob = await (await fetch(dataUrl)).blob();
+    const file = new File([blob], 'meme.png', { type: blob.type || 'image/png' });
+    const dt = new DataTransfer(); dt.items.add(file);
+    $('pfp').files = dt.files;
+    if (typeof prev === 'function') prev($('pfp'), 'pfp'); else {
+      const box = $('pfpBox'); if (box) { box.style.backgroundImage = 'url(' + dataUrl + ')'; box.style.backgroundSize = 'cover'; box.style.backgroundPosition = 'center'; box.innerHTML = ''; }
+    }
+  }
+
+  let busy = false;
+  btn.addEventListener('click', async () => {
+    if (busy) return;
+    const f = ($('pfp').files || [])[0];
+    if (!f) { st.textContent = 'Pick or snap a photo first.'; $('pfp').click(); return; }
+    busy = true; btn.disabled = true; st.style.color = 'var(--ink-faint)'; st.textContent = 'Making your meme… this takes a few seconds.';
+    try {
+      const image = await readFile(f);
+      const res = await fetch(API_BASE + '/api/meme', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ image, style: (style.value || '').trim() }),
+        signal: AbortSignal.timeout(90000),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j || !j.image) throw new Error((j && j.error) || 'Could not make a meme, try another photo.');
+      await useAsPfp(j.image);
+      st.style.color = 'var(--green)'; st.textContent = 'Done. Using it as your coin image, tweak the vibe and re-run if you want.';
+    } catch (e) {
+      st.style.color = 'var(--red)'; st.textContent = (e && e.message) || 'Meme generation failed.';
+    } finally { busy = false; btn.disabled = false; }
+  });
+})();
 </script>
 </body>
 </html>

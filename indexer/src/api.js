@@ -18,6 +18,7 @@ import { currentEpoch as rewardsEpoch, userAllocations as rewardsUserAlloc } fro
 import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleApproval as uniHandleApproval } from "./uniproxy.js";
 import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes, stats as lifiUsage } from "./lifiproxy.js";
 import { renderCard, coinOgHtml } from "./og.js";
+import { enabled as memeEnabled, makeMeme } from "./memeproxy.js";
 
 const DAY = 86400;
 
@@ -319,6 +320,16 @@ const rpcRateOk = makeRateLimiter(CFG.rpcProxyMaxPerSec);
 const metaRateOk = makeRateLimiter(2); // profile uploads: ≤2/s/IP (HEIC decode is CPU-bound on the main thread)
 const uniRateOk = makeRateLimiter(CFG.uniRatePerSec);       // per-IP cap on the Uniswap swap proxy
 const uniGlobalOk = makeRateLimiter(CFG.uniGlobalPerSec);   // total upstream/sec (shared paid-key budget), keyed by a constant
+const memeRateOk = makeRateLimiter(CFG.memeRatePerSec);     // per-IP/sec cap on the photo-to-meme generator
+// Per-MINUTE global cap on meme generation — the hard spend bound (each image costs a few cents, so this
+// is the ceiling on what a leaked endpoint can run up regardless of how many IPs hit it).
+const _memeMin = { min: 0, n: 0 };
+function memeGlobalOk() {
+  const min = Math.floor(Date.now() / 60000);
+  if (_memeMin.min !== min) { _memeMin.min = min; _memeMin.n = 0; }
+  _memeMin.n += 1;
+  return _memeMin.n <= CFG.memeGlobalPerMin;
+}
 const lifiRateOk = makeRateLimiter(CFG.lifiRatePerSec);     // per-IP cap on the LI.FI bridge proxy
 const lifiGlobalOk = makeRateLimiter(CFG.lifiGlobalPerSec); // total upstream/sec (protects our per-key LI.FI budget)
 // Per-IP cap on GET /api/* reads. The 5s micro-cache keys on url.search, so a client spraying distinct
@@ -513,6 +524,11 @@ function uniOrigin(req) {
   const o = String(req.headers["origin"] || "");
   return CFG.uniCorsOrigins.includes(o) ? o : (CFG.uniCorsOrigins[0] || "https://robinlab.io");
 }
+// Meme proxy responses: scope CORS to our own origins (not "*"), never cache a per-user image.
+function memeOrigin(req) {
+  const o = String(req.headers["origin"] || "");
+  return CFG.memeCorsOrigins.includes(o) ? o : (CFG.memeCorsOrigins[0] || "https://robinlab.io");
+}
 function sendUni(res, code, body, origin) {
   res.writeHead(code, {
     "content-type": "application/json; charset=utf-8",
@@ -616,6 +632,28 @@ export function startApi() {
         } catch { return sendUni(res, 502, { error: "trading upstream error" }, uorigin); }
       }
 
+      // ── Photo-to-meme proxy: POST /api/meme ──────────────────────────────────
+      // Off unless MEME_API_KEY is set. Body: { image: <base64 data URL>, style?: string }. Injects the
+      // secret key server-side, per-IP + global-per-minute rate limits (the spend bound), scoped CORS.
+      if (path === "/api/meme") {
+        const morigin = memeOrigin(req);
+        if (!memeEnabled()) return sendUni(res, 503, { error: "meme generator is not enabled yet" }, morigin);
+        if (!memeRateOk(clientIp(req))) return sendUni(res, 429, { error: "one at a time — try again in a moment" }, morigin);
+        if (!memeGlobalOk()) return sendUni(res, 429, { error: "the meme generator is busy, try again shortly" }, morigin);
+        let mbody;
+        try { mbody = JSON.parse((await readBody(req, Math.ceil(CFG.memeMaxUploadBytes * 1.4) + 4096)).toString("utf8")); }
+        catch { return sendUni(res, 400, { error: "image too large or bad request" }, morigin); }
+        const dm = /^data:[^;,]*;base64,(.+)$/s.exec(String(mbody.image || ""));
+        if (!dm) return sendUni(res, 400, { error: "send a photo as a base64 data URL" }, morigin);
+        let buf; try { buf = Buffer.from(dm[1], "base64"); } catch { return sendUni(res, 400, { error: "bad image" }, morigin); }
+        try {
+          const out = await makeMeme({ imageBuf: buf, style: mbody.style });
+          return sendUni(res, 200, { image: out.dataUrl }, morigin);
+        } catch (e) {
+          return sendUni(res, 502, { error: (e && e.message) || "meme generation failed" }, morigin);
+        }
+      }
+
       const mm = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/meta$/);
       if (!mm) return send(res, 404, { error: "no such route" }, origin);
       if (!metaRateOk(clientIp(req))) return send(res, 429, { error: "rate limited — wait a moment and try again" }, origin);
@@ -716,6 +754,9 @@ export function startApi() {
         // a quick way to confirm a redeploy actually took and the deps installed.
         return send(res, 200, { ok: true, head: getHead(), cursor: cur ? Number(cur.v) : null, coins: c, trades: t, img: !!(_sharp && _heic) }, origin);
       }
+
+      // Whether the photo-to-meme generator is configured — the create page shows its button only if so.
+      if (path === "/api/meme/enabled") return send(res, 200, { enabled: memeEnabled() }, origin);
 
       if (path === "/api/stats") {
         const s = statsStmt.get({ since });

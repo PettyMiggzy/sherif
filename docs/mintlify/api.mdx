@@ -26,6 +26,8 @@ An optional read API reads the on-chain events into a database and serves a fast
 | `GET /media/:token/:kind` | The coin's image bytes (`kind` = `pfp` \| `banner`) |
 | `GET /coin/:token` | A [share landing](#share-cards): per-coin `og:`/`twitter:` tags for crawlers, then redirects a human to the coin page |
 | `GET /og/:token.png` | The coin's [share-card image](#share-cards) (pfp + name + live stats), used as its `og:image` |
+| `GET /api/meme/enabled` | `{ enabled }` — is the [photo-to-meme](#photo-to-meme) generator configured (the create page shows its button only if so) |
+| `POST /api/meme` | Turn an uploaded photo into a meme character (OFF unless a key is set); body `{ image, style? }` |
 | `POST /rpc` | [Read-only JSON-RPC proxy](#read-proxy-rpc): the pad's live reads, served + cached from the paid RPC |
 
 ```http
@@ -104,6 +106,24 @@ GET /og/:token.png    # the card image (1200x630): coin pfp + name + ticker + li
 - `GET /og/:token.png` is the card, composited with `sharp` and memory-cached with a short TTL so the stats stay fresh. If the pfp can't be composited it degrades to the coin's raw pfp; an unknown coin falls back to the site's generic image.
 
 Everything here is **cosmetic**: it changes how a link looks when shared, never trading.
+
+## Photo-to-meme
+
+Turn a snapshot into a coin's meme character, server-side, so the create page can offer a
+"turn a photo into a meme" button. The image-model API key is a **secret** that lives only in the
+indexer's `.env`; the browser never sees it.
+
+```http
+GET  /api/meme/enabled   # { enabled } — the create page shows the button only when true
+POST /api/meme           # { image: <base64 data URL>, style?: string } → { image: <data URL> }
+```
+
+- **OFF unless `MEME_API_KEY` is set.** With no key the endpoint returns `503` and `enabled` is
+  `false`, so the button stays hidden. Provider-agnostic: defaults to OpenAI's `/images/edits`
+  (`gpt-image-1`), overridable with `MEME_API_BASE` / `MEME_MODEL`.
+- **Spend-bounded.** A per-IP/second cap plus a global per-minute cap (`MEME_GLOBAL_PER_MIN`) is the
+  hard ceiling on how many images a leaked endpoint could ever generate. Scoped CORS, no caching.
+- The generated image comes back as a data URL the create page drops straight into the coin's pfp.
 
 ## Read proxy (`/rpc`)
 
