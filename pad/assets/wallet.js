@@ -32,6 +32,13 @@ import {
   GAS_BUFFER_WEI, isDeployed, API_BASE, hasApi,
 } from "./config.js";
 
+// Register the service worker (installable PWA + offline page + store packaging via
+// PWABuilder/Bubblewrap). HTTPS only, best-effort, never blocks the app. Every page
+// imports this module, so this one line covers the whole site.
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator && location.protocol === "https:") {
+  addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+}
+
 // Re-export the config helper so pages doing `import * as Pad from './wallet.js'`
 // can call `Pad.hasApi()` (a namespace import only sees a module's own exports,
 // not what it imports). create.html relies on this to decide whether to upload

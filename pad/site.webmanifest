@@ -1,14 +1,23 @@
 {
+  "id": "/",
   "name": "Robin Labs",
   "short_name": "Robin Labs",
   "description": "The fair-launch memecoin launchpad on Robinhood Chain: real Uniswap v3 liquidity, a permanent floor, and creator rewards.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0d0f07",
-  "theme_color": "#0d0f07",
+  "orientation": "portrait",
+  "background_color": "#060803",
+  "theme_color": "#060803",
+  "categories": ["finance"],
   "icons": [
-    { "src": "/assets/favicon-180.png", "sizes": "180x180", "type": "image/png" },
-    { "src": "/assets/favicon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/favicon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Browse coins", "url": "/browse.html" },
+    { "name": "Launch a coin", "url": "/create.html" },
+    { "name": "Swap", "url": "/swap.html" }
   ]
 }
