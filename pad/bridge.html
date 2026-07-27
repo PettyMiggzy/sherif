@@ -83,6 +83,24 @@ footer{border-top:1px solid var(--line-2);margin-top:20px}
 .foot-in .socs{display:flex;align-items:center;gap:12px}
 .foot-in .socs a{color:var(--dim)}.foot-in .socs a:hover{color:var(--lime)}
 @media(max-width:640px){.nav-in{flex-wrap:wrap;padding:11px 16px}.nav .links{order:3;width:100%;justify-content:flex-start;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:.85rem}}
+/* token picker */
+.selwrap[role=button]{cursor:pointer}
+.selwrap[role=button]:hover{border-color:var(--lime)}
+.selsym{font-weight:800;font-size:.92rem;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tokmodal{display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.62);align-items:flex-start;justify-content:center;padding:56px 14px}
+.tokmodal.open{display:flex}
+.tokbox{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;max-height:72vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.tokhd{display:flex;justify-content:space-between;align-items:center;font-weight:800;margin-bottom:10px}
+.tokhd button{background:none;border:0;color:var(--dim);font-size:1.5rem;cursor:pointer;line-height:1}
+#tokSearch{background:var(--bg);border:1px solid var(--line-2);border-radius:10px;padding:11px 13px;color:var(--ink);font-family:var(--sans);font-size:.95rem;outline:none}
+#tokSearch:focus{border-color:var(--lime)}
+.toklist{overflow-y:auto;margin-top:10px;display:flex;flex-direction:column;gap:1px}
+.tokrow{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:10px;cursor:pointer;border:0;background:none;width:100%;text-align:left;font-family:var(--sans);color:var(--ink)}
+.tokrow:hover{background:rgba(220,233,5,.08)}
+.tokrow img,.tokrow .ph{width:28px;height:28px;border-radius:50%;object-fit:cover;flex:none}
+.tokrow .ph{background:conic-gradient(from 210deg,var(--lime),var(--violet),var(--lime-deep))}
+.tokrow .sy{font-weight:700}.tokrow .nm{color:var(--dim);font-size:.78rem;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
+.tokempty{padding:18px;text-align:center;color:var(--dim);font-size:.85rem}
 </style>
 </head>
 <body>
@@ -111,7 +129,7 @@ footer{border-top:1px solid var(--line-2);margin-top:20px}
         <div class="lab">You pay</div>
         <div class="row">
           <input id="payAmt" inputmode="decimal" placeholder="0.0" value="0.1" aria-label="Amount to pay" />
-          <span class="selwrap"><img id="payTokIc" class="selic" alt="" onerror="this.style.visibility='hidden'" /><select id="srcToken" aria-label="Pay token"></select></span>
+          <span class="selwrap" id="srcTokBtn" role="button" tabindex="0" aria-label="Choose the token you pay with"><img id="payTokIc" class="selic" alt="" onerror="this.style.visibility='hidden'" /><span class="selsym" id="srcTokSym">ETH</span> <span class="chev" style="color:var(--dim);font-size:.7rem">&#9660;</span></span>
         </div>
         <div class="sub">from <select id="srcChain" class="chainsel" aria-label="Source chain"></select></div>
       </div>
@@ -132,6 +150,14 @@ footer{border-top:1px solid var(--line-2);margin-top:20px}
       <div class="status" id="bridgeStatus"></div>
     </div>
   </section>
+
+  <div class="tokmodal" id="tokModal">
+    <div class="tokbox">
+      <div class="tokhd"><span>Pay with</span><button type="button" id="tokClose" aria-label="Close">&times;</button></div>
+      <input id="tokSearch" placeholder="Search name or symbol" autocomplete="off" spellcheck="false" />
+      <div class="toklist" id="tokList"></div>
+    </div>
+  </div>
 
   <div class="trust wrap">
     <span><span class="d">●</span> Non-custodial, your keys the whole way</span>
@@ -189,22 +215,45 @@ async function loadCoins(){
 
 // ── state ──
 let quoteSeq = 0, lastQuote = null, busy = false;
-const state = { chain: 42161, token: null, coin: Bridge.NATIVE }; // default: receive ETH on Robinhood Chain
+const state = { chain: 42161, token: Bridge.NATIVE, coin: Bridge.NATIVE, tokenMeta: Bridge.nativeToken(42161) }; // pay: ETH, receive: ETH on Robinhood Chain
 
 function fillChains(){
   $('srcChain').innerHTML = Bridge.SRC_CHAINS.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   $('srcChain').value = String(state.chain);
 }
-function fillTokens(){
-  const toks = Bridge.tokensFor(state.chain);
-  $('srcToken').innerHTML = toks.map((t) => `<option value="${esc(t.addr)}">${esc(t.symbol)}</option>`).join('');
-  if (!toks.find((t) => t.addr === state.token)) state.token = toks[0].addr;
-  $('srcToken').value = state.token;
-  const t = toks.find((x) => x.addr === state.token);
-  $('payTokIc').src = t && t.symbol === 'USDC'
-    ? 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png'
-    : 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png';
-  $('payTokIc').style.visibility = 'visible';
+function paintSrcTok(){
+  const m = state.tokenMeta || Bridge.nativeToken(state.chain);
+  $('srcTokSym').textContent = m.symbol || 'ETH';
+  if (m.logo){ $('payTokIc').src = m.logo; $('payTokIc').style.visibility = 'visible'; }
+  else { $('payTokIc').removeAttribute('src'); $('payTokIc').style.visibility = 'hidden'; }
+}
+// searchable source-token picker, fed by LI.FI's full per-chain token list (pay with ANY supported token)
+let _pickTokens = [], _shownTokens = [];
+async function openTokPicker(){
+  $('tokModal').classList.add('open');
+  $('tokSearch').value = '';
+  $('tokList').innerHTML = '<div class="tokempty">Loading tokens…</div>';
+  setTimeout(() => $('tokSearch').focus(), 30);
+  const chainAtOpen = state.chain;
+  const toks = await Bridge.chainTokens(state.chain);
+  if (state.chain !== chainAtOpen) return; // user changed chain while loading
+  _pickTokens = toks;
+  renderTokList('');
+}
+function renderTokList(filter){
+  const f = (filter || '').trim().toLowerCase();
+  const list = (f ? _pickTokens.filter((t) => t.symbol.toLowerCase().includes(f) || t.addr.toLowerCase() === f) : _pickTokens).slice(0, 80);
+  _shownTokens = list;
+  if (!list.length){ $('tokList').innerHTML = '<div class="tokempty">No token found on this chain.</div>'; return; }
+  $('tokList').innerHTML = list.map((t, i) =>
+    `<button class="tokrow" type="button" data-i="${i}">${t.logo ? `<img src="${esc(t.logo)}" alt="" onerror="this.outerHTML='<span class=\\'ph\\'></span>'" />` : '<span class="ph"></span>'}<span class="sy">${esc(t.symbol)}</span><span class="nm">${esc(t.addr.slice(0,6))}…${esc(t.addr.slice(-4))}</span></button>`
+  ).join('');
+}
+function pickToken(t){
+  state.token = t.addr; state.tokenMeta = t;
+  paintSrcTok();
+  $('tokModal').classList.remove('open');
+  scheduleQuote();
 }
 function fillCoins(){
   const opts = DST_LIST().map((a) => { const c = COINS.get(a) || { symbol: a.slice(0,6) }; const lbl = (a === Bridge.NATIVE) ? 'ETH (Robinhood Chain)' : (c.symbol || a.slice(0,6)); return `<option value="${esc(a)}">${esc(lbl)}</option>`; }).join('');
@@ -218,7 +267,7 @@ function paintCoinIc(){
   if (c && c.image){ $('getCoinIc').src = c.image; $('getCoinIc').style.visibility = 'visible'; }
   else { $('getCoinIc').removeAttribute('src'); $('getCoinIc').style.visibility = 'visible'; }
 }
-const srcTokenMeta = () => Bridge.tokensFor(state.chain).find((t) => t.addr === state.token) || { decimals: 18, symbol: 'ETH', native: true };
+const srcTokenMeta = () => state.tokenMeta || Bridge.nativeToken(state.chain);
 const coinMeta = () => COINS.get(state.coin) || { symbol: '', decimals: 18 };
 
 // ── live quote (debounced) ──
@@ -232,25 +281,30 @@ async function refreshQuote(){
   const wei = Bridge.parseUnits(amt, st.decimals);
   if (!wei || wei <= 0n){ $('getAmt').value = ''; $('routeInfo').textContent = ''; return; }
   $('getAmt').value = '…'; $('routeInfo').textContent = 'Finding the best route…';
-  try {
-    const q = await Bridge.quote({ fromChain: state.chain, fromToken: state.token, fromAmount: wei.toString(),
-      fromAddress: Pad.account() || PREVIEW_ADDR, toToken: state.coin });
-    if (seq !== quoteSeq) return; // stale
+  // Retry once: "None of the available routes could successfully generate a tx" is often transient.
+  let q = null, err = null;
+  for (let attempt = 0; attempt < 2; attempt++){
+    try { q = await Bridge.quote({ fromChain: state.chain, fromToken: state.token, fromAmount: wei.toString(), fromAddress: Pad.account() || PREVIEW_ADDR, toToken: state.coin }); err = null; break; }
+    catch (e){ err = e; if (seq !== quoteSeq) return; if (attempt === 0) await new Promise((r) => setTimeout(r, 1100)); if (seq !== quoteSeq) return; }
+  }
+  if (seq !== quoteSeq) return; // stale
+  if (q){
     lastQuote = q;
-    const outStr = Bridge.fmtUnits(q.toAmount, q.toDecimals);
-    const out = Number(outStr);
+    const out = Number(Bridge.fmtUnits(q.toAmount, q.toDecimals));
     $('getAmt').value = out >= 1 ? out.toLocaleString(undefined, { maximumFractionDigits: 4 }) : out.toPrecision(4);
     const mins = Math.max(1, Math.round((q.durationSec || 60) / 60));
     const via = (q.steps || []).filter((s) => !/fee|collect/i.test(s)).join(' + ') || q.tool || 'best route';
     const cost = (q.gasUSD || 0) + (q.feeUSD || 0);
     $('routeInfo').innerHTML = `via <b>${esc(via)}</b> · ~${mins} min · fees ~$${cost.toFixed(2)}`;
-    setBuy();
-  } catch (e){
-    if (seq !== quoteSeq) return;
+  } else {
     $('getAmt').value = ''; lastQuote = null;
-    $('routeInfo').innerHTML = `<span style="color:var(--down)">No route right now: ${esc((e && e.message) || 'try a different amount or token')}</span>`;
-    setBuy();
+    const m = (err && err.message) || '';
+    const friendly = /generate a tx|no available|no route|not find|no quote/i.test(m)
+      ? 'No route for this token or amount right now. Try a larger amount or a different token.'
+      : (m || 'Could not get a quote, try again.');
+    $('routeInfo').innerHTML = `<span style="color:var(--down)">${esc(friendly)}</span>`;
   }
+  setBuy();
 }
 
 function setStatus(html, cls){ $('bridgeStatus').innerHTML = html ? `<span class="${cls || ''}">${html}</span>` : ''; }
@@ -315,8 +369,17 @@ cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (Pad.accoun
 window.addEventListener('robinpad:ready', refreshWallet);
 
 // ── wiring ──
-$('srcChain').addEventListener('change', () => { state.chain = Number($('srcChain').value); fillTokens(); scheduleQuote(); });
-$('srcToken').addEventListener('change', () => { state.token = $('srcToken').value; fillTokens(); scheduleQuote(); });
+$('srcChain').addEventListener('change', () => {
+  state.chain = Number($('srcChain').value);
+  state.token = Bridge.NATIVE; state.tokenMeta = Bridge.nativeToken(state.chain); // reset to the new chain's native token
+  paintSrcTok(); scheduleQuote();
+});
+$('srcTokBtn').addEventListener('click', openTokPicker);
+$('srcTokBtn').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openTokPicker(); } });
+$('tokClose').addEventListener('click', () => $('tokModal').classList.remove('open'));
+$('tokModal').addEventListener('click', (e) => { if (e.target === $('tokModal')) $('tokModal').classList.remove('open'); });
+$('tokSearch').addEventListener('input', () => renderTokList($('tokSearch').value));
+$('tokList').addEventListener('click', (e) => { const b = e.target.closest('.tokrow'); if (b && _shownTokens[+b.dataset.i]) pickToken(_shownTokens[+b.dataset.i]); });
 $('dstCoin').addEventListener('change', () => { state.coin = $('dstCoin').value; paintCoinIc(); scheduleQuote(); });
 $('payAmt').addEventListener('input', scheduleQuote);
 cta.addEventListener('click', onBuy);
@@ -324,13 +387,13 @@ cta.addEventListener('click', onBuy);
 (function boot(){
   // deep-link ?token=<coin> (from a coin page) preselects the coin to receive
   const p = (new URLSearchParams(location.search).get('token') || '').toLowerCase();
-  state.token = Bridge.tokensFor(state.chain)[0].addr;
+  state.tokenMeta = Bridge.nativeToken(state.chain); // pay with native ETH by default
   COINS.set(Bridge.NATIVE, { addr: Bridge.NATIVE, symbol: 'ETH', image: ETH_LOGO, decimals: 18 });
   if (/^0x[0-9a-f]{40}$/.test(p) && UNI_TOKENS.includes(p)) state.coin = p; // a coin deep-link overrides the ETH default
   // Seed placeholder coin metadata synchronously so the selectors populate IMMEDIATELY,
   // never blocked behind the DexScreener fetch (a slow fetch would otherwise leave the page empty).
   UNI_TOKENS.forEach((a) => { if (!COINS.has(a)) COINS.set(a, { addr: a, symbol: '…', image: null, decimals: 18 }); });
-  fillChains(); fillTokens(); fillCoins();
+  fillChains(); paintSrcTok(); fillCoins();
   refreshWallet();
   refreshQuote();
   loadCoins().then(() => { fillCoins(); });  // enrich symbols + logos in the background, then repaint

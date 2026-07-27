@@ -49,6 +49,35 @@ export function tokensFor(chainId) {
 }
 export const chainName = (id) => (SRC_CHAINS.find((x) => x.id === id) || {}).name || ("chain " + id);
 
+// Full per-chain token list from LI.FI (hundreds of real, correctly-addressed tokens with logos),
+// so the user can bridge from ANY supported token, not just native + USDC. Cached per chain.
+const _tokCache = new Map();
+export async function chainTokens(chainId) {
+  if (_tokCache.has(chainId)) return _tokCache.get(chainId);
+  let list = null;
+  try {
+    const r = await fetch(`${LIFI}/tokens?chains=${chainId}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+    const j = await r.json();
+    const raw = (j.tokens && j.tokens[String(chainId)]) || [];
+    list = raw
+      .filter((t) => t && t.symbol && t.address)
+      .map((t) => ({
+        addr: t.address, symbol: t.symbol, decimals: Number(t.decimals) || 18,
+        native: t.address.toLowerCase() === NATIVE, logo: t.logoURI || null, priceUSD: Number(t.priceUSD) || 0,
+      }));
+  } catch { list = null; }
+  if (!list || !list.length) list = tokensFor(chainId).map((t) => ({ ...t, logo: null, priceUSD: 0 }));
+  // native first, then keep LI.FI's order (majors are front-loaded)
+  list.sort((a, b) => (b.native - a.native));
+  _tokCache.set(chainId, list);
+  return list;
+}
+// The native token descriptor for a chain (used as the default source token).
+export function nativeToken(chainId) {
+  const t = tokensFor(chainId).find((x) => x.native) || { addr: NATIVE, symbol: "ETH", decimals: 18, native: true };
+  return { ...t, logo: null };
+}
+
 // ── LI.FI quote ────────────────────────────────────────────────────────────────
 // Returns a normalized object plus the raw LI.FI quote (needed verbatim for execution + status).
 export async function quote({ fromChain, fromToken, fromAmount, fromAddress, toToken }) {
