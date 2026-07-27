@@ -1309,7 +1309,9 @@ export async function uniEnsureApproval({ token, side, amountWei }) {
 // Build + broadcast the swap. Pass the WHOLE /quote response (it carries quote + optional
 // permitData). If a Permit2 signature is required, we sign the typed-data and forward it;
 // then POST /swap for the built Universal Router tx and send it as a balance-guarded legacy tx.
-export async function uniSwap(quoteResp) {
+// opts.simulate (Robin Guard): eth_call the built tx at latest block FIRST, so a stale/doomed
+//   swap surfaces as a clean "price moved" error instead of the user paying gas for a revert.
+export async function uniSwap(quoteResp, opts = {}) {
   if (!_signer) await connect();
   const quote = quoteResp && quoteResp.quote;
   if (!quote) throw new Error("No quote to execute - refresh the price and try again.");
@@ -1337,6 +1339,22 @@ export async function uniSwap(quoteResp) {
     const fmt = (w) => (+ethers.formatEther(w)).toFixed(4);
     throw new Error(`Not enough ETH. This needs ≈ ${fmt(need)} ETH (incl. gas); you have ${fmt(bal)}.`);
   }
+
+  // Robin Guard: pre-sign dry run. eth_call the EXACT built tx at latest block through the read
+  // layer. If it reverts (stale quote, moved price, below the built min-out) we stop BEFORE the
+  // wallet prompt so the user never signs a doomed swap. Only a *clear* revert blocks; a node
+  // error/timeout is not treated as a revert (fail-open) so a flaky RPC can't wedge trading.
+  if (opts.simulate) {
+    let reverted = false;
+    try { await _read.call({ to: s.to, data: s.data, value, from: _account }); }
+    catch (e) {
+      const msg = String(e?.shortMessage || e?.reason || e?.message || "");
+      const code = e?.code || "";
+      if (code === "CALL_EXCEPTION" || /revert|execution reverted|STF|Too little received|min|slippage/i.test(msg)) reverted = true;
+    }
+    if (reverted) throw new Error("The price moved while you were deciding. Refresh the quote and try again.");
+  }
+
   const overrides = { to: s.to, data: s.data, value, gasLimit, type: 0 };
   if (gasPrice > 0n) overrides.gasPrice = gasPrice;
   try { return await _signer.sendTransaction(overrides); }

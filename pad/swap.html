@@ -142,6 +142,45 @@ main{padding:34px 0 70px}
 .notice{max-width:460px;margin:14px auto 0;text-align:center;color:var(--faint);font-size:.78rem;line-height:1.5}
 .notice b{color:var(--dim)}
 
+/* mode tabs (Swap / Basket) */
+.modes{display:flex;gap:6px;max-width:460px;margin:0 auto 12px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:13px;padding:5px}
+.mode{flex:1;text-align:center;padding:9px 0;border-radius:9px;font-weight:700;font-size:.9rem;color:var(--dim);cursor:pointer;border:1px solid transparent;background:transparent;font-family:var(--sans)}
+.mode.on{background:var(--panel);border-color:var(--line-strong);color:var(--lime)}
+.mode:hover:not(.on){color:var(--ink)}
+
+/* Robin Guard toggle (inside the slip popover) */
+.guardrow{display:flex;align-items:center;gap:10px;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--line-2)}
+.guardrow .gl{flex:1}
+.guardrow .gl .t{font-weight:700;font-size:.86rem;color:var(--ink)}
+.guardrow .gl .d{font-size:.72rem;color:var(--faint);margin-top:1px}
+.switch{width:42px;height:24px;border-radius:999px;background:var(--panel);border:1px solid var(--line-2);position:relative;cursor:pointer;flex:none;transition:.16s}
+.switch.on{background:rgba(220,233,5,.25);border-color:var(--line-strong)}
+.switch .knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--faint);transition:.16s}
+.switch.on .knob{left:21px;background:var(--lime)}
+.slip.autoslip .chip{opacity:.4;pointer-events:none}
+.slip.autoslip #slipCustom{opacity:.4;pointer-events:none}
+.autonote{font-size:.74rem;color:var(--lime-deep);margin-top:8px;display:none}
+.slip.autoslip .autonote{display:block}
+
+/* basket */
+.bk .top{display:flex;justify-content:space-between;align-items:center;font-size:.76rem;color:var(--faint);margin:2px 4px 10px}
+.bkrows{display:flex;flex-direction:column;gap:8px}
+.bkrow{display:flex;align-items:center;gap:10px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:12px;padding:9px 11px}
+.bkrow .ic{width:28px;height:28px;font-size:.72rem}
+.bkrow .sy{font-weight:800;font-size:.9rem;flex:none;min-width:64px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bkrow .amt2{flex:1;min-width:0;background:transparent;border:none;color:var(--ink);font-size:1rem;font-weight:700;font-family:var(--sans);text-align:right;padding:0}
+.bkrow .amt2:focus{outline:none}
+.bkrow .eth{font-size:.76rem;color:var(--faint);flex:none}
+.bkrow .rm{background:transparent;border:none;color:var(--faint);cursor:pointer;font-size:1.1rem;line-height:1;flex:none;width:22px}
+.bkrow .rm:hover{color:var(--red)}
+.bkrow .st{font-size:.72rem;flex:none;min-width:58px;text-align:right}
+.bkrow .st.ok{color:var(--green)}.bkrow .st.err{color:var(--red)}.bkrow .st.run{color:var(--lime)}
+.bkadd{width:100%;margin-top:10px;border:1px dashed var(--line-2);background:transparent;color:var(--dim);border-radius:12px;padding:11px;cursor:pointer;font-weight:700;font-family:var(--sans);font-size:.88rem}
+.bkadd:hover{border-color:var(--line-strong);color:var(--ink)}
+.bkadd:disabled{opacity:.4;cursor:not-allowed}
+.bktot{display:flex;justify-content:space-between;align-items:center;margin:14px 4px 0;font-size:.9rem}
+.bktot .k{color:var(--faint)}.bktot .v{font-weight:800;font-variant-numeric:tabular-nums}
+
 /* token picker modal */
 .modal{position:fixed;inset:0;z-index:100;display:none;align-items:flex-start;justify-content:center;padding:70px 16px;background:rgba(3,4,1,.72);backdrop-filter:blur(4px)}
 .modal.open{display:flex}
@@ -194,13 +233,22 @@ main{padding:34px 0 70px}
     <p>The biggest coins on Robinhood Chain, tradeable right here. Real Uniswap liquidity, ETH in and out, one signature. No bridge, no leaving the pad.</p>
   </div>
 
-  <div class="swap">
+  <div class="modes">
+    <button class="mode on" id="modeSwap" type="button">Swap</button>
+    <button class="mode" id="modeBasket" type="button">Basket</button>
+  </div>
+
+  <div class="swap" id="swapCard">
     <div class="swaphead">
       <div class="t">Swap</div>
-      <button class="gear" id="gear" type="button" aria-label="Slippage settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      <button class="gear" id="gear" type="button" aria-label="Slippage and Guard settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </div>
 
-    <div class="slip" id="slip">
+    <div class="slip autoslip" id="slip">
+      <div class="guardrow">
+        <div class="gl"><div class="t">Robin Guard</div><div class="d">Auto slippage plus a pre-sign safety check</div></div>
+        <div class="switch on" id="guardSw" role="switch" aria-checked="true" tabindex="0"><span class="knob"></span></div>
+      </div>
       <div class="lab">Max slippage</div>
       <div class="row">
         <button class="chip" data-slip="1" type="button">1%</button>
@@ -209,6 +257,7 @@ main{padding:34px 0 70px}
         <input id="slipCustom" type="text" inputmode="decimal" placeholder="custom" />
         <span style="color:var(--faint)">%</span>
       </div>
+      <div class="autonote" id="autoNote">Guard is tuning slippage to this coin's liquidity and will dry-run the swap before you sign.</div>
     </div>
 
     <!-- PAY -->
@@ -243,6 +292,16 @@ main{padding:34px 0 70px}
 
     <button class="btn btn-lime act" id="act" type="button" disabled>Connect wallet</button>
     <div class="status" id="status"></div>
+  </div>
+
+  <div class="swap bk" id="basketCard" style="display:none">
+    <div class="swaphead"><div class="t">Basket</div></div>
+    <div class="top"><span>Pick 2 to 8 top coins and an ETH amount each. One click buys them all, straight to your wallet.</span></div>
+    <div class="bkrows" id="bkRows"></div>
+    <button class="bkadd" id="bkAdd" type="button">+ Add a coin</button>
+    <div class="bktot"><span class="k">Total</span><span class="v" id="bkTotal">0 ETH</span></div>
+    <button class="btn btn-lime act" id="bkAct" type="button" disabled>Connect wallet</button>
+    <div class="status" id="bkStatus"></div>
   </div>
 
   <div class="notice">
@@ -310,8 +369,36 @@ let quoteResp = null;   // last good quote response (for execution)
 let quoteSeq = 0;       // guards out-of-order async quotes
 let busy = false;       // a tx flow owns the button
 
+let GUARD = true;        // Robin Guard: auto-slippage tuned to liquidity + a pre-sign dry run
+let MODE = 'swap';       // 'swap' | 'basket'
+let pickerMode = 'swap'; // where the token picker sends its pick: the swap card, or the basket
+const BK = [];           // basket legs: [{addr,symbol,image,decimals,liqUsd,eth,status,statusCls,txHash}]
+let bkBusy = false;      // a basket run owns the basket button
+
 const payTok = () => SIDE === 'buy' ? NATIVE : TOKEN;
 const getTok = () => SIDE === 'buy' ? TOKEN : NATIVE;
+
+// Robin Guard tunes the slippage floor to the coin's liquidity (deeper pools tolerate a tighter floor).
+// Values stay inside the server's 0.1-15 band.
+function autoSlipFor(liqUsd){
+  const l = +liqUsd || 0;
+  if (l >= 250000) return 2;
+  if (l >= 75000) return 4;
+  if (l >= 20000) return 7;
+  return 12;
+}
+function applyGuardSlip(){
+  if (!GUARD || !TOKEN) return;
+  SLIP = autoSlipFor(TOKEN.liqUsd);
+}
+function setGuard(on){
+  GUARD = !!on;
+  $('guardSw').classList.toggle('on', GUARD);
+  $('guardSw').setAttribute('aria-checked', GUARD ? 'true' : 'false');
+  $('slip').classList.toggle('autoslip', GUARD);
+  if (GUARD) applyGuardSlip(); // else the user's manual SLIP stands
+  resetQuote(); syncAction(); scheduleQuote();
+}
 
 // ── token metadata: DexScreener (logo/price/liq) ──────────────────────────────
 async function loadMeta(){
@@ -484,8 +571,8 @@ async function doAction(){
       const approved = await Pad.uniEnsureApproval({ token: TOKEN.addr, side: SIDE, amountWei: amtWei.toString() });
       if (approved){ setAction('Refreshing quote…', true); quoteResp = await Pad.uniQuote({ token: TOKEN.addr, side: SIDE, amountWei: amtWei.toString(), slippagePct: SLIP }); }
     }
-    setAction('Confirm in your wallet…', true);
-    const tx = await Pad.uniSwap(quoteResp);
+    setAction(GUARD ? 'Checking price, then confirm…' : 'Confirm in your wallet…', true);
+    const tx = await Pad.uniSwap(quoteResp, { simulate: GUARD }); // Guard: pre-sign dry run
     setStatus('Swapping… <span style="color:var(--faint)">waiting for confirmation</span>', 'ok');
     setAction('Swapping…', true);
     const rc = await tx.wait();
@@ -496,7 +583,8 @@ async function doAction(){
     quoteResp = null; $('det').classList.remove('show');
     busy = false; refreshBalances(); syncAction();
   } catch (e){
-    busy = false; setStatus(cleanErr(e), 'err'); syncAction();
+    // Any failure (incl. Guard's "price moved" dry-run stop) drops the stale quote and re-quotes fresh.
+    busy = false; setStatus(cleanErr(e), 'err'); resetQuote(); syncAction(); scheduleQuote();
   }
 }
 
@@ -519,8 +607,17 @@ function renderPicker(filter){
 }
 async function pickToken(addr){
   closePicker();
+  if (pickerMode === 'basket'){
+    pickerMode = 'swap';
+    if (bkHas(addr) || BK.length >= 8) return;
+    const m = await ensureMeta(addr);
+    BK.push({ addr, symbol: m.symbol, image: m.image, decimals: m.decimals || 18, liqUsd: m.liqUsd || 0, eth: '0.05', status: '' });
+    renderBasket();
+    return;
+  }
   resetQuote(); syncAction();               // invalidate the old token's quote IMMEDIATELY (before the async meta read)
   TOKEN = { ...(await ensureMeta(addr)), addr };
+  applyGuardSlip();
   const url = new URL(location.href); url.searchParams.set('c', addr); history.replaceState(null, '', url);
   paintTokens(); scheduleQuote(); syncAction();
 }
@@ -577,9 +674,103 @@ $('tokSearch').addEventListener('input', (e) => renderPicker(e.target.value));
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePicker(); });
 $('navToggle').addEventListener('click', () => $('mobileMenu').classList.toggle('open'));
 
-function afterConnect(){ const a = Pad.account(); $('connectBtn').textContent = a ? short(a) : 'Connect Wallet'; refreshBalances(); scheduleQuote(); syncAction(); }
+function afterConnect(){ const a = Pad.account(); $('connectBtn').textContent = a ? short(a) : 'Connect Wallet'; refreshBalances(); scheduleQuote(); syncAction(); syncBasket(); }
 $('connectBtn').addEventListener('click', async () => { try { await Pad.connect(); afterConnect(); } catch {} });
 window.addEventListener('robinpad:ready', () => { if (Pad.account()) afterConnect(); });
+
+// Robin Guard toggle
+$('guardSw').addEventListener('click', () => setGuard(!GUARD));
+$('guardSw').addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); setGuard(!GUARD); } });
+
+// ── mode: Swap vs Basket ──────────────────────────────────────────────────────
+function setMode(m){
+  MODE = m;
+  $('modeSwap').classList.toggle('on', m === 'swap');
+  $('modeBasket').classList.toggle('on', m === 'basket');
+  $('swapCard').style.display = m === 'swap' ? '' : 'none';
+  $('basketCard').style.display = m === 'basket' ? '' : 'none';
+  if (m === 'basket'){ if (!BK.length) seedBasket(); renderBasket(); }
+}
+$('modeSwap').addEventListener('click', () => setMode('swap'));
+$('modeBasket').addEventListener('click', () => setMode('basket'));
+
+// ── Robin Baskets: one-click multi-coin buy (N independent native-ETH buys) ─────
+function bkHas(addr){ return BK.some((r) => r.addr.toLowerCase() === String(addr).toLowerCase()); }
+function seedBasket(){
+  const ranked = UNI_TOKENS.map((a) => META.get(a)).filter(Boolean).sort((x, y) => (y.volUsd||0) - (x.volUsd||0));
+  for (const m of ranked.slice(0, 3)) BK.push({ addr: m.addr, symbol: m.symbol, image: m.image, decimals: m.decimals || 18, liqUsd: m.liqUsd || 0, eth: '0.05', status: '' });
+}
+function bkStatusHtml(r){
+  if (!r.status) return '';
+  if (r.status === 'done' && r.txHash && explorer) return `<a class="st ok" href="${explorer}/tx/${r.txHash}" target="_blank" rel="noopener">done</a>`;
+  return `<span class="st ${r.statusCls || ''}">${esc(r.status)}</span>`;
+}
+function renderBasket(){
+  $('bkRows').innerHTML = BK.length ? BK.map((r, i) => `
+    <div class="bkrow" data-i="${i}">
+      ${icHtml(r, 'ic')}
+      <span class="sy">${esc(tsym(r.symbol || '?'))}</span>
+      <input class="amt2" data-i="${i}" type="text" inputmode="decimal" value="${esc(r.eth)}" aria-label="ETH for ${esc(tsym(r.symbol||''))}" ${bkBusy ? 'readonly' : ''} />
+      <span class="eth">ETH</span>
+      ${r.status ? bkStatusHtml(r) : (bkBusy ? '' : `<button class="rm" data-rm="${i}" type="button" aria-label="Remove">&times;</button>`)}
+    </div>`).join('') : `<div style="padding:14px;text-align:center;color:var(--faint);font-size:.85rem">Add a coin to start your basket.</div>`;
+  $('bkRows').querySelectorAll('.amt2').forEach((el) => el.addEventListener('input', () => { const r = BK[+el.dataset.i]; if (r) r.eth = el.value; updateBkTotal(); syncBasket(); }));
+  $('bkRows').querySelectorAll('.rm').forEach((el) => el.addEventListener('click', () => { BK.splice(+el.dataset.rm, 1); renderBasket(); }));
+  $('bkAdd').disabled = bkBusy || BK.length >= 8;
+  updateBkTotal(); syncBasket();
+}
+function bkTotalWei(){
+  let t = 0n;
+  for (const r of BK){ const w = toUnits(r.eth, 18); if (w && w > 0n) t += w; }
+  return t;
+}
+function updateBkTotal(){ $('bkTotal').textContent = fromUnits(bkTotalWei(), 18) + ' ETH'; }
+function setBkAct(label, disabled){ const a = $('bkAct'); a.textContent = label; a.disabled = !!disabled; }
+function setBkStatus(msg, cls){ const s = $('bkStatus'); s.className = 'status' + (cls ? ' ' + cls : ''); s.innerHTML = msg || ''; }
+function bkLegs(){ return BK.map((r, i) => ({ r, i, w: toUnits(r.eth, 18) })).filter((x) => x.w && x.w > 0n); }
+function syncBasket(){
+  if (bkBusy) return;
+  const legs = bkLegs();
+  if (!LIVE){ setBkAct('Trading opens shortly', true); return; }
+  if (!Pad.account()){ setBkAct('Connect wallet', false); return; }
+  if (legs.length < 2){ setBkAct('Add at least 2 coins', true); return; }
+  setBkAct(`Buy basket · ${fromUnits(bkTotalWei(), 18)} ETH`, false);
+}
+async function buyBasket(){
+  if (bkBusy) return;
+  if (!Pad.account()){ try { await Pad.connect(); afterConnect(); } catch {} return; }
+  const legs = bkLegs();
+  if (legs.length < 2) return;
+  bkBusy = true; setBkStatus('');
+  BK.forEach((r) => { r.status = ''; r.statusCls = ''; r.txHash = ''; });
+  renderBasket();
+  let done = 0, failed = 0, stopped = false;
+  for (let k = 0; k < legs.length; k++){
+    const { r } = legs[k];
+    setBkAct(`Buying ${k + 1} of ${legs.length}…`, true);
+    r.status = 'signing…'; r.statusCls = 'run'; renderBasket();
+    try {
+      const slip = GUARD ? autoSlipFor(r.liqUsd ?? (META.get(r.addr.toLowerCase())?.liqUsd)) : SLIP;
+      const quote = await Pad.uniQuote({ token: r.addr, side: 'buy', amountWei: toUnits(r.eth, 18).toString(), slippagePct: slip });
+      const tx = await Pad.uniSwap(quote, { simulate: GUARD });
+      r.status = 'confirming…'; r.statusCls = 'run'; renderBasket();
+      const rc = await tx.wait();
+      r.txHash = (rc && rc.hash) || (tx && tx.hash) || ''; r.status = 'done'; r.statusCls = 'ok'; done++;
+    } catch (e){
+      r.status = 'failed'; r.statusCls = 'err'; failed++;
+      // a wallet rejection OR running out of ETH means the rest will just fail too: stop the basket
+      // rather than prompt through N more doomed legs.
+      if (/reject|denied|4001|user cancel|not enough eth/i.test(String(e?.message || e))){ stopped = true; renderBasket(); break; }
+    }
+    renderBasket();
+  }
+  bkBusy = false;
+  const parts = [`${done} bought`]; if (failed) parts.push(`${failed} failed`); if (stopped) parts.push('stopped');
+  setBkStatus(parts.join(', ') + '.', failed || stopped ? 'err' : 'ok');
+  refreshBalances(); renderBasket();
+}
+$('bkAdd').addEventListener('click', () => { pickerMode = 'basket'; openPicker(); });
+$('bkAct').addEventListener('click', buyBasket);
 
 // ── boot ────────────────────────────────────────────────────────────────────
 async function boot(){
@@ -591,6 +782,7 @@ async function boot(){
     want = (ranked[0]?.addr || UNI_TOKENS[0]).toLowerCase();
   }
   TOKEN = { ...(await ensureMeta(want)), addr: want };
+  applyGuardSlip();  // Guard on by default: tune the floor to this coin's liquidity
   paintTokens();
   LIVE = await Pad.uniLive();
   if (!LIVE) setStatus('The top-token swap desk goes live shortly - liquidity and pricing are being wired up. Check back soon.', '');
