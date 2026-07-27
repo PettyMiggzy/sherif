@@ -49,6 +49,22 @@ export function stats() {
   };
 }
 
+// Cache token + connection lists (they barely change) so repeated picker opens cost ZERO upstream budget
+// and zero outbound work from our own endpoint. Served straight from memory within the TTL.
+const _cache = new Map();
+const LIST_TTL = 600000; // 10 min
+async function cached(key, doForward) {
+  const now = Date.now();
+  const hit = _cache.get(key);
+  if (hit && hit.exp > now) return { status: 200, json: hit.json, cached: true };
+  const out = await doForward();
+  if (out.status >= 200 && out.status < 300 && out.json) {
+    _cache.set(key, { exp: now + LIST_TTL, json: out.json });
+    if (_cache.size > 100) for (const [k, v] of _cache) if (v.exp <= now) _cache.delete(k);
+  }
+  return out;
+}
+
 async function forward(path, { method = "GET", query, body } = {}) {
   let url = BASE + path;
   if (query) url += "?" + query.toString();
@@ -76,8 +92,7 @@ export async function handleTokens(q) {
   const p = new URLSearchParams(q || {});
   const chains = (p.get("chains") || "").split(",").map(Number).filter((n) => allowed(n) || n === CFG.lifiDestChain);
   if (!chains.length) return { status: 400, json: { error: "no allowed chains" } };
-  const p2 = new URLSearchParams(); p2.set("chains", chains.join(","));
-  return forward("/tokens", { query: p2 });
+  return cached("tokens:" + chains.join(","), () => forward("/tokens", { query: new URLSearchParams({ chains: chains.join(",") }) }));
 }
 
 // GET /api/lifi/connections — tokens that can ACTUALLY route into Robinhood Chain (LI.FI's own answer to
@@ -86,7 +101,7 @@ export async function handleConnections(q) {
   const p = new URLSearchParams(q || {});
   if (p.get("fromChain") && !allowed(p.get("fromChain"))) return { status: 400, json: { error: "source chain not allowed" } };
   p.set("toChain", DEST);
-  return forward("/connections", { query: p });
+  return cached("conn:" + p.toString(), () => forward("/connections", { query: p }));
 }
 
 // GET /api/lifi/status — cross-chain delivery tracking.
