@@ -70,7 +70,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .mobile-menu a{padding:13px 4px;color:var(--ink);font-weight:600;border-bottom:1px solid var(--line-2)}
 .mobile-menu a.go{color:#0a0e05;margin-top:10px;border:none}
 .mobile-menu.open{display:flex}
-@media(max-width:900px){.nav-links{display:none}.navtoggle{display:inline-flex}.nav-cta .nav-launch{display:none}}
+@media(max-width:900px){.nav-links{display:none}.navtoggle{display:inline-flex}.nav-cta .nav-launch{display:none}.nav-in{padding-left:14px;padding-right:14px;gap:12px}.brand{font-size:1.05rem}}
 @media(max-width:400px){.nav-cta #connectBtn{font-size:.82rem;padding:9px 12px}}
 
 main{padding:34px 0 70px}
@@ -441,15 +441,17 @@ async function ensureMeta(addr){
   META.set(a, m); return m;
 }
 
+// Real Ethereum mark (white), used for native ETH instead of a bare glyph so the pay side shows a proper logo.
+const ETH_MARK = '<svg viewBox="0 0 256 417" style="width:58%;height:58%" fill="#fff" aria-hidden="true"><path fill-opacity=".55" d="M127.9 0l-2.8 9.5v275.7l2.8 2.8 127.9-75.6z"/><path d="M127.9 0L0 212.2l127.9 75.6V154.2z"/><path fill-opacity=".55" d="M127.9 312.1l-1.6 2v98.2l1.6 4.6L256 236.6z"/><path d="M127.9 416.9V312.1L0 236.6z"/><path fill-opacity=".35" d="M127.9 287.8l127.9-75.6-127.9-58.1z"/><path fill-opacity=".55" d="M0 212.2l127.9 75.6V154.2z"/></svg>';
 // paint an icon element (span.ic) for a token
 function paintIc(el, t){
   el.textContent = ''; el.removeAttribute('style');
-  if (t.native){ el.style.background = 'linear-gradient(135deg,#6c7cff,#455bd6)'; el.style.color = '#fff'; el.textContent = 'Ξ'; return; }
+  if (t.native){ el.style.background = 'linear-gradient(135deg,#6c7cff,#455bd6)'; el.innerHTML = ETH_MARK; return; }
   if (t.image){ const img = document.createElement('img'); img.alt = ''; img.src = t.image; img.onerror = () => { img.remove(); el.textContent = (t.symbol||'?').slice(0,2); el.style.cssText = avaStyle(t.addr); }; el.appendChild(img); return; }
   el.style.cssText = avaStyle(t.addr); el.textContent = (t.symbol||'?').replace(/[^\w]/g,'').slice(0,2) || '?';
 }
 function icHtml(t, cls){
-  if (t.native) return `<span class="${cls}" style="background:linear-gradient(135deg,#6c7cff,#455bd6);color:#fff">Ξ</span>`;
+  if (t.native) return `<span class="${cls}" style="background:linear-gradient(135deg,#6c7cff,#455bd6)">${ETH_MARK}</span>`;
   if (t.image) return `<span class="${cls}"><img src="${esc(t.image)}" alt="" onerror="this.parentNode.textContent='${esc((t.symbol||'?').slice(0,2))}'"/></span>`;
   return `<span class="${cls}" style="${avaStyle(t.addr)}">${esc((t.symbol||'?').replace(/[^\w]/g,'').slice(0,2) || '?')}</span>`;
 }

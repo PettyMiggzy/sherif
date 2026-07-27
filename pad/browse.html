@@ -101,7 +101,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .mobile-menu a{padding:13px 4px;color:var(--ink);font-weight:600;border-bottom:1px solid var(--line-2)}
 .mobile-menu a.go{color:#0a0e05;margin-top:10px;border:none}
 .mobile-menu.open{display:flex}
-@media(max-width:900px){.nav-links{display:none}.navtoggle{display:inline-flex}.nav-cta .nav-launch{display:none}}
+@media(max-width:900px){.nav-links{display:none}.navtoggle{display:inline-flex}.nav-cta .nav-launch{display:none}.nav-in{padding-left:14px;padding-right:14px;gap:12px}.brand{font-size:1.05rem}}
 @media(max-width:400px){.nav-cta #connectBtn{font-size:.82rem;padding:9px 12px}}
 
 /* announcement */
@@ -243,14 +243,14 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .board{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:14px;margin-top:14px}
 /* mobile: two tokens per row (denser, built to hold a lot of tokens) instead of one big card per line */
 @media(max-width:560px){
-  .board{grid-template-columns:repeat(2,1fr);gap:9px}
-  .bcard{padding:9px;border-radius:11px}
+  .board{grid-template-columns:1fr;gap:11px}
+  .bcard{padding:13px;border-radius:13px}
   .bcard .btop{gap:7px}
-  .bav,.bcard .bav{width:30px;height:30px}
-  .bnm{font-size:.82rem}.btk{font-size:.68rem}
+  .bav,.bcard .bav{width:42px;height:42px}
+  .bnm{font-size:1rem}.btk{font-size:.78rem}
   .bstats{gap:3px;margin:8px 0 7px}
-  .bstats .bk{font-size:.56rem}.bstats .bv{font-size:.72rem}
-  .bqbuy{font-size:.72rem;padding:7px;gap:4px}.bqbuy .bamt{font-size:.64rem}
+  .bstats .bk{font-size:.62rem}.bstats .bv{font-size:.9rem}
+  .bqbuy{font-size:.9rem;padding:11px;gap:6px}.bqbuy .bamt{font-size:.74rem}
   .bchg{font-size:.62rem}
   .bsoon{font-size:.5rem;padding:2px 6px;top:7px;right:7px}
 }
@@ -308,7 +308,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 /* trending cards */
 .tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
 @media(max-width:1000px){.tgrid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:560px){.tgrid{grid-template-columns:repeat(2,1fr);gap:9px}.tcard{padding:11px}.tcard .g3{gap:4px;margin:10px 0 8px}}
+@media(max-width:560px){.tgrid{grid-template-columns:1fr;gap:11px}.tcard{padding:15px}.tcard .g3{gap:4px;margin:10px 0 8px}}
 .tcard{padding:16px;transition:.16s;position:relative}
 .tcard:hover{border-color:var(--line-strong);transform:translateY(-2px)}
 .tcard .row{display:flex;align-items:center;gap:11px}
