@@ -236,6 +236,11 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 .soc svg{width:17px;height:17px;display:block}
 /* dev-bag vesting lock (gold) */
 .lockbadge{font-family:var(--mono);font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;background:rgba(245,197,66,.14);border:1px solid var(--gold);color:var(--gold);border-radius:999px;padding:3px 8px;white-space:nowrap;align-self:center}
+.dlockpill{display:inline-flex;align-items:center;gap:4px;padding:2px 9px 2px 6px;border-radius:999px;font-family:var(--mono);font-weight:800;font-size:.58rem;letter-spacing:.06em;line-height:1;align-self:center;white-space:nowrap;background:linear-gradient(180deg,rgba(57,255,20,.15),rgba(30,180,10,.08));border:1px solid rgba(120,255,60,.5);color:#d6ffab;box-shadow:0 0 12px -3px rgba(90,230,40,.6)}
+.dlockpill svg{width:12px;height:12px;flex:none}
+.dlockpill .dl-fl{transform-origin:50% 85%;animation:dlpuls 1.5s ease-in-out infinite;filter:drop-shadow(0 0 3px rgba(90,230,40,.85))}
+@keyframes dlpuls{0%,100%{transform:scale(1)}50%{transform:scale(1.14)}}
+@media(prefers-reduced-motion:reduce){.dlockpill .dl-fl{animation:none}}
 .devlock{border-color:var(--gold);background:linear-gradient(180deg,rgba(245,197,66,.06),var(--panel))}
 .devlock h3 .meta{color:var(--gold)}
 .dl-blurb{color:var(--ink-dim);font-size:.84rem;line-height:1.5;margin:0 0 12px}.dl-blurb b{color:var(--ink)}
@@ -265,6 +270,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="dlGrn" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#2a8000"/><stop offset=".5" stop-color="#39ff14"/><stop offset="1" stop-color="#c8ff8a"/></linearGradient></defs></svg>
 <header class="top"><div class="top-in">
   <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" style="height:30px;width:auto" onerror="this.style.display='none'" /><span>ROBIN <span class="tag">LABS</span></span></a>
   <div class="spacer"></div><a class="nlink" href="browse.html">← All coins</a><a class="nlink" href="rewards.html" id="rewardsNav" style="display:none">Rewards</a><a class="nlink" href="profile.html">Portfolio</a><button class="btn btn-ghost" id="connectBtn" type="button">Connect wallet</button>
@@ -275,7 +281,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
   <div class="idbar">
     <div class="pfp" id="pfp">?</div>
     <div class="who">
-      <h1><span id="nm">Loading…</span> <span class="tk" id="tk"></span> <span id="lockBadge" class="lockbadge" style="display:none">🔒 Dev locked</span> <a id="migBadge" class="lockbadge" style="display:none;text-decoration:none"></a> <a id="migBridge" class="lockbadge" style="display:none;text-decoration:none" title="Bring your holders across from any chain">Buy from any chain</a></h1>
+      <h1><span id="nm">Loading…</span> <span class="tk" id="tk"></span> <span id="lockBadge" class="dlockpill" style="display:none" title="Dev bag locked on-chain, this dev cannot dump"><svg class="dl-fl" viewBox="0 0 24 24" fill="url(#dlGrn)" aria-hidden="true"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg><svg class="dl-lock" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#bfff7a" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#bfff7a" stroke-width="2"/></svg>DEV LOCKED</span> <a id="migBadge" class="lockbadge" style="display:none;text-decoration:none"></a> <a id="migBridge" class="lockbadge" style="display:none;text-decoration:none" title="Bring your holders across from any chain">Buy from any chain</a></h1>
       <span class="ca"><span id="ca" class="mono">-</span> <button id="copyCa" type="button">Copy</button></span>
     </div>
   </div>

@@ -288,6 +288,8 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .bverif{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:999px;font-family:var(--mono);font-weight:800;font-size:10px;background:rgba(63,132,255,.16);border:1px solid rgba(90,150,255,.44);color:#bcd4ff;white-space:nowrap}
 .bverif svg{width:11px;height:11px}
 @keyframes rlpuls{0%,100%{transform:scale(1)}50%{transform:scale(1.13)}}
+.bdlockpill{display:inline-flex;align-items:center;gap:3px;padding:1px 6px 1px 4px;border-radius:999px;font-family:var(--mono);font-weight:800;font-size:10px;line-height:1;background:linear-gradient(180deg,rgba(57,255,20,.16),rgba(30,180,10,.08));border:1px solid rgba(120,255,60,.45);color:#d6ffab;white-space:nowrap}
+.bdlockpill svg{width:11px;height:12px;transform-origin:50% 85%;animation:rlpuls 1.5s ease-in-out infinite;filter:drop-shadow(0 0 3px rgba(90,230,40,.8))}
 @media(prefers-reduced-motion:reduce){.bboostpill svg{animation:none}}
 .btop{display:flex;align-items:center;gap:10px}
 .bav{width:42px;height:42px;border-radius:50%;flex:none;object-fit:cover;border:1.5px solid var(--line);background:var(--bg-2)}
@@ -439,6 +441,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <linearGradient id="rlFlO" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff3b1a"/><stop offset=".5" stop-color="#ff8a1e"/><stop offset="1" stop-color="#ffe27a"/></linearGradient>
   <linearGradient id="rlFlG" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#e0a800"/><stop offset=".5" stop-color="#ffcf40"/><stop offset="1" stop-color="#fff4c2"/></linearGradient>
+  <linearGradient id="rlGrnB" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#2a8000"/><stop offset=".5" stop-color="#39ff14"/><stop offset="1" stop-color="#c8ff8a"/></linearGradient>
   <path id="rlflame" d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
 </defs></svg>
 
@@ -542,7 +545,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 <script type="module">
 import * as Pad from './assets/wallet.js';
 import { DEMO, DEMO_COINS, DEMO_STATS } from './assets/demo.js';
-import { OWNER, isDeployed, UNI_TOKENS } from './assets/config.js';
+import { OWNER, isDeployed, UNI_TOKENS, API_BASE } from './assets/config.js';
 
 const $ = (id) => document.getElementById(id);
 const ETH_USD = 1920;
@@ -731,7 +734,7 @@ function bcard(c){
     : `<div class="bprog"><div class="bptrack"><div class="bpfill${prog>=70?' hot':''}" style="width:${Math.min(100,prog)}%"></div></div><span class="bppct">${prog}%</span></div>`;
   return `<div class="bcard" data-tok="${esc(String(c.token).toLowerCase())}">
     <a class="bcard-link" href="${url}" aria-label="View ${esc(c.name||'Token')}"></a>
-    <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btkrow"><div class="btk">${esc(tsym(c.symbol))}</div><span class="bboost" data-boost style="display:none"></span></div></div><span class="bchg ${chgCls}" data-chg title="price change since launch"${chgInner?'':' style="display:none"'}>${chgInner}</span></div>
+    <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btkrow"><div class="btk">${esc(tsym(c.symbol))}</div><span class="bboost" data-boost style="display:none"></span><span class="bdlock" data-dlock style="display:none"></span></div></div><span class="bchg ${chgCls}" data-chg title="price change since launch"${chgInner?'':' style="display:none"'}>${chgInner}</span></div>
     <div class="bstats"><div><span class="bk">MC</span><span class="bv" data-mc>${fmtUsd(cMc(c))}</span></div><div><span class="bk">Vol</span><span class="bv" data-vol>${fmtUsd(cVol(c))}</span></div><div><span class="bk">Holders</span><span class="bv">${fmtNum(c.holders!=null?c.holders:(c.tradesAll||0))}</span></div></div>
     ${foot}
     <button class="bqbuy" type="button" onclick="quickBuy('${esc(c.token)}')">${BOLT}<span>Quick Buy</span><span class="bamt">0.1 ETH</span></button>
@@ -923,6 +926,24 @@ async function enrichBoosts(coins) {
   }
 }
 
+// Dev-lock trust badge: a coin whose creator locked their bag on-chain (vesting) gets a green flame.
+// Per-coin lookup, cached. At large scale this moves into the feed; for now client-side, no redeploy.
+const _dlockCache = new Map();
+async function enrichDevlock(coins) {
+  if (DEMO || !API_BASE) return;
+  for (const c of coins) {
+    const t = String(c.token || '').toLowerCase(); if (!t) continue;
+    const card = document.querySelector(`.bcard[data-tok="${t}"]`); if (!card) continue;
+    const slot = card.querySelector('[data-dlock]'); if (!slot) continue;
+    let has = _dlockCache.get(t);
+    if (has === undefined) {
+      try { const r = await fetch(`${API_BASE}/api/coin/${t}/devlock`, { cache: 'no-store' }); has = r.ok ? !!(await r.json()).hasLock : false; } catch { has = false; }
+      _dlockCache.set(t, has);
+    }
+    if (has) { slot.innerHTML = `<span class="bdlockpill" title="Dev bag locked on-chain"><svg viewBox="0 0 24 24" fill="url(#rlGrnB)" aria-hidden="true"><use href="#rlflame"/></svg>LOCKED</span>`; slot.style.display = ''; }
+  }
+}
+
 function resetBoard(opts) {
   session++; offset = 0; done = false; busy = false;
   // soft reset (a live re-poll) repaints in place with no skeleton flash; a hard reset (tab/search) shows it
@@ -949,6 +970,7 @@ async function loadNext() {
   $('board').insertAdjacentHTML('beforeend', render.map(bcard).join(''));
   enrichBoard(coins);                             // async: real 24h change + MC/Vol from DexScreener (pad coins)
   enrichBoosts(coins);                            // async: DexScreener boost/paid badge on matching cards
+  enrichDevlock(coins);                           // async: green "LOCKED" flame on coins whose dev locked their bag
   offset += coins.length;
   if (coins.length < PAGE) done = true;
   busy = false; syncFooter();
