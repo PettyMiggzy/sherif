@@ -124,7 +124,7 @@ footer{border-top:1px solid var(--line-2);margin-top:20px}
           <input id="getAmt" placeholder="0.0" value="" aria-label="Estimated amount received" readonly />
           <span class="selwrap"><img id="getCoinIc" class="selic" alt="" onerror="this.style.visibility='hidden'" /><select id="dstCoin" aria-label="Coin to receive"></select></span>
         </div>
-        <div class="sub">on <b style="color:var(--lime)">Robinhood Chain</b> · the Robin Labs coin you want</div>
+        <div class="sub">on <b style="color:var(--lime)">Robinhood Chain</b> · ETH, or any Robin Labs coin</div>
       </div>
 
       <div class="route" id="routeInfo"></div>
@@ -166,6 +166,8 @@ const $ = (id) => document.getElementById(id);
 const cbtn = $('connectBtn'), cta = $('buyCta');
 const esc = (s) => String(s == null ? '' : s);
 const PREVIEW_ADDR = '0x742d35Cc6634C0532925a3b844Bc454e4438f44e'; // for indicative quotes before connect
+const ETH_LOGO = 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png';
+const DST_LIST = () => [Bridge.NATIVE, ...UNI_TOKENS]; // ETH on Robinhood Chain first (the easy default), then the coins
 
 // ── coin metadata (symbol + logo) from DexScreener, same source the rest of the pad uses ──
 const COINS = new Map(); // addr(lc) -> { addr, symbol, image, decimals }
@@ -187,7 +189,7 @@ async function loadCoins(){
 
 // ── state ──
 let quoteSeq = 0, lastQuote = null, busy = false;
-const state = { chain: 42161, token: null, coin: null };
+const state = { chain: 42161, token: null, coin: Bridge.NATIVE }; // default: receive ETH on Robinhood Chain
 
 function fillChains(){
   $('srcChain').innerHTML = Bridge.SRC_CHAINS.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
@@ -205,9 +207,9 @@ function fillTokens(){
   $('payTokIc').style.visibility = 'visible';
 }
 function fillCoins(){
-  const opts = UNI_TOKENS.map((a) => { const c = COINS.get(a) || { symbol: a.slice(0,6) }; return `<option value="${esc(a)}">${esc(c.symbol)}</option>`; }).join('');
+  const opts = DST_LIST().map((a) => { const c = COINS.get(a) || { symbol: a.slice(0,6) }; const lbl = (a === Bridge.NATIVE) ? 'ETH (Robinhood Chain)' : (c.symbol || a.slice(0,6)); return `<option value="${esc(a)}">${esc(lbl)}</option>`; }).join('');
   $('dstCoin').innerHTML = opts;
-  if (!UNI_TOKENS.includes(state.coin)) state.coin = UNI_TOKENS[0];
+  if (!DST_LIST().includes(state.coin)) state.coin = Bridge.NATIVE;
   $('dstCoin').value = state.coin;
   paintCoinIc();
 }
@@ -323,7 +325,8 @@ cta.addEventListener('click', onBuy);
   // deep-link ?token=<coin> (from a coin page) preselects the coin to receive
   const p = (new URLSearchParams(location.search).get('token') || '').toLowerCase();
   state.token = Bridge.tokensFor(state.chain)[0].addr;
-  if (/^0x[0-9a-f]{40}$/.test(p) && UNI_TOKENS.includes(p)) state.coin = p;
+  COINS.set(Bridge.NATIVE, { addr: Bridge.NATIVE, symbol: 'ETH', image: ETH_LOGO, decimals: 18 });
+  if (/^0x[0-9a-f]{40}$/.test(p) && UNI_TOKENS.includes(p)) state.coin = p; // a coin deep-link overrides the ETH default
   // Seed placeholder coin metadata synchronously so the selectors populate IMMEDIATELY,
   // never blocked behind the DexScreener fetch (a slow fetch would otherwise leave the page empty).
   UNI_TOKENS.forEach((a) => { if (!COINS.has(a)) COINS.set(a, { addr: a, symbol: '…', image: null, decimals: 18 }); });
