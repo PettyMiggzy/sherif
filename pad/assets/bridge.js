@@ -15,7 +15,8 @@ import { ethers } from "./ethers.min.js";
 import * as Pad from "./wallet.js";
 
 const LIFI = "https://li.quest/v1";
-const INTEGRATOR = "robinlab";                  // identifies us to LI.FI (matches robinlab.io); fee-sharing enabled later via LI.FI registration
+const INTEGRATOR = "labs";                      // LI.FI Portal integrator id (fee wallet configured in the Portal); CASE-SENSITIVE
+const FEE = "0.01";                             // our 1% integrator fee -> the Portal-configured wallet (LI.FI adds its own 0.25%). No API key needed.
 export const DEST_CHAIN = 4663;                  // Robinhood Chain
 export const NATIVE = "0x0000000000000000000000000000000000000000";
 const hex = (n) => "0x" + Number(n).toString(16);
@@ -58,6 +59,7 @@ export async function quote({ fromChain, fromToken, fromAmount, fromAddress, toT
     fromAmount: String(fromAmount),
     fromAddress,
     integrator: INTEGRATOR,
+    fee: FEE,
   });
   const r = await fetch(`${LIFI}/quote?${qs.toString()}`, { headers: { accept: "application/json" } });
   const j = await r.json().catch(() => null);
