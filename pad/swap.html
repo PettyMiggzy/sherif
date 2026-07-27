@@ -162,6 +162,12 @@ main{padding:34px 0 70px}
 .autonote{font-size:.74rem;color:var(--lime-deep);margin-top:8px;display:none}
 .slip.autoslip .autonote{display:block}
 
+/* pre-trade firewall badge */
+.fwbadge{margin:2px 4px 10px;padding:9px 11px;border:1px solid var(--line-2);border-radius:11px;background:var(--bg-2);line-height:1.35}
+.fwbadge:empty{display:none;margin:0;padding:0;border:0}
+.fwbadge.red{border-color:rgba(255,90,82,.5);background:rgba(255,90,82,.07)}
+.fwbadge.amber{border-color:rgba(245,197,66,.4)}
+
 /* basket */
 .bk .top{display:flex;justify-content:space-between;align-items:center;font-size:.76rem;color:var(--faint);margin:2px 4px 10px}
 .bkrows{display:flex;flex-direction:column;gap:8px}
@@ -244,6 +250,8 @@ main{padding:34px 0 70px}
       <button class="gear" id="gear" type="button" aria-label="Slippage and Guard settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </div>
 
+    <div id="fwBadge" class="fwbadge"></div>
+
     <div class="slip autoslip" id="slip">
       <div class="guardrow">
         <div class="gl"><div class="t">Robin Guard</div><div class="d">Auto slippage plus a pre-sign safety check</div></div>
@@ -322,6 +330,7 @@ main{padding:34px 0 70px}
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
+import * as Safety from './assets/safety.js';
 import { CHAIN, UNI_TOKENS, UNI_NATIVE, UNI_FEE_BPS, isUniToken } from './assets/config.js';
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
@@ -374,6 +383,10 @@ let MODE = 'swap';       // 'swap' | 'basket'
 let pickerMode = 'swap'; // where the token picker sends its pick: the swap card, or the basket
 const BK = [];           // basket legs: [{addr,symbol,image,decimals,liqUsd,eth,status,statusCls,txHash}]
 let bkBusy = false;      // a basket run owns the basket button
+let firewall = null;     // current pre-trade firewall verdict for TOKEN (buy side)
+let fwSeq = 0;           // race guard so a fast token switch can't paint a stale badge
+const fwCache = new Map(); // addr(lc) -> best verdict we have (GoPlus, upgraded to round-trip)
+const fwProbed = new Set(); // addrs whose one-extra round-trip sell probe already ran
 
 const payTok = () => SIDE === 'buy' ? NATIVE : TOKEN;
 const getTok = () => SIDE === 'buy' ? TOKEN : NATIVE;
@@ -397,6 +410,7 @@ function setGuard(on){
   $('guardSw').setAttribute('aria-checked', GUARD ? 'true' : 'false');
   $('slip').classList.toggle('autoslip', GUARD);
   if (GUARD) applyGuardSlip(); // else the user's manual SLIP stands
+  paintFirewall();             // re-label the button for the new Guard state
   resetQuote(); syncAction(); scheduleQuote();
 }
 
@@ -465,6 +479,50 @@ async function balOf(t, acct){
   try { return t.native ? await Pad.ethBalance(acct) : await Pad.tokenBalanceWei(t.addr, acct); } catch { return null; }
 }
 
+// ── pre-trade honeypot firewall ────────────────────────────────────────────────
+function paintFirewall(){
+  const el = $('fwBadge');
+  if (!firewall || MODE !== 'swap' || SIDE !== 'buy'){ el.className = 'fwbadge'; el.innerHTML = ''; return; }
+  if (firewall.code === 'scanning'){ el.className = 'fwbadge amber'; el.innerHTML = '<span style="color:var(--faint);font-size:.76rem">Checking this coin is safe to sell…</span>'; return; }
+  el.className = 'fwbadge ' + (firewall.level === 'red' ? 'red' : firewall.level === 'amber' ? 'amber' : '');
+  el.innerHTML = Safety.firewallBadge(firewall);
+}
+// Fast first pass: GoPlus-only verdict for the selected token, race-guarded + cached.
+async function ensureFirewall(){
+  if (!TOKEN){ firewall = null; paintFirewall(); return; }
+  const addr = TOKEN.addr.toLowerCase();
+  const seq = ++fwSeq;
+  if (fwCache.has(addr)){ firewall = fwCache.get(addr); paintFirewall(); return; }
+  firewall = { level: 'amber', code: 'scanning', flags: [] }; paintFirewall();
+  try {
+    const v = await Safety.goPlusHoneypot(addr);
+    if (seq !== fwSeq) return;               // token changed while scanning
+    fwCache.set(addr, v); firewall = v; paintFirewall(); syncAction();
+  } catch { if (seq === fwSeq){ firewall = null; paintFirewall(); } }
+}
+// Cheap upgrade to the full round-trip verdict: reuse the buy quote's estimated output as the sell-probe
+// input, so it costs exactly ONE extra proxy quote per token (only after a real buy quote succeeded).
+async function upgradeFirewall(resp){
+  if (!TOKEN) return;
+  const addr = TOKEN.addr.toLowerCase();
+  if (fwProbed.has(addr)) return;
+  fwProbed.add(addr);
+  const seq = fwSeq;
+  const est = readOut(resp).out;
+  const sellProbe = async () => {
+    try {
+      if (!est || est <= 0n) return { ok: true, skipped: true };
+      await Pad.uniQuote({ token: addr, side: 'sell', amountWei: est.toString(), slippagePct: SLIP });
+      return { ok: true };
+    } catch (e){ return { ok: false, error: String(e && e.message || e) }; }
+  };
+  try {
+    const v = await Safety.preTradeFirewall({ token: addr, side: 'buy', sellProbe });
+    if (seq !== fwSeq) return;
+    fwCache.set(addr, v); firewall = v; paintFirewall(); syncAction();
+  } catch { fwProbed.delete(addr); }
+}
+
 // ── quoting (debounced) ───────────────────────────────────────────────────────
 let quoteTimer = null;
 function scheduleQuote(){ clearTimeout(quoteTimer); quoteTimer = setTimeout(runQuote, 350); }
@@ -484,6 +542,7 @@ async function runQuote(){
     const resp = await Pad.uniQuote({ token: TOKEN.addr, side: SIDE, amountWei: amtWei.toString(), slippagePct: SLIP });
     if (seq !== quoteSeq) return;   // superseded
     quoteResp = resp; paintQuote(resp); syncAction();
+    if (SIDE === 'buy') upgradeFirewall(resp); // one-time round-trip sell probe once a real quote exists
   } catch (e){
     if (seq !== quoteSeq) return;
     quoteResp = null; $('getAmt').value = ''; $('det').classList.remove('show');
@@ -554,6 +613,7 @@ function syncAction(){
   const amtWei = toUnits($('payAmt').value, payDecimals());
   if (amtWei == null || amtWei <= 0n){ setAction('Enter an amount', true); return; }
   if (!quoteResp){ setAction('Fetching best price…', true); return; }
+  if (SIDE === 'buy' && GUARD && firewall && firewall.level === 'red'){ setAction('Blocked - sell route unsafe', true); return; }
   setAction((SIDE === 'buy' ? 'Buy ' : 'Sell ') + tsym(TOKEN.symbol), false);
 }
 
@@ -564,6 +624,11 @@ async function doAction(){
   const amtWei = toUnits($('payAmt').value, payDecimals());
   // Refuse to execute a quote that no longer matches the on-screen amount/token/side (debounce race).
   if (amtWei == null || amtWei <= 0n || !quoteMatches(amtWei)){ resetQuote(); syncAction(); scheduleQuote(); return; }
+  // Pre-trade firewall gate (buys only). Guard on = hard block on a red verdict; Guard off = explicit override.
+  if (SIDE === 'buy' && firewall && firewall.level === 'red'){
+    if (GUARD){ setStatus('Robin Guard blocked this trade. ' + Safety.firewallReason(firewall) + ' Turn Guard off in settings to override at your own risk.', 'err'); syncAction(); return; }
+    if (!window.confirm('This token looks unsafe:\n\n' + Safety.firewallReason(firewall) + '\n\nTrade anyway at your own risk?')) return;
+  }
   busy = true; setStatus('');
   try {
     if (SIDE === 'sell'){
@@ -615,11 +680,11 @@ async function pickToken(addr){
     renderBasket();
     return;
   }
-  resetQuote(); syncAction();               // invalidate the old token's quote IMMEDIATELY (before the async meta read)
+  resetQuote(); firewall = null; paintFirewall(); syncAction(); // invalidate old quote + badge IMMEDIATELY
   TOKEN = { ...(await ensureMeta(addr)), addr };
   applyGuardSlip();
   const url = new URL(location.href); url.searchParams.set('c', addr); history.replaceState(null, '', url);
-  paintTokens(); scheduleQuote(); syncAction();
+  paintTokens(); ensureFirewall(); scheduleQuote(); syncAction();
 }
 // Does the held quote actually correspond to the current amount/token/side? A last-line defence so a
 // race (edit + click inside the debounce window) can never execute a swap for the wrong amount or token.
@@ -643,7 +708,9 @@ function resetQuote(){
 function flip(){
   SIDE = SIDE === 'buy' ? 'sell' : 'buy';
   $('payAmt').value = ''; resetQuote(); setStatus('');
+  firewall = null; paintFirewall();      // sell side isn't gated; drop the buy-side badge
   paintTokens(); syncAction();
+  if (SIDE === 'buy') ensureFirewall();
 }
 function setSlip(v){
   // Clamp to the server's accepted band (uniproxy forwards slippage only in [0.1, 15]; above that it
@@ -748,6 +815,12 @@ async function buyBasket(){
   for (let k = 0; k < legs.length; k++){
     const { r } = legs[k];
     setBkAct(`Buying ${k + 1} of ${legs.length}…`, true);
+    // Firewall: quarantine a honeypot leg (Guard on) instead of buying it.
+    if (GUARD){
+      let v = fwCache.get(r.addr.toLowerCase());
+      if (!v){ try { v = await Safety.goPlusHoneypot(r.addr); fwCache.set(r.addr.toLowerCase(), v); } catch {} }
+      if (v && v.level === 'red'){ r.status = 'blocked'; r.statusCls = 'err'; failed++; renderBasket(); continue; }
+    }
     r.status = 'signing…'; r.statusCls = 'run'; renderBasket();
     try {
       const slip = GUARD ? autoSlipFor(r.liqUsd ?? (META.get(r.addr.toLowerCase())?.liqUsd)) : SLIP;
@@ -759,8 +832,10 @@ async function buyBasket(){
     } catch (e){
       r.status = 'failed'; r.statusCls = 'err'; failed++;
       // a wallet rejection OR running out of ETH means the rest will just fail too: stop the basket
-      // rather than prompt through N more doomed legs.
-      if (/reject|denied|4001|user cancel|not enough eth/i.test(String(e?.message || e))){ stopped = true; renderBasket(); break; }
+      // rather than prompt through N more doomed legs. NOTE: wallet.js friendly() normalizes a
+      // rejection to "You cancelled the signature - nothing was sent.", so match "cancel"/"nothing was sent"
+      // (the raw 4001 code is already stripped by friendly()); a plain "reject/denied" may still appear pre-normalization.
+      if (/cancel|reject|denied|4001|not enough eth|nothing was sent/i.test(String(e?.message || e))){ stopped = true; renderBasket(); break; }
     }
     renderBasket();
   }
@@ -784,6 +859,7 @@ async function boot(){
   TOKEN = { ...(await ensureMeta(want)), addr: want };
   applyGuardSlip();  // Guard on by default: tune the floor to this coin's liquidity
   paintTokens();
+  ensureFirewall();  // scan the default token's safety in the background
   LIVE = await Pad.uniLive();
   if (!LIVE) setStatus('The top-token swap desk goes live shortly - liquidity and pricing are being wired up. Check back soon.', '');
   if (Pad.account()) afterConnect();

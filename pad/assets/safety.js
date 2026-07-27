@@ -196,6 +196,70 @@ export async function mountSafety(el, token) {
   catch { if (el) el.innerHTML = `<div style="color:#7f8570;font-size:.8rem">Safety scan unavailable right now.</div>`; }
 }
 
+// ── pre-trade honeypot firewall (the top-token swap desk) ────────────────────
+// A "can I actually sell this?" gate for the external top tokens (which, unlike our own
+// template coins, are arbitrary third-party contracts). Combines GoPlus token_security with a
+// round-trip sell-quote probe. FAILS OPEN to amber on any missing data / error, so its worst
+// case is a warning, never a wedged trade. Levels: "green" | "amber" | "red".
+export async function goPlusHoneypot(token) {
+  const gp = await goPlusToken(token);
+  if (!gp) return { level: "amber", code: "no-data", flags: [], buyTax: null, sellTax: null, gp: null };
+  const flags = [];
+  let level = "green";
+  if (truthy(gp.is_honeypot) || truthy(gp.cannot_sell_all)) { flags.push("honeypot"); level = "red"; }
+  if (truthy(gp.can_take_back_ownership) || truthy(gp.hidden_owner)) { flags.push("owner-takeback"); level = "red"; }
+  if (truthy(gp.transfer_pausable)) { flags.push("pausable"); level = "red"; }
+  const buyTax = pct(gp.buy_tax), sellTax = pct(gp.sell_tax);
+  if ((sellTax ?? 0) >= 50 || (buyTax ?? 0) >= 50) { flags.push("extreme-tax"); level = "red"; }
+  else if ((sellTax ?? 0) > 10 || (buyTax ?? 0) > 10) { flags.push("high-tax"); if (level !== "red") level = "amber"; }
+  if (truthy(gp.is_mintable)) { flags.push("mintable"); if (level === "green") level = "amber"; }
+  if (truthy(gp.slippage_modifiable)) { flags.push("mutable-tax"); if (level === "green") level = "amber"; }
+  return { level, code: "goplus", flags, buyTax, sellTax, gp };
+}
+
+// side "buy": also run the injected sellProbe() (a fn the caller supplies so this module stays free of
+// any wallet import) to catch the one-way trap - a token that quotes a BUY but cannot quote a SELL.
+// side "sell": GoPlus verdict is informational only (the caller's eth_call dry-run is the real sell guard).
+export async function preTradeFirewall({ token, side, sellProbe }) {
+  const [gp, rt] = await Promise.all([
+    goPlusHoneypot(token),
+    (side === "buy" && typeof sellProbe === "function") ? Promise.resolve().then(sellProbe).catch((e) => ({ ok: false, error: String(e && e.message || e) })) : Promise.resolve(null),
+  ]);
+  let level = gp.level, code = gp.code;
+  const flags = gp.flags.slice();
+  if (gp.level === "red") { /* GoPlus already condemned it */ }
+  else if (rt && rt.ok === false) { level = "red"; code = "no-sell-route"; if (!flags.includes("no-sell-route")) flags.push("no-sell-route"); }
+  else if (gp.level === "amber") { level = "amber"; if (rt && rt.ok && code === "no-data") code = "no-data-sell-ok"; }
+  else level = "green";
+  return { level, code, flags, buyTax: gp.buyTax, sellTax: gp.sellTax, sellRoute: rt, gp: gp.gp };
+}
+
+// One-line human reason, most-severe flag first. No stock emoji (project copy rule).
+export function firewallReason(v) {
+  if (!v) return "";
+  if (v.flags.includes("honeypot")) return "Flagged as a honeypot. You may not be able to sell.";
+  if (v.code === "no-sell-route") return "No sell route found. This token quotes a buy but not a sell.";
+  if (v.flags.includes("owner-takeback")) return "The owner can reclaim control of this token.";
+  if (v.flags.includes("pausable")) return "Transfers can be paused by the owner.";
+  if (v.flags.includes("extreme-tax")) return "Extreme trading tax (50% or more).";
+  if (v.flags.includes("high-tax")) return `High trading tax${v.sellTax != null ? ` (${Math.round(v.sellTax)}% sell)` : ""}.`;
+  if (v.flags.includes("mintable")) return "Supply is mintable by the owner.";
+  if (v.flags.includes("mutable-tax")) return "The trading tax can be changed.";
+  if (v.code === "no-data-sell-ok") return "Not on GoPlus yet. Live sell route confirmed.";
+  if (v.code === "no-data") return "Not scanned yet. Trade carefully.";
+  return "Sell route confirmed. Clean on every check.";
+}
+
+// Inline-styled pill string reusing the safety colour vocabulary. `compact` = pill only (no reason line).
+export function firewallBadge(v, compact = false) {
+  if (!v) return "";
+  const map = { green: { c: "#48d16a", t: "SAFE" }, amber: { c: "#f5c542", t: "REVIEW" }, red: { c: "#ff5a52", t: "BLOCKED" } };
+  const h = map[v.level] || map.amber;
+  const pill = `<span style="font-family:ui-monospace,Menlo,monospace;font-size:.62rem;letter-spacing:.12em;font-weight:800;color:#10140a;background:${h.c};padding:2px 8px;border-radius:999px">${h.t}</span>`;
+  if (compact) return pill;
+  return `<span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">${pill}<span style="color:#93a382;font-size:.76rem">${firewallReason(v)}</span></span>`;
+}
+
 if (typeof window !== "undefined") {
-  window.RobinSafety = { goPlusToken, goPlusAddress, scanToken, simulate, renderSafety, mountSafety };
+  window.RobinSafety = { goPlusToken, goPlusAddress, scanToken, simulate, renderSafety, mountSafety, goPlusHoneypot, preTradeFirewall, firewallReason, firewallBadge };
 }
