@@ -452,7 +452,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
     <div class="s"><img class="ic" src="assets/icons/launch.png" alt="" /><div><div class="v" id="stProj">-</div><div class="k">Projects Launched</div></div></div>
     <div class="s"><img class="ic" src="assets/icons/graduated.png" alt="" /><div><div class="v" id="stGrad">-</div><div class="k">Graduated</div></div></div>
     <div class="s"><img class="ic" src="assets/icons/reward.png" alt="" /><div><div class="v" id="stRew">-</div><div class="k">Creator Payouts</div></div></div>
-    <div class="s"><img class="ic" src="assets/icons/growth.png" alt="" /><div><div class="v" id="stMcap">-</div><div class="k">Market Cap Created</div></div></div>
+    <div class="s"><img class="ic" src="assets/icons/growth.png" alt="" /><div><div class="v" id="stMcap">-</div><div class="k">Tradable Projects</div></div></div>
     <div class="s"><img class="ic" src="assets/icons/buy-robin.png" alt="" /><div><div class="v" id="stVol">-</div><div class="k">Total Volume</div></div></div>
   </section>
 
@@ -523,7 +523,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 <script type="module">
 import * as Pad from './assets/wallet.js';
 import { DEMO, DEMO_COINS, DEMO_STATS } from './assets/demo.js';
-import { OWNER, isDeployed } from './assets/config.js';
+import { OWNER, isDeployed, UNI_TOKENS } from './assets/config.js';
 
 const $ = (id) => document.getElementById(id);
 const ETH_USD = 1920;
@@ -1009,7 +1009,7 @@ async function loadStats(){
     $('stProj').textContent = DEMO_STATS.projectsLaunched.toLocaleString();
     $('stGrad').textContent = DEMO_STATS.graduatedTotal;
     $('stRew').textContent = DEMO_STATS.rewardsPaidEth + ' ETH';
-    $('stMcap').textContent = fmtUsd(DEMO_STATS.mcapCreatedUsd);
+    $('stMcap').textContent = (UNI_TOKENS.length + (DEMO_STATS.projectsLaunched||0)).toLocaleString();
     $('stVol').textContent = fmtUsd(DEMO_STATS.totalVolumeUsd);
     TK_STATS = { coins: DEMO_STATS.projectsLaunched, graduated: DEMO_STATS.graduatedTotal, volAllEth: 0 }; buildTicker();
     return;
@@ -1021,7 +1021,7 @@ async function loadStats(){
       $('stGrad').textContent = s.graduated||0;
       TK_STATS = { coins: s.coins||0, graduated: s.graduated||0, volAllEth: s.volAllEth||0 }; buildTicker();
       $('stRew').textContent = (s.graduated ? (s.graduated*0.5).toFixed(1) : '0') + ' ETH';
-      $('stMcap').textContent = '-';
+      $('stMcap').textContent = (UNI_TOKENS.length + (s.coins||0)).toLocaleString();
       $('stVol').textContent = fmtUsd((s.volAllEth||0)*ETH_USD);
     } else { ['stProj','stGrad','stRew','stMcap','stVol'].forEach(id=>$(id).textContent='-'); }
   } catch { ['stProj','stGrad','stRew','stMcap','stVol'].forEach(id=>$(id).textContent='-'); }

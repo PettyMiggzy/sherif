@@ -894,9 +894,13 @@ async function boot(){
     const ranked = UNI_TOKENS.map((a) => META.get(a)).filter(Boolean).sort((x,y)=>(y.volUsd||0)-(x.volUsd||0));
     want = (ranked[0]?.addr || UNI_TOKENS[0]).toLowerCase();
   }
-  TOKEN = { ...(await ensureMeta(want)), addr: want };
+  // Paint the DexScreener logo + symbol IMMEDIATELY from META. Do NOT block the icon on the on-chain
+  // decimals lookup (a slow/failing RPC would otherwise leave the token stuck on a placeholder even
+  // though we already have the logo). Enrich decimals in the background, then repaint.
+  TOKEN = { ...(META.get(want) || { addr: want, symbol: '?', name: 'Token', decimals: 18, image: null, priceUsd: 0, volUsd: 0, liqUsd: 0 }), addr: want };
   applyGuardSlip();  // Guard on by default: tune the floor to this coin's liquidity
   paintTokens();
+  ensureMeta(want).then((m) => { TOKEN = { ...TOKEN, ...m, addr: want }; paintTokens(); }).catch(() => {});
   ensureFirewall();  // scan the default token's safety in the background
   LIVE = await Pad.uniLive();
   if (!LIVE) setStatus('The top-token swap desk goes live shortly - liquidity and pricing are being wired up. Check back soon.', '');
