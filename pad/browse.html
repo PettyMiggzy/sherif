@@ -278,6 +278,17 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 /* stretched link: covers the whole card so it's fully clickable, while the Quick Buy button
    below sits on a higher layer as an independent control (no interactive element inside an <a>) */
 .bcard-link{position:absolute;inset:0;z-index:1;border-radius:13px}
+/* DexScreener boost / paid badge (populated by enrichBoosts) */
+.btkrow{display:flex;align-items:center;gap:6px}
+.bboost{position:relative;z-index:2;display:inline-flex}
+.bboostpill{display:inline-flex;align-items:center;gap:3px;padding:1px 6px 1px 4px;border-radius:999px;font-family:var(--mono);font-weight:800;font-size:10.5px;line-height:1;
+  background:linear-gradient(180deg,rgba(255,120,30,.18),rgba(255,60,20,.10));border:1px solid rgba(255,130,40,.42);color:#ffd9a8;white-space:nowrap}
+.bboostpill svg{width:12px;height:13px;transform-origin:50% 85%;animation:rlpuls 1.4s ease-in-out infinite;filter:drop-shadow(0 0 3px rgba(255,120,30,.8))}
+.bboostpill.gold{background:linear-gradient(180deg,rgba(255,215,80,.22),rgba(240,180,20,.12));border-color:rgba(255,205,70,.6);color:#ffe9a6;box-shadow:0 0 11px -3px rgba(255,200,60,.6)}
+.bverif{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:999px;font-family:var(--mono);font-weight:800;font-size:10px;background:rgba(63,132,255,.16);border:1px solid rgba(90,150,255,.44);color:#bcd4ff;white-space:nowrap}
+.bverif svg{width:11px;height:11px}
+@keyframes rlpuls{0%,100%{transform:scale(1)}50%{transform:scale(1.13)}}
+@media(prefers-reduced-motion:reduce){.bboostpill svg{animation:none}}
 .btop{display:flex;align-items:center;gap:10px}
 .bav{width:42px;height:42px;border-radius:50%;flex:none;object-fit:cover;border:1.5px solid var(--line);background:var(--bg-2)}
 .bid{min-width:0;flex:1}
@@ -425,6 +436,11 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="profile.html">Portfolio</a><a href="rewards.html" id="rewardsNavM" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLinkM" style="display:none">⚙ Admin</a>
   <a class="btn btn-lime go" href="create.html">Launch Token</a>
 </nav></header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="rlFlO" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff3b1a"/><stop offset=".5" stop-color="#ff8a1e"/><stop offset="1" stop-color="#ffe27a"/></linearGradient>
+  <linearGradient id="rlFlG" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#e0a800"/><stop offset=".5" stop-color="#ffcf40"/><stop offset="1" stop-color="#fff4c2"/></linearGradient>
+  <path id="rlflame" d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+</defs></svg>
 
 <!-- ANNOUNCEMENT -->
 <div class="announce" id="announce" style="display:none"><div class="in">
@@ -715,7 +731,7 @@ function bcard(c){
     : `<div class="bprog"><div class="bptrack"><div class="bpfill${prog>=70?' hot':''}" style="width:${Math.min(100,prog)}%"></div></div><span class="bppct">${prog}%</span></div>`;
   return `<div class="bcard" data-tok="${esc(String(c.token).toLowerCase())}">
     <a class="bcard-link" href="${url}" aria-label="View ${esc(c.name||'Token')}"></a>
-    <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btk">${esc(tsym(c.symbol))}</div></div><span class="bchg ${chgCls}" data-chg title="price change since launch"${chgInner?'':' style="display:none"'}>${chgInner}</span></div>
+    <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btkrow"><div class="btk">${esc(tsym(c.symbol))}</div><span class="bboost" data-boost style="display:none"></span></div></div><span class="bchg ${chgCls}" data-chg title="price change since launch"${chgInner?'':' style="display:none"'}>${chgInner}</span></div>
     <div class="bstats"><div><span class="bk">MC</span><span class="bv" data-mc>${fmtUsd(cMc(c))}</span></div><div><span class="bk">Vol</span><span class="bv" data-vol>${fmtUsd(cVol(c))}</span></div><div><span class="bk">Holders</span><span class="bv">${fmtNum(c.holders!=null?c.holders:(c.tradesAll||0))}</span></div></div>
     ${foot}
     <button class="bqbuy" type="button" onclick="quickBuy('${esc(c.token)}')">${BOLT}<span>Quick Buy</span><span class="bamt">0.1 ETH</span></button>
@@ -872,6 +888,41 @@ function patchCard(t) {
   if (d.vol != null) { const v = card.querySelector('[data-vol]'); if (v) v.textContent = fmtUsd(+d.vol); }
 }
 
+// ── DexScreener "boosted / paid" badge ──────────────────────────────────────
+// DexScreener exposes, on its FREE public API (CORS open), which tokens paid to Boost
+// (a ranking multiplier, flame + count, gold at the 500+ Golden Ticker tier) and which
+// bought Enhanced Token Info (the paid profile). We read both feeds in the browser,
+// keep only chainId "robinhood" (DexScreener's slug for chain 4663), and light up the
+// matching coin cards. Zero server cost. Cached 60s.
+let _boostMap = null, _boostTs = 0;
+async function loadBoostFeeds() {
+  if (_boostMap && Date.now() - _boostTs < 60000) return _boostMap;
+  const map = new Map(); // token(lowercase) -> { boost:number, verified:bool }
+  const pull = async (url, apply) => { try { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) return; const arr = await r.json(); for (const x of (Array.isArray(arr) ? arr : [])) { if (x.chainId !== 'robinhood') continue; const a = String(x.tokenAddress || '').toLowerCase(); if (!a) continue; apply(map.get(a) || {}, x, a); } } catch {} };
+  await pull('https://api.dexscreener.com/token-boosts/top/v1',    (cur, x, a) => { cur.boost = Math.max(cur.boost || 0, +x.totalAmount || 0); map.set(a, cur); });
+  await pull('https://api.dexscreener.com/token-boosts/latest/v1', (cur, x, a) => { cur.boost = Math.max(cur.boost || 0, +x.totalAmount || 0); map.set(a, cur); });
+  await pull('https://api.dexscreener.com/token-profiles/latest/v1', (cur, x, a) => { cur.verified = true; map.set(a, cur); });
+  _boostMap = map; _boostTs = Date.now(); return map;
+}
+async function enrichBoosts(coins) {
+  if (DEMO) return;
+  let map; try { map = await loadBoostFeeds(); } catch { return; }
+  for (const c of coins) {
+    const t = String(c.token || '').toLowerCase();
+    const info = map.get(t); if (!info) continue;
+    const card = document.querySelector(`.bcard[data-tok="${t}"]`); if (!card) continue;
+    const slot = card.querySelector('[data-boost]'); if (!slot) continue;
+    let html = '';
+    if (info.boost > 0) {
+      const gold = info.boost >= 500;
+      html = `<span class="bboostpill${gold ? ' gold' : ''}" title="Boosted on DexScreener"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#rlflame" fill="url(#${gold ? 'rlFlG' : 'rlFlO'})"/></svg>x${info.boost}</span>`;
+    } else if (info.verified) {
+      html = `<span class="bverif" title="Paid DexScreener profile"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 12l2 2 4-4" stroke="#9cc0ff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="#6a9bff" stroke-width="1.8"/></svg>DEX</span>`;
+    }
+    if (html) { slot.innerHTML = html; slot.style.display = ''; }
+  }
+}
+
 function resetBoard(opts) {
   session++; offset = 0; done = false; busy = false;
   // soft reset (a live re-poll) repaints in place with no skeleton flash; a hard reset (tab/search) shows it
@@ -897,6 +948,7 @@ async function loadNext() {
   }
   $('board').insertAdjacentHTML('beforeend', render.map(bcard).join(''));
   enrichBoard(coins);                             // async: real 24h change + MC/Vol from DexScreener (pad coins)
+  enrichBoosts(coins);                            // async: DexScreener boost/paid badge on matching cards
   offset += coins.length;
   if (coins.length < PAGE) done = true;
   busy = false; syncFooter();
