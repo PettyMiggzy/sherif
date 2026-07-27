@@ -189,10 +189,20 @@ export async function execute(q, { fromChain, fromToken, fromAmount, fromAddress
     // ERC20 source token → ensure allowance to LI.FI's spender.
     if (fromToken && fromToken.toLowerCase() !== NATIVE) {
       const spender = q.approvalAddress || q.raw.transactionRequest.to;
-      const have = await erc20Allowance(fromChain, fromToken, fromAddress, spender);
-      if (BigInt(have) < BigInt(fromAmount)) {
+      const need = BigInt(fromAmount);
+      const have = BigInt(await erc20Allowance(fromChain, fromToken, fromAddress, spender));
+      if (have < need) {
         onProgress("approve", null);
-        const data = ERC20.encodeFunctionData("approve", [spender, BigInt(fromAmount)]);
+        // USDT (and a handful of other ERC20s) REVERT on approve() to a non-zero amount when the
+        // existing allowance is already non-zero — the SafeERC20 "reset to zero first" rule. If we
+        // have a leftover non-zero allowance that's too small, zero it before setting the new one, or
+        // the bridge tx never gets its spend. Native and fresh (allowance==0) tokens skip this.
+        if (have > 0n) {
+          const zero = ERC20.encodeFunctionData("approve", [spender, 0n]);
+          const zTx = await eip.request({ method: "eth_sendTransaction", params: [{ from: fromAddress, to: fromToken, data: zero }] });
+          await waitReceipt(fromChain, zTx);
+        }
+        const data = ERC20.encodeFunctionData("approve", [spender, need]);
         const apTx = await eip.request({ method: "eth_sendTransaction", params: [{ from: fromAddress, to: fromToken, data }] });
         await waitReceipt(fromChain, apTx);
       }

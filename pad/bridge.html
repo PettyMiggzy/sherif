@@ -355,9 +355,18 @@ async function pollStatus(txHash, bridge){
     await new Promise((r) => setTimeout(r, 12000)); // 12s (was 8s): a bridge takes minutes, so this cuts status calls ~1/3 with no real UX cost
     let s; try { s = await Bridge.status({ txHash, fromChain: state.chain, bridge }); } catch { continue; }
     if (s.status === 'DONE'){
+      // LI.FI reports DONE even when a route couldn't deliver and REFUNDED you on the source chain,
+      // or only PARTIALLY filled — treat those honestly instead of claiming the coin landed.
+      const sub = (s.substatus || '').toUpperCase();
+      if (sub === 'REFUNDED'){
+        const rlink = s.sending && s.sending.txHash ? ` <a href="${esc((Bridge.SRC_CHAINS.find((c)=>c.id===state.chain)||{}).exp || '')}/tx/${esc(s.sending.txHash)}" target="_blank" rel="noopener">source tx</a>` : '';
+        setStatus(`The route couldn't complete, so the bridge refunded you on ${esc(Bridge.chainName(state.chain))}. No ${esc(coinMeta().symbol)} was delivered, your funds are back in your wallet.${rlink} You can try again with a larger amount or a different token.`, 'err');
+        busy = false; setBuy(); return;
+      }
       const got = s.receiving && s.receiving.amount ? Bridge.fmtUnits(s.receiving.amount, coinMeta().decimals || 18) : '';
       const link = s.receiving && s.receiving.txHash ? ` <a href="https://robinhoodchain.blockscout.com/tx/${esc(s.receiving.txHash)}" target="_blank" rel="noopener">view</a>` : '';
-      setStatus(`Done. ${got ? esc(Number(got).toLocaleString(undefined,{maximumFractionDigits:4})) + ' ' : ''}${esc(coinMeta().symbol)} landed on Robinhood Chain.${link} <a href="swap.html?c=${esc(state.coin)}">Trade it</a>`, 'ok');
+      const partial = sub === 'PARTIAL' ? 'Partly filled: some arrived, the rest was refunded on the source chain. ' : '';
+      setStatus(`${partial}Done. ${got ? esc(Number(got).toLocaleString(undefined,{maximumFractionDigits:4})) + ' ' : ''}${esc(coinMeta().symbol)} landed on Robinhood Chain.${link} <a href="swap.html?c=${esc(state.coin)}">Trade it</a>`, partial ? 'run' : 'ok');
       busy = false; setBuy(); return;
     }
     if (s.status === 'FAILED'){
