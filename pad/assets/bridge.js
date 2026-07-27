@@ -13,8 +13,24 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { ethers } from "./ethers.min.js";
 import * as Pad from "./wallet.js";
+import { API_BASE } from "./config.js";
 
-const LIFI = "https://li.quest/v1";
+// Prefer our server-side key-proxy: it injects the LI.FI API key + our integrator/fee, so we avoid LI.FI's
+// tiny keyless limit (75 requests / 2h / IP — the cause of the token-list fallback + intermittent quote
+// failures). Fall back to li.quest directly if the proxy isn't enabled yet (404). Params already carry
+// integrator/fee/toChain so the direct path works; the proxy just re-injects them server-side.
+const PROXY = (API_BASE || "").replace(/\/+$/, "") + "/api/lifi";
+const DIRECT = "https://li.quest/v1";
+async function lifiFetch(name, { query, method = "GET", body, timeout = 12000 } = {}) {
+  const qs = query ? "?" + query.toString() : "";
+  const go = (base, path) => {
+    const o = { method, headers: { accept: "application/json" }, signal: AbortSignal.timeout(timeout) };
+    if (body !== undefined) { o.body = JSON.stringify(body); o.headers["content-type"] = "application/json"; }
+    return fetch(`${base}/${path}${qs}`, o);
+  };
+  try { const r = await go(PROXY, name); if (r.status !== 404) return r; } catch { /* proxy unreachable -> direct */ }
+  return go(DIRECT, name === "routes" ? "advanced/routes" : name);
+}
 const INTEGRATOR = "labs";                      // LI.FI Portal integrator id (fee wallet configured in the Portal); CASE-SENSITIVE
 const FEE = "0.01";                             // our 1% integrator fee -> the Portal-configured wallet (LI.FI adds its own 0.25%). No API key needed.
 export const DEST_CHAIN = 4663;                  // Robinhood Chain
@@ -56,7 +72,7 @@ export async function chainTokens(chainId) {
   if (_tokCache.has(chainId)) return _tokCache.get(chainId);
   let list = null;
   try {
-    const r = await fetch(`${LIFI}/tokens?chains=${chainId}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+    const r = await lifiFetch("tokens", { query: new URLSearchParams({ chains: String(chainId) }), timeout: 8000 });
     const j = await r.json();
     const raw = (j.tokens && j.tokens[String(chainId)]) || [];
     list = raw
@@ -80,7 +96,7 @@ export function nativeToken(chainId) {
 
 // ── LI.FI quote ────────────────────────────────────────────────────────────────
 // Returns a normalized object plus the raw LI.FI quote (needed verbatim for execution + status).
-export async function quote({ fromChain, fromToken, fromAmount, fromAddress, toToken }) {
+export async function quote({ fromChain, fromToken, fromAmount, fromAddress, toToken, preview = false, slippage = 0.01 }) {
   const qs = new URLSearchParams({
     fromChain: String(fromChain),
     toChain: String(DEST_CHAIN),
@@ -89,8 +105,10 @@ export async function quote({ fromChain, fromToken, fromAmount, fromAddress, toT
     fromAddress,
     integrator: INTEGRATOR,
     fee: FEE,
+    slippage: String(slippage),   // 4663 is thin-liquidity; never rely on LI.FI's default
   });
-  const r = await fetch(`${LIFI}/quote?${qs.toString()}`, { headers: { accept: "application/json" } });
+  if (preview) qs.set("skipSimulation", "true"); // pre-connect estimate: don't simulate against an unfunded placeholder (that is what triggers "no route could build a tx")
+  const r = await lifiFetch("quote", { query: qs });
   const j = await r.json().catch(() => null);
   if (!r.ok || !j || !j.transactionRequest) {
     const msg = (j && (j.message || j.error)) || `no route (HTTP ${r.status})`;
@@ -119,7 +137,7 @@ export async function quote({ fromChain, fromToken, fromAmount, fromAddress, toT
 export async function status({ txHash, fromChain, toChain = DEST_CHAIN, bridge }) {
   const qs = new URLSearchParams({ txHash, fromChain: String(fromChain), toChain: String(toChain) });
   if (bridge) qs.set("bridge", bridge);
-  const r = await fetch(`${LIFI}/status?${qs.toString()}`, { headers: { accept: "application/json" } });
+  const r = await lifiFetch("status", { query: qs });
   const j = await r.json().catch(() => null);
   if (!j) throw new Error("status unavailable");
   // j.status: NOT_FOUND | INVALID | PENDING | DONE | FAILED ; j.substatus for detail

@@ -16,6 +16,7 @@ import {
 } from "./db.js";
 import { currentEpoch as rewardsEpoch, userAllocations as rewardsUserAlloc } from "./rewards.js";
 import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleApproval as uniHandleApproval } from "./uniproxy.js";
+import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes } from "./lifiproxy.js";
 
 const DAY = 86400;
 
@@ -317,6 +318,8 @@ const rpcRateOk = makeRateLimiter(CFG.rpcProxyMaxPerSec);
 const metaRateOk = makeRateLimiter(2); // profile uploads: ≤2/s/IP (HEIC decode is CPU-bound on the main thread)
 const uniRateOk = makeRateLimiter(CFG.uniRatePerSec);       // per-IP cap on the Uniswap swap proxy
 const uniGlobalOk = makeRateLimiter(CFG.uniGlobalPerSec);   // total upstream/sec (shared paid-key budget), keyed by a constant
+const lifiRateOk = makeRateLimiter(CFG.lifiRatePerSec);     // per-IP cap on the LI.FI bridge proxy
+const lifiGlobalOk = makeRateLimiter(CFG.lifiGlobalPerSec); // total upstream/sec (protects our per-key LI.FI budget)
 // Per-IP cap on GET /api/* reads. The 5s micro-cache keys on url.search, so a client spraying distinct
 // query strings (e.g. /api/coins?offset=<incrementing>) bypasses it and forces a full aggregate recompute
 // each time; this cap stops one client saturating the single-threaded SQLite/event loop. Generous for real
@@ -582,6 +585,31 @@ export function startApi() {
           else return sendUni(res, 404, { error: "no such route" }, uorigin);
           return sendUni(res, out.status, out.json, uorigin);
         } catch { return sendUni(res, 502, { error: "trading upstream error" }, uorigin); }
+      }
+
+      // ── LI.FI cross-chain bridge proxy: /api/lifi/{quote,tokens,connections,status,routes} ─────────
+      // Off unless LIFI_API_KEY is set. Injects the secret key + our integrator/fee server-side, locks the
+      // destination to Robinhood Chain, scoped CORS + rate limits. Keeps the key out of the browser AND
+      // moves us off LI.FI's tiny keyless per-IP limit.
+      if (CFG.lifiApiKey && path.startsWith("/api/lifi/")) {
+        const lorigin = uniOrigin(req);
+        const ip = clientIp(req);
+        if (!lifiRateOk(ip)) return sendUni(res, 429, { error: "rate limited, slow down" }, lorigin);
+        if (!lifiGlobalOk("g")) return sendUni(res, 429, { error: "busy, retry in a moment" }, lorigin);
+        const sub = path.slice("/api/lifi/".length);
+        try {
+          let out;
+          if (sub === "quote") out = await lifiQuote(url.searchParams);
+          else if (sub === "tokens") out = await lifiTokens(url.searchParams);
+          else if (sub === "connections") out = await lifiConnections(url.searchParams);
+          else if (sub === "status") out = await lifiStatus(url.searchParams);
+          else if (sub === "routes") {
+            let lb; try { lb = JSON.parse((await readBody(req, 256 * 1024)).toString("utf8")); }
+            catch { return sendUni(res, 400, { error: "bad json" }, lorigin); }
+            out = await lifiRoutes(lb);
+          } else return sendUni(res, 404, { error: "no such route" }, lorigin);
+          return sendUni(res, out.status, out.json, lorigin);
+        } catch { return sendUni(res, 502, { error: "bridge upstream error" }, lorigin); }
       }
       const mm = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/meta$/);
       if (!mm) return send(res, 404, { error: "no such route" }, origin);

@@ -284,7 +284,7 @@ async function refreshQuote(){
   // Retry once: "None of the available routes could successfully generate a tx" is often transient.
   let q = null, err = null;
   for (let attempt = 0; attempt < 2; attempt++){
-    try { q = await Bridge.quote({ fromChain: state.chain, fromToken: state.token, fromAmount: wei.toString(), fromAddress: Pad.account() || PREVIEW_ADDR, toToken: state.coin }); err = null; break; }
+    try { q = await Bridge.quote({ fromChain: state.chain, fromToken: state.token, fromAmount: wei.toString(), fromAddress: Pad.account() || PREVIEW_ADDR, toToken: state.coin, preview: !Pad.account() }); err = null; break; }
     catch (e){ err = e; if (seq !== quoteSeq) return; if (attempt === 0) await new Promise((r) => setTimeout(r, 1100)); if (seq !== quoteSeq) return; }
   }
   if (seq !== quoteSeq) return; // stale

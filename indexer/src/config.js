@@ -85,4 +85,17 @@ export const CFG = {
   uniGlobalPerSec: num("UNISWAP_GLOBAL_PER_SEC", 6),   // total upstream/sec cap (shared key budget)
   uniCorsOrigins: (process.env.UNISWAP_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinslab.fun")
     .split(",").map((s) => s.trim()).filter(Boolean),
+
+  // ── LI.FI cross-chain proxy (the bridge) ──
+  // /api/lifi/* is OFF unless LIFI_API_KEY is set. The key is a SECRET (gitignored .env), injected
+  // server-side into the x-lifi-api-key header so it NEVER reaches the browser, which also moves us off
+  // the tiny keyless 75-requests-per-2h-per-IP limit onto our per-key bucket (LI.FI's documented fix).
+  lifiApiKey: process.env.LIFI_API_KEY || "",
+  lifiApiBase: (process.env.LIFI_API_BASE || "https://li.quest/v1").replace(/\/+$/, ""),
+  lifiIntegrator: process.env.LIFI_INTEGRATOR || "labs",     // our LI.FI Portal integrator id (fee wallet configured there)
+  lifiFee: (process.env.LIFI_FEE || "0.01").trim(),           // our integrator fee fraction (1%); LI.FI forwards it to the Portal wallet
+  lifiDestChain: num("LIFI_DEST_CHAIN", 4663),               // destination is always Robinhood Chain
+  lifiSrcChains: (process.env.LIFI_SRC_CHAINS || "1,10,56,137,8453,42161").split(",").map((s) => Number(s.trim())).filter(Boolean),
+  lifiRatePerSec: num("LIFI_RATE_PER_SEC", 4),               // per-IP cap on the proxy
+  lifiGlobalPerSec: num("LIFI_GLOBAL_PER_SEC", 20),          // total upstream/sec cap (protects our per-key budget)
 };
