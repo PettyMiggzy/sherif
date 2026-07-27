@@ -502,23 +502,32 @@ async function ensureFirewall(){
 }
 // Cheap upgrade to the full round-trip verdict: reuse the buy quote's estimated output as the sell-probe
 // input, so it costs exactly ONE extra proxy quote per token (only after a real buy quote succeeded).
+// A sell-quote probe that classifies its failure: transient transport errors (rate limit, timeout, 5xx,
+// network) must NOT be read as a honeypot - only a genuine routing rejection is a real no-sell-route.
+function makeSellProbe(addr, estWei){
+  return async () => {
+    try {
+      if (!estWei || estWei <= 0n) return { ok: true, skipped: true };
+      await Pad.uniQuote({ token: addr, side: 'sell', amountWei: estWei.toString(), slippagePct: GUARD ? autoSlipFor(META.get(addr)?.liqUsd) : SLIP });
+      return { ok: true };
+    } catch (e){
+      const m = String(e && e.message || e);
+      const transient = /rate limit|429|busy|temporarily|unavailable|50[234]|timeout|timed out|network|failed to fetch|load failed/i.test(m);
+      return { ok: false, transient, error: m };
+    }
+  };
+}
 async function upgradeFirewall(resp){
   if (!TOKEN) return;
   const addr = TOKEN.addr.toLowerCase();
   if (fwProbed.has(addr)) return;
   fwProbed.add(addr);
   const seq = fwSeq;
-  const est = readOut(resp).out;
-  const sellProbe = async () => {
-    try {
-      if (!est || est <= 0n) return { ok: true, skipped: true };
-      await Pad.uniQuote({ token: addr, side: 'sell', amountWei: est.toString(), slippagePct: SLIP });
-      return { ok: true };
-    } catch (e){ return { ok: false, error: String(e && e.message || e) }; }
-  };
   try {
-    const v = await Safety.preTradeFirewall({ token: addr, side: 'buy', sellProbe });
+    const v = await Safety.preTradeFirewall({ token: addr, side: 'buy', sellProbe: makeSellProbe(addr, readOut(resp).out) });
     if (seq !== fwSeq) return;
+    // A transient probe failure is not a verdict: don't persist it as "probed" so it retries on the next quote.
+    if (v.sellRoute && v.sellRoute.ok === false && v.sellRoute.transient) fwProbed.delete(addr);
     fwCache.set(addr, v); firewall = v; paintFirewall(); syncAction();
   } catch { fwProbed.delete(addr); }
 }
@@ -814,17 +823,22 @@ async function buyBasket(){
   let done = 0, failed = 0, stopped = false;
   for (let k = 0; k < legs.length; k++){
     const { r } = legs[k];
+    const addrLc = r.addr.toLowerCase();
     setBkAct(`Buying ${k + 1} of ${legs.length}…`, true);
-    // Firewall: quarantine a honeypot leg (Guard on) instead of buying it.
-    if (GUARD){
-      let v = fwCache.get(r.addr.toLowerCase());
-      if (!v){ try { v = await Safety.goPlusHoneypot(r.addr); fwCache.set(r.addr.toLowerCase(), v); } catch {} }
-      if (v && v.level === 'red'){ r.status = 'blocked'; r.statusCls = 'err'; failed++; renderBasket(); continue; }
-    }
-    r.status = 'signing…'; r.statusCls = 'run'; renderBasket();
+    r.status = 'checking…'; r.statusCls = 'run'; renderBasket();
     try {
-      const slip = GUARD ? autoSlipFor(r.liqUsd ?? (META.get(r.addr.toLowerCase())?.liqUsd)) : SLIP;
+      const slip = GUARD ? autoSlipFor(r.liqUsd ?? (META.get(addrLc)?.liqUsd)) : SLIP;
       const quote = await Pad.uniQuote({ token: r.addr, side: 'buy', amountWei: toUnits(r.eth, 18).toString(), slippagePct: slip });
+      // Firewall (full round-trip, not just GoPlus) under Guard: quarantine a honeypot or one-way-trap leg.
+      if (GUARD){
+        let v = fwCache.get(addrLc);
+        if (!v || v.sellRoute === undefined){
+          v = await Safety.preTradeFirewall({ token: r.addr, side: 'buy', sellProbe: makeSellProbe(addrLc, readOut(quote).out) });
+          if (!(v.sellRoute && v.sellRoute.ok === false && v.sellRoute.transient)) fwCache.set(addrLc, v); // don't cache a transient
+        }
+        if (v && v.level === 'red'){ r.status = 'blocked'; r.statusCls = 'err'; failed++; renderBasket(); continue; }
+      }
+      r.status = 'signing…'; r.statusCls = 'run'; renderBasket();
       const tx = await Pad.uniSwap(quote, { simulate: GUARD });
       r.status = 'confirming…'; r.statusCls = 'run'; renderBasket();
       const rc = await tx.wait();

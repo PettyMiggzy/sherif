@@ -16,6 +16,7 @@ import { CFG } from "./config.js";
 export const NATIVE = "0x0000000000000000000000000000000000000000";
 export const PERMIT2 = "0x000000000022d473030f116ddee9f6b43ac78ba3";
 export const UNIVERSAL_ROUTER = "0x8876789976decbfcbbbe364623c63652db8c0904"; // v2.1.1 on 4663 (verified live)
+export const WETH = "0x0bd7d308f8e1639fab988df18a8011f41eacad73"; // WETH9 on 4663 (the fee leg for native swaps)
 
 const lc = (x) => String(x || "").toLowerCase();
 const isAddr = (x) => typeof x === "string" && /^0x[0-9a-fA-F]{40}$/.test(x);
@@ -87,23 +88,28 @@ const UR_IFACE = new ethers.Interface([
 const PAY_PORTION = 0x06;
 const COMMAND_TYPE_MASK = 0x3f;
 
-// Assert the BUILT calldata actually pays OUR fee: a PAY_PORTION command whose recipient is our fee wallet
-// AND whose bips == our configured fee. A doctored quote can leave the cosmetic aggregatedOutputs summary
-// at 125 bips while the real PAY_PORTION carries ~1 bip (and keep our address present so a naive substring
-// check still matches), stripping the fee ~125x. Decoding the command is the only reliable guard.
-function feeInCalldata(data) {
+// Assert the BUILT calldata actually pays OUR fee: a PAY_PORTION command whose recipient is our fee wallet,
+// whose bips == our configured fee, AND whose token is a real leg of THIS swap ({tokenIn, tokenOut, WETH}).
+// A doctored quote can otherwise leave the cosmetic aggregatedOutputs summary at 125 bips while the real
+// PAY_PORTION carries ~1 bip (bips attack) OR targets a decoy token the router holds ~0 of, so 125 bips *
+// ~0 balance = ~0 fee actually paid (token attack). Both must be blocked; decoding the command is the only
+// reliable guard. `tokenIn`/`tokenOut` come from the (already-validated) quote legs.
+function feeInCalldata(data, tokenIn, tokenOut) {
   let parsed;
   try { parsed = UR_IFACE.parseTransaction({ data }); } catch { return false; }
   if (!parsed) return false;
   let commands, inputs;
   try { commands = ethers.getBytes(parsed.args.commands); inputs = parsed.args.inputs; } catch { return false; }
   if (!inputs || commands.length !== inputs.length) return false;
+  // The fee is legitimately taken on a real leg: the non-native output token (a buy), or WETH (a sell,
+  // before unwrap). Bind to {tokenIn, tokenOut, WETH} minus the native sentinel so a decoy leg can't qualify.
+  const allowedFeeTokens = new Set([lc(tokenIn), lc(tokenOut), WETH].filter((t) => t && t !== NATIVE));
   const coder = ethers.AbiCoder.defaultAbiCoder();
   for (let i = 0; i < commands.length; i++) {
     if ((commands[i] & COMMAND_TYPE_MASK) !== PAY_PORTION) continue;
     try {
-      const [, recipient, bips] = coder.decode(["address", "address", "uint256"], inputs[i]);
-      if (lc(recipient) === CFG.uniFeeRecipient && Number(bips) === CFG.uniFeeBips) return true;
+      const [token, recipient, bips] = coder.decode(["address", "address", "uint256"], inputs[i]);
+      if (lc(recipient) === CFG.uniFeeRecipient && Number(bips) === CFG.uniFeeBips && allowedFeeTokens.has(lc(token))) return true;
     } catch { /* not a readable PAY_PORTION; keep scanning */ }
   }
   return false;
@@ -147,9 +153,13 @@ export async function handleSwap(clientBody) {
   if (!s || lc(s.to) !== UNIVERSAL_ROUTER || Number(s.chainId) !== CFG.uniChainId) {
     return { status: 502, json: { error: "unexpected swap target" } };
   }
-  // Decode the built calldata and require a PAY_PORTION to OUR recipient at OUR bips - so a doctored quote
-  // can't reduce or strip the fee while leaving the cosmetic aggregatedOutputs summary intact.
-  if (!feeInCalldata(s.data)) return { status: 502, json: { error: "fee missing or reduced in swap calldata" } };
+  // Decode the built calldata and require a PAY_PORTION to OUR recipient at OUR bips ON A REAL LEG of this
+  // swap - so a doctored quote can't reduce, strip, or decoy-token the fee while leaving the cosmetic
+  // aggregatedOutputs summary intact.
+  const q = clientBody.quote;
+  if (!feeInCalldata(s.data, q.input && q.input.token, q.output && q.output.token)) {
+    return { status: 502, json: { error: "fee missing or reduced in swap calldata" } };
+  }
   // For a native-in (buy) EXACT_INPUT, the tx value must equal the quoted input amount.
   const tin = lc(clientBody.quote.input && clientBody.quote.input.token);
   if (tin === NATIVE) {

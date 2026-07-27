@@ -71,25 +71,28 @@ test("feeApplied reads the RESPONSE field `bps` and requires our recipient + INT
   assert.equal(feeApplied({}), false);
 });
 
-test("feeInCalldata decodes the built Universal Router PAY_PORTION and enforces recipient + exact bips", () => {
+test("feeInCalldata enforces PAY_PORTION recipient + exact bips + a real leg token (blocks bips and decoy-token attacks)", () => {
   const coder = ethers.AbiCoder.defaultAbiCoder();
-  const WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
+  const WETH = "0x0bd7d308f8e1639fab988df18a8011f41eacad73";
   const iface2 = new ethers.Interface(["function execute(bytes commands, bytes[] inputs)"]);
   const iface3 = new ethers.Interface(["function execute(bytes commands, bytes[] inputs, uint256 deadline)"]);
   // commands: V3_SWAP_EXACT_IN (0x00) then PAY_PORTION (0x06); inputs sized to match.
-  const exec = (iface, recipient, bips) => {
+  const exec = (iface, feeToken, recipient, bips) => {
     const commands = "0x0006";
     const swapInput = coder.encode(["address", "uint256", "uint256", "bytes", "bool"], [SWAPPER, 1n, 0n, "0x", true]);
-    const payInput = coder.encode(["address", "address", "uint256"], [WETH, recipient, bips]);
+    const payInput = coder.encode(["address", "address", "uint256"], [feeToken, recipient, bips]);
     const args = [commands, [swapInput, payInput]];
     if (iface === iface3) args.push(1893456000n); // deadline
     return iface.encodeFunctionData("execute", args);
   };
-  assert.equal(feeInCalldata(exec(iface2, FEE_LC, 125)), true);          // correct: our recipient, our bips
-  assert.equal(feeInCalldata(exec(iface3, FEE_LC, 125)), true);          // 3-arg execute variant also decodes
-  assert.equal(feeInCalldata(exec(iface2, FEE_LC, 1)), false);           // bips reduced ~125x -> reject
-  assert.equal(feeInCalldata(exec(iface2, SWAPPER, 125)), false);        // fee redirected to attacker -> reject
-  assert.equal(feeInCalldata("0xdeadbeef"), false);                      // unparseable -> reject
+  // buy leg: tokenIn = native, tokenOut = CASHCAT -> allowed fee tokens {CASHCAT, WETH}
+  assert.equal(feeInCalldata(exec(iface2, WETH, FEE_LC, 125), NATIVE, CASHCAT), true);      // fee on WETH leg
+  assert.equal(feeInCalldata(exec(iface2, CASHCAT, FEE_LC, 125), NATIVE, CASHCAT), true);   // fee on the output leg
+  assert.equal(feeInCalldata(exec(iface3, WETH, FEE_LC, 125), NATIVE, CASHCAT), true);      // 3-arg variant decodes
+  assert.equal(feeInCalldata(exec(iface2, WETH, FEE_LC, 1), NATIVE, CASHCAT), false);       // bips reduced ~125x
+  assert.equal(feeInCalldata(exec(iface2, WETH, SWAPPER, 125), NATIVE, CASHCAT), false);    // fee redirected
+  assert.equal(feeInCalldata(exec(iface2, OFFLIST, FEE_LC, 125), NATIVE, CASHCAT), false);  // DECOY token (router holds ~0) -> reject
+  assert.equal(feeInCalldata("0xdeadbeef", NATIVE, CASHCAT), false);                        // unparseable -> reject
 });
 
 test("validateSwapQuote re-checks chain, allowlist, one-native-leg, and fee presence", () => {

@@ -291,7 +291,8 @@ const uniGlobalOk = makeRateLimiter(CFG.uniGlobalPerSec);   // total upstream/se
 // query strings (e.g. /api/coins?offset=<incrementing>) bypasses it and forces a full aggregate recompute
 // each time; this cap stops one client saturating the single-threaded SQLite/event loop. Generous for real
 // browsing (a page load fires a handful of calls). /health and /media stay uncapped.
-const apiGetRateOk = makeRateLimiter(CFG.apiGetMaxPerSec || 30);
+const apiGetRateOk = makeRateLimiter(CFG.apiGetMaxPerSec);
+const rpcGlobalOk = makeRateLimiter(CFG.rpcGlobalPerSec); // TOTAL /rpc upstream/sec across all IPs (keyed by a constant) so a third party can't repurpose our paid read-proxy
 
 // Absolute base for media links, derived from the request (works behind Caddy/any proxy).
 function mediaBase(req) {
@@ -432,10 +433,13 @@ const recentActivityStmt = db.prepare(
 // Every Robin Labs coin is a fixed-supply 18-decimal ERC20 from one audited template, so wallets
 // and aggregators that consume token lists get our whole catalogue (name/symbol/logo) with zero
 // per-coin submission. Oldest-first so `version.major` (= row count) only ever climbs.
+// LIMIT 10000: the Uniswap token-list schema caps `tokens` at 10,000; past that a strict consumer rejects
+// the WHOLE list, so we cap rather than emit an invalid list. Oldest-first keeps version.minor monotonic.
+const TOKENLIST_MAX = 10000;
 const tokenListStmt = db.prepare(
   `SELECT c.token, c.name, c.symbol, cm.updated_ts AS meta_ts, (cm.pfp IS NOT NULL) AS has_pfp
    FROM coins c LEFT JOIN coin_meta cm ON cm.token = c.token
-   ORDER BY c.launch_block ASC`);
+   ORDER BY c.launch_block ASC LIMIT ${TOKENLIST_MAX}`);
 
 // ── rewards ──
 const coinNameStmt = db.prepare("SELECT name, symbol FROM coins WHERE token = ?");
@@ -516,6 +520,8 @@ export function startApi() {
           // remaining N-1 so a big batch can't drive maxPerSec×batchSize upstream/sec/IP.
           const n = Array.isArray(payload) ? payload.length : 1;
           if (n > 1 && !rpcRateOk(ip, n - 1)) return send(res, 429, { error: "rate limited" }, origin);
+          // Global upstream cap (all IPs): CORS can't stop non-browser clients, so bound total budget abuse.
+          if (!rpcGlobalOk("g", n)) return send(res, 429, { error: "busy, retry shortly" }, origin);
           const result = await rpcHandle(payload);
           return send(res, 200, result, origin);
         } catch (e) { return send(res, 400, { error: String(e.message || e) }, origin); }
@@ -651,7 +657,8 @@ export function startApi() {
         return send(res, 200, {
           name: "Robin Labs",
           timestamp: new Date().toISOString(),
-          version: { major: rows.length, minor: 0, patch: 0 },
+          // Token-list semver: additions bump MINOR (major is reserved for removals / breaking changes).
+          version: { major: 1, minor: tokens.length, patch: 0 },
           logoURI: "https://robinlab.io/assets/favicon-512.png",
           keywords: ["robinlabs", "robinhood chain", "memecoin", "launchpad"],
           tokens,

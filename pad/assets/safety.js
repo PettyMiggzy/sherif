@@ -228,7 +228,9 @@ export async function preTradeFirewall({ token, side, sellProbe }) {
   let level = gp.level, code = gp.code;
   const flags = gp.flags.slice();
   if (gp.level === "red") { /* GoPlus already condemned it */ }
-  else if (rt && rt.ok === false) { level = "red"; code = "no-sell-route"; if (!flags.includes("no-sell-route")) flags.push("no-sell-route"); }
+  // Only a GENUINE routing failure (not a transient 429/timeout/5xx/network error) is a real no-sell-route.
+  // A transient probe failure must FAIL OPEN to the GoPlus verdict, never hard-block a safe token.
+  else if (rt && rt.ok === false && rt.transient !== true) { level = "red"; code = "no-sell-route"; if (!flags.includes("no-sell-route")) flags.push("no-sell-route"); }
   else if (gp.level === "amber") { level = "amber"; if (rt && rt.ok && code === "no-data") code = "no-data-sell-ok"; }
   else level = "green";
   return { level, code, flags, buyTax: gp.buyTax, sellTax: gp.sellTax, sellRoute: rt, gp: gp.gp };

@@ -24,7 +24,9 @@ interface IPadRouter {
 }
 
 interface IWETH9 {
+    function deposit() external payable;
     function withdraw(uint256) external;
+    function transfer(address to, uint256 amount) external returns (bool);
     function balanceOf(address) external view returns (uint256);
 }
 
@@ -108,9 +110,14 @@ contract RobinZap {
                 if (!sent) revert RefundFailed();
             }
             // Refund only THIS call's leftover ETH (PadRouter refunds past the graduation ceiling).
-            // Best-effort so undeliverable dust can't undo an otherwise-successful buy.
+            // Best-effort so undeliverable dust can't undo an otherwise-successful buy - but if the
+            // recipient can't take native ETH (e.g. a contract with no receive), deliver it as WETH
+            // instead of stranding it here forever (ERC20 transfer never runs recipient code).
             uint256 back = address(this).balance - ethResidue;
-            if (back > 0) { (bool ok, ) = recipient.call{value: back}(""); ok; }
+            if (back > 0) {
+                (bool ok, ) = recipient.call{value: back}("");
+                if (!ok) { IWETH9(weth).deposit{value: back}(); IWETH9(weth).transfer(recipient, back); }
+            }
             emit Zapped(recipient, coin, ethAmount, got);
         } catch {
             // Buy failed — return exactly this call's input (never any resident funds).
