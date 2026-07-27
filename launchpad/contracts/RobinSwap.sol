@@ -265,6 +265,18 @@ contract RobinSwap is Ownable2Step, ReentrancyGuard {
         emit ListingPaused(token, paused);
     }
 
+    /// Correct a mislisted token (e.g. a wrong poolFee tier that would route every trade to a dead pool)
+    /// WITHOUT a redeploy. Curator-gated; only updates an EXISTING listing (list() stays register-once),
+    /// and preserves the paused flag. Without this, a single fat-fingered list() bricks a token forever.
+    function relist(address token, uint24 poolFee, address lpSink) external {
+        if (!isCurator[msg.sender]) revert NotCurator();
+        if (poolFee == 0) revert BadArg();
+        if (!listing[token].set) revert Unknown();
+        listing[token].poolFee = poolFee;
+        listing[token].lpSink = lpSink;
+        emit Listed(token, poolFee, lpSink);
+    }
+
     // ── owner config ───────────────────────────────────────────────────────────────
 
     function setCurator(address who, bool on) external onlyOwner { isCurator[who] = on; }

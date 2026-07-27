@@ -622,6 +622,9 @@ function syncAction(){
   const amtWei = toUnits($('payAmt').value, payDecimals());
   if (amtWei == null || amtWei <= 0n){ setAction('Enter an amount', true); return; }
   if (!quoteResp){ setAction('Fetching best price…', true); return; }
+  // While Guard is on, don't let a buy fire until the safety scan has a REAL verdict - a 'scanning'
+  // (pending) state must not read as safe, or a honeypot slips through in the scan window.
+  if (SIDE === 'buy' && GUARD && firewall && firewall.code === 'scanning'){ setAction('Checking safety…', true); return; }
   if (SIDE === 'buy' && GUARD && firewall && firewall.level === 'red'){ setAction('Blocked - sell route unsafe', true); return; }
   setAction((SIDE === 'buy' ? 'Buy ' : 'Sell ') + tsym(TOKEN.symbol), false);
 }
@@ -633,6 +636,8 @@ async function doAction(){
   const amtWei = toUnits($('payAmt').value, payDecimals());
   // Refuse to execute a quote that no longer matches the on-screen amount/token/side (debounce race).
   if (amtWei == null || amtWei <= 0n || !quoteMatches(amtWei)){ resetQuote(); syncAction(); scheduleQuote(); return; }
+  // Don't execute a buy while Guard is on and the safety scan is still pending - wait for a real verdict.
+  if (SIDE === 'buy' && GUARD && firewall && firewall.code === 'scanning'){ setStatus('Still checking this coin is safe to sell, one moment.', ''); syncAction(); return; }
   // Pre-trade firewall gate (buys only). Guard on = hard block on a red verdict; Guard off = explicit override.
   if (SIDE === 'buy' && firewall && firewall.level === 'red'){
     if (GUARD){ setStatus('Robin Guard blocked this trade. ' + Safety.firewallReason(firewall) + ' Turn Guard off in settings to override at your own risk.', 'err'); syncAction(); return; }
@@ -724,7 +729,9 @@ function flip(){
 function setSlip(v){
   // Clamp to the server's accepted band (uniproxy forwards slippage only in [0.1, 15]; above that it
   // drops it and the built swap uses the upstream default, so never show/keep a value the swap won't use).
-  SLIP = Math.max(0.1, Math.min(15, Number(v) || 3));
+  // A finite check (not `|| 3`) so a legitimate 0 clamps to the 0.1 floor instead of jumping to 3%.
+  const n = Number(v);
+  SLIP = Math.max(0.1, Math.min(15, Number.isFinite(n) ? n : 3));
   document.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.slip) === SLIP));
   resetQuote(); syncAction(); scheduleQuote();
 }
@@ -829,14 +836,17 @@ async function buyBasket(){
     try {
       const slip = GUARD ? autoSlipFor(r.liqUsd ?? (META.get(addrLc)?.liqUsd)) : SLIP;
       const quote = await Pad.uniQuote({ token: r.addr, side: 'buy', amountWei: toUnits(r.eth, 18).toString(), slippagePct: slip });
-      // Firewall (full round-trip, not just GoPlus) under Guard: quarantine a honeypot or one-way-trap leg.
-      if (GUARD){
+      // Firewall (full round-trip) on EVERY leg, Guard on OR off - so a honeypot is never bought silently.
+      // Guard on: quarantine a red leg. Guard off: mirror the swap card and require an explicit confirm.
+      {
         let v = fwCache.get(addrLc);
         if (!v || v.sellRoute === undefined){
           v = await Safety.preTradeFirewall({ token: r.addr, side: 'buy', sellProbe: makeSellProbe(addrLc, readOut(quote).out) });
           if (!(v.sellRoute && v.sellRoute.ok === false && v.sellRoute.transient)) fwCache.set(addrLc, v); // don't cache a transient
         }
-        if (v && v.level === 'red'){ r.status = 'blocked'; r.statusCls = 'err'; failed++; renderBasket(); continue; }
+        if (v && v.level === 'red' && (GUARD || !window.confirm(`${tsym(r.symbol || '?')} looks unsafe:\n\n${Safety.firewallReason(v)}\n\nBuy it anyway at your own risk?`))){
+          r.status = GUARD ? 'blocked' : 'skipped'; r.statusCls = 'err'; failed++; renderBasket(); continue;
+        }
       }
       r.status = 'signing…'; r.statusCls = 'run'; renderBasket();
       const tx = await Pad.uniSwap(quote, { simulate: GUARD });

@@ -159,6 +159,22 @@ const RPC_READ_METHODS = new Set([
   "eth_getTransactionReceipt", "eth_getTransactionCount", "eth_feeHistory", "eth_getBlockReceipts",
 ]);
 const RPC_CACHE = new Map(); // key -> { result, exp }
+let RPC_CACHE_BYTES = 0;                        // approx cached bytes, so we can evict by SIZE not just count
+const MAX_RPC_RESP_BYTES = 8_000_000;           // reject an upstream response bigger than this (never buffer/cache it)
+const RPC_CACHE_BYTE_BUDGET = 64_000_000;       // total cache ceiling; clear when a new entry would exceed it
+// Reject an eth_getLogs whose range is a whole-chain scan or wider than this many blocks, so a client can't
+// force huge upstream responses (memory amplification). The pad's own reads page in <=50k-block chunks.
+const MAX_LOGS_SPAN = 100000n;
+function getLogsRangeOk(params) {
+  const p = Array.isArray(params) ? params[0] : null;
+  if (!p || typeof p !== "object") return true; // malformed -> let upstream reject it
+  const headish = (b) => b === undefined || b === "latest" || b === "pending" || b === "safe" || b === "finalized";
+  const num = (b) => { if (headish(b)) return null; if (b === "earliest") return 0n; try { return BigInt(b); } catch { return null; } };
+  const from = num(p.fromBlock), to = num(p.toBlock);
+  if ((p.fromBlock === undefined || p.fromBlock === "earliest" || from === 0n) && headish(p.toBlock)) return false; // earliest..head
+  if (from !== null && to !== null && to - from > MAX_LOGS_SPAN) return false; // explicit span too wide
+  return true;
+}
 function rpcTtl(method) {
   switch (method) {
     case "eth_chainId": case "net_version": return 3600_000;
@@ -179,7 +195,9 @@ async function rpcForward(payload) {
     try {
       const r = await fetch(u, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(9000) });
       if (!r.ok) { lastErr = new Error(`upstream ${r.status}`); continue; }
-      return await r.json();
+      const text = await r.text();
+      if (text.length > MAX_RPC_RESP_BYTES) { lastErr = new Error("upstream response too large"); continue; } // don't buffer/cache a huge body
+      return JSON.parse(text);
     } catch (e) { lastErr = e; }
   }
   throw lastErr || new Error("no upstream RPC");
@@ -211,6 +229,7 @@ async function rpcHandle(payload) {
     const req = arr[i] || {};
     const method = req.method;
     if (!RPC_READ_METHODS.has(method)) { out[i] = { jsonrpc: "2.0", id: req.id ?? null, error: { code: -32601, message: `method not allowed: ${method}` } }; continue; }
+    if (method === "eth_getLogs" && !getLogsRangeOk(req.params)) { out[i] = { jsonrpc: "2.0", id: req.id ?? null, error: { code: -32005, message: "eth_getLogs range too wide (max 100000 blocks; no whole-chain scan)" } }; continue; }
     const ttl = rpcTtl(method);
     const key = ttl ? method + ":" + JSON.stringify(req.params || []) : null;
     if (key) { const hit = RPC_CACHE.get(key); if (hit && hit.exp > Date.now()) { out[i] = { jsonrpc: "2.0", id: req.id, result: hit.result }; continue; } }
@@ -234,8 +253,11 @@ async function rpcHandle(payload) {
       // Cache only a real, non-null result: a null (e.g. a not-yet-mined receipt) cached for
       // the TTL would stall confirmation UIs; and never cache when correlation failed.
       if (ttl && r && r.result !== undefined && r.result !== null && !r.error) {
-        if (RPC_CACHE.size > 8000) RPC_CACHE.clear();
+        let sz = 0; try { sz = JSON.stringify(r.result).length; } catch { sz = 0; }
+        // Evict by COUNT or total BYTES, so a stream of large distinct responses can't pin the process toward OOM.
+        if (RPC_CACHE.size > 8000 || RPC_CACHE_BYTES + sz > RPC_CACHE_BYTE_BUDGET) { RPC_CACHE.clear(); RPC_CACHE_BYTES = 0; }
         RPC_CACHE.set(req.method + ":" + JSON.stringify(req.params || []), { result: r.result, exp: Date.now() + ttl });
+        RPC_CACHE_BYTES += sz;
       }
     }
   }
@@ -593,11 +615,15 @@ export function startApi() {
       } catch (e) { return send(res, 400, { error: String(e.message || e) }, origin); }
     }
     if (req.method !== "GET") return send(res, 405, { error: "method not allowed" }, origin);
-    if (path.startsWith("/api/") && !apiGetRateOk(clientIp(req))) return send(res, 429, { error: "rate limited — slow down" }, origin);
+    // The token list is reachable at BOTH /api/tokenlist.json and the clean /tokenlist.json; the clean
+    // path must get the SAME rate-limit + cache as the /api/ twin, or it becomes an uncapped, uncached
+    // event-loop DoS (a full 10k-row join + 10k keccak checksums per hit). Treat it as an api path here.
+    const isApiPath = path.startsWith("/api/") || path === "/tokenlist.json";
+    if (isApiPath && !apiGetRateOk(clientIp(req))) return send(res, 429, { error: "rate limited — slow down" }, origin);
 
-    // Micro-cache for GET /api/* (not /media, not /health). On a hit, serve the stored
+    // Micro-cache for GET api paths (not /media, not /health). On a hit, serve the stored
     // bytes from RAM; on a miss, transparently capture this response into the cache.
-    if (CACHE_TTL_MS > 0 && path.startsWith("/api/")) {
+    if (CACHE_TTL_MS > 0 && isApiPath) {
       // Key by host too: responses embed absolute media URLs built from the request host
       // (base), so a body cached for one host must not be served to a different one.
       const key = base + "\n" + path + url.search;
