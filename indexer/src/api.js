@@ -323,6 +323,12 @@ const uniGlobalOk = makeRateLimiter(CFG.uniGlobalPerSec);   // total upstream/se
 // browsing (a page load fires a handful of calls). /health and /media stay uncapped.
 const apiGetRateOk = makeRateLimiter(CFG.apiGetMaxPerSec);
 const rpcGlobalOk = makeRateLimiter(CFG.rpcGlobalPerSec); // TOTAL /rpc upstream/sec across all IPs (keyed by a constant) so a third party can't repurpose our paid read-proxy
+const metaGlobalOk = makeRateLimiter(CFG.metaGlobalPerSec); // TOTAL profile-POST/sec across all IPs (bounds the pre-auth big-body parse cost regardless of IP count)
+const mediaRateOk = makeRateLimiter(CFG.mediaMaxPerSec);   // per-IP cap on /media blob reads
+// Negative cache for chainDevOf: an unknown address's on-chain miss is remembered briefly so a flood of
+// distinct-unknown-address meta POSTs can't each fire a paid eth_call.
+const CHAIN_DEV_MISS = new Map(); // addr -> exp(ms)
+const MEDIA_CACHE = new Map();    // token:kind:v -> { blob, mime } (immutable per ?v, so no TTL needed)
 
 // Absolute base for media links, derived from the request (works behind Caddy/any proxy).
 function mediaBase(req) {
@@ -580,13 +586,26 @@ export function startApi() {
       const mm = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/meta$/);
       if (!mm) return send(res, 404, { error: "no such route" }, origin);
       if (!metaRateOk(clientIp(req))) return send(res, 429, { error: "rate limited — wait a moment and try again" }, origin);
+      // Global cap across ALL IPs: the profile POST buffers + synchronously JSON.parses a large body, so bound
+      // total meta processing/sec so a distributed flood can't monopolise the single-threaded event loop.
+      if (!metaGlobalOk("g")) return send(res, 503, { error: "busy, retry shortly" }, origin);
       try {
         const token = mm[1].toLowerCase();
         // Creator from the index, else straight from the factory on-chain — so a profile uploaded the instant
         // a launch confirms (before the indexer has polled the coin in) is NOT dropped with a 404.
         let devAddr = coinDev.get(token)?.dev;
-        if (!devAddr) devAddr = await chainDevOf(token);
-        if (!devAddr) return send(res, 404, { error: "unknown coin" }, origin);
+        if (!devAddr) {
+          const miss = CHAIN_DEV_MISS.get(token);
+          if (miss && miss > Date.now()) return send(res, 404, { error: "unknown coin" }, origin); // remembered miss, no upstream call
+          // chainDevOf fires a paid eth_call — charge the shared /rpc budget so this path can't be a side-door around it.
+          if (!rpcGlobalOk("g")) return send(res, 503, { error: "busy, retry shortly" }, origin);
+          devAddr = await chainDevOf(token);
+          if (!devAddr) {
+            if (CHAIN_DEV_MISS.size > 5000) CHAIN_DEV_MISS.clear();
+            CHAIN_DEV_MISS.set(token, Date.now() + 60_000); // 60s negative cache
+            return send(res, 404, { error: "unknown coin" }, origin);
+          }
+        }
         const raw = await readBody(req, CFG.profileMaxUploadBytes * 3);
         const body = JSON.parse(raw.toString("utf8"));
         const ts = Number(body.ts);
@@ -742,13 +761,23 @@ export function startApi() {
         return send(res, 200, { coins: rows.map((r) => shapeCoin(r, base)), total, sort, filter, limit, offset }, origin);
       }
 
-      // Serve a coin's image bytes (pfp | banner). Cacheable; ?v=updatedTs busts the cache.
+      // Serve a coin's image bytes (pfp | banner). Cacheable; ?v=updatedTs busts the cache. Per-IP rate
+      // limited + a small origin LRU so a flood on one image can't hammer synchronous SQLite blob reads
+      // (each read is up to ~800KB on the single event-loop thread) when no CDN is in front.
       let m = path.match(/^\/media\/(0x[0-9a-fA-F]{40})\/(pfp|banner)$/);
       if (m) {
+        if (!mediaRateOk(clientIp(req))) return send(res, 429, { error: "rate limited" }, origin);
         const token = m[1].toLowerCase();
-        const row = m[2] === "pfp" ? getCoinPfp.get(token) : getCoinBanner.get(token);
-        if (!row || !row.blob) return send(res, 404, { error: "no image" }, origin);
-        return sendMedia(res, row.blob, row.mime, origin);
+        const ckey = token + ":" + m[2] + ":" + (url.searchParams.get("v") || "");
+        let hit = MEDIA_CACHE.get(ckey);
+        if (!hit) {
+          const row = m[2] === "pfp" ? getCoinPfp.get(token) : getCoinBanner.get(token);
+          if (!row || !row.blob) return send(res, 404, { error: "no image" }, origin);
+          hit = { blob: row.blob, mime: row.mime };
+          if (MEDIA_CACHE.size > 200) MEDIA_CACHE.clear(); // bounded LRU-ish; images are small + immutable per ?v
+          MEDIA_CACHE.set(ckey, hit);
+        }
+        return sendMedia(res, hit.blob, hit.mime, origin);
       }
 
       // A coin's profile (creator-set metadata + image URLs). `profile` is null until set.

@@ -497,8 +497,13 @@ async function ensureFirewall(){
   try {
     const v = await Safety.goPlusHoneypot(addr);
     if (seq !== fwSeq) return;               // token changed while scanning
-    fwCache.set(addr, v); firewall = v; paintFirewall(); syncAction();
-  } catch { if (seq === fwSeq){ firewall = null; paintFirewall(); } }
+    // fwSeq only detects a TOKEN change, not concurrency with upgradeFirewall for the SAME token. If the
+    // round-trip probe already promoted a verdict (code 'probing' or a full red/green), this slower
+    // GoPlus-only result must NOT clobber it - only replace our own 'scanning' placeholder, and never
+    // downgrade a cache entry upgradeFirewall already wrote.
+    if (!fwCache.has(addr)) fwCache.set(addr, v);
+    if (firewall && firewall.code === 'scanning'){ firewall = v; paintFirewall(); syncAction(); }
+  } catch { if (seq === fwSeq && firewall && firewall.code === 'scanning'){ firewall = null; paintFirewall(); } }
 }
 // Cheap upgrade to the full round-trip verdict: reuse the buy quote's estimated output as the sell-probe
 // input, so it costs exactly ONE extra proxy quote per token (only after a real buy quote succeeded).

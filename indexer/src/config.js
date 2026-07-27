@@ -39,6 +39,8 @@ export const CFG = {
   rpcProxyMaxPerSec: num("RPC_PROXY_MAX_PER_SEC", 40), // per-IP/sec cap on upstream calls (a batch counts by its method count)
   rpcGlobalPerSec: num("RPC_GLOBAL_PER_SEC", 300),     // TOTAL upstream/sec across all IPs, so a third party can't repurpose our read-proxy budget
   apiGetMaxPerSec: num("API_GET_MAX_PER_SEC", 30),     // per-IP/sec cap on GET /api/* reads (cache-bypass DoS guard)
+  metaGlobalPerSec: num("META_GLOBAL_PER_SEC", 6),     // TOTAL profile-POST processing/sec across all IPs (pre-auth big-body parse DoS bound)
+  mediaMaxPerSec: num("MEDIA_MAX_PER_SEC", 20),        // per-IP/sec cap on /media blob reads (each is a synchronous SQLite blob read)
   factory: (process.env.FACTORY || "0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2").toLowerCase(),
   router: (process.env.ROUTER || "0x7d0c7122E26a75A9f0bd753e84c6115CAfE3Fd9F").toLowerCase(),
   startBlock: num("START_BLOCK", 0),
