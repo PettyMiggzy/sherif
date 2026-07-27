@@ -65,4 +65,20 @@ export const CFG = {
   rewardUriBase: process.env.REWARD_URI_BASE || "",            // optional: prefix for the pinned leaf-set URI (else self /api URL)
   holderMinBps: num("HOLDER_MIN_BPS", 2),                      // min time-avg holding to accrue HOLDER rewards, in bps of the 1e9 supply (2 = 0.02%); sub-threshold rolls into the coin's floor. 0 disables the gate
   tokenVestingLock: (process.env.TOKEN_VESTING_LOCK || "").toLowerCase(), // dev vesting-lock singleton — excluded from rewards + ScheduleCreated indexing; "" = not deployed yet
+
+  // ── Uniswap Trading API proxy (top-token swaps) ──
+  // The whole /api/uni/* group is OFF unless UNISWAP_API_KEY is set. The key is a SECRET that lives ONLY
+  // here (gitignored .env), is injected server-side into the upstream header, and NEVER reaches the browser.
+  uniApiKey: process.env.UNISWAP_API_KEY || "",
+  uniApiBase: (process.env.UNISWAP_API_BASE || "https://trade-api.gateway.uniswap.org").replace(/\/+$/, ""),
+  uniChainId: num("UNISWAP_CHAIN_ID", 4663),
+  // Our 1.25%/side integrator fee. Recipient stored lowercased for response comparison + request injection.
+  uniFeeRecipient: (process.env.UNISWAP_FEE_RECIPIENT || "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf").toLowerCase(),
+  uniFeeBips: num("UNISWAP_FEE_BIPS", 125),
+  // Curated, live-verified tradeable token allowlist (lowercased). Only these + native ETH can be routed.
+  uniTokens: (process.env.UNISWAP_TOKENS || "").split(",").map((s) => s.trim().toLowerCase()).filter((s) => /^0x[0-9a-f]{40}$/.test(s)),
+  uniRatePerSec: num("UNISWAP_RATE_PER_SEC", 2),       // per-IP cap on the proxy
+  uniGlobalPerSec: num("UNISWAP_GLOBAL_PER_SEC", 6),   // total upstream/sec cap (shared key budget)
+  uniCorsOrigins: (process.env.UNISWAP_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinslab.fun")
+    .split(",").map((s) => s.trim()).filter(Boolean),
 };

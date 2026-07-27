@@ -15,6 +15,7 @@ import {
   holdingsByActor, holdersByToken,
 } from "./db.js";
 import { currentEpoch as rewardsEpoch, userAllocations as rewardsUserAlloc } from "./rewards.js";
+import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleApproval as uniHandleApproval } from "./uniproxy.js";
 
 const DAY = 86400;
 
@@ -284,6 +285,8 @@ function makeRateLimiter(maxPerSec) {
 }
 const rpcRateOk = makeRateLimiter(CFG.rpcProxyMaxPerSec);
 const metaRateOk = makeRateLimiter(2); // profile uploads: ≤2/s/IP (HEIC decode is CPU-bound on the main thread)
+const uniRateOk = makeRateLimiter(CFG.uniRatePerSec);       // per-IP cap on the Uniswap swap proxy
+const uniGlobalOk = makeRateLimiter(CFG.uniGlobalPerSec);   // total upstream/sec (shared paid-key budget), keyed by a constant
 
 // Absolute base for media links, derived from the request (works behind Caddy/any proxy).
 function mediaBase(req) {
@@ -445,6 +448,23 @@ function send(res, code, body, origin) {
   res.end(json);
 }
 
+// Uniswap proxy responses: scope CORS to our own origins (not "*") and never cache per-user quote/swap data.
+function uniOrigin(req) {
+  const o = String(req.headers["origin"] || "");
+  return CFG.uniCorsOrigins.includes(o) ? o : (CFG.uniCorsOrigins[0] || "https://robinlab.io");
+}
+function sendUni(res, code, body, origin) {
+  res.writeHead(code, {
+    "content-type": "application/json; charset=utf-8",
+    "access-control-allow-origin": origin,
+    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-allow-headers": "content-type",
+    "cache-control": "no-store",
+    "vary": "Origin",
+  });
+  res.end(JSON.stringify(body));
+}
+
 function sendMedia(res, blob, mime, origin) {
   res.writeHead(200, {
     "content-type": mime || "application/octet-stream",
@@ -485,6 +505,27 @@ export function startApi() {
           const result = await rpcHandle(payload);
           return send(res, 200, result, origin);
         } catch (e) { return send(res, 400, { error: String(e.message || e) }, origin); }
+      }
+      // ── Uniswap Trading API proxy: /api/uni/{quote,swap,check_approval} ──────────────────
+      // Off unless UNISWAP_API_KEY is set. Injects the secret key + our fee server-side, allowlists
+      // inputs, asserts the fee applied + the swap target, per-IP + global rate limits, scoped CORS.
+      if (CFG.uniApiKey && path.startsWith("/api/uni/")) {
+        const uorigin = uniOrigin(req);
+        const ip = clientIp(req);
+        if (!uniRateOk(ip)) return sendUni(res, 429, { error: "rate limited, slow down" }, uorigin);
+        if (!uniGlobalOk("g")) return sendUni(res, 429, { error: "busy, retry in a moment" }, uorigin);
+        let ubody;
+        try { ubody = JSON.parse((await readBody(req, 256 * 1024)).toString("utf8")); }
+        catch { return sendUni(res, 400, { error: "bad json" }, uorigin); }
+        const sub = path.slice("/api/uni/".length);
+        try {
+          let out;
+          if (sub === "quote") out = await uniHandleQuote(ubody);
+          else if (sub === "swap") out = await uniHandleSwap(ubody);
+          else if (sub === "check_approval") out = await uniHandleApproval(ubody);
+          else return sendUni(res, 404, { error: "no such route" }, uorigin);
+          return sendUni(res, out.status, out.json, uorigin);
+        } catch { return sendUni(res, 502, { error: "trading upstream error" }, uorigin); }
       }
       const mm = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/meta$/);
       if (!mm) return send(res, 404, { error: "no such route" }, origin);
