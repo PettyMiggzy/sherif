@@ -16,7 +16,10 @@
   "iconUrl": "https://robinlab.io/assets/favicon-512.png",
   "maskableIconUrl": "https://robinlab.io/assets/favicon-512.png",
   "splashScreenFadeOutDuration": 300,
-  "signingKey": { "path": "./android.keystore", "alias": "robinlabs" },
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "robinlabs"
+  },
   "appVersionName": "1.0.0",
   "appVersionCode": 1,
   "shortcuts": [],
@@ -24,6 +27,9 @@
   "webManifestUrl": "https://robinlab.io/site.webmanifest",
   "fallbackType": "customtabs",
   "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
   "enableSiteSettingsShortcut": true,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
@@ -32,5 +38,7 @@
   "orientation": "default",
   "fingerprints": [],
   "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "displayOverride": [],
   "appVersion": "1.0.0"
 }
