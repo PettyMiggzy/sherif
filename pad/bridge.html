@@ -4,14 +4,14 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Robin Labs - Buy with any token</title>
-<meta name="description" content="Buy any Robin Labs coin with any token on any chain. Pay from Ethereum, Base, Arbitrum, Solana and more, and land on Robinhood Chain in one step. Non-custodial, best-price routing." />
+<meta name="description" content="Buy any Robin Labs coin with any token on any chain. Pay from Ethereum, Base, Arbitrum, Optimism, Polygon and more, and land on Robinhood Chain in one step. Non-custodial, best-price routing." />
 <link rel="canonical" href="https://robinlab.io/bridge.html" />
 <meta name="robots" content="index, follow, max-image-preview:large" />
 <link rel="manifest" href="/site.webmanifest" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Robin Labs" />
 <meta property="og:title" content="Buy any Robin coin with any token" />
-<meta property="og:description" content="Pay from any EVM chain or Solana and land on Robinhood Chain in one step. Non-custodial, best-price routing." />
+<meta property="og:description" content="Pay from any EVM chain and land on Robinhood Chain in one step. Non-custodial, best-price routing." />
 <meta property="og:url" content="https://robinlab.io/bridge.html" />
 <meta property="og:image" content="https://robinlab.io/assets/og.jpg" />
 <meta name="twitter:card" content="summary_large_image" />
@@ -28,10 +28,9 @@
   --panel:#0b0f06;--disp:"Bebas Neue",Oswald,Impact,sans-serif;--sans:"Plus Jakarta Sans",system-ui,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden}
 a{color:inherit;text-decoration:none}svg,img{display:block}
 .wrap{max-width:1120px;margin:0 auto;padding:0 22px;width:100%}
-/* nav */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:800;font-size:.95rem;border-radius:12px;padding:13px 22px;cursor:pointer;border:1px solid transparent;transition:.16s;font-family:var(--sans)}
 .btn-lime{background:var(--lime);color:#0a0e05;box-shadow:var(--glow)}
 .btn-lime:hover{transform:translateY(-2px);box-shadow:0 0 30px rgba(220,233,5,.75)}
@@ -46,43 +45,44 @@ a{color:inherit;text-decoration:none}svg,img{display:block}
 .nav-in{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;max-width:1120px;margin:0 auto}
 .nav .links{display:flex;gap:20px;align-items:center;font-size:.9rem;color:var(--dim)}
 .nav .links a:hover{color:var(--lime)}.nav .links a.on{color:var(--lime)}
-/* hero */
 main{flex:1}
 .hero{text-align:center;padding:64px 0 26px}
 .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--lime-2);margin-bottom:14px}
 .hero h1{font-family:var(--disp);font-size:clamp(2.6rem,7vw,4.6rem);line-height:.94;letter-spacing:.01em}
 .hero h1 .g{color:var(--lime);text-shadow:var(--glow)}
 .hero p{max-width:620px;margin:16px auto 0;color:var(--dim);font-size:1.05rem}
-/* swap card */
 .stage{display:flex;justify-content:center;padding:8px 0 40px}
 .card{width:100%;max-width:480px;background:linear-gradient(180deg,#0c1006,var(--panel));border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .leg{background:var(--bg);border:1px solid var(--line-2);border-radius:14px;padding:14px 16px}
 .leg .lab{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-family:var(--mono)}
 .leg .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px}
-.leg input{background:none;border:0;color:var(--ink);font-size:1.7rem;font-weight:700;width:60%;outline:none;font-family:var(--sans)}
-.pill{display:inline-flex;align-items:center;gap:8px;background:rgba(220,233,5,.08);border:1px solid var(--line-2);border-radius:999px;padding:7px 12px;cursor:pointer;transition:.14s;font-weight:700;font-size:.9rem;white-space:nowrap}
-.pill:hover{border-color:var(--lime);background:rgba(220,233,5,.14)}
-.pill .chip{width:22px;height:22px;border-radius:50%;background:conic-gradient(from 210deg,var(--lime),var(--violet),var(--lime-deep));flex:none}
-.pill .chev{color:var(--dim);font-size:.7rem}
-.sub{font-size:.78rem;color:var(--dim);margin-top:8px}
+.leg input{background:none;border:0;color:var(--ink);font-size:1.7rem;font-weight:700;width:52%;outline:none;font-family:var(--sans)}
+.leg input:read-only{color:var(--dim)}
+.selwrap{display:inline-flex;align-items:center;gap:7px;background:rgba(220,233,5,.08);border:1px solid var(--line-2);border-radius:999px;padding:5px 10px 5px 6px;flex:none}
+.selic{width:23px;height:23px;border-radius:50%;object-fit:cover;background:conic-gradient(from 210deg,var(--lime),var(--violet),var(--lime-deep));flex:none}
+.selwrap select{background:none;border:0;color:var(--ink);font-weight:800;font-size:.92rem;outline:none;font-family:var(--sans);cursor:pointer;max-width:118px}
+.selwrap select option{background:var(--panel);color:var(--ink)}
+.sub{font-size:.78rem;color:var(--dim);margin-top:9px;display:flex;align-items:center;gap:5px}
+.chainsel{background:rgba(220,233,5,.06);border:1px solid var(--line-2);border-radius:8px;padding:3px 6px;color:var(--lime);font-weight:700;font-family:var(--sans);cursor:pointer;font-size:.8rem;outline:none}
+.chainsel option{background:var(--panel);color:var(--ink)}
 .swapmid{display:flex;justify-content:center;margin:-8px 0;position:relative;z-index:2}
 .swapmid .ic{width:38px;height:38px;border-radius:11px;background:var(--panel);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--lime);font-size:1.1rem}
-.chain-strip{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 2px;justify-content:center}
-.chain-strip span{font-size:.72rem;color:var(--dim);border:1px solid var(--line-2);border-radius:999px;padding:4px 10px;font-family:var(--mono)}
 .cta{width:100%;margin-top:16px;font-size:1.05rem;padding:15px}
-.route{margin-top:12px;font-size:.76rem;color:var(--dim);text-align:center;line-height:1.6}
+.route{margin-top:12px;font-size:.76rem;color:var(--dim);text-align:center;line-height:1.6;min-height:1px}
 .route b{color:var(--ink)}
+.status{margin-top:12px;font-size:.85rem;text-align:center;line-height:1.7;min-height:1px}
+.status .ok{color:var(--up);font-weight:700}.status .err{color:var(--down)}.status .run{color:var(--lime-2)}
+.status a{color:var(--lime);text-decoration:underline}
 .trust{display:flex;flex-wrap:wrap;gap:8px 18px;justify-content:center;margin-top:22px}
 .trust span{font-size:.8rem;color:var(--dim);display:inline-flex;align-items:center;gap:7px}
 .trust .d{color:var(--lime)}
 .note{max-width:480px;margin:26px auto 0;font-size:.82rem;color:var(--dim);text-align:center;line-height:1.6;border-top:1px solid var(--line-2);padding-top:18px}
-/* footer */
 footer{border-top:1px solid var(--line-2);margin-top:20px}
 .foot-in{display:flex;align-items:center;justify-content:space-between;padding:20px 22px;font-size:.85rem;color:var(--dim);flex-wrap:wrap;gap:10px}
 .foot-in .mid b{color:var(--lime)}
 .foot-in .socs{display:flex;align-items:center;gap:12px}
 .foot-in .socs a{color:var(--dim)}.foot-in .socs a:hover{color:var(--lime)}
-@media(max-width:640px){.nav-in{flex-wrap:wrap}.nav .links{order:3;width:100%;justify-content:flex-start;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:.85rem}}
+@media(max-width:640px){.nav-in{flex-wrap:wrap;padding:11px 16px}.nav .links{order:3;width:100%;justify-content:flex-start;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:.85rem}}
 </style>
 </head>
 <body>
@@ -90,7 +90,7 @@ footer{border-top:1px solid var(--line-2);margin-top:20px}
   <a class="mark" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" /><span class="wm">ROBIN<small>LABS</small></span></a>
   <div class="links">
     <a href="browse.html">Browse</a>
-    <a href="rewards.html">Rewards</a>
+    <a href="swap.html">Swap</a>
     <a href="bridge.html" class="on">Buy Cross-Chain</a>
     <a href="profile.html">Portfolio</a>
     <a href="docs.html">Docs</a>
@@ -102,52 +102,49 @@ footer{border-top:1px solid var(--line-2);margin-top:20px}
   <section class="hero wrap">
     <div class="eyebrow">Pay with anything · land on Robinhood Chain</div>
     <h1>BUY ANY ROBIN COIN<br>WITH <span class="g">ANY TOKEN</span></h1>
-    <p>Bring ETH, USDC, SOL, whatever you hold, from Ethereum, Base, Arbitrum, Solana and more. One step, best price, straight into the coin. You never leave Robin Labs.</p>
+    <p>Bring ETH or USDC from Ethereum, Base, Arbitrum, Optimism, Polygon or BNB Chain. One signature, best price, straight into the coin. You never leave Robin Labs.</p>
   </section>
 
   <section class="stage wrap">
     <div class="card" id="swapCard">
-      <!-- The reskinned cross-chain buy card. The routing engine (LI.FI/Relay, best price)
-           mounts here, themed to Robin Labs and served from this page - never a redirect. -->
       <div class="leg">
         <div class="lab">You pay</div>
         <div class="row">
-          <input id="payAmt" inputmode="decimal" placeholder="0.0" value="0.5" aria-label="Amount to pay" />
-          <button class="pill" id="payToken" type="button"><span class="chip"></span> ETH <span class="chev">▼</span></button>
+          <input id="payAmt" inputmode="decimal" placeholder="0.0" value="0.1" aria-label="Amount to pay" />
+          <span class="selwrap"><img id="payTokIc" class="selic" alt="" onerror="this.style.visibility='hidden'" /><select id="srcToken" aria-label="Pay token"></select></span>
         </div>
-        <div class="sub" id="payChain">from Ethereum · any chain, any token</div>
+        <div class="sub">from <select id="srcChain" class="chainsel" aria-label="Source chain"></select></div>
       </div>
 
       <div class="swapmid"><div class="ic">↓</div></div>
 
       <div class="leg">
-        <div class="lab">You get</div>
+        <div class="lab">You get (estimated)</div>
         <div class="row">
           <input id="getAmt" placeholder="0.0" value="" aria-label="Estimated amount received" readonly />
-          <button class="pill" id="getToken" type="button"><span class="chip"></span> Pick a coin <span class="chev">▼</span></button>
+          <span class="selwrap"><img id="getCoinIc" class="selic" alt="" onerror="this.style.visibility='hidden'" /><select id="dstCoin" aria-label="Coin to receive"></select></span>
         </div>
         <div class="sub">on <b style="color:var(--lime)">Robinhood Chain</b> · the Robin Labs coin you want</div>
       </div>
 
-      <button class="btn btn-lime cta" id="buyCta" type="button">Connect wallet to buy</button>
-
-      <div class="route">
-        Best-price routing across <b>Across</b>, <b>deBridge</b> &amp; <b>Relay</b>, settled on-chain into
-        <b>RobinZap</b>, which buys the coin and sends it to your wallet. Non-custodial, one signature.
-      </div>
+      <div class="route" id="routeInfo"></div>
+      <button class="btn btn-lime cta" id="buyCta" type="button" disabled>Connect wallet</button>
+      <div class="status" id="bridgeStatus"></div>
     </div>
   </section>
 
   <div class="trust wrap">
     <span><span class="d">●</span> Non-custodial, your keys the whole way</span>
-    <span><span class="d">●</span> 26+ EVM chains + Solana</span>
-    <span><span class="d">●</span> Best price, auto-routed</span>
-    <span><span class="d">●</span> Lands in one step</span>
+    <span><span class="d">●</span> 6 EVM chains, one signature</span>
+    <span><span class="d">●</span> Best price, auto-routed by LI.FI</span>
+    <span><span class="d">●</span> Lands straight in the coin</span>
   </div>
 
   <p class="note">
-    Powered by open, audited bridges and Robin Labs' own on-chain handler, all inside robinlab.io.
-    Amounts and routes are quoted live; you approve exactly one transaction and the coin arrives on Robinhood Chain.
+    Routing by <b>LI.FI</b> across Across, Relay and more, delivered straight into your chosen coin on
+    Robinhood Chain. Non-custodial: you approve at most one token spend and sign one bridge transaction on
+    the source chain, then the coin arrives in your wallet. Amounts are quoted live; final amount can move
+    slightly with the market.
   </p>
 </main>
 
@@ -162,36 +159,178 @@ footer{border-top:1px solid var(--line-2);margin-top:20px}
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
-// Lightweight interactivity for the shell. The live routing engine (LI.FI SDK, themed to
-// these tokens, + RobinZap on Robinhood Chain) wires into #swapCard next; this keeps the
-// page on-brand and interactive in the meantime, never redirecting off robinlab.io.
-(function(){
-  var cbtn = document.getElementById('connectBtn');
-  var cta = document.getElementById('buyCta');
-  // Wallet button: connect, or open your profile if already connected — same behavior as every page.
-  var refresh = function(){
-    var a = Pad.account();
-    cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet';
-    if (a) cta.textContent = 'Buy';
-  };
-  cbtn.addEventListener('click', async function(e){
-    e.preventDefault();
-    if (Pad.account()) { location.href = 'profile.html'; return; }
-    try { await Pad.connect(); refresh(); } catch(err){ alert(err.message || String(err)); }
-  });
-  window.addEventListener('robinpad:ready', refresh); refresh();
-  // Preselect a coin from ?token= so the coin page can deep-link into the cross-chain buy.
-  // Only accept a well-formed EVM address, and build the label via textContent so nothing from the
-  // query string can ever reach innerHTML.
-  var p = new URLSearchParams(location.search).get('token');
-  if (p && /^0x[0-9a-fA-F]{40}$/.test(p)) {
-    var el = document.getElementById('getToken');
-    el.textContent = '';
-    var chip = document.createElement('span'); chip.className = 'chip';
-    var label = document.createTextNode(' ' + p.slice(0,6) + '…' + p.slice(-4) + ' ');
-    var chev = document.createElement('span'); chev.className = 'chev'; chev.textContent = '▼';
-    el.appendChild(chip); el.appendChild(label); el.appendChild(chev);
+import * as Bridge from './assets/bridge.js';
+import { UNI_TOKENS } from './assets/config.js';
+
+const $ = (id) => document.getElementById(id);
+const cbtn = $('connectBtn'), cta = $('buyCta');
+const esc = (s) => String(s == null ? '' : s);
+const PREVIEW_ADDR = '0x742d35Cc6634C0532925a3b844Bc454e4438f44e'; // for indicative quotes before connect
+
+// ── coin metadata (symbol + logo) from DexScreener, same source the rest of the pad uses ──
+const COINS = new Map(); // addr(lc) -> { addr, symbol, image, decimals }
+async function loadCoins(){
+  UNI_TOKENS.forEach((a) => COINS.set(a, { addr: a, symbol: '…', image: null, decimals: 18 }));
+  try {
+    const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + UNI_TOKENS.join(','));
+    const j = await r.json();
+    const best = new Map();
+    for (const p of (j.pairs || [])){
+      if (p.chainId !== 'robinhood') continue;
+      const a = (p.baseToken && p.baseToken.address || '').toLowerCase(); if (!a) continue;
+      const vol = (p.volume && p.volume.h24) || 0, cur = best.get(a);
+      if (!cur || vol > cur._v) best.set(a, { addr: a, symbol: p.baseToken.symbol, image: (p.info && p.info.imageUrl) || null, decimals: 18, _v: vol });
+    }
+    for (const [a, m] of best) COINS.set(a, m);
+  } catch { /* fall back to the … placeholders */ }
+}
+
+// ── state ──
+let quoteSeq = 0, lastQuote = null, busy = false;
+const state = { chain: 42161, token: null, coin: null };
+
+function fillChains(){
+  $('srcChain').innerHTML = Bridge.SRC_CHAINS.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  $('srcChain').value = String(state.chain);
+}
+function fillTokens(){
+  const toks = Bridge.tokensFor(state.chain);
+  $('srcToken').innerHTML = toks.map((t) => `<option value="${esc(t.addr)}">${esc(t.symbol)}</option>`).join('');
+  if (!toks.find((t) => t.addr === state.token)) state.token = toks[0].addr;
+  $('srcToken').value = state.token;
+  const t = toks.find((x) => x.addr === state.token);
+  $('payTokIc').src = t && t.symbol === 'USDC'
+    ? 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png'
+    : 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png';
+  $('payTokIc').style.visibility = 'visible';
+}
+function fillCoins(){
+  const opts = UNI_TOKENS.map((a) => { const c = COINS.get(a) || { symbol: a.slice(0,6) }; return `<option value="${esc(a)}">${esc(c.symbol)}</option>`; }).join('');
+  $('dstCoin').innerHTML = opts;
+  if (!UNI_TOKENS.includes(state.coin)) state.coin = UNI_TOKENS[0];
+  $('dstCoin').value = state.coin;
+  paintCoinIc();
+}
+function paintCoinIc(){
+  const c = COINS.get(state.coin);
+  if (c && c.image){ $('getCoinIc').src = c.image; $('getCoinIc').style.visibility = 'visible'; }
+  else { $('getCoinIc').removeAttribute('src'); $('getCoinIc').style.visibility = 'visible'; }
+}
+const srcTokenMeta = () => Bridge.tokensFor(state.chain).find((t) => t.addr === state.token) || { decimals: 18, symbol: 'ETH', native: true };
+const coinMeta = () => COINS.get(state.coin) || { symbol: '', decimals: 18 };
+
+// ── live quote (debounced) ──
+let quoteTimer = null;
+function scheduleQuote(){ clearTimeout(quoteTimer); quoteTimer = setTimeout(refreshQuote, 450); }
+async function refreshQuote(){
+  const seq = ++quoteSeq;
+  lastQuote = null; setBuy();
+  const amt = $('payAmt').value.trim();
+  const st = srcTokenMeta();
+  const wei = Bridge.parseUnits(amt, st.decimals);
+  if (!wei || wei <= 0n){ $('getAmt').value = ''; $('routeInfo').textContent = ''; return; }
+  $('getAmt').value = '…'; $('routeInfo').textContent = 'Finding the best route…';
+  try {
+    const q = await Bridge.quote({ fromChain: state.chain, fromToken: state.token, fromAmount: wei.toString(),
+      fromAddress: Pad.account() || PREVIEW_ADDR, toToken: state.coin });
+    if (seq !== quoteSeq) return; // stale
+    lastQuote = q;
+    const outStr = Bridge.fmtUnits(q.toAmount, q.toDecimals);
+    const out = Number(outStr);
+    $('getAmt').value = out >= 1 ? out.toLocaleString(undefined, { maximumFractionDigits: 4 }) : out.toPrecision(4);
+    const mins = Math.max(1, Math.round((q.durationSec || 60) / 60));
+    const via = (q.steps || []).filter((s) => !/fee|collect/i.test(s)).join(' + ') || q.tool || 'best route';
+    const cost = (q.gasUSD || 0) + (q.feeUSD || 0);
+    $('routeInfo').innerHTML = `via <b>${esc(via)}</b> · ~${mins} min · fees ~$${cost.toFixed(2)}`;
+    setBuy();
+  } catch (e){
+    if (seq !== quoteSeq) return;
+    $('getAmt').value = ''; lastQuote = null;
+    $('routeInfo').innerHTML = `<span style="color:var(--down)">No route right now: ${esc((e && e.message) || 'try a different amount or token')}</span>`;
+    setBuy();
   }
+}
+
+function setStatus(html, cls){ $('bridgeStatus').innerHTML = html ? `<span class="${cls || ''}">${html}</span>` : ''; }
+function setBuy(){
+  if (busy) return;
+  const acct = Pad.account();
+  if (!acct){ cta.textContent = 'Connect wallet'; cta.disabled = false; return; }
+  if (!lastQuote){ cta.textContent = 'Enter an amount'; cta.disabled = true; return; }
+  cta.textContent = `Buy ${esc(coinMeta().symbol || 'coin')}`; cta.disabled = false;
+}
+
+// ── buy flow: (connect →) re-quote for the real address → execute → poll status ──
+async function onBuy(){
+  if (busy) return;
+  if (!Pad.account()){ try { await Pad.connect(); afterConnect(); } catch (e){ setStatus(esc((e && e.message) || 'Could not connect'), 'err'); } return; }
+  if (!lastQuote) return;
+  busy = true; cta.disabled = true; setStatus('');
+  const st = srcTokenMeta();
+  const wei = Bridge.parseUnits($('payAmt').value.trim(), st.decimals);
+  try {
+    // Re-quote bound to the REAL wallet address right before signing (LI.FI ties the route to fromAddress).
+    cta.textContent = 'Getting best price…';
+    const q = await Bridge.quote({ fromChain: state.chain, fromToken: state.token, fromAmount: wei.toString(),
+      fromAddress: Pad.account(), toToken: state.coin });
+    const phases = { switch: (d) => `Switch your wallet to ${esc(d)}…`, approve: () => 'Approve the token spend in your wallet…', sign: () => 'Confirm the bridge in your wallet…', sent: () => 'Bridging…' };
+    const res = await Bridge.execute(q, { fromChain: state.chain, fromToken: state.token, fromAmount: wei.toString(),
+      fromAddress: Pad.account(), onProgress: (p, d) => { cta.textContent = 'Working…'; setStatus((phases[p] ? phases[p](d) : p), 'run'); } });
+    const srcC = Bridge.SRC_CHAINS.find((c) => c.id === state.chain);
+    setStatus(`Bridging your ${esc(coinMeta().symbol)}… <a href="${srcC.exp}/tx/${esc(res.srcTxHash)}" target="_blank" rel="noopener">source tx</a>. This can take a few minutes, you can leave this open.`, 'run');
+    pollStatus(res.srcTxHash, res.bridge);
+  } catch (e){
+    const m = (e && (e.message || String(e))) || 'Bridge failed';
+    setStatus(/reject|denied|4001|cancel/i.test(m) ? 'You cancelled, nothing was sent.' : esc(m), 'err');
+    busy = false; setBuy();
+  }
+}
+
+async function pollStatus(txHash, bridge){
+  for (let i = 0; i < 100; i++){
+    await new Promise((r) => setTimeout(r, 8000));
+    let s; try { s = await Bridge.status({ txHash, fromChain: state.chain, bridge }); } catch { continue; }
+    if (s.status === 'DONE'){
+      const got = s.receiving && s.receiving.amount ? Bridge.fmtUnits(s.receiving.amount, coinMeta().decimals || 18) : '';
+      const link = s.receiving && s.receiving.txHash ? ` <a href="https://robinhoodchain.blockscout.com/tx/${esc(s.receiving.txHash)}" target="_blank" rel="noopener">view</a>` : '';
+      setStatus(`Done. ${got ? esc(Number(got).toLocaleString(undefined,{maximumFractionDigits:4})) + ' ' : ''}${esc(coinMeta().symbol)} landed on Robinhood Chain.${link} <a href="swap.html?c=${esc(state.coin)}">Trade it</a>`, 'ok');
+      busy = false; setBuy(); return;
+    }
+    if (s.status === 'FAILED'){
+      setStatus(`The bridge reported a problem${s.substatusMessage ? ': ' + esc(s.substatusMessage) : ''}. Your funds are safe on the source chain or refunded by the bridge. `, 'err');
+      busy = false; setBuy(); return;
+    }
+    // PENDING / NOT_FOUND → keep waiting
+  }
+  setStatus('Still bridging, this one is slow. Check your Robinhood Chain wallet in a few minutes.', 'run');
+  busy = false; setBuy();
+}
+
+// ── wallet button ──
+function refreshWallet(){ cbtn.textContent = Pad.account() ? Pad.short(Pad.account()) : 'Connect Wallet'; setBuy(); }
+function afterConnect(){ refreshWallet(); refreshQuote(); }
+cbtn.addEventListener('click', async (e) => { e.preventDefault(); if (Pad.account()){ location.href = 'profile.html'; return; } try { await Pad.connect(); afterConnect(); } catch (err){ alert((err && err.message) || String(err)); } });
+window.addEventListener('robinpad:ready', refreshWallet);
+
+// ── wiring ──
+$('srcChain').addEventListener('change', () => { state.chain = Number($('srcChain').value); fillTokens(); scheduleQuote(); });
+$('srcToken').addEventListener('change', () => { state.token = $('srcToken').value; fillTokens(); scheduleQuote(); });
+$('dstCoin').addEventListener('change', () => { state.coin = $('dstCoin').value; paintCoinIc(); scheduleQuote(); });
+$('payAmt').addEventListener('input', scheduleQuote);
+cta.addEventListener('click', onBuy);
+
+(function boot(){
+  // deep-link ?token=<coin> (from a coin page) preselects the coin to receive
+  const p = (new URLSearchParams(location.search).get('token') || '').toLowerCase();
+  state.token = Bridge.tokensFor(state.chain)[0].addr;
+  if (/^0x[0-9a-f]{40}$/.test(p) && UNI_TOKENS.includes(p)) state.coin = p;
+  // Seed placeholder coin metadata synchronously so the selectors populate IMMEDIATELY,
+  // never blocked behind the DexScreener fetch (a slow fetch would otherwise leave the page empty).
+  UNI_TOKENS.forEach((a) => { if (!COINS.has(a)) COINS.set(a, { addr: a, symbol: '…', image: null, decimals: 18 }); });
+  fillChains(); fillTokens(); fillCoins();
+  refreshWallet();
+  refreshQuote();
+  loadCoins().then(() => { fillCoins(); });  // enrich symbols + logos in the background, then repaint
 })();
 </script>
 </body>

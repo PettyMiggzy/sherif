@@ -61,6 +61,7 @@ const REWARD_LEG_BPS = 25; // 0.25% router reward leg (buy→traders / sell→ho
 // more than one, show a picker. Legacy wallets that only expose window.ethereum still work.
 const _wallets = new Map(); // rdns -> { info:{uuid,name,icon,rdns}, provider }
 let _eip = null;            // the currently-connected provider
+let _bridgeMode = false;    // while true, a chainChanged does NOT reload (the bridge deliberately hops chains)
 const WALLET_KEY = "rl_wallet_rdns";
 if (typeof window !== "undefined") {
   window.addEventListener("eip6963:announceProvider", (e) => {
@@ -219,12 +220,19 @@ async function connectWith(wallet) {
   // keep UI in sync if the user switches account/chain in their wallet
   eip.removeAllListeners?.("accountsChanged");
   eip.on?.("accountsChanged", () => location.reload());
-  eip.on?.("chainChanged", () => location.reload());
+  eip.on?.("chainChanged", () => { if (!_bridgeMode) location.reload(); });
   return _account;
 }
 
 /** Forget the remembered wallet so the next Connect re-shows the picker. */
 export function forgetWallet() { try { localStorage.removeItem(WALLET_KEY); } catch { /* ignore */ } }
+
+// ── bridge support ────────────────────────────────────────────────────────────
+// The cross-chain bridge (bridge.html) deliberately switches the wallet to a SOURCE chain
+// (Ethereum/Base/Arbitrum/…) to sign one tx there, so it needs the raw EIP-1193 provider AND a
+// way to suppress the chainChanged→reload guard for the duration of that flow.
+export function rawEip() { return _eip; }
+export function setBridgeMode(on) { _bridgeMode = !!on; }
 
 async function ensureChain(eip) {
   const current = await eip.request({ method: "eth_chainId" });
