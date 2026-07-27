@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "io.robinlab.twa",
+    "sha256_cert_fingerprints": ["30:4E:0E:0A:64:68:37:0A:60:C8:EE:EA:1D:C3:54:F1:39:E4:69:43:D4:B9:F1:FB:1F:46:6B:F5:C1:A4:2A:8E"]
+  }
+}]
