@@ -2,7 +2,7 @@
 // Demo data - OPT-IN preview. Loads ONLY when the URL has ?demo=1; otherwise every
 // visitor sees the honest, live on-chain board. The stack is deployed and coins have
 // launched, so sample data is never the default - just a populated-pad preview.
-//   Preview:  robinlabs.io/?demo=1   ·   robinlabs.io/token.html?c=<any>&demo=1
+//   Preview:  robinlab.io/?demo=1   ·   robinlab.io/token.html?c=<any>&demo=1
 // (Was temporarily ON-by-default during pre-launch review - now flipped to opt-in.)
 const _q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
 export const DEMO = typeof location !== "undefined" && ["1","true",""].includes(_q.get("demo"));

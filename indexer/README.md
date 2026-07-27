@@ -53,7 +53,7 @@ Serves the static pad **and** the API on one domain with automatic HTTPS
 ```bash
 cd indexer
 cp .env.example .env
-#  → set RPC_URL (Alchemy/QuickNode), START_BLOCK, and SITE_DOMAIN=pad.robinlabs.io
+#  → set RPC_URL (Alchemy/QuickNode), START_BLOCK, and SITE_DOMAIN=pad.robinlab.io
 docker compose up -d
 ```
 
@@ -61,10 +61,10 @@ Point your domain's A record at the box first. Then set, in
 `pad/assets/config.js`:
 
 ```js
-export const API_BASE = "https://pad.robinlabs.io";   // your SITE_DOMAIN
+export const API_BASE = "https://pad.robinlab.io";   // your SITE_DOMAIN
 ```
 
-That's it — `https://pad.robinlabs.io` now serves the pad, and
+That's it — `https://pad.robinlab.io` now serves the pad, and
 `…/api/coins` is the live feed.
 
 ### DigitalOcean droplet — API only, pad stays on Vercel (recommended)

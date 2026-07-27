@@ -25,7 +25,7 @@ node docs/build.mjs
 1. Create a space at [gitbook.com](https://gitbook.com) (free tier is fine).
 2. **Sync with Git** → point it at this repo, subdirectory `docs/gitbook`.
    GitBook reads `SUMMARY.md` for the sidebar and `README.md` as the landing.
-3. In the space settings, set a **custom domain** → `docs.robinlabs.io`
+3. In the space settings, set a **custom domain** → `docs.robinlab.io`
    (add the CNAME GitBook shows you at your registrar).
 
 Done — same look as the big pads, hosted for you, with search built in.
@@ -36,7 +36,7 @@ Done — same look as the big pads, hosted for you, with search built in.
    repo, subdirectory `docs/mintlify`.
 2. Mintlify reads `mint.json` for navigation/theme and renders the `.mdx` pages.
    Brand colors and the "Launch a coin" CTA are already set.
-3. Add your **custom domain** → `docs.robinlabs.io` in the dashboard.
+3. Add your **custom domain** → `docs.robinlab.io` in the dashboard.
 
 No "powered by" on Mintlify's free plan — it reads a notch more premium.
 

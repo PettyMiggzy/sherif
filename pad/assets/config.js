@@ -266,7 +266,7 @@ export const ADMIN_ABI = {
 };
 
 // ── Optional indexer/API (see /indexer) ─────────────────────────────────────
-// When set to your indexer host (e.g. "https://api.robinlabs.io"), the browse
+// When set to your indexer host (e.g. "https://api.robinlab.io"), the browse
 // feed, search, trending/top sorting and per-coin trade history come from the
 // API in ONE request instead of fanning out dozens of RPC calls per page. Leave
 // "" and everything falls back to reading the chain directly - the pad works
