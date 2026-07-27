@@ -241,7 +241,20 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .bsort>svg{position:absolute;right:12px;width:15px;height:15px;pointer-events:none;color:var(--dim)}
 @media(max-width:560px){.bsearch .bsort{margin-left:0}}
 .board{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:14px;margin-top:14px}
-@media(max-width:560px){.board{grid-template-columns:1fr}}
+/* mobile: two tokens per row (denser, built to hold a lot of tokens) instead of one big card per line */
+@media(max-width:560px){
+  .board{grid-template-columns:repeat(2,1fr);gap:9px}
+  .bcard{padding:9px;border-radius:11px}
+  .bcard .btop{gap:7px}
+  .bav,.bcard .bav{width:30px;height:30px}
+  .bnm{font-size:.82rem}.btk{font-size:.68rem}
+  .bstats{gap:3px;margin:8px 0 7px}
+  .bstats .bk{font-size:.56rem}.bstats .bv{font-size:.72rem}
+  .bqbuy{font-size:.72rem;padding:7px;gap:4px}.bqbuy .bamt{font-size:.64rem}
+  .bchg{font-size:.62rem}
+  .bsoon{font-size:.5rem;padding:2px 6px;top:7px;right:7px}
+}
+@media(max-width:380px){ .board .bqbuy .bamt{display:none} } /* tiny phones: drop the "0.1 ETH" tag so the button fits */
 /* skeleton shimmer while a page loads */
 .bskel{height:186px;border-radius:13px;border:1px solid var(--line-2);background:
   linear-gradient(100deg,var(--bg) 30%,rgba(255,255,255,.05) 50%,var(--bg) 70%) 0/220% 100%;
@@ -295,7 +308,7 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 /* trending cards */
 .tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
 @media(max-width:1000px){.tgrid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:560px){.tgrid{grid-template-columns:1fr}}
+@media(max-width:560px){.tgrid{grid-template-columns:repeat(2,1fr);gap:9px}.tcard{padding:11px}.tcard .g3{gap:4px;margin:10px 0 8px}}
 .tcard{padding:16px;transition:.16s;position:relative}
 .tcard:hover{border-color:var(--line-strong);transform:translateY(-2px)}
 .tcard .row{display:flex;align-items:center;gap:11px}
@@ -581,16 +594,20 @@ async function loadExternal(){
         _vol: vol, external: true,
       });
     }
-    EXTERNAL = [...best.values()].sort((a, b) => b.liqUsd - a.liqUsd).slice(0, 10);
+    EXTERNAL = [...best.values()].sort((a, b) => b.liqUsd - a.liqUsd).slice(0, 20);
   } catch { EXTERNAL = []; }
   return EXTERNAL;
 }
-// blend external tokens in with a page of pad coins, sorted by volume, de-duped against the pad coins
+// Our official $ROBIN (the chain has many impersonator "ROBIN"/"HOOD" copies, so we pin by EXACT address).
+const ROBIN_TOKEN = '0x6696fe29288b586017e6f264c0091dba6c5ebeaf';
+const isRobin = (c) => String(c && c.token || '').toLowerCase() === ROBIN_TOKEN;
+// Sort: our $ROBIN always first, then everything else by volume. Used for the board, trending, and ticker.
+const byRobinThenVol = (a, b) => { const ar = isRobin(a), br = isRobin(b); if (ar !== br) return ar ? -1 : 1; return cVol(b) - cVol(a); };
+// blend external tokens in with a page of pad coins, $ROBIN pinned on top, de-duped against the pad coins
 function blendExternal(padCoins){
-  if (!EXTERNAL.length) return padCoins;
   const have = new Set((padCoins || []).map((c) => String(c.token || '').toLowerCase()));
   const ext = EXTERNAL.filter((e) => !have.has(String(e.token || '').toLowerCase()));
-  return [...(padCoins || []), ...ext].sort((a, b) => cVol(b) - cVol(a));
+  return [...(padCoins || []), ...ext].sort(byRobinThenVol);
 }
 // only blend on the open, unsearched board (All / Live), not on pad-specific tabs or a search
 const showExternal = () => !DEMO && !curQ && (curFilter.key === 'all' || curFilter.key === 'live') && EXTERNAL.length > 0;
@@ -606,7 +623,7 @@ function tcardExt(c){
       <div><div class="k">Volume</div><div class="val">${fmtUsd(cVol(c))}</div></div>
       <div><div class="k">Liquidity</div><div class="val">${fmtUsd(c.liqUsd||0)}</div></div>
     </div>
-    <div class="buy bqsoon">Trading soon on Robin</div>
+    <div class="buy bqsoon">On Robinhood Chain</div>
   </div>`;
 }
 function bcardExt(c){
@@ -617,7 +634,7 @@ function bcardExt(c){
     <span class="bsoon">Trading soon</span>
     <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btk">${esc(tsym(c.symbol))}</div></div><span class="bchg ${chgCls}"${chgInner?'':' style="display:none"'}>${chgInner}</span></div>
     <div class="bstats"><div><span class="bk">MC</span><span class="bv">${fmtUsd(cMc(c))}</span></div><div><span class="bk">Vol</span><span class="bv">${fmtUsd(cVol(c))}</span></div><div><span class="bk">Liq</span><span class="bv">${fmtUsd(c.liqUsd||0)}</span></div></div>
-    <div class="bqbuy bqsoon">Trading soon on Robin</div>
+    <div class="bqbuy bqsoon">On Robinhood Chain</div>
   </div>`;
 }
 
@@ -947,7 +964,7 @@ async function initBoard() {
   // TRENDING cards - the top projects by 24h volume (pad coins + external), shown as cards at the top
   boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:8 }).then(r => {
     const el = $('trendCards'); if (!el) return;
-    const top = blendExternal(r.coins || []).slice(0, 12);
+    const top = blendExternal(r.coins || []).slice(0, 20);
     el.innerHTML = top.length ? top.map(tcard).join('') : `<div class="empty" style="padding:14px;grid-column:1/-1">No live projects yet, <a href="create.html">launch the first</a>.</div>`;
     const sec = document.getElementById('trendsec'); if (sec && !top.length) sec.style.display = 'none'; // hide the whole trending block until there are coins
   });
