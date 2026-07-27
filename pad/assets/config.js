@@ -62,6 +62,12 @@ export const CONTRACTS = {
   // admin panel to read/set the split. Key MUST be `splitter` to match ADMIN_ABI.splitter and admin.html.
   splitter: "0xca0EfD87B983CdeF56459051ecBE91aA5C87E17a",
 
+  // RobinLimit - non-custodial limit orders + DCA over RobinSwap. STAGED, not deployed:
+  // the contract moves funds and must be reviewed/audited first (see launchpad/contracts/
+  // RobinLimit.REVIEW.md). It also needs RobinSwap live. Leave "" so isDeployed('robinLimit')
+  // stays false and the profile "Automations" UI + keeper stay off until the address is set.
+  robinLimit: "",
+
   // The platform's buy-back token + its WETH pool (for links / a future buy widget).
   // The above-default fee's 25% cut is paid to the platform, which buys+burns the
   // platform token off-chain - the router does not swap it on-chain. TBD for Robin Labs.
