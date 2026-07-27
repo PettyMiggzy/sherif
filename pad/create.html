@@ -202,7 +202,7 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
       <!-- Advanced: lock the dev bag (only useful when you're doing a dev buy). Shown when Dev buy > 0.
            The lock itself is set up right after launch, from the coin page, so it can never delay the launch tx. -->
       <div class="field" id="lockCard" style="display:none">
-        <label>Advanced: Lock your dev bag <span class="hint">optional · prove on-chain you can't dump</span></label>
+        <label>Lock your dev bag <span class="hint">earn the Dev Locked badge buyers look for</span></label>
         <div class="devbuy">
           <div class="hd"><span style="font-weight:700">Lock of your dev buy</span><span class="amt" id="lockPctAmt">0%</span></div>
           <input type="range" id="lockPct" aria-label="Percent of dev bag to lock" min="0" max="100" step="5" value="0" oninput="lockSync()" />
@@ -217,7 +217,7 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
             <button type="button" data-m="linear" class="on" style="flex:1">Linear unlock</button>
             <button type="button" data-m="cliff" style="flex:1">Cliff · all at end</button>
           </div>
-          <p id="lockNote">Off, you keep your bag liquid.</p>
+          <p id="lockNote">Not locked yet. Devs who lock earn the Dev Locked badge buyers look for.</p>
         </div>
       </div>
 
@@ -352,7 +352,7 @@ function lockSync(){
   document.getElementById('lockPctAmt').textContent = pct + '%';
   const dur = __lockDays === 365 ? '1 year' : __lockDays + ' days';
   document.getElementById('lockNote').textContent = pct === 0
-    ? 'Off, you keep your bag liquid. Slide to lock a share of your dev buy in an irrevocable cliff+linear vesting lock, so buyers can verify on-chain that you can’t dump.'
+    ? 'Not locked yet. Devs who lock earn the Dev Locked badge buyers look for, proof on-chain you can’t dump. Slide to lock a share of your dev buy in an irrevocable cliff+linear vesting lock.'
     : `Locking ${pct}% of your dev buy for ${dur}, ${__lockMode === 'cliff' ? 'released all at once at the end (hard cliff)' : 'unlocking linearly over the term'}. Irrevocable, no cancel, no owner. It’s set up right after your coin launches (approve + lock), so it never delays the launch.`;
 }
 document.getElementById('lockDurs').addEventListener('click',(e)=>{const b=e.target.closest('button[data-d]');if(!b)return;__lockDays=+b.dataset.d;[...b.parentNode.children].forEach(x=>x.classList.toggle('on',x===b));lockSync();});
