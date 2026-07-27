@@ -23,12 +23,39 @@ const headers = () => {
 };
 const allowed = (id) => CFG.lifiSrcChains.includes(Number(id));
 
+// ── usage tracking (so we can alert BEFORE LI.FI throttles and add another key) ──
+// Each LI.FI key is capped at ~100 upstream requests/min. We track a rolling 60s window of upstream
+// calls + any 429s (LI.FI's rate-limit signal) and expose it at /api/lifi/stats. In-memory, per instance.
+const _s = { total: 0, upstream429: 0, last429: 0, window: [] };
+function track(status) {
+  const now = Date.now();
+  _s.total++;
+  _s.window.push(now);
+  const cutoff = now - 60000;
+  while (_s.window.length && _s.window[0] < cutoff) _s.window.shift();
+  if (status === 429) { _s.upstream429++; _s.last429 = now; }
+}
+export function stats() {
+  const now = Date.now();
+  const keys = CFG.lifiApiKeys.length || 1;
+  const budgetPerMin = keys * 100;
+  const reqLastMin = _s.window.length;
+  return {
+    keys, reqLastMin, budgetPerMin,
+    utilizationPct: Math.round((reqLastMin / budgetPerMin) * 100),
+    upstream429Total: _s.upstream429,
+    last429SecsAgo: _s.last429 ? Math.round((now - _s.last429) / 1000) : null,
+    totalSinceBoot: _s.total,
+  };
+}
+
 async function forward(path, { method = "GET", query, body } = {}) {
   let url = BASE + path;
   if (query) url += "?" + query.toString();
   const opts = { method, headers: headers(), signal: AbortSignal.timeout(12000) };
   if (body !== undefined) { opts.body = JSON.stringify(body); opts.headers["content-type"] = "application/json"; }
   const r = await fetch(url, opts);
+  track(r.status);
   let json = null;
   try { json = await r.json(); } catch { /* non-JSON upstream */ }
   return { status: r.status, json: json ?? { error: "bridge upstream error" } };

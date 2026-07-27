@@ -16,7 +16,7 @@ import {
 } from "./db.js";
 import { currentEpoch as rewardsEpoch, userAllocations as rewardsUserAlloc } from "./rewards.js";
 import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleApproval as uniHandleApproval } from "./uniproxy.js";
-import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes } from "./lifiproxy.js";
+import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes, stats as lifiUsage } from "./lifiproxy.js";
 
 const DAY = 86400;
 
@@ -552,6 +552,7 @@ export function startApi() {
       if (!lifiRateOk(ip)) return sendUni(res, 429, { error: "rate limited, slow down" }, lorigin);
       if (!lifiGlobalOk("g")) return sendUni(res, 429, { error: "busy, retry in a moment" }, lorigin);
       const sub = path.slice("/api/lifi/".length);
+      if (sub === "stats") return sendUni(res, 200, lifiUsage(), lorigin); // usage/rate-limit monitor (no upstream call)
       try {
         let out;
         if (sub === "quote") out = await lifiQuote(url.searchParams);
