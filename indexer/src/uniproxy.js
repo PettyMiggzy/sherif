@@ -80,12 +80,19 @@ function validateSwapQuote(q) {
 }
 
 // Universal Router: execute(bytes commands, bytes[] inputs [, uint256 deadline]). Each command byte's low
-// 6 bits (& 0x3f) is the command type; PAY_PORTION = 0x06, input = abi.encode(address token, address recipient, uint256 bips).
+// 6 bits (& 0x3f) is the command type. The integrator fee is taken by a top-level "pay a portion to
+// recipient" command whose input is abi.encode(address currency, address recipient, uint256 bips):
+//   - Classic PAY_PORTION = 0x06, with bips as a plain integer (125 = 1.25%).
+//   - The Universal Router deployed on Robinhood Chain (4663) uses command 0x07 for the SAME purpose, but
+//     encodes bips as a 1e18-scaled WAD fraction (125 bips = 0.0125e18 = 125 * 1e14 = 12500000000000000).
+// Both must be recognised; both carry the same (currency, recipient, bips) tuple. Verified against live
+// buy (WRAP_ETH, V3/V4 swap, 0x07, SWEEP) and sell (V4 swap, 0x07, UNWRAP_WETH) calldata on 4663.
 const UR_IFACE = new ethers.Interface([
   "function execute(bytes commands, bytes[] inputs)",
   "function execute(bytes commands, bytes[] inputs, uint256 deadline)",
 ]);
-const PAY_PORTION = 0x06;
+const PAY_PORTION = 0x06;   // bips as a plain integer
+const FEE_TAKE = 0x07;      // 4663's UR: same tuple, bips as a 1e18 WAD
 const COMMAND_TYPE_MASK = 0x3f;
 
 // Assert the BUILT calldata actually pays OUR fee: a PAY_PORTION command whose recipient is our fee wallet,
@@ -114,13 +121,21 @@ function feeInCalldata(data, tokenIn, tokenOut) {
   else allowedFeeTokens = new Set([tin, tout, WETH]);                  // (guarded elsewhere to one native leg)
   allowedFeeTokens.delete(NATIVE);
   allowedFeeTokens.delete("");
+  // Accept either fee-command encoding: bips as a plain integer (125) OR as a 1e18-scaled WAD (125 * 1e14).
+  // Compare with BigInt — the WAD (1.25e16) exceeds Number.MAX_SAFE_INTEGER, so Number(bips) would round and
+  // could false-match. The strict recipient + leg-token match still blocks any strip/decoy: a command that
+  // doesn't pay OUR wallet OUR bips on a real leg simply isn't counted, so broadening the opcode is safe.
+  const feeBips = BigInt(CFG.uniFeeBips);
+  const feeWad = feeBips * 100000000000000n; // bips -> 1e18 fraction (x 1e14)
   const coder = ethers.AbiCoder.defaultAbiCoder();
   for (let i = 0; i < commands.length; i++) {
-    if ((commands[i] & COMMAND_TYPE_MASK) !== PAY_PORTION) continue;
+    const ct = commands[i] & COMMAND_TYPE_MASK;
+    if (ct !== PAY_PORTION && ct !== FEE_TAKE) continue;
     try {
       const [token, recipient, bips] = coder.decode(["address", "address", "uint256"], inputs[i]);
-      if (lc(recipient) === CFG.uniFeeRecipient && Number(bips) === CFG.uniFeeBips && allowedFeeTokens.has(lc(token))) return true;
-    } catch { /* not a readable PAY_PORTION; keep scanning */ }
+      let b; try { b = BigInt(bips); } catch { continue; }
+      if (lc(recipient) === CFG.uniFeeRecipient && (b === feeBips || b === feeWad) && allowedFeeTokens.has(lc(token))) return true;
+    } catch { /* not a readable fee command; keep scanning */ }
   }
   return false;
 }

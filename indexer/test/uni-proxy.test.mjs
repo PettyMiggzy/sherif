@@ -109,3 +109,45 @@ test("validateSwapQuote re-checks chain, allowlist, one-native-leg, and fee pres
   assert.match(validateSwapQuote({ ...q, aggregatedOutputs: [] }), /fee/);
   assert.match(validateSwapQuote({ ...q, input: { token: CASHCAT }, output: { token: CASHCAT } }), /native|allowlist/);
 });
+
+// The Universal Router deployed on Robinhood Chain (4663) takes the integrator fee via command 0x07 with
+// bips as a 1e18 WAD (125 -> 125*1e14 = 12500000000000000), NOT the classic 0x06 PAY_PORTION with integer
+// bips. These guard against a regression that would 502 every real swap (the fee guard looking in the
+// wrong place / comparing the wrong encoding). WAD (1.25e16) also exceeds Number.MAX_SAFE_INTEGER, so the
+// comparison must be BigInt.
+const WAD_BIPS = 125n * 100000000000000n; // 12500000000000000
+const feeCmd = (feeToken, recipient, bipsVal, cmdByte) => {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  const iface = new ethers.Interface(["function execute(bytes commands, bytes[] inputs)"]);
+  const commands = "0x00" + cmdByte;                                             // V3_SWAP_EXACT_IN then the fee command
+  const swapInput = coder.encode(["address", "uint256", "uint256", "bytes", "bool"], [SWAPPER, 1n, 0n, "0x", true]);
+  const feeInput = coder.encode(["address", "address", "uint256"], [feeToken, recipient, bipsVal]);
+  return iface.encodeFunctionData("execute", [commands, [swapInput, feeInput]]);
+};
+
+test("feeInCalldata accepts the 4663 fee command 0x07 with WAD bips (and still the classic 0x06 integer)", () => {
+  const WETH = "0x0bd7d308f8e1639fab988df18a8011f41eacad73";
+  // 0x07 + WAD, buy: fee on OUTPUT token -> accept
+  assert.equal(feeInCalldata(feeCmd(CASHCAT, FEE_LC, WAD_BIPS, "07"), NATIVE, CASHCAT), true);
+  // 0x07 + WAD, sell: fee on WETH -> accept
+  assert.equal(feeInCalldata(feeCmd(WETH, FEE_LC, WAD_BIPS, "07"), CASHCAT, NATIVE), true);
+  // classic 0x06 + integer 125 still works
+  assert.equal(feeInCalldata(feeCmd(CASHCAT, FEE_LC, 125n, "06"), NATIVE, CASHCAT), true);
+  // WAD on a BUY but on WETH (decoy) -> reject
+  assert.equal(feeInCalldata(feeCmd(WETH, FEE_LC, WAD_BIPS, "07"), NATIVE, CASHCAT), false);
+  // WAD but wrong recipient -> reject
+  assert.equal(feeInCalldata(feeCmd(CASHCAT, SWAPPER, WAD_BIPS, "07"), NATIVE, CASHCAT), false);
+  // reduced WAD (1 bip) -> reject (bips attack)
+  assert.equal(feeInCalldata(feeCmd(CASHCAT, FEE_LC, 1n * 100000000000000n, "07"), NATIVE, CASHCAT), false);
+});
+
+test("feeInCalldata accepts REAL live-captured Universal Router calldata (buy + sell)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const fx = JSON.parse(readFileSync(new URL("./fixtures-uni-calldata.json", import.meta.url), "utf8"));
+  // buy: native -> CASHCAT, fee legitimately on the OUTPUT (CASHCAT)
+  assert.equal(feeInCalldata(fx.buyData, fx.native, fx.cashcat), true, "real buy calldata must pass");
+  // sell: CASHCAT -> native, fee legitimately on WETH
+  assert.equal(feeInCalldata(fx.sellData, fx.cashcat, fx.native), true, "real sell calldata must pass");
+  // leg-binding still holds: the buy's fee (on CASHCAT) must NOT validate if the swap claims to be a sell
+  assert.equal(feeInCalldata(fx.buyData, fx.cashcat, fx.native), false, "leg binding must reject a mislabeled buy");
+});
