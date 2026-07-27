@@ -409,7 +409,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 <header class="nav"><div class="nav-in">
   <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
   <nav class="nav-links">
-    <a href="browse.html">Browse</a><a href="bridge.html">Bridge</a><a href="#graduates">Graduated</a>
+    <a href="browse.html">Browse</a><a href="swap.html">Swap</a><a href="bridge.html">Bridge</a><a href="#graduates">Graduated</a>
     <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="profile.html">Portfolio</a><a href="rewards.html" id="rewardsNav" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLink" style="display:none">⚙ Admin</a>
   </nav>
   <div class="nav-cta">
@@ -421,7 +421,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   </div>
 </div>
 <nav class="mobile-menu" id="mobileMenu">
-  <a href="browse.html">Browse</a><a href="bridge.html">Bridge</a><a href="#graduates">Graduated</a>
+  <a href="browse.html">Browse</a><a href="swap.html">Swap</a><a href="bridge.html">Bridge</a><a href="#graduates">Graduated</a>
   <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add LP</a><a href="profile.html">Portfolio</a><a href="rewards.html" id="rewardsNavM" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLinkM" style="display:none">⚙ Admin</a>
   <a class="btn btn-lime go" href="create.html">Launch Token</a>
 </nav></header>
@@ -576,6 +576,8 @@ const EXT_CANDIDATES = [
   "0x41F41F7B849A25e027876c485544c8088f447A11",
 ];
 let EXTERNAL = []; // card-shaped external tokens, populated once by loadExternal()
+let UNILIVE = false; // is the top-token swap desk live? (set once in initBoard via Pad.uniLive())
+const extSwapUrl = (c) => `swap.html?c=${encodeURIComponent(c.token)}`; // where a top-token card trades
 async function loadExternal(){
   if (DEMO) { EXTERNAL = []; return EXTERNAL; }
   try {
@@ -615,27 +617,31 @@ const showExternal = () => !DEMO && !curQ && (curFilter.key === 'all' || curFilt
 function tcardExt(c){
   const ch = cChg(c);
   const chgInner = (ch == null || Math.abs(ch) < 0.05) ? '' : `<span class="tk" style="color:${ch>=0?'#8bea3c':'#ff6b57'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
-  return `<div class="card tcard bext" title="Top Robinhood Chain token, trading on Robin soon">
-    <span class="bsoon">Trading soon</span>
+  const inner = `
+    <span class="bsoon">Top on Robinhood Chain</span>
     <div class="row">${avatar(c,'av')}<div><div class="nm">${esc(c.name||'Token')}</div><div class="tk">${esc(tsym(c.symbol))} ${chgInner}</div></div></div>
     <div class="g3">
       <div><div class="k">MC</div><div class="val">${fmtUsd(cMc(c))}</div></div>
       <div><div class="k">Volume</div><div class="val">${fmtUsd(cVol(c))}</div></div>
       <div><div class="k">Liquidity</div><div class="val">${fmtUsd(c.liqUsd||0)}</div></div>
     </div>
-    <div class="buy bqsoon">On Robinhood Chain</div>
-  </div>`;
+    <div class="buy${UNILIVE?'':' bqsoon'}">${UNILIVE ? 'Trade on Robin' : 'On Robinhood Chain'}</div>`;
+  return UNILIVE
+    ? `<a class="card tcard bext" href="${extSwapUrl(c)}" title="Swap ${esc(c.symbol||'this token')} on Robin">${inner}</a>`
+    : `<div class="card tcard bext" title="Top Robinhood Chain token">${inner}</div>`;
 }
 function bcardExt(c){
   const ch = cChg(c);
   const chgInner = (ch == null || Math.abs(ch) < 0.05) ? '' : `${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%`;
   const chgCls = (ch != null && ch < 0) ? 'dn' : 'up';
-  return `<div class="bcard bext" title="Top Robinhood Chain token, trading on Robin soon">
-    <span class="bsoon">Trading soon</span>
+  const inner = `
+    <span class="bsoon">Top on Robinhood Chain</span>
     <div class="btop">${avatar(c,'bav')}<div class="bid"><div class="bnm">${esc(c.name||'Token')}</div><div class="btk">${esc(tsym(c.symbol))}</div></div><span class="bchg ${chgCls}"${chgInner?'':' style="display:none"'}>${chgInner}</span></div>
     <div class="bstats"><div><span class="bk">MC</span><span class="bv">${fmtUsd(cMc(c))}</span></div><div><span class="bk">Vol</span><span class="bv">${fmtUsd(cVol(c))}</span></div><div><span class="bk">Liq</span><span class="bv">${fmtUsd(c.liqUsd||0)}</span></div></div>
-    <div class="bqbuy bqsoon">On Robinhood Chain</div>
-  </div>`;
+    <div class="bqbuy${UNILIVE?'':' bqsoon'}">${UNILIVE ? BOLT + '<span>Trade on Robin</span>' : 'On Robinhood Chain'}</div>`;
+  return UNILIVE
+    ? `<a class="bcard bext" href="${extSwapUrl(c)}" title="Swap ${esc(c.symbol||'this token')} on Robin">${inner}</a>`
+    : `<div class="bcard bext" title="Top Robinhood Chain token">${inner}</div>`;
 }
 
 // trending cards
@@ -908,8 +914,10 @@ let TK_COINS = [], TK_BUYS = [], TK_STATS = null;
 function coinPill(c) {
   const ch = c.chg;
   const chg = ch == null ? '' : `<span class="c ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
-  // external tokens are non-interactive (trading soon), so their pill is a span, not a link off to a pad page
-  if (c.external) return `<span class="tpill" title="Trading on Robin soon">${avatar(c,'ti')}<span class="s">${esc(tsym(c.symbol))}</span><span class="v">${fmtUsd(cVol(c))}</span>${chg}</span>`;
+  // external top-chain tokens: a live swap link once the desk is up, else a non-interactive pill
+  if (c.external) return UNILIVE
+    ? `<a class="tpill" href="${extSwapUrl(c)}" title="Swap ${esc(c.symbol||'this token')} on Robin">${avatar(c,'ti')}<span class="s">${esc(tsym(c.symbol))}</span><span class="v">${fmtUsd(cVol(c))}</span>${chg}</a>`
+    : `<span class="tpill" title="Top on Robinhood Chain">${avatar(c,'ti')}<span class="s">${esc(tsym(c.symbol))}</span><span class="v">${fmtUsd(cVol(c))}</span>${chg}</span>`;
   return `<a class="tpill" href="token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}">${avatar(c,'ti')}<span class="s">${esc(tsym(c.symbol))}</span><span class="v">${fmtUsd(cVol(c))}</span>${chg}</a>`;
 }
 function buyPill(a) {
@@ -957,7 +965,10 @@ setInterval(refreshActivity, 12000); refreshActivity();
 
 async function initBoard() {
   buildTabs();
-  await loadExternal(); // top external Robinhood Chain tokens, blended into the strips below so the pad reads full
+  // Load the external top-token board AND check whether the swap desk is live, in parallel, before
+  // rendering - so top-chain cards render as real "Trade on Robin" links the moment trading is on.
+  const [, live] = await Promise.all([loadExternal(), Pad.uniLive().catch(() => false)]);
+  UNILIVE = !!live;
   // trending strip (top 14 by trending) + graduates rail (top 3 by mcap) - each a
   // bounded query, independent of how many coins exist in total.
   boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:14 }).then(r => renderTicker(blendExternal(r.coins)));

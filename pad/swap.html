@@ -3,218 +3,578 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Robin Labs - Top 10 on Robinhood Chain</title>
-<meta name="description" content="The top coins on Robinhood Chain. Swap them on Robin Labs soon, 1.25% a side and most of it flows back to the traders and holders who use our swap." />
+<title>Swap top tokens: Robin Labs</title>
+<meta name="description" content="Swap the biggest tokens on Robinhood Chain right from Robin Labs. Real Uniswap liquidity, ETH in and out, one signature. No bridge, no leaving the pad." />
 <link rel="canonical" href="https://robinlab.io/swap.html" />
 <meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
 <link rel="manifest" href="/site.webmanifest" />
+<meta name="theme-color" content="#060803" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Robin Labs" />
-<meta property="og:title" content="Top 10 on Robinhood Chain - trading soon on Robin" />
-<meta property="og:description" content="Swap the top coins on Robinhood Chain on Robin Labs soon, and get paid: most of every fee flows back to traders and holders." />
+<meta property="og:title" content="Swap top tokens: Robin Labs" />
+<meta property="og:description" content="Swap the biggest tokens on Robinhood Chain right from Robin Labs. Real Uniswap liquidity, ETH in and out." />
 <meta property="og:url" content="https://robinlab.io/swap.html" />
 <meta property="og:image" content="https://robinlab.io/assets/og.jpg" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:site" content="@robinlabzz" />
+<meta name="twitter:title" content="Swap top tokens: Robin Labs" />
+<meta name="twitter:description" content="Swap the biggest tokens on Robinhood Chain right from Robin Labs." />
 <meta name="twitter:image" content="https://robinlab.io/assets/og.jpg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
 :root{
-  --bg:#060803;--bg-2:#0a0e05;--ink:#f4f7ee;--dim:#93a382;--lime:#dce905;--lime-2:#a6e017;--lime-deep:#7fae00;
-  --up:#8bea3c;--down:#ff6b57;--violet:#8a63e0;--glow:0 0 22px rgba(220,233,5,.45);
-  --line:rgba(220,233,5,.28);--line-2:rgba(220,233,5,.14);--line-strong:rgba(220,233,5,.4);
-  --panel:#0b0f06;--disp:"Bebas Neue",Oswald,Impact,sans-serif;--sans:"Plus Jakarta Sans",system-ui,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace;
+  --bg:#060803; --bg-2:#0b0f06; --panel:#0c1108; --panel-2:#101609;
+  --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06); --line-strong:rgba(220,233,5,.4);
+  --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
+  --lime:#dce905; --lime-2:#c3d400; --lime-deep:#8a9c00; --green:#5fd16a; --red:#ff5a52;
+  --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --glow:0 0 40px rgba(220,233,5,.25);
 }
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
-a{color:inherit;text-decoration:none}svg,img{display:block}
-.wrap{max-width:1120px;margin:0 auto;padding:0 22px;width:100%}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:800;font-size:.95rem;border-radius:12px;padding:13px 22px;cursor:pointer;border:1px solid transparent;transition:.16s;font-family:var(--sans)}
-.btn-lime{background:var(--lime);color:#0a0e05;box-shadow:var(--glow)}
-.btn-lime:hover{transform:translateY(-2px);box-shadow:0 0 30px rgba(220,233,5,.75)}
-.mark{display:inline-flex;align-items:center;gap:12px}
-.mark img{width:34px;height:34px;filter:drop-shadow(var(--glow))}
-.mark .wm{font-family:var(--disp);font-size:1.35rem;letter-spacing:.2em;padding-left:.1em}
-.mark .wm small{display:block;font-size:.5em;letter-spacing:.5em;color:var(--lime);margin-top:-4px}
-.nav{position:sticky;top:0;z-index:30;backdrop-filter:blur(10px);background:rgba(6,8,3,.72);border-bottom:1px solid var(--line-2)}
-.nav-in{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;max-width:1120px;margin:0 auto}
-.nav .links{display:flex;gap:20px;align-items:center;font-size:.9rem;color:var(--dim)}
-.nav .links a:hover{color:var(--lime)}.nav .links a.on{color:var(--lime)}
-main{flex:1}
-.hero{text-align:center;padding:56px 0 8px}
-.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--lime-2);margin-bottom:14px}
-.hero h1{font-family:var(--disp);font-size:clamp(2.4rem,6.5vw,4.2rem);line-height:.94}
-.hero h1 .g{color:var(--lime);text-shadow:var(--glow)}
-.hero p{max-width:640px;margin:14px auto 0;color:var(--dim);font-size:1.02rem}
-.paybar{display:inline-flex;flex-wrap:wrap;gap:8px 14px;justify-content:center;margin:18px auto 0;background:rgba(220,233,5,.05);border:1px solid var(--line-2);border-radius:14px;padding:12px 18px;font-size:.85rem;color:var(--dim)}
-.paybar b{color:var(--ink)}.paybar .hl{color:var(--lime);font-weight:700}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;padding:26px 0 44px}
-.tok{display:flex;align-items:center;gap:14px;background:linear-gradient(180deg,#0c1006,var(--panel));border:1px solid var(--line-2);border-radius:16px;padding:15px 16px;position:relative;transition:.16s}
-.tok:hover{border-color:var(--line);transform:translateY(-2px)}
-.tok .rk{font-family:var(--disp);font-size:1.3rem;color:var(--dim);width:26px;text-align:center;flex:none}
-.tok .lg{width:44px;height:44px;border-radius:50%;flex:none;background:conic-gradient(from 210deg,var(--lime),var(--violet),var(--lime-deep));object-fit:cover}
-.tok .meta{flex:1;min-width:0}
-.tok .nm{font-weight:800;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tok .sy{font-family:var(--mono);font-size:.74rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
-.tok .num{text-align:right;flex:none}
-.tok .px{font-weight:700;font-variant-numeric:tabular-nums}
-.tok .vol{font-size:.74rem;color:var(--dim);font-variant-numeric:tabular-nums}
-.soon{position:absolute;top:10px;right:12px;font-family:var(--mono);font-size:.56rem;letter-spacing:.1em;text-transform:uppercase;background:rgba(220,233,5,.12);border:1px solid var(--line);color:var(--lime);border-radius:999px;padding:3px 8px}
-.state{text-align:center;color:var(--dim);padding:40px 0;font-size:.9rem}
-footer{border-top:1px solid var(--line-2);margin-top:10px}
-.foot-in{display:flex;align-items:center;justify-content:space-between;padding:20px 22px;font-size:.85rem;color:var(--dim);flex-wrap:wrap;gap:10px}
-.foot-in .mid b{color:var(--lime)}.foot-in .socs a{color:var(--dim)}.foot-in .socs a:hover{color:var(--lime)}
-@media(max-width:640px){.nav-in{flex-wrap:wrap}.nav .links{order:3;width:100%;justify-content:flex-start;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:.85rem}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased;overflow-x:hidden;
+  background-image:radial-gradient(ellipse 60% 40% at 75% 8%,rgba(220,233,5,.10),transparent 60%)}
+a{color:inherit;text-decoration:none}
+img,svg{display:block}
+h1,h2,h3,h4{margin:0;font-weight:800;letter-spacing:-.02em;line-height:1.05}
+.wrap{max-width:1140px;margin:0 auto;padding:0 20px}
+.lime{color:var(--lime)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;font-size:.92rem;border-radius:12px;padding:12px 20px;cursor:pointer;border:1px solid transparent;white-space:nowrap;transition:.16s;font-family:var(--sans)}
+.btn-lime{background:var(--lime);color:#0a0e05;box-shadow:0 6px 24px -8px rgba(220,233,5,.6)}
+.btn-lime:hover{transform:translateY(-1px);box-shadow:0 8px 30px -6px rgba(220,233,5,.8)}
+.btn-ghost{border-color:var(--line-strong);color:var(--ink);background:rgba(255,255,255,.02)}
+.btn-ghost:hover{background:rgba(220,233,5,.08)}
+.btn-dark{background:#0e1206;border:1px solid var(--line);color:var(--ink)}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+
+/* nav */
+header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line-2)}
+.nav-in{display:flex;align-items:center;gap:20px;padding:12px 20px;max-width:1140px;margin:0 auto}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1.15rem;letter-spacing:.02em}
+.brand img{width:32px;height:32px;object-fit:contain}
+.brand b{color:var(--lime)}
+.nav-links{display:flex;gap:22px;margin-left:14px}
+.nav-links a{color:var(--dim);font-size:.9rem;font-weight:600;white-space:nowrap}
+.nav-links a:hover{color:var(--ink)}
+.nav-links a.on{color:var(--lime)}
+.nav-cta{margin-left:auto;display:flex;gap:10px;align-items:center}
+.navtoggle{display:none;background:transparent;border:1px solid var(--line-2);border-radius:9px;width:40px;height:40px;color:var(--ink);cursor:pointer;align-items:center;justify-content:center;flex:none}
+.navtoggle svg{width:20px;height:20px}
+.mobile-menu{display:none;flex-direction:column;padding:6px 20px 14px;border-top:1px solid var(--line-2);background:rgba(6,8,3,.97);max-width:1140px;margin:0 auto}
+.mobile-menu a{padding:13px 4px;color:var(--ink);font-weight:600;border-bottom:1px solid var(--line-2)}
+.mobile-menu a.go{color:#0a0e05;margin-top:10px;border:none}
+.mobile-menu.open{display:flex}
+@media(max-width:900px){.nav-links{display:none}.navtoggle{display:inline-flex}.nav-cta .nav-launch{display:none}}
+@media(max-width:400px){.nav-cta #connectBtn{font-size:.82rem;padding:9px 12px}}
+
+main{padding:34px 0 70px}
+.head{max-width:460px;margin:0 auto 18px;text-align:center}
+.head .eyebrow{font-family:var(--mono);font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:var(--lime-deep)}
+.head h1{font-size:clamp(1.7rem,4.4vw,2.4rem);margin:8px 0 8px}
+.head p{color:var(--dim);font-size:.96rem;line-height:1.5;margin:0}
+
+/* swap card */
+.swap{max-width:460px;margin:0 auto;background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:20px;padding:16px;box-shadow:var(--glow)}
+.swaphead{display:flex;align-items:center;justify-content:space-between;margin:2px 4px 12px}
+.swaphead .t{font-weight:800;font-size:1.05rem}
+.gear{background:transparent;border:1px solid var(--line-2);border-radius:10px;width:38px;height:38px;display:grid;place-items:center;color:var(--dim);cursor:pointer}
+.gear:hover{color:var(--ink);border-color:var(--line-strong)}
+.gear svg{width:18px;height:18px}
+
+/* slippage popover */
+.slip{display:none;margin:0 4px 12px;padding:12px;border:1px solid var(--line-2);border-radius:12px;background:var(--bg-2)}
+.slip.open{display:block}
+.slip .lab{font-size:.76rem;color:var(--faint);font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.slip .row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.chip{border:1px solid var(--line-2);background:var(--panel);color:var(--dim);border-radius:9px;padding:7px 12px;font-weight:700;font-size:.85rem;cursor:pointer}
+.chip.on{border-color:var(--line-strong);color:var(--lime);background:rgba(220,233,5,.08)}
+.slip input{width:74px;background:var(--panel);border:1px solid var(--line-2);border-radius:9px;color:var(--ink);padding:7px 10px;font-family:var(--mono);font-size:.85rem}
+.slip input:focus{outline:none;border-color:var(--line-strong)}
+
+/* pay / receive boxes */
+.box{background:var(--bg-2);border:1px solid var(--line-2);border-radius:14px;padding:14px 14px 12px;transition:border-color .14s}
+.box:focus-within{border-color:var(--line-strong)}
+.box .top{display:flex;justify-content:space-between;align-items:center;font-size:.76rem;color:var(--faint);margin-bottom:6px}
+.box .top .bal{cursor:pointer}
+.box .top .bal:hover{color:var(--dim)}
+.box .mid{display:flex;align-items:center;gap:10px}
+.amt{flex:1;min-width:0;background:transparent;border:none;color:var(--ink);font-size:1.7rem;font-weight:800;font-family:var(--sans);padding:0;letter-spacing:-.02em}
+.amt:focus{outline:none}
+.amt::placeholder{color:var(--faint)}
+.amt[readonly]{color:var(--ink)}
+.tokbtn{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line-2);border-radius:999px;padding:6px 12px 6px 6px;cursor:pointer;flex:none;transition:.14s}
+.tokbtn:hover{border-color:var(--line-strong)}
+.tokbtn.fixed{cursor:default}
+.tokbtn.fixed:hover{border-color:var(--line-2)}
+.ic{width:26px;height:26px;border-radius:50%;overflow:hidden;display:grid;place-items:center;font-weight:800;font-size:.72rem;color:#0a0e05;flex:none}
+.ic img{width:100%;height:100%;object-fit:cover}
+.tokbtn .sy{font-weight:800;font-size:.95rem;white-space:nowrap}
+.tokbtn .cv{width:14px;height:14px;color:var(--dim);flex:none}
+.box .sub{font-size:.76rem;color:var(--faint);margin-top:6px;min-height:1em}
+
+/* flip */
+.flipwrap{display:flex;justify-content:center;height:0;position:relative;z-index:2}
+.flip{background:var(--panel);border:3px solid var(--panel-2);border-radius:12px;width:40px;height:40px;display:grid;place-items:center;color:var(--lime);cursor:pointer;margin:-6px 0;transition:transform .2s,border-color .16s}
+.flip:hover{transform:rotate(180deg);border-color:var(--panel)}
+.flip svg{width:18px;height:18px}
+
+/* details */
+.det{margin:12px 4px 0;font-size:.84rem;color:var(--dim);display:none}
+.det.show{display:block}
+.det .r{display:flex;justify-content:space-between;padding:5px 0;gap:12px}
+.det .r .k{color:var(--faint)}
+.det .r .v{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;text-align:right}
+.det .r .v.warn{color:var(--red)}
+.det .fee{border-top:1px solid var(--line-2);margin-top:6px;padding-top:8px}
+
+/* action + status */
+.act{width:100%;margin-top:14px;font-size:1rem;padding:15px}
+.status{margin:12px 4px 0;font-size:.86rem;line-height:1.5;min-height:1em}
+.status.err{color:var(--red)}
+.status.ok{color:var(--green)}
+.status a{color:var(--lime);font-weight:700;text-decoration:underline}
+.notice{max-width:460px;margin:14px auto 0;text-align:center;color:var(--faint);font-size:.78rem;line-height:1.5}
+.notice b{color:var(--dim)}
+
+/* token picker modal */
+.modal{position:fixed;inset:0;z-index:100;display:none;align-items:flex-start;justify-content:center;padding:70px 16px;background:rgba(3,4,1,.72);backdrop-filter:blur(4px)}
+.modal.open{display:flex}
+.sheet{width:100%;max-width:420px;max-height:76vh;display:flex;flex-direction:column;background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.sheet .sh{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 10px}
+.sheet .sh h3{font-size:1.05rem}
+.sheet .x{background:transparent;border:none;color:var(--faint);cursor:pointer;font-size:1.4rem;width:34px;height:34px;line-height:1}
+.search{margin:0 16px 10px;display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:11px;padding:9px 12px}
+.search input{flex:1;background:transparent;border:none;color:var(--ink);font-size:.92rem;font-family:inherit}
+.search input:focus{outline:none}
+.search svg{width:16px;height:16px;color:var(--faint)}
+.toklist{overflow-y:auto;padding:0 8px 12px}
+.tokrow{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:12px;cursor:pointer}
+.tokrow:hover{background:rgba(220,233,5,.06)}
+.tokrow.sel{background:rgba(220,233,5,.09)}
+.tokrow .ic{width:34px;height:34px;font-size:.8rem}
+.tokrow .id{flex:1;min-width:0}
+.tokrow .id .sy{font-weight:800;font-size:.95rem}
+.tokrow .id .nm{color:var(--faint);font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tokrow .rt{text-align:right;font-size:.78rem;color:var(--dim);font-variant-numeric:tabular-nums}
+.tokrow .rt .v{color:var(--ink);font-weight:700}
+
+.foot{border-top:1px solid var(--line-2);padding:22px 0 44px;color:var(--faint);font-size:.76rem;text-align:center;margin-top:40px}
+.foot a{color:var(--dim)}
 </style>
 </head>
 <body>
 <header class="nav"><div class="nav-in">
-  <a class="mark" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" /><span class="wm">ROBIN<small>LABS</small></span></a>
-  <div class="links">
-    <a href="browse.html">Browse</a>
-    <a href="rewards.html">Rewards</a>
-    <a href="swap.html" class="on">Top 10</a>
-    <a href="bridge.html">Buy Cross-Chain</a>
-    <a href="docs.html">Docs</a>
-    <a class="btn btn-lime" id="connectBtn" href="#">Connect Wallet</a>
+  <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
+  <nav class="nav-links">
+    <a href="browse.html">Browse</a><a href="swap.html" class="on">Swap</a><a href="browse.html#graduates">Graduated</a>
+    <a href="stats.html">Stats</a><a href="docs.html">Docs</a>
+  </nav>
+  <div class="nav-cta">
+    <button class="btn btn-dark" id="connectBtn" type="button">Connect Wallet</button>
+    <a class="btn btn-lime nav-launch" href="create.html">Launch Token</a>
+    <button class="navtoggle" id="navToggle" type="button" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
   </div>
-</div></header>
+</div>
+<div class="mobile-menu" id="mobileMenu">
+  <a href="browse.html">Browse</a><a href="swap.html">Swap</a><a href="browse.html#graduates">Graduated</a>
+  <a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="create.html" class="btn btn-lime go">Launch Token</a>
+</div>
+</header>
 
-<main>
-  <section class="hero wrap">
-    <div class="eyebrow">The chain's top coins · trading soon on Robin</div>
-    <h1>SWAP THE <span class="g">TOP 10</span><br>AND GET PAID</h1>
-    <p>The biggest coins on Robinhood Chain, all in one place. Soon you'll swap them right here, and most of every fee flows back to the traders and holders who use our swap.</p>
-    <div class="paybar">
-      <span><b>1.25%</b> a side (buy &amp; sell)</span> <span>·</span>
-      <span><span class="hl">most of it</span> back to traders &amp; holders</span> <span>·</span>
-      <span>a slice to <b>Robin LP</b></span>
+<main class="wrap">
+  <div class="head">
+    <div class="eyebrow">Top tokens · Robinhood Chain</div>
+    <h1>Swap the whole chain</h1>
+    <p>The biggest coins on Robinhood Chain, tradeable right here. Real Uniswap liquidity, ETH in and out, one signature. No bridge, no leaving the pad.</p>
+  </div>
+
+  <div class="swap">
+    <div class="swaphead">
+      <div class="t">Swap</div>
+      <button class="gear" id="gear" type="button" aria-label="Slippage settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </div>
-  </section>
 
-  <section class="wrap">
-    <div class="grid" id="grid"></div>
-    <div class="state" id="state">Loading the top coins on Robinhood Chain…</div>
-  </section>
+    <div class="slip" id="slip">
+      <div class="lab">Max slippage</div>
+      <div class="row">
+        <button class="chip" data-slip="1" type="button">1%</button>
+        <button class="chip on" data-slip="3" type="button">3%</button>
+        <button class="chip" data-slip="8" type="button">8%</button>
+        <input id="slipCustom" type="text" inputmode="decimal" placeholder="custom" />
+        <span style="color:var(--faint)">%</span>
+      </div>
+    </div>
+
+    <!-- PAY -->
+    <div class="box">
+      <div class="top"><span>You pay</span><span class="bal" id="payBal"></span></div>
+      <div class="mid">
+        <input class="amt" id="payAmt" type="text" inputmode="decimal" placeholder="0.0" autocomplete="off" spellcheck="false" />
+        <button class="tokbtn" id="payTok" type="button"><span class="ic" id="payIc">?</span><span class="sy" id="paySy">ETH</span><svg class="cv" id="payCv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button>
+      </div>
+      <div class="sub" id="paySub"></div>
+    </div>
+
+    <div class="flipwrap"><button class="flip" id="flip" type="button" aria-label="Flip direction"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M7 4v13M7 17l-3-3M7 17l3-3M17 20V7M17 7l-3 3M17 7l3 3"/></svg></button></div>
+
+    <!-- RECEIVE -->
+    <div class="box">
+      <div class="top"><span>You receive (estimated)</span><span class="bal" id="getBal"></span></div>
+      <div class="mid">
+        <input class="amt" id="getAmt" type="text" placeholder="0.0" readonly tabindex="-1" />
+        <button class="tokbtn" id="getTok" type="button"><span class="ic" id="getIc">?</span><span class="sy" id="getSy">Token</span><svg class="cv" id="getCv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button>
+      </div>
+      <div class="sub" id="getSub"></div>
+    </div>
+
+    <div class="det" id="det">
+      <div class="r"><span class="k">Rate</span><span class="v" id="dRate">-</span></div>
+      <div class="r"><span class="k">Min received</span><span class="v" id="dMin">-</span></div>
+      <div class="r"><span class="k">Price impact</span><span class="v" id="dImpact">-</span></div>
+      <div class="r fee"><span class="k">Robin Labs fee (1.25%)</span><span class="v" id="dFee">included</span></div>
+      <div class="r"><span class="k">Route</span><span class="v">Uniswap · Robinhood Chain</span></div>
+    </div>
+
+    <button class="btn btn-lime act" id="act" type="button" disabled>Connect wallet</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="notice">
+    Powered by <b>Uniswap</b> liquidity on Robinhood Chain. Buys spend native ETH with no approval; a sell needs one exact-amount approval to Permit2, then the swap. A <b>1.25% Robin Labs fee</b> is included in every quote. Not financial advice.
+  </div>
 </main>
 
-<footer><div class="wrap foot-in">
-  <span>robinlabs.io</span>
-  <span class="mid">Trade. Hold. <b>Get paid.</b></span>
-  <span class="socs">
-    <a href="https://x.com/robinlabzz" target="_blank" rel="noopener" aria-label="X (Twitter)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
-    <span>@robinlabzz</span>
-  </span>
-</div></footer>
+<!-- token picker -->
+<div class="modal" id="modal">
+  <div class="sheet">
+    <div class="sh"><h3>Select a token</h3><button class="x" id="modalX" type="button" aria-label="Close">&times;</button></div>
+    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="tokSearch" type="text" placeholder="Search name, symbol or address" autocomplete="off" /></div>
+    <div class="toklist" id="toklist"></div>
+  </div>
+</div>
+
+<div class="foot">Robin Labs on Robinhood Chain. Prices are read live; execution is a standard Uniswap swap through your own wallet. <a href="docs.html">Docs</a></div>
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
+import { CHAIN, UNI_TOKENS, UNI_NATIVE, UNI_FEE_BPS, isUniToken } from './assets/config.js';
+const $ = (id) => document.getElementById(id);
+const q = new URLSearchParams(location.search);
+const ETH_USD = 1920; // display-only, matches the rest of the pad
 
-// Curated top-of-chain candidates (by live 24h volume). The board fetches LIVE from
-// DexScreener and shows the top 10, so prices/volume stay current. Refine this list as
-// the chain moves. Everything is marked "Trading soon" until RobinSwap goes live.
-const CANDIDATES = [
-  "0x020bfC650A365f8BB26819deAAbF3E21291018b4", // CashCat
-  "0x0339f5459FC690aC85F1782e15782A151b4A9E1b", // WALLET
-  "0x45F82AC5d507e988f7406935da8eEfe495a360e0", // BRODIE
-  "0x1541B925f0948c6d91bE8B52320687Ba62D30b64", // Catecoin
-  "0x499dC58539BA6869EE15b6c2a3c3c07F1AC4995F", // HOOD4663
-  "0x2286397228be256529BE1ae9ed8D7d16549e9C6A", // Real World Impact
-  "0x9E94C8b5a0CAEdA5d0471C3a9F5eD4f3519d88c7", // ROCKET
-  "0x5266eeafF092D6136AB63D18B975A60a0Cc0C8f7", // REPE
-  "0x8f100e99dDF699320724e37Cb866770381d47382", // ROBINHOOD
-  "0xC42cF61C16aaC797b991cf9C1ac8Ae70bA74A286", // ROBINHOODS
-  "0x38bb87Cf3E7344A82be7CD671c191f015b97eEe6", // SANTAHOOD
-  "0x86E5aC7eC60EEec0a8989F1F1D617AE18c15FA0c", // button
-  "0x41F41F7B849A25e027876c485544c8088f447A11", // Catcoin
-];
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const short = (a) => a ? a.slice(0,6) + '…' + a.slice(-4) : '';
+const tsym = (s) => { s = String(s || '?'); return s.startsWith('$') ? s.slice(1) : s; };
+const isAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a || '');
+const explorer = (CHAIN.explorer || '').replace(/\/+$/, '');
+function avaStyle(addr){ const h = parseInt((addr||'0x0').slice(2,8),16) || 0; return `background:linear-gradient(135deg,hsl(${h%360} 68% 55%),hsl(${(h>>4)%360} 68% 45%))`; }
+function fmtUsd(n){ n = +n || 0; if (!n) return '$0'; return n >= 1000 ? '$' + (n/1000).toFixed(n>=10000?0:1) + 'k' : (n>=1 ? '$'+n.toFixed(2) : '$'+n.toPrecision(2)); }
 
-const fmtUsd = (n) => {
-  n = Number(n) || 0;
-  if (n >= 1e9) return "$" + (n / 1e9).toFixed(1) + "B";
-  if (n >= 1e6) return "$" + (n / 1e6).toFixed(1) + "M";
-  if (n >= 1e3) return "$" + (n / 1e3).toFixed(1) + "k";
-  return "$" + n.toFixed(0);
-};
-const fmtPx = (p) => {
-  p = Number(p) || 0;
-  if (p === 0) return "$0";
-  if (p >= 1) return "$" + p.toFixed(3);
-  return "$" + p.toPrecision(3);
-};
-const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// bigint base-units → plain decimal string (local, so we don't load ethers just for this)
+function fromUnits(v, dec){
+  v = BigInt(v); const neg = v < 0n; if (neg) v = -v;
+  const base = 10n ** BigInt(dec);
+  const whole = v / base, frac = v % base;
+  const fs = frac.toString().padStart(Number(dec), '0').replace(/0+$/, '');
+  return (neg ? '-' : '') + whole.toString() + (fs ? '.' + fs : '');
+}
+function fmtAmt(v, dec){
+  const n = Number(fromUnits(v, dec));
+  if (!Number.isFinite(n) || n === 0) return '0';
+  if (n >= 1) return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  return n.toPrecision(4).replace(/\.?0+$/, '');
+}
+// decimal string → base units (bigint) for `dec` decimals; null if not a clean number
+function toUnits(str, dec){
+  const s = String(str ?? '').trim();
+  if (!s || !/^\d*\.?\d*$/.test(s) || s === '.') return null;
+  let [w, f = ''] = s.split('.');
+  w = w || '0'; f = f.slice(0, Number(dec)).padEnd(Number(dec), '0');
+  try { return BigInt(w) * (10n ** BigInt(dec)) + BigInt(f || '0'); } catch { return null; }
+}
 
-async function load() {
-  const uniq = [...new Set(CANDIDATES.map((a) => a.toLowerCase()))];
-  let best = new Map();
+// ── state ───────────────────────────────────────────────────────────────────
+const NATIVE = { addr: UNI_NATIVE, symbol: 'ETH', name: 'Ether', decimals: 18, native: true, image: null, priceUsd: ETH_USD };
+let SIDE = 'buy';       // 'buy' = ETH → token ; 'sell' = token → ETH
+let TOKEN = null;       // selected non-ETH token
+let SLIP = 3;           // max slippage %
+let LIVE = false;       // is the swap desk enabled server-side
+const META = new Map(); // addr(lc) → { addr, symbol, name, decimals, image, priceUsd, volUsd, liqUsd }
+let quoteResp = null;   // last good quote response (for execution)
+let quoteSeq = 0;       // guards out-of-order async quotes
+let busy = false;       // a tx flow owns the button
+
+const payTok = () => SIDE === 'buy' ? NATIVE : TOKEN;
+const getTok = () => SIDE === 'buy' ? TOKEN : NATIVE;
+
+// ── token metadata: DexScreener (logo/price/liq) ──────────────────────────────
+async function loadMeta(){
   try {
-    // DexScreener tokens endpoint (up to 30 addresses); keep each token's highest-volume pair.
-    const r = await fetch("https://api.dexscreener.com/latest/dex/tokens/" + uniq.join(","));
+    const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + UNI_TOKENS.join(','));
     const j = await r.json();
-    for (const p of (j.pairs || [])) {
-      if (p.chainId !== "robinhood") continue;
-      const a = (p.baseToken && p.baseToken.address || "").toLowerCase();
-      if (!a) continue;
-      const vol = (p.volume && p.volume.h24) || 0;
-      const cur = best.get(a);
-      if (!cur || vol > cur.vol) best.set(a, {
-        addr: p.baseToken.address, sym: p.baseToken.symbol, name: p.baseToken.name,
-        vol, liq: (p.liquidity && p.liquidity.usd) || 0, price: p.priceUsd, mcap: p.marketCap || p.fdv || 0,
-        img: (p.info && p.info.imageUrl) || null,
-        ch: (p.priceChange && p.priceChange.h24) || 0,
+    const best = new Map();
+    for (const p of (j.pairs || [])){
+      if (p.chainId !== 'robinhood') continue;
+      const a = (p.baseToken && p.baseToken.address || '').toLowerCase(); if (!a) continue;
+      const vol = (p.volume && p.volume.h24) || 0, cur = best.get(a);
+      if (!cur || vol > cur._vol) best.set(a, {
+        addr: p.baseToken.address, symbol: p.baseToken.symbol, name: p.baseToken.name,
+        image: (p.info && p.info.imageUrl) || null, priceUsd: +(p.priceUsd || 0) || 0,
+        volUsd: vol, liqUsd: (p.liquidity && p.liquidity.usd) || 0, decimals: 18, _vol: vol,
       });
     }
-  } catch (e) { /* fall through to error state */ }
+    for (const [a, m] of best) META.set(a, m);
+  } catch { /* DexScreener down - chain fallback on demand */ }
+}
+// ensure real name/symbol/decimals (chain is the source of truth for decimals)
+async function ensureMeta(addr){
+  const a = addr.toLowerCase();
+  let m = META.get(a) || { addr, symbol: '?', name: 'Token', decimals: 18, image: null, priceUsd: 0, volUsd: 0, liqUsd: 0 };
+  try { const cm = await Pad.tokenMeta(addr); m = { ...m, symbol: cm.symbol || m.symbol, name: cm.name || m.name, decimals: cm.decimals ?? 18 }; } catch {}
+  META.set(a, m); return m;
+}
 
-  // Rank by LIQUIDITY, not raw 24h volume — several coins on the chain wash-trade huge
-  // volume on near-zero liquidity, and we don't want those topping the board.
-  const rows = [...best.values()].sort((a, b) => b.liq - a.liq).slice(0, 10);
-  const grid = document.getElementById("grid"), state = document.getElementById("state");
-  if (!rows.length) {
-    // Only show the empty state if we have nothing on screen yet; a live refresh that briefly fails
-    // shouldn't blank out a board that's already populated. Retry sooner than the steady cadence.
-    if (!grid.children.length) { state.style.display = ""; state.textContent = "Could not load the board right now. Retrying…"; }
-    return;
+// paint an icon element (span.ic) for a token
+function paintIc(el, t){
+  el.textContent = ''; el.removeAttribute('style');
+  if (t.native){ el.style.background = 'linear-gradient(135deg,#6c7cff,#455bd6)'; el.style.color = '#fff'; el.textContent = 'Ξ'; return; }
+  if (t.image){ const img = document.createElement('img'); img.alt = ''; img.src = t.image; img.onerror = () => { img.remove(); el.textContent = (t.symbol||'?').slice(0,2); el.style.cssText = avaStyle(t.addr); }; el.appendChild(img); return; }
+  el.style.cssText = avaStyle(t.addr); el.textContent = (t.symbol||'?').replace(/[^\w]/g,'').slice(0,2) || '?';
+}
+function icHtml(t, cls){
+  if (t.native) return `<span class="${cls}" style="background:linear-gradient(135deg,#6c7cff,#455bd6);color:#fff">Ξ</span>`;
+  if (t.image) return `<span class="${cls}"><img src="${esc(t.image)}" alt="" onerror="this.parentNode.textContent='${esc((t.symbol||'?').slice(0,2))}'"/></span>`;
+  return `<span class="${cls}" style="${avaStyle(t.addr)}">${esc((t.symbol||'?').replace(/[^\w]/g,'').slice(0,2) || '?')}</span>`;
+}
+
+// ── paint the two token buttons + balances ────────────────────────────────────
+function paintTokens(){
+  const pay = payTok(), get = getTok();
+  paintIc($('payIc'), pay); paintIc($('getIc'), get);
+  $('paySy').textContent = tsym(pay.symbol);
+  $('getSy').textContent = tsym(get.symbol || 'Token');
+  $('payTok').classList.toggle('fixed', SIDE === 'buy');  // ETH side isn't selectable
+  $('getTok').classList.toggle('fixed', SIDE === 'sell');
+  $('payCv').style.display = SIDE === 'buy' ? 'none' : '';
+  $('getCv').style.display = SIDE === 'sell' ? 'none' : '';
+  refreshBalances();
+}
+
+async function refreshBalances(){
+  const acct = Pad.account();
+  $('payBal').textContent = ''; $('getBal').textContent = ''; delete $('payBal').dataset.max;
+  if (!acct) return;
+  const pay = payTok(), get = getTok();
+  try { const b = await balOf(pay, acct); if (b != null){ $('payBal').innerHTML = `Balance: <b style="color:var(--dim)">${fmtAmt(b, pay.decimals)}</b>${pay.native ? '' : ' · Max'}`; $('payBal').dataset.max = b.toString(); } } catch {}
+  try { const b = await balOf(get, acct); if (b != null) $('getBal').textContent = 'Balance: ' + fmtAmt(b, get.decimals); } catch {}
+}
+async function balOf(t, acct){
+  try { return t.native ? await Pad.ethBalance(acct) : await Pad.tokenBalanceWei(t.addr, acct); } catch { return null; }
+}
+
+// ── quoting (debounced) ───────────────────────────────────────────────────────
+let quoteTimer = null;
+function scheduleQuote(){ clearTimeout(quoteTimer); quoteTimer = setTimeout(runQuote, 350); }
+const payDecimals = () => payTok().decimals;
+
+async function runQuote(){
+  quoteResp = null;
+  const amtWei = toUnits($('payAmt').value, payDecimals());
+  $('getAmt').value = '';
+  $('det').classList.remove('show');
+  if (!LIVE || !TOKEN){ syncAction(); return; }
+  if (amtWei == null || amtWei <= 0n){ setStatus(''); syncAction(); return; }
+  if (!Pad.account()){ setStatus(''); syncAction(); return; }
+  const seq = ++quoteSeq;
+  setAction('Fetching best price…', true); setStatus('');
+  try {
+    const resp = await Pad.uniQuote({ token: TOKEN.addr, side: SIDE, amountWei: amtWei.toString(), slippagePct: SLIP });
+    if (seq !== quoteSeq) return;   // superseded
+    quoteResp = resp; paintQuote(resp); syncAction();
+  } catch (e){
+    if (seq !== quoteSeq) return;
+    quoteResp = null; $('getAmt').value = ''; $('det').classList.remove('show');
+    setStatus(cleanErr(e), 'err'); syncAction();
   }
-  state.style.display = "none";
-  grid.innerHTML = rows.map((t, i) => `
-    <div class="tok">
-      <span class="soon">Trading soon</span>
-      <span class="rk">${i + 1}</span>
-      ${t.img ? `<img class="lg" src="${esc(t.img)}" alt="" onerror="this.style.background='';this.removeAttribute('src')" />` : `<span class="lg"></span>`}
-      <div class="meta">
-        <div class="nm">${esc(t.name || t.sym)}</div>
-        <div class="sy">${esc(t.sym)}</div>
-      </div>
-      <div class="num">
-        <div class="px">${fmtPx(t.price)}</div>
-        <div class="vol">${fmtUsd(t.liq)} liq · ${fmtUsd(t.vol)} vol</div>
-      </div>
-    </div>`).join("");
 }
 
-// ── wallet: same behavior as the rest of the site (connect, or open your profile if already on) ──
-const cbtn = document.getElementById("connectBtn");
-const refreshBtn = () => { const a = Pad.account(); cbtn.textContent = a ? Pad.short(a) : "Connect Wallet"; cbtn.title = a ? "View your profile" : ""; };
-cbtn.addEventListener("click", async (e) => {
-  e.preventDefault();
-  if (Pad.account()) { location.href = "profile.html"; return; }
-  try { await Pad.connect(); refreshBtn(); } catch (err) { alert(err.message || String(err)); }
+// read estimated output + min-received defensively (Trading API field names vary a little)
+function readOut(resp){
+  const qo = (resp && resp.quote) || {};
+  const out = qo.output || {};
+  // the user's receive amount is quote.output.amount (never aggregatedOutputs, whose order isn't
+  // guaranteed and includes the fee leg - we must not accidentally show the fee as "you receive").
+  const outAmt = out.amount ?? qo.amountOut ?? null;
+  const minAmt = out.minAmount ?? qo.minAmountOut ?? qo.minimumAmountOut ?? null;
+  let bi = null, mi = null;
+  try { bi = outAmt != null ? BigInt(outAmt) : null; } catch {}
+  try { mi = minAmt != null ? BigInt(minAmt) : null; } catch {}
+  if (mi == null && bi != null){ const bps = BigInt(Math.round(SLIP * 100)); mi = bi - (bi * bps) / 10000n; }
+  return { out: bi, min: mi, dec: getTok().decimals };
+}
+function readImpact(resp){
+  const qo = (resp && resp.quote) || {};
+  const pi = qo.priceImpact ?? qo.priceImpactPct ?? (qo.route && qo.route.priceImpact);
+  const n = Number(pi); return Number.isFinite(n) ? n : null;
+}
+function usdOf(t, wei){
+  if (wei == null) return 0;
+  const price = t.native ? ETH_USD : (t.priceUsd || (META.get((t.addr||'').toLowerCase())?.priceUsd) || 0);
+  return price ? Number(fromUnits(wei, t.decimals)) * price : 0;
+}
+function rateStr(pay, inWei, get, outWei){
+  try {
+    const inN = Number(fromUnits(inWei, pay.decimals)), outN = Number(fromUnits(outWei, get.decimals));
+    if (!inN || !outN) return '-';
+    const perOne = outN / inN;
+    return `1 ${tsym(pay.symbol)} = ${perOne >= 1 ? perOne.toLocaleString(undefined,{maximumFractionDigits:4}) : perOne.toPrecision(4)} ${tsym(get.symbol)}`;
+  } catch { return '-'; }
+}
+function paintQuote(resp){
+  const pay = payTok(), get = getTok();
+  const { out, min, dec } = readOut(resp);
+  if (out == null){ $('getAmt').value = ''; return; }
+  const inWei = toUnits($('payAmt').value, pay.decimals) || 0n;
+  $('getAmt').value = fmtAmt(out, dec);
+  const payUsd = usdOf(pay, inWei), getUsd = usdOf(get, out);
+  $('paySub').textContent = payUsd ? '≈ ' + fmtUsd(payUsd) : '';
+  $('getSub').textContent = getUsd ? '≈ ' + fmtUsd(getUsd) : '';
+  $('dRate').textContent = rateStr(pay, inWei, get, out);
+  $('dMin').textContent = (min != null ? fmtAmt(min, dec) : fmtAmt(out, dec)) + ' ' + tsym(get.symbol);
+  const impact = readImpact(resp), iEl = $('dImpact');
+  if (impact == null){ iEl.textContent = '-'; iEl.className = 'v'; }
+  else { iEl.textContent = impact.toFixed(2) + '%'; iEl.className = 'v' + (Math.abs(impact) >= 5 ? ' warn' : ''); }
+  $('dFee').textContent = (UNI_FEE_BPS / 100) + '% · included';
+  $('det').classList.add('show');
+}
+
+// ── action button state machine ───────────────────────────────────────────────
+function setAction(label, disabled){ const a = $('act'); a.textContent = label; a.disabled = !!disabled; }
+function setStatus(msg, cls){ const s = $('status'); s.className = 'status' + (cls ? ' ' + cls : ''); s.innerHTML = msg || ''; }
+function cleanErr(e){ const m = (e && e.message) || String(e); return esc(m.length > 180 ? m.slice(0,180) + '…' : m); }
+
+function syncAction(){
+  if (busy) return;
+  if (!LIVE){ setAction('Trading opens shortly', true); return; }
+  if (!TOKEN){ setAction('Select a token', true); return; }
+  if (!Pad.account()){ setAction('Connect wallet', false); return; }
+  const amtWei = toUnits($('payAmt').value, payDecimals());
+  if (amtWei == null || amtWei <= 0n){ setAction('Enter an amount', true); return; }
+  if (!quoteResp){ setAction('Fetching best price…', true); return; }
+  setAction((SIDE === 'buy' ? 'Buy ' : 'Sell ') + tsym(TOKEN.symbol), false);
+}
+
+async function doAction(){
+  if (busy) return;
+  if (!Pad.account()){ try { await Pad.connect(); afterConnect(); } catch {} return; }
+  if (!quoteResp){ runQuote(); return; }
+  busy = true; setStatus('');
+  const amtWei = toUnits($('payAmt').value, payDecimals());
+  try {
+    if (SIDE === 'sell'){
+      setAction('Approving ' + tsym(TOKEN.symbol) + '…', true);
+      const approved = await Pad.uniEnsureApproval({ token: TOKEN.addr, side: SIDE, amountWei: amtWei.toString() });
+      if (approved){ setAction('Refreshing quote…', true); quoteResp = await Pad.uniQuote({ token: TOKEN.addr, side: SIDE, amountWei: amtWei.toString(), slippagePct: SLIP }); }
+    }
+    setAction('Confirm in your wallet…', true);
+    const tx = await Pad.uniSwap(quoteResp);
+    setStatus('Swapping… <span style="color:var(--faint)">waiting for confirmation</span>', 'ok');
+    setAction('Swapping…', true);
+    const rc = await tx.wait();
+    const hash = (rc && rc.hash) || (tx && tx.hash) || '';
+    const link = hash && explorer ? ` <a href="${explorer}/tx/${hash}" target="_blank" rel="noopener">View</a>` : '';
+    setStatus('Swap confirmed.' + link, 'ok');
+    $('payAmt').value = ''; $('getAmt').value = ''; $('paySub').textContent = ''; $('getSub').textContent = '';
+    quoteResp = null; $('det').classList.remove('show');
+    busy = false; refreshBalances(); syncAction();
+  } catch (e){
+    busy = false; setStatus(cleanErr(e), 'err'); syncAction();
+  }
+}
+
+// ── token picker ──────────────────────────────────────────────────────────────
+function openPicker(){ renderPicker(''); $('tokSearch').value = ''; $('modal').classList.add('open'); setTimeout(() => $('tokSearch').focus(), 30); }
+function closePicker(){ $('modal').classList.remove('open'); }
+function renderPicker(filter){
+  const f = filter.trim().toLowerCase();
+  const rows = UNI_TOKENS.map((a) => META.get(a) || { addr: a, symbol: '?', name: 'Token', decimals: 18, image: null, priceUsd: 0, volUsd: 0 })
+    .filter((m) => !f || (m.symbol||'').toLowerCase().includes(f) || (m.name||'').toLowerCase().includes(f) || m.addr.toLowerCase().includes(f))
+    .sort((x, y) => (y.volUsd||0) - (x.volUsd||0));
+  $('toklist').innerHTML = rows.map((m) => {
+    const sel = TOKEN && TOKEN.addr.toLowerCase() === m.addr.toLowerCase() ? ' sel' : '';
+    const price = m.priceUsd ? `<div class="v">${fmtUsd(m.priceUsd)}</div>` : '';
+    return `<div class="tokrow${sel}" data-addr="${esc(m.addr)}">${icHtml(m, 'ic')}
+      <div class="id"><div class="sy">${esc(tsym(m.symbol))}</div><div class="nm">${esc(m.name||'Token')}</div></div>
+      <div class="rt">${price}<div>${esc(short(m.addr))}</div></div></div>`;
+  }).join('') || `<div style="padding:20px;text-align:center;color:var(--faint)">No tokens match.</div>`;
+  $('toklist').querySelectorAll('.tokrow').forEach((el) => el.addEventListener('click', () => pickToken(el.dataset.addr)));
+}
+async function pickToken(addr){
+  closePicker();
+  TOKEN = { ...(await ensureMeta(addr)), addr };
+  const url = new URL(location.href); url.searchParams.set('c', addr); history.replaceState(null, '', url);
+  paintTokens(); scheduleQuote(); syncAction();
+}
+
+// ── wiring ────────────────────────────────────────────────────────────────────
+function flip(){
+  SIDE = SIDE === 'buy' ? 'sell' : 'buy';
+  $('payAmt').value = ''; $('getAmt').value = ''; $('paySub').textContent = ''; $('getSub').textContent = '';
+  quoteResp = null; $('det').classList.remove('show'); setStatus('');
+  paintTokens(); syncAction();
+}
+function setSlip(v){
+  SLIP = Math.max(0.1, Math.min(50, Number(v) || 3));
+  document.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.slip) === SLIP));
+  scheduleQuote();
+}
+$('gear').addEventListener('click', () => $('slip').classList.toggle('open'));
+document.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => { $('slipCustom').value = ''; setSlip(c.dataset.slip); }));
+$('slipCustom').addEventListener('input', (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) setSlip(v); });
+$('payAmt').addEventListener('input', () => { scheduleQuote(); syncAction(); });
+$('payBal').addEventListener('click', () => {
+  const max = $('payBal').dataset.max; if (!max) return;
+  const pay = payTok(); let v = BigInt(max);
+  if (pay.native){ const buf = 800000000000000n; v = v > buf ? v - buf : 0n; } // leave gas headroom
+  $('payAmt').value = fromUnits(v, pay.decimals); scheduleQuote(); syncAction();
 });
-window.addEventListener("robinpad:ready", refreshBtn); refreshBtn();
+$('flip').addEventListener('click', flip);
+$('act').addEventListener('click', doAction);
+$('payTok').addEventListener('click', () => { if (SIDE === 'sell') openPicker(); });
+$('getTok').addEventListener('click', () => { if (SIDE === 'buy') openPicker(); });
+$('modalX').addEventListener('click', closePicker);
+$('modal').addEventListener('click', (e) => { if (e.target === $('modal')) closePicker(); });
+$('tokSearch').addEventListener('input', (e) => renderPicker(e.target.value));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePicker(); });
+$('navToggle').addEventListener('click', () => $('mobileMenu').classList.toggle('open'));
 
-// Load now, then keep the board fresh. Steady 60s cadence; a failed fetch that left the board empty
-// retries in 12s so a cold start recovers quickly without hammering DexScreener.
-let boardTimer;
-async function tick() {
-  try { await load(); } catch (e) { /* keep the refresh loop alive even if a render throws */ }
-  clearTimeout(boardTimer);
-  const empty = !document.getElementById("grid").children.length;
-  boardTimer = setTimeout(tick, empty ? 12000 : 60000);
+function afterConnect(){ const a = Pad.account(); $('connectBtn').textContent = a ? short(a) : 'Connect Wallet'; refreshBalances(); scheduleQuote(); syncAction(); }
+$('connectBtn').addEventListener('click', async () => { try { await Pad.connect(); afterConnect(); } catch {} });
+window.addEventListener('robinpad:ready', () => { if (Pad.account()) afterConnect(); });
+
+// ── boot ────────────────────────────────────────────────────────────────────
+async function boot(){
+  setAction('Loading…', true);
+  await loadMeta();
+  let want = (q.get('c') || '').toLowerCase();
+  if (!isAddr(want) || !isUniToken(want)){
+    const ranked = UNI_TOKENS.map((a) => META.get(a)).filter(Boolean).sort((x,y)=>(y.volUsd||0)-(x.volUsd||0));
+    want = (ranked[0]?.addr || UNI_TOKENS[0]).toLowerCase();
+  }
+  TOKEN = { ...(await ensureMeta(want)), addr: want };
+  paintTokens();
+  LIVE = await Pad.uniLive();
+  if (!LIVE) setStatus('The top-token swap desk goes live shortly - liquidity and pricing are being wired up. Check back soon.', '');
+  if (Pad.account()) afterConnect();
+  syncAction();
 }
-tick();
+boot();
 </script>
 </body>
 </html>

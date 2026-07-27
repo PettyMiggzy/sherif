@@ -559,6 +559,14 @@ export async function tokenBalanceWei(token, who) {
   return await erc.balanceOf(addr);
 }
 
+/// Native ETH balance (wei, BigInt) via the read layer's failover provider. Used by the
+/// swap terminal for the "You pay" balance + MAX, so it never has to build its own RPC call.
+export async function ethBalance(who) {
+  const addr = who || _account;
+  if (!addr) return 0n;
+  try { return await _read.getBalance(addr); } catch { return 0n; }
+}
+
 // EVM has no approval-free way to sell a standard ERC20 through an AMM, so this
 // is the ONE approval in the app: exact amount (never MaxUint), to our own
 // PadRouter only, simulated first. The sell tax comes off the ETH out.
@@ -820,11 +828,16 @@ export async function activity(limit = 30) {
   catch { return []; }
 }
 
-/// Token metadata (name / symbol) for a card or the trade header.
+/// Token metadata (name / symbol / decimals) for a card or the trade header.
+/// decimals defaults to 18 (every Robin Labs coin is 18; external top tokens are read live).
 export async function tokenMeta(token) {
   const t = new ethers.Contract(token, ABIS.erc20, _read);
-  const [name, symbol] = await Promise.all([t.name().catch(() => "Token"), t.symbol().catch(() => "?")]);
-  return { name, symbol };
+  const [name, symbol, dec] = await Promise.all([
+    t.name().catch(() => "Token"),
+    t.symbol().catch(() => "?"),
+    t.decimals().then((d) => Number(d)).catch(() => 18),
+  ]);
+  return { name, symbol, decimals: Number.isFinite(dec) ? dec : 18 };
 }
 
 // ── holders + trade/fee history - work with NO indexer (chain + explorer API) ─
@@ -1221,6 +1234,113 @@ export async function devLockOf(token, dev) {
 
 // Restore an existing wallet session WITHOUT a popup (eth_accounts is silent), so the
 // connection persists across page navigations instead of forcing a reconnect every page.
+// ── Uniswap Trading API top-token swaps (through OUR server-side key-proxy) ─────
+// The browser NEVER sees the Uniswap key or the trade-api host: it POSTs to our own
+// /api/uni/{quote,check_approval,swap} on the indexer, which injects the secret key +
+// our 1.25% fee, hard-locks chain 4663 + a curated allowlist, asserts the fee applied,
+// and returns an executable Universal Router tx. This layer just drives the flow:
+//   quote → (sell only) approve token→Permit2 → sign Permit2 typed-data → build → send.
+// Every broadcast is a LEGACY type-0 tx (this chain has no eip-1559), same as the pad.
+const UNI_NATIVE = "0x0000000000000000000000000000000000000000"; // Trading API native-ETH sentinel
+
+async function apiPost(path, body) {
+  if (!hasApi()) throw new Error("Trading is temporarily unavailable.");
+  const res = await fetch(`${API_BASE.replace(/\/+$/, "")}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  let j = null; try { j = await res.json(); } catch { /* non-JSON upstream */ }
+  if (!res.ok) throw new Error((j && j.error) || `Trading error (${res.status}).`);
+  return j;
+}
+
+// Feature-detect whether the top-token swap desk is live (the operator has set the
+// Uniswap key on the indexer). A POST of an empty body returns 400 "bad body" when the
+// route is mounted, or 404 when the whole /api/uni/* group is off - no upstream budget
+// spent either way. Cached for the session so the board/picker only probe once.
+let _uniLive = null;
+export async function uniLive() {
+  if (_uniLive !== null) return _uniLive;
+  if (!hasApi()) { _uniLive = false; return _uniLive; }
+  try {
+    const res = await fetch(`${API_BASE.replace(/\/+$/, "")}/api/uni/quote`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    });
+    _uniLive = res.status !== 404;   // 400 = route live (rejected the empty body); 404 = desk disabled
+  } catch { _uniLive = false; }
+  return _uniLive;
+}
+
+// Get a quote from our proxy. side: 'buy' (ETH → token) | 'sell' (token → ETH).
+// amountWei is the EXACT_INPUT amount (ETH wei for a buy, token wei for a sell).
+// Requires a connected wallet (the Trading API routes/permits per swapper).
+export async function uniQuote({ token, side, amountWei, slippagePct = 8 }) {
+  if (!_signer) await connect();
+  if (!_account) throw new Error("Connect a wallet to trade.");
+  const tokenIn = side === "sell" ? token : UNI_NATIVE;
+  const tokenOut = side === "sell" ? UNI_NATIVE : token;
+  return apiPost("/api/uni/quote", {
+    type: "EXACT_INPUT",
+    amount: String(amountWei),
+    tokenIn, tokenOut,
+    swapper: _account,
+    slippageTolerance: Number(slippagePct),
+  }); // → { quote, permitData?, routing, ... }
+}
+
+// SELL only: make sure the token is approved to the canonical Permit2 (one-time-ish).
+// Buys spend native ETH and need no approval. Returns true if it sent (and mined) an
+// approval tx. The proxy verifies the returned approval is approve(Permit2, …) of THIS token.
+export async function uniEnsureApproval({ token, side, amountWei }) {
+  if (side !== "sell") return false;
+  if (!_signer) await connect();
+  const r = await apiPost("/api/uni/check_approval", { walletAddress: _account, token, amount: String(amountWei) });
+  const ap = r && r.approval;
+  if (!ap || !ap.to || !ap.data) return false;
+  const o = await legacyOverrides();
+  const tx = await _signer.sendTransaction({ to: ap.to, data: ap.data, value: ap.value ? BigInt(ap.value) : 0n, ...o });
+  await tx.wait();
+  return true;
+}
+
+// Build + broadcast the swap. Pass the WHOLE /quote response (it carries quote + optional
+// permitData). If a Permit2 signature is required, we sign the typed-data and forward it;
+// then POST /swap for the built Universal Router tx and send it as a balance-guarded legacy tx.
+export async function uniSwap(quoteResp) {
+  if (!_signer) await connect();
+  const quote = quoteResp && quoteResp.quote;
+  if (!quote) throw new Error("No quote to execute - refresh the price and try again.");
+  const payload = { quote };
+  const pd = quoteResp.permitData;
+  if (pd && pd.domain && pd.types && pd.values) {
+    const types = { ...pd.types }; delete types.EIP712Domain; // ethers derives the domain type itself
+    payload.signature = await _signer.signTypedData(pd.domain, types, pd.values);
+    payload.permitData = pd;
+  }
+  const built = await apiPost("/api/uni/swap", payload);
+  const s = built && built.swap;
+  if (!s || !s.to || !s.data) throw new Error("Trading is temporarily unavailable - try again shortly.");
+  const value = s.value ? BigInt(s.value) : 0n;
+
+  // Balance guard BEFORE signing (same spirit as guardedSend) so the wallet never shows
+  // its red "insufficient funds" screen. Legacy gas price; use the built gasLimit, capped.
+  const gasPrice = await safeGasPrice();
+  let gasLimit = TX_GAS_CAP;
+  try { if (s.gasLimit) { const g = BigInt(s.gasLimit); if (g > 0n) gasLimit = g; } } catch { /* keep cap */ }
+  if (gasLimit > TX_GAS_CAP) gasLimit = TX_GAS_CAP;
+  const bal = await _provider.getBalance(_account);
+  const need = value + gasLimit * gasPrice + GAS_BUFFER_WEI;
+  if (bal < need) {
+    const fmt = (w) => (+ethers.formatEther(w)).toFixed(4);
+    throw new Error(`Not enough ETH. This needs ≈ ${fmt(need)} ETH (incl. gas); you have ${fmt(bal)}.`);
+  }
+  const overrides = { to: s.to, data: s.data, value, gasLimit, type: 0 };
+  if (gasPrice > 0n) overrides.gasPrice = gasPrice;
+  try { return await _signer.sendTransaction(overrides); }
+  catch (e) { throw friendly(e, "Swap"); }
+}
+
 async function eagerConnect() {
   try {
     requestAnnounce();
@@ -1256,6 +1376,7 @@ if (typeof window !== "undefined") {
     rewards, rewardStats, claimReward, claimAllRewards,
     floorInfo, floorDeposit, floorClaim, floorWithdraw,
     createVestingLock, lockDevBagPct, lockMyBag, allLocksOf, releaseVesting, devLockOf, tokenBalanceWei,
+    uniLive, uniQuote, uniEnsureApproval, uniSwap,
   };
   window.SheriffPad = window.RobinPad; // back-compat alias for existing pages
   window.dispatchEvent(new Event("robinpad:ready"));

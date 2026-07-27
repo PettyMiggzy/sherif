@@ -285,3 +285,24 @@ export const GOPLUS_APP_KEY = "";
 
 export const isDeployed = (key) => /^0x[0-9a-fA-F]{40}$/.test(CONTRACTS[key] || "");
 export const hasApi = () => /^https?:\/\//.test(API_BASE || "");
+
+// ── Uniswap Trading API top-token swaps (via the indexer key-proxy) ──────────
+// The biggest LIVE tokens on Robinhood Chain trade through OUR server-side proxy
+// (/api/uni/*), which injects the Uniswap key + our 1.25% fee and allowlists the
+// chain + these tokens. NO secret here - the key never leaves the server; this is
+// just the public token list the swap UI offers. The server allowlist is the real
+// authority (indexer UNISWAP_TOKENS); this mirrors it so the picker reads full.
+// Whether the desk is actually live is feature-detected at runtime (Pad.uniLive()),
+// since it only turns on once the operator sets UNISWAP_API_KEY on the indexer.
+export const UNI_NATIVE = "0x0000000000000000000000000000000000000000"; // Trading API native-ETH sentinel
+export const UNI_TOKENS = [
+  "0x020bfc650a365f8bb26819deaabf3e21291018b4", "0x0339f5459fc690ac85f1782e15782a151b4a9e1b",
+  "0x45f82ac5d507e988f7406935da8eefe495a360e0", "0x1541b925f0948c6d91be8b52320687ba62d30b64",
+  "0x499dc58539ba6869ee15b6c2a3c3c07f1ac4995f", "0x2286397228be256529be1ae9ed8d7d16549e9c6a",
+  "0x9e94c8b5a0caeda5d0471c3a9f5ed4f3519d88c7", "0x5266eeaff092d6136ab63d18b975a60a0cc0c8f7",
+  "0x8f100e99ddf699320724e37cb866770381d47382", "0xc42cf61c16aac797b991cf9c1ac8ae70ba74a286",
+  "0x38bb87cf3e7344a82be7cd671c191f015b97eee6", "0x86e5ac7ec60eeec0a8989f1f1d617ae18c15fa0c",
+  "0x41f41f7b849a25e027876c485544c8088f447a11",
+];
+export const UNI_FEE_BPS = 125; // our 1.25%/side integrator fee (matches the server); shown to the user, taken in-swap
+export const isUniToken = (a) => UNI_TOKENS.includes(String(a || "").toLowerCase());
