@@ -681,9 +681,13 @@ export function startApi() {
         const tokens = [];
         for (const r of rows) {
           let addr; try { addr = ethers.getAddress(r.token); } catch { continue; } // valid, checksummed
-          // Uniswap list schema: symbol ^[a-zA-Z0-9+\-%/$.]+$ (<=20), name (<=40, restricted charset).
+          // Uniswap list schema: symbol ^[a-zA-Z0-9+\-%/$.]+$ (<=20), name (<=40, DIFFERENT charset - no '$').
+          const nameChars = (s) => String(s || "").replace(/[^ \w.'+\-%/&()\[\]]/g, "").trim().slice(0, 40);
           const symbol = String(r.symbol || "").replace(/[^a-zA-Z0-9+\-%/$.]/g, "").slice(0, 20) || "TOKEN";
-          const name = (String(r.name || "").replace(/[^ \w.'+\-%/&()\[\]]/g, "").trim().slice(0, 40)) || symbol;
+          // The name FALLBACK must be sanitized against the NAME charset too: falling back to the raw symbol
+          // could put a '$' (legal in a symbol, illegal in a name) into `name`, which fails schema validation
+          // for the WHOLE list and makes strict consumers drop every token.
+          const name = nameChars(r.name) || nameChars(symbol) || "Token";
           const t = { chainId: CFG.chainId, address: addr, name, symbol, decimals: 18 };
           if (r.has_pfp) t.logoURI = `${base}/media/${r.token}/pfp?v=${r.meta_ts || 0}`;
           tokens.push(t);
