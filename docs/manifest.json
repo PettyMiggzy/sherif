@@ -6,7 +6,8 @@
       "group": "Getting Started",
       "pages": [
         { "slug": "overview",    "src": "overview.md",    "title": "Overview",             "description": "What Robin Labs Pad is and how the contract stack fits together." },
-        { "slug": "network",     "src": "network.md",     "title": "Network & Addresses",  "description": "Robinhood Chain details, live contract addresses, and constants." }
+        { "slug": "network",     "src": "network.md",     "title": "Network & Addresses",  "description": "Robinhood Chain details, live contract addresses, and constants." },
+        { "slug": "migrate",     "src": "migrate.md",     "title": "Migrate to Robin",     "description": "Relaunch a token from another chain on Robinhood Chain in minutes: one paste imports your name, ticker, and logo, and your coin gets a verifiable Migrated From badge." }
       ]
     },
     {

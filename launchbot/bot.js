@@ -78,6 +78,7 @@ const HELP =
   '<b>Commands</b>\n' +
   '/start: set up your wallet + menu\n' +
   '/launch: create a new coin (name → ticker → image → optional dev-buy)\n' +
+  '/migrate: bring a coin from another chain to Robin\n' +
   '/balance: your ETH + coins\n' +
   '/deposit: show your deposit address\n' +
   '/withdraw &lt;address&gt;: send your ETH out\n' +
@@ -156,6 +157,24 @@ async function showWallet(chatId, userId, head) {
     `Send ETH (Robinhood Chain) to that address, then tap <b>Launch a coin</b>. ` +
     `Keep only what you’ll use, and /withdraw the rest.`,
     { reply_markup: menuKb });
+}
+
+// /migrate: route a project relaunching from another chain to the migrate flow + a human.
+const MIGRATE_URL = `${CFG.siteBase}/migrate.html`;
+async function cmdMigrate(chatId) {
+  await send(chatId,
+    '<b>Bring your coin to Robinhood Chain.</b>\n\n' +
+    'Launched a token somewhere else? Relaunch it native on Robin in minutes and keep your name, ticker, and logo.\n\n' +
+    '<b>How it works</b>\n' +
+    '1. Open the migrate page and paste your old token address.\n' +
+    '2. We pull your name, ticker, and logo from DexScreener.\n' +
+    '3. Review, connect, and launch on the curve.\n' +
+    '4. Your coin gets a Migrated From badge automatically.\n\n' +
+    'Want a hand? Message @robinlabcodev or email team@robinlabs.fun.',
+    { reply_markup: { inline_keyboard: [
+      [{ text: '🪂 Open migrate page', url: MIGRATE_URL }],
+      [{ text: '🚀 Launch a coin', callback_data: 'launch' }],
+    ] } });
 }
 
 // Called from the 'agree' button: record consent, then create + show the wallet.
@@ -485,6 +504,7 @@ async function onMessage(msg) {
       case '/help': return await send(chatId, HELP, { reply_markup: menuKb });
       case '/disclaimer': return await send(chatId, DISCLAIMER);
       case '/launch': case '/create': return await launchStart(chatId, userId);
+      case '/migrate': return await cmdMigrate(chatId);
       case '/balance': case '/wallet': return await cmdBalance(chatId, userId);
       case '/deposit': return await cmdDeposit(chatId, userId);
       case '/withdraw': return await exclusive(userId, chatId, () => cmdWithdraw(chatId, userId, arg));
@@ -541,6 +561,7 @@ async function setupCommands() {
     await tg('setMyCommands', { commands: [
       { command: 'start', description: 'Set up your wallet + menu' },
       { command: 'launch', description: 'Create a new coin' },
+      { command: 'migrate', description: 'Bring a coin from another chain' },
       { command: 'balance', description: 'Your ETH + coins' },
       { command: 'deposit', description: 'Show your deposit address' },
       { command: 'withdraw', description: 'Send your ETH out' },

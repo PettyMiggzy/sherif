@@ -32,9 +32,9 @@ export function profileMessage(token, p) {
  * downscales any format, incl. HEIC, to a small webp). Returns the server JSON.
  * Only the dev's signature is accepted, so `signer` must be the coin's creator.
  */
-export async function setProfile(signer, token, { pfpDataUrl = '', description = '', telegram = '', twitter = '', website = '' } = {}) {
+export async function setProfile(signer, token, { pfpDataUrl = '', description = '', telegram = '', twitter = '', website = '', migratedFrom = '' } = {}) {
   const ts = Math.floor(Date.now() / 1000);
-  const payload = { description, telegram, twitter, website, pfp: pfpDataUrl, banner: '', ts };
+  const payload = { description, telegram, twitter, website, migratedFrom, pfp: pfpDataUrl, banner: '', ts };
   const signature = await signer.signMessage(profileMessage(token, payload));
   const r = await fetch(`${CFG.apiBase}/api/coin/${token.toLowerCase()}/meta`, {
     method: 'POST',

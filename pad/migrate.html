@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Migrate to Robin: bring your coin to Robinhood Chain</title>
+<meta name="description" content="Relaunch your token native on Robinhood Chain in minutes. Paste your old contract, pull your name, ticker and logo automatically, and get a verifiable Migrated From badge." />
+<link rel="canonical" href="https://robinlab.io/migrate.html" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<link rel="manifest" href="/site.webmanifest" />
+<meta name="theme-color" content="#060803" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Robin Labs" />
+<meta property="og:title" content="Migrate to Robin: bring your coin to Robinhood Chain" />
+<meta property="og:description" content="Relaunch native on Robinhood Chain in minutes. One paste pulls your name, ticker and logo, and your coin gets a verifiable Migrated From badge." />
+<meta property="og:url" content="https://robinlab.io/migrate.html" />
+<meta property="og:image" content="https://robinlab.io/assets/og.jpg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@robinlabzz" />
+<meta name="twitter:title" content="Migrate to Robin: bring your coin to Robinhood Chain" />
+<meta name="twitter:description" content="Relaunch native on Robinhood Chain in minutes. One paste pulls your name, ticker and logo." />
+<meta name="twitter:image" content="https://robinlab.io/assets/og.jpg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#060803; --bg-2:#0b0f06; --panel:#0c1108; --panel-2:#101609;
+  --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06); --line-strong:rgba(220,233,5,.4);
+  --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
+  --lime:#dce905; --lime-2:#c3d400; --lime-deep:#8a9c00; --green:#5fd16a; --red:#ff5a52;
+  --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --glow:0 0 40px rgba(220,233,5,.25);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased;overflow-x:hidden;
+  background-image:radial-gradient(ellipse 60% 40% at 75% 8%,rgba(220,233,5,.10),transparent 60%)}
+a{color:inherit;text-decoration:none}
+img,svg{display:block}
+h1,h2,h3,h4{margin:0;font-weight:800;letter-spacing:-.02em;line-height:1.05}
+.wrap{max-width:1140px;margin:0 auto;padding:0 20px}
+.lime{color:var(--lime)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;font-size:.92rem;border-radius:12px;padding:12px 20px;cursor:pointer;border:1px solid transparent;white-space:nowrap;transition:.16s;font-family:var(--sans)}
+.btn-lime{background:var(--lime);color:#0a0e05;box-shadow:0 6px 24px -8px rgba(220,233,5,.6)}
+.btn-lime:hover{transform:translateY(-1px);box-shadow:0 8px 30px -6px rgba(220,233,5,.8)}
+.btn-ghost{border-color:var(--line-strong);color:var(--ink);background:rgba(255,255,255,.02)}
+.btn-ghost:hover{background:rgba(220,233,5,.08)}
+.btn-dark{background:#0e1206;border:1px solid var(--line);color:var(--ink)}
+.card{background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line-2);border-radius:16px}
+.eyebrow{font-family:var(--mono);font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:var(--lime-deep)}
+
+/* nav */
+header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line-2)}
+.nav-in{display:flex;align-items:center;gap:20px;padding:12px 20px;max-width:1140px;margin:0 auto}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1.15rem;letter-spacing:.02em}
+.brand img{width:32px;height:32px;object-fit:contain}
+.brand b{color:var(--lime)}
+.nav-links{display:flex;gap:22px;margin-left:14px}
+.nav-links a{color:var(--dim);font-size:.9rem;font-weight:600;white-space:nowrap}
+.nav-links a:hover{color:var(--ink)}
+.nav-links a.on{color:var(--lime)}
+.nav-cta{margin-left:auto;display:flex;gap:10px;align-items:center}
+.navtoggle{display:none;background:transparent;border:1px solid var(--line-2);border-radius:9px;width:40px;height:40px;color:var(--ink);cursor:pointer;align-items:center;justify-content:center;flex:none}
+.navtoggle svg{width:20px;height:20px}
+.mobile-menu{display:none;flex-direction:column;padding:6px 20px 14px;border-top:1px solid var(--line-2);background:rgba(6,8,3,.97);max-width:1140px;margin:0 auto}
+.mobile-menu a{padding:13px 4px;color:var(--ink);font-weight:600;border-bottom:1px solid var(--line-2)}
+.mobile-menu a.go{color:#0a0e05;margin-top:10px;border:none}
+.mobile-menu.open{display:flex}
+@media(max-width:900px){.nav-links{display:none}.navtoggle{display:inline-flex}.nav-launch{display:none}}
+
+/* hero */
+.hero{padding:clamp(48px,9vw,96px) 0 clamp(30px,6vw,54px);text-align:center}
+.hero .eyebrow{display:inline-block;margin-bottom:18px}
+.hero h1{font-size:clamp(34px,7vw,64px);line-height:1.02;max-width:16ch;margin:0 auto;text-wrap:balance}
+.hero p.sub{color:var(--dim);font-size:clamp(16px,2.4vw,20px);max-width:60ch;margin:20px auto 0;line-height:1.5}
+.hero .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:30px}
+.hero .cta .btn{padding:14px 26px;font-size:1rem}
+.trust{display:flex;gap:8px 22px;justify-content:center;flex-wrap:wrap;margin-top:26px;color:var(--faint);font-size:.82rem;font-family:var(--mono)}
+.trust span{display:inline-flex;align-items:center;gap:7px}
+.trust span::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--lime-deep)}
+
+/* section shell */
+section.blk{padding:clamp(30px,6vw,56px) 0}
+.blk-head{text-align:center;margin-bottom:34px}
+.blk-head h2{font-size:clamp(24px,4vw,36px)}
+.blk-head p{color:var(--dim);margin:12px auto 0;max-width:52ch;font-size:1rem}
+
+/* why grid */
+.why{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:860px){.why{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.why{grid-template-columns:1fr}}
+.why .card{padding:22px}
+.why h3{font-size:1.05rem;margin-bottom:8px;display:flex;align-items:center;gap:9px}
+.why h3 .dot{width:9px;height:9px;border-radius:50%;background:var(--lime);flex:none;box-shadow:var(--glow)}
+.why p{color:var(--dim);font-size:.9rem;line-height:1.5;margin:0}
+
+/* steps */
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;counter-reset:step}
+@media(max-width:760px){.steps{grid-template-columns:1fr 1fr}}
+@media(max-width:420px){.steps{grid-template-columns:1fr}}
+.steps .card{padding:22px;position:relative}
+.steps .n{font-family:var(--mono);font-weight:700;color:var(--lime);background:rgba(220,233,5,.08);border:1px solid var(--line);width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.steps h4{font-size:1rem;margin-bottom:6px}
+.steps p{color:var(--dim);font-size:.86rem;line-height:1.5;margin:0}
+
+/* shot */
+.shot-card{padding:clamp(24px,4vw,38px);text-align:center}
+.chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:8px}
+.chip{background:rgba(220,233,5,.06);border:1px solid var(--line);border-radius:999px;padding:9px 16px;font-weight:600;font-size:.9rem;display:inline-flex;align-items:center;gap:8px}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--lime)}
+
+/* concierge */
+.concierge{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;align-items:stretch}
+@media(max-width:760px){.concierge{grid-template-columns:1fr}}
+.concierge .card{padding:26px}
+.concierge h3{font-size:1.2rem;margin-bottom:10px}
+.concierge p{color:var(--dim);line-height:1.55;margin:0 0 18px}
+.contact-row{display:flex;flex-direction:column;gap:12px}
+.contact{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line-2);border-radius:12px;background:rgba(255,255,255,.02);transition:.16s}
+.contact:hover{border-color:var(--line-strong);background:rgba(220,233,5,.05)}
+.contact .k{font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.contact .v{font-weight:700;font-size:.95rem}
+.faq{display:grid;gap:10px;max-width:760px;margin:0 auto}
+.faq details{border:1px solid var(--line-2);border-radius:12px;background:var(--panel);padding:2px 18px}
+.faq summary{cursor:pointer;font-weight:700;padding:16px 0;list-style:none;display:flex;justify-content:space-between;gap:12px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";color:var(--lime);font-weight:800}
+.faq details[open] summary::after{content:"–"}
+.faq p{color:var(--dim);line-height:1.6;margin:0 0 16px;font-size:.92rem}
+
+/* footer */
+footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
+.foot-grid{display:grid;grid-template-columns:1.6fr repeat(4,1fr);gap:20px}
+@media(max-width:860px){.foot-grid{grid-template-columns:1fr 1fr 1fr}}
+.foot-grid h5{font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--lime-deep);margin:0 0 10px}
+.foot-grid a{display:block;color:var(--dim);font-size:.85rem;padding:3px 0}
+.foot-grid a:hover{color:var(--ink)}
+.foot-brand p{color:var(--faint);font-size:.82rem;line-height:1.5;margin:10px 0 0;max-width:30ch}
+.foot-bot{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:26px;padding-top:18px;border-top:1px solid var(--line-2);color:var(--faint);font-size:.78rem}
+.foot-bot .built{display:inline-flex;align-items:center;gap:8px}
+.foot-bot .built img{width:18px;height:18px}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
+  <nav class="nav-links">
+    <a href="browse.html">Browse</a><a href="browse.html#graduates">Graduated</a>
+    <a href="swap.html">Swap</a><a href="bridge.html">Bridge</a><a href="migrate.html" class="on">Migrate</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
+  </nav>
+  <div class="nav-cta">
+    <button class="btn btn-dark" id="connectBtn" type="button">Connect Wallet</button>
+    <a class="btn btn-lime nav-launch" href="create.html#migrate">Start Migration</a>
+    <button class="navtoggle" id="navToggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="mobileMenu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </div>
+</div>
+<nav class="mobile-menu" id="mobileMenu">
+  <a href="browse.html">Browse</a><a href="browse.html#graduates">Graduated</a>
+  <a href="swap.html">Swap</a><a href="bridge.html">Bridge</a><a href="migrate.html">Migrate</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a>
+  <a class="btn btn-lime go" href="create.html#migrate">Start Migration</a>
+</nav></header>
+
+<main>
+  <!-- HERO -->
+  <section class="hero"><div class="wrap">
+    <span class="eyebrow">Migrate to Robin</span>
+    <h1>Bring your coin home to Robinhood Chain</h1>
+    <p class="sub">You already did the hard part. You shipped a token and found people who care about it. Relaunch native on Robinhood Chain in minutes, keep your name, ticker, and logo, and carry a verifiable record of where you came from.</p>
+    <div class="cta">
+      <a class="btn btn-lime" href="create.html#migrate">Start migration</a>
+      <a class="btn btn-ghost" href="#how">See how it works</a>
+    </div>
+    <div class="trust">
+      <span>One paste imports your details</span>
+      <span>Migrated From badge is automatic</span>
+      <span>You never hand over control to a stranger</span>
+    </div>
+  </div></section>
+
+  <!-- WHY -->
+  <section class="blk"><div class="wrap">
+    <div class="blk-head">
+      <h2>Why teams move to Robin</h2>
+      <p>Not a bribe, a better home. The launchpad itself is the reason.</p>
+    </div>
+    <div class="why">
+      <div class="card"><h3><span class="dot"></span>Native to Robinhood Chain</h3><p>You launch directly on Robinhood Chain, an Arbitrum Orbit L2 built for speed, not bolted on as an afterthought.</p></div>
+      <div class="card"><h3><span class="dot"></span>Low, clear fees</h3><p>You see exactly what a launch and each trade costs up front. A flat 1% per side, no hidden cuts buried in the flow.</p></div>
+      <div class="card"><h3><span class="dot"></span>Holders earn</h3><p>Trading activity routes real ETH rewards back to diamond hand holders, so your community is paid to stay.</p></div>
+      <div class="card"><h3><span class="dot"></span>Migrated From badge</h3><p>Your coin carries a verifiable provenance badge showing its origin, so buyers trust this is the real relaunch and not a copycat.</p></div>
+      <div class="card"><h3><span class="dot"></span>One paste import</h3><p>Drop in your old contract and we pull your name, ticker, and logo from DexScreener, so you never rebuild your identity from scratch.</p></div>
+      <div class="card"><h3><span class="dot"></span>A real floor at graduation</h3><p>Fill the curve and your coin graduates with 0.5 ETH to the creator plus a permanent, locked liquidity floor underneath it.</p></div>
+    </div>
+  </div></section>
+
+  <!-- STEPS -->
+  <section class="blk" id="how"><div class="wrap">
+    <div class="blk-head">
+      <h2>How it works</h2>
+      <p>Four steps, no code, a few minutes. Same button everyone else clicks.</p>
+    </div>
+    <div class="steps">
+      <div class="card"><div class="n">1</div><h4>Paste</h4><p>Enter the contract address of the token you launched elsewhere, on any chain or pad.</p></div>
+      <div class="card"><div class="n">2</div><h4>Pull</h4><p>Click import. We read your public data from DexScreener and fill in your name, ticker, and logo.</p></div>
+      <div class="card"><div class="n">3</div><h4>Relaunch</h4><p>Review, connect your wallet, and launch on the curve. The fee on screen is the total, nothing added after.</p></div>
+      <div class="card"><div class="n">4</div><h4>Badge</h4><p>Save your profile. The Migrated From badge attaches automatically and records your origin for holders to verify.</p></div>
+    </div>
+    <div style="text-align:center;margin-top:30px"><a class="btn btn-lime" href="create.html#migrate">Start migration</a></div>
+  </div></section>
+
+  <!-- THE SHOT -->
+  <section class="blk"><div class="wrap">
+    <div class="card shot-card">
+      <span class="eyebrow">What you get, day one</span>
+      <div class="chips" style="margin-top:16px">
+        <span class="chip">The fair launch curve</span>
+        <span class="chip">0.5 ETH graduation reward</span>
+        <span class="chip">A permanent liquidity floor</span>
+        <span class="chip">Migrated From badge</span>
+        <span class="chip">A DexScreener boost on graduation</span>
+      </div>
+      <p style="color:var(--dim);max-width:60ch;margin:20px auto 0;line-height:1.55">That is the shot most chains never hand out. It comes with the launch. There is nothing extra to claim and nothing to farm.</p>
+    </div>
+  </div></section>
+
+  <!-- CONCIERGE -->
+  <section class="blk"><div class="wrap">
+    <div class="concierge">
+      <div class="card">
+        <h3>Want a human to walk you through it?</h3>
+        <p>Bringing a real community over is a moment, not a chore. If you want a hand with timing, comms, or verifying your badge before you announce, reach out. A person answers, not a queue.</p>
+        <div class="contact-row">
+          <a class="contact" href="https://t.me/robinlabcodev" target="_blank" rel="noopener noreferrer">
+            <div><div class="k">Telegram</div><div class="v">@robinlabcodev</div></div>
+          </a>
+          <a class="contact" href="mailto:team@robinlabs.fun">
+            <div><div class="k">Email</div><div class="v">team@robinlabs.fun</div></div>
+          </a>
+        </div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:center">
+        <span class="eyebrow">One rail</span>
+        <p style="color:var(--dim);line-height:1.6;margin:12px 0 0">Every coin on Robin launches through the same battle tested contract. You keep your owner wallet the whole way, and the pool is the same real, locked liquidity every other project gets. No bespoke deploys, no surprises.</p>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- FAQ -->
+  <section class="blk"><div class="wrap">
+    <div class="blk-head"><h2>Common questions</h2></div>
+    <div class="faq">
+      <details><summary>Does migrating move my old liquidity?</summary><p>No. Migrating relaunches your token native on Robinhood Chain as a fresh launch on the curve. Your old liquidity stays where it is on the old chain, and you decide how and when to move your community over. Reach out if you want to talk through the approach.</p></details>
+      <details><summary>What happens to my old token?</summary><p>It keeps existing on its original chain. Nothing we do touches or removes it. The new token is the one that lives on Robinhood Chain and carries your community forward, with the Migrated From badge pointing back to the original as proof of where you started.</p></details>
+      <details><summary>Is the Migrated From badge automatic?</summary><p>Yes. When you import your old contract and launch through the migrate flow, the badge attaches to your coin profile automatically and records your origin. You do not have to request it or set it up by hand, and only the coin's own creator can set it.</p></details>
+      <details><summary>What does it cost?</summary><p>You pay a launch fee plus the standard 1% per side trading fee, both shown clearly on screen before you confirm. There are no hidden cuts added after the fact.</p></details>
+      <details><summary>How long does it take?</summary><p>The core migration takes minutes. Paste, import, review, connect, launch. Most of your time goes into the parts you control, like reviewing details and planning your announcement, not the technical steps.</p></details>
+    </div>
+  </div></section>
+</main>
+
+<footer><div class="wrap">
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
+      <p>The only launchpad that rewards successful creators.</p>
+    </div>
+    <div><h5>Migrate</h5><a href="create.html#migrate">Start Migration</a><a href="docs.html">Migration Guide</a><a href="https://t.me/robinlabcodev" target="_blank" rel="noopener noreferrer">Talk to us</a></div>
+    <div><h5>Launch</h5><a href="create.html">Launch a Project</a><a href="docs.html#fees">Fees</a></div>
+    <div><h5>Explore</h5><a href="browse.html">All Projects</a><a href="browse.html#graduates">Graduated</a><a href="stats.html">Stats</a></div>
+    <div><h5>Resources</h5><a href="docs.html">Docs</a><a href="docs.html#security">Security</a></div>
+  </div>
+  <div class="foot-bot">
+    <span>© 2026 Robin Labs. All rights reserved.</span>
+    <span class="built"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />Built on <b>Robinhood Chain</b></span>
+  </div>
+</div></footer>
+
+<script type="module">
+import * as Pad from './assets/wallet.js';
+const $ = (id) => document.getElementById(id);
+
+// mobile menu toggle (mirrors index.html)
+(() => {
+  const t = $('navToggle'), m = $('mobileMenu'); if (!t || !m) return;
+  const set = (open) => { m.classList.toggle('open', open); t.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+  t.addEventListener('click', (e) => { e.stopPropagation(); set(!m.classList.contains('open')); });
+  m.addEventListener('click', (e) => { if (e.target.closest('a')) set(false); });
+  document.addEventListener('click', (e) => { if (!m.contains(e.target) && e.target !== t) set(false); });
+  addEventListener('resize', () => { if (innerWidth > 900) set(false); });
+})();
+
+// connect button: same wallet.js the rest of the site uses; degrades to a create link if unavailable
+(() => {
+  const b = $('connectBtn'); if (!b) return;
+  const paint = () => { const a = Pad.account && Pad.account(); b.textContent = a ? Pad.short(a) : 'Connect Wallet'; };
+  b.addEventListener('click', async () => { try { await Pad.connect(); paint(); } catch (_) { location.href = 'create.html#migrate'; } });
+  try { paint(); } catch (_) {}
+})();
+</script>
+</body>
+</html>

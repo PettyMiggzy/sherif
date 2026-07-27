@@ -418,6 +418,17 @@ async function urlToDataUrl(u) {
     return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result || '')); fr.onerror = () => res(''); fr.readAsDataURL(blob); });
   } catch (_) { return ''; }
 }
+// Deep link from the /migrate front door: create.html#migrate opens the import panel and scrolls to it.
+(() => {
+  const open = () => {
+    const p = $('migPanel'); if (!p) return;
+    p.open = true;
+    p.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const a = $('migAddr'); if (a) setTimeout(() => a.focus({ preventScroll: true }), 400);
+  };
+  if ((location.hash || '').toLowerCase() === '#migrate') open();
+  addEventListener('hashchange', () => { if ((location.hash || '').toLowerCase() === '#migrate') open(); });
+})();
 const migImportBtn = $('migImport');
 if (migImportBtn) migImportBtn.addEventListener('click', async () => {
   const addr = ($('migAddr').value || '').trim();

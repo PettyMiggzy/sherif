@@ -12,7 +12,8 @@
       "group": "Getting Started",
       "pages": [
         "overview",
-        "network"
+        "network",
+        "migrate"
       ]
     },
     {
