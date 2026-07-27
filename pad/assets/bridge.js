@@ -15,7 +15,7 @@ import { ethers } from "./ethers.min.js";
 import * as Pad from "./wallet.js";
 
 const LIFI = "https://li.quest/v1";
-const INTEGRATOR = "robinlabs";                 // identifies us to LI.FI (fee-sharing can be enabled later, needs LI.FI-side registration)
+const INTEGRATOR = "robinlab";                  // identifies us to LI.FI (matches robinlab.io); fee-sharing enabled later via LI.FI registration
 export const DEST_CHAIN = 4663;                  // Robinhood Chain
 export const NATIVE = "0x0000000000000000000000000000000000000000";
 const hex = (n) => "0x" + Number(n).toString(16);
