@@ -474,8 +474,10 @@ async function doAction(){
   if (busy) return;
   if (!Pad.account()){ try { await Pad.connect(); afterConnect(); } catch {} return; }
   if (!quoteResp){ runQuote(); return; }
-  busy = true; setStatus('');
   const amtWei = toUnits($('payAmt').value, payDecimals());
+  // Refuse to execute a quote that no longer matches the on-screen amount/token/side (debounce race).
+  if (amtWei == null || amtWei <= 0n || !quoteMatches(amtWei)){ resetQuote(); syncAction(); scheduleQuote(); return; }
+  busy = true; setStatus('');
   try {
     if (SIDE === 'sell'){
       setAction('Approving ' + tsym(TOKEN.symbol) + '…', true);
@@ -517,32 +519,53 @@ function renderPicker(filter){
 }
 async function pickToken(addr){
   closePicker();
+  resetQuote(); syncAction();               // invalidate the old token's quote IMMEDIATELY (before the async meta read)
   TOKEN = { ...(await ensureMeta(addr)), addr };
   const url = new URL(location.href); url.searchParams.set('c', addr); history.replaceState(null, '', url);
   paintTokens(); scheduleQuote(); syncAction();
 }
+// Does the held quote actually correspond to the current amount/token/side? A last-line defence so a
+// race (edit + click inside the debounce window) can never execute a swap for the wrong amount or token.
+function quoteMatches(amtWei){
+  const q = quoteResp && quoteResp.quote; if (!q || !q.input || !q.output || !TOKEN) return false;
+  const inTok = SIDE === 'sell' ? TOKEN.addr : UNI_NATIVE;
+  const outTok = SIDE === 'sell' ? UNI_NATIVE : TOKEN.addr;
+  const lc = (x) => String(x || '').toLowerCase();
+  return lc(q.input.token) === lc(inTok) && lc(q.output.token) === lc(outTok) && String(q.input.amount) === String(amtWei);
+}
 
 // ── wiring ────────────────────────────────────────────────────────────────────
+// Synchronously invalidate the current quote AND supersede any in-flight one (bump quoteSeq so a
+// pending runQuote bails on resolve). MUST run on every input that changes the trade (amount, token,
+// side, slippage) so the button can never execute a stale quote for the wrong amount/token/side.
+function resetQuote(){
+  quoteResp = null; quoteSeq++;
+  $('getAmt').value = ''; $('paySub').textContent = ''; $('getSub').textContent = '';
+  $('det').classList.remove('show');
+}
 function flip(){
   SIDE = SIDE === 'buy' ? 'sell' : 'buy';
-  $('payAmt').value = ''; $('getAmt').value = ''; $('paySub').textContent = ''; $('getSub').textContent = '';
-  quoteResp = null; $('det').classList.remove('show'); setStatus('');
+  $('payAmt').value = ''; resetQuote(); setStatus('');
   paintTokens(); syncAction();
 }
 function setSlip(v){
-  SLIP = Math.max(0.1, Math.min(50, Number(v) || 3));
+  // Clamp to the server's accepted band (uniproxy forwards slippage only in [0.1, 15]; above that it
+  // drops it and the built swap uses the upstream default, so never show/keep a value the swap won't use).
+  SLIP = Math.max(0.1, Math.min(15, Number(v) || 3));
   document.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.slip) === SLIP));
-  scheduleQuote();
+  resetQuote(); syncAction(); scheduleQuote();
 }
 $('gear').addEventListener('click', () => $('slip').classList.toggle('open'));
 document.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => { $('slipCustom').value = ''; setSlip(c.dataset.slip); }));
 $('slipCustom').addEventListener('input', (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) setSlip(v); });
-$('payAmt').addEventListener('input', () => { scheduleQuote(); syncAction(); });
+$('payAmt').addEventListener('input', () => { resetQuote(); scheduleQuote(); syncAction(); });
 $('payBal').addEventListener('click', () => {
   const max = $('payBal').dataset.max; if (!max) return;
   const pay = payTok(); let v = BigInt(max);
-  if (pay.native){ const buf = 800000000000000n; v = v > buf ? v - buf : 0n; } // leave gas headroom
-  $('payAmt').value = fromUnits(v, pay.decimals); scheduleQuote(); syncAction();
+  // On the native leg leave room for BOTH the swap's gas AND uniSwap's balance-guard buffer, else
+  // "MAX -> Buy" always trips the guard (need = value + gas + buffer > balance). ~0.003 ETH is ample on this L2.
+  if (pay.native){ const reserve = 3000000000000000n; v = v > reserve ? v - reserve : 0n; }
+  $('payAmt').value = fromUnits(v, pay.decimals); resetQuote(); scheduleQuote(); syncAction();
 });
 $('flip').addEventListener('click', flip);
 $('act').addEventListener('click', doAction);

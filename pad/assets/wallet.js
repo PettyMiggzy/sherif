@@ -1267,7 +1267,9 @@ export async function uniLive() {
     const res = await fetch(`${API_BASE.replace(/\/+$/, "")}/api/uni/quote`, {
       method: "POST", headers: { "content-type": "application/json" }, body: "{}",
     });
-    _uniLive = res.status !== 404;   // 400 = route live (rejected the empty body); 404 = desk disabled
+    // Route mounted → 400 (rejected the empty body) or 429 (rate limited) or 2xx. Desk off → 404 (falls
+    // through to the meta matcher). A CDN/proxy 403/405/407 is NOT a positive signal → treat as off.
+    _uniLive = res.status === 400 || res.status === 429 || (res.status >= 200 && res.status < 300);
   } catch { _uniLive = false; }
   return _uniLive;
 }

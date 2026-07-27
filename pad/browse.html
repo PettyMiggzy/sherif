@@ -537,7 +537,7 @@ const ETH_USD = 1920;
   document.addEventListener('click', (e) => { if (!m.contains(e.target) && e.target !== t) set(false); });
   addEventListener('resize', () => { if (innerWidth > 900) set(false); });
 })();
-const esc = (x) => String(x).replace(/[<>&"]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+const esc = (x) => String(x).replace(/[<>&"']/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtUsd = (n) => n >= 1e6 ? "$" + (n/1e6).toFixed(n>=1e7?0:2) + "M" : n >= 1e3 ? "$" + (n/1e3).toFixed(0) + "K" : "$" + Math.round(n||0);
 const fmtNum = (n) => n >= 1e3 ? (n/1e3).toFixed(n>=1e4?0:1) + "K" : String(n||0);
 
