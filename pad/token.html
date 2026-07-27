@@ -725,7 +725,7 @@ function renderMigBadge(migratedFrom){
   const addr = i >= 0 ? raw.slice(i + 1).trim() : '';
   const meta = MIG_CHAINS[chain];
   if (!chain || !meta) { el.style.display = 'none'; return; }
-  el.textContent = '🌉 Migrated from ' + meta.label;
+  el.textContent = 'Migrated from ' + meta.label;
   el.title = addr ? ('Originally ' + addr) : 'Migrated to Robin';
   // Link to the origin token when we know the explorer and the address looks sane; else non-linking.
   const safeAddr = /^[A-Za-z0-9]{25,64}$/.test(addr);

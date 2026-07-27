@@ -921,12 +921,12 @@ function buyPill(a) {
 function infoPills() {
   const out = [];
   if (TK_STATS) {
-    if (TK_STATS.coins)     out.push(`🚀 <b>${Number(TK_STATS.coins).toLocaleString()}</b> projects launched`);
-    if (TK_STATS.graduated) out.push(`🎓 <b>${Number(TK_STATS.graduated).toLocaleString()}</b> graduated`);
-    if (TK_STATS.volAllEth) out.push(`💰 <b>${fmtUsd(TK_STATS.volAllEth * ETH_USD)}</b> traded all-time`);
+    if (TK_STATS.coins)     out.push(`<b>${Number(TK_STATS.coins).toLocaleString()}</b> projects launched`);
+    if (TK_STATS.graduated) out.push(`<b>${Number(TK_STATS.graduated).toLocaleString()}</b> graduated`);
+    if (TK_STATS.volAllEth) out.push(`<b>${fmtUsd(TK_STATS.volAllEth * ETH_USD)}</b> traded all-time`);
   }
-  out.push('💚 get paid to trade &amp; hold', '🔒 lock your bag on-chain', '🌉 buy with any token on any chain',
-           '🏹 free to launch, LP locked forever', '⚖️ 1% buy / 1% sell, most back to you');
+  out.push('Get paid to trade and hold', 'Lock your bag on-chain',
+           'Free to launch, LP locked forever', '1% buy / 1% sell, most back to you');
   return out.map((t) => `<span class="tpill info">${t}</span>`);
 }
 function interleave(groups) {
