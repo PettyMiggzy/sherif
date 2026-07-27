@@ -245,6 +245,17 @@ async function ensureChain(eip) {
   }
 }
 
+// Guard the money paths against a wrong-chain broadcast. eagerConnect restores a signer SILENTLY
+// (no chain switch, so it never pops an unsolicited dialog on page load), so a wallet that is on
+// another network when the page loads would otherwise broadcast there. Call this at the top of every
+// path that sends value: it's a no-op when already on Robinhood Chain, and prompts a switch (exactly
+// when the user is trying to trade) otherwise. Throws a friendly error if they decline.
+async function ensureOnChain() {
+  if (!_eip) return;
+  try { await ensureChain(_eip); }
+  catch { throw new Error("Switch your wallet to Robinhood Chain to trade."); }
+}
+
 export const account = () => _account;
 export const short = (a) => (a ? a.slice(0, 6) + "…" + a.slice(-4) : "");
 
@@ -371,6 +382,7 @@ export async function getCoinProfile(token) {
 const TX_GAS_CAP = 16_000_000n; // just under the 2^24 (16,777,216) per-tx ceiling; ~13M launch fits with headroom
 
 async function guardedSend(contract, method, args, valueWei, label, fallbackGas = TX_GAS_CAP) {
+  await ensureOnChain(); // never broadcast on the wrong network (silently-restored session guard)
   const value = valueWei ?? 0n;
 
   // 0) if the attached ETH alone is more than the wallet holds, the chain's eth_call returns EMPTY
@@ -1297,6 +1309,7 @@ export async function uniQuote({ token, side, amountWei, slippagePct = 8 }) {
 export async function uniEnsureApproval({ token, side, amountWei }) {
   if (side !== "sell") return false;
   if (!_signer) await connect();
+  await ensureOnChain(); // the approval is an on-chain tx too - keep it on Robinhood Chain
   const r = await apiPost("/api/uni/check_approval", { walletAddress: _account, token, amount: String(amountWei) });
   const ap = r && r.approval;
   if (!ap || !ap.to || !ap.data) return false;
@@ -1313,6 +1326,7 @@ export async function uniEnsureApproval({ token, side, amountWei }) {
 //   swap surfaces as a clean "price moved" error instead of the user paying gas for a revert.
 export async function uniSwap(quoteResp, opts = {}) {
   if (!_signer) await connect();
+  await ensureOnChain(); // guard against a wrong-chain broadcast on a silently-restored session
   const quote = quoteResp && quoteResp.quote;
   if (!quote) throw new Error("No quote to execute - refresh the price and try again.");
   const payload = { quote };

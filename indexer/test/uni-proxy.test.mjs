@@ -11,8 +11,9 @@ process.env.UNISWAP_FEE_RECIPIENT = "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf"
 process.env.UNISWAP_FEE_BIPS = "125";
 process.env.UNISWAP_TOKENS = "0x020bfc650a365f8bb26819deaabf3e21291018b4,0x45f82ac5d507e988f7406935da8eefe495a360e0";
 
+const { ethers } = await import("ethers");
 const { _internal } = await import("../src/uniproxy.js");
-const { buildQuoteUpstream, validateQuote, validateSwapQuote, feeApplied } = _internal;
+const { buildQuoteUpstream, validateQuote, validateSwapQuote, feeApplied, feeInCalldata } = _internal;
 
 const NATIVE = "0x0000000000000000000000000000000000000000";
 const CASHCAT = "0x020bfc650a365f8bb26819deaabf3e21291018b4";
@@ -68,6 +69,27 @@ test("feeApplied reads the RESPONSE field `bps` and requires our recipient + INT
   assert.equal(feeApplied({ aggregatedOutputs: [{ recipient: FEE_LC, bps: 125 }] }), false);
   // no outputs
   assert.equal(feeApplied({}), false);
+});
+
+test("feeInCalldata decodes the built Universal Router PAY_PORTION and enforces recipient + exact bips", () => {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  const WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
+  const iface2 = new ethers.Interface(["function execute(bytes commands, bytes[] inputs)"]);
+  const iface3 = new ethers.Interface(["function execute(bytes commands, bytes[] inputs, uint256 deadline)"]);
+  // commands: V3_SWAP_EXACT_IN (0x00) then PAY_PORTION (0x06); inputs sized to match.
+  const exec = (iface, recipient, bips) => {
+    const commands = "0x0006";
+    const swapInput = coder.encode(["address", "uint256", "uint256", "bytes", "bool"], [SWAPPER, 1n, 0n, "0x", true]);
+    const payInput = coder.encode(["address", "address", "uint256"], [WETH, recipient, bips]);
+    const args = [commands, [swapInput, payInput]];
+    if (iface === iface3) args.push(1893456000n); // deadline
+    return iface.encodeFunctionData("execute", args);
+  };
+  assert.equal(feeInCalldata(exec(iface2, FEE_LC, 125)), true);          // correct: our recipient, our bips
+  assert.equal(feeInCalldata(exec(iface3, FEE_LC, 125)), true);          // 3-arg execute variant also decodes
+  assert.equal(feeInCalldata(exec(iface2, FEE_LC, 1)), false);           // bips reduced ~125x -> reject
+  assert.equal(feeInCalldata(exec(iface2, SWAPPER, 125)), false);        // fee redirected to attacker -> reject
+  assert.equal(feeInCalldata("0xdeadbeef"), false);                      // unparseable -> reject
 });
 
 test("validateSwapQuote re-checks chain, allowlist, one-native-leg, and fee presence", () => {

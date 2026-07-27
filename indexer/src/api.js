@@ -287,6 +287,11 @@ const rpcRateOk = makeRateLimiter(CFG.rpcProxyMaxPerSec);
 const metaRateOk = makeRateLimiter(2); // profile uploads: ≤2/s/IP (HEIC decode is CPU-bound on the main thread)
 const uniRateOk = makeRateLimiter(CFG.uniRatePerSec);       // per-IP cap on the Uniswap swap proxy
 const uniGlobalOk = makeRateLimiter(CFG.uniGlobalPerSec);   // total upstream/sec (shared paid-key budget), keyed by a constant
+// Per-IP cap on GET /api/* reads. The 5s micro-cache keys on url.search, so a client spraying distinct
+// query strings (e.g. /api/coins?offset=<incrementing>) bypasses it and forces a full aggregate recompute
+// each time; this cap stops one client saturating the single-threaded SQLite/event loop. Generous for real
+// browsing (a page load fires a handful of calls). /health and /media stay uncapped.
+const apiGetRateOk = makeRateLimiter(CFG.apiGetMaxPerSec || 30);
 
 // Absolute base for media links, derived from the request (works behind Caddy/any proxy).
 function mediaBase(req) {
@@ -582,6 +587,7 @@ export function startApi() {
       } catch (e) { return send(res, 400, { error: String(e.message || e) }, origin); }
     }
     if (req.method !== "GET") return send(res, 405, { error: "method not allowed" }, origin);
+    if (path.startsWith("/api/") && !apiGetRateOk(clientIp(req))) return send(res, 429, { error: "rate limited — slow down" }, origin);
 
     // Micro-cache for GET /api/* (not /media, not /health). On a hit, serve the stored
     // bytes from RAM; on a miss, transparently capture this response into the cache.

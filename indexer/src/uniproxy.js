@@ -78,6 +78,37 @@ function validateSwapQuote(q) {
   return null;
 }
 
+// Universal Router: execute(bytes commands, bytes[] inputs [, uint256 deadline]). Each command byte's low
+// 6 bits (& 0x3f) is the command type; PAY_PORTION = 0x06, input = abi.encode(address token, address recipient, uint256 bips).
+const UR_IFACE = new ethers.Interface([
+  "function execute(bytes commands, bytes[] inputs)",
+  "function execute(bytes commands, bytes[] inputs, uint256 deadline)",
+]);
+const PAY_PORTION = 0x06;
+const COMMAND_TYPE_MASK = 0x3f;
+
+// Assert the BUILT calldata actually pays OUR fee: a PAY_PORTION command whose recipient is our fee wallet
+// AND whose bips == our configured fee. A doctored quote can leave the cosmetic aggregatedOutputs summary
+// at 125 bips while the real PAY_PORTION carries ~1 bip (and keep our address present so a naive substring
+// check still matches), stripping the fee ~125x. Decoding the command is the only reliable guard.
+function feeInCalldata(data) {
+  let parsed;
+  try { parsed = UR_IFACE.parseTransaction({ data }); } catch { return false; }
+  if (!parsed) return false;
+  let commands, inputs;
+  try { commands = ethers.getBytes(parsed.args.commands); inputs = parsed.args.inputs; } catch { return false; }
+  if (!inputs || commands.length !== inputs.length) return false;
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  for (let i = 0; i < commands.length; i++) {
+    if ((commands[i] & COMMAND_TYPE_MASK) !== PAY_PORTION) continue;
+    try {
+      const [, recipient, bips] = coder.decode(["address", "address", "uint256"], inputs[i]);
+      if (lc(recipient) === CFG.uniFeeRecipient && Number(bips) === CFG.uniFeeBips) return true;
+    } catch { /* not a readable PAY_PORTION; keep scanning */ }
+  }
+  return false;
+}
+
 async function forward(routePath, body) {
   const r = await fetch(CFG.uniApiBase + routePath, {
     method: "POST",
@@ -116,8 +147,9 @@ export async function handleSwap(clientBody) {
   if (!s || lc(s.to) !== UNIVERSAL_ROUTER || Number(s.chainId) !== CFG.uniChainId) {
     return { status: 502, json: { error: "unexpected swap target" } };
   }
-  // Cheap fee-presence check on the built calldata: our recipient's 20 bytes must appear (PAY_PORTION target).
-  if (!lc(s.data).includes(CFG.uniFeeRecipient.slice(2))) return { status: 502, json: { error: "fee missing from swap calldata" } };
+  // Decode the built calldata and require a PAY_PORTION to OUR recipient at OUR bips - so a doctored quote
+  // can't reduce or strip the fee while leaving the cosmetic aggregatedOutputs summary intact.
+  if (!feeInCalldata(s.data)) return { status: 502, json: { error: "fee missing or reduced in swap calldata" } };
   // For a native-in (buy) EXACT_INPUT, the tx value must equal the quoted input amount.
   const tin = lc(clientBody.quote.input && clientBody.quote.input.token);
   if (tin === NATIVE) {
@@ -153,4 +185,4 @@ export async function handleApproval(clientBody) {
 }
 
 // exported for tests
-export const _internal = { feeApplied, validateQuote, validateSwapQuote, buildQuoteUpstream, allowedSet };
+export const _internal = { feeApplied, validateQuote, validateSwapQuote, buildQuoteUpstream, allowedSet, feeInCalldata };

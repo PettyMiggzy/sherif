@@ -72,6 +72,7 @@ contract RobinSwap is Ownable2Step, ReentrancyGuard {
 
     address public feeConfig;      // RobinSwapFeeConfig (0 → hardcoded default split)
     address public rewardVault;    // RobinSwap's RewardVault (0 → reward legs OFF, whole fee to platform/LP)
+    mapping(address => bool) public wasRewardVault; // every vault ever wired here (current + migrated-away) — see donateFloor
     address public lpSinkDefault;  // global Robin-LP sink
     address public platformWallet; // platform cut recipient
 
@@ -239,8 +240,11 @@ contract RobinSwap is Ownable2Step, ReentrancyGuard {
 
     /// The vault's sweep/emergencySweep calls this on its router for stranded epochs. Here it means "credit
     /// the Robin-LP escrow" (external tokens have no Bond floor). Keeps the vault bytecode identical.
+    /// Gate on wasRewardVault (any current-or-former vault), not just the CURRENT one: RewardVault.router is
+    /// immutable, so after a setRewardVault migration an OLD vault still calls back here on a late sweep and
+    /// must not be rejected (which would strand its swept remainder). Mirrors PadRouter.
     function donateFloor(address token) external payable {
-        if (msg.sender != rewardVault) revert NotVault();
+        if (!wasRewardVault[msg.sender]) revert NotVault();
         lpEscrow[token] += msg.value;
     }
 
@@ -271,7 +275,7 @@ contract RobinSwap is Ownable2Step, ReentrancyGuard {
         feeConfig = fc;
     }
     function setRewardVault(address v) external onlyOwner {
-        if (v != address(0)) require(v.code.length > 0, "not a contract");
+        if (v != address(0)) { require(v.code.length > 0, "not a contract"); wasRewardVault[v] = true; }
         rewardVault = v;
     }
     function setLpSinkDefault(address s) external onlyOwner { lpSinkDefault = s; }
