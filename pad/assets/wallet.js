@@ -1254,6 +1254,7 @@ export async function devLockOf(token, dev) {
 //   quote → (sell only) approve token→Permit2 → sign Permit2 typed-data → build → send.
 // Every broadcast is a LEGACY type-0 tx (this chain has no eip-1559), same as the pad.
 const UNI_NATIVE = "0x0000000000000000000000000000000000000000"; // Trading API native-ETH sentinel
+const UNI_APPROVE_IFACE = new ethers.Interface(["function approve(address spender, uint256 amount)"]); // to bound the sell approval
 
 async function apiPost(path, body) {
   if (!hasApi()) throw new Error("Trading is temporarily unavailable.");
@@ -1263,7 +1264,9 @@ async function apiPost(path, body) {
     body: JSON.stringify(body),
   });
   let j = null; try { j = await res.json(); } catch { /* non-JSON upstream */ }
-  if (!res.ok) throw new Error((j && j.error) || `Trading error (${res.status}).`);
+  // Always surface the HTTP status in the message so callers (e.g. the firewall sell-probe) can classify
+  // a transient transport failure vs a definitive rejection instead of guessing from prose alone.
+  if (!res.ok) throw new Error(`${(j && j.error) || "Trading error"} (HTTP ${res.status})`);
   return j;
 }
 
@@ -1313,8 +1316,16 @@ export async function uniEnsureApproval({ token, side, amountWei }) {
   const r = await apiPost("/api/uni/check_approval", { walletAddress: _account, token, amount: String(amountWei) });
   const ap = r && r.approval;
   if (!ap || !ap.to || !ap.data) return false;
+  // Bound the allowance to EXACTLY this sell amount - the Trading API returns approve(Permit2, MaxUint256),
+  // but this app's rule is exact-amount, never-infinite approvals [Rule 1]. The proxy already verified the
+  // calldata is approve(spender==Permit2) of this token; we only rewrite the amount to amountWei.
+  let data = ap.data;
+  try {
+    const dec = UNI_APPROVE_IFACE.parseTransaction({ data: ap.data });
+    data = UNI_APPROVE_IFACE.encodeFunctionData("approve", [dec.args[0], BigInt(amountWei)]);
+  } catch { /* not a standard approve; leave as-is (spender is proxy-verified as Permit2) */ }
   const o = await legacyOverrides();
-  const tx = await _signer.sendTransaction({ to: ap.to, data: ap.data, value: ap.value ? BigInt(ap.value) : 0n, ...o });
+  const tx = await _signer.sendTransaction({ to: ap.to, data, value: ap.value ? BigInt(ap.value) : 0n, ...o });
   await tx.wait();
   return true;
 }

@@ -94,8 +94,9 @@ test("feeInCalldata enforces PAY_PORTION recipient + exact bips + a real leg tok
   assert.equal(feeInCalldata(exec(iface2, CASHCAT, SWAPPER, 125), NATIVE, CASHCAT), false); // fee redirected
   assert.equal(feeInCalldata(exec(iface2, OFFLIST, FEE_LC, 125), NATIVE, CASHCAT), false);  // decoy token -> reject
   assert.equal(feeInCalldata("0xdeadbeef", NATIVE, CASHCAT), false);                        // unparseable -> reject
-  // SELL leg (tokenIn=CASHCAT, tokenOut=native): fee is on WETH (pre-unwrap).
+  // SELL leg (tokenIn=CASHCAT, tokenOut=native): fee is on WETH ONLY (pre-unwrap).
   assert.equal(feeInCalldata(exec(iface2, WETH, FEE_LC, 125), CASHCAT, NATIVE), true);      // fee on WETH -> accept
+  assert.equal(feeInCalldata(exec(iface2, CASHCAT, FEE_LC, 125), CASHCAT, NATIVE), false);  // fee on tin (swapped away) -> reject (~0-balance strip)
   assert.equal(feeInCalldata(exec(iface2, OFFLIST, FEE_LC, 125), CASHCAT, NATIVE), false);  // decoy on a sell -> reject
 });
 

@@ -692,19 +692,20 @@ export function startApi() {
           if (r.has_pfp) t.logoURI = `${base}/media/${r.token}/pfp?v=${r.meta_ts || 0}`;
           tokens.push(t);
         }
-        // Content hash over each token's mutable detail, so a logo/name/symbol edit bumps `patch`
-        // (additions bump `minor`); version-gating consumers then see metadata-only changes too.
-        let _ph = 5381 >>> 0;
-        for (const t of tokens) {
-          const s = `${t.symbol}|${t.name}|${t.logoURI || ""}`;
-          for (let i = 0; i < s.length; i++) _ph = (((_ph * 33) >>> 0) ^ s.charCodeAt(i)) >>> 0;
-        }
+        // The Uniswap list schema requires tokens.minItems >= 1; serving an empty list (fresh DB / a
+        // not-yet-indexed replica) is schema-INVALID and a strict consumer caches a hard failure. 503 until ready.
+        if (tokens.length === 0) return send(res, 503, { error: "token list not ready" }, origin);
+        // MONOTONIC patch = the newest coin_meta.updated_ts (only ever increases as metadata is edited), so a
+        // logo/name edit yields a strictly HIGHER version and version-gating consumers apply it. A non-monotonic
+        // hash would drop ~half of edits (Uniswap's getVersionUpgrade needs patch strictly greater).
+        let _patch = 0;
+        for (const r of rows) { const t = Number(r.meta_ts) || 0; if (t > _patch) _patch = t; }
         return send(res, 200, {
           name: "Robin Labs",
           timestamp: new Date().toISOString(),
           // Token-list semver: additions bump MINOR (major is reserved for removals / breaking changes),
-          // and PATCH tracks a content hash so a metadata-only edit is still a version change.
-          version: { major: 1, minor: tokens.length, patch: _ph % 1000000 },
+          // PATCH is the newest metadata-edit timestamp so a metadata-only change is still a strictly higher version.
+          version: { major: 1, minor: tokens.length, patch: _patch },
           logoURI: "https://robinlab.io/assets/favicon-512.png",
           keywords: ["robinlabs", "robinhood chain", "memecoin", "launchpad"],
           tokens,

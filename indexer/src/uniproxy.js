@@ -109,7 +109,8 @@ function feeInCalldata(data, tokenIn, tokenOut) {
   const tin = lc(tokenIn), tout = lc(tokenOut);
   let allowedFeeTokens;
   if (tin === NATIVE) allowedFeeTokens = new Set([tout]);              // buy: output token only
-  else if (tout === NATIVE) allowedFeeTokens = new Set([tin, WETH]);   // sell: input token or WETH (pre-unwrap)
+  else if (tout === NATIVE) allowedFeeTokens = new Set([WETH]);        // sell: WETH only - tin is swapped AWAY, so a
+                                                                       // PAY_PORTION on tin post-swap pays 125 bips * ~0 (same decoy class as the buy side)
   else allowedFeeTokens = new Set([tin, tout, WETH]);                  // (guarded elsewhere to one native leg)
   allowedFeeTokens.delete(NATIVE);
   allowedFeeTokens.delete("");

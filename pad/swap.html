@@ -512,8 +512,12 @@ function makeSellProbe(addr, estWei){
       return { ok: true };
     } catch (e){
       const m = String(e && e.message || e);
-      const transient = /rate limit|429|busy|temporarily|unavailable|50[234]|timeout|timed out|network|failed to fetch|load failed/i.test(m);
-      return { ok: false, transient, error: m };
+      // FAIL OPEN: treat every probe error as transient (fall back to the GoPlus verdict, never condemn the
+      // token) UNLESS upstream gave a DEFINITIVE routing rejection. A honeypot's sell genuinely has no route,
+      // which surfaces as one of these; any other error (rate limit, 5xx, "upstream error", timeout, network)
+      // is transient and must not hard-block a sellable coin.
+      const definitiveNoRoute = /no route|no quotes|not allowlisted|tokenin == tokenout|exactly one leg|unsupported/i.test(m);
+      return { ok: false, transient: !definitiveNoRoute, error: m };
     }
   };
 }
