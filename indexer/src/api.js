@@ -423,6 +423,15 @@ const tradesStmt = db.prepare(
 const recentActivityStmt = db.prepare(
   "SELECT t.token, t.side, t.eth, t.tokens, t.ts, c.symbol, c.name FROM trades t JOIN coins c ON c.token = t.token ORDER BY t.block DESC, t.log_index DESC LIMIT ?");
 
+// ── token list (Uniswap-standard tokenlist.json of every launched coin) ──
+// Every Robin Labs coin is a fixed-supply 18-decimal ERC20 from one audited template, so wallets
+// and aggregators that consume token lists get our whole catalogue (name/symbol/logo) with zero
+// per-coin submission. Oldest-first so `version.major` (= row count) only ever climbs.
+const tokenListStmt = db.prepare(
+  `SELECT c.token, c.name, c.symbol, cm.updated_ts AS meta_ts, (cm.pfp IS NOT NULL) AS has_pfp
+   FROM coins c LEFT JOIN coin_meta cm ON cm.token = c.token
+   ORDER BY c.launch_block ASC`);
+
 // ── rewards ──
 const coinNameStmt = db.prepare("SELECT name, symbol FROM coins WHERE token = ?");
 const rewardAccruedStmt = db.prepare(
@@ -616,6 +625,30 @@ export function startApi() {
           coins: s.coins, graduated: s.graduated,
           tradesAll: s.trades_all, trades24h: s.trades_24h,
           volAllEth: s.vol_all, vol24hEth: s.vol_24h,
+        }, origin);
+      }
+
+      // Uniswap-standard token list of every launched coin (self-hosted, no third-party gatekeeper).
+      // Served at both /api/tokenlist.json (cached) and /tokenlist.json (clean URL).
+      if (path === "/api/tokenlist.json" || path === "/tokenlist.json") {
+        const rows = tokenListStmt.all();
+        const tokens = [];
+        for (const r of rows) {
+          let addr; try { addr = ethers.getAddress(r.token); } catch { continue; } // valid, checksummed
+          // Uniswap list schema: symbol ^[a-zA-Z0-9+\-%/$.]+$ (<=20), name (<=40, restricted charset).
+          const symbol = String(r.symbol || "").replace(/[^a-zA-Z0-9+\-%/$.]/g, "").slice(0, 20) || "TOKEN";
+          const name = (String(r.name || "").replace(/[^ \w.'+\-%/&()\[\]]/g, "").trim().slice(0, 40)) || symbol;
+          const t = { chainId: CFG.chainId, address: addr, name, symbol, decimals: 18 };
+          if (r.has_pfp) t.logoURI = `${base}/media/${r.token}/pfp?v=${r.meta_ts || 0}`;
+          tokens.push(t);
+        }
+        return send(res, 200, {
+          name: "Robin Labs",
+          timestamp: new Date().toISOString(),
+          version: { major: rows.length, minor: 0, patch: 0 },
+          logoURI: "https://robinlab.io/assets/favicon-512.png",
+          keywords: ["robinlabs", "robinhood chain", "memecoin", "launchpad"],
+          tokens,
         }, origin);
       }
 
