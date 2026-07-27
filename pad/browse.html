@@ -559,7 +559,7 @@ window.addEventListener('robinpad:ready', refreshBtn); refreshBtn();
 
 // avatar helper
 const avatar = (c, cls) => c.image
-  ? `<img class="${cls}" src="${esc(c.image)}" alt="" onerror="this.style.visibility='hidden'" />`
+  ? `<img class="${cls}" src="${esc(c.image)}" alt="" loading="lazy" decoding="async" onerror="this.style.visibility='hidden'" />`
   : `<div class="${cls}" style="display:grid;place-items:center;font-weight:800;color:#0a0e05;background:linear-gradient(135deg,#dce905,#8a63e0)">${esc((c.symbol||'?').slice(0,2))}</div>`;
 
 // ── external top tokens, BLENDED INTO the board so the pad looks busy even with few native launches ──
