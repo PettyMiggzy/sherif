@@ -542,6 +542,31 @@ export function startApi() {
     const since = now - DAY;
     const base = mediaBase(req);
 
+    // ── LI.FI cross-chain bridge proxy: /api/lifi/{quote,tokens,connections,status,routes} ─────────
+    // Handled BEFORE the method split because most of these are GET (tokens/quote/connections/status),
+    // only `routes` is POST. Off unless a LIFI key is set. Injects the secret key + our integrator/fee
+    // server-side, locks the destination to Robinhood Chain, scoped CORS + rate limits.
+    if (CFG.lifiApiKeys.length && path.startsWith("/api/lifi/")) {
+      const lorigin = uniOrigin(req);
+      const ip = clientIp(req);
+      if (!lifiRateOk(ip)) return sendUni(res, 429, { error: "rate limited, slow down" }, lorigin);
+      if (!lifiGlobalOk("g")) return sendUni(res, 429, { error: "busy, retry in a moment" }, lorigin);
+      const sub = path.slice("/api/lifi/".length);
+      try {
+        let out;
+        if (sub === "quote") out = await lifiQuote(url.searchParams);
+        else if (sub === "tokens") out = await lifiTokens(url.searchParams);
+        else if (sub === "connections") out = await lifiConnections(url.searchParams);
+        else if (sub === "status") out = await lifiStatus(url.searchParams);
+        else if (sub === "routes") {
+          let lb; try { lb = JSON.parse((await readBody(req, 256 * 1024)).toString("utf8")); }
+          catch { return sendUni(res, 400, { error: "bad json" }, lorigin); }
+          out = await lifiRoutes(lb);
+        } else return sendUni(res, 404, { error: "no such route" }, lorigin);
+        return sendUni(res, out.status, out.json, lorigin);
+      } catch { return sendUni(res, 502, { error: "bridge upstream error" }, lorigin); }
+    }
+
     // ── write: set a coin's profile (creator-signed) ──────────────────────────
     // Body: { description, telegram, twitter, website, pfp?, banner?, ts, signature }.
     // pfp/banner are base64 data: URLs. The signature must be the coin's dev over
@@ -587,30 +612,6 @@ export function startApi() {
         } catch { return sendUni(res, 502, { error: "trading upstream error" }, uorigin); }
       }
 
-      // ── LI.FI cross-chain bridge proxy: /api/lifi/{quote,tokens,connections,status,routes} ─────────
-      // Off unless LIFI_API_KEY is set. Injects the secret key + our integrator/fee server-side, locks the
-      // destination to Robinhood Chain, scoped CORS + rate limits. Keeps the key out of the browser AND
-      // moves us off LI.FI's tiny keyless per-IP limit.
-      if (CFG.lifiApiKeys.length && path.startsWith("/api/lifi/")) {
-        const lorigin = uniOrigin(req);
-        const ip = clientIp(req);
-        if (!lifiRateOk(ip)) return sendUni(res, 429, { error: "rate limited, slow down" }, lorigin);
-        if (!lifiGlobalOk("g")) return sendUni(res, 429, { error: "busy, retry in a moment" }, lorigin);
-        const sub = path.slice("/api/lifi/".length);
-        try {
-          let out;
-          if (sub === "quote") out = await lifiQuote(url.searchParams);
-          else if (sub === "tokens") out = await lifiTokens(url.searchParams);
-          else if (sub === "connections") out = await lifiConnections(url.searchParams);
-          else if (sub === "status") out = await lifiStatus(url.searchParams);
-          else if (sub === "routes") {
-            let lb; try { lb = JSON.parse((await readBody(req, 256 * 1024)).toString("utf8")); }
-            catch { return sendUni(res, 400, { error: "bad json" }, lorigin); }
-            out = await lifiRoutes(lb);
-          } else return sendUni(res, 404, { error: "no such route" }, lorigin);
-          return sendUni(res, out.status, out.json, lorigin);
-        } catch { return sendUni(res, 502, { error: "bridge upstream error" }, lorigin); }
-      }
       const mm = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/meta$/);
       if (!mm) return send(res, 404, { error: "no such route" }, origin);
       if (!metaRateOk(clientIp(req))) return send(res, 429, { error: "rate limited — wait a moment and try again" }, origin);
