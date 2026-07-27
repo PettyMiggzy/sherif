@@ -90,7 +90,9 @@ export const CFG = {
   // /api/lifi/* is OFF unless LIFI_API_KEY is set. The key is a SECRET (gitignored .env), injected
   // server-side into the x-lifi-api-key header so it NEVER reaches the browser, which also moves us off
   // the tiny keyless 75-requests-per-2h-per-IP limit onto our per-key bucket (LI.FI's documented fix).
-  lifiApiKey: process.env.LIFI_API_KEY || "",
+  // One OR MORE LI.FI keys (LIFI_API_KEYS=key1,key2 for round-robin: 2x the per-key 100/min budget + failover;
+  // LIFI_API_KEY=key1 also works for a single key). The proxy rotates across them per request.
+  lifiApiKeys: (process.env.LIFI_API_KEYS || process.env.LIFI_API_KEY || "").split(",").map((s) => s.trim()).filter(Boolean),
   lifiApiBase: (process.env.LIFI_API_BASE || "https://li.quest/v1").replace(/\/+$/, ""),
   lifiIntegrator: process.env.LIFI_INTEGRATOR || "labs",     // our LI.FI Portal integrator id (fee wallet configured there)
   lifiFee: (process.env.LIFI_FEE || "0.01").trim(),           // our integrator fee fraction (1%); LI.FI forwards it to the Portal wallet

@@ -14,7 +14,13 @@ import { CFG } from "./config.js";
 
 const BASE = CFG.lifiApiBase;
 const DEST = String(CFG.lifiDestChain);
-const headers = () => ({ accept: "application/json", "x-lifi-api-key": CFG.lifiApiKey });
+// Round-robin across all configured LI.FI keys, each key has its own 100/min bucket, so N keys => N*100/min + failover.
+let _keyIdx = 0;
+const headers = () => {
+  const keys = CFG.lifiApiKeys;
+  const key = keys.length ? keys[_keyIdx++ % keys.length] : "";
+  return { accept: "application/json", "x-lifi-api-key": key };
+};
 const allowed = (id) => CFG.lifiSrcChains.includes(Number(id));
 
 async function forward(path, { method = "GET", query, body } = {}) {

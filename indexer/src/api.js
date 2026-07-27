@@ -591,7 +591,7 @@ export function startApi() {
       // Off unless LIFI_API_KEY is set. Injects the secret key + our integrator/fee server-side, locks the
       // destination to Robinhood Chain, scoped CORS + rate limits. Keeps the key out of the browser AND
       // moves us off LI.FI's tiny keyless per-IP limit.
-      if (CFG.lifiApiKey && path.startsWith("/api/lifi/")) {
+      if (CFG.lifiApiKeys.length && path.startsWith("/api/lifi/")) {
         const lorigin = uniOrigin(req);
         const ip = clientIp(req);
         if (!lifiRateOk(ip)) return sendUni(res, 429, { error: "rate limited, slow down" }, lorigin);
