@@ -110,7 +110,7 @@ main{padding:34px 0 70px}
 .amt[readonly]{color:var(--ink)}
 .tokbtn{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line-2);border-radius:999px;padding:6px 12px 6px 6px;cursor:pointer;flex:none;transition:.14s}
 .tokbtn:hover{border-color:var(--line-strong)}
-.tokbtn.fixed{cursor:default}
+.tokbtn.fixed{cursor:pointer}
 .tokbtn.fixed:hover{border-color:var(--line-2)}
 .ic{width:26px;height:26px;border-radius:50%;overflow:hidden;display:grid;place-items:center;font-weight:800;font-size:.72rem;color:#0a0e05;flex:none}
 .ic img{width:100%;height:100%;object-fit:cover}
@@ -763,8 +763,11 @@ $('payBal').addEventListener('click', () => {
 });
 $('flip').addEventListener('click', flip);
 $('act').addEventListener('click', doAction);
-$('payTok').addEventListener('click', () => { if (SIDE === 'sell') openPicker(); });
-$('getTok').addEventListener('click', () => { if (SIDE === 'buy') openPicker(); });
+// On the pickable side open the token picker; on the FIXED (ETH) side, flip direction instead of
+// dead-clicking — so tapping "ETH" on a buy switches you to selling (paying with your coin), and vice
+// versa. Guard on TOKEN so we never flip to a side with no coin selected (that would read a null token).
+$('payTok').addEventListener('click', () => { if (SIDE === 'sell') openPicker(); else if (TOKEN) flip(); else openPicker(); });
+$('getTok').addEventListener('click', () => { if (SIDE === 'buy') openPicker(); else if (TOKEN) flip(); });
 $('modalX').addEventListener('click', closePicker);
 $('modal').addEventListener('click', (e) => { if (e.target === $('modal')) closePicker(); });
 $('tokSearch').addEventListener('input', (e) => renderPicker(e.target.value));
