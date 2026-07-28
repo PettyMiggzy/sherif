@@ -87,6 +87,30 @@ section{margin:0 0 34px}
 .foot{border-top:1px solid var(--line-2);padding:22px 0 44px;color:var(--ink-faint);font-size:.76rem;text-align:center}
 .skel{height:96px;border-radius:14px;background:linear-gradient(100deg,var(--bg-2),var(--bg-3),var(--bg-2));background-size:200% 100%;animation:sh 1.2s linear infinite}
 @keyframes sh{to{background-position:-200% 0}}
+/* automations */
+.autowrap{display:grid;grid-template-columns:1.1fr .9fr;gap:20px}
+@media(max-width:760px){.autowrap{grid-template-columns:1fr}}
+.autoform{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,var(--bg-2),var(--panel));padding:18px}
+.tabs{display:inline-flex;gap:4px;background:var(--bg);border:1px solid var(--line-2);border-radius:10px;padding:4px;margin:0 0 12px}
+.tabs.sm{margin-left:10px}
+.atab,.sbtn{background:transparent;border:none;color:var(--ink-dim,#a7ad98);font-weight:700;font-size:.82rem;padding:7px 14px;border-radius:7px;cursor:pointer;font-family:inherit}
+.atab.on,.sbtn.on{background:var(--lime);color:#10140a}
+.alab{display:block;font-size:.72rem;color:var(--ink-faint);margin:10px 0 5px;font-weight:600}
+.ainp{width:100%;background:var(--bg);border:1px solid var(--line-2);border-radius:9px;padding:11px 12px;color:var(--ink,#f4f7ee);font-family:var(--mono);font-size:.86rem}
+.ainp:focus{outline:none;border-color:var(--lime)}
+.arow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.arow.dcaonly{grid-template-columns:1fr 1fr 1fr}
+.afine{color:var(--ink-faint);font-size:.72rem;line-height:1.5;margin-top:12px;border-top:1px solid var(--line-2);padding-top:12px}
+.autolist{border:1px solid var(--line-2);border-radius:16px;background:var(--bg-2);padding:16px}
+.alh{font-weight:800;font-size:.92rem;margin-bottom:12px}
+.ocard{border:1px solid var(--line-2);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--bg)}
+.ocard .oh{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700;font-size:.86rem}
+.ochip{font-family:var(--mono);font-size:.6rem;letter-spacing:.06em;padding:2px 8px;border-radius:999px;border:1px solid var(--line)}
+.ochip.buy{color:var(--up,#5fd16a);border-color:rgba(95,209,106,.4)}
+.ochip.sell{color:var(--down,#ff5a52);border-color:rgba(255,90,82,.4)}
+.ocard .od{color:var(--ink-faint);font-size:.76rem;font-family:var(--mono);margin-top:6px;line-height:1.5}
+.ocancel{background:transparent;border:1px solid var(--line-2);color:var(--ink-faint);border-radius:8px;padding:6px 12px;font-size:.74rem;font-weight:700;cursor:pointer;font-family:inherit;margin-top:8px}
+.ocancel:hover{border-color:var(--down,#ff5a52);color:var(--down,#ff5a52)}
 </style>
 </head>
 <body>
@@ -128,11 +152,43 @@ section{margin:0 0 34px}
     <div class="grid" id="holdings"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
     <div class="note" id="holdNote"></div>
   </section>
+
+  <!-- Automations: non-custodial limit orders + DCA. Hidden until RobinLimit is deployed (isDeployed). -->
+  <section id="autoSec" style="display:none">
+    <div class="sh"><h2>Automations</h2><span class="c">Limit orders and DCA, non-custodial</span></div>
+    <div class="autowrap">
+      <div class="autoform">
+        <div class="tabs"><button type="button" class="atab on" data-mode="limit">Limit order</button><button type="button" class="atab" data-mode="dca">DCA</button></div>
+        <div class="tabs sm"><button type="button" class="sbtn on" data-side="buy">Buy</button><button type="button" class="sbtn" data-side="sell">Sell</button></div>
+        <label class="alab">Coin address</label>
+        <input class="ainp" id="aoCoin" placeholder="0x… the coin you want to trade" spellcheck="false" />
+        <div class="arow">
+          <div><label class="alab" id="aoSpendL">You spend (ETH)</label><input class="ainp" id="aoSpend" inputmode="decimal" placeholder="0.0" /></div>
+          <div id="aoMinBox"><label class="alab" id="aoMinL">Only fill if you get at least</label><input class="ainp" id="aoMin" inputmode="decimal" placeholder="0" /></div>
+        </div>
+        <div class="arow dcaonly" style="display:none">
+          <div><label class="alab">Number of buys</label><input class="ainp" id="aoSlices" inputmode="numeric" value="10" /></div>
+          <div><label class="alab">Every (hours)</label><input class="ainp" id="aoInterval" inputmode="numeric" value="24" /></div>
+          <div><label class="alab">Max slippage %</label><input class="ainp" id="aoSlip" inputmode="decimal" value="5" /></div>
+        </div>
+        <div class="arow"><div><label class="alab">Expires in (days)</label><input class="ainp" id="aoExpiry" inputmode="numeric" value="30" /></div><div></div></div>
+        <button class="btn" id="aoSubmit" type="button" style="width:100%;margin-top:6px">Approve and sign order</button>
+        <div class="note" id="aoNote"></div>
+        <div class="afine">No escrow. Your funds stay in your wallet, a keeper fills each slice only when your price is met, and you can cancel any time. This is not an order book.</div>
+      </div>
+      <div class="autolist">
+        <div class="alh">Your open orders</div>
+        <div id="aoList"><div class="empty">No open orders yet.</div></div>
+      </div>
+    </div>
+  </section>
 </main>
 <div class="foot">Robin Labs on Robinhood Chain. Holdings and launches are read live on-chain. Not financial advice.</div>
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
+import { ethers } from './assets/ethers.min.js';
+import { isDeployed, API_BASE, CONTRACTS } from './assets/config.js';
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
 const ETH_USD = 1920;            // display-only, matches the rest of the pad
@@ -284,6 +340,7 @@ $('connectBtn').addEventListener('click', async () => {
     $('connectBtn').textContent = a ? short(a) : 'Connect Wallet';
     // once connected, if we were not already viewing a specific ?a wallet, show mine
     if (!isAddr((q.get('a') || '').trim()) && isAddr(a)) loadOnce(a);
+    if (isAddr(a) && isDeployed('robinLimit')) refreshOrders();
   } catch (e) { /* user declined */ }
 });
 // eagerConnect restores a prior session AFTER boot() runs; when it does, show the
@@ -293,7 +350,109 @@ window.addEventListener('robinpad:ready', () => {
   if (!isAddr(a)) return;
   $('connectBtn').textContent = short(a);
   if (!isAddr((q.get('a') || '').trim())) loadOnce(a);
+  if (isDeployed('robinLimit')) refreshOrders();
 });
+// ── Automations: non-custodial limit orders + DCA ────────────────────────────
+// Appears only when RobinLimit is deployed (isDeployed). The maker signs an EIP-712 order and
+// approves one ERC20 allowance; a keeper fills each slice when the price is met. No escrow.
+const WETH = (CONTRACTS.weth || '').toLowerCase();
+const ORDERS = {}; // hash -> order object (for cancel)
+let aoMode = 'limit', aoSide = 'buy';
+const aoNote = (m, k) => { const e = $('aoNote'); if (!e) return; e.textContent = m || ''; e.style.color = k === 'err' ? 'var(--red,#ff5a52)' : k === 'ok' ? 'var(--lime)' : 'var(--ink-faint)'; };
+
+function aoSyncLabels(){
+  const buy = aoSide === 'buy';
+  $('aoSpendL').textContent = buy ? 'You spend (ETH)' : 'You sell (coin)';
+  $('aoMinBox').style.display = aoMode === 'limit' ? '' : 'none';
+  if (aoMode === 'limit') $('aoMinL').textContent = buy ? 'Only if you get at least (coin)' : 'Only if you get at least (ETH)';
+  document.querySelectorAll('.dcaonly').forEach((x) => x.style.display = aoMode === 'dca' ? 'grid' : 'none');
+}
+function autoWire(){
+  if (!isDeployed('robinLimit') || !$('autoSec')) return;
+  $('autoSec').style.display = 'block';
+  document.querySelectorAll('.atab').forEach((b) => b.addEventListener('click', () => {
+    aoMode = b.dataset.mode; document.querySelectorAll('.atab').forEach((x) => x.classList.toggle('on', x === b)); aoSyncLabels();
+  }));
+  document.querySelectorAll('.sbtn').forEach((b) => b.addEventListener('click', () => {
+    aoSide = b.dataset.side; document.querySelectorAll('.sbtn').forEach((x) => x.classList.toggle('on', x === b)); aoSyncLabels();
+  }));
+  $('aoSubmit').addEventListener('click', submitOrder);
+  aoSyncLabels();
+  refreshOrders();
+}
+async function submitOrder(){
+  try {
+    if (!Pad.account()) await Pad.connect();
+    const coin = ($('aoCoin').value || '').trim();
+    if (!isAddr(coin)) return aoNote('Enter a valid coin address.', 'err');
+    const buy = aoSide === 'buy';
+    const sellToken = buy ? CONTRACTS.weth : coin, buyToken = buy ? coin : CONTRACTS.weth;
+    const spend = parseFloat($('aoSpend').value);
+    if (!(spend > 0)) return aoNote('Enter an amount.', 'err');
+    const days = Math.max(1, parseInt($('aoExpiry').value) || 30);
+    const expiry = Math.floor(Date.now() / 1000) + days * 86400;
+    const salt = BigInt('0x' + [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join(''));
+    let sliceIn, minOut, slices, interval;
+    if (aoMode === 'limit') {
+      const min = parseFloat($('aoMin').value);
+      if (!(min > 0)) return aoNote('Set the minimum you must receive.', 'err');
+      sliceIn = ethers.parseEther(String(spend)); minOut = ethers.parseEther(String(min)); slices = 1n; interval = 0n;
+    } else {
+      const n = Math.max(2, parseInt($('aoSlices').value) || 10);
+      const hrs = Math.max(1, parseInt($('aoInterval').value) || 24);
+      const slip = Math.min(50, Math.max(0.1, parseFloat($('aoSlip').value) || 5));
+      slices = BigInt(n); interval = BigInt(hrs * 3600);
+      sliceIn = ethers.parseEther(String(spend)) / slices;
+      let price = 0; try { const r = await fetch(API_BASE + '/api/coin/' + coin); const j = await r.json(); price = Number(j.coin && j.coin.lastPriceEth) || 0; } catch {}
+      if (price > 0) {
+        const perSliceEth = spend / n;
+        const expected = buy ? (perSliceEth / price) : (Number(ethers.formatEther(sliceIn)) * price);
+        minOut = ethers.parseEther(String(Math.max(0, expected * (1 - slip / 100)).toFixed(12)));
+      } else { minOut = 0n; aoNote('No live price yet, slices will fill at market.'); }
+    }
+    const order = { maker: Pad.account(), sellToken, buyToken, sliceIn: sliceIn.toString(), minOut: minOut.toString(),
+      slices: slices.toString(), interval: interval.toString(), expiry: String(expiry), salt: salt.toString() };
+    aoNote('Approving the token spend…');
+    await Pad.ensureLimitApproval(sellToken, (BigInt(order.sliceIn) * BigInt(order.slices)).toString());
+    aoNote('Sign the order in your wallet…');
+    const signature = await Pad.signLimitOrder(order);
+    aoNote('Saving your order…');
+    const res = await fetch(API_BASE + '/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ order, signature }) });
+    if (!res.ok) { const j = await res.json().catch(() => null); throw new Error((j && j.error) || 'Could not save the order.'); }
+    aoNote('Order is live. The keeper fills it when your price is met.', 'ok');
+    $('aoSpend').value = ''; $('aoMin').value = '';
+    refreshOrders();
+  } catch (e) { aoNote((e && e.message) || 'Failed.', 'err'); }
+}
+function renderOrder(o){
+  const ord = o.order; ORDERS[o.hash] = ord;
+  const buy = String(ord.buyToken).toLowerCase() !== WETH; // buying a coin => buyToken is the coin
+  const type = ord.slices === '1' ? 'Limit' : 'DCA';
+  const inSym = buy ? 'ETH' : 'coin';
+  const spend = (Number(ethers.formatEther(ord.sliceIn)) * Number(ord.slices));
+  const cadence = ord.slices === '1' ? 'at your limit price' : (ord.slices + ' buys, every ' + (Number(ord.interval) / 3600) + 'h');
+  return `<div class="ocard"><div class="oh"><span>${type} ${buy ? 'buy' : 'sell'}</span><span class="ochip ${buy ? 'buy' : 'sell'}">${buy ? 'BUY' : 'SELL'}</span></div>
+    <div class="od">Spend ${(+spend.toPrecision(4))} ${inSym} · ${cadence} · filled ${o.filled || 0}/${ord.slices}<br>coin ${short(buy ? ord.buyToken : ord.sellToken)}</div>
+    <button class="ocancel" data-h="${esc(o.hash)}">Cancel</button></div>`;
+}
+async function refreshOrders(){
+  const a = Pad.account(); if (!isAddr(a) || !$('aoList')) return;
+  let orders = []; try { const r = await fetch(API_BASE + '/api/orders/' + a); const j = await r.json(); orders = (j && j.orders) || []; } catch {}
+  const el = $('aoList');
+  el.innerHTML = orders.length ? orders.map(renderOrder).join('') : '<div class="empty">No open orders yet.</div>';
+  el.querySelectorAll('.ocancel').forEach((b) => b.addEventListener('click', () => cancelOrder(b.dataset.h)));
+}
+async function cancelOrder(hash){
+  const ord = ORDERS[hash]; if (!ord) return;
+  try {
+    aoNote('Cancelling on-chain…');
+    await (await Pad.cancelLimitOrder(ord)).wait();
+    await fetch(API_BASE + '/api/orders/cancel', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ hash }) }).catch(() => {});
+    aoNote('Order cancelled.', 'ok'); refreshOrders();
+  } catch (e) { aoNote((e && e.message) || 'Cancel failed.', 'err'); }
+}
+autoWire();
+
 boot();
 </script>
 </body>

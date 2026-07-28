@@ -183,6 +183,14 @@ export const ABIS = {
     "function token0() view returns (address)",
     "function token1() view returns (address)",
   ],
+  // RobinLimit — non-custodial limit orders + DCA. The Order tuple must match the contract's struct order.
+  robinLimit: [
+    "function hashOrder((address maker,address sellToken,address buyToken,uint256 sliceIn,uint256 minOut,uint256 slices,uint256 interval,uint256 expiry,uint256 salt) o) view returns (bytes32)",
+    "function cancel((address maker,address sellToken,address buyToken,uint256 sliceIn,uint256 minOut,uint256 slices,uint256 interval,uint256 expiry,uint256 salt) o)",
+    "function filledSlices(bytes32) view returns (uint256)",
+    "function remainingSlices((address maker,address sellToken,address buyToken,uint256 sliceIn,uint256 minOut,uint256 slices,uint256 interval,uint256 expiry,uint256 salt) o) view returns (uint256)",
+    "function execute((address maker,address sellToken,address buyToken,uint256 sliceIn,uint256 minOut,uint256 slices,uint256 interval,uint256 expiry,uint256 salt) o, bytes signature) returns (uint256)",
+  ],
 };
 
 // ── Admin ABIs (owner/poster/guardian surface) ──────────────────────────────

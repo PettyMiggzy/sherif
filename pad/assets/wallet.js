@@ -594,6 +594,44 @@ export async function ethBalance(who) {
   try { return await _read.getBalance(addr); } catch { return 0n; }
 }
 
+// ── RobinLimit: non-custodial limit orders + DCA (signed intents) ─────────────
+// The maker EIP-712-signs an order (below) and grants ONE ERC20 allowance to RobinLimit; a
+// keeper later fills it. No escrow: funds stay in the wallet until a fill pulls one slice.
+const LIMIT_ORDER_TYPES = { Order: [
+  { name: "maker", type: "address" }, { name: "sellToken", type: "address" }, { name: "buyToken", type: "address" },
+  { name: "sliceIn", type: "uint256" }, { name: "minOut", type: "uint256" }, { name: "slices", type: "uint256" },
+  { name: "interval", type: "uint256" }, { name: "expiry", type: "uint256" }, { name: "salt", type: "uint256" },
+] };
+function limitDomain() {
+  return { name: "RobinLimit", version: "1", chainId: CHAIN.id, verifyingContract: CONTRACTS.robinLimit };
+}
+// Sign an order object (values as strings/bigints matching the struct). Returns the signature hex.
+export async function signLimitOrder(order) {
+  if (!CONTRACTS.robinLimit) throw new Error("Automations are not live yet.");
+  if (!_signer) await connect();
+  return _signer.signTypedData(limitDomain(), LIMIT_ORDER_TYPES, order);
+}
+// Ensure RobinLimit can pull `amountWei` of `token`. USDT-safe: reset a too-small non-zero
+// allowance to 0 first. Returns true if an approval tx was sent, false if the allowance sufficed.
+export async function ensureLimitApproval(token, amountWei) {
+  if (!CONTRACTS.robinLimit) throw new Error("Automations are not live yet.");
+  if (!_signer) await connect();
+  const need = BigInt(amountWei);
+  const erc = new ethers.Contract(token, ABIS.erc20, _signer);
+  const have = BigInt(await erc.allowance(_account, CONTRACTS.robinLimit).catch(() => 0n));
+  if (have >= need) return false;
+  if (have > 0n) await (await guardedSend(erc, "approve", [CONTRACTS.robinLimit, 0n], 0n, "Reset approval")).wait();
+  await (await guardedSend(erc, "approve", [CONTRACTS.robinLimit, need], 0n, "Approve")).wait();
+  return true;
+}
+// Cancel the remainder of an order on-chain (maker only). `order` is the same object that was signed.
+export async function cancelLimitOrder(order) {
+  if (!CONTRACTS.robinLimit) throw new Error("Automations are not live yet.");
+  if (!_signer) await connect();
+  const c = new ethers.Contract(CONTRACTS.robinLimit, ABIS.robinLimit, _signer);
+  return guardedSend(c, "cancel", [order], 0n, "Cancel order");
+}
+
 // EVM has no approval-free way to sell a standard ERC20 through an AMM, so this
 // is the ONE approval in the app: exact amount (never MaxUint), to our own
 // PadRouter only, simulated first. The sell tax comes off the ETH out.

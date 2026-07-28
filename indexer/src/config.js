@@ -52,6 +52,10 @@ export const CFG = {
   corsOrigin: process.env.CORS_ORIGIN || "*",
   // Pad origin a shared /coin/:token link bounces a human visitor to (the coin page).
   siteBase: (process.env.SITE_BASE || "https://robinlab.io").replace(/\/+$/, ""),
+  // RobinLimit (non-custodial limit orders + DCA) address. "" = the order store + keeper stay OFF
+  // (the feature isn't deployed yet). Must match the deployed contract for EIP-712 signature checks.
+  robinLimit: (process.env.ROBIN_LIMIT || "").toLowerCase(),
+  weth: (process.env.WETH || "0x0bd7d308f8e1639fab988df18a8011f41eacad73").toLowerCase(),
 
   // ── coin profiles (creator-signed off-chain metadata: image, banner, socials) ──
   profileMaxImageBytes: num("PROFILE_MAX_IMAGE_BYTES", 800 * 1024), // per STORED image (after server downscale)

@@ -19,6 +19,7 @@ import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleAppro
 import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes, stats as lifiUsage } from "./lifiproxy.js";
 import { renderCard, coinOgHtml } from "./og.js";
 import { enabled as memeEnabled, makeMeme } from "./memeproxy.js";
+import { enabled as ordersEnabled, saveOrder, ordersForMaker, cancelOrder, verifyCancelledOnChain } from "./orders.js";
 
 const DAY = 86400;
 
@@ -654,6 +655,29 @@ export function startApi() {
         }
       }
 
+      // ── RobinLimit order store: POST /api/orders and /api/orders/cancel ───────
+      // Off unless RobinLimit is deployed. Signature-verified on save; cancel only hides an order
+      // the maker actually cancelled on-chain. Scoped CORS + a light rate limit.
+      if (path === "/api/orders" || path === "/api/orders/cancel") {
+        const oorigin = memeOrigin(req); // same allowlisted pad origins
+        if (!ordersEnabled()) return sendUni(res, 503, { error: "automations are not live yet" }, oorigin);
+        if (!apiGetRateOk(clientIp(req))) return sendUni(res, 429, { error: "slow down" }, oorigin);
+        let ob;
+        try { ob = JSON.parse((await readBody(req, 32 * 1024)).toString("utf8")); }
+        catch { return sendUni(res, 400, { error: "bad json" }, oorigin); }
+        if (path === "/api/orders/cancel") {
+          const hash = String(ob.hash || "");
+          if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) return sendUni(res, 400, { error: "bad hash" }, oorigin);
+          if (!(await verifyCancelledOnChain(hash))) return sendUni(res, 409, { error: "not cancelled on-chain yet" }, oorigin);
+          cancelOrder(hash); // source of truth is the chain; we only mirror a confirmed cancel
+          return sendUni(res, 200, { ok: true }, oorigin);
+        }
+        try {
+          const { hash } = saveOrder(ob.order, ob.signature, now);
+          return sendUni(res, 200, { ok: true, hash }, oorigin);
+        } catch (e) { return sendUni(res, 400, { error: (e && e.message) || "bad order" }, oorigin); }
+      }
+
       const mm = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/meta$/);
       if (!mm) return send(res, 404, { error: "no such route" }, origin);
       if (!metaRateOk(clientIp(req))) return send(res, 429, { error: "rate limited — wait a moment and try again" }, origin);
@@ -757,6 +781,13 @@ export function startApi() {
 
       // Whether the photo-to-meme generator is configured — the create page shows its button only if so.
       if (path === "/api/meme/enabled") return send(res, 200, { enabled: memeEnabled() }, origin);
+
+      // A maker's open limit/DCA orders (for the portfolio's Automations panel).
+      const ordersMatch = path.match(/^\/api\/orders\/(0x[0-9a-fA-F]{40})$/);
+      if (ordersMatch) {
+        if (!ordersEnabled()) return send(res, 200, { orders: [] }, origin);
+        return send(res, 200, { orders: ordersForMaker(ordersMatch[1], now) }, origin);
+      }
 
       if (path === "/api/stats") {
         const s = statsStmt.get({ since });
