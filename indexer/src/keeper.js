@@ -101,6 +101,9 @@ async function tick(contract, provider, feeBps) {
 export async function runKeeper() {
   if (!KEY || !/^0x[0-9a-f]{40}$/.test(CFG.robinLimit)) {
     console.log("[keeper] disabled (set KEEPER_KEY and ROBIN_LIMIT to run)");
+    // Stay alive idle instead of exiting, so a `restart: unless-stopped` container doesn't crash-loop
+    // when the key isn't configured yet. It becomes a no-op until KEEPER_KEY/ROBIN_LIMIT are set + restarted.
+    setInterval(() => {}, 1 << 30);
     return;
   }
   const provider = new ethers.JsonRpcProvider(CFG.rpcUrl, CFG.chainId, { staticNetwork: true });

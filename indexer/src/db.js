@@ -11,6 +11,10 @@ mkdirSync(dirname(CFG.dbPath), { recursive: true });
 export const db = new Database(CFG.dbPath);
 db.pragma("journal_mode = WAL");
 db.pragma("synchronous = NORMAL");
+// Wait (up to 5s) for a lock instead of erroring, so the API and the keeper can safely share this
+// file from separate processes (WAL already allows concurrent readers + one writer; this makes the
+// occasional writer-vs-writer overlap block-and-retry instead of throwing SQLITE_BUSY).
+db.pragma("busy_timeout = 5000");
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS meta (

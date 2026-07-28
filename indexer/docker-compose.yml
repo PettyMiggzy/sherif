@@ -30,6 +30,22 @@ services:
       timeout: 5s
       retries: 3
 
+  # RobinLimit keeper — fills signed limit/DCA orders. OFF unless KEEPER_KEY (a funded hot wallet, its
+  # own — NOT the deployer/cold key) and ROBIN_LIMIT are set in .env. Shares the indexer's SQLite volume
+  # so it reads the same open orders. Broadcasts execute() txs via RPC_URL, which must be write-capable
+  # (your Alchemy endpoint), not the read-only Blockscout RPC.
+  keeper:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /app/data/robinlabs.db
+    volumes:
+      - indexer-data:/app/data
+    command: ["node", "src/keeper.js"]
+    depends_on:
+      - indexer
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
