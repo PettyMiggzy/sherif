@@ -783,6 +783,27 @@ export function startApi() {
       // Whether the photo-to-meme generator is configured — the create page shows its button only if so.
       if (path === "/api/meme/enabled") return send(res, 200, { enabled: memeEnabled() }, origin);
 
+      // ── DexScreener logo proxy for migrate-in: GET /api/img?u=<dexscreener image url> ──
+      // DexScreener's image CDN sends no CORS header, so the browser can't fetch a migrating coin's
+      // existing logo directly. We fetch it server-side (SSRF-guarded to DexScreener CDNs only, image
+      // content-type + size capped) and return it with CORS, so the create page can import the logo.
+      if (path === "/api/img") {
+        if (!mediaRateOk(clientIp(req))) return send(res, 429, { error: "rate limited" }, origin);
+        let u; try { u = new URL(url.searchParams.get("u") || ""); } catch { return send(res, 400, { error: "bad url" }, origin); }
+        const ALLOWED = new Set(["cdn.dexscreener.com", "dd.dexscreener.com", "media.dexscreener.com", "dexscreener.com"]);
+        if (u.protocol !== "https:" || !ALLOWED.has(u.hostname)) return send(res, 400, { error: "host not allowed" }, origin);
+        try {
+          const up = await fetch(u.toString(), { signal: AbortSignal.timeout(8000), headers: { accept: "image/*" }, redirect: "follow" });
+          if (!up.ok) return send(res, 502, { error: "upstream " + up.status }, origin);
+          const ct = up.headers.get("content-type") || "";
+          if (!/^image\//.test(ct)) return send(res, 415, { error: "not an image" }, origin);
+          const buf = Buffer.from(await up.arrayBuffer());
+          if (buf.length > 3 * 1024 * 1024) return send(res, 413, { error: "too large" }, origin);
+          res.writeHead(200, { "content-type": ct, "access-control-allow-origin": origin, "cache-control": "public, max-age=86400" });
+          return res.end(buf);
+        } catch { return send(res, 502, { error: "fetch failed" }, origin); }
+      }
+
       // A maker's open limit/DCA orders (for the portfolio's Automations panel).
       const ordersMatch = path.match(/^\/api\/orders\/(0x[0-9a-fA-F]{40})$/);
       if (ordersMatch) {

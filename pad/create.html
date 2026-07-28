@@ -413,15 +413,20 @@ function migProvenance() {
   return chain + '|' + addr;
 }
 async function urlToDataUrl(u) {
-  // Best-effort: DexScreener image CDN may or may not allow cross-origin fetch. On any failure we just
-  // skip the logo (name/ticker still import) rather than block the flow.
-  try {
-    const r = await fetch(u, { mode: 'cors' });
+  // DexScreener's image CDN sends no CORS header, so a direct browser fetch is blocked. Go through our
+  // own proxy (which fetches server-side and returns CORS); fall back to a direct attempt if the proxy
+  // is unavailable. On any failure we just skip the logo (name/ticker still import) rather than block.
+  const tryFetch = async (target) => {
+    const r = await fetch(target, { mode: 'cors' });
     if (!r.ok) return '';
     const blob = await r.blob();
     if (!/^image\//.test(blob.type) || blob.size > 2 * 1024 * 1024) return '';
     return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result || '')); fr.onerror = () => res(''); fr.readAsDataURL(blob); });
-  } catch (_) { return ''; }
+  };
+  try {
+    if (API_BASE) { const viaProxy = await tryFetch(API_BASE + '/api/img?u=' + encodeURIComponent(u)); if (viaProxy) return viaProxy; }
+  } catch (_) { /* proxy down — try direct */ }
+  try { return await tryFetch(u); } catch (_) { return ''; }
 }
 // Deep link from the /migrate front door: create.html#migrate opens the import panel and scrolls to it.
 (() => {
@@ -456,7 +461,9 @@ if (migImportBtn) migImportBtn.addEventListener('click', async () => {
     if (!chain && pool.chainId) { const opt = [...$('migChain').options].find((o) => o.value === pool.chainId); $('migChain').value = opt ? pool.chainId : 'other'; }
     if (typeof sync === 'function') sync();
     let gotLogo = false;
-    const img = pool.info && pool.info.imageUrl;
+    // Look for the logo on the selected pool first, then ANY pair for this token (DexScreener attaches
+    // `info` per-pair and only some carry it), so a token with a logo isn't missed.
+    const img = (pool.info && pool.info.imageUrl) || (pairs.find((p) => p.info && p.info.imageUrl) || {}).info?.imageUrl;
     if (img && !($('pfp').files || []).length) {
       const dataUrl = await urlToDataUrl(img);
       if (dataUrl) {
