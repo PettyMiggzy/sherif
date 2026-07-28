@@ -12,18 +12,25 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { ethers } from "ethers";
 import { CFG } from "./config.js";
-import { openOrders, cancelOrder, setFilled } from "./orders.js";
+import { openOrders, cancelOrder, setFilled, bumpAttempts } from "./orders.js";
 
 const ABI = [
   "function execute((address maker,address sellToken,address buyToken,uint256 sliceIn,uint256 minOut,uint256 slices,uint256 interval,uint256 expiry,uint256 salt) o, bytes signature) returns (uint256)",
   "function cancelled(bytes32) view returns (bool)",
   "function filledSlices(bytes32) view returns (uint256)",
+  "function keeperFeeBps() view returns (uint16)",
   "function hashOrder((address maker,address sellToken,address buyToken,uint256 sliceIn,uint256 minOut,uint256 slices,uint256 interval,uint256 expiry,uint256 salt) o) view returns (bytes32)",
 ];
 
 const KEY = process.env.KEEPER_KEY || "";
 const POLL_MS = Number(process.env.KEEPER_POLL_MS || 30000);
 const GAS_CAP = BigInt(process.env.KEEPER_GAS_CAP || 3_000_000);
+// Profitability guard: skip a fill unless its keeper fee (in ETH terms) covers gas with this margin,
+// and skip dust slices below MIN_SLICE_WEI. Stops a griefer posting fillable-but-unprofitable dust
+// orders that would drain the keeper's ETH on gas.
+const MIN_SLICE_WEI = BigInt(process.env.KEEPER_MIN_SLICE_WEI || 2_000_000_000_000_000n); // 0.002 ETH-side
+const PROFIT_MARGIN = BigInt(process.env.KEEPER_PROFIT_MARGIN || 2); // fee must exceed gas cost by this factor
+const WETH_LC = (CFG.weth || "").toLowerCase();
 
 // Turn a stored order (string fields) into the tuple the contract expects.
 function tuple(o) {
@@ -40,7 +47,7 @@ async function legacyGasPrice(provider) {
   return gp > floor ? gp : floor;
 }
 
-async function tick(contract, provider) {
+async function tick(contract, provider, feeBps) {
   const now = Math.floor(Date.now() / 1000);
   const orders = openOrders(now);
   if (!orders.length) return;
@@ -48,12 +55,15 @@ async function tick(contract, provider) {
 
   for (const { order, signature, hash } of orders) {
     const t = tuple(order);
+    let makerOut;
     try {
-      // Is it fillable right now? The contract reverts if not (price/cadence/filled/expired).
-      await contract.execute.staticCall(t, signature);
+      // Is it fillable right now? The contract reverts if not (price/cadence/filled/expired). The
+      // return value is the maker's out — for a sell that's WETH we can value the fee against.
+      makerOut = await contract.execute.staticCall(t, signature);
     } catch (e) {
-      // Not fillable this round. Retire it from the open set if it is cancelled on-chain OR fully
-      // filled, so a done/dead order isn't re-probed forever (keeps the working set small).
+      // Not fillable this round. Bump attempts so chronic junk sinks below fresh orders, and retire it
+      // outright if it is cancelled on-chain OR fully filled (so it stops being re-probed).
+      bumpAttempts(hash);
       try {
         if (await contract.cancelled(hash)) { cancelOrder(hash); continue; }
         const done = Number(await contract.filledSlices(hash));
@@ -62,10 +72,21 @@ async function tick(contract, provider) {
       } catch { /* ignore */ }
       continue;
     }
+
+    // Profitability + dust guard. The keeper fee is `feeBps` of the output; value it in ETH terms —
+    // for a buy the ETH side is the WETH spent (sliceIn), for a sell it's the WETH received (makerOut).
+    const isBuy = order.sellToken.toLowerCase() === WETH_LC;
+    const ethSide = isBuy ? BigInt(order.sliceIn) : BigInt(makerOut);
+    let gas = GAS_CAP;
+    try { gas = (await contract.execute.estimateGas(t, signature)) * 12n / 10n; } catch {}
+    if (gas > GAS_CAP) gas = GAS_CAP;
+    const feeEth = (ethSide * BigInt(feeBps)) / 10000n;
+    if (ethSide < MIN_SLICE_WEI || feeEth < gas * gasPrice * PROFIT_MARGIN) {
+      bumpAttempts(hash); // fillable but not worth the gas right now — deprioritize, don't burn ETH on it
+      continue;
+    }
+
     try {
-      let gas = GAS_CAP;
-      try { gas = (await contract.execute.estimateGas(t, signature)) * 12n / 10n; } catch {}
-      if (gas > GAS_CAP) gas = GAS_CAP;
       const txn = await contract.execute(t, signature, { type: 0, gasPrice, gasLimit: gas });
       const rc = await txn.wait(1, 120000); // bound the wait so a stuck tx can't hang the whole loop
       console.log(`[keeper] filled ${hash.slice(0, 10)} slice — tx ${rc.hash}`);
@@ -85,10 +106,12 @@ export async function runKeeper() {
   const provider = new ethers.JsonRpcProvider(CFG.rpcUrl, CFG.chainId, { staticNetwork: true });
   const wallet = new ethers.Wallet(KEY, provider);
   const contract = new ethers.Contract(ethers.getAddress(CFG.robinLimit), ABI, wallet);
-  console.log(`[keeper] running as ${wallet.address}, polling every ${POLL_MS}ms`);
+  let feeBps = 20;
+  try { feeBps = Number(await contract.keeperFeeBps()); } catch {}
+  console.log(`[keeper] running as ${wallet.address}, fee ${feeBps}bps, polling every ${POLL_MS}ms`);
   // Simple loop; a fill's own wait() paces us, and tick() is re-entrant-safe (each order is independent).
   for (;;) {
-    try { await tick(contract, provider); } catch (e) { console.log("[keeper] tick error:", (e && e.message) || e); }
+    try { await tick(contract, provider, feeBps); } catch (e) { console.log("[keeper] tick error:", (e && e.message) || e); }
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
 }

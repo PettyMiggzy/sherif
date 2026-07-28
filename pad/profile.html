@@ -407,15 +407,34 @@ async function submitOrder(){
       // Never sign a zero-floor (unprotected) slice: without a price we can't set a safe minimum, and a
       // minOut of 0 would be fully sandwichable. Make the user use a Limit order with an explicit minimum.
       if (!(price > 0)) return aoNote('No live price for this coin yet. Use a Limit order with an explicit minimum instead.', 'err');
+      // Account for the pad's swap fee (padRouter buyBps/sellBps) + the 0.25% reward leg BEFORE the user's
+      // slippage, so the floor isn't set above what a real fill can return (which would make slices revert
+      // as "price" and the DCA never fill). Fee is a fraction; slippage is on top.
+      let feeFrac = 0.0125; try { const tx = await Pad.getTax(coin); const bps = buy ? (tx && tx.buyBps) : (tx && tx.sellBps); if (Number.isFinite(+bps)) feeFrac = (+bps + 25) / 10000; } catch {}
       const perSliceEth = spend / n;
-      const expected = buy ? (perSliceEth / price) : (Number(ethers.formatEther(sliceIn)) * price);
+      const gross = buy ? (perSliceEth / price) : (Number(ethers.formatEther(sliceIn)) * price);
+      const expected = gross * (1 - feeFrac);
       minOut = ethers.parseEther(String(Math.max(0, expected * (1 - slip / 100)).toFixed(12)));
       if (minOut === 0n) return aoNote('That slippage/price gives a zero minimum. Lower slippage or raise the amount.', 'err');
     }
     const order = { maker: Pad.account(), sellToken, buyToken, sliceIn: sliceIn.toString(), minOut: minOut.toString(),
       slices: slices.toString(), interval: interval.toString(), expiry: String(expiry), salt: salt.toString() };
+    // Approve the maker's TOTAL outstanding obligation on this sellToken (all open orders on it plus this
+    // one), not just this order's need — buy orders all share the one WETH allowance, so a per-order top-up
+    // would let a later order's slices silently fail once an earlier one drained the allowance.
     aoNote('Approving the token spend…');
-    await Pad.ensureLimitApproval(sellToken, (BigInt(order.sliceIn) * BigInt(order.slices)).toString());
+    let need = BigInt(order.sliceIn) * BigInt(order.slices);
+    try {
+      const r = await fetch(API_BASE + '/api/orders/' + Pad.account());
+      const open = ((await r.json()).orders) || [];
+      for (const it of open) {
+        if (String(it.order.sellToken).toLowerCase() === sellToken.toLowerCase()) {
+          const remaining = BigInt(it.order.slices) - BigInt(it.filled || 0);
+          if (remaining > 0n) need += BigInt(it.order.sliceIn) * remaining;
+        }
+      }
+    } catch { /* fall back to this order's need alone */ }
+    await Pad.ensureLimitApproval(sellToken, need.toString());
     aoNote('Sign the order in your wallet…');
     const signature = await Pad.signLimitOrder(order);
     aoNote('Saving your order…');

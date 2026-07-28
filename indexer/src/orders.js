@@ -28,24 +28,32 @@ CREATE TABLE IF NOT EXISTS limit_orders (
 );
 CREATE INDEX IF NOT EXISTS idx_lo_maker ON limit_orders(maker);
 `);
-// `filled` (slices done, written by the keeper) is added defensively so an older db upgrades cleanly.
-if (!db.prepare("PRAGMA table_info(limit_orders)").all().some((c) => c.name === "filled")) {
-  db.exec("ALTER TABLE limit_orders ADD COLUMN filled INTEGER DEFAULT 0");
+// `filled` (slices done) + `attempts` (keeper static-call reverts) are added defensively so an older
+// db upgrades cleanly. `attempts` is how we sink never-fillable junk below fresh orders (see openOrders).
+{
+  const cols = db.prepare("PRAGMA table_info(limit_orders)").all().map((c) => c.name);
+  if (!cols.includes("filled")) db.exec("ALTER TABLE limit_orders ADD COLUMN filled INTEGER DEFAULT 0");
+  if (!cols.includes("attempts")) db.exec("ALTER TABLE limit_orders ADD COLUMN attempts INTEGER DEFAULT 0");
 }
 
 const MAX_OPEN_PER_MAKER = Number(process.env.MAX_OPEN_ORDERS_PER_MAKER || 25);
+const MAX_OPEN_GLOBAL = Number(process.env.MAX_OPEN_ORDERS_GLOBAL || 20000); // backstop against a Sybil flood
 
 const insertStmt = db.prepare(`INSERT OR REPLACE INTO limit_orders
   (hash, maker, sell_token, buy_token, order_json, signature, expiry, slices, cancelled, created_ts)
   VALUES (@hash, @maker, @sell_token, @buy_token, @order_json, @signature, @expiry, @slices, 0, @created_ts)`);
 const byMakerStmt = db.prepare(`SELECT * FROM limit_orders WHERE maker = ? ORDER BY created_ts DESC LIMIT 200`);
-// Open = not cancelled, not expired, and not fully filled (filled < slices). Retired orders drop out
-// automatically, so the keeper's working set stays bounded and newer orders never starve.
-const openStmt = db.prepare(`SELECT * FROM limit_orders WHERE cancelled = 0 AND expiry > ? AND filled < slices ORDER BY created_ts ASC LIMIT 2000`);
+// Open = not cancelled, not expired, and not fully filled (filled < slices). Ordered by `attempts`
+// FIRST so orders that keep reverting when the keeper probes them (never-fillable junk / Sybil flood)
+// sink below fresh orders — a legitimate new order (attempts 0) always outranks probed junk, so it
+// can't be starved out of the window. created_ts breaks ties.
+const openStmt = db.prepare(`SELECT * FROM limit_orders WHERE cancelled = 0 AND expiry > ? AND filled < slices ORDER BY attempts ASC, created_ts ASC LIMIT 2000`);
 const openCountStmt = db.prepare(`SELECT COUNT(*) AS n FROM limit_orders WHERE maker = ? AND cancelled = 0 AND expiry > ? AND filled < slices`);
+const globalOpenStmt = db.prepare(`SELECT COUNT(*) AS n FROM limit_orders WHERE cancelled = 0 AND expiry > ? AND filled < slices`);
 const cancelStmt = db.prepare(`UPDATE limit_orders SET cancelled = 1 WHERE hash = ? AND maker = ?`);
 const cancelAnyStmt = db.prepare(`UPDATE limit_orders SET cancelled = 1 WHERE hash = ?`);
 const setFilledStmt = db.prepare(`UPDATE limit_orders SET filled = @filled WHERE hash = @hash`);
+const bumpAttemptsStmt = db.prepare(`UPDATE limit_orders SET attempts = attempts + 1 WHERE hash = ?`);
 const pruneExpiredStmt = db.prepare(`DELETE FROM limit_orders WHERE expiry < ?`); // reclaim long-dead rows
 
 export const enabled = () => /^0x[0-9a-f]{40}$/.test(CFG.robinLimit);
@@ -107,8 +115,11 @@ export function saveOrder(rawOrder, signature, nowSec) {
   // Cap open orders per maker so a self-signing spammer can't grow the table (and the keeper's
   // working set) without bound. Re-saving an existing order (same hash) is fine — it REPLACEs.
   const existing = db.prepare("SELECT 1 FROM limit_orders WHERE hash = ?").get(hash);
-  if (!existing && openCountStmt.get(order.maker.toLowerCase(), nowSec).n >= MAX_OPEN_PER_MAKER) {
-    throw new Error(`too many open orders (max ${MAX_OPEN_PER_MAKER}); cancel some first`);
+  if (!existing) {
+    if (openCountStmt.get(order.maker.toLowerCase(), nowSec).n >= MAX_OPEN_PER_MAKER) {
+      throw new Error(`too many open orders (max ${MAX_OPEN_PER_MAKER}); cancel some first`);
+    }
+    if (globalOpenStmt.get(nowSec).n >= MAX_OPEN_GLOBAL) throw new Error("order book is full, try again later");
   }
   insertStmt.run({
     hash, maker: order.maker.toLowerCase(), sell_token: order.sellToken.toLowerCase(), buy_token: order.buyToken.toLowerCase(),
@@ -135,6 +146,12 @@ export function openOrders(nowSec) {
 // complete and the portfolio can show N/M.
 export function setFilled(hash, filled) {
   try { setFilledStmt.run({ hash, filled }); } catch { /* best-effort */ }
+}
+
+// The keeper calls this when an order static-call-reverts (not fillable now), so chronic
+// never-fillable orders accrue attempts and sink below fresh orders in openOrders().
+export function bumpAttempts(hash) {
+  try { bumpAttemptsStmt.run(hash); } catch { /* best-effort */ }
 }
 
 // Mark cancelled. If `maker` is given, only the maker can cancel their own; else unconditional
