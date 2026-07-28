@@ -182,15 +182,17 @@ contract RobinLimit is Ownable2Step, ReentrancyGuard {
         uint256 out;
         if (o.sellToken == WETH) {
             // BUY the coin with WETH: pull WETH, unwrap, buy through RobinSwap (proceeds land here).
+            uint256 ethBefore = address(this).balance; // any pre-existing (force-fed) ETH — measure the delta, not the total
             IERC20(WETH).safeTransferFrom(o.maker, address(this), o.sliceIn);
             IWETH9b(WETH).withdraw(o.sliceIn);
             uint256 before = IERC20(o.buyToken).balanceOf(address(this));
             IRobinSwap(robinSwap).buy{value: o.sliceIn}(o.buyToken, 0);
             out = IERC20(o.buyToken).balanceOf(address(this)) - before;
             // The venue may refund unspent ETH (padRouter does on a near-graduation partial fill, where the
-            // buy hits the curve top and can't absorb the whole slice). Return any such refund to the maker
-            // as WETH so it is never stranded here. A venue that never refunds (RobinSwap) makes this a no-op.
-            uint256 refund = address(this).balance;
+            // buy hits the curve top and can't absorb the whole slice). Return ONLY this fill's refund to the
+            // maker as WETH (delta above ethBefore), so a force-fed balance can't be donated to the maker and
+            // nothing is stranded. A venue that never refunds (RobinSwap) makes this a no-op.
+            uint256 refund = address(this).balance - ethBefore;
             if (refund > 0) { IWETH9b(WETH).deposit{value: refund}(); IERC20(WETH).safeTransfer(o.maker, refund); }
         } else {
             // SELL the coin for WETH: pull the coin, approve RobinSwap, sell (ETH lands here), wrap to WETH.
@@ -201,6 +203,12 @@ contract RobinLimit is Ownable2Step, ReentrancyGuard {
             uint256 ethOut = address(this).balance - ethBefore;
             IWETH9b(WETH).deposit{value: ethOut}();
             out = ethOut;
+            // The venue may consume only PART of the slice and return the rest (padRouter refunds the
+            // unconsumed coin on a floor/partial fill). Clear the residual approval and sweep any leftover
+            // sellToken back to the maker, so a partial sell never strands the maker's tokens here.
+            IERC20(o.sellToken).forceApprove(robinSwap, 0);
+            uint256 leftover = IERC20(o.sellToken).balanceOf(address(this));
+            if (leftover > 0) IERC20(o.sellToken).safeTransfer(o.maker, leftover);
         }
 
         // keeper fee comes out of the OUTPUT, capped; the maker still nets at least their signed minOut.

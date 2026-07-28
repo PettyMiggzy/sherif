@@ -206,6 +206,25 @@ describe("RobinLimit", () => {
     expect(await ethers.provider.getBalance(await rlimit.getAddress())).to.equal(0n); // nothing stranded
   });
 
+  it("sweeps unconsumed sellToken back to the maker on a partial SELL (padRouter floor fill)", async () => {
+    // The venue sells only 70% of the coin and returns 30% to the caller (RobinLimit).
+    const psell = await (await ethers.getContractFactory("MockPartialSellLimit")).deploy(
+      await weth.getAddress(), await coin.getAddress(), COIN_PER_ETH, 7000);
+    await owner.sendTransaction({ to: await psell.getAddress(), value: E("100") });
+    const plimit = await (await ethers.getContractFactory("RobinLimit")).deploy(
+      await weth.getAddress(), await psell.getAddress(), owner.address);
+    await coin.mint(maker.address, E("1000"));
+    await coin.connect(maker).approve(await plimit.getAddress(), ethers.MaxUint256);
+    const pdomain = { name: "RobinLimit", version: "1", chainId: (await ethers.provider.getNetwork()).chainId, verifyingContract: await plimit.getAddress() };
+    // sell 1000 coin; 700 consumed -> 0.7 ETH gross, keeper 0.2% = 0.0014, maker gets 0.6986 WETH; accept 0.69
+    const o = { maker: maker.address, sellToken: await coin.getAddress(), buyToken: await weth.getAddress(),
+      sliceIn: E("1000"), minOut: E("0.69"), slices: 1n, interval: 0n, expiry: BigInt(await now() + 3600), salt: 11n };
+    await plimit.connect(keeper).execute(o, await maker.signTypedData(pdomain, TYPES, o));
+    expect(await weth.balanceOf(maker.address)).to.equal(E("0.6986"));   // ETH for the 700 consumed
+    expect(await coin.balanceOf(maker.address)).to.equal(E("300"));      // the 300 unconsumed, returned (NOT stranded)
+    expect(await coin.balanceOf(await plimit.getAddress())).to.equal(0n); // nothing left in the contract
+  });
+
   it("rejects a pair where neither/both legs are WETH", async () => {
     await fundSell(E("10"));
     const bad = await mkOrder({

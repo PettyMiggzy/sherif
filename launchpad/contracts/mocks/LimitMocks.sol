@@ -86,3 +86,27 @@ contract MockRefundSwapLimit {
     function sell(address, uint256, uint256) external pure returns (uint256) { revert("n/a"); }
     receive() external payable {}
 }
+
+// A venue whose sell() consumes only PART of amountIn and returns the unconsumed coin to the caller,
+// exactly like padRouter on a floor/partial fill. Proves RobinLimit sweeps the leftover to the maker.
+contract MockPartialSellLimit {
+    address public immutable weth;
+    MintERC20 public immutable coin;
+    uint256 public coinPerEth;
+    uint16 public consumeBps; // portion of amountIn actually sold; the rest is refunded
+    constructor(address weth_, MintERC20 coin_, uint256 coinPerEth_, uint16 consumeBps_) {
+        weth = weth_; coin = coin_; coinPerEth = coinPerEth_; consumeBps = consumeBps_;
+    }
+    function buy(address, uint256) external payable returns (uint256) { revert("n/a"); }
+    function sell(address token, uint256 amountIn, uint256 minOutEth) external returns (uint256 ethOut) {
+        require(token == address(coin), "coin");
+        IERC20(address(coin)).transferFrom(msg.sender, address(this), amountIn);
+        uint256 consumed = (amountIn * consumeBps) / 10000;
+        if (consumed < amountIn) IERC20(address(coin)).transfer(msg.sender, amountIn - consumed); // refund unconsumed
+        ethOut = (consumed * 1e18) / coinPerEth;
+        require(ethOut >= minOutEth, "min");
+        (bool ok,) = msg.sender.call{value: ethOut}("");
+        require(ok, "eth");
+    }
+    receive() external payable {}
+}
