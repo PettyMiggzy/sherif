@@ -153,6 +153,10 @@ contract RobinLimit is Ownable2Step, ReentrancyGuard {
         require(block.timestamp <= o.expiry, "expired");
         // exactly one leg must be WETH; the other is the coin. This is an ETH-quoted venue.
         require(o.sellToken == WETH ? o.buyToken != WETH : o.buyToken == WETH, "pair");
+        // A zero minOut would disable the price floor entirely (any fill "clears"), turning a slice
+        // into an unprotected market buy a searcher can sandwich to near-total loss. Every order MUST
+        // carry a real minimum. The app enforces this too; this is the on-chain backstop.
+        require(o.minOut > 0, "no min");
 
         bytes32 h = hashOrder(o);
         require(!cancelled[h], "cancelled");
@@ -196,10 +200,16 @@ contract RobinLimit is Ownable2Step, ReentrancyGuard {
 
         // keeper fee comes out of the OUTPUT, capped; the maker still nets at least their signed minOut.
         uint256 fee = (out * keeperFeeBps) / BPS;
-        makerOut = out - fee;
+        uint256 send = out - fee;
+
+        // Enforce the limit price on what the maker ACTUALLY RECEIVES, measured across the transfer, so a
+        // fee-on-transfer buyToken (RobinSwap can list external tokens) can't deliver less than the signed
+        // minOut while still passing a pre-transfer check. Standard tokens: received == send, unchanged.
+        uint256 mBefore = IERC20(o.buyToken).balanceOf(o.maker);
+        IERC20(o.buyToken).safeTransfer(o.maker, send);
+        makerOut = IERC20(o.buyToken).balanceOf(o.maker) - mBefore;
         require(makerOut >= o.minOut, "price");
 
-        IERC20(o.buyToken).safeTransfer(o.maker, makerOut);
         if (fee > 0) IERC20(o.buyToken).safeTransfer(msg.sender, fee);
 
         emit Filled(h, o.maker, msg.sender, done, out, fee);

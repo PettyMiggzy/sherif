@@ -19,7 +19,7 @@ import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleAppro
 import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes, stats as lifiUsage } from "./lifiproxy.js";
 import { renderCard, coinOgHtml } from "./og.js";
 import { enabled as memeEnabled, makeMeme } from "./memeproxy.js";
-import { enabled as ordersEnabled, saveOrder, ordersForMaker, cancelOrder, verifyCancelledOnChain } from "./orders.js";
+import { enabled as ordersEnabled, saveOrder, ordersForMaker, cancelOrder, verifyCancelledOnChain, orderExists } from "./orders.js";
 
 const DAY = 86400;
 
@@ -668,6 +668,7 @@ export function startApi() {
         if (path === "/api/orders/cancel") {
           const hash = String(ob.hash || "");
           if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) return sendUni(res, 400, { error: "bad hash" }, oorigin);
+          if (!orderExists(hash)) return sendUni(res, 404, { error: "unknown order" }, oorigin); // no RPC for a hash we don't store
           if (!(await verifyCancelledOnChain(hash))) return sendUni(res, 409, { error: "not cancelled on-chain yet" }, oorigin);
           cancelOrder(hash); // source of truth is the chain; we only mirror a confirmed cancel
           return sendUni(res, 200, { ok: true }, oorigin);

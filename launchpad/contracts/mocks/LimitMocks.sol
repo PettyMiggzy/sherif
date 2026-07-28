@@ -10,6 +10,19 @@ contract MintERC20 is ERC20 {
     function mint(address to, uint256 amt) external { _mint(to, amt); }
 }
 
+// A mintable ERC20 that skims a fee on every transfer (NOT on mint) — the classic fee-on-transfer
+// token, used to prove RobinLimit enforces minOut on what the maker ACTUALLY receives.
+contract MintFeeERC20 is MintERC20 {
+    uint16 public feeBps; // e.g. 500 = 5% burned on each transfer
+    constructor(string memory n, string memory s, uint16 feeBps_) MintERC20(n, s) { feeBps = feeBps_; }
+    function _update(address from, address to, uint256 value) internal override {
+        if (from == address(0) || to == address(0) || feeBps == 0) { super._update(from, to, value); return; }
+        uint256 fee = (value * feeBps) / 10000;
+        super._update(from, address(0xdEaD), fee); // burn the fee
+        super._update(from, to, value - fee);
+    }
+}
+
 interface IWethMock {
     function deposit() external payable;
     function withdraw(uint256) external;

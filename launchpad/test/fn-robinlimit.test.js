@@ -160,6 +160,34 @@ describe("RobinLimit", () => {
     expect(await limit.keeperFeeBps()).to.equal(100n);
   });
 
+  it("rejects an order with a zero minimum (no price floor)", async () => {
+    await fundBuy(E("1"));
+    const o = await mkOrder({ minOut: 0n });
+    await expect(limit.connect(keeper).execute(o, await sign(o))).to.be.revertedWith("no min");
+  });
+
+  it("enforces minOut on what the maker ACTUALLY receives (fee-on-transfer buyToken)", async () => {
+    // A 5%-fee coin; the swap pays 1000 gross, keeper takes 0.2% (2), so 998 is sent, but the maker
+    // only receives 998 * 0.95 = 948.1 after the transfer fee. An order demanding 990 must revert.
+    const fcoin = await (await ethers.getContractFactory("MintFeeERC20")).deploy("Fee", "FEE", 500);
+    const fswap = await (await ethers.getContractFactory("MockRobinSwapLimit")).deploy(
+      await weth.getAddress(), await fcoin.getAddress(), COIN_PER_ETH);
+    const flimit = await (await ethers.getContractFactory("RobinLimit")).deploy(
+      await weth.getAddress(), await fswap.getAddress(), owner.address);
+    await weth.connect(maker).deposit({ value: E("1") });
+    await weth.connect(maker).approve(await flimit.getAddress(), ethers.MaxUint256);
+    const fdomain = { name: "RobinLimit", version: "1", chainId: (await ethers.provider.getNetwork()).chainId, verifyingContract: await flimit.getAddress() };
+    const o = { maker: maker.address, sellToken: await weth.getAddress(), buyToken: await fcoin.getAddress(),
+      sliceIn: E("1"), minOut: E("990"), slices: 1n, interval: 0n, expiry: BigInt(await now() + 3600), salt: 7n };
+    const sig = await maker.signTypedData(fdomain, TYPES, o);
+    await expect(flimit.connect(keeper).execute(o, sig)).to.be.revertedWith("price"); // received < minOut
+    // a slack order (accept 948) fills, and the maker gets the real post-fee amount, not the pre-fee 998
+    const o2 = { ...o, minOut: E("948"), salt: 8n };
+    const sig2 = await maker.signTypedData(fdomain, TYPES, o2);
+    await flimit.connect(keeper).execute(o2, sig2);
+    expect(await fcoin.balanceOf(maker.address)).to.equal(E("948.1")); // 998 * 0.95
+  });
+
   it("rejects a pair where neither/both legs are WETH", async () => {
     await fundSell(E("10"));
     const bad = await mkOrder({

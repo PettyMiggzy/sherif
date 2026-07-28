@@ -28,16 +28,32 @@ CREATE TABLE IF NOT EXISTS limit_orders (
 );
 CREATE INDEX IF NOT EXISTS idx_lo_maker ON limit_orders(maker);
 `);
+// `filled` (slices done, written by the keeper) is added defensively so an older db upgrades cleanly.
+if (!db.prepare("PRAGMA table_info(limit_orders)").all().some((c) => c.name === "filled")) {
+  db.exec("ALTER TABLE limit_orders ADD COLUMN filled INTEGER DEFAULT 0");
+}
+
+const MAX_OPEN_PER_MAKER = Number(process.env.MAX_OPEN_ORDERS_PER_MAKER || 25);
 
 const insertStmt = db.prepare(`INSERT OR REPLACE INTO limit_orders
   (hash, maker, sell_token, buy_token, order_json, signature, expiry, slices, cancelled, created_ts)
   VALUES (@hash, @maker, @sell_token, @buy_token, @order_json, @signature, @expiry, @slices, 0, @created_ts)`);
 const byMakerStmt = db.prepare(`SELECT * FROM limit_orders WHERE maker = ? ORDER BY created_ts DESC LIMIT 200`);
-const openStmt = db.prepare(`SELECT * FROM limit_orders WHERE cancelled = 0 AND expiry > ? ORDER BY created_ts ASC LIMIT 1000`);
+// Open = not cancelled, not expired, and not fully filled (filled < slices). Retired orders drop out
+// automatically, so the keeper's working set stays bounded and newer orders never starve.
+const openStmt = db.prepare(`SELECT * FROM limit_orders WHERE cancelled = 0 AND expiry > ? AND filled < slices ORDER BY created_ts ASC LIMIT 2000`);
+const openCountStmt = db.prepare(`SELECT COUNT(*) AS n FROM limit_orders WHERE maker = ? AND cancelled = 0 AND expiry > ? AND filled < slices`);
 const cancelStmt = db.prepare(`UPDATE limit_orders SET cancelled = 1 WHERE hash = ? AND maker = ?`);
 const cancelAnyStmt = db.prepare(`UPDATE limit_orders SET cancelled = 1 WHERE hash = ?`);
+const setFilledStmt = db.prepare(`UPDATE limit_orders SET filled = @filled WHERE hash = @hash`);
+const pruneExpiredStmt = db.prepare(`DELETE FROM limit_orders WHERE expiry < ?`); // reclaim long-dead rows
 
 export const enabled = () => /^0x[0-9a-f]{40}$/.test(CFG.robinLimit);
+
+// Is this order hash in our store (and still open)? Gates the cancel path so a random hash never
+// costs an on-chain call.
+const existsStmt = db.prepare("SELECT 1 FROM limit_orders WHERE hash = ? AND cancelled = 0");
+export const orderExists = (hash) => !!existsStmt.get(hash);
 
 function domain() {
   return { name: "RobinLimit", version: "1", chainId: CFG.chainId, verifyingContract: ethers.getAddress(CFG.robinLimit) };
@@ -61,6 +77,9 @@ function normalize(o) {
   for (const f of ["sliceIn", "minOut", "slices", "interval", "expiry", "salt"]) if (!isUint(String(o[f]))) throw new Error("bad " + f);
   if (BigInt(o.sliceIn) === 0n) throw new Error("zero amount");
   if (BigInt(o.slices) === 0n) throw new Error("zero slices");
+  // A zero minOut = no price floor = an unprotected, sandwichable slice. Reject it here as well as
+  // on-chain, so such an order can never even be stored.
+  if (BigInt(o.minOut) === 0n) throw new Error("minOut must be > 0");
   // exactly one leg must be WETH (an ETH-quoted venue), mirroring the contract
   const w = CFG.weth, s = o.sellToken.toLowerCase(), b = o.buyToken.toLowerCase();
   if (!((s === w) !== (b === w))) throw new Error("one leg must be WETH");
@@ -85,6 +104,12 @@ export function verifyAndHash(rawOrder, signature) {
 export function saveOrder(rawOrder, signature, nowSec) {
   const { order, hash } = verifyAndHash(rawOrder, signature);
   if (Number(order.expiry) <= nowSec) throw new Error("already expired");
+  // Cap open orders per maker so a self-signing spammer can't grow the table (and the keeper's
+  // working set) without bound. Re-saving an existing order (same hash) is fine — it REPLACEs.
+  const existing = db.prepare("SELECT 1 FROM limit_orders WHERE hash = ?").get(hash);
+  if (!existing && openCountStmt.get(order.maker.toLowerCase(), nowSec).n >= MAX_OPEN_PER_MAKER) {
+    throw new Error(`too many open orders (max ${MAX_OPEN_PER_MAKER}); cancel some first`);
+  }
   insertStmt.run({
     hash, maker: order.maker.toLowerCase(), sell_token: order.sellToken.toLowerCase(), buy_token: order.buyToken.toLowerCase(),
     order_json: JSON.stringify(order), signature, expiry: Number(order.expiry), slices: Number(order.slices), created_ts: nowSec,
@@ -92,16 +117,24 @@ export function saveOrder(rawOrder, signature, nowSec) {
   return { hash, order };
 }
 
-// A maker's open orders (not cancelled, not expired) shaped for the portfolio UI.
+// A maker's open orders (not cancelled, not expired, not fully filled) shaped for the portfolio UI,
+// including how many slices the keeper has filled so far so the panel shows real progress.
 export function ordersForMaker(maker, nowSec) {
   return byMakerStmt.all(maker.toLowerCase())
-    .filter((r) => !r.cancelled && r.expiry > nowSec)
-    .map((r) => ({ hash: r.hash, order: JSON.parse(r.order_json), createdTs: r.created_ts }));
+    .filter((r) => !r.cancelled && r.expiry > nowSec && (r.filled || 0) < r.slices)
+    .map((r) => ({ hash: r.hash, order: JSON.parse(r.order_json), filled: r.filled || 0, createdTs: r.created_ts }));
 }
 
-// All open orders (for the keeper).
+// All open orders (for the keeper). Also opportunistically reclaims long-expired rows.
 export function openOrders(nowSec) {
+  try { pruneExpiredStmt.run(nowSec); } catch { /* best-effort */ }
   return openStmt.all(nowSec).map((r) => ({ hash: r.hash, order: JSON.parse(r.order_json), signature: r.signature }));
+}
+
+// The keeper records how many slices it has filled, so the order retires from the open set once
+// complete and the portfolio can show N/M.
+export function setFilled(hash, filled) {
+  try { setFilledStmt.run({ hash, filled }); } catch { /* best-effort */ }
 }
 
 // Mark cancelled. If `maker` is given, only the maker can cancel their own; else unconditional

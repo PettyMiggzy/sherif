@@ -23,7 +23,10 @@ Non-custodial limit orders and DCA for Robin Labs coins, executed through `Robin
 - **Maker sets the price.** Every fill must clear `makerOut >= minOut` (the signed limit), checked
   in RobinLimit itself, after the keeper fee. The underlying swap runs at market with the price
   enforced here; since it's one atomic tx, a price move (even a same-block sandwich) just makes the
-  fill revert — nothing settles below the signed price.
+  fill revert — nothing settles below the signed price. Two hardening rules back this: `minOut` must
+  be `> 0` (a zero floor would disable protection entirely — rejected on-chain AND in the app/store),
+  and `minOut` is checked against what the maker ACTUALLY receives, measured across the final transfer,
+  so a fee-on-transfer buyToken can't deliver less than the signed minimum.
 - **Can't over-fill or replay.** `filledSlices[hash]` caps fills at `slices`; `expiry` kills stale
   orders; `cancel()` (maker-only) stops the rest. The EIP-712 domain binds signatures to this
   contract + chain id (recomputed on a fork).
