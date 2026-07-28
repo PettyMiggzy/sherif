@@ -187,6 +187,11 @@ contract RobinLimit is Ownable2Step, ReentrancyGuard {
             uint256 before = IERC20(o.buyToken).balanceOf(address(this));
             IRobinSwap(robinSwap).buy{value: o.sliceIn}(o.buyToken, 0);
             out = IERC20(o.buyToken).balanceOf(address(this)) - before;
+            // The venue may refund unspent ETH (padRouter does on a near-graduation partial fill, where the
+            // buy hits the curve top and can't absorb the whole slice). Return any such refund to the maker
+            // as WETH so it is never stranded here. A venue that never refunds (RobinSwap) makes this a no-op.
+            uint256 refund = address(this).balance;
+            if (refund > 0) { IWETH9b(WETH).deposit{value: refund}(); IERC20(WETH).safeTransfer(o.maker, refund); }
         } else {
             // SELL the coin for WETH: pull the coin, approve RobinSwap, sell (ETH lands here), wrap to WETH.
             IERC20(o.sellToken).safeTransferFrom(o.maker, address(this), o.sliceIn);

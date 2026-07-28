@@ -47,9 +47,21 @@ Non-custodial limit orders and DCA for Robin Labs coins, executed through `Robin
 5. The keeper is permissionless. Confirm that's intended (it decentralizes execution but invites
    MEV competition, which only benefits the maker via the price floor).
 
+## Routing venue: padRouter (live) or RobinSwap
+
+`RobinLimit`'s `IRobinSwap` interface (`buy(token,minOut) payable`, `sell(token,amountIn,minOut)`) is
+byte-for-byte the same as the LIVE **PadRouter** (`0xA6BaAB820809C7fC8350311776627298f91F07eC`). So the
+`robinSwap` constructor arg can be **padRouter**, and limit orders / DCA work on pad coins with just this
+one contract deployed — no RobinSwap needed. RobinLimit only ever *calls* padRouter as a normal user;
+it never modifies padRouter, the curves, any coin, or the $ROBIN token. padRouter refunds unspent ETH on
+a near-graduation partial-fill buy; RobinLimit now sweeps that refund back to the maker as WETH (verified
+by the "sweeps a venue's ETH refund" test), so nothing is stranded. Alternatively, point it at RobinSwap
+once that is deployed to cover external top coins too.
+
 ## Deploy + wiring (only after review)
 
-1. `constructor(WETH, RobinSwap, owner)` — WETH + the live RobinSwap address, owner = the cold wallet.
+1. `constructor(WETH, venue, owner)` — WETH + the routing venue (padRouter for pad coins, or RobinSwap),
+   owner = the cold wallet.
 2. Optionally `setKeeperFeeBps(bps)` (default 20 = 0.20%).
 3. Run the keeper (`indexer/keeper` once built) with the deployed address; it watches stored orders
    and calls `execute()` when they clear.

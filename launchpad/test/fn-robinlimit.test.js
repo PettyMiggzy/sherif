@@ -188,6 +188,24 @@ describe("RobinLimit", () => {
     expect(await fcoin.balanceOf(maker.address)).to.equal(E("948.1")); // 998 * 0.95
   });
 
+  it("sweeps a venue's ETH refund back to the maker as WETH (padRouter near-graduation path)", async () => {
+    // The router consumes 70% and refunds 30% of the slice (a buy that hit the curve top).
+    const rswap = await (await ethers.getContractFactory("MockRefundSwapLimit")).deploy(
+      await weth.getAddress(), await coin.getAddress(), COIN_PER_ETH, 3000);
+    const rlimit = await (await ethers.getContractFactory("RobinLimit")).deploy(
+      await weth.getAddress(), await rswap.getAddress(), owner.address);
+    await weth.connect(maker).deposit({ value: E("1") });
+    await weth.connect(maker).approve(await rlimit.getAddress(), ethers.MaxUint256);
+    const rdomain = { name: "RobinLimit", version: "1", chainId: (await ethers.provider.getNetwork()).chainId, verifyingContract: await rlimit.getAddress() };
+    // 0.7 ETH consumed * 1000 = 700 coin gross; keeper 0.2% = 1.4; maker gets 698.6 (accept 690)
+    const o = { maker: maker.address, sellToken: await weth.getAddress(), buyToken: await coin.getAddress(),
+      sliceIn: E("1"), minOut: E("690"), slices: 1n, interval: 0n, expiry: BigInt(await now() + 3600), salt: 9n };
+    await rlimit.connect(keeper).execute(o, await maker.signTypedData(rdomain, TYPES, o));
+    expect(await coin.balanceOf(maker.address)).to.equal(E("698.6"));   // coins for the consumed 70%
+    expect(await weth.balanceOf(maker.address)).to.equal(E("0.3"));      // the 30% refund, returned as WETH
+    expect(await ethers.provider.getBalance(await rlimit.getAddress())).to.equal(0n); // nothing stranded
+  });
+
   it("rejects a pair where neither/both legs are WETH", async () => {
     await fundSell(E("10"));
     const bad = await mkOrder({

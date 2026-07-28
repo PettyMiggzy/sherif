@@ -62,3 +62,27 @@ contract MockRobinSwapLimit {
 
     receive() external payable {}
 }
+
+// Like MockRobinSwapLimit but its buy() consumes only part of the ETH and REFUNDS the rest to the
+// caller — exactly what padRouter does on a near-graduation partial fill. Proves RobinLimit sweeps
+// the refund back to the maker instead of stranding it.
+contract MockRefundSwapLimit {
+    address public immutable weth;
+    MintERC20 public immutable coin;
+    uint256 public coinPerEth;
+    uint16 public refundBps;
+    constructor(address weth_, MintERC20 coin_, uint256 coinPerEth_, uint16 refundBps_) {
+        weth = weth_; coin = coin_; coinPerEth = coinPerEth_; refundBps = refundBps_;
+    }
+    function buy(address token, uint256 minOut) external payable returns (uint256 tokensOut) {
+        require(token == address(coin), "coin");
+        uint256 refund = (msg.value * refundBps) / 10000;
+        uint256 consumed = msg.value - refund;
+        tokensOut = (consumed * coinPerEth) / 1e18;
+        require(tokensOut >= minOut, "min");
+        coin.mint(msg.sender, tokensOut);
+        if (refund > 0) { (bool ok,) = msg.sender.call{value: refund}(""); require(ok, "refund"); }
+    }
+    function sell(address, uint256, uint256) external pure returns (uint256) { revert("n/a"); }
+    receive() external payable {}
+}
