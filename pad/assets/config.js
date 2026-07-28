@@ -62,12 +62,10 @@ export const CONTRACTS = {
   // admin panel to read/set the split. Key MUST be `splitter` to match ADMIN_ABI.splitter and admin.html.
   splitter: "0xca0EfD87B983CdeF56459051ecBE91aA5C87E17a",
 
-  // RobinLimit - non-custodial limit orders + DCA. STAGED, not deployed: the contract moves funds and
-  // must be reviewed/audited first (see launchpad/contracts/RobinLimit.REVIEW.md). It can route through
-  // the LIVE padRouter (works on pad coins today, no RobinSwap needed) or RobinSwap once deployed. Leave
-  // "" so isDeployed('robinLimit') stays false and the profile "Automations" UI + keeper stay off until
-  // the address is set.
-  robinLimit: "",
+  // RobinLimit - non-custodial limit orders + DCA, routing through the LIVE padRouter. Deployed
+  // 2026-07-28; owner = the cold wallet. Setting this address turns on the profile "Automations" UI;
+  // the keeper (indexer) must also run with ROBIN_LIMIT set for orders to fill.
+  robinLimit: "0xe1d37524E2992Aeb8943B229c42293264c8fA99C",
 
   // The platform's buy-back token + its WETH pool (for links / a future buy widget).
   // The above-default fee's 25% cut is paid to the platform, which buys+burns the
