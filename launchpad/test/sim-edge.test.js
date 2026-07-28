@@ -1,307 +1,268 @@
+// sim-edge — adversarial simulation for RobinLimit: griefing, signature edge cases, value extremes.
+// Robin Labs / Robinhood Chain 4663 / Arbitrum Orbit L2. Legacy type-0 txs (no EIP-1559).
+//
+// A "violation" here = the executor let something happen that must NEVER happen (funds moved on a
+// forged/replayed order, partial state written on a reverted fill, stranded balances, overflow/
+// mis-round). Every case that MUST fail is asserted to revert with the exact reason; a fill that
+// slips through would fail the assertion (that IS the violation surfacing as a red test).
+//
+// Run: npx hardhat test test/sim-edge.test.js
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-// ============================================================================
-// EDGE-CASE SIM on a REAL Uniswap v3 fork of Robinhood Chain. Production
-// "let it ride" calibration from scripts/deploy.js:
-//   START_TICK_MAG=201600, CURVE_WIDTH=23000, MIN_GRAD_WIDTH=22800
-//   -> intended ~4.2 ETH raised / ~$34k mcap at graduation.
-//
-// Each case deploys a FRESH pad stack + coin and trades DIRECTLY against the raw
-// Uniswap v3 pool via SwapProbe (bypassing PadRouter) — the strongest anti-honeypot
-// proof. We assert the operator's invariants hold at the extremes:
-//   (1) sells are NEVER blocked and the pool can always pay a seller
-//   (2) nobody extracts more ETH than was put in (solvency: out <= in)
-//   (3) graduation posts the Bond and pays the fixed rewards correctly
-//   (4) no ETH / token is left stranded in the curve after graduation
-//
-// Cases:
-//   (1) a 1-wei buy and a dust sell
-//   (2) a single whale buys the ENTIRE curve in one tx (graduatable? others still sell?)
-//   (3) sell the ENTIRE bought supply back in one tx
-//   (4) trigger graduation then immediately trade
-//   (5) below the ceiling it NEVER graduates — no timeout path — yet sellers can still exit
-//
-// Run: FORK_RPC=<rpc> npx hardhat test test/sim-edge.test.js
-// ============================================================================
-const ONE = 10n ** 18n;
-const V3_FACTORY = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
-const WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
-const ETH_USD = 1920;
+describe("RobinLimit — sim-edge (griefing / sig edges / value extremes)", () => {
+  let weth, coin, swap, limit;
+  let owner, maker, keeper, other;
+  const E = (n) => ethers.parseEther(n);
+  const COIN_PER_ETH = E("1000"); // 1 ETH buys 1000 coin at the mock's set price
 
-const START_TICK_MAG = 201600, CURVE_WIDTH = 23000, MIN_GRAD_WIDTH = 22800;
-const NOTAX = (dev) => ({ buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev });
+  let domain, chainId;
+  const TYPES = {
+    Order: [
+      { name: "maker", type: "address" },
+      { name: "sellToken", type: "address" },
+      { name: "buyToken", type: "address" },
+      { name: "sliceIn", type: "uint256" },
+      { name: "minOut", type: "uint256" },
+      { name: "slices", type: "uint256" },
+      { name: "interval", type: "uint256" },
+      { name: "expiry", type: "uint256" },
+      { name: "salt", type: "uint256" },
+    ],
+  };
 
-const suite = process.env.FORK_RPC ? describe : describe.skip;
+  async function now() { return (await ethers.provider.getBlock("latest")).timestamp; }
 
-// deploy a fresh pad stack + launch a plain 1% coin; return every handle a case needs
-async function freshCoin(name, symbol) {
-  const [dep, platform, dev, ...rest] = await ethers.getSigners();
-  const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
-  const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-  const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
-  const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
-  const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
-    WETH, V3_FACTORY, platform.address, dep.address, await router.getAddress(),
-    await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress,
-    START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH
-  );
-  await (await router.setFactory(await factory.getAddress())).wait();
+  async function mkOrder(over = {}) {
+    const t = await now();
+    return {
+      maker: maker.address,
+      sellToken: await weth.getAddress(),
+      buyToken: await coin.getAddress(),
+      sliceIn: E("1"),
+      minOut: E("990"),
+      slices: 1n,
+      interval: 0n,
+      expiry: BigInt(t + 3600),
+      salt: BigInt(Math.floor(Math.random() * 1e9)),
+      ...over,
+    };
+  }
+  async function sign(order) { return maker.signTypedData(domain, TYPES, order); }
 
-  const rc = await (await factory.launch({ name, symbol, dev: dev.address, tax: NOTAX(dev.address) })).wait();
-  const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
-    .find((e) => e && e.name === "Launched");
-  const { token, curve, pool: poolAddr } = ev.args;
+  beforeEach(async () => {
+    [owner, maker, keeper, other] = await ethers.getSigners();
+    weth = await (await ethers.getContractFactory("MockWETH9")).deploy();
+    coin = await (await ethers.getContractFactory("MintERC20")).deploy("Robin", "ROBIN");
+    swap = await (await ethers.getContractFactory("MockRobinSwapLimit")).deploy(
+      await weth.getAddress(), await coin.getAddress(), COIN_PER_ETH);
+    limit = await (await ethers.getContractFactory("RobinLimit")).deploy(
+      await weth.getAddress(), await swap.getAddress(), owner.address);
+    await owner.sendTransaction({ to: await swap.getAddress(), value: E("100") });
 
-  const curveC = await ethers.getContractAt("CurvePool", curve);
-  const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
-  const TOK = await ethers.getContractAt(
-    ["function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"], token);
-  const wethW = await ethers.getContractAt(
-    ["function deposit() payable", "function approve(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"], WETH);
-  const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
-  const probeAddr = await probe.getAddress();
-
-  const tokenIsToken0 = await curveC.tokenIsToken0();
-  const gradSqrt = await curveC.gradSqrtPriceX96();
-
-  // past the anti-snipe window so this is a normal live coin
-  await ethers.provider.send("evm_increaseTime", [400]);
-  await ethers.provider.send("evm_mine", []);
-
-  return { dep, platform, dev, rest, token, curve, poolAddr, curveC, pool, TOK, wethW,
-           probe, probeAddr, tokenIsToken0, gradSqrt };
-}
-
-// give an actor WETH + max approvals for both tokens
-async function fund(ctx, actor, ethAmt) {
-  const MAX = (1n << 250n);
-  await ethers.provider.send("hardhat_setBalance", [actor.address, "0x" + (10n ** 27n).toString(16)]);
-  await (await ctx.wethW.connect(actor).deposit({ value: ethAmt })).wait();
-  await (await ctx.wethW.connect(actor).approve(ctx.probeAddr, MAX)).wait();
-  await (await ctx.TOK.connect(actor).approve(ctx.probeAddr, MAX)).wait();
-}
-
-const f = (x) => Number(ethers.formatEther(x));
-
-// mcap in USD from the pool's current tick, 1B supply
-function mcapUsd(tick, tokenIsToken0) {
-  const p1per0 = Math.pow(1.0001, Number(tick));
-  const wethPerToken = tokenIsToken0 ? p1per0 : 1 / p1per0;
-  return wethPerToken * 1e9 * ETH_USD;
-}
-
-suite("Edge-case sim — production calibration on a real Uniswap v3 fork", function () {
-  this.timeout(600000);
-
-  // ── CASE 1 ────────────────────────────────────────────────────────────────
-  it("CASE 1: a 1-wei buy and a dust sell — neither breaks anything, sell not blocked", async () => {
-    const ctx = await freshCoin("Dust", "DUST");
-    const [buyer] = ctx.rest;
-    await fund(ctx, buyer, 5n * ONE);
-
-    // 1-wei buy: acceptable to fill nothing; must NOT strand funds. Uniswap may revert a 1-wei
-    // exact-in as a no-op (rounds output to 0) — that's a benign DEX quirk, not a honeypot.
-    let oneWeiBuyReverted = false, tokFrom1Wei = 0n;
-    const wBefore1 = await ctx.wethW.balanceOf(buyer.address);
-    try {
-      await (await ctx.probe.connect(buyer).swapExactInLimit(ctx.poolAddr, WETH, 1n, ctx.gradSqrt)).wait();
-      tokFrom1Wei = await ctx.TOK.balanceOf(buyer.address);
-    } catch { oneWeiBuyReverted = true; }
-    const wethSpent1 = wBefore1 - (await ctx.wethW.balanceOf(buyer.address));
-
-    // a real buy so we have a bag, then a DUST sell (1 wei of token). Must never revert (anti-honeypot).
-    await (await ctx.probe.connect(buyer).swapExactInLimit(ctx.poolAddr, WETH, ONE / 2n, ctx.gradSqrt)).wait();
-    const bag = await ctx.TOK.balanceOf(buyer.address);
-    expect(bag, "real buy should deliver tokens").to.be.greaterThan(0n);
-
-    let dustSellReverted = false, dustOut = 0n;
-    const wBeforeDust = await ctx.wethW.balanceOf(buyer.address);
-    try {
-      await (await ctx.probe.connect(buyer).swapExactIn(ctx.poolAddr, ctx.token, 1n)).wait();
-      dustOut = (await ctx.wethW.balanceOf(buyer.address)) - wBeforeDust;
-    } catch { dustSellReverted = true; }
-
-    // a normal-size dust sell (0.0001% of bag) must ALSO go through and pay something back
-    const smallAmt = bag / 1_000_000n > 0n ? bag / 1_000_000n : bag;
-    const wBeforeSmall = await ctx.wethW.balanceOf(buyer.address);
-    await (await ctx.probe.connect(buyer).swapExactIn(ctx.poolAddr, ctx.token, smallAmt)).wait();
-    const smallOut = (await ctx.wethW.balanceOf(buyer.address)) - wBeforeSmall;
-
-    console.log(`\n      CASE 1 — 1-wei buy: reverted=${oneWeiBuyReverted} weth_spent=${wethSpent1} tok=${tokFrom1Wei}`);
-    console.log(`      CASE 1 — 1-wei dust sell: reverted=${dustSellReverted} weth_out=${dustOut}`);
-    console.log(`      CASE 1 — tiny sell (${smallAmt} tok): weth_out=${smallOut}`);
-
-    // INVARIANTS: the 1-wei sell must not revert (no honeypot); the tiny sell must pay > 0.
-    expect(dustSellReverted, "a 1-wei dust sell must NOT revert (anti-honeypot)").to.equal(false);
-    expect(smallOut, "a tiny (non-dust) sell must pay out > 0").to.be.greaterThan(0n);
-    // 1-wei buy either fills nothing or a trivial amount; never strands more weth than it took
-    expect(wethSpent1, "1-wei buy cannot consume more than 1 wei").to.be.lessThanOrEqual(1n);
+    chainId = (await ethers.provider.getNetwork()).chainId;
+    domain = {
+      name: "RobinLimit", version: "1",
+      chainId,
+      verifyingContract: await limit.getAddress(),
+    };
   });
 
-  // ── CASE 2 ────────────────────────────────────────────────────────────────
-  it("CASE 2: a whale buys the ENTIRE curve in one tx — it graduates and others can still sell", async () => {
-    const ctx = await freshCoin("Whale", "WHALE");
-    const [small, whale] = ctx.rest;
-    await fund(ctx, small, 5n * ONE);
-    await fund(ctx, whale, 200n * ONE);
+  async function fundBuy(amount) {
+    await weth.connect(maker).deposit({ value: amount });
+    await weth.connect(maker).approve(await limit.getAddress(), ethers.MaxUint256);
+  }
+  async function fundSell(amount) {
+    await coin.mint(maker.address, amount);
+    await coin.connect(maker).approve(await limit.getAddress(), ethers.MaxUint256);
+  }
 
-    // a small holder buys FIRST so we can prove they can still exit after the whale
-    await (await ctx.probe.connect(small).swapExactInLimit(ctx.poolAddr, WETH, ONE / 4n, ctx.gradSqrt)).wait();
-    const smallBag = await ctx.TOK.balanceOf(small.address);
-    expect(smallBag, "small holder should hold tokens").to.be.greaterThan(0n);
+  // (1) forged / altered order — every mutated field breaks the signature -----------------------
+  it("rejects a FORGED order: any field changed after signing => 'bad sig' (no field is malleable)", async () => {
+    await fundBuy(E("5"));
+    const base = await mkOrder({ sliceIn: E("1"), minOut: E("990") });
+    const sig = await sign(base); // signature is bound to `base` only
 
-    // the whale slams the ENTIRE remaining curve in ONE tx, capped at the ceiling (can't overshoot)
-    const wWhaleBefore = await ctx.wethW.balanceOf(whale.address);
-    await (await ctx.probe.connect(whale).swapExactInLimit(ctx.poolAddr, WETH, 150n * ONE, ctx.gradSqrt)).wait();
-    const whaleSpent = wWhaleBefore - (await ctx.wethW.balanceOf(whale.address));
-    const whaleBag = await ctx.TOK.balanceOf(whale.address);
+    // A griefer flips each field in turn, reusing the maker's original signature.
+    const mutations = {
+      sliceIn: E("2"),                       // pull twice as much
+      minOut: E("1"),                        // gut the price floor
+      slices: 5n,                            // turn a 1-shot into a DCA
+      interval: 999n,
+      expiry: base.expiry + 100000n,
+      salt: base.salt + 1n,
+    };
+    for (const [field, val] of Object.entries(mutations)) {
+      const forged = { ...base, [field]: val };
+      await expect(
+        limit.connect(keeper).execute(forged, sig),
+        `mutating ${field} must not fill`
+      ).to.be.revertedWith("bad sig");
+    }
+    // changing the maker (funds source / recipient) is likewise unauthorized
+    const forgedMaker = { ...base, maker: other.address };
+    await expect(limit.connect(keeper).execute(forgedMaker, sig)).to.be.revertedWith("bad sig");
 
-    const tick = (await ctx.pool.slot0()).tick;
-    const ready = await ctx.curveC.ready();
-    console.log(`\n      CASE 2 — whale spent ${f(whaleSpent).toFixed(4)} ETH, got ${f(whaleBag).toExponential(3)} tok`);
-    console.log(`      CASE 2 — tick=${tick}  ready=${ready}  mcap≈$${mcapUsd(tick, ctx.tokenIsToken0).toFixed(0)}`);
-
-    // buying the whole curve to the ceiling must make it graduatable
-    expect(ready, "buying the entire curve to the ceiling should be graduatable").to.equal(true);
-
-    // ── others can STILL SELL even after the curve is maxed out (not a honeypot) ──
-    const wSmallBefore = await ctx.wethW.balanceOf(small.address);
-    await (await ctx.probe.connect(small).swapExactIn(ctx.poolAddr, ctx.token, smallBag)).wait();
-    const smallOut = (await ctx.wethW.balanceOf(small.address)) - wSmallBefore;
-    expect(smallOut, "small holder must still be able to sell after the whale buyout").to.be.greaterThan(0n);
-
-    // the whale can also dump part of its bag back
-    const wWhaleSellBefore = await ctx.wethW.balanceOf(whale.address);
-    await (await ctx.probe.connect(whale).swapExactIn(ctx.poolAddr, ctx.token, whaleBag / 2n)).wait();
-    const whaleOut = (await ctx.wethW.balanceOf(whale.address)) - wWhaleSellBefore;
-    expect(whaleOut, "whale can sell back too").to.be.greaterThan(0n);
-    console.log(`      CASE 2 — small holder sell out=${f(smallOut).toExponential(3)} ETH; whale half-dump out=${f(whaleOut).toFixed(4)} ETH`);
+    // and nothing moved: maker still holds all 5 WETH, contract holds nothing.
+    expect(await weth.balanceOf(maker.address)).to.equal(E("5"));
+    expect(await coin.balanceOf(maker.address)).to.equal(0n);
+    expect(await weth.balanceOf(await limit.getAddress())).to.equal(0n);
   });
 
-  // ── CASE 3 ────────────────────────────────────────────────────────────────
-  it("CASE 3: sell the ENTIRE bought supply back in one tx — succeeds, out<=in, no revert", async () => {
-    const ctx = await freshCoin("RoundTrip", "RT");
-    const [buyer] = ctx.rest;
-    await fund(ctx, buyer, 50n * ONE);
+  // (2) replay of a fully-filled single-slice order --------------------------------------------
+  it("rejects REPLAY of a fully-filled single-slice order => 'filled' (a valid sig is not reusable)", async () => {
+    await fundBuy(E("2")); // extra headroom so a replay CANNOT be starved by allowance
+    const o = await mkOrder();
+    const sig = await sign(o);
+    const h = await limit.hashOrder(o);
 
-    const wBefore = await ctx.wethW.balanceOf(buyer.address);
-    // buy a big chunk of the curve (capped at the ceiling)
-    await (await ctx.probe.connect(buyer).swapExactInLimit(ctx.poolAddr, WETH, 20n * ONE, ctx.gradSqrt)).wait();
-    const spent = wBefore - (await ctx.wethW.balanceOf(buyer.address));
-    const bag = await ctx.TOK.balanceOf(buyer.address);
-    expect(bag, "buyer should hold the whole bought supply").to.be.greaterThan(0n);
+    await limit.connect(keeper).execute(o, sig); // first fill: legit
+    expect(await limit.filledSlices(h)).to.equal(1n);
 
-    // dump the ENTIRE bag in one tx
-    const wPreSell = await ctx.wethW.balanceOf(buyer.address);
-    let reverted = false;
-    try {
-      await (await ctx.probe.connect(buyer).swapExactIn(ctx.poolAddr, ctx.token, bag)).wait();
-    } catch { reverted = true; }
-    const out = (await ctx.wethW.balanceOf(buyer.address)) - wPreSell;
-
-    console.log(`\n      CASE 3 — bought ${f(bag).toExponential(3)} tok for ${f(spent).toFixed(4)} ETH`);
-    console.log(`      CASE 3 — full round-trip sell: reverted=${reverted} out=${f(out).toFixed(6)} ETH (in=${f(spent).toFixed(6)})`);
-    console.log(`      CASE 3 — round-trip retention: ${(f(out) / f(spent) * 100).toFixed(2)}% (rest kept by pool/fees)`);
-
-    expect(reverted, "selling the entire bag in one tx must NOT revert").to.equal(false);
-    expect(out, "full-bag sell must pay out > 0").to.be.greaterThan(0n);
-    // SOLVENCY: a round trip cannot profit — out must be <= in
-    expect(out, "round-trip out must be <= in (solvency)").to.be.lessThanOrEqual(spent);
-    // buyer should have essentially no tokens left
-    const leftover = await ctx.TOK.balanceOf(buyer.address);
-    expect(leftover, "buyer should have dumped the whole bag").to.equal(0n);
+    // same order, same (valid) signature, replayed — must not fill a second slice.
+    await expect(limit.connect(keeper).execute(o, sig)).to.be.revertedWith("filled");
+    await expect(limit.connect(other).execute(o, sig)).to.be.revertedWith("filled"); // any keeper, still dead
+    expect(await limit.filledSlices(h)).to.equal(1n); // count did not advance
+    expect(await coin.balanceOf(maker.address)).to.equal(E("998")); // paid exactly once
   });
 
-  // ── CASE 4 ────────────────────────────────────────────────────────────────
-  it("CASE 4: trigger graduation, then immediately trade — Bond posted, rewards paid, pool trades", async () => {
-    const ctx = await freshCoin("GradNow", "GN");
-    const [buyer] = ctx.rest;
-    await fund(ctx, buyer, 200n * ONE);
-
-    // buy the curve up to the ceiling so it graduates
-    await (await ctx.probe.connect(buyer).swapExactInLimit(ctx.poolAddr, WETH, 120n * ONE, ctx.gradSqrt)).wait();
-    expect(await ctx.curveC.ready(), "should be graduatable at ceiling").to.equal(true);
-
-    const devBefore = await ctx.wethW.balanceOf(ctx.dev.address);
-    const platBefore = await ctx.wethW.balanceOf(ctx.platform.address);
-    const gradRc = await (await ctx.curveC.graduate()).wait();
-    const gev = gradRc.logs.map((l) => { try { return ctx.curveC.interface.parseLog(l); } catch { return null; } })
-      .find((e) => e && e.name === "Graduated");
-    const bondRaise = gev.args.raisedWeth;
-    const devGain = (await ctx.wethW.balanceOf(ctx.dev.address)) - devBefore;
-    const platGain = (await ctx.wethW.balanceOf(ctx.platform.address)) - platBefore;
-    const grossRaise = bondRaise + 2n * ethers.parseEther("0.5");
-
-    console.log(`\n      CASE 4 — graduated. gross raise=${f(grossRaise).toFixed(4)} ETH  into Bond=${f(bondRaise).toFixed(4)} ETH`);
-    console.log(`      CASE 4 — creator=${f(devGain).toFixed(4)} ETH  platform=${f(platGain).toFixed(4)} ETH`);
-
-    // (3) rewards paid correctly: fixed 0.5 each (platform also sweeps tiny weth dust)
-    expect(devGain, "creator reward = 0.5 ETH").to.equal(ethers.parseEther("0.5"));
-    // v2: platform gets its 0.5 reward PLUS the LP fees graduate() now sweeps (100% to platform, feeConfig unset).
-    expect(platGain, "platform reward (0.5) + swept LP fees").to.be.gte(ethers.parseEther("0.5"));
-    expect(platGain, "platform gain is 0.5 plus a modest LP-fee slice").to.be.lte(ethers.parseEther("0.75"));
-
-    // (3) Bond posted with both legs
-    const bond = await ethers.getContractAt("Bond", await ctx.curveC.bond());
-    expect(await bond.posted(), "Bond posted").to.equal(true);
-    expect(await bond.sherwoodL(), "sherwood LP > 0").to.be.greaterThan(0n);
-    expect(await bond.bountyL(), "bounty floor > 0").to.be.greaterThan(0n);
-
-    // (4) nothing stranded in the curve
-    expect(await ctx.wethW.balanceOf(ctx.curve), "no WETH stranded in curve").to.equal(0n);
-    expect(await ctx.TOK.balanceOf(ctx.curve), "no token stranded in curve").to.equal(0n);
-    expect(await ctx.pool.liquidity(), "pool tradeable post-grad").to.be.greaterThan(0n);
-
-    // ── IMMEDIATELY trade the graduated pool: a buy then a sell, both must succeed ──
-    const tokBefore = await ctx.TOK.balanceOf(buyer.address);
-    await (await ctx.probe.connect(buyer).swapExactIn(ctx.poolAddr, WETH, ONE / 2n)).wait();
-    const gotTok = (await ctx.TOK.balanceOf(buyer.address)) - tokBefore;
-    expect(gotTok, "post-grad buy delivers tokens").to.be.greaterThan(0n);
-
-    const wPreSell = await ctx.wethW.balanceOf(buyer.address);
-    await (await ctx.probe.connect(buyer).swapExactIn(ctx.poolAddr, ctx.token, gotTok / 2n)).wait();
-    const gotWeth = (await ctx.wethW.balanceOf(buyer.address)) - wPreSell;
-    expect(gotWeth, "post-grad sell pays WETH (not a honeypot)").to.be.greaterThan(0n);
-    console.log(`      CASE 4 — post-grad buy got ${f(gotTok).toExponential(3)} tok; sell got ${f(gotWeth).toFixed(6)} ETH`);
-
-    // graduating twice must fail cleanly
-    let reGrad = false;
-    try { await (await ctx.curveC.graduate()).wait(); } catch { reGrad = true; }
-    expect(reGrad, "double-graduate must revert (AlreadyGraduated)").to.equal(true);
+  // (3) wrong-chain / wrong-verifyingContract signatures ---------------------------------------
+  it("rejects a WRONG-CHAIN signature => 'bad sig' (cross-chain replay blocked by domain chainId)", async () => {
+    await fundBuy(E("1"));
+    const o = await mkOrder();
+    const wrongChain = { ...domain, chainId: chainId + 1n }; // signed as if for a different chain
+    const sig = await maker.signTypedData(wrongChain, TYPES, o);
+    await expect(limit.connect(keeper).execute(o, sig)).to.be.revertedWith("bad sig");
   });
 
-  // ── CASE 5 ────────────────────────────────────────────────────────────────
-  it("CASE 5: below the ceiling it NEVER graduates — no timeout path — yet sellers can still exit", async () => {
-    const ctx = await freshCoin("Timeout", "TO");
-    const [buyer] = ctx.rest;
-    await fund(ctx, buyer, 200n * ONE);
+  it("rejects a WRONG-verifyingContract signature => 'bad sig' (order bound to a different deployment)", async () => {
+    await fundBuy(E("1"));
+    const o = await mkOrder();
+    const wrongVC = { ...domain, verifyingContract: other.address }; // some other contract address
+    const sig = await maker.signTypedData(wrongVC, TYPES, o);
+    await expect(limit.connect(keeper).execute(o, sig)).to.be.revertedWith("bad sig");
+  });
 
-    // buy up to JUST BELOW the ceiling (a sqrt limit strictly under gradSqrt). The ONLY graduation point is
-    // the full ceiling, so this is NOT graduatable and graduate() reverts NotReady.
-    const ceilS = BigInt(ctx.gradSqrt);
-    const curS = BigInt((await ctx.pool.slot0()).sqrtPriceX96);
-    const belowCeil = curS + ((ceilS - curS) * 99n) / 100n; // 99% of the way to the ceiling, still strictly below it
-    await (await ctx.probe.connect(buyer).swapExactInLimit(ctx.poolAddr, WETH, 120n * ONE, belowCeil)).wait();
-    const tickBelow = (await ctx.pool.slot0()).tick;
-    const readyBefore = await ctx.curveC.ready();
-    console.log(`\n      CASE 5 — just below the ceiling: tick=${tickBelow}  ready(before warp)=${readyBefore}`);
-    expect(readyBefore, "below the ceiling it must NOT be graduatable").to.equal(false);
-    await expect(ctx.curveC.graduate()).to.be.revertedWithCustomError(ctx.curveC, "NotReady");
+  // (4) pair guard: both legs WETH, and neither leg WETH ---------------------------------------
+  it("rejects a pair with BOTH legs WETH => 'pair'", async () => {
+    await fundBuy(E("1"));
+    const bad = await mkOrder({
+      sellToken: await weth.getAddress(),
+      buyToken: await weth.getAddress(),
+      minOut: 1n,
+    });
+    await expect(limit.connect(keeper).execute(bad, await sign(bad))).to.be.revertedWith("pair");
+  });
 
-    // warp 8 days: there is NO timeout / abandon-proof path anymore — it stays NOT graduatable.
-    await ethers.provider.send("evm_increaseTime", [8 * 24 * 3600]);
-    await ethers.provider.send("evm_mine", []);
-    const readyAfter = await ctx.curveC.ready();
-    console.log(`      CASE 5 — ready(after 8d warp)=${readyAfter}`);
-    expect(readyAfter, "no timeout path: still NOT graduatable after 8 days").to.equal(false);
-    await expect(ctx.curveC.graduate()).to.be.revertedWithCustomError(ctx.curveC, "NotReady");
+  it("rejects a pair with NEITHER leg WETH => 'pair'", async () => {
+    await fundSell(E("10"));
+    const other20 = await (await ethers.getContractFactory("MintERC20")).deploy("Other", "OTH");
+    const bad = await mkOrder({
+      sellToken: await coin.getAddress(),
+      buyToken: await other20.getAddress(),
+      sliceIn: E("10"), minOut: 1n,
+    });
+    await expect(limit.connect(keeper).execute(bad, await sign(bad))).to.be.revertedWith("pair");
+  });
 
-    // a coin that never reaches the ceiling keeps trading on the curve — sellers can always exit (not a honeypot)
-    const bag = await ctx.TOK.balanceOf(buyer.address);
-    expect(bag, "buyer holds tokens from the below-ceiling buy").to.be.greaterThan(0n);
-    const wPre = await ctx.wethW.balanceOf(buyer.address);
-    await (await ctx.probe.connect(buyer).swapExactIn(ctx.poolAddr, ctx.token, bag / 2n)).wait();
-    expect((await ctx.wethW.balanceOf(buyer.address)) - wPre, "a below-ceiling (never-graduated) coin still lets sellers exit").to.be.greaterThan(0n);
+  // (5) value extremes: dust (1 wei) and whole-supply-scale outputs -----------------------------
+  it("DUST: a 1-wei slice fills without mis-round; maker gets 998 wei coin, keeper 2 wei, contract clean", async () => {
+    await fundBuy(E("1"));
+    // 1 wei WETH * 1000 = 1000 wei coin gross; keeper 0.20% = 2 wei; maker gets 998 wei (>= minOut 1).
+    const o = await mkOrder({ sliceIn: 1n, minOut: 1n });
+    await limit.connect(keeper).execute(o, await sign(o));
+    expect(await coin.balanceOf(maker.address)).to.equal(998n);
+    expect(await coin.balanceOf(keeper.address)).to.equal(2n);
+    // nothing stranded in the executor.
+    expect(await coin.balanceOf(await limit.getAddress())).to.equal(0n);
+    expect(await ethers.provider.getBalance(await limit.getAddress())).to.equal(0n);
+    expect(await weth.balanceOf(await limit.getAddress())).to.equal(0n);
+  });
+
+  it("EXTREME: a whole-supply-scale output (1e12 coin/ETH) does not overflow or mis-round", async () => {
+    // Fresh venue priced at 1e12 coin per ETH: a single 1-ETH slice mints 1e12 coin (1e30 base units),
+    // exercising the out*bps/BPS fee math at scale. 1e30 * 100 (max bps) = 1e32 << 2^256, so no overflow.
+    const bigSwap = await (await ethers.getContractFactory("MockRobinSwapLimit")).deploy(
+      await weth.getAddress(), await coin.getAddress(), E("1000000000000")); // 1e12 coin/ETH
+    const bigLimit = await (await ethers.getContractFactory("RobinLimit")).deploy(
+      await weth.getAddress(), await bigSwap.getAddress(), owner.address);
+    await weth.connect(maker).deposit({ value: E("1") });
+    await weth.connect(maker).approve(await bigLimit.getAddress(), ethers.MaxUint256);
+    const bigDomain = { name: "RobinLimit", version: "1", chainId, verifyingContract: await bigLimit.getAddress() };
+
+    const gross = E("1000000000000");          // 1 ETH * 1e12 coin/ETH = 1e12 coin
+    const fee = (gross * 20n) / 10000n;         // 0.20%
+    const makerExp = gross - fee;
+    const o = { maker: maker.address, sellToken: await weth.getAddress(), buyToken: await coin.getAddress(),
+      sliceIn: E("1"), minOut: makerExp, slices: 1n, interval: 0n, expiry: BigInt(await now() + 3600), salt: 42n };
+    await bigLimit.connect(keeper).execute(o, await maker.signTypedData(bigDomain, TYPES, o));
+    expect(await coin.balanceOf(maker.address)).to.equal(makerExp); // exact, no rounding drift
+    expect(await coin.balanceOf(keeper.address)).to.equal(fee);
+    expect(await coin.balanceOf(await bigLimit.getAddress())).to.equal(0n);
+  });
+
+  // (6) allowance < sliceIn: clean revert, NO partial state -------------------------------------
+  it("GRIEF: allowance < sliceIn reverts cleanly and writes NO state (filledSlices/lastFillTs stay 0)", async () => {
+    await weth.connect(maker).deposit({ value: E("1") });
+    // approve one wei short of the slice — the pull (transferFrom) must fail.
+    await weth.connect(maker).approve(await limit.getAddress(), E("1") - 1n);
+    const o = await mkOrder({ sliceIn: E("1") });
+    const sig = await sign(o);
+    const h = await limit.hashOrder(o);
+
+    await expect(limit.connect(keeper).execute(o, sig)).to.be.reverted; // ERC20InsufficientAllowance
+    // the effects-before-interactions write to filledSlices/lastFillTs must have rolled back.
+    expect(await limit.filledSlices(h)).to.equal(0n);
+    expect(await limit.lastFillTs(h)).to.equal(0n);
+    // no funds moved, nothing stranded.
+    expect(await weth.balanceOf(maker.address)).to.equal(E("1"));
+    expect(await coin.balanceOf(maker.address)).to.equal(0n);
+    expect(await weth.balanceOf(await limit.getAddress())).to.equal(0n);
+  });
+
+  // (6b) reverted fill mid-DCA: a post-swap price revert must NOT advance filledSlices/lastFillTs -
+  it("GRIEF: a reverted slice (price fails AFTER the swap) does not advance filledSlices or lastFillTs", async () => {
+    await fundBuy(E("3"));
+    const o = await mkOrder({ sliceIn: E("1"), slices: 3n, interval: 0n, minOut: E("990") });
+    const sig = await sign(o);
+    const h = await limit.hashOrder(o);
+
+    await limit.connect(keeper).execute(o, sig); // slice 1 fills
+    expect(await limit.filledSlices(h)).to.equal(1n);
+    const tsAfter1 = await limit.lastFillTs(h);
+
+    // drop the price so slice 2's swap succeeds but makerOut < minOut => "price" revert AFTER the
+    // effects-before-interactions write. The write must roll back with the tx.
+    await swap.setPrice(E("980"));
+    await expect(limit.connect(keeper).execute(o, sig)).to.be.revertedWith("price");
+    expect(await limit.filledSlices(h)).to.equal(1n);          // still 1, not 2
+    expect(await limit.lastFillTs(h)).to.equal(tsAfter1);       // cadence clock did not advance
+    expect(await coin.balanceOf(await limit.getAddress())).to.equal(0n); // no coin stranded from the reverted buy
+    expect(await ethers.provider.getBalance(await limit.getAddress())).to.equal(0n);
+
+    // and the order is still fillable once the price recovers — the revert cost only gas.
+    await swap.setPrice(COIN_PER_ETH);
+    await limit.connect(keeper).execute(o, sig);
+    expect(await limit.filledSlices(h)).to.equal(2n);
+  });
+
+  // (7) sell path pays WETH and leaves the contract with 0 ETH / 0 coin -------------------------
+  it("SELL path pays the maker WETH and leaves the executor with ZERO ETH and ZERO coin", async () => {
+    await fundSell(E("1000"));
+    const o = await mkOrder({
+      sellToken: await coin.getAddress(),
+      buyToken: await weth.getAddress(),
+      sliceIn: E("1000"),
+      minOut: E("0.99"),
+    });
+    await limit.connect(keeper).execute(o, await sign(o));
+    // 1000 coin -> 1 WETH gross; keeper 0.20% = 0.002; maker nets 0.998.
+    expect(await weth.balanceOf(maker.address)).to.equal(E("0.998"));
+    expect(await weth.balanceOf(keeper.address)).to.equal(E("0.002"));
+    expect(await coin.balanceOf(maker.address)).to.equal(0n);
+    // the non-custodial invariant: contract holds no ETH, no coin, no WETH between txs.
+    expect(await ethers.provider.getBalance(await limit.getAddress())).to.equal(0n);
+    expect(await coin.balanceOf(await limit.getAddress())).to.equal(0n);
+    expect(await weth.balanceOf(await limit.getAddress())).to.equal(0n);
   });
 });
