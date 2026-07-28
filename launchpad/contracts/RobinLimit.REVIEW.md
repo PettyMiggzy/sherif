@@ -4,6 +4,14 @@ This contract moves user funds, so it is **staged, not deployed**. Read this, re
 `RobinLimit.sol`, and ideally get an outside audit before it touches mainnet. Nothing about
 limit orders / DCA goes live until you deploy it and point the keeper at it.
 
+**Pre-deploy audit status:** a multi-lens adversarial audit + 3 hardhat simulation suites
+(33 passing) were run. Verdict was GO-WITH-FIXES; all findings are now fixed and re-tested:
+HIGH sell-path partial-fill token stranding (now swept to the maker), a buy-side ETH sweep
+tightening, keeper starvation via junk-order flood (attempts-based deprioritization + global
+cap), keeper profitability guard (no gas-losing dust fills), shared-allowance on concurrent
+buys (cumulative approval), and DCA minOut vs padRouter fees. An independent human/audit-firm
+review is still recommended before mainnet — this file + the tests are the starting point.
+
 ## What it is
 
 Non-custodial limit orders and DCA for Robin Labs coins, executed through `RobinSwap`.
