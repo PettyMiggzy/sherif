@@ -41,9 +41,11 @@ export const CFG = {
   apiGetMaxPerSec: num("API_GET_MAX_PER_SEC", 30),     // per-IP/sec cap on GET /api/* reads (cache-bypass DoS guard)
   metaGlobalPerSec: num("META_GLOBAL_PER_SEC", 6),     // TOTAL profile-POST processing/sec across all IPs (pre-auth big-body parse DoS bound)
   mediaMaxPerSec: num("MEDIA_MAX_PER_SEC", 100),       // per-IP/sec cap on /media blob reads. A browse page fires ~40-50 avatar GETs in the first second from one IP; set well above a full page's image count so first-load avatars never 429. Reads are cheap immutable-per-?v blobs already served from MEDIA_CACHE.
-  factory: (process.env.FACTORY || "0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2").toLowerCase(),
-  router: (process.env.ROUTER || "0x7d0c7122E26a75A9f0bd753e84c6115CAfE3Fd9F").toLowerCase(),
-  startBlock: num("START_BLOCK", 0),
+  // Defaults match the LIVE pad on Robinhood Chain (pad/assets/config.js padFactory/padRouter), so a
+  // fresh deploy indexes the right factory even before .env is filled in. Override via env as needed.
+  factory: (process.env.FACTORY || "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074").toLowerCase(),
+  router: (process.env.ROUTER || "0xA6BaAB820809C7fC8350311776627298f91F07eC").toLowerCase(),
+  startBlock: num("START_BLOCK", 15944153),
   port: num("PORT", 8787),
   pollMs: num("POLL_MS", 6000),
   chunk: num("CHUNK", 1500),

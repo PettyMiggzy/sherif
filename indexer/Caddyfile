@@ -8,7 +8,7 @@
 	# API, media (coin profile images), the read-only RPC proxy, and health → the
 	# indexer. Same origin as the site, so no CORS needed. /media and /rpc MUST be
 	# here or profile images 404 and the RPC proxy is served as a static file.
-	@api path /api/* /media/* /rpc /health
+	@api path /api/* /media/* /og/* /coin/* /tokenlist.json /rpc /health
 	handle @api {
 		reverse_proxy indexer:8787
 	}
