@@ -174,7 +174,11 @@ $('save').addEventListener('click', async () => {
     const banner = await imgDataUrl('banner', 1200);
     if(!pfp && !banner){ log('Pick at least a pfp image.','bad'); $('save').disabled=false; return; }
     const ts = Math.floor(Date.now()/1000);
-    const payload = { description:"", telegram:"", twitter:"", website:"", migratedFrom:"", pfp, banner, ts };
+    // Preserve the coin's existing description + socials — this tool only swaps images, but the server
+    // overwrites those columns from the payload, so re-send the current values instead of blank ones.
+    let cur = {};
+    try { const cr = await fetch(`${API_BASE}/api/coin/${token}/meta`); if(cr.ok){ cur = (await cr.json()).profile || {}; } } catch {}
+    const payload = { description:cur.description||"", telegram:cur.telegram||"", twitter:cur.twitter||"", website:cur.website||"", migratedFrom:cur.migratedFrom||cur.migrated_from||"", pfp, banner, ts };
     log('Requesting signature in your wallet (free, no gas)…');
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
