@@ -14,7 +14,7 @@
 //
 // Rate limit: GeckoTerminal free tier is ~30 calls/min. We pace to stay under it.
 // ─────────────────────────────────────────────────────────────────────────────
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 
 const NET = "robinhood";                 // GeckoTerminal network slug for Robinhood Chain
 const GT = "https://api.geckoterminal.com/api/v2";
@@ -110,6 +110,15 @@ function score(c, gradUsd) {
 }
 
 async function main() {
+  // --dms-only: skip the slow chain scan, just regenerate the DM sheet from the existing hit-list JSON
+  // (use after editing the DM template so you don't re-resolve every social).
+  if (process.argv.includes("--dms-only")) {
+    const json = JSON.parse(readFileSync("marketing/radar-hitlist.json", "utf8"));
+    renderMd(json); renderDms(json);
+    const reach = json.filter((c) => c.twitter || c.telegram).length;
+    console.log(`Regenerated marketing/radar-dms.md from ${json.length} candidates (${reach} reachable).`);
+    return;
+  }
   console.log(`Robin Radar scanning Robinhood Chain (network=${NET}, pages=${argPages})...`);
   // 1) Find the WETH address + ETH price from a trending WETH pair, to size the graduation bar in USD.
   let ethUsd = 0;
@@ -273,9 +282,9 @@ function dmFor(c, i) {
   const crowdLine = crowd ? `${crowd.toLocaleString()} ${c.holders ? "holders" : "buyers"}` : "a real community";
   const dropLine = drop ? `${drop}% drawdown` : "a rough stretch";
   const variants = [
-    `Hey, been watching $${sym}. ${crowd ? `${crowdLine} still here through ${hard ? "a " + dropLine : dropLine}` : "You built something real"} says the community is real even if the chart hasn't been. I run Robin Labs (robinlab.io). I can migrate $${sym} in one paste: keep your name, ticker, logo and holders, and relaunch into real Uniswap v3 liquidity with a permanent floor the price can't fall through. Free to launch, and I'll do it with you live and seed the first buy so it opens green. Worth 10 minutes?`,
-    `Hey $${sym} team. Finding ${crowdLine} is the hard part, and they deserve better than ${dropLine}. I run Robin Labs. One paste migrates you onto real liquidity with a permanent floor, keeps your whole community, and it's free to launch (PONS charges you and then puts you on a curve that can dump to zero). I'll walk you through it personally. Can I show you?`,
-    `Hey, saw $${sym}. ${crowd ? crowdLine + " holding through " + dropLine : "Real project, unfair chart"}. Robin Labs can relaunch you in one paste onto a permanent floor instead of a curve, keep your name and holders, free to launch. I'll help you live and seed a green opening candle. Open to it?`,
+    `Hey, been watching $${sym}. ${crowd ? `${crowdLine} still here through ${hard ? "a " + dropLine : dropLine}` : "You built something real"} says the community is real even if the chart hasn't been. I run Robin Labs (robinlab.io). I can migrate $${sym} in one paste: keep your name, ticker, logo and holders, and relaunch into real Uniswap v3 liquidity with a permanent floor the price can't fall through. Free to launch, you earn a 0.5 ETH creator reward on graduation, and I'll do it with you live and seed the first buy so it opens green. Worth 10 minutes?`,
+    `Hey $${sym} team. Finding ${crowdLine} is the hard part, and they deserve better than ${dropLine}. I run Robin Labs. One paste migrates you onto real liquidity with a permanent floor, keeps your whole community, and it's free to launch with a 0.5 ETH creator reward on graduation (PONS charges you to launch and then puts you on a curve that can dump to zero). I'll walk you through it personally. Can I show you?`,
+    `Hey, saw $${sym}. ${crowd ? crowdLine + " holding through " + dropLine : "Real project, unfair chart"}. Robin Labs relaunches you in one paste onto a permanent floor instead of a curve, keeps your name and holders, free to launch plus a 0.5 ETH creator reward on graduation. I'll help you live and seed a green opening candle. Open to it?`,
   ];
   return variants[i % variants.length];
 }
