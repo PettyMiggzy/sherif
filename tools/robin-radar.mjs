@@ -168,7 +168,8 @@ async function main() {
     scored.push({ ...c, score: s, tags });
   }
   scored.sort((a, b) => b.score - a.score);
-  const top = scored.slice(0, 30);
+  const TOPN = Number((() => { const i = process.argv.indexOf("--top"); return i > -1 ? process.argv[i + 1] : 0; })()) || 80;
+  const top = scored.slice(0, TOPN);
   // Identity is already known from the included token objects — set it now so the list is useful
   // even if the (slower, rate-limited) socials pass gets cut short.
   for (const c of top) {
@@ -192,6 +193,7 @@ async function main() {
     }));
     writeFileSync("marketing/radar-hitlist.json", JSON.stringify(json, null, 2));
     renderMd(json);
+    renderDms(json);
     return json;
   };
 
@@ -200,7 +202,7 @@ async function main() {
 
   // 4) Enrich the top candidates with socials + deployer (bounded — the slow, rate-limited part).
   // Cool down first so the rate-limit bucket refills after the list phase, then space calls wide.
-  const ENRICH = Math.min(15, top.length);
+  const ENRICH = Math.min(Number((() => { const i = process.argv.indexOf("--enrich"); return i > -1 ? process.argv[i + 1] : 0; })()) || 60, top.length);
   console.log(`Cooling down, then resolving socials for top ${ENRICH} candidates...`);
   await sleep(5000);
   for (let i = 0; i < ENRICH; i++) {
@@ -257,6 +259,42 @@ function renderMd(json) {
     md.push(`- Signals: ${c.tags.join(", ")}\n`);
   });
   writeFileSync("marketing/radar-hitlist.md", md.join("\n"));
+}
+
+// Draft a PERSONALIZED migration DM per reachable target — pulls its real name/ticker/drawdown/holders so
+// each one reads written-for-them, not blasted. A human still reviews + sends (this never sends anything).
+// Phrasing varies by index so 20 of them don't look like a copy-paste (reads real, and doesn't trip filters).
+function dmFor(c, i) {
+  const sym = (c.symbol || "?").replace(/^\$+/, "");
+  const drop = c.chg24 <= 0 ? Math.abs(c.chg24) : 0;
+  const crowd = c.holders || c.buyers24 || 0;
+  const hard = drop >= 40;
+  // Only cite numbers we actually have; keep it honest.
+  const crowdLine = crowd ? `${crowd.toLocaleString()} ${c.holders ? "holders" : "buyers"}` : "a real community";
+  const dropLine = drop ? `${drop}% drawdown` : "a rough stretch";
+  const variants = [
+    `Hey, been watching $${sym}. ${crowd ? `${crowdLine} still here through ${hard ? "a " + dropLine : dropLine}` : "You built something real"} says the community is real even if the chart hasn't been. I run Robin Labs (robinlab.io). I can migrate $${sym} in one paste: keep your name, ticker, logo and holders, and relaunch into real Uniswap v3 liquidity with a permanent floor the price can't fall through. Free to launch, and I'll do it with you live and seed the first buy so it opens green. Worth 10 minutes?`,
+    `Hey $${sym} team. Finding ${crowdLine} is the hard part, and they deserve better than ${dropLine}. I run Robin Labs. One paste migrates you onto real liquidity with a permanent floor, keeps your whole community, and it's free to launch (PONS charges you and then puts you on a curve that can dump to zero). I'll walk you through it personally. Can I show you?`,
+    `Hey, saw $${sym}. ${crowd ? crowdLine + " holding through " + dropLine : "Real project, unfair chart"}. Robin Labs can relaunch you in one paste onto a permanent floor instead of a curve, keep your name and holders, free to launch. I'll help you live and seed a green opening candle. Open to it?`,
+  ];
+  return variants[i % variants.length];
+}
+
+// Write a clean, copy-paste DM sheet: one ready-to-send message per reachable target.
+function renderDms(json) {
+  const reachable = json.filter((c) => c.twitter || c.telegram);
+  const md = [];
+  md.push(`# Robin Radar — ready-to-send migration DMs`);
+  md.push(`${reachable.length} reachable targets, each with a personalized draft. Skim, tweak a word, send from a REAL profile.`);
+  md.push(`Do NOT auto-send (spam = bans + "scam project" label). Aim for ~15-20 quality sends/day.\n`);
+  reachable.forEach((c, i) => {
+    const to = [c.twitter && `X ${c.twitter}`, c.telegram && `TG ${c.telegram}`].filter(Boolean).join("  |  ");
+    md.push(`## ${i + 1}. ${c.name} ($${(c.symbol || "").replace(/^\$+/, "")})`);
+    md.push(`Send to: ${to}`);
+    md.push(`Signals: ${c.chg24}% 24h, ${c.buyers24} buyers${c.holders ? `, ${c.holders} holders` : ""}. Chart: ${c.gecko}`);
+    md.push(`\n> ${dmFor(c, i)}\n`);
+  });
+  writeFileSync("marketing/radar-dms.md", md.join("\n"));
 }
 
 main().catch((e) => { console.error("radar error:", e); process.exit(1); });
