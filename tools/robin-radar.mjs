@@ -209,28 +209,34 @@ async function main() {
   // Write immediately (pre-socials) so a killed run still leaves a usable list.
   writeOutputs();
 
-  // 4) Enrich the top candidates with socials + deployer (bounded — the slow, rate-limited part).
-  // Cool down first so the rate-limit bucket refills after the list phase, then space calls wide.
-  const ENRICH = Math.min(Number((() => { const i = process.argv.indexOf("--enrich"); return i > -1 ? process.argv[i + 1] : 0; })()) || 60, top.length);
-  console.log(`Cooling down, then resolving socials for top ${ENRICH} candidates...`);
-  await sleep(5000);
-  for (let i = 0; i < ENRICH; i++) {
-    const c = top[i];
-    const info = await gt(`/networks/${NET}/tokens/${c.baseAddr}/info`);
-    await sleep(2600);
-    const a = info?.data?.attributes || {};
-    if (!a || Object.keys(a).length === 0) continue; // rate-limited/miss — leave identity as-is
-    if (a.symbol) c.symbol = a.symbol;
-    if (a.name) c.name = a.name;
-    c.twitter = a.twitter_handle ? `https://x.com/${a.twitter_handle.replace(/^@/, "")}` : "";
-    c.telegram = a.telegram_handle ? `https://t.me/${a.telegram_handle.replace(/^@/, "")}` : "";
-    c.websites = (a.websites || []).slice(0, 2);
-    c.gtScore = a.gt_score != null ? Math.round(a.gt_score) : null;
-    c.deployer = a.developer_address || "";
-    c.holders = a.holders?.count ?? a.holders ?? null;
-    if (c.twitter || c.telegram) c.score += 12; // reachable => higher priority
-    if (i % 4 === 3) writeOutputs(); // checkpoint so partial progress survives
+  // 4) Enrich socials via DexScreener — batched 30 tokens/call, ~300 req/min, far better socials coverage
+  // than GeckoTerminal and no throttling, so we enrich EVERY candidate and get a big reachable list.
+  console.log(`Resolving socials via DexScreener for all ${top.length} candidates...`);
+  const byAddr = new Map(top.map((c) => [c.baseAddr.toLowerCase(), c]));
+  for (let i = 0; i < top.length; i += 30) {
+    const batch = top.slice(i, i + 30).map((c) => c.baseAddr);
+    let j = null;
+    try {
+      const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${batch.join(",")}`, { headers: HEADERS });
+      if (r.ok) j = await r.json();
+    } catch { /* skip batch */ }
+    for (const pair of (j?.pairs || [])) {
+      const c = byAddr.get((pair.baseToken?.address || "").toLowerCase());
+      if (!c) continue;
+      const info = pair.info || {};
+      const soc = info.socials || [];
+      const tw = soc.find((s) => /twitter|^x$/i.test(s.type || ""));
+      const tg = soc.find((s) => /telegram/i.test(s.type || ""));
+      if (tw && !c.twitter) c.twitter = tw.url;
+      if (tg && !c.telegram) c.telegram = tg.url;
+      if (info.websites?.length && !(c.websites || []).length) c.websites = info.websites.map((w) => w.url || w).slice(0, 2);
+      if (pair.baseToken?.symbol) c.symbol = pair.baseToken.symbol;
+      if (pair.baseToken?.name) c.name = pair.baseToken.name;
+    }
+    await sleep(400); // stay well under DexScreener's ~300/min
+    writeOutputs(); // checkpoint each batch
   }
+  top.forEach((c) => { if (c.twitter || c.telegram) c.score += 12; }); // reachable => higher priority
 
   const json = writeOutputs();
   const reachable = json.filter((c) => c.twitter || c.telegram);
