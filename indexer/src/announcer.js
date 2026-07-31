@@ -25,6 +25,7 @@ const CHAT = (process.env.TG_CHAT || "").trim();
 const API = (process.env.ANNOUNCE_API_BASE || "https://api.robinlab.io").replace(/\/+$/, "");
 const SITE = (process.env.ANNOUNCE_SITE_BASE || "https://robinlab.io").replace(/\/+$/, "");
 const BANNER = (process.env.ANNOUNCE_BANNER_URL || "").trim();  // promo graphic posted on top of every launch
+const TG_API = (process.env.TG_API_BASE || "https://api.telegram.org").replace(/\/+$/, ""); // override for tests
 const POLL_MS = Number(process.env.ANNOUNCE_POLL_MS || 30000);
 const STATE = process.env.ANNOUNCE_STATE || "./data/announced.json";
 const BACKLOG = process.env.ANNOUNCE_BACKLOG === "1";
@@ -46,7 +47,7 @@ async function getJson(url) {
 // Telegram Bot API call. Returns the parsed body or null.
 async function tg(method, params) {
   try {
-    const r = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
+    const r = await fetch(`${TG_API}/bot${TOKEN}/${method}`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(params),
     });
     const j = await r.json();
@@ -59,7 +60,7 @@ const fmtUsd = (n) => (n == null ? null : "$" + Number(n).toLocaleString("en-US"
 const esc = (s) => String(s ?? "").replace(/[<&>]/g, (c) => ({ "<": "&lt;", "&": "&amp;", ">": "&gt;" }[c])); // HTML parse_mode
 
 // Build the announcement text for a coin (brand voice: no em-dashes, no emoji-spam, only true mechanics).
-function caption(c) {
+export function caption(c) {
   const sym = String(c.symbol || "").replace(/^\$+/, "");
   const link = `${SITE}/token.html?c=${c.token}`;
   const mc = fmtUsd(c.mcapUsd) || (c.mcapEth != null ? `${Number(c.mcapEth).toFixed(3)} ETH` : null);
@@ -74,7 +75,7 @@ function caption(c) {
   return lines.join("\n");
 }
 
-async function announce(c) {
+export async function announce(c) {
   const text = caption(c);
   // The coin's own image (creator pfp) makes a richer card; a public URL is required for Telegram to fetch it.
   const coinImg = c.image || (c.has_pfp ? `${API}/media/${c.token}/pfp` : null);
