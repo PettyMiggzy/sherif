@@ -919,23 +919,28 @@ async function loadCoin(){
   // are used ONLY as a fallback when the indexer doesn't have the coin - that's what was
   // making the coin page slow, routing a dozen calls through the RPC per load.
   let info = null, meta, tax;
+  // Never let a slow/stalled RPC read freeze the whole page: cap each chain read and move on with
+  // whatever we have (the indexer snapshot fills the rest; a later reconcile retries).
+  const withTimeout = (p, ms) => Promise.race([Promise.resolve(p).catch(() => null), new Promise((r) => setTimeout(() => r(null), ms))]);
   const [apiCoin, taxRes] = await Promise.all([
-    Pad.coin(TOKEN).catch(() => null),
-    Pad.getTax(TOKEN).catch(() => null),
+    withTimeout(Pad.coin(TOKEN), 9000),
+    withTimeout(Pad.getTax(TOKEN), 9000),
   ]);
   tax = taxRes;
   if (apiCoin) {
     meta = { name: apiCoin.name, symbol: apiCoin.symbol };
     if (!tax) tax = { curve: apiCoin.curve, pool: apiCoin.pool, projectWallet: apiCoin.dev, set: true, buyBps: apiCoin.buyBps ?? 100, sellBps: apiCoin.sellBps ?? 100 };
   } else {
-    // Indexer doesn't know this coin - fall back to reading the chain directly.
-    try { [meta, tax] = await Promise.all([Pad.tokenMeta(TOKEN), Pad.getTax(TOKEN)]); }
-    catch { $('nm').textContent = 'Coin not found'; return; }
+    // Indexer doesn't know this coin yet - fall back to reading the chain directly (with a timeout so a
+    // stalled RPC can't hang the page). If it times out, show a friendly state and auto-retry.
+    const pair = await withTimeout(Promise.all([Pad.tokenMeta(TOKEN), Pad.getTax(TOKEN)]), 9000);
+    if (pair) { [meta, tax] = pair; }
+    else { $('nm').textContent = 'Still loading…'; setNote('This coin is fresh, still syncing. Refreshing…', ''); setTimeout(loadCoin, 6000); return; }
   }
   if (!tax || !tax.set){ $('nm').textContent = meta?.name || 'Coin'; $('tk').textContent = disp(meta?.symbol); setNote('This coin is not registered on Robin Labs.', 'err'); return; }
   // Stats/bond from the indexer snapshot; only read curveInfo live if the indexer lacked it.
   let view = viewFromApi(apiCoin);
-  if (!view || view.mcapEth == null) { info = await Pad.curveInfo(tax.curve, TOKEN).catch(() => null); view = info || view; }
+  if (!view || view.mcapEth == null) { info = await withTimeout(Pad.curveInfo(tax.curve, TOKEN), 9000); view = info || view; }
 
   // `dev` MUST be the coin's LAUNCH creator (what the indexer + on-chain gates check), NOT
   // the fee wallet (projectWallet). Using projectWallet locked a creator out of their own
