@@ -627,11 +627,17 @@ const ROBIN_TOKEN = '0x6696fe29288b586017e6f264c0091dba6c5ebeaf';
 const isRobin = (c) => String(c && c.token || '').toLowerCase() === ROBIN_TOKEN;
 // Sort: our $ROBIN always first, then everything else by volume. Used for the board, trending, and ticker.
 const byRobinThenVol = (a, b) => { const ar = isRobin(a), br = isRobin(b); if (ar !== br) return ar ? -1 : 1; return cVol(b) - cVol(a); };
-// blend external tokens in with a page of pad coins, $ROBIN pinned on top, de-duped against the pad coins
+// Append external tokens BELOW the pad's own coins (never interleaved). Our native launches always lead
+// the board in their chosen sort order ($ROBIN pinned first); the brought-in "Top on Robinhood Chain"
+// tokens fill the space underneath so the board still reads full without burying our own projects.
 function blendExternal(padCoins){
   const have = new Set((padCoins || []).map((c) => String(c.token || '').toLowerCase()));
-  const ext = EXTERNAL.filter((e) => !have.has(String(e.token || '').toLowerCase()));
-  return [...(padCoins || []), ...ext].sort(byRobinThenVol);
+  const ext = EXTERNAL.filter((e) => !have.has(String(e.token || '').toLowerCase()))
+    .sort((a, b) => cVol(b) - cVol(a)); // external ranked among themselves by volume
+  const pad = [...(padCoins || [])];    // already ordered by the API's chosen sort (new/trending/etc.)
+  const ri = pad.findIndex(isRobin);    // pin our official $ROBIN to the very top of the native group
+  if (ri > 0) { const [r] = pad.splice(ri, 1); pad.unshift(r); }
+  return [...pad, ...ext];
 }
 // only blend on the open, unsearched board (All / Live), not on pad-specific tabs or a search
 const showExternal = () => !DEMO && !curQ && (curFilter.key === 'all' || curFilter.key === 'live') && EXTERNAL.length > 0;
