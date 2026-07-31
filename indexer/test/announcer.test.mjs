@@ -123,3 +123,24 @@ test("caption is HTML-safe and brand-correct (no em-dash, CA in <code>)", async 
   assert.ok(!text.includes("—"), "no em-dashes in brand copy");
   assert.match(text, /Market cap: \$14,500/);
 });
+
+test("graduation caption states the graduation + 0.5 ETH creator reward", async () => {
+  const { gradCaption } = await freshAnnouncer({});
+  const text = gradCaption({ token: TOKEN_ADDR, name: "Buy Me", symbol: "$BUYME", mcapUsd: 34000 });
+  assert.match(text, /GRADUATED/);
+  assert.match(text, /0\.5 ETH/, "names the creator reward");
+  assert.match(text, /permanent Uniswap v3 floor/);
+  assert.match(text, new RegExp(`<code>${TOKEN_ADDR}</code>`));
+  assert.ok(!text.includes("—"), "no em-dashes");
+});
+
+test("announceGrad posts the graduation card (banner on top when set)", async () => {
+  const calls = [];
+  stubFetch(calls);
+  const { announceGrad } = await freshAnnouncer({ ANNOUNCE_BANNER_URL: BANNER });
+  const ok = await announceGrad(coinWithPfp);
+  assert.equal(ok, true);
+  assert.equal(calls[0].method, "sendMediaGroup");
+  assert.equal(calls[0].body.media[0].media, BANNER);
+  assert.match(calls[0].body.media[0].caption, /GRADUATED/);
+});
