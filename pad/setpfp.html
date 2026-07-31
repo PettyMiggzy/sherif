@@ -140,7 +140,13 @@ async function imgDataUrl(inputId, maxDim){
       const s=Math.min(1,maxDim/Math.max(iw,ih,1));
       const cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(iw*s)); cv.height=Math.max(1,Math.round(ih*s));
       cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height);
-      for(const t of ['image/webp','image/jpeg','image/png']){ let url=''; try{url=cv.toDataURL(t,0.85);}catch{} if(IMG_OK.test(url)){ log(`  → resized ok (${Math.round(url.length/1024)} KB)`,'ok'); return url; } }
+      // Compress UNDER the server's 800KB post-process cap so the image can never be rejected for size.
+      const BUDGET = 720 * 1024;
+      const b64Bytes = (u) => { const i = u.indexOf(','); return i < 0 ? Infinity : Math.floor((u.length - i - 1) * 0.75); };
+      for(const q of [0.85,0.72,0.58,0.45,0.32]){
+        for(const t of ['image/webp','image/jpeg']){ let url=''; try{url=cv.toDataURL(t,q);}catch{} if(IMG_OK.test(url) && b64Bytes(url) <= BUDGET){ log(`  → resized ok (${Math.round(b64Bytes(url)/1024)} KB)`,'ok'); return url; } }
+      }
+      try{ const u=cv.toDataURL('image/jpeg',0.3); if(IMG_OK.test(u)){ log(`  → resized (min quality)`,'ok'); return u; } }catch{}
     }
   }catch(e){ log('  → in-browser resize failed ('+e.message+'), trying raw…'); }
   if(f.size<=16*1024*1024){
