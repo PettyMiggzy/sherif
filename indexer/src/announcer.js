@@ -9,11 +9,13 @@
 //   TG_BOT_TOKEN  the @BotFather bot token (SECRET, .env only)
 //   TG_CHAT       the channel to post to: "@robinlabslaunches" or a numeric chat id (add the bot as admin)
 // Optional:
-//   ANNOUNCE_API_BASE   default https://api.robinlab.io   (where /api/coins lives)
-//   ANNOUNCE_SITE_BASE  default https://robinlab.io       (coin links point here, the fresh site)
-//   ANNOUNCE_POLL_MS    default 30000
-//   ANNOUNCE_BACKLOG    "1" to also post coins that already exist on first run (default: seed silently)
-//   ANNOUNCE_STATE      state file path (default ./data/announced.json)
+//   ANNOUNCE_API_BASE     default https://api.robinlab.io   (where /api/coins lives)
+//   ANNOUNCE_SITE_BASE    default https://robinlab.io       (coin links point here, the fresh site)
+//   ANNOUNCE_BANNER_URL   a public image URL (the promo graphic). When set, every launch post LEADS with
+//                         this banner on top, and the coin's own image rides second in the same album.
+//   ANNOUNCE_POLL_MS      default 30000
+//   ANNOUNCE_BACKLOG      "1" to also post coins that already exist on first run (default: seed silently)
+//   ANNOUNCE_STATE        state file path (default ./data/announced.json)
 // ─────────────────────────────────────────────────────────────────────────────
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -22,6 +24,7 @@ const TOKEN = (process.env.TG_BOT_TOKEN || "").trim();
 const CHAT = (process.env.TG_CHAT || "").trim();
 const API = (process.env.ANNOUNCE_API_BASE || "https://api.robinlab.io").replace(/\/+$/, "");
 const SITE = (process.env.ANNOUNCE_SITE_BASE || "https://robinlab.io").replace(/\/+$/, "");
+const BANNER = (process.env.ANNOUNCE_BANNER_URL || "").trim();  // promo graphic posted on top of every launch
 const POLL_MS = Number(process.env.ANNOUNCE_POLL_MS || 30000);
 const STATE = process.env.ANNOUNCE_STATE || "./data/announced.json";
 const BACKLOG = process.env.ANNOUNCE_BACKLOG === "1";
@@ -73,11 +76,29 @@ function caption(c) {
 
 async function announce(c) {
   const text = caption(c);
-  // A public image lets us post a richer photo card; fall back to a text message if none.
-  const img = c.image || (c.has_pfp ? `${API}/media/${c.token}/pfp` : null);
+  // The coin's own image (creator pfp) makes a richer card; a public URL is required for Telegram to fetch it.
+  const coinImg = c.image || (c.has_pfp ? `${API}/media/${c.token}/pfp` : null);
   const base = { chat_id: CHAT, parse_mode: "HTML", disable_web_page_preview: false };
   let ok = false;
-  if (img) ok = !!(await tg("sendPhoto", { ...base, photo: img, caption: text }));
+
+  // With a promo BANNER set, every launch LEADS with it. If the coin also has an image, post an album
+  // (banner first, coin image second) with the launch details as the caption on the banner; otherwise
+  // just the banner captioned. Telegram renders album captions under the first photo, so the brand
+  // graphic sits on top of the text exactly as intended.
+  if (BANNER) {
+    if (coinImg) {
+      ok = !!(await tg("sendMediaGroup", {
+        chat_id: CHAT,
+        media: [
+          { type: "photo", media: BANNER, caption: text, parse_mode: "HTML" },
+          { type: "photo", media: coinImg },
+        ],
+      }));
+    }
+    if (!ok) ok = !!(await tg("sendPhoto", { ...base, photo: BANNER, caption: text }));
+  } else if (coinImg) {
+    ok = !!(await tg("sendPhoto", { ...base, photo: coinImg, caption: text }));
+  }
   if (!ok) ok = !!(await tg("sendMessage", { ...base, text }));
   if (ok) console.log(`[announcer] posted ${c.symbol} (${c.token.slice(0, 10)})`);
   return ok;
