@@ -311,10 +311,9 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
       <div class="chart">
         <div class="hd"><span class="dot"></span> Price · live
           <span class="mono" id="pLast" style="margin-left:8px;color:var(--ink);font-weight:700"></span>
-          <a href="#" id="dexLink" target="_blank" rel="noopener" class="mono" style="margin-left:auto;color:var(--ink-dim);font-size:.74rem">Uniswap v3 · 1% · GeckoTerminal ↗</a>
+          <a href="#" id="dexLink" target="_blank" rel="noopener" class="mono" style="margin-left:auto;color:var(--ink-dim);font-size:.74rem">Uniswap v3 · 1% · DexScreener ↗</a>
         </div>
         <div style="position:relative;height:440px;background:var(--bg-2)">
-          <iframe id="gtchart" title="Price chart" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;border:0;display:none"></iframe>
           <svg id="psvg" viewBox="0 0 1000 400" preserveAspectRatio="none" style="width:100%;height:100%;display:block"></svg>
           <span id="pHi" class="mono" style="position:absolute;top:8px;left:12px;font-size:.72rem;color:var(--ink-faint)"></span>
           <span id="pLo" class="mono" style="position:absolute;bottom:10px;left:12px;font-size:.72rem;color:var(--ink-faint)"></span>
@@ -476,7 +475,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
     </div>
   </div>
 </main>
-<div class="foot">Robin Labs on Robinhood Chain, contracts live and audited. Chart via GeckoTerminal. Not financial advice. Not affiliated with Robinhood Markets, Uniswap, or GeckoTerminal.</div>
+<div class="foot">Robin Labs on Robinhood Chain, contracts live and audited. Chart via DexScreener. Not financial advice. Not affiliated with Robinhood Markets, Uniswap, or DexScreener.</div>
 
 <script type="module">
 import * as Pad from './assets/wallet.js';
@@ -957,19 +956,7 @@ async function loadCoin(){
   finishPendingProfile(); // if this browser launched the coin with an image that hasn't saved yet, complete it
 
   // chart
-  if (tax.pool){
-    const p = tax.pool.toLowerCase();
-    const dl = $('dexLink'); if (dl) dl.href = 'https://www.geckoterminal.com/robinhood/pools/' + p;
-    // GeckoTerminal candlestick embed (proper per-token scale, unlike our line chart). Shows once the
-    // pool exists + GT has indexed the first trade; the self-drawn SVG stays as the pre-trade fallback.
-    const gt = $('gtchart');
-    if (gt){
-      gt.src = 'https://www.geckoterminal.com/robinhood/pools/' + p + '?embed=1&info=0&swaps=1';
-      gt.style.display = 'block';
-      const s = $('psvg'); if (s) s.style.display = 'none';
-      const ph = $('chartPh'); if (ph) ph.style.display = 'none';
-    }
-  }
+  if (tax.pool){ const dl = $('dexLink'); if (dl) dl.href = 'https://dexscreener.com/robinhood/' + tax.pool.toLowerCase(); }
   renderPriceChart();
 
   // stats + bond - from the live read when available, else the indexer snapshot
