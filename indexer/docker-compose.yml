@@ -46,6 +46,18 @@ services:
     depends_on:
       - indexer
 
+  # Launch announcer — posts every new coin to a Telegram channel. OFF unless TG_BOT_TOKEN and TG_CHAT
+  # are set in .env. Public-API only; no chain access, no wallet. Shares the volume for its state file.
+  announcer:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - indexer-data:/app/data
+    command: ["node", "src/announcer.js"]
+    depends_on:
+      - indexer
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
