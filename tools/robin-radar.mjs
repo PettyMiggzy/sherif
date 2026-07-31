@@ -123,7 +123,7 @@ async function main() {
   // 1) Find the WETH address + ETH price from a trending WETH pair, to size the graduation bar in USD.
   let ethUsd = 0;
   const INC = "include=base_token,quote_token,dex";
-  const trend = await gt(`/networks/${NET}/trending_pools?page=1&${INC}`); await sleep(2200);
+  const trend = await gt(`/networks/${NET}/trending_pools?page=1&${INC}`); await sleep(3300);
   const incMap = new Map();
   const pools = [];
   const absorb = (j) => {
@@ -139,11 +139,11 @@ async function main() {
   }
 
   // 2) Pull new pools + several pages of all pools (sorted by volume desc) for breadth.
-  absorb(await gt(`/networks/${NET}/new_pools?page=1&${INC}`)); await sleep(2200);
-  absorb(await gt(`/networks/${NET}/new_pools?page=2&${INC}`)); await sleep(2200);
+  absorb(await gt(`/networks/${NET}/new_pools?page=1&${INC}`)); await sleep(3300);
+  absorb(await gt(`/networks/${NET}/new_pools?page=2&${INC}`)); await sleep(3300);
   for (let pg = 1; pg <= argPages; pg++) {
     absorb(await gt(`/networks/${NET}/pools?page=${pg}&${INC}`));
-    await sleep(2200);
+    await sleep(3300);
   }
 
   // ETH price: read it from GeckoTerminal simple token price of WETH if we can spot WETH id.
@@ -155,7 +155,7 @@ async function main() {
   }
   const wethAddr = [...quoteCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
   if (wethAddr) {
-    const pj = await gt(`/simple/networks/${NET}/token_price/${wethAddr}`); await sleep(2200);
+    const pj = await gt(`/simple/networks/${NET}/token_price/${wethAddr}`); await sleep(3300);
     ethUsd = parseFloat(pj?.data?.attributes?.token_prices?.[wethAddr] || 0) || 0;
   }
   if (!ethUsd) ethUsd = 1868; // fallback to a recently observed price
