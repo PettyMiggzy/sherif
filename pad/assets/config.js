@@ -15,12 +15,13 @@ export const CHAIN = {
   hexId: "0x1237", // 4663
   name: "Robinhood Chain",
   currency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  // Read RPCs, in priority order. First is the indexer's read-proxy: it serves reads
-  // from the paid RPC server-side with a short cache, so a launch-day crowd hits ONE
-  // cached hop instead of each browser hammering the public RPC. The public endpoint is
-  // kept as an automatic failover if the proxy is ever unreachable. (Writes never use
-  // these - wallets broadcast their own txs through the user's own RPC.)
-  rpc: ["https://api.robinlab.io/rpc", "https://robinhoodchain.blockscout.com/api/eth-rpc"],
+  // Read RPC. ONLY the indexer read-proxy: it serves reads from the paid Alchemy RPC
+  // server-side (with its own failover to a backup key + Blockscout) and a short cache.
+  // We deliberately do NOT list the public Blockscout endpoint here as a browser fallback:
+  // it rate-limits (429) every browser and ethers then retries it forever, hanging reads.
+  // The proxy already does all failover server-side, so one reliable endpoint is correct.
+  // (Writes never use this - wallets broadcast their own txs through the user's own RPC.)
+  rpc: ["https://api.robinlab.io/rpc"],
   // RPC given to the WALLET when adding the chain (wallet_addEthereumChain). MUST be a
   // full, write-capable endpoint - the wallet broadcasts the user's txs through it - so
   // it must NEVER include the read-only /rpc proxy (which refuses eth_sendRawTransaction).
