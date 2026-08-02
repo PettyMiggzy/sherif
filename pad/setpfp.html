@@ -67,6 +67,7 @@
   <div id="result" class="big" style="display:none"></div>
   <div id="log"></div>
   <p class="sub" style="margin-top:14px">Done? Go back to your <a id="coinLink" href="#">coin page →</a></p>
+  <p class="sub">Want a full website for this coin? <a id="siteLink" href="website.html">Give it a site at &lt;name&gt;.robinlabs.fun →</a></p>
 </div>
 
 <script type="module">
@@ -83,7 +84,8 @@ function log(msg, cls){ const d=document.createElement('div'); d.className='step
 // token from ?c= or ?token=
 const q = new URLSearchParams(location.search);
 $('token').value = q.get('c') || q.get('token') || '';
-const syncLink = () => { const t=$('token').value.trim(); $('coinLink').href = t ? ('token.html?c='+encodeURIComponent(t)) : '#'; };
+const syncLink = () => { const t=$('token').value.trim(); $('coinLink').href = t ? ('token.html?c='+encodeURIComponent(t)) : '#';
+  const sl=$('siteLink'); if(sl) sl.href = t ? ('website.html?c='+encodeURIComponent(t)) : 'website.html'; };
 syncLink(); $('token').addEventListener('input', () => { syncLink(); loadDev(); });
 
 // resolve the coin's creator (dev) - the ONLY wallet the server accepts

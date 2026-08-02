@@ -35,12 +35,14 @@
     <button class="pill" role="tab" id="tab-monomax" aria-controls="preview" aria-selected="false" tabindex="-1" data-k="monomax">Mono Max</button>
   </div>
 </header>
-<div class="stage"><iframe id="preview" title="Coin site preview" role="tabpanel" aria-live="polite" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-same-origin"></iframe></div>
+<div class="stage"><iframe id="preview" title="Coin site preview" role="tabpanel" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-same-origin"></iframe></div>
+<div id="sr-status" role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0"></div>
 <div class="foot"><span>Preview only. One data-driven engine renders any coin into any style.</span><span>Powered by Robin Labs &nbsp;/&nbsp; <a href="https://robinlabs.fun" target="_blank" rel="noopener">robinlabs.fun</a></span></div>
 <script>
   const DOCS=null;
   var f=document.getElementById("preview"); var pills=[].slice.call(document.querySelectorAll(".pill"));
-  function show(k, focus){ f.removeAttribute('srcdoc'); f.src='./'+k+'.html'; pills.forEach(function(p){ var sel=p.dataset.k===k; p.setAttribute("aria-selected",sel?"true":"false"); p.tabIndex=sel?0:-1; if(sel){ f.setAttribute("aria-labelledby",p.id); if(focus) p.focus(); } }); }
+  var srStatus=document.getElementById("sr-status");
+  function show(k, focus){ f.removeAttribute('srcdoc'); f.src='./'+k+'.html'; pills.forEach(function(p){ var sel=p.dataset.k===k; p.setAttribute("aria-selected",sel?"true":"false"); p.tabIndex=sel?0:-1; if(sel){ f.setAttribute("aria-labelledby",p.id); if(srStatus) srStatus.textContent="Showing "+p.textContent+" template"; if(focus) p.focus(); } }); }
   pills.forEach(function(p,i){ p.addEventListener("click",function(){show(p.dataset.k,false);});
     p.addEventListener("keydown",function(e){ var n=pills.length;
       if(e.key==="ArrowRight"||e.key==="ArrowDown"){e.preventDefault();show(pills[(i+1)%n].dataset.k,true);}

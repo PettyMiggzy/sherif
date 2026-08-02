@@ -13,7 +13,9 @@ import {
   coinDev, upsertCoinMetaFields, setCoinPfp, setCoinBanner,
   getCoinMetaLite, getCoinPfp, getCoinBanner,
   holdingsByActor, holdersByToken,
+  setCoinSite, clearCoinSite, getSiteBySlug, slugOwnerToken, getCoinSite,
 } from "./db.js";
+import { checkSlug, isValidStyle, isTakenDown, normalizeSlug } from "./sitegate.js";
 import { currentEpoch as rewardsEpoch, userAllocations as rewardsUserAlloc } from "./rewards.js";
 import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleApproval as uniHandleApproval } from "./uniproxy.js";
 import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes, stats as lifiUsage } from "./lifiproxy.js";
@@ -47,6 +49,15 @@ export function profileMessage(token, p) {
     ts: p.ts,
   });
   return `Robin Labs - set coin profile\ntoken: ${token.toLowerCase()}\nts: ${p.ts}\ndigest: ${ethers.id(canon)}`;
+}
+
+// The message a coin's dev signs to set (or clear) its website. Kept SEPARATE from
+// profileMessage so adding websites never changes the profile signature (no client
+// breakage). An empty style+slug is the "remove my site" action. MUST byte-match the
+// frontend (pad/website.html).
+export function siteMessage(token, s) {
+  const canon = JSON.stringify({ style: s.style || "", slug: s.slug || "", ts: s.ts });
+  return `Robin Labs - set coin website\ntoken: ${token.toLowerCase()}\nts: ${s.ts}\ndigest: ${ethers.id(canon)}`;
 }
 
 // Decode a base64 data: URL to { buf, mime } — accepts ANY image type (incl. HEIC/HEIF)
@@ -371,6 +382,7 @@ const profileOf = (token, m, base) => (m ? {
   description: m.description || null, telegram: m.telegram || null,
   twitter: m.twitter || null, website: m.website || null,
   migratedFrom: m.migrated_from || null,
+  siteStyle: m.site_style || null, siteSlug: m.site_slug || null,
   image: m.has_pfp ? `${base}/media/${token}/pfp?v=${m.updated_ts}` : null,
   banner: m.has_banner ? `${base}/media/${token}/banner?v=${m.updated_ts}` : null,
   updatedTs: m.updated_ts || null,
@@ -436,11 +448,14 @@ const shapeCoin = (r, base = "") => ({
   description: r.meta_desc || null,
   telegram: r.meta_tg || null, twitter: r.meta_tw || null, website: r.meta_web || null,
   migratedFrom: r.meta_migrated || null,
+  // per-coin website (null until the creator picks a style + slug)
+  siteStyle: r.meta_site_style || null, siteSlug: r.meta_site_slug || null,
   launchBlock: r.launch_block, launchTs: r.launch_ts, launchTx: r.launch_tx,
   devBought: r.dev_bought,
   graduated: !!r.graduated,
   gradBlock: r.grad_block, gradTs: r.grad_ts, raisedWeth: r.raised_weth, bond: r.bond,
   tradesAll: r.trades_all, trades24h: r.trades_24h,
+  holders: r.holders_est != null ? r.holders_est : null, // distinct traders (approx holders); only on single-coin reads
   volAllEth: r.vol_all, vol24hEth: r.vol_24h,
   lastTradeTs: r.last_trade_ts, lastPriceEth: r.last_price,
   // live curve snapshot — lets the pad render the progress bar + mcap with no
@@ -479,6 +494,7 @@ const seriesGradStmt = db.prepare(`
 const oneCoinStmt = db.prepare(`
   SELECT c.*,
     (SELECT COUNT(*) FROM trades t WHERE t.token=c.token) AS trades_all,
+    (SELECT COUNT(DISTINCT t.actor) FROM trades t WHERE t.token=c.token) AS holders_est,
     (SELECT COUNT(*) FROM trades t WHERE t.token=c.token AND t.ts>=@since) AS trades_24h,
     (SELECT COALESCE(SUM(CAST(t.eth AS REAL)),0)/1e18 FROM trades t WHERE t.token=c.token) AS vol_all,
     (SELECT COALESCE(SUM(CAST(t.eth AS REAL)),0)/1e18 FROM trades t WHERE t.token=c.token AND t.ts>=@since) AS vol_24h,
@@ -486,7 +502,7 @@ const oneCoinStmt = db.prepare(`
     (SELECT CAST(t.eth AS REAL)/NULLIF(CAST(t.tokens AS REAL),0)
        FROM trades t WHERE t.token=c.token ORDER BY t.block DESC, t.log_index DESC LIMIT 1) AS last_price,
     cm.description AS meta_desc, cm.telegram AS meta_tg, cm.twitter AS meta_tw, cm.website AS meta_web,
-    cm.migrated_from AS meta_migrated,
+    cm.migrated_from AS meta_migrated, cm.site_style AS meta_site_style, cm.site_slug AS meta_site_slug,
     cm.updated_ts AS meta_ts, (cm.pfp IS NOT NULL) AS has_pfp, (cm.banner IS NOT NULL) AS has_banner
   FROM coins c LEFT JOIN coin_meta cm ON cm.token = c.token WHERE c.token=@token
 `);
@@ -704,6 +720,62 @@ export function startApi() {
           const { hash } = saveOrder(ob.order, ob.signature, now);
           return sendUni(res, 200, { ok: true, hash }, oorigin);
         } catch (e) { return sendUni(res, 400, { error: (e && e.message) || "bad order" }, oorigin); }
+      }
+
+      // ── set/clear a coin's website: POST /api/coin/:token/site ──────────────
+      // Creator-signed (siteMessage). Body: { style, slug, ts, signature }. An empty
+      // style AND slug clears the site (releases the slug). Small body, so the same
+      // per-IP + global meta budget bounds the pre-auth parse.
+      const sm = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/site$/);
+      if (sm) {
+        if (!metaRateOk(clientIp(req))) return send(res, 429, { error: "rate limited — wait a moment and try again" }, origin);
+        if (!metaGlobalOk("g")) return send(res, 503, { error: "busy, retry shortly" }, origin);
+        try {
+          const token = sm[1].toLowerCase();
+          let devAddr = coinDev.get(token)?.dev;
+          if (!devAddr) {
+            const miss = CHAIN_DEV_MISS.get(token);
+            if (miss && miss > Date.now()) return send(res, 404, { error: "unknown coin" }, origin);
+            if (!rpcGlobalOk("g")) return send(res, 503, { error: "busy, retry shortly" }, origin);
+            devAddr = await chainDevOf(token);
+            if (!devAddr) {
+              if (CHAIN_DEV_MISS.size > 5000) CHAIN_DEV_MISS.clear();
+              CHAIN_DEV_MISS.set(token, Date.now() + 60_000);
+              return send(res, 404, { error: "unknown coin" }, origin);
+            }
+          }
+          const raw = await readBody(req, 8192); // tiny JSON — no images here
+          const body = JSON.parse(raw.toString("utf8"));
+          const ts = Number(body.ts);
+          if (!Number.isFinite(ts)) return send(res, 400, { error: "missing ts" }, origin);
+          if (Math.abs(now - ts) > CFG.profileMaxSigAgeSecs) return send(res, 400, { error: "signature expired — sign and submit again" }, origin);
+          const style = String(body.style || "").trim().toLowerCase();
+          const slugRaw = String(body.slug || "").trim();
+          let signer;
+          try { signer = ethers.verifyMessage(siteMessage(token, { style, slug: slugRaw, ts }), String(body.signature || "")); }
+          catch { return send(res, 400, { error: "bad signature" }, origin); }
+          if (signer.toLowerCase() !== String(devAddr).toLowerCase())
+            return send(res, 403, { error: "only the coin's creator can set its website" }, origin);
+          const existing = getCoinMetaLite.get(token);
+          const stampTs = Math.max(ts, existing?.updated_ts || 0); // never move the media cache-bust backwards
+          // CLEAR: empty style + slug removes the site and frees the slug.
+          if (!style && !slugRaw) {
+            clearCoinSite.run({ token, updated_ts: stampTs, updated_by: signer.toLowerCase() });
+            return send(res, 200, { ok: true, token, site: null }, origin);
+          }
+          if (!isValidStyle(style)) return send(res, 400, { error: "unknown style" }, origin);
+          const chk = checkSlug(slugRaw);
+          if (!chk.ok) return send(res, 400, { error: `slug ${chk.reason}` }, origin);
+          // Uniqueness: the slug must be unclaimed, or already this coin's.
+          const owner = slugOwnerToken.get(chk.slug);
+          if (owner && owner.token.toLowerCase() !== token)
+            return send(res, 409, { error: "that address is taken — pick another" }, origin);
+          setCoinSite.run({ token, site_style: style, site_slug: chk.slug, updated_ts: stampTs, updated_by: signer.toLowerCase() });
+          return send(res, 200, {
+            ok: true, token,
+            site: { style, slug: chk.slug, url: `https://${chk.slug}.robinlabs.fun` },
+          }, origin);
+        } catch (e) { return send(res, 400, { error: String(e.message || e) }, origin); }
       }
 
       const mm = path.match(/^\/api\/coin\/(0x[0-9a-fA-F]{40})\/meta$/);
@@ -1024,6 +1096,39 @@ export function startApi() {
         const r = oneCoinStmt.get({ token: m[1].toLowerCase(), since });
         if (!r) return send(res, 404, { error: "not found" }, origin);
         return send(res, 200, { coin: shapeCoin(r, base) }, origin);
+      }
+
+      // ── per-coin website: slug availability check (form live feedback) ───────
+      // MUST be matched before /api/site/:slug (else "available" looks like a slug).
+      m = path.match(/^\/api\/site\/available\/([a-z0-9-]{1,40})$/i);
+      if (m) {
+        const chk = checkSlug(m[1]);
+        if (!chk.ok) return send(res, 200, { slug: normalizeSlug(m[1]), available: false, reason: chk.reason }, origin);
+        const owner = slugOwnerToken.get(chk.slug);
+        const token = (url.searchParams.get("token") || "").toLowerCase();
+        // "available" = free, OR already owned by the coin doing the asking (so a
+        // creator re-saving their own site doesn't see their slug as taken).
+        const free = !owner || owner.token.toLowerCase() === token;
+        return send(res, 200, {
+          slug: chk.slug, available: free, reason: free ? null : "taken",
+          url: `https://${chk.slug}.robinlabs.fun`,
+        }, origin);
+      }
+
+      // ── per-coin website: resolve slug → coin + chosen style ────────────────
+      // The wildcard serving layer (site.html on <slug>.robinlabs.fun) calls this.
+      m = path.match(/^\/api\/site\/([a-z0-9-]{1,40})$/i);
+      if (m) {
+        const slug = normalizeSlug(m[1]);
+        if (isTakenDown(slug)) return send(res, 410, { error: "this site has been removed" }, origin);
+        const row = getSiteBySlug.get(slug);
+        if (!row || !row.site_style) return send(res, 404, { error: "no site here" }, origin);
+        const r = oneCoinStmt.get({ token: String(row.token).toLowerCase(), since });
+        if (!r) return send(res, 404, { error: "no site here" }, origin);
+        return send(res, 200, {
+          slug, style: isValidStyle(row.site_style) ? row.site_style : "neonvault",
+          coin: shapeCoin(r, base),
+        }, origin);
       }
 
       // Global recent activity across all coins — powers the homepage live ticker.

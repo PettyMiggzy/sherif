@@ -164,9 +164,15 @@ for (const [name, decl] of [
 // Same defensive migration for reward_roots (posted_ts added after the reward pipeline shipped).
 const _rrCols = new Set(db.prepare("PRAGMA table_info(reward_roots)").all().map((r) => r.name));
 if (!_rrCols.has("posted_ts")) db.exec("ALTER TABLE reward_roots ADD COLUMN posted_ts INTEGER");
-// Same for coin_meta (migrated_from added with the project-migration feature).
+// Same for coin_meta (migrated_from added with the project-migration feature;
+// site_style/site_slug added with per-coin websites — the <ticker>.robinlabs.fun pages).
 const _cmCols = new Set(db.prepare("PRAGMA table_info(coin_meta)").all().map((r) => r.name));
 if (!_cmCols.has("migrated_from")) db.exec("ALTER TABLE coin_meta ADD COLUMN migrated_from TEXT");
+if (!_cmCols.has("site_style")) db.exec("ALTER TABLE coin_meta ADD COLUMN site_style TEXT"); // chosen template key
+if (!_cmCols.has("site_slug"))  db.exec("ALTER TABLE coin_meta ADD COLUMN site_slug TEXT");  // subdomain label
+// One slug per site, and fast slug→coin resolution for the wildcard serving layer. Partial unique index
+// (slug IS NOT NULL) so the many coins without a site don't all collide on NULL.
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_coin_meta_slug ON coin_meta(site_slug) WHERE site_slug IS NOT NULL");
 
 // ── cursor (last fully-processed block) ─────────────────────────────────────
 const _getMeta = db.prepare("SELECT v FROM meta WHERE k = ?");
@@ -301,10 +307,34 @@ export const setCoinBanner = db.prepare("UPDATE coin_meta SET banner=@blob, bann
 // Lite = no blobs (for the feed join + the meta JSON); has_* flags say whether an image exists.
 export const getCoinMetaLite = db.prepare(`
   SELECT token, description, telegram, twitter, website, migrated_from, updated_ts, updated_by,
+         site_style, site_slug,
          (pfp IS NOT NULL) AS has_pfp, (banner IS NOT NULL) AS has_banner
   FROM coin_meta WHERE token = ?`);
 export const getCoinPfp = db.prepare("SELECT pfp AS blob, pfp_mime AS mime FROM coin_meta WHERE token = ?");
 export const getCoinBanner = db.prepare("SELECT banner AS blob, banner_mime AS mime FROM coin_meta WHERE token = ?");
+
+// ── per-coin websites (<ticker>.robinlabs.fun) ─────────────────────────────────
+// A creator picks a template `site_style` + a unique `site_slug`; the wildcard
+// serving layer resolves slug→coin. Both are creator-signed (see POST /api/coin/
+// :token/site). Upsert creates the coin_meta row if the coin has no profile yet.
+// site_slug is UNIQUE (partial index above); a caller MUST check slugOwnerToken
+// first so a taken slug surfaces as a 409, not a raw SQLite constraint throw.
+export const setCoinSite = db.prepare(`
+  INSERT INTO coin_meta (token, site_style, site_slug, updated_ts, updated_by)
+  VALUES (@token, @site_style, @site_slug, @updated_ts, @updated_by)
+  ON CONFLICT(token) DO UPDATE SET
+    site_style=excluded.site_style, site_slug=excluded.site_slug,
+    updated_ts=excluded.updated_ts, updated_by=excluded.updated_by`);
+// Release a coin's site (creator self-removal or moderator takedown): frees the slug.
+export const clearCoinSite = db.prepare(
+  "UPDATE coin_meta SET site_style=NULL, site_slug=NULL, updated_ts=@updated_ts, updated_by=@updated_by WHERE token=@token");
+// slug → coin (the resolution the wildcard host does on every hit). Case-folded by the caller.
+export const getSiteBySlug = db.prepare(
+  "SELECT token, site_style, site_slug FROM coin_meta WHERE site_slug = ?");
+// Which token (if any) already owns a slug — for the availability check + collision guard.
+export const slugOwnerToken = db.prepare("SELECT token FROM coin_meta WHERE site_slug = ?");
+// A coin's current site config (form prefill + the coin page's "view site" link).
+export const getCoinSite = db.prepare("SELECT site_style, site_slug FROM coin_meta WHERE token = ?");
 
 // A reorg on the very tip can leave rows from an orphaned block. Before we
 // re-scan a window we delete trades in it so the re-insert reflects the new

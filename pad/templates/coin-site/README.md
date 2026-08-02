@@ -1,13 +1,40 @@
-# Coin site templates
+# Coin sites — `<ticker>.robinlabs.fun`
 
-Per-launch websites for Robin Labs coins. The idea: every coin launched on the pad can get its
-own polished website at `<ticker>.robinlabs.fun` (a single wildcard subdomain covers all of them,
-unlimited, at no per-coin cost). The creator picks a style and fills a short form; the site renders
-itself from that data plus live chain data. No per-coin build, no per-coin domain.
+Every coin launched on Robin Labs can claim its own live website at
+`<slug>.robinlabs.fun`. One wildcard subdomain covers all of them — unlimited,
+no per-coin build, no per-coin domain, no per-coin cost. The creator picks a
+style and a subdomain in a short form; the page renders itself from the coin's
+**real on-chain data** (market cap, volume, trades, curve progress) plus the
+creator's profile (logo, description, socials).
 
-The showcase coin is **$ROBIN** (the Robin Labs flagship), so the default anyone sees is the home
-team, rendered from its real on-chain data (7.20 ETH mcap, 15.2 ETH volume, 9,306 trades, 61% up
-its bonding curve).
+The flagship **$ROBIN** is the showcase, but the exact same engine themes any
+coin — see `examples/broke.html` (the real `$BROKE` launch, overdraft theme).
+
+## How it works (data flow)
+
+```
+visitor → broke.robinlabs.fun/
+        → Vercel rewrite (pad/vercel.json, host = *.robinlabs.fun) → /site.html
+        → site.html reads the subdomain "broke"
+        → GET https://api.robinlab.io/api/site/broke   → { coin, style }
+        → GET /templates/coin-site/<style>.html        → the chosen template
+        → CoinSite.render(template, coin)              → filled HTML
+        → document.write(...)                          → the live coin site
+```
+
+- **Engine:** `pad/assets/coinsite.js` — the ONE data-driven renderer. It maps
+  the API's `shapeCoin` object + profile onto the template placeholders, escaping
+  every value. Used by the serve page, the form preview, and the tests.
+- **Templates:** the 10 `*.html` files below, each a self-contained document with
+  `{{TOKEN}}` and `<!--IF:x-->` markers. Contract: `ENGINE.md`.
+- **Serve page:** `pad/site.html` — the wildcard target. Resolves the slug, fetches
+  data + template, renders, and handles not-found / taken-down / preview states.
+- **Creator form:** `pad/website.html` — connect wallet → pick style → claim slug
+  (live availability) → live preview → one signature → published.
+- **Indexer:** `POST /api/coin/:token/site` (creator-signed) stores style + slug;
+  `GET /api/site/:slug` resolves; `GET /api/site/available/:slug` checks a slug.
+  Moderation in `indexer/src/sitegate.js` (format + reserved words + wordlist +
+  takedown blocklist). Slug column is UNIQUE.
 
 ## The 10 styles
 
@@ -23,32 +50,40 @@ its bonding curve).
 | `brutalist.html`    | Brutalist Ink   | Heavy grotesque, hard rules, one red. Print-poster. |
 | `halftone.html`     | Halftone Pop    | Comic outlines, halftone dots, speech panels. Playful. |
 | `monomax.html`      | Mono Max        | One accent, enormous type, near-zero chrome. Gallery-minimal. |
-| `index.html`        | Switcher        | Flip between all 10 in one page. |
+| `index.html`        | Switcher        | Flip between all 10 in one page (static preview). |
 
-`examples/broke.html` is a second coin (the real `$BROKE` launch) rendered in a bespoke
-overdraft/receipt theme, to prove the engine themes any coin, not just the flagship.
+## Deploying the wildcard (one-time, in Vercel)
 
-## How to review
+The code is ready; adding the domain is the only manual step:
 
-- Open `index.html` and use the pills to switch styles, or open any single template directly.
-- On this branch's Vercel preview deploy: `/<preview-domain>/templates/coin-site/`.
-- Every file is fully self-contained: the coin logo is inlined as a data URI and there are zero
-  external requests (works offline, safe under a strict CSP).
+1. In the **pad's** Vercel project (root directory `pad/`), add the domain
+   `*.robinlabs.fun` (wildcard). Vercel will show the DNS record to add at your
+   registrar (a `CNAME *` → `cname.vercel-dns.com`, or the ALIAS Vercel gives you).
+2. `pad/vercel.json` already contains the host-conditioned rewrite that turns any
+   `<slug>.robinlabs.fun` request into `/site.html`. Nothing else to configure —
+   `robinlab.io` is unaffected (the rewrite only fires on the `*.robinlabs.fun` host).
+3. That's it. A creator opens `robinlab.io/website.html?c=<their coin>`, picks a
+   style + slug, signs once, and their site is live at `<slug>.robinlabs.fun`.
+
+> If the pad is instead deployed from the repo root (pad served as a subpath),
+> move the `rewrites`/`headers` blocks from `pad/vercel.json` into the root
+> `vercel.json` and prefix the destinations with `/pad` (`/pad/site.html`).
+> `site.html` also falls back to fetching the engine + templates from
+> `https://robinlab.io/...` so it renders regardless of the exact mount.
+
+## Moderation & takedowns
+
+- **Reserved words** (infra + first-party + phishing targets like `robinhood`,
+  `uniswap`, `airdrop`) are refused. **Format:** 2–32 chars, `[a-z0-9-]`, no
+  edge/double hyphens. **Wordlist:** a built-in rot13'd slur/abuse list; extend
+  with `SITE_SLUG_BLOCKWORDS` (extra substrings).
+- **Takedown:** put a slug in `SITE_SLUG_BLOCKLIST` (env) — it's refused at both
+  registration and serve time (HTTP 410), so `shit.robinlabs.fun` can be pulled
+  even after the fact. A creator can also self-remove their site from the form.
 
 ## Design rules baked in
 
-- No stock imagery. The only bitmap is the coin's own logo. Everything else is pure CSS, inline
-  SVG, or Canvas. Generated hero art (optional) would route through Venice, never stock libraries.
-- No emoji, no em-dashes.
-- Each template commits to one premium visual identity and is responsive down to a phone.
-- Verified: each renders in a real browser with no console errors, machine-scanned for external
-  requests / emoji / em-dashes, and passed a design-director critique + refine pass before landing.
-
-## Not wired yet (next steps)
-
-- Wildcard routing on `robinlabs.fun` (Vercel) so `<ticker>.robinlabs.fun` resolves to the matching
-  coin, with a slug wordlist filter, reserved-word block, and takedown blocklist.
-- The short "site builder" form (an extension of the existing coin profile editor) with the style
-  picker, so the baked-in demo values become variables filled from each coin's signed profile.
-
-Preview only. Nothing here is wired into the live pad; it lives on the feature branch for review.
+- No stock imagery. The only bitmap is the coin's own logo (or a generated
+  monogram when it has none). Everything else is pure CSS / inline SVG.
+- No emoji, no em-dashes. Each template commits to one premium identity and is
+  responsive to a phone. Zero external requests beyond the coin logo + data.

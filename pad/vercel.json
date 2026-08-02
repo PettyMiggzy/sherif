@@ -1,0 +1,33 @@
+{
+  "$comment": "Robin Labs pad (root directory = pad/). The rewrite turns every <slug>.robinlabs.fun host into the coin-site serving page (site.html), which resolves the subdomain to a coin and renders its chosen template. robinlab.io (the pad's primary domain) is untouched because the rewrite only fires on the *.robinlabs.fun host condition. Add *.robinlabs.fun (wildcard) as a domain on THIS Vercel project for it to take effect.",
+  "headers": [
+    {
+      "source": "/(.*)\\.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate, max-age=0" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)\\.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, must-revalidate, max-age=0" }
+      ]
+    },
+    {
+      "source": "/templates/coin-site/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Cache-Control", "value": "public, max-age=300" }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/((?!assets/|templates/|site\\.html|favicon|robots\\.txt|sitemap\\.xml|site\\.webmanifest|sw\\.js).*)",
+      "has": [
+        { "type": "host", "value": "(?!www\\.)(?<slug>[a-z0-9-]+)\\.robinlabs\\.fun" }
+      ],
+      "destination": "/site.html"
+    }
+  ]
+}

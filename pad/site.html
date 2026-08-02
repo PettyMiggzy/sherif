@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0c0f">
+<title>Loading… · Robin Labs</title>
+<meta name="description" content="A coin on Robin Labs — the launchpad on Robinhood Chain that pays its creators.">
+<!-- Generic social card. Per-coin cards are served by the API at /og/:token.png; this
+     client-rendered page keeps a safe default for crawlers that don't run JS. -->
+<meta property="og:title" content="Robin Labs coin">
+<meta property="og:description" content="Live on Robinhood Chain — a fair launch into a permanent Uniswap v3 floor.">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/png" sizes="32x32" href="https://robinlab.io/assets/favicon-32.png">
+<style>
+  :root{--bg:#0b0c0f;--ink:#e8edf3;--dim:#8a94a3;--acc:#c6ff3f;--line:#20242c;--panel:#111318}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex;align-items:center;justify-content:center;min-height:100dvh;padding:24px;text-align:center}
+  .box{max-width:460px}
+  .mark{width:44px;height:44px;margin:0 auto 22px;display:block;filter:drop-shadow(0 0 12px rgba(198,255,63,.35))}
+  .spin{width:34px;height:34px;margin:0 auto 20px;border:3px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+  h1{font-size:1.35rem;margin:0 0 8px;letter-spacing:-.01em}
+  p{color:var(--dim);margin:0 0 20px;line-height:1.55;font-size:.96rem}
+  .host{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--acc);font-size:.9rem;word-break:break-all}
+  .btn{display:inline-block;text-decoration:none;background:var(--acc);color:#0c1400;font-weight:800;
+    padding:12px 20px;border-radius:11px;font-size:.92rem}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);margin-left:8px}
+  .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .muted{font-size:.8rem;color:var(--dim);margin-top:26px}
+  .muted a{color:var(--dim)}
+</style>
+</head>
+<body>
+  <main class="box" id="shell">
+    <div class="spin" id="spin" aria-hidden="true"></div>
+    <h1 id="msg">Loading this coin…</h1>
+    <p class="host" id="host"></p>
+  </main>
+
+<script src="/assets/coinsite.js" onerror="window.__engineFallback&&window.__engineFallback()"></script>
+<script>
+(function () {
+  "use strict";
+  var API_BASE = "https://api.robinlab.io";
+  var PAD_ORIGIN = "https://robinlab.io";
+  var SITE_DOMAIN = "robinlabs.fun";
+
+  // If the same-origin engine 404s (e.g. a different deploy mount), pull it from
+  // the canonical pad origin. Set a flag the <script onerror> above can call.
+  window.__engineFallback = function () {
+    if (window.CoinSite) return;
+    var s = document.createElement("script");
+    s.src = PAD_ORIGIN + "/assets/coinsite.js";
+    s.onload = boot; s.onerror = function () { fail("Could not load the site engine.", true); };
+    document.head.appendChild(s);
+  };
+
+  function $(id) { return document.getElementById(id); }
+  function setState(msg, showSpin) {
+    $("msg").textContent = msg;
+    $("spin").style.display = showSpin ? "" : "none";
+  }
+  function fail(msg, hard, actions) {
+    var shell = $("shell");
+    var host = slugHost();
+    shell.innerHTML =
+      '<svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">' +
+      '<path d="M16 2 L28 7 V16 C28 24 22 28.5 16 30.5 C10 28.5 4 24 4 16 V7 Z" stroke="#c6ff3f" stroke-width="1.6" fill="rgba(198,255,63,.06)"/>' +
+      '<rect x="11.5" y="15" width="9" height="8" rx="1.4" stroke="#c6ff3f" stroke-width="1.5"/>' +
+      '<path d="M13 15 V12.5 A3 3 0 0 1 19 12.5 V15" stroke="#c6ff3f" stroke-width="1.5"/></svg>' +
+      '<h1>' + esc(msg) + '</h1>' +
+      (host ? '<p class="host">' + esc(host) + '</p>' : "") +
+      '<div class="row">' + (actions || ('<a class="btn" href="' + PAD_ORIGIN + '">Explore Robin Labs</a>' +
+        '<a class="btn ghost" href="' + PAD_ORIGIN + '/create.html">Launch a coin</a>')) + '</div>' +
+      '<p class="muted">Every launch on <a href="' + PAD_ORIGIN + '">Robin Labs</a> can claim a site at &lt;ticker&gt;.' + SITE_DOMAIN + '</p>';
+  }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+
+  // slug from <slug>.robinlabs.fun, or ?slug=/?preview= for local + Vercel-preview testing.
+  function currentSlug() {
+    var q = new URLSearchParams(location.search);
+    if (q.get("slug")) return String(q.get("slug")).toLowerCase();
+    var h = location.hostname.toLowerCase();
+    var suffix = "." + SITE_DOMAIN;
+    if (h.endsWith(suffix)) {
+      var label = h.slice(0, -suffix.length);
+      // only a single left-most label is a coin site (foo.robinlabs.fun, not a.b.robinlabs.fun)
+      if (label && label.indexOf(".") === -1 && label !== "www") return label;
+    }
+    return null;
+  }
+  function slugHost() { var s = currentSlug(); return s ? s + "." + SITE_DOMAIN : location.hostname; }
+
+  function loadTemplate(style) {
+    var paths = ["/templates/coin-site/" + style + ".html", PAD_ORIGIN + "/templates/coin-site/" + style + ".html"];
+    return paths.reduce(function (p, url) {
+      return p.catch(function () {
+        return fetch(url, { cache: "force-cache" }).then(function (r) {
+          if (!r.ok) throw new Error("template " + r.status); return r.text();
+        });
+      });
+    }, Promise.reject());
+  }
+
+  function renderInto(tpl, coin, slug) {
+    var html = window.CoinSite.render(tpl, coin, slug);
+    // Replace the whole document with the filled template so its own CSS/fonts/JS run.
+    document.open("text/html", "replace");
+    document.write(html);
+    document.close();
+  }
+
+  function boot() {
+    if (!window.CoinSite) { window.__engineFallback(); return; }
+    var slug = currentSlug();
+    $("host").textContent = slugHost();
+
+    // Preview mode: ?preview=<style> renders a template with the flagship coin (used by the picker).
+    var q = new URLSearchParams(location.search);
+    var previewStyle = q.get("preview");
+    if (previewStyle && !slug) {
+      var coinAddr = q.get("coin") || "0x6696fe29288b586017e6f264c0091dba6c5ebeaf";
+      setState("Loading preview…", true);
+      Promise.all([
+        fetch(API_BASE + "/api/coin/" + coinAddr).then(function (r) { return r.ok ? r.json() : { coin: null }; }),
+        loadTemplate(previewStyle),
+      ]).then(function (a) {
+        var coin = (a[0] && a[0].coin) || { token: coinAddr, name: "Preview", symbol: "COIN", progress: 0.5 };
+        renderInto(a[1], coin, coin.symbol ? coin.symbol.toLowerCase() : "preview");
+      }).catch(function () { fail("Preview unavailable."); });
+      return;
+    }
+
+    if (!slug) { fail("No coin here yet.", false); return; }
+
+    setState("Loading " + slug + "…", true);
+    fetch(API_BASE + "/api/site/" + encodeURIComponent(slug)).then(function (r) {
+      if (r.status === 410) return r.json().then(function () { throw { code: 410 }; });
+      if (r.status === 404) throw { code: 404 };
+      if (!r.ok) throw { code: r.status };
+      return r.json();
+    }).then(function (data) {
+      if (!data || !data.coin) throw { code: 404 };
+      document.title = (data.coin.name || slug) + " · $" + (data.coin.symbol || "").replace(/^\$/, "");
+      return loadTemplate(data.style || "neonvault").then(function (tpl) {
+        renderInto(tpl, data.coin, slug);
+      });
+    }).catch(function (e) {
+      if (e && e.code === 410) return fail("This site has been removed.", false);
+      if (e && e.code === 404)
+        return fail("No coin has claimed this address yet.", false,
+          '<a class="btn" href="' + PAD_ORIGIN + '/create.html">Launch a coin</a>' +
+          '<a class="btn ghost" href="' + PAD_ORIGIN + '">Explore Robin Labs</a>');
+      fail("Something went wrong loading this coin. Try again in a moment.", false);
+    });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+</script>
+</body>
+</html>

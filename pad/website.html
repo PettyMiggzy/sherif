@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Give your coin a website - Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<meta name="description" content="Pick a style, claim a subdomain, and your coin gets its own website at <ticker>.robinlabs.fun." />
+<link rel="canonical" href="https://robinlab.io/website.html" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<style>
+  :root{--bg:#060803;--panel:#0c1108;--panel2:#0a0d06;--ink:#f4f7ee;--dim:#93a382;--lime:#dce905;
+    --red:#ff5a52;--green:#5fd16a;--line:rgba(220,233,5,.2)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,sans-serif;line-height:1.5;padding:20px}
+  .wrap{max-width:900px;margin:0 auto}
+  h1{font-size:1.55rem;margin:0 0 4px}
+  .sub{color:var(--dim);margin:0 0 20px;font-size:.92rem;max-width:70ch}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
+  .card h2{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 12px;font-weight:700}
+  label{display:block;font-weight:600;margin:0 0 6px;font-size:.9rem}
+  input[type=text]{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font-size:.92rem}
+  .slugrow{display:flex;align-items:stretch;gap:0}
+  .slugrow input{border-top-right-radius:0;border-bottom-right-radius:0;font-family:ui-monospace,monospace}
+  .slugrow .suffix{display:flex;align-items:center;padding:0 12px;border:1px solid var(--line);border-left:0;
+    border-top-right-radius:10px;border-bottom-right-radius:10px;background:#11160a;color:var(--dim);font-family:ui-monospace,monospace;font-size:.85rem;white-space:nowrap}
+  button{background:var(--lime);color:#0a0e05;border:none;border-radius:10px;padding:12px 18px;font-weight:800;cursor:pointer;font-size:.95rem}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  button.danger{background:transparent;color:var(--red);border:1px solid rgba(255,90,82,.4)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .mono{font-family:ui-monospace,monospace;font-size:.82rem;word-break:break-all}
+  .big{font-size:1.02rem;font-weight:800;padding:12px;border-radius:10px;text-align:center;margin-top:10px}
+  .ok{background:rgba(95,209,106,.12);color:var(--green);border:1px solid rgba(95,209,106,.4)}
+  .bad{background:rgba(255,90,82,.12);color:var(--red);border:1px solid rgba(255,90,82,.4)}
+  .hint{font-size:.8rem;margin-top:8px}
+  .hint.ok{background:none;border:0;color:var(--green);padding:0;text-align:left}
+  .hint.bad{background:none;border:0;color:var(--red);padding:0;text-align:left}
+  .hint.dim{color:var(--dim)}
+  /* style grid */
+  .styles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .style{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer;background:var(--panel2);transition:border-color .15s, transform .12s}
+  .style:hover{border-color:rgba(220,233,5,.5);transform:translateY(-1px)}
+  .style.sel{border-color:var(--lime);box-shadow:0 0 0 1px var(--lime)}
+  .style .swatch{height:74px;display:block}
+  .style .nm{padding:8px 10px;font-size:.82rem;font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:6px}
+  .style .tick{color:var(--lime);opacity:0;font-weight:900}
+  .style.sel .tick{opacity:1}
+  .style input{position:absolute;opacity:0;pointer-events:none}
+  /* preview */
+  .previewbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .framewrap{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#000;height:520px}
+  iframe{width:100%;height:100%;border:0;display:block}
+  #log{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;font-family:ui-monospace,monospace;font-size:.78rem;white-space:pre-wrap;max-height:220px;overflow:auto;margin-top:12px}
+  .step{color:var(--dim)}.step b{color:var(--ink)}
+  a{color:var(--lime)}
+  .devbox .step{margin-bottom:2px}
+  .liveurl{font-family:ui-monospace,monospace;color:var(--lime);font-size:.95rem;word-break:break-all}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Give your coin a website</h1>
+  <p class="sub">Pick a style, claim a subdomain, and your coin gets its own live website at
+    <b>&lt;yourname&gt;.robinlabs.fun</b> — rendering your coin's real on-chain data. Only the coin's
+    creator wallet can set this. It's free and takes one signature (no gas).</p>
+
+  <div class="card">
+    <label>Coin token address</label>
+    <input type="text" id="token" placeholder="0x…" />
+  </div>
+
+  <div class="card devbox">
+    <div class="row">
+      <button id="connect">Connect wallet</button>
+      <div class="mono" id="acct" style="color:var(--dim)">not connected</div>
+    </div>
+    <div id="devInfo" style="margin-top:10px;display:none">
+      <div class="step">Only this coin's creator wallet can set its website:</div>
+      <div class="mono" id="devAddr" style="color:var(--lime)">-</div>
+      <div id="match" class="big"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>1 · Choose a style</h2>
+    <div class="styles" id="styles"></div>
+  </div>
+
+  <div class="card">
+    <h2>2 · Claim your address</h2>
+    <label for="slug">Subdomain</label>
+    <div class="slugrow">
+      <input type="text" id="slug" placeholder="yourname" autocomplete="off" spellcheck="false" maxlength="32" />
+      <span class="suffix">.robinlabs.fun</span>
+    </div>
+    <div class="hint dim" id="slugHint">2–32 chars, letters, numbers and hyphens.</div>
+  </div>
+
+  <div class="card">
+    <div class="previewbar">
+      <h2 style="margin:0">Live preview</h2>
+      <button class="ghost" id="refreshPrev" type="button">Refresh preview</button>
+    </div>
+    <div class="framewrap"><iframe id="preview" title="Coin site preview" referrerpolicy="no-referrer"></iframe></div>
+  </div>
+
+  <div class="row">
+    <button id="save" disabled>Sign &amp; publish website</button>
+    <button id="remove" class="danger" style="display:none" type="button">Remove website</button>
+  </div>
+  <div id="result" class="big" style="display:none"></div>
+  <div id="log"></div>
+  <p class="sub" style="margin-top:14px">Back to your <a id="coinLink" href="#">coin page →</a></p>
+</div>
+
+<script type="module">
+import { ethers } from "./assets/ethers.min.js";
+
+const API_BASE = "https://api.robinlab.io";
+const SITE_DOMAIN = "robinlabs.fun";
+const CHAIN_HEX = "0x1237";
+const STYLES = [
+  { key: "neonvault", name: "Neon Vault", c1: "#c6ff3f", c2: "#0d0f12" },
+  { key: "aurora", name: "Aurora Glass", c1: "#8b5cf6", c2: "#0b1020" },
+  { key: "midnight", name: "Midnight Terminal", c1: "#39d98a", c2: "#05080a" },
+  { key: "blackgold", name: "Blackgold", c1: "#d4af37", c2: "#0a0a0a" },
+  { key: "chromesunset", name: "Chrome Sunset", c1: "#ff7a59", c2: "#1a1030" },
+  { key: "cyberhud", name: "Cyber HUD", c1: "#22d3ee", c2: "#05121a" },
+  { key: "reserve", name: "Reserve", c1: "#e7dfce", c2: "#141210" },
+  { key: "brutalist", name: "Brutalist Ink", c1: "#111111", c2: "#f2f2f2" },
+  { key: "halftone", name: "Halftone Pop", c1: "#ff2d78", c2: "#fff3c4" },
+  { key: "monomax", name: "Mono Max", c1: "#ffffff", c2: "#0b0b0b" },
+];
+const $ = (id) => document.getElementById(id);
+let account = null, dev = null, style = "neonvault", slugOk = false, hasSite = false;
+
+function log(msg, cls){ const d=document.createElement('div'); d.className='step';
+  d.innerHTML=msg; if(cls)d.style.color=cls==='ok'?'var(--green)':cls==='bad'?'var(--red)':'';
+  $('log').appendChild(d); $('log').scrollTop=1e9; }
+const esc = (s)=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// token from ?c= / ?token=
+const q = new URLSearchParams(location.search);
+$('token').value = q.get('c') || q.get('token') || '';
+const syncLink = () => { const t=$('token').value.trim(); $('coinLink').href = t ? ('token.html?c='+encodeURIComponent(t)) : '#'; };
+syncLink();
+$('token').addEventListener('input', () => { syncLink(); dev=null; loadCoin(); });
+
+// ── style grid ──
+function buildStyles(){
+  const g = $('styles');
+  g.innerHTML = STYLES.map((s,i)=>(
+    '<label class="style'+(i===0?' sel':'')+'" data-k="'+s.key+'">'+
+      '<span class="swatch" style="background:linear-gradient(135deg,'+s.c1+' 0 42%,'+s.c2+' 42% 100%)"></span>'+
+      '<span class="nm">'+esc(s.name)+'<span class="tick">✓</span></span>'+
+      '<input type="radio" name="style" value="'+s.key+'"'+(i===0?' checked':'')+'></label>'
+  )).join('');
+  [].forEach.call(g.querySelectorAll('.style'), (el)=>{
+    el.addEventListener('click', ()=>{
+      style = el.dataset.k;
+      [].forEach.call(g.querySelectorAll('.style'), (o)=>o.classList.toggle('sel', o===el));
+      el.querySelector('input').checked = true;
+      updatePreview();
+    });
+  });
+}
+
+// ── live preview (renders the chosen style with THIS coin via site.html?preview) ──
+let prevTimer;
+function updatePreview(){
+  clearTimeout(prevTimer);
+  prevTimer = setTimeout(()=>{
+    const token = $('token').value.trim();
+    let url = 'site.html?preview='+encodeURIComponent(style);
+    if(/^0x[0-9a-fA-F]{40}$/.test(token)) url += '&coin='+encodeURIComponent(token);
+    $('preview').src = url;
+  }, 120);
+}
+$('refreshPrev').addEventListener('click', updatePreview);
+
+// ── resolve coin creator + existing site ──
+async function loadCoin(){
+  const token = $('token').value.trim().toLowerCase();
+  dev = null; $('devInfo').style.display='none'; refreshMatch();
+  if(!/^0x[0-9a-fA-F]{40}$/.test(token)) return;
+  try{
+    const r = await fetch(`${API_BASE}/api/coin/${token}`);
+    const j = await r.json();
+    dev = (j.coin && j.coin.dev || '').toLowerCase();
+    if(dev){ $('devAddr').textContent = dev; $('devInfo').style.display='block'; log(`Coin creator (required wallet): <b>${dev}</b>`); }
+    else { log('Could not find this coin, check the address.', 'bad'); }
+    // prefill any existing site config
+    const cr = await fetch(`${API_BASE}/api/coin/${token}/meta`);
+    if(cr.ok){ const p = (await cr.json()).profile || {}; if(p.siteStyle){ selectStyle(p.siteStyle); } if(p.siteSlug){ $('slug').value = p.siteSlug; checkSlug(); hasSite=true; $('remove').style.display=''; } }
+  }catch(e){ log('Could not reach the API: '+e.message,'bad'); }
+  refreshMatch(); updatePreview();
+}
+function selectStyle(k){ const el=$('styles').querySelector('.style[data-k="'+k+'"]'); if(el){ style=k; [].forEach.call($('styles').querySelectorAll('.style'),o=>o.classList.toggle('sel',o===el)); el.querySelector('input').checked=true; } }
+
+function refreshMatch(){
+  const m=$('match');
+  if(!account||!dev){ m.textContent=''; m.className='big'; updateSave(); return; }
+  if(account===dev){ m.textContent='✓ Correct wallet, you can publish.'; m.className='big ok'; }
+  else { m.innerHTML='✗ WRONG WALLET.<br>Switch to the creator wallet above, then reconnect.'; m.className='big bad'; }
+  updateSave();
+}
+function updateSave(){ $('save').disabled = !(account && dev && account===dev && slugOk); }
+
+// ── slug availability ──
+let slugTimer;
+$('slug').addEventListener('input', ()=>{ slugOk=false; updateSave(); clearTimeout(slugTimer); slugTimer=setTimeout(checkSlug, 350); });
+async function checkSlug(){
+  const raw = $('slug').value.trim().toLowerCase();
+  $('slug').value = raw;
+  const h = $('slugHint');
+  if(!raw){ h.className='hint dim'; h.textContent='2–32 chars, letters, numbers and hyphens.'; slugOk=false; updateSave(); return; }
+  h.className='hint dim'; h.textContent='Checking availability…';
+  try{
+    const token = $('token').value.trim().toLowerCase();
+    const r = await fetch(`${API_BASE}/api/site/available/${encodeURIComponent(raw)}?token=${encodeURIComponent(token)}`);
+    const j = await r.json();
+    if(j.available){ h.className='hint ok'; h.textContent='✓ '+raw+'.'+SITE_DOMAIN+' is available'; slugOk=true; }
+    else { h.className='hint bad'; h.textContent='✗ '+(j.reason==='taken'?'that address is taken':('not allowed: '+(j.reason||'invalid'))); slugOk=false; }
+  }catch(e){ h.className='hint bad'; h.textContent='Could not check right now.'; slugOk=false; }
+  updateSave();
+}
+
+// ── wallet ──
+$('connect').addEventListener('click', async () => {
+  if(!window.ethereum){ log('No wallet found, install MetaMask.','bad'); return; }
+  try{
+    const accts = await window.ethereum.request({ method:'eth_requestAccounts' });
+    account = (accts[0]||'').toLowerCase();
+    $('acct').textContent = account; $('acct').style.color='var(--ink)';
+    log(`Connected: <b>${account}</b>`);
+    const cid = await window.ethereum.request({ method:'eth_chainId' });
+    if(cid !== CHAIN_HEX){ try{ await window.ethereum.request({ method:'wallet_switchEthereumChain', params:[{chainId:CHAIN_HEX}] }); }catch(e){ log('Could not switch chain: '+(e.message||e),'bad'); } }
+    if(!dev) await loadCoin();
+    refreshMatch();
+  }catch(e){ log('Connect failed: '+(e.message||e),'bad'); }
+});
+window.ethereum && window.ethereum.on && window.ethereum.on('accountsChanged', () => location.reload());
+
+// The exact message the server verifies (indexer siteMessage). Byte-for-byte match required.
+function siteMessage(token, style, slug, ts){
+  const canon = JSON.stringify({ style: style||"", slug: slug||"", ts });
+  return `Robin Labs - set coin website\ntoken: ${String(token).toLowerCase()}\nts: ${ts}\ndigest: ${ethers.id(canon)}`;
+}
+
+async function submit(clear){
+  const token = $('token').value.trim().toLowerCase();
+  const res = $('result'); res.style.display='none';
+  if(!account){ log('Connect your wallet first.','bad'); return; }
+  if(account!==dev){ log('Wrong wallet, switch to the creator wallet.','bad'); return; }
+  const useStyle = clear ? "" : style;
+  const useSlug = clear ? "" : $('slug').value.trim().toLowerCase();
+  if(!clear && (!useStyle || !useSlug || !slugOk)){ log('Pick a style and an available address first.','bad'); return; }
+  $('save').disabled=true; $('remove').disabled=true;
+  try{
+    const ts = Math.floor(Date.now()/1000);
+    log(clear ? 'Requesting signature to REMOVE your site (free, no gas)…' : 'Requesting signature in your wallet (free, no gas)…');
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const signature = await signer.signMessage(siteMessage(token, useStyle, useSlug, ts));
+    log('Signed. Sending…');
+    const r = await fetch(`${API_BASE}/api/coin/${token}/site`, { method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ style: useStyle, slug: useSlug, ts, signature }) });
+    const j = await r.json().catch(()=>({}));
+    log(`Server: HTTP ${r.status} ${JSON.stringify(j).slice(0,200)}`, r.ok?'ok':'bad');
+    if(r.ok && !clear){
+      const url = (j.site && j.site.url) || ('https://'+useSlug+'.'+SITE_DOMAIN);
+      res.innerHTML = '✅ Published! Your site is live at<br><a class="liveurl" href="'+esc(url)+'" target="_blank" rel="noopener">'+esc(url)+'</a>'
+        +'<div style="font-size:.72rem;color:var(--dim);margin-top:8px;font-weight:400">DNS for a brand-new subdomain can take a few minutes to resolve.</div>';
+      res.className='big ok'; res.style.display='block'; hasSite=true; $('remove').style.display='';
+    } else if(r.ok && clear){
+      res.textContent='Site removed. The address is free again.'; res.className='big ok'; res.style.display='block';
+      hasSite=false; $('remove').style.display='none';
+    } else {
+      res.textContent='❌ '+(j.error||('Not saved (HTTP '+r.status+')')); res.className='big bad'; res.style.display='block';
+    }
+  }catch(e){ log('Failed: '+(e.message||e),'bad'); res.textContent='❌ '+(e.message||e); res.className='big bad'; res.style.display='block'; }
+  $('save').disabled=false; $('remove').disabled=false; updateSave();
+}
+$('save').addEventListener('click', ()=>submit(false));
+$('remove').addEventListener('click', ()=>{ if(confirm('Remove your coin’s website and free the address?')) submit(true); });
+
+buildStyles();
+loadCoin();
+updatePreview();
+</script>
+</body>
+</html>

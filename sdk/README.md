@@ -1,6 +1,6 @@
 # @robinlabs/pad-sdk
 
-Read the [Robin Labs Pad](https://robinlabs.io) with one import — live addresses,
+Read the [Robin Labs Pad](https://robinlab.io) with one import — live addresses,
 typed ABIs, and two read clients. **Read-only; it signs nothing.**
 
 - `RobinLabsAPI` — the indexer's fast JSON feed (browse, trades, stats). `fetch` only.
@@ -76,4 +76,4 @@ no EIP-1559, so a default type-2 tx is rejected with `-32601`.
 Every contract is source-verified on [Blockscout](https://robinhoodchain.blockscout.com)
 and [Sourcify](https://sourcify.dev) — you can also pull ABIs straight from the explorer.
 
-See the full [docs](https://robinlabs.io/docs) for the contract reference and write flows.
+See the full [docs](https://robinlab.io/docs.html) for the contract reference and write flows.
