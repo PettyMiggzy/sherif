@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ROBIN LABS · $ROBIN</title>
-<meta name="description" content="ROBIN is the coin of Robin Labs, the only launchpad that pays its successful creators. Fair launch into real Uniswap v3 liquidity with a permanent floor.">
+<title>{{NAME_UPPER}} &middot; {{TICKER}}</title>
+<meta name="description" content="{{NAME}} is a coin on Robin Labs, the only launchpad that pays its successful creators. Fair launch into real Uniswap v3 liquidity with a permanent floor.">
 <style>
   :root{
     --paper:#f6f4ef;
@@ -196,7 +196,7 @@
   .progress__head span:first-child{font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
   .progress__pct{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--green)}
   .track{height:14px;background:var(--paper-2);border:1px solid var(--line);border-radius:999px;overflow:hidden;position:relative}
-  .fill{height:100%;width:61%;border-radius:999px;
+  .fill{height:100%;width:{{GRAD_PCT}}%;border-radius:999px;
     background:linear-gradient(90deg,var(--green),var(--green-2));
     position:relative;
     box-shadow:inset 0 1px 0 rgba(255,255,255,0.18);
@@ -318,13 +318,13 @@
 <section class="hero">
   <div class="wrap hero__grid">
     <div>
-      <p class="eyebrow"><span class="ix">01</span> The home team</p>
-      <h1>ROBIN LABS</h1>
-      <span class="ticker num">$ROBIN</span>
-      <p class="hook">The coin of the launchpad that pays its creators.</p>
+      <p class="eyebrow"><span class="ix">01</span> The coin</p>
+      <h1>{{NAME_UPPER}}</h1>
+      <span class="ticker num">{{TICKER}}</span>
+      <p class="hook">{{TAGLINE}}</p>
       <div class="cta-row">
-        <a class="btn btn--primary" href="https://robinlab.io/token.html?c=0x6696fe29288b586017e6f264c0091dba6c5ebeaf" rel="noopener">
-          Buy $ROBIN
+        <a class="btn btn--primary" href="{{BUY_URL}}" rel="noopener">
+          Buy {{TICKER}}
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 8h8M8.5 4.5 12 8l-3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
         <a class="btn btn--ghost" href="#chart">
@@ -336,18 +336,18 @@
 
     <aside class="plate" aria-label="Token summary">
       <div class="plate__head">
-        <img class="plate__logo" src="data:image/webp;base64,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" alt="ROBIN LABS logo" width="96" height="96">
+        <img class="plate__logo" src="{{LOGO_URL}}" alt="{{NAME}} logo" width="96" height="96">
         <div>
-          <div class="plate__id">$ROBIN</div>
-          <div class="plate__sub">Robin Labs flagship</div>
-          <span class="status"><span class="sq" aria-hidden="true"></span>Live on the curve</span>
+          <div class="plate__id">{{TICKER}}</div>
+          <div class="plate__sub">{{NAME}}</div>
+          <span class="status"><span class="sq" aria-hidden="true"></span>{{STATUS}} on {{CHAIN}}</span>
         </div>
       </div>
       <div class="plate__rule"></div>
       <div class="plate__figure">
         <div class="plate__figure-k">Market cap</div>
-        <div class="plate__figure-v num">7.20<span class="u">ETH</span></div>
-        <div class="plate__figure-sub">61% filled toward a permanent Uniswap v3 floor.</div>
+        <div class="plate__figure-v num">{{MCAP}}<span class="u">{{MCAP_UNIT}}</span></div>
+        <div class="plate__figure-sub">{{GRAD_PCT}}% filled toward a permanent Uniswap v3 floor.</div>
       </div>
     </aside>
   </div>
@@ -361,25 +361,25 @@
       <div class="stat" role="listitem">
         <div class="stat__ix num">i.</div>
         <div class="stat__k">Market cap</div>
-        <div class="stat__v num">7.20<span class="u">ETH</span></div>
+        <div class="stat__v num">{{MCAP}}<span class="u">{{MCAP_UNIT}}</span></div>
         <div class="stat__sub">Fully on the bonding curve</div>
       </div>
       <div class="stat" role="listitem">
         <div class="stat__ix num">ii.</div>
         <div class="stat__k">Total volume</div>
-        <div class="stat__v num">15.2<span class="u">ETH</span></div>
+        <div class="stat__v num">{{VOLUME}}<span class="u">{{VOL_UNIT}}</span></div>
         <div class="stat__sub">Cumulative traded</div>
       </div>
       <div class="stat" role="listitem">
         <div class="stat__ix num">iii.</div>
         <div class="stat__k">Trades</div>
-        <div class="stat__v num">9,306</div>
+        <div class="stat__v num">{{TRADES}}</div>
         <div class="stat__sub">Buys and sells</div>
       </div>
       <div class="stat" role="listitem">
         <div class="stat__ix num">iv.</div>
         <div class="stat__k">Curve progress</div>
-        <div class="stat__v num" style="color:var(--green)">61<span class="u">%</span></div>
+        <div class="stat__v num" style="color:var(--green)">{{GRAD_PCT}}<span class="u">%</span></div>
         <div class="stat__sub">Toward graduation</div>
       </div>
     </div>
@@ -391,18 +391,18 @@
   <div class="wrap grad">
     <div>
       <p class="eyebrow"><span class="ix">03</span> Bonding curve</p>
-      <h2 class="section-title">61 percent to graduation.</h2>
+      <h2 class="section-title">{{GRAD_PCT}} percent to graduation.</h2>
       <div class="progress__head" style="margin-top:26px">
         <span>Curve filled</span>
-        <span class="progress__pct num">61%</span>
+        <span class="progress__pct num">{{GRAD_PCT}}%</span>
       </div>
-      <div class="track" role="progressbar" aria-valuenow="61" aria-valuemin="0" aria-valuemax="100" aria-label="Bonding curve progress to graduation">
+      <div class="track" role="progressbar" aria-valuenow="{{GRAD_PCT}}" aria-valuemin="0" aria-valuemax="100" aria-label="Bonding curve progress to graduation">
         <div class="fill"></div>
       </div>
       <div class="ticks num"><span>0%</span><span>Graduation · 100%</span></div>
     </div>
     <div class="grad__note">
-      <p style="margin-top:0">When the curve fills, $ROBIN <strong>graduates</strong>. Liquidity moves into a permanent Uniswap v3 floor that never leaves, and the creator earns <strong>0.5 ETH</strong> for a successful launch.</p>
+      <p style="margin-top:0">When the curve fills, {{TICKER}} <strong>graduates</strong>. Liquidity moves into a permanent Uniswap v3 floor that never leaves, and the creator earns <strong>0.5 ETH</strong> for a successful launch.</p>
       <p style="margin-bottom:0">That is the whole promise of Robin Labs. Real liquidity, a floor that stays, and creators who get paid when their work succeeds.</p>
     </div>
   </div>
@@ -413,18 +413,18 @@
   <div class="wrap">
     <p class="eyebrow"><span class="ix">04</span> Price action</p>
     <h2 class="section-title">Up the curve, on real volume.</h2>
-    <p class="lead">$ROBIN is 61 percent up its bonding curve with 15.2 ETH traded across 9,306 trades. Each buy advances the curve toward a permanent floor.</p>
+    <p class="lead">{{TICKER}} is {{GRAD_PCT}} percent up its bonding curve with {{VOLUME}} {{VOL_UNIT}} traded across {{TRADES}} trades. Each buy advances the curve toward a permanent floor.</p>
 
     <div class="chart-wrap" style="margin-top:28px">
       <div class="chart-top">
-        <div class="pair">$ROBIN / ETH<small>Bonding curve · Robin Labs</small></div>
+        <div class="pair">{{TICKER}} / ETH<small>Bonding curve · Robin Labs</small></div>
         <div class="chart-price">
-          <div class="p num">7.20 <span style="font-size:13px;color:var(--muted)">ETH cap</span></div>
-          <div class="d num">+61% curve filled</div>
+          <div class="p num">{{MCAP}} <span style="font-size:13px;color:var(--muted)">{{MCAP_UNIT}} cap</span></div>
+          <div class="d num">+{{GRAD_PCT}}% curve filled</div>
         </div>
       </div>
       <div class="chart-scroll">
-        <svg class="chart-svg" viewBox="0 0 820 340" role="img" aria-label="Rising price chart for ROBIN showing an accelerating bonding curve up 61 percent">
+        <svg class="chart-svg" viewBox="0 0 820 340" role="img" aria-label="Rising price chart for {{NAME_UPPER}} showing an accelerating bonding curve up {{GRAD_PCT}} percent">
           <defs>
             <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stop-color="#1f4d3a" stop-opacity="0.22"/>
@@ -476,14 +476,14 @@
     <div>
       <p class="eyebrow"><span class="ix">05</span> The story</p>
       <div class="about__meta">
-        <p class="k">Home team</p>
-        <p>ROBIN is the flagship token of Robin Labs, launched on the same fair terms offered to every creator on the platform.</p>
+        <p class="k">Fair launch</p>
+        <p>{{NAME}} is a token launched on Robin Labs, on the same fair terms offered to every creator on the platform.</p>
         <p class="k">No games</p>
         <p>No presale. No team allocation. One curve, one floor, one honest launch.</p>
       </div>
     </div>
     <div>
-      <p class="story"><span class="drop">ROBIN is the home team.</span> It is the coin of Robin Labs, the only launchpad that pays its successful creators. Every launch here is a fair launch into real Uniswap v3 liquidity, with a permanent floor that never leaves. No presale, no team allocation, no games.</p>
+      <p class="story"><span class="drop">{{NAME}}</span> is a launch on Robin Labs, the only launchpad that pays its successful creators. {{DESCRIPTION}} Every launch here is a fair launch into real Uniswap v3 liquidity, with a permanent floor that never leaves. No presale, no team allocation, no games.</p>
     </div>
   </div>
 </section>
@@ -494,8 +494,8 @@
     <p class="eyebrow"><span class="ix">06</span> Contract</p>
     <div class="ca">
       <div>
-        <div class="ca__label">$ROBIN contract address</div>
-        <div class="ca__addr" id="ca">0x6696fe29288b586017e6f264c0091dba6c5ebeaf</div>
+        <div class="ca__label">{{TICKER}} contract address</div>
+        <div class="ca__addr" id="ca">{{CONTRACT}}</div>
       </div>
       <button class="copy" id="copyBtn" type="button">
         <svg id="copyIc" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.4" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 10.5A1 1 0 0 1 2.5 9.5v-6a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -510,12 +510,30 @@
   <div class="wrap">
     <p class="eyebrow"><span class="ix">07</span> Links</p>
     <div class="links">
-      <a class="flink" href="https://robinlab.io/token.html?c=0x6696fe29288b586017e6f264c0091dba6c5ebeaf" rel="noopener">
+      <a class="flink" href="{{BUY_URL}}" rel="noopener">
         <span class="k">Trade</span>
-        <span class="v">$ROBIN token page
+        <span class="v">{{TICKER}} token page
           <svg class="arw" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M4 10 10 4M5 4h5v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
       </a>
+      <!--IF:website--><a class="flink" href="{{WEBSITE_URL}}" target="_blank" rel="noopener">
+        <span class="k">Website</span>
+        <span class="v">{{WEBSITE_URL}}
+          <svg class="arw" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M4 10 10 4M5 4h5v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a><!--/IF:website-->
+      <!--IF:twitter--><a class="flink" href="{{TWITTER_URL}}" target="_blank" rel="noopener">
+        <span class="k">Twitter</span>
+        <span class="v">X / Twitter
+          <svg class="arw" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M4 10 10 4M5 4h5v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a><!--/IF:twitter-->
+      <!--IF:telegram--><a class="flink" href="{{TELEGRAM_URL}}" target="_blank" rel="noopener">
+        <span class="k">Telegram</span>
+        <span class="v">Telegram
+          <svg class="arw" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M4 10 10 4M5 4h5v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a><!--/IF:telegram-->
       <a class="flink" href="https://robinlab.io/create.html" rel="noopener">
         <span class="k">Create</span>
         <span class="v">Launch a coin

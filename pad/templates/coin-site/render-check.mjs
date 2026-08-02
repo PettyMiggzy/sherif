@@ -41,6 +41,12 @@ for (const file of TEMPLATES) {
   ok(/\{\{[A-Z0-9_]+\}\}/.test(tpl), `${file}: contains {{TOKENS}} (was tokenized)`);
   ok(!tpl.includes(FLAGSHIP_ADDR), `${file}: no hardcoded flagship address in source`);
   ok(!tpl.includes("$ROBIN"), `${file}: no literal $ROBIN in source`);
+  // The coin logo must be data-driven, not a baked-in bitmap. Per the design rules
+  // the ONLY raster in a template is the coin's own logo, so after tokenization
+  // there must be a {{LOGO_URL}} and NO leftover data:image/...;base64 blob (the
+  // @font-face uses data:font/woff2, which this does not match).
+  ok(tpl.includes("{{LOGO_URL}}"), `${file}: coin logo is data-driven ({{LOGO_URL}})`);
+  ok(!/data:image\/[a-z0-9.+-]+;base64,/i.test(tpl), `${file}: no hardcoded raster logo left in source`);
 
   const out = CoinSite.render(tpl, coin, "broke");
   ok(!out.includes("{{"), `${file}: no leftover {{token}} after render`);
