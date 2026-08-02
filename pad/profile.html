@@ -249,15 +249,15 @@ async function loadHoldings(coins, addr){
   let candidates = null;
   try { candidates = await Pad.holdings(addr); } catch {}
   if (candidates !== null){
+    // One Multicall3 eth_call refines every candidate to its exact on-chain balance (was one
+    // balanceOf per coin). tokenBalances falls back to per-token reads internally on any failure.
+    const bals = await Pad.tokenBalances(candidates.map((c) => c.token), addr);
     const held = [];
-    for (let i = 0; i < candidates.length; i += 8){
-      const batch = candidates.slice(i, i + 8);
-      const rows = await Promise.all(batch.map(async (c) => {
-        let bal = Number(c.balance) || 0;                          // approx from the index
-        try { const b = Number(await Pad.tokenBalance(c.token, addr)); if (Number.isFinite(b)) bal = b; } catch {}
-        return { c, bal };                                         // refined to the exact on-chain balance
-      }));
-      for (const r of rows) if (r.bal > 0) held.push(r);
+    for (const c of candidates){
+      let bal = Number(c.balance) || 0;                            // approx from the index
+      const b = Number(bals[String(c.token).toLowerCase()]);
+      if (Number.isFinite(b)) bal = b;                             // refined to the exact on-chain balance
+      if (bal > 0) held.push({ c, bal });
     }
     held.sort((a,b) => (b.bal * priceEth(b.c)) - (a.bal * priceEth(a.c)));
     return { held, scanned: candidates.length, total: candidates.length, server: true };
@@ -266,14 +266,12 @@ async function loadHoldings(coins, addr){
 }
 async function scanHoldings(coins, addr){
   const sub = coins.slice(0, HOLDINGS_SCAN_CAP);
+  // One Multicall3 eth_call for the whole scan (was up to HOLDINGS_SCAN_CAP separate balanceOf calls).
+  const bals = await Pad.tokenBalances(sub.map((c) => c.token), addr);
   const held = [];
-  for (let i = 0; i < sub.length; i += 8){
-    const batch = sub.slice(i, i + 8);
-    const rows = await Promise.all(batch.map(async (c) => {
-      try { return { c, bal: Number(await Pad.tokenBalance(c.token, addr)) }; }
-      catch { return { c, bal: 0 }; }
-    }));
-    for (const r of rows) if (r.bal > 0) held.push(r);
+  for (const c of sub){
+    const bal = Number(bals[String(c.token).toLowerCase()]) || 0;
+    if (bal > 0) held.push({ c, bal });
   }
   held.sort((a,b) => (b.bal * priceEth(b.c)) - (a.bal * priceEth(a.c)));
   return { held, scanned: sub.length, total: coins.length };

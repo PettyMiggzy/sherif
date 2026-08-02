@@ -5,6 +5,7 @@
 import { ethers } from "ethers";
 import { CFG } from "./config.js";
 import { iface, TOPICS, ERC20, CURVE, POOL } from "./abi.js";
+import { mc3 } from "./multicall.js";
 import {
   db, getCursor, setCursor, setHeadTs, upsertCoin, markGraduated, ungraduateFrom, insertTrade,
   coinByCurve, purgeTradesFrom, setGeometry,
@@ -359,6 +360,37 @@ async function readSnapshotValues(g) {
   }
 }
 
+const POOL_IFACE = new ethers.Interface(POOL);
+// Batch slot0 for MANY pools into ONE eth_call, returning token -> snapshot values. Preserves the
+// exact per-token math of readSnapshotValues. On a whole-batch failure it falls back to per-pool
+// reads, so it can only ever reduce RPC calls; per-pool failures are skipped (as the single path does).
+async function readSnapshotsBatch(entries) {
+  const out = new Map();
+  const valid = entries.filter((e) =>
+    e.g && e.g.pool && e.g.start_tick !== null && e.g.start_tick !== undefined && e.g.token0 !== null && e.g.token0 !== undefined);
+  if (!valid.length) return out;
+  let res;
+  try {
+    res = await withRetry(
+      () => mc3(provider, valid.map((e) => ({ target: e.g.pool, iface: POOL_IFACE, fn: "slot0", args: [] }))),
+      "multicall.slot0", 3);
+  } catch (e) {
+    console.warn(`[indexer] batch snapshot failed, per-pool fallback: ${e.shortMessage || e.message}`);
+    for (const e2 of valid) { const s = await readSnapshotValues(e2.g); if (s) out.set(e2.token, s); }
+    return out;
+  }
+  valid.forEach((e, i) => {
+    const r = res[i];
+    if (!r) return;                 // per-pool failure: skip (matches the single-read try/catch)
+    try {
+      const tick = Number(r.tick);
+      const wethPerToken = priceFromSqrt(r.sqrtPriceX96, e.g.token0);
+      out.set(e.token, { last_tick: tick, progress: frac(tick, e.g.start_tick, e.g.grad_tick), mcap_eth: wethPerToken * TOTAL_SUPPLY });
+    } catch { /* skip malformed decode */ }
+  });
+  return out;
+}
+
 let head = 0;
 export const getHead = () => head;
 
@@ -429,10 +461,12 @@ export async function tick() {
       writes.push(() => insertTrade.run(row));
       touched.set(coin.token, row.ts);
     }
-    // One snapshot per pool that traded this chunk — bounds RPC to ACTIVITY, not coin
-    // count. A pool with 500 trades is still one slot0 read. Read now; write in the commit.
+    // One snapshot per pool that traded this chunk — bounds RPC to ACTIVITY, not coin count.
+    // All touched pools' slot0 reads are batched into ONE eth_call via Multicall3 (was one
+    // slot0 per pool), and the per-token snap_ts is preserved. Read now; write in the commit.
+    const snaps = await readSnapshotsBatch([...touched.keys()].map((token) => ({ token, g: geom.get(token) || coinGeom.get(token) })));
     for (const [token, ts] of touched) {
-      const snap = await readSnapshotValues(geom.get(token) || coinGeom.get(token));
+      const snap = snaps.get(token);
       if (snap) writes.push(() => setSnapshot.run({ token, ...snap, snap_ts: ts }));
     }
 

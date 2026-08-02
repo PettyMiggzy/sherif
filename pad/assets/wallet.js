@@ -59,6 +59,47 @@ const _read = (() => {
   }));
   return cfgs.length > 1 ? new ethers.FallbackProvider(cfgs, CHAIN.id, { quorum: 1 }) : cfgs[0].provider;
 })();
+
+// ── Multicall3 read batching ─────────────────────────────────────────────────
+// Collapse many INDEPENDENT view calls into ONE eth_call via Multicall3 (canonical address,
+// verified deployed on Robinhood Chain). aggregate3 runs every subcall in a single block
+// context (block-consistent) with per-call allowFailure, so one bad/non-standard token can't
+// sink the whole read. READ-ONLY: no tx path touches this.
+// calls: [{ target, iface, fn, args }] -> results aligned to input: the decoded ethers Result
+// on success, or null on per-call failure/decode mismatch. Throws only if the whole eth_call
+// fails, so callers fall back to per-call reads and batching can only ever reduce RPC load.
+const _mc3Iface = new ethers.Interface(ABIS.multicall3);
+async function mc3(calls, provider = _read) {
+  if (!calls || !calls.length) return [];
+  const packed = calls.map((c) => ({ target: c.target, allowFailure: true, callData: c.iface.encodeFunctionData(c.fn, c.args || []) }));
+  const data = _mc3Iface.encodeFunctionData("aggregate3", [packed]);
+  const raw = await provider.call({ to: CONTRACTS.multicall3, data });
+  const [results] = _mc3Iface.decodeFunctionResult("aggregate3", raw);
+  return results.map((r, i) => {
+    if (!r.success || !r.returnData || r.returnData === "0x") return null;
+    try { return calls[i].iface.decodeFunctionResult(calls[i].fn, r.returnData); } catch { return null; }
+  });
+}
+
+/// Batched balances: ONE eth_call for MANY tokens' balanceOf(who), instead of N. Returns a
+/// map { tokenLower: decimalStringBalance }. Falls back to per-token reads if the batch fails,
+/// so it can only ever reduce RPC calls, never break a page. Single form: tokenBalance().
+export async function tokenBalances(tokens, who) {
+  const addr = who || _account;
+  const out = {};
+  const list = (tokens || []).filter(Boolean);
+  if (!addr || !list.length) return out;
+  const erc = new ethers.Interface(ABIS.erc20);
+  try {
+    const res = await mc3(list.map((t) => ({ target: t, iface: erc, fn: "balanceOf", args: [addr] })));
+    list.forEach((t, i) => { const r = res[i]; out[t.toLowerCase()] = r ? ethers.formatUnits(r[0], 18) : "0"; });
+    return out;
+  } catch {
+    for (const t of list) out[t.toLowerCase()] = await tokenBalance(t, addr);
+    return out;
+  }
+}
+
 const REWARD_LEG_BPS = 25; // 0.25% router reward leg (buy→traders / sell→holders), carved before the swap when the vault is set
 
 // ── wallet discovery (EIP-6963) — let people PICK their wallet ────────────────
@@ -1119,6 +1160,66 @@ export async function floorInfo(token, who) {
     out.unlocked = !forever && out.lockUntil > 0 && Math.floor(Date.now() / 1000) >= out.lockUntil;
   }
   return out;
+}
+
+/// Batched floor-vault stats for MANY coins (the liquidity page): two eth_calls total instead of
+/// up to ~6 per coin. Phase 1 resolves each coin's coop address; phase 2 batches the vault reads
+/// across every coop. Returns Map(tokenLower -> the same shape as floorInfo). Falls back to per-coin
+/// floorInfo on any batch failure, so it can only ever cut RPC calls, never break the page.
+export async function floorInfoMany(tokens, who) {
+  const out = new Map();
+  const list = (tokens || []).filter(Boolean);
+  if (!list.length) return out;
+  if (!isDeployed("floorCoopFactory")) { for (const t of list) out.set(t.toLowerCase(), null); return out; }
+  try {
+    const facIface = new ethers.Interface(ABIS.floorCoopFactory);
+    const coopIface = new ethers.Interface(ABIS.floorCoop);
+    // Phase 1: coopOf(token) for every coin in one eth_call.
+    const coopRes = await mc3(list.map((t) => ({ target: CONTRACTS.floorCoopFactory, iface: facIface, fn: "coopOf", args: [t] })));
+    const coops = list.map((t, i) => { const r = coopRes[i]; const a = r ? r[0] : null; return (a && !/^0x0+$/.test(a)) ? a : null; });
+    // Coins with no coop yet get the empty-but-valid shape (mirrors floorInfo's early return).
+    list.forEach((t, i) => { if (!coops[i]) out.set(t.toLowerCase(), { tvlEth: 0, feesPaidEth: 0, mineEth: 0, earnedEth: 0, coop: null }); });
+    // Phase 2: batch every existing coop's reads in one eth_call (totalShares/totalNav, plus the
+    // per-user leg when `who` is connected).
+    const withCoop = list.map((t, i) => ({ t, coop: coops[i] })).filter((x) => x.coop);
+    if (withCoop.length) {
+      const calls = [];
+      for (const x of withCoop) {
+        calls.push({ target: x.coop, iface: coopIface, fn: "totalShares", args: [] });
+        calls.push({ target: x.coop, iface: coopIface, fn: "totalNav", args: [] });
+        if (who) {
+          calls.push({ target: x.coop, iface: coopIface, fn: "shares", args: [who] });
+          calls.push({ target: x.coop, iface: coopIface, fn: "pending", args: [who] });
+          calls.push({ target: x.coop, iface: coopIface, fn: "pos", args: [who] });
+        }
+      }
+      const res = await mc3(calls);
+      const per = who ? 5 : 2;
+      withCoop.forEach((x, k) => {
+        const base = k * per;
+        const ts = res[base] ? BigInt(res[base][0]) : 0n;
+        const nav = res[base + 1] ? BigInt(res[base + 1][0]) : 0n;
+        const o = { coop: x.coop, tvlEth: Number(ethers.formatEther(nav)), feesPaidEth: 0, mineEth: 0, earnedEth: 0 };
+        if (who && ts > 0n) {
+          const sh = res[base + 2] ? BigInt(res[base + 2][0]) : 0n;
+          const pend = res[base + 3];
+          const p = res[base + 4];
+          o.mineEth = Number(ethers.formatEther((nav * sh) / ts));
+          o.earnedEth = pend ? Number(ethers.formatEther(pend[0])) : 0;
+          const luRaw = p ? (p.lockUntil ?? p[3] ?? 0n) : 0n;
+          const forever = BigInt(luRaw) > 10n ** 18n;
+          o.forever = forever;
+          o.lockUntil = forever ? Infinity : Number(luRaw);
+          o.unlocked = !forever && o.lockUntil > 0 && Math.floor(Date.now() / 1000) >= o.lockUntil;
+        }
+        out.set(x.t.toLowerCase(), o);
+      });
+    }
+    return out;
+  } catch {
+    for (const t of list) { try { out.set(t.toLowerCase(), await floorInfo(t, who)); } catch { out.set(t.toLowerCase(), null); } }
+    return out;
+  }
 }
 
 /// Stake ETH into a coin's real liquidity, locked for `lockDays` (0 = forever). Creates the vault on

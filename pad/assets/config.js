@@ -73,6 +73,11 @@ export const CONTRACTS = {
   // platform token off-chain - the router does not swap it on-chain. TBD for Robin Labs.
   platformToken: "",
   platformPool: "",
+
+  // Multicall3 - the canonical read-batcher (same address on nearly every EVM chain;
+  // verified deployed on Robinhood Chain). Used to collapse many independent view reads
+  // (e.g. a portfolio's balanceOf fan-out) into ONE eth_call, cutting RPC load. Reads only.
+  multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11",
 };
 
 // 1% pool tier - the fee is collected as Uniswap LP fees IN-PROTOCOL. There is
@@ -182,6 +187,11 @@ export const ABIS = {
     "function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 obsIdx, uint16 obsCard, uint16 obsCardNext, uint8 feeProtocol, bool unlocked)",
     "function token0() view returns (address)",
     "function token1() view returns (address)",
+  ],
+  // Multicall3 read-batcher. aggregate3 runs every subcall in one block context with per-call
+  // allowFailure, so one bad target can't sink the batch. We only ever eth_call this (reads).
+  multicall3: [
+    "function aggregate3((address target,bool allowFailure,bytes callData)[] calls) view returns ((bool success,bytes returnData)[] returnData)",
   ],
   // RobinLimit — non-custodial limit orders + DCA. The Order tuple must match the contract's struct order.
   robinLimit: [

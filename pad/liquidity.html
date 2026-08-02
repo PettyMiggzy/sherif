@@ -268,8 +268,10 @@ async function load(){
   // live: list graduated coins that have (or can have) a floor pool
   try {
     const { coins } = await Pad.feed({ filter:'graduated', limit:40 });
-    POOLS = await Promise.all((coins||[]).map(async (c) => {
-      const f = await Pad.floorInfo(c.token, Pad.account()).catch(() => null);
+    // One batched read for every coin's floor vault (two eth_calls total, was up to ~6 per coin).
+    const fmap = await Pad.floorInfoMany((coins||[]).map((c) => c.token), Pad.account());
+    POOLS = (coins||[]).map((c) => {
+      const f = fmap.get(String(c.token).toLowerCase()) || null;
       // Carry the real on-chain lock (lockUntil/forever/unlocked) into the pool entry and derive an
       // honest label - mirrors token.html's fcShowPos. No more hardcoded "unlocks in 74d".
       const nowS = Math.floor(Date.now()/1000);
@@ -280,7 +282,7 @@ async function load(){
       return { token:c.token, sym:c.symbol, name:c.name, image:c.image,
                tvlEth:f?.tvlEth||0, feesPaidEth:f?.feesPaidEth||0, aprPct:0, mineEth:f?.mineEth||0, earnedEth:f?.earnedEth||0,
                forever:f?.forever, lockUntil:f?.lockUntil, unlocked:f?.unlocked, lockTxt };
-    }));
+    });
   } catch { POOLS = []; }
   renderMine(); renderPools();
 }
