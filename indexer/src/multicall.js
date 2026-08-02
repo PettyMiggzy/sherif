@@ -22,8 +22,15 @@ const MC3_IFACE = new ethers.Interface([
 // Returns an array aligned to `calls`: the decoded ethers Result on success, or null on a
 // per-call failure / decode mismatch. Throws ONLY if the whole eth_call fails, so callers
 // should wrap in try/catch and fall back to per-call reads (batching can then only ever help).
+const MC3_MAX = 50; // cap subcalls per eth_call so a big batch can't exhaust a node's call-gas and
+                    // silently starve the tail; each chunk is still one upstream call.
 export async function mc3(provider, calls) {
   if (!calls || !calls.length) return [];
+  if (calls.length > MC3_MAX) {
+    const out = [];
+    for (let i = 0; i < calls.length; i += MC3_MAX) out.push(...(await mc3(provider, calls.slice(i, i + MC3_MAX))));
+    return out;
+  }
   const packed = calls.map((c) => ({
     target: c.target,
     allowFailure: true,

@@ -69,8 +69,15 @@ const _read = (() => {
 // on success, or null on per-call failure/decode mismatch. Throws only if the whole eth_call
 // fails, so callers fall back to per-call reads and batching can only ever reduce RPC load.
 const _mc3Iface = new ethers.Interface(ABIS.multicall3);
+const MC3_MAX = 50; // cap subcalls per eth_call so one batch can't exhaust a node's call-gas and
+                    // silently starve the tail (each chunk is still one upstream call: 160 -> ~3).
 async function mc3(calls, provider = _read) {
   if (!calls || !calls.length) return [];
+  if (calls.length > MC3_MAX) {
+    const chunks = [];
+    for (let i = 0; i < calls.length; i += MC3_MAX) chunks.push(calls.slice(i, i + MC3_MAX));
+    return (await Promise.all(chunks.map((c) => mc3(c, provider)))).flat();
+  }
   const packed = calls.map((c) => ({ target: c.target, allowFailure: true, callData: c.iface.encodeFunctionData(c.fn, c.args || []) }));
   const data = _mc3Iface.encodeFunctionData("aggregate3", [packed]);
   const raw = await provider.call({ to: CONTRACTS.multicall3, data });
@@ -1568,12 +1575,12 @@ if (typeof window !== "undefined") {
   window.RobinPad = {
     connect, forgetWallet, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax,
     setCoinProfile, getCoinProfile, profileMessage,
-    estimateDevBuyEth, isDeployed, tokenBalance, holdings, coinHolders,
+    estimateDevBuyEth, isDeployed, tokenBalance, tokenBalances, holdings, coinHolders,
     curveInfo, devEscrow, graduate, withdrawDev, burnDev, listCoins, tokenMeta,
     feed, stats, recentTrades, activity, hasApi, coin,
     holders, trades, chainTrades, feeTotals,
     rewards, rewardStats, claimReward, claimAllRewards,
-    floorInfo, floorDeposit, floorClaim, floorWithdraw,
+    floorInfo, floorInfoMany, floorDeposit, floorClaim, floorWithdraw,
     createVestingLock, lockDevBagPct, lockMyBag, allLocksOf, releaseVesting, devLockOf, tokenBalanceWei,
     uniLive, uniQuote, uniEnsureApproval, uniSwap,
   };
