@@ -246,8 +246,8 @@ rows. Bump `CONFIRMATIONS` if Robinhood Chain ever shows deeper reorgs.
 
 - Volume/price are summed as ETH-scale floats for ranking and display; the exact
   per-trade wei are always available on `/api/trades`.
-- Set `START_BLOCK` to the factory deploy block or the first backfill crawls from
-  genesis (correct, just slower). Find it on the explorer: the factory address'
-  first transaction.
+- `START_BLOCK` defaults to the factory deploy block (`17752965`); set it to `0`
+  to scan from genesis (correct, just much slower). Find the deploy block on the
+  explorer: the factory address' first transaction.
 - Use a private archive RPC in `.env` for faster backfills and higher getLogs
   range limits; the public Blockscout endpoint works but is rate-limited.

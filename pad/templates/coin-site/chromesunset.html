@@ -809,16 +809,21 @@
         txt.textContent = "Copied";
         setTimeout(function(){ btn.classList.remove("done"); txt.textContent = "Copy"; }, 1900);
       };
+      var failed = function(){   // don't claim success when the copy actually failed
+        txt.textContent = "Press Ctrl+C";
+        setTimeout(function(){ txt.textContent = "Copy"; }, 1900);
+      };
       if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(ca).then(done, function(){ fallback(); done(); });
-      } else { fallback(); done(); }
+        navigator.clipboard.writeText(ca).then(done, function(){ if(fallback()) done(); else failed(); });
+      } else { if(fallback()) done(); else failed(); }
       function fallback(){
         try{
           var t=document.createElement("textarea");
           t.value=ca; t.style.position="fixed"; t.style.opacity="0";
           document.body.appendChild(t); t.select();
-          document.execCommand("copy"); document.body.removeChild(t);
-        }catch(e){}
+          var ok=document.execCommand("copy"); document.body.removeChild(t);
+          return !!ok;
+        }catch(e){ return false; }
       }
     });
   }

@@ -257,6 +257,13 @@ export const coinsGraduatedInRewardWindow = db.prepare(`
   SELECT token, symbol, pool, token0, start_tick, grad_tick, launch_block FROM coins
   WHERE graduated = 1 AND pool IS NOT NULL AND grad_ts >= @cutoff
 `);
+// Coins whose one-time geometry read failed at launch (a transient RPC error), leaving token0/start_tick
+// NULL. They are excluded from every pool scan (poolMap and backfill both require token0), so without a
+// reconciliation pass they stay permanently orphaned: zero trades, null price, invisible in the feed, and
+// their whole reward pot swept unclaimed. Re-read their geometry each loop until it succeeds.
+export const coinsMissingGeometry = db.prepare(`
+  SELECT token, curve, pool, launch_block FROM coins WHERE token0 IS NULL AND graduated = 0
+`);
 export const tradeCountForToken = db.prepare("SELECT COUNT(*) AS n FROM trades WHERE token = ?");
 
 export const coinByCurve = db.prepare("SELECT token FROM coins WHERE curve = ?");

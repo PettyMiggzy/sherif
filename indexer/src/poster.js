@@ -126,8 +126,11 @@ export async function postPending() {
       continue;
     }
     if (onchain.root && onchain.root !== ethers.ZeroHash && !onchain.vetoed) {
-      // computed but a (non-vetoed) root is already on-chain — record and move on, don't double-post
+      // computed but a (non-vetoed) root is already on-chain — record and move on, don't double-post.
+      // Also stamp posted_ts from the on-chain postedAt: the /api/rewards claimable filter treats a NULL
+      // posted_ts as immediately claimable, which would bypass the challenge window for this epoch.
       setRewardRootPostedTx.run({ epoch, posted_tx: "onchain" });
+      setRewardRootPostedTs.run({ epoch, posted_ts: Number(onchain.postedAt) || Math.floor(Date.now() / 1000) });
       continue;
     }
     try {

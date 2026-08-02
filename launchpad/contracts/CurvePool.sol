@@ -136,10 +136,10 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         // tick); token1 => the token is on the BELOW-price side (price rises as tick falls).
         gradTick = tIs0 ? startTick_ + curveWidth_ : startTick_ - curveWidth_;
         minGradTick = tIs0 ? startTick_ + minGradWidth_ : startTick_ - minGradWidth_;
-        // Default graduation target = the FULL ceiling (~4.2 ETH raised). The coin does NOT graduate until it
-        // rides all the way to the ceiling, and only then does the creator earn their 0.5 WETH reward. The dev
-        // MAY lower the target via setGradTarget to graduate EARLY — but early graduation forfeits the creator's
-        // 0.5 reward (it stays in the raise → the floor) and leaves a thinner floor. See graduate().
+        // Graduation target = the FULL ceiling (~4.2 ETH raised). The coin does NOT graduate until it rides all
+        // the way to the ceiling, and only then does the creator earn their 0.5 WETH reward. There is no early
+        // graduation and no creator-settable target: gradTarget is fixed here at the ceiling (there is no
+        // setGradTarget), so ready() flips true only at the ceiling tick. See graduate().
         gradTarget = gradTick;
 
         // Claim + initialize the pool at the start price (DEX + DexScreener live from here).

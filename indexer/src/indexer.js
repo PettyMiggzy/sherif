@@ -10,7 +10,8 @@ import {
   db, getCursor, setCursor, setHeadTs, upsertCoin, markGraduated, ungraduateFrom, insertTrade,
   coinByCurve, purgeTradesFrom, setGeometry,
   setSnapshot, coinGeom, insertAccrual, purgeAccrualsFrom, insertDevLock, purgeDevLocksFrom,
-  liveCoinsAll, coinsGraduatedSince, coinsGraduatedInRewardWindow, tradeCountForToken, getMeta, setMeta,
+  liveCoinsAll, coinsGraduatedSince, coinsGraduatedInRewardWindow, coinsMissingGeometry,
+  tradeCountForToken, getMeta, setMeta,
 } from "./db.js";
 
 const WETH = (process.env.WETH || "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73").toLowerCase();
@@ -495,8 +496,21 @@ export async function tick() {
     // chunks are all NEW blocks (> stored) that no reader had, so they need no purge. The
     // transaction body is pure synchronous better-sqlite3 — all network I/O happened above.
     const doPurge = firstChunk && stored !== null;
+    // Scope the trades purge to ONLY the pools re-scanned this pass (poolMap). The re-insert below covers
+    // exactly those pools, so a global DELETE ... WHERE block>=from would delete the recent trades of a coin
+    // that has aged out of poolMap (e.g. a graduated coin past its reward window) which nothing re-inserts,
+    // silently under-counting it forever. Delete only what we re-insert. Accruals/dev-locks/graduation are
+    // sourced from topic-filtered getLogs (not poolMap), so those purges stay global and are re-inserted.
+    let purgeTrades = null;
+    if (doPurge) {
+      const toks = [...new Set([...poolMap.values()].map((v) => v.token))];
+      if (toks.length) purgeTrades = { stmt: db.prepare(`DELETE FROM trades WHERE block >= ? AND token IN (${toks.map(() => "?").join(",")})`), args: [from, ...toks] };
+    }
     db.transaction(() => {
-      if (doPurge) { purgeTradesFrom.run(from); purgeAccrualsFrom.run(from); purgeDevLocksFrom.run(from); ungraduateFrom.run(from); }
+      if (doPurge) {
+        if (purgeTrades) purgeTrades.stmt.run(...purgeTrades.args);
+        purgeAccrualsFrom.run(from); purgeDevLocksFrom.run(from); ungraduateFrom.run(from);
+      }
       for (const w of writes) w();
       setCursor(hi);
     })();
@@ -519,6 +533,28 @@ export async function tick() {
 // Swap events. Idempotent (inserts DO NOTHING on conflict) and gated by a per-coin meta
 // flag so a restart doesn't re-scan. New coins never need this — tick() catches their
 // swaps live. Runs only when the cursor is already past the coin's launch.
+// Recover any coin orphaned by a transient RPC failure during its one-time launch geometry read: its
+// token0/start_tick are NULL, so it is excluded from every pool scan and stays permanently invisible with
+// its reward pot swept unclaimed. Re-read geometry each loop until it succeeds; returns how many were
+// recovered so the caller can backfill their pool history (backfillSwaps skips already-backfilled coins).
+async function reconcileGeometry() {
+  const broken = coinsMissingGeometry.all();
+  if (!broken.length) return 0;
+  let fixed = 0;
+  for (const c of broken) {
+    if (!c.curve || !c.pool) continue;
+    const gv = await readGeometryValues(c.curve, c.pool);
+    if (!gv) continue; // still failing (RPC still down / bad addresses) — retry next loop
+    db.transaction(() => setGeometry.run({
+      token: c.token, start_tick: gv.start_tick, min_grad_tick: gv.min_grad_tick,
+      grad_tick: gv.grad_tick, grad_target: gv.grad_target, token0: gv.token0,
+    }))();
+    fixed++;
+    console.log(`[indexer] reconciled geometry for ${c.token} (was orphaned by a launch-time RPC failure)`);
+  }
+  return fixed;
+}
+
 async function backfillSwaps() {
   const cursor = getCursor();
   if (cursor === null) return; // fresh db — the normal forward scan covers everything
@@ -567,6 +603,9 @@ export async function runLoop() {
   try { await backfillSwaps(); } catch (e) { console.error(`[indexer] backfill error: ${e.message || e}`); }
   for (;;) {
     try {
+      // Recover any launch-time-orphaned coin, then backfill its pool history so it isn't missing trades.
+      const recovered = await reconcileGeometry();
+      if (recovered) { try { await backfillSwaps(); } catch (e) { console.error(`[indexer] post-reconcile backfill error: ${e.message || e}`); } }
       const n = await tick();
       if (n) console.log(`[indexer] cursor=${getCursor()} head=${head} (+${n} logs)`);
     } catch (e) {

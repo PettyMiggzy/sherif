@@ -267,9 +267,12 @@ async function rpcHandle(payload) {
       // the TTL would stall confirmation UIs; and never cache when correlation failed.
       if (ttl && r && r.result !== undefined && r.result !== null && !r.error) {
         let sz = 0; try { sz = JSON.stringify(r.result).length; } catch { sz = 0; }
+        const key = req.method + ":" + JSON.stringify(req.params || []);
+        const prev = RPC_CACHE.get(key);
+        if (prev) RPC_CACHE_BYTES -= prev.sz || 0;   // re-caching an expired key: reclaim the old entry's bytes first, or the counter drifts up forever
         // Evict by COUNT or total BYTES, so a stream of large distinct responses can't pin the process toward OOM.
         if (RPC_CACHE.size > 8000 || RPC_CACHE_BYTES + sz > RPC_CACHE_BYTE_BUDGET) { RPC_CACHE.clear(); RPC_CACHE_BYTES = 0; }
-        RPC_CACHE.set(req.method + ":" + JSON.stringify(req.params || []), { result: r.result, exp: Date.now() + ttl });
+        RPC_CACHE.set(key, { result: r.result, exp: Date.now() + ttl, sz });
         RPC_CACHE_BYTES += sz;
       }
     }
