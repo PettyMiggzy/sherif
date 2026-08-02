@@ -10,7 +10,7 @@ import {
   db, getCursor, setCursor, setHeadTs, upsertCoin, markGraduated, ungraduateFrom, insertTrade,
   coinByCurve, purgeTradesFrom, setGeometry,
   setSnapshot, coinGeom, insertAccrual, purgeAccrualsFrom, insertDevLock, purgeDevLocksFrom,
-  liveCoinsAll, coinsGraduatedSince, tradeCountForToken, getMeta, setMeta,
+  liveCoinsAll, coinsGraduatedSince, coinsGraduatedInRewardWindow, tradeCountForToken, getMeta, setMeta,
 } from "./db.js";
 
 const WETH = (process.env.WETH || "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73").toLowerCase();
@@ -435,6 +435,13 @@ export async function tick() {
   // Also re-scan pools of coins that graduated within this purge window, so the purge (which deletes
   // trades by block, ignoring graduation) can re-insert their final on-curve trades instead of losing them.
   for (const c of coinsGraduatedSince.all({ from })) {
+    if (c.pool && c.token0) poolMap.set(c.pool.toLowerCase(), { pool: c.pool.toLowerCase(), token: c.token, token0: c.token0 });
+  }
+  // And keep scanning a graduated coin's pool until its graduation reward-epoch is safely past finalization
+  // (one epoch + the finality delay), so post-graduation DEX sells are indexed before the poster finalizes
+  // that epoch's weights. Adding pools can only make the trade history MORE complete, never corrupt it (#39).
+  const rewardCutoff = Math.floor(Date.now() / 1000) - (CFG.epochLen + CFG.finalityDelay);
+  for (const c of coinsGraduatedInRewardWindow.all({ cutoff: rewardCutoff })) {
     if (c.pool && c.token0) poolMap.set(c.pool.toLowerCase(), { pool: c.pool.toLowerCase(), token: c.token, token0: c.token0 });
   }
 

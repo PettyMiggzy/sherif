@@ -6,6 +6,7 @@
 <title>ROBIN LABS // $ROBIN</title>
 <meta name="description" content="ROBIN is the coin of Robin Labs, the only launchpad that pays its successful creators. Fair launch into real Uniswap v3 liquidity with a permanent floor.">
 <style>
+  html{scroll-padding-top:88px}  /* offset anchor scroll for the sticky top bar */
   :root{
     --bg:#05070c;
     --panel:#0a0e17;
@@ -450,7 +451,7 @@
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="1"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>
           <span id="copyTxt">Copy</span>
         </button>
-        <span class="copied-msg" id="copiedMsg" role="status" aria-live="polite">Copied</span>
+        <span class="copied-msg" id="copiedMsg" role="status" aria-live="polite"></span>
       </div>
     </div>
   </section>
@@ -529,9 +530,9 @@
     if(!btn)return;
     var t;
     function done(){
-      btn.classList.add('copied');msg.classList.add('on');txt.textContent='Copied';
+      btn.classList.add('copied');msg.classList.add('on');msg.textContent='Copied';txt.textContent='Copied';
       clearTimeout(t);
-      t=setTimeout(function(){btn.classList.remove('copied');msg.classList.remove('on');txt.textContent='Copy';},1900);
+      t=setTimeout(function(){btn.classList.remove('copied');msg.classList.remove('on');msg.textContent='';txt.textContent='Copy';},1900);
     }
     function fallback(){
       try{

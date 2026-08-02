@@ -249,6 +249,14 @@ export const coinsGraduatedSince = db.prepare(`
   SELECT token, symbol, pool, token0, start_tick, grad_tick, launch_block FROM coins
   WHERE graduated = 1 AND pool IS NOT NULL AND grad_block >= @from
 `);
+// Coins whose graduation reward-epoch is not yet safely finalized (grad_ts within the last epoch +
+// finality window). Their pools must keep being scanned so post-graduation Uniswap sells (which bypass
+// PadRouter) are indexed BEFORE the poster finalizes that epoch's holder/trader weights from the trades
+// table; otherwise the permanent on-chain Merkle root over-allocates to already-exited wallets (task #39).
+export const coinsGraduatedInRewardWindow = db.prepare(`
+  SELECT token, symbol, pool, token0, start_tick, grad_tick, launch_block FROM coins
+  WHERE graduated = 1 AND pool IS NOT NULL AND grad_ts >= @cutoff
+`);
 export const tradeCountForToken = db.prepare("SELECT COUNT(*) AS n FROM trades WHERE token = ?");
 
 export const coinByCurve = db.prepare("SELECT token FROM coins WHERE curve = ?");

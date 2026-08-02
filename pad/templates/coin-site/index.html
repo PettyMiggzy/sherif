@@ -1,8 +1,5 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Robin Labs // Coin Site Templates // $ROBIN</title>
 <style>
   :root{--bg:#0b0c0f;--panel:#111318;--line:#20242c;--ink:#e8edf3;--dim:#8a94a3;--accent:#c6ff3f}
@@ -21,9 +18,7 @@
   iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:#05060a}
   .foot{flex:0 0 auto;border-top:1px solid var(--line);padding:8px 16px;font-size:11.5px;color:var(--dim);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
   .foot a{color:var(--accent);text-decoration:none}.note{font-size:11.5px;color:var(--dim)}
-</style>
-</head>
-<body>
+</style></head><body>
 <header>
   <div class="titlerow"><div class="brand">ROBIN <b>LABS</b> &nbsp;/&nbsp; Coin Site Templates</div><div class="note">10 styles</div></div>
   <p class="sub">This is <b>$ROBIN</b>, the Robin Labs flagship, rendered as its own website in <b>10 template styles</b>, all from the coin real on-chain data. Every launch can get a page like this at <b>&lt;ticker&gt;.robinslab.fun</b>. Pick a style.</p>
@@ -44,23 +39,13 @@
 <div class="foot"><span>Preview only. One data-driven engine renders any coin into any style.</span><span>Powered by Robin Labs &nbsp;/&nbsp; <a href="https://robinslab.fun" target="_blank" rel="noopener">robinslab.fun</a></span></div>
 <script>
   const DOCS=null;
-  var f=document.getElementById("preview");
-  var pills=[].slice.call(document.querySelectorAll(".pill"));
-  function show(k, focus){
-    f.removeAttribute('srcdoc'); f.src='./'+k+'.html';
-    pills.forEach(function(p){ var sel=p.dataset.k===k; p.setAttribute("aria-selected",sel?"true":"false"); p.tabIndex=sel?0:-1; if(sel){ f.setAttribute("aria-labelledby",p.id); if(focus) p.focus(); } });
-  }
-  pills.forEach(function(p,i){
-    p.addEventListener("click",function(){show(p.dataset.k,false);});
-    p.addEventListener("keydown",function(e){
-      var n=pills.length;
+  var f=document.getElementById("preview"); var pills=[].slice.call(document.querySelectorAll(".pill"));
+  function show(k, focus){ f.removeAttribute('srcdoc'); f.src='./'+k+'.html'; pills.forEach(function(p){ var sel=p.dataset.k===k; p.setAttribute("aria-selected",sel?"true":"false"); p.tabIndex=sel?0:-1; if(sel){ f.setAttribute("aria-labelledby",p.id); if(focus) p.focus(); } }); }
+  pills.forEach(function(p,i){ p.addEventListener("click",function(){show(p.dataset.k,false);});
+    p.addEventListener("keydown",function(e){ var n=pills.length;
       if(e.key==="ArrowRight"||e.key==="ArrowDown"){e.preventDefault();show(pills[(i+1)%n].dataset.k,true);}
       else if(e.key==="ArrowLeft"||e.key==="ArrowUp"){e.preventDefault();show(pills[(i-1+n)%n].dataset.k,true);}
       else if(e.key==="Home"){e.preventDefault();show(pills[0].dataset.k,true);}
-      else if(e.key==="End"){e.preventDefault();show(pills[n-1].dataset.k,true);}
-    });
-  });
+      else if(e.key==="End"){e.preventDefault();show(pills[n-1].dataset.k,true);} }); });
   show("neonvault",false);
-</script>
-</body>
-</html>
+</script></body></html>

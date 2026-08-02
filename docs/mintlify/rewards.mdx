@@ -49,7 +49,7 @@ both scores so rewards flow only to real users:
 
 ## The epoch lifecycle
 
-Rewards settle in **daily-ish epochs**. Each epoch walks through four gates before ETH can leave the vault:
+Rewards settle in **weekly (7-day) epochs**. Each epoch walks through four gates before ETH can leave the vault:
 
 1. **Epoch closes.** The scorer reads the full epoch of trades and balances, computes each wallet's trader
    and holder share, and builds a Merkle tree of `(epoch, coin, side, user, amount)` leaves.

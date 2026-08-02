@@ -281,21 +281,25 @@ async function refresh() {
     try {
       const v = C('rewardVault');
       const [ep, poster, guardian, cw, clw, own, pend] = await Promise.all([v.currentEpoch(), v.poster(), v.guardian(), v.challengeWindow(), v.claimWindow(), v.owner(), v.pendingOwner()]);
-      $('epochNow').textContent = '#' + ep.toString();
-      $('valPoster').textContent = poster;
-      $('valGuardian').textContent = guardian;
-      $('valWindows').textContent = `${secsToDh(cw)} · ${secsToDh(clw)}`;
-      $('valOwnRv').textContent = short(own);
-      $('pendRv').textContent = 'pending: ' + short(pend);
-      $('accRv').style.display = acct && pend.toLowerCase() === acct ? '' : 'none';
+      // Null-safe writes: some ids (epochNow/epochSub/posterBal/posterSub) aren't in the markup, and a
+      // throw on the first missing one would abort the whole panel render (poster/guardian/health/owner).
+      const setT = (id, val) => { const el = $(id); if (el) el.textContent = val; };
+      const setH = (id, val) => { const el = $(id); if (el) el.innerHTML = val; };
+      setT('epochNow', '#' + ep.toString());
+      setT('valPoster', poster);
+      setT('valGuardian', guardian);
+      setT('valWindows', `${secsToDh(cw)} · ${secsToDh(clw)}`);
+      setT('valOwnRv', short(own));
+      setT('pendRv', 'pending: ' + short(pend));
+      { const el = $('accRv'); if (el) el.style.display = acct && pend.toLowerCase() === acct ? '' : 'none'; }
       if (acct && own.toLowerCase() !== acct) mism.push('rewardVault');
       const bal = await read.getBalance(poster);
-      $('posterBal').textContent = fmtEth(bal);
+      setT('posterBal', fmtEth(bal));
       const low = bal < ethers.parseEther('0.01');
-      $('posterSub').innerHTML = low ? '<span class="bad">⚠ low, top up gas</span>' : 'ok · signs postRoot each epoch';
+      setH('posterSub', low ? '<span class="bad">⚠ low, top up gas</span>' : 'ok · signs postRoot each epoch');
       let posted = 0, pending = 0; const prev = Number(ep) - 1;
       for (let e = Math.max(0, prev - 3); e <= prev; e++) { try { const er = await v.epochRoot(e); if (!isZero(er.root)) posted++; else pending++; } catch {} }
-      $('epochSub').textContent = `${posted} posted · ${pending} pending (last 4)`;
+      setT('epochSub', `${posted} posted · ${pending} pending (last 4)`);
       $('rwdDot').className = 'dot ' + (low ? 'bad' : 'ok');
       $('rwdState').textContent = low ? 'poster low on gas' : 'healthy';
     } catch {}

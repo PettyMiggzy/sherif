@@ -69,7 +69,7 @@ On top of the two fee streams above, every trade carves **two additive 0.25% leg
 | Holders | **0.25% of each sell** | Balance-seconds held, above a 0.02%-of-supply minimum |
 
 These legs are **additive**, carved on top of a trade, not skimmed out of the base fee. The chain custodies
-and caps the ETH; a daily-ish epoch settles into a Merkle root and wallets claim their leaf on-site in one
+and caps the ETH; a weekly (7-day) epoch settles into a Merkle root and wallets claim their leaf on-site in one
 clean tx and keep the ETH. Protocol addresses (the token, curve, pool, Bond, router, vault, factory,
 vesting-lock and dead address) are excluded so rewards flow only to real users. Rewards are **variable, not
 guaranteed, and not a security**.
