@@ -531,8 +531,8 @@ async function safeGasPrice() {
 }
 
 // ── LAUNCH - one call, one recipient, optional dev buy, approval-free [Rule 1] ─
-// devBuyEth: string ETH amount to spend on the creator's OWN opening buy (≤2%,
-// enforced + excess-refunded by the contract). "0" = no dev buy.
+// devBuyEth: string ETH amount to spend on the creator's OWN opening buy (uncapped;
+// it climbs the curve up to the graduation ceiling and the contract refunds any excess). "0" = no dev buy.
 // tax: {buyBps, sellBps, walletBps, floorBps, burnBps, projectWallet} - the
 // project's self-set tax (≤4%/side; splits sum to 100%). Omitting it still charges the
 // 1% floor - clampBps enforces a 100 bps minimum, so every coin pays at least 1% buy & sell.

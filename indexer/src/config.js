@@ -91,7 +91,7 @@ export const CFG = {
   uniTokens: (process.env.UNISWAP_TOKENS || "").split(",").map((s) => s.trim().toLowerCase()).filter((s) => /^0x[0-9a-f]{40}$/.test(s)),
   uniRatePerSec: num("UNISWAP_RATE_PER_SEC", 2),       // per-IP cap on the proxy
   uniGlobalPerSec: num("UNISWAP_GLOBAL_PER_SEC", 6),   // total upstream/sec cap (shared key budget)
-  uniCorsOrigins: (process.env.UNISWAP_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinslab.fun")
+  uniCorsOrigins: (process.env.UNISWAP_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinlabs.fun,https://www.robinlabs.fun")
     .split(",").map((s) => s.trim()).filter(Boolean),
 
   // ── Photo-to-meme proxy (turn a snapshot into a coin's meme pfp) ──
@@ -107,7 +107,7 @@ export const CFG = {
   memeRatePerSec: num("MEME_RATE_PER_SEC", 1),          // per-IP cap (image gen is slow + costs money)
   memeGlobalPerMin: num("MEME_GLOBAL_PER_MIN", 20),     // TOTAL images/min across all IPs — the hard spend bound
   memeMaxUploadBytes: num("MEME_MAX_UPLOAD_BYTES", 8 * 1024 * 1024),
-  memeCorsOrigins: (process.env.MEME_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinslab.fun")
+  memeCorsOrigins: (process.env.MEME_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinlabs.fun,https://www.robinlabs.fun")
     .split(",").map((s) => s.trim()).filter(Boolean),
 
   // ── LI.FI cross-chain proxy (the bridge) ──

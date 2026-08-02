@@ -1,7 +1,7 @@
 # Coin site templates
 
 Per-launch websites for Robin Labs coins. The idea: every coin launched on the pad can get its
-own polished website at `<ticker>.robinslab.fun` (a single wildcard subdomain covers all of them,
+own polished website at `<ticker>.robinlabs.fun` (a single wildcard subdomain covers all of them,
 unlimited, at no per-coin cost). The creator picks a style and fills a short form; the site renders
 itself from that data plus live chain data. No per-coin build, no per-coin domain.
 
@@ -46,7 +46,7 @@ overdraft/receipt theme, to prove the engine themes any coin, not just the flags
 
 ## Not wired yet (next steps)
 
-- Wildcard routing on `robinslab.fun` (Vercel) so `<ticker>.robinslab.fun` resolves to the matching
+- Wildcard routing on `robinlabs.fun` (Vercel) so `<ticker>.robinlabs.fun` resolves to the matching
   coin, with a slug wordlist filter, reserved-word block, and takedown blocklist.
 - The short "site builder" form (an extension of the existing coin profile editor) with the style
   picker, so the baked-in demo values become variables filled from each coin's signed profile.
