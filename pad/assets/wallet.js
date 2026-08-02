@@ -126,8 +126,9 @@ if (typeof window !== "undefined") {
   try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch { /* SSR/no-window */ }
 }
 const escHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-// Only render a wallet-supplied icon if it's a safe data:/https: image (never javascript:).
-const safeIcon = (u) => (typeof u === "string" && /^(data:image\/|https:\/\/)/i.test(u)) ? u : "";
+// Only render a wallet-supplied icon if it's a safe data:/https: image (never javascript:), and reject
+// any quote/space/angle-bracket so a crafted value can't break out of the src attribute (also escaped at use).
+const safeIcon = (u) => (typeof u === "string" && /^(data:image\/|https:\/\/)/i.test(u) && !/["'<>\s]/.test(u)) ? u : "";
 
 // Legacy fallback: wallets that predate 6963, or an aggregator exposing .providers[].
 function legacyProviders() {
@@ -175,7 +176,7 @@ function pickWallet(wallets) {
         <div style="display:flex;flex-direction:column;gap:9px">
           ${wallets.map((w, i) => {
             const ic = safeIcon(w.info.icon);
-            const badge = ic ? `<img src="${ic}" alt="" style="width:26px;height:26px;border-radius:7px" />`
+            const badge = ic ? `<img src="${escHtml(ic)}" alt="" style="width:26px;height:26px;border-radius:7px" />`
               : `<span style="width:26px;height:26px;border-radius:7px;background:rgba(220,233,5,.16);display:inline-block"></span>`;
             return `<button data-i="${i}" style="display:flex;align-items:center;gap:12px;text-align:left;background:#121a0b;border:1px solid rgba(255,255,255,.08);color:#f4f7ee;font-weight:700;padding:12px 14px;border-radius:12px;cursor:pointer;font-size:.98rem">${badge}<span>${escHtml(w.info.name)}</span></button>`;
           }).join("")}

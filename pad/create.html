@@ -492,7 +492,7 @@ $('connectBtn').addEventListener('click', async () => {
   catch (e) { setNote(e.message, 'err'); }
 });
 
-// [Launch] one tx: token + real pool + seeded curve + optional dev buy (≤2%)
+// [Launch] one tx: token + real pool + seeded curve + optional dev buy (uncapped; excess refunded at the ceiling)
 $('launchBtn').addEventListener('click', async () => {
   const name = ($('name').value || '').trim();
   const symbol = ($('ticker').value || '').trim();

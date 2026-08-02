@@ -44,7 +44,8 @@ async function freshAnnouncer(env) {
   return import(`../src/announcer.js?case=${++importSeq}`);
 }
 
-const coinWithPfp = { token: TOKEN_ADDR, name: "Buy Me", symbol: "$BUYME", has_pfp: true, mcapUsd: 14500 };
+// Real /api/coins rows carry mcapEth (not mcapUsd — there is no server price feed), so fixtures use it.
+const coinWithPfp = { token: TOKEN_ADDR, name: "Buy Me", symbol: "$BUYME", has_pfp: true, mcapEth: 2.273 };
 const coinNoImg = { token: TOKEN_ADDR, name: "No Image", symbol: "NOIMG", has_pfp: false };
 
 test("banner + coin image -> album with banner on top, coin image second, caption on banner", async () => {
@@ -117,16 +118,24 @@ test("album fails -> falls back to banner photo -> then to text message", async 
 
 test("caption is HTML-safe and brand-correct (no em-dash, CA in <code>)", async () => {
   const { caption } = await freshAnnouncer({});
-  const text = caption({ token: TOKEN_ADDR, name: "A & B <script>", symbol: "$X", mcapUsd: 14500 });
+  const text = caption({ token: TOKEN_ADDR, name: "A & B <script>", symbol: "$X", mcapEth: 2.273 });
   assert.match(text, /A &amp; B &lt;script&gt;/, "name is HTML-escaped");
   assert.match(text, new RegExp(`<code>${TOKEN_ADDR}</code>`), "CA wrapped in <code>");
   assert.ok(!text.includes("—"), "no em-dashes in brand copy");
-  assert.match(text, /Market cap: \$14,500/);
+  assert.match(text, /Market cap: 2\.273 ETH/, "real API rows carry mcapEth, so posts show the ETH cap");
+});
+
+test("market cap: uses the ETH cap by default, prefers USD only if a price is ever supplied", async () => {
+  const { caption } = await freshAnnouncer({});
+  // Real /api/coins gives only mcapEth today -> ETH shows.
+  assert.match(caption({ token: TOKEN_ADDR, name: "X", symbol: "$X", mcapEth: 2.273 }), /Market cap: 2\.273 ETH/);
+  // Forward-compat: if a USD cap is ever added server-side, it takes precedence.
+  assert.match(caption({ token: TOKEN_ADDR, name: "X", symbol: "$X", mcapUsd: 14500, mcapEth: 2.273 }), /Market cap: \$14,500/);
 });
 
 test("graduation caption states the graduation + 0.5 ETH creator reward", async () => {
   const { gradCaption } = await freshAnnouncer({});
-  const text = gradCaption({ token: TOKEN_ADDR, name: "Buy Me", symbol: "$BUYME", mcapUsd: 34000 });
+  const text = gradCaption({ token: TOKEN_ADDR, name: "Buy Me", symbol: "$BUYME", mcapEth: 4.2 });
   assert.match(text, /GRADUATED/);
   assert.match(text, /0\.5 ETH/, "names the creator reward");
   assert.match(text, /permanent Uniswap v3 floor/);

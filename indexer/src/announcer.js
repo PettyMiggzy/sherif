@@ -72,6 +72,9 @@ async function tg(method, params) {
 
 const fmtUsd = (n) => (n == null ? null : "$" + Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 }));
 const esc = (s) => String(s ?? "").replace(/[<&>]/g, (c) => ({ "<": "&lt;", "&": "&amp;", ">": "&gt;" }[c])); // HTML parse_mode
+// Prefer a USD market cap when present, else the ETH cap. NOTE: the current /api/coins does NOT return
+// mcapUsd (there is no server-side price feed), so real posts render the ETH cap. The USD branch is
+// forward-compatible for when a price is added; do not assume dollars show today.
 const mcapOf = (c) => fmtUsd(c.mcapUsd) || (c.mcapEth != null ? `${Number(c.mcapEth).toFixed(3)} ETH` : null);
 
 // Build the LAUNCH text for a coin (brand voice: no em-dashes, no emoji-spam, only true mechanics).

@@ -18,12 +18,12 @@ Every coin that graduates gets a **DexScreener 10× Boost**, funded by Robin Lab
 
 ## The Bond: three positions
 
-The raise is split **60% Sherwood full-range LP / 40% Bounty floor**, plus the Ambush token wall.
+The Bond (~3.2 ETH, the raise after the creator + platform 0.5 ETH each) is split **60% Sherwood full-range LP / 40% Bounty floor**, plus the Ambush token wall.
 
 | Position | What it is |
 |----------|-----------|
-| **Sherwood** | A full-range Uniswap v3 LP, locked forever. Its trading fees compound back into itself via `poke()`. Takes 60% of the raise. |
-| **Bounty** | A concentrated WETH buy-wall *below* spot, a floor that bids on every dip. Takes 40% of the raise; deeper with volume. |
+| **Sherwood** | A full-range Uniswap v3 LP, locked forever. Its trading fees compound back into itself via `poke()`. Takes 60% of the Bond (~1.92 ETH). |
+| **Bounty** | A concentrated WETH buy-wall *below* spot, a floor that bids on every dip. Takes 40% of the Bond (~1.28 ETH); deeper with volume. |
 | **Ambush** | The 25% token reserve + unsold curve tokens, posted as a sell-wall *above* spot. |
 
 The curve geometry is fixed by calibration constants (`START_TICK_MAG=201600`, `CURVE_WIDTH=23000`, `MIN_GRAD_WIDTH=22800`), so every coin launches with the same shape and the same ceiling distance.

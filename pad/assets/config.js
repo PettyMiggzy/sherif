@@ -99,7 +99,7 @@ export const GAS_BUFFER_WEI = 800_000_000_000_000n; // 0.0008 ETH
 // surface tiny and readable instead of pasting giant JSON blobs.
 export const ABIS = {
   // Our launch entrypoint. Payable: any ETH sent is the dev's OWN opening buy
-  // (≤2%), executed atomically before trading opens. Carries the project's tax.
+  // (uncapped; excess is refunded at the ceiling), executed atomically before trading opens. Carries the project's tax.
   padFactory: [
     "function launch((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax) p) payable returns (address token, address curve, address pool)",
     "function tokenCount() view returns (uint256)",
