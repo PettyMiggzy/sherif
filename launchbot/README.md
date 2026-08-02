@@ -70,6 +70,36 @@ This bot holds funds. Treat it like a hot wallet service.
   environment only, and backed up somewhere safe.
 - The wallet store (`data/wallets.json`) is written `0600` and atomically. **Back up
   the volume** — losing it loses every user's funds.
+
+### Rotating `MASTER_SECRET`
+
+If `MASTER_SECRET` is ever exposed, rotate it. **You cannot just edit `.env` and
+restart** — the keystore is encrypted under the old secret, so a new secret makes
+every GCM auth tag fail and locks every user out of their own wallet. Use the
+re-encryption tool, which decrypts under the old secret and re-encrypts under the
+new one (the private keys themselves don't change), all-or-nothing, with a backup:
+
+```bash
+cd launchbot
+node rotate-secret.js --gen            # generate a strong new secret (32-byte hex)
+node rotate-secret.js --check          # sanity: keystore opens under the CURRENT secret
+
+# dry run, then the real rotation (keep both secrets in env, not shell history):
+OLD_MASTER_SECRET=<current> NEW_MASTER_SECRET=<new> node rotate-secret.js --dry-run
+OLD_MASTER_SECRET=<current> NEW_MASTER_SECRET=<new> node rotate-secret.js
+
+# then set MASTER_SECRET=<new> in .env, restart, and verify:
+MASTER_SECRET=<new> node rotate-secret.js --check
+```
+
+`OLD_MASTER_SECRET` defaults to `MASTER_SECRET` if unset. A pre-rotation backup is
+saved as `wallets.json.bak-<ts>` — it still opens under the OLD secret, so delete
+it once the bot is healthy on the new secret.
+
+> Re-encryption re-protects the **same** keys. If the keystore file *also* leaked
+> alongside the secret, the plaintext keys are already exposed — rotation won't
+> un-leak them; you'd have to generate fresh wallets and move funds. Rotation fully
+> restores safety only when `data/wallets.json` never left the host.
 - Tell users to keep only what they'll use and `/withdraw` the rest. The `/start`
   and `/disclaimer` copy says exactly this.
 
