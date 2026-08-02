@@ -28,11 +28,13 @@
 // does not un-leak them; you must move funds to fresh wallets. Rotation fully
 // restores safety only when the keystore itself never left the host.
 // ─────────────────────────────────────────────────────────────────────────────
+import 'dotenv/config'; // load launchbot/.env (MASTER_SECRET, DATA_DIR) exactly like the bot does
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { ethers } from 'ethers';
 
+// Resolves against the bot's own DATA_DIR (from .env) so it targets the SAME keystore the bot uses.
 const DATA_DIR = path.resolve((process.env.DATA_DIR || './data').trim());
 const FILE = path.join(DATA_DIR, 'wallets.json');
 
