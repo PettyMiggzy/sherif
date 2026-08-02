@@ -10,7 +10,7 @@ import {
   db, getCursor, setCursor, setHeadTs, upsertCoin, markGraduated, ungraduateFrom, insertTrade,
   coinByCurve, purgeTradesFrom, setGeometry,
   setSnapshot, coinGeom, insertAccrual, purgeAccrualsFrom, insertDevLock, purgeDevLocksFrom,
-  liveCoinsAll, coinsGraduatedSince, coinsGraduatedInRewardWindow, coinsMissingGeometry,
+  liveCoinsAll, coinsGraduatedSince, coinsGraduatedInRewardWindow, coinsMissingGeometry, purgeTradesScoped,
   tradeCountForToken, getMeta, setMeta,
 } from "./db.js";
 
@@ -496,19 +496,14 @@ export async function tick() {
     // chunks are all NEW blocks (> stored) that no reader had, so they need no purge. The
     // transaction body is pure synchronous better-sqlite3 — all network I/O happened above.
     const doPurge = firstChunk && stored !== null;
-    // Scope the trades purge to ONLY the pools re-scanned this pass (poolMap). The re-insert below covers
-    // exactly those pools, so a global DELETE ... WHERE block>=from would delete the recent trades of a coin
-    // that has aged out of poolMap (e.g. a graduated coin past its reward window) which nothing re-inserts,
-    // silently under-counting it forever. Delete only what we re-insert. Accruals/dev-locks/graduation are
-    // sourced from topic-filtered getLogs (not poolMap), so those purges stay global and are re-inserted.
-    let purgeTrades = null;
-    if (doPurge) {
-      const toks = [...new Set([...poolMap.values()].map((v) => v.token))];
-      if (toks.length) purgeTrades = { stmt: db.prepare(`DELETE FROM trades WHERE block >= ? AND token IN (${toks.map(() => "?").join(",")})`), args: [from, ...toks] };
-    }
     db.transaction(() => {
       if (doPurge) {
-        if (purgeTrades) purgeTrades.stmt.run(...purgeTrades.args);
+        // Scope the trades purge to ONLY the pools re-scanned this pass (the exact poolMap membership),
+        // via a subquery so it costs O(1) bound params. A global block-only purge would delete an aged-out
+        // coin's recent trades that nothing re-inserts (under-counting it forever); enumerating the tokens
+        // as parameters would exceed SQLite's ~32k host-parameter limit at launchpad scale and wedge
+        // indexing. Accrual/dev-lock/graduation purges are topic-sourced (not poolMap) and stay global.
+        purgeTradesScoped.run({ from, cutoff: rewardCutoff });
         purgeAccrualsFrom.run(from); purgeDevLocksFrom.run(from); ungraduateFrom.run(from);
       }
       for (const w of writes) w();

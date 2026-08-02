@@ -9,14 +9,14 @@ const ts = () => new Date().toISOString().slice(11, 19);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const TARGETS = [
-  { addr: "0x7d0c7122E26a75A9f0bd753e84c6115CAfE3Fd9F", sol: "contracts/PadRouter.sol",                name: "PadRouter" },
-  { addr: "0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2", sol: "contracts/CurvePadFactory.sol",          name: "CurvePadFactory" },
-  { addr: "0x0F07dC315e332084129c1D00bEbADAb05edf79Dc", sol: "contracts/RewardVault.sol",              name: "RewardVault" },
-  { addr: "0x26aBF8443C30AA2913b9f94B89787d38146C825b", sol: "contracts/FloorCoopFactory.sol",         name: "FloorCoopFactory" },
-  { addr: "0xAc918cd2BF3affFEc81A4f55238539d7eBFd156f", sol: "contracts/PlatformFeeSplitter.sol",      name: "PlatformFeeSplitter" },
-  { addr: "0xAcaeB153312CFf7B82C33a5a43604c566dbbe8c3", sol: "contracts/deployers/CurveDeployers.sol", name: "LaunchTokenDeployer" },
-  { addr: "0x441bA3270B9EF2f15C603D384609D1a6Ef98e428", sol: "contracts/deployers/CurveDeployers.sol", name: "CurvePoolDeployer" },
-  { addr: "0x5049f2CCa88E62990515155c745e814a53cfb862", sol: "contracts/deployers/CurveDeployers.sol", name: "BondDeployer" },
+  { addr: "0xA6BaAB820809C7fC8350311776627298f91F07eC", sol: "contracts/PadRouter.sol",                name: "PadRouter" },
+  { addr: "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074", sol: "contracts/CurvePadFactory.sol",          name: "CurvePadFactory" },
+  { addr: "0x03d5d26E492B288e62D897E7dde91af3CceB4347", sol: "contracts/RewardVault.sol",              name: "RewardVault" },
+  { addr: "0x564EDF561Bed46C972d5D44D84f5FAc9C5118668", sol: "contracts/FloorCoopFactory.sol",         name: "FloorCoopFactory" },
+  { addr: "0xca0EfD87B983CdeF56459051ecBE91aA5C87E17a", sol: "contracts/PlatformFeeSplitter.sol",      name: "PlatformFeeSplitter" },
+  { addr: "0xb3748cB6ba4e47b885f8333aCa8C004A4657383d", sol: "contracts/deployers/CurveDeployers.sol", name: "LaunchTokenDeployer" },
+  { addr: "0x020524511aD8B99828b19DA0FD3Bb7BE919A080c", sol: "contracts/deployers/CurveDeployers.sol", name: "CurvePoolDeployer" },
+  { addr: "0x8B04d9e55C904d6D371eA6e81ecb2a0911843AD3", sol: "contracts/deployers/CurveDeployers.sol", name: "BondDeployer" },
 ];
 
 function filesFor(t) {

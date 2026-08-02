@@ -17,9 +17,9 @@ for (const line of fs.readFileSync(path.join(__dirname, "..", ".env"), "utf8").s
 }
 const RPC = process.env.ROBINHOOD_RPC || "https://robinhoodchain.blockscout.com/api/eth-rpc";
 
-const FACTORY  = "0x44855d49E73Ad103Df51871A072FEe8709E6A2d6";
-const ROUTER   = "0xAEFE708e04D3E2e9609e6bC987903b31818C2a46";
-const PLATFORM = "0xCD04919a51bc0866BbA48c300465425d8fF83160";
+const FACTORY  = "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074"; // live v2.1 CurvePadFactory
+const ROUTER   = "0xA6BaAB820809C7fC8350311776627298f91F07eC"; // live v2.1 PadRouter
+const PLATFORM = "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf"; // live factory.platform() (cold wallet)
 const WETH     = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 
 const ab = (...f) => f;

@@ -264,6 +264,18 @@ export const coinsGraduatedInRewardWindow = db.prepare(`
 export const coinsMissingGeometry = db.prepare(`
   SELECT token, curve, pool, launch_block FROM coins WHERE token0 IS NULL AND graduated = 0
 `);
+// Purge the reorg re-scan window's trades, but ONLY for the coins whose pools are re-scanned this pass
+// (the exact poolMap membership: live coins, plus coins graduated within the reorg window or still inside
+// their reward window). Expressed as a subquery so it uses O(1) bound params — enumerating tokens as
+// parameters blows SQLite's ~32k host-parameter limit at launchpad scale and would wedge indexing.
+// Coins NOT re-scanned keep their trades (nothing would re-insert them).
+export const purgeTradesScoped = db.prepare(`
+  DELETE FROM trades WHERE block >= @from AND token IN (
+    SELECT token FROM coins WHERE pool IS NOT NULL AND token0 IS NOT NULL AND (
+      graduated = 0 OR grad_block >= @from OR grad_ts >= @cutoff
+    )
+  )
+`);
 export const tradeCountForToken = db.prepare("SELECT COUNT(*) AS n FROM trades WHERE token = ?");
 
 export const coinByCurve = db.prepare("SELECT token FROM coins WHERE curve = ?");

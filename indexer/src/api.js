@@ -169,6 +169,15 @@ const RPC_CACHE_BYTE_BUDGET = 64_000_000;       // total cache ceiling; clear wh
 // Reject an eth_getLogs whose range is a whole-chain scan or wider than this many blocks, so a client can't
 // force huge upstream responses (memory amplification). The pad's own reads page in <=50k-block chunks.
 const MAX_LOGS_SPAN = 100000n;
+// Best-effort chain head. On an API-only / read-replica node (`server.js --no-index`) the indexer loop
+// never runs, so getHead() stays 0 forever; fall back to a recently-forwarded, cached eth_blockNumber so
+// legitimate "recent block N .. latest" getLogs still pass the bound instead of being rejected outright.
+function effectiveHead() {
+  let h = 0n; try { h = BigInt(getHead() || 0); } catch { h = 0n; }
+  if (h > 0n) return h;
+  try { const c = RPC_CACHE.get("eth_blockNumber:[]"); if (c && c.result) return BigInt(c.result); } catch {}
+  return 0n;
+}
 function getLogsRangeOk(params) {
   const p = Array.isArray(params) ? params[0] : null;
   if (!p || typeof p !== "object") return true; // malformed -> let upstream reject it
@@ -181,9 +190,9 @@ function getLogsRangeOk(params) {
   // synced head (a close-enough estimate of chain head). Reject only when that span is too wide, so a
   // legitimate "recent block N .. latest" tail still works but "block 1 .. latest" does not.
   if (from !== null && headish(p.toBlock)) {
-    let head = 0n; try { head = BigInt(getHead() || 0); } catch { head = 0n; }
-    if (head === 0n) return false;                       // head unknown (startup): can't bound an open upper range, refuse
-    if (head - from > MAX_LOGS_SPAN) return false;        // head is known and >0 here; reject a too-wide "N..latest" span
+    const head = effectiveHead();
+    if (head === 0n) return false;                       // head still unknown (fresh node, nothing forwarded yet): refuse
+    if (head - from > MAX_LOGS_SPAN) return false;        // head known; reject a too-wide "N..latest" span
   }
   if (from !== null && to !== null && to - from > MAX_LOGS_SPAN) return false; // explicit span too wide
   return true;
