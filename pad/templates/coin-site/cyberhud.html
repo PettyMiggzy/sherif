@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ROBIN LABS // $ROBIN</title>
+<meta name="description" content="ROBIN is the coin of Robin Labs, the only launchpad that pays its successful creators. Fair launch into real Uniswap v3 liquidity with a permanent floor.">
+<style>
+  :root{
+    --bg:#05070c;
+    --panel:#0a0e17;
+    --panel-2:#080b13;
+    --ink:#dbe8f0;
+    --muted:#7d8fa0;
+    --dim:#6d8092;
+    --mag:#ff3d81;
+    --cyan:#22e0ff;
+    --green:#39ff9e;
+    --line:rgba(34,224,255,.14);
+    --line-strong:rgba(34,224,255,.34);
+    --mono:ui-monospace,"SF Mono","Cascadia Mono","Roboto Mono",Menlo,Consolas,monospace;
+    --sans:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
+    --maxw:1140px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;
+    line-height:1.55;
+    overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(900px 520px at 80% -10%, rgba(255,61,129,.11), transparent 60%),
+      radial-gradient(820px 620px at 8% 108%, rgba(34,224,255,.10), transparent 62%),
+      linear-gradient(180deg,#05070c 0%,#05070c 58%,#06090f 100%);
+  }
+  body::after{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.55;
+    background:
+      linear-gradient(rgba(34,224,255,.03) 1px,transparent 1px) 0 0/100% 3px,
+      linear-gradient(90deg,rgba(120,140,160,.05) 1px,transparent 1px) 0 0/48px 48px,
+      linear-gradient(rgba(120,140,160,.05) 1px,transparent 1px) 0 0/48px 48px;
+    -webkit-mask-image:radial-gradient(1300px 1000px at 50% 16%,#000 38%,transparent 92%);
+    mask-image:radial-gradient(1300px 1000px at 50% 16%,#000 38%,transparent 92%);
+  }
+  .wrap{position:relative;z-index:1;max-width:var(--maxw);margin:0 auto;padding:0 22px}
+  a{color:inherit;text-decoration:none}
+  img{max-width:100%;display:block}
+  ::selection{background:var(--mag);color:#0b0206}
+
+  .mono{font-family:var(--mono)}
+  .tnum{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  a:focus-visible,button:focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:2px}
+
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;letter-spacing:.32em;text-transform:uppercase;
+    color:var(--cyan);display:inline-flex;align-items:center;gap:10px;margin:0 0 18px;
+  }
+  .eyebrow::before{content:"";width:18px;height:1px;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+
+  /* corner brackets */
+  .hud{position:relative}
+  .hud::before{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    --c:var(--line-strong);--l:16px;--t:2px;
+    background-image:
+      linear-gradient(var(--c),var(--c)),linear-gradient(var(--c),var(--c)),
+      linear-gradient(var(--c),var(--c)),linear-gradient(var(--c),var(--c)),
+      linear-gradient(var(--c),var(--c)),linear-gradient(var(--c),var(--c)),
+      linear-gradient(var(--c),var(--c)),linear-gradient(var(--c),var(--c));
+    background-repeat:no-repeat;
+    background-size:
+      var(--l) var(--t),var(--t) var(--l),var(--l) var(--t),var(--t) var(--l),
+      var(--l) var(--t),var(--t) var(--l),var(--l) var(--t),var(--t) var(--l);
+    background-position:left top,left top,right top,right top,left bottom,left bottom,right bottom,right bottom;
+  }
+
+  /* buttons */
+  .btn{
+    --bc:var(--cyan);position:relative;display:inline-flex;align-items:center;justify-content:center;gap:10px;
+    font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;
+    padding:14px 22px;color:var(--ink);cursor:pointer;
+    background:linear-gradient(180deg,rgba(34,224,255,.05),rgba(34,224,255,.01));
+    border:1px solid var(--bc);
+    clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+    transition:box-shadow .18s ease,transform .18s ease,color .18s ease;
+  }
+  .btn:hover{box-shadow:0 0 0 1px var(--bc) inset,0 0 22px rgba(34,224,255,.28);transform:translateY(-1px)}
+  .btn svg{flex:none}
+  .btn--primary{--bc:var(--mag);color:#0b0206;font-weight:700;background:linear-gradient(180deg,#ff5b95,#ff2f78);box-shadow:0 0 26px rgba(255,61,129,.35)}
+  .btn--primary:hover{color:#0b0206;box-shadow:0 0 36px rgba(255,61,129,.55)}
+  .btn--ghost{padding:10px 16px;font-size:11.5px;background:transparent;border-color:var(--line-strong);color:var(--muted)}
+  .btn--ghost:hover{color:var(--ink);box-shadow:0 0 0 1px var(--line-strong) inset,0 0 16px rgba(34,224,255,.18)}
+
+  /* scanline sweep on hover */
+  .glitchable{overflow:hidden}
+  .glitchable::after{
+    content:"";position:absolute;left:0;right:0;top:-100%;height:100%;pointer-events:none;
+    background:linear-gradient(180deg,transparent,rgba(34,224,255,.07),transparent);transition:transform .55s ease;
+  }
+  .glitchable:hover::after{transform:translateY(220%)}
+
+  /* top bar */
+  header.bar{position:sticky;top:0;z-index:40;background:rgba(5,7,12,.74);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .bar-in{display:flex;align-items:center;justify-content:space-between;height:60px}
+  .wordmark{display:flex;align-items:center;gap:11px;font-family:var(--mono)}
+  .wordmark .rt{display:grid;place-items:center;width:26px;height:26px;border:1px solid var(--mag);color:var(--mag);font-weight:700;font-size:13px;box-shadow:0 0 14px rgba(255,61,129,.4),inset 0 0 10px rgba(255,61,129,.18);clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)}
+  .wordmark b{font-weight:700;letter-spacing:.16em;font-size:13.5px}
+  .wordmark span{color:var(--dim);font-size:12px}
+
+  /* hero */
+  .hero{padding:70px 0 30px}
+  .hero-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:46px;align-items:center}
+  .hero-status{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.12em;margin-bottom:22px}
+  .hero-status i{font-style:normal;color:var(--cyan)}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 9px var(--green);margin-right:7px;vertical-align:middle;animation:pulse 2.4s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  h1.title{font-family:var(--sans);font-weight:800;font-size:clamp(44px,8vw,88px);line-height:.94;letter-spacing:-.02em;margin:0;text-transform:uppercase}
+  h1.title .lab{display:block;color:transparent;-webkit-text-stroke:1.2px var(--cyan);text-shadow:0 0 26px rgba(34,224,255,.25)}
+  .ticker-line{display:flex;align-items:baseline;gap:14px;margin:18px 0 20px;flex-wrap:wrap}
+  .ticker{font-family:var(--mono);font-weight:700;font-size:20px;letter-spacing:.08em;color:var(--mag);text-shadow:0 0 18px rgba(255,61,129,.5)}
+  .ticker-sub{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.16em;text-transform:uppercase}
+  .hook{font-size:clamp(17px,2.4vw,21px);color:var(--ink);max-width:34ch;line-height:1.35;margin:0 0 30px}
+  .hook em{font-style:normal;color:var(--cyan)}
+  .hero-cta{display:flex;gap:14px;flex-wrap:wrap}
+
+  /* hero pod */
+  .pod{position:relative;padding:26px;background:linear-gradient(180deg,rgba(10,14,23,.92),rgba(6,9,15,.92));border:1px solid var(--line)}
+  .pod .reticle{position:absolute;inset:0;pointer-events:none}
+  .logo-ring{position:relative;aspect-ratio:1/1;display:grid;place-items:center;border:1px solid var(--line-strong);background:radial-gradient(circle at 50% 40%,rgba(255,61,129,.10),transparent 60%);clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);overflow:hidden}
+  .logo-ring img{width:56%;height:56%;object-fit:contain;filter:drop-shadow(0 0 22px rgba(34,224,255,.35))}
+  .logo-ring .sweep{position:absolute;inset:-40%;background:conic-gradient(from 0deg,transparent 0 78%,rgba(34,224,255,.16) 88%,transparent 100%);animation:spin 9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .pod-caption{display:flex;justify-content:space-between;margin-top:16px;font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.1em}
+  .pod-caption b{color:var(--cyan);font-weight:600}
+
+  /* sections */
+  .section{padding:52px 0;position:relative}
+  .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:26px;flex-wrap:wrap}
+  .sec-head h2{font-family:var(--sans);font-weight:800;font-size:clamp(24px,4vw,34px);text-transform:uppercase;letter-spacing:-.01em;margin:0}
+  .sec-idx{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.24em}
+
+  /* stats */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .stat{padding:20px 18px 18px;background:var(--panel);border:1px solid var(--line);position:relative;display:flex;flex-direction:column;min-height:150px}
+  .stat .lab{font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+  .stat .lab svg{flex:none;color:var(--dim)}
+  .stat .val{font-family:var(--mono);font-size:clamp(26px,3.4vw,34px);font-weight:700;font-variant-numeric:tabular-nums;margin-top:14px;line-height:1}
+  .stat .unit{font-size:14px;color:var(--muted);margin-left:5px;font-weight:400}
+  .stat.c1 .val{color:var(--cyan)}
+  .stat.c4 .val{color:var(--mag)}
+  .stat .spark{margin-top:auto;padding-top:14px;height:20px;width:100%;display:block}
+
+  /* curve */
+  .curve-panel{padding:30px;background:linear-gradient(120deg,rgba(10,14,23,.92),rgba(6,9,15,.6));border:1px solid var(--line)}
+  .curve-top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+  .curve-top .pct{font-family:var(--mono);font-weight:700;font-size:40px;color:var(--cyan);line-height:1;font-variant-numeric:tabular-nums}
+  .curve-top .pct small{font-size:16px;color:var(--muted);font-weight:400}
+  .curve-top .goal{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);text-align:right}
+  .track{position:relative;height:16px;background:#070b12;border:1px solid var(--line-strong);clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);overflow:hidden}
+  .track .fill{position:absolute;inset:0 auto 0 0;width:61%;background:repeating-linear-gradient(90deg,rgba(0,0,0,.28) 0 2px,transparent 2px 9px),linear-gradient(90deg,#22e0ff,#7affd0 55%,#ff3d81);box-shadow:0 0 20px rgba(34,224,255,.5);transform-origin:left;animation:grow 1.3s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  .track .fill::after{content:"";position:absolute;top:0;right:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 12px #fff}
+  .ticks{display:flex;justify-content:space-between;margin-top:9px;font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.1em;flex-wrap:wrap;gap:6px}
+  .curve-note{margin-top:18px;color:var(--muted);font-size:14.5px;max-width:72ch;line-height:1.6}
+  .curve-note b{color:var(--ink);font-weight:600}
+
+  /* chart */
+  .chart-shell{padding:22px 22px 10px;background:var(--panel);border:1px solid var(--line);position:relative;overflow:hidden}
+  .chart-legend{display:flex;gap:22px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.1em;margin-bottom:12px}
+  .chart-legend span{display:inline-flex;align-items:center;gap:8px}
+  .chart-legend i{width:18px;height:2px;display:inline-block}
+  .chart-scroll{overflow-x:auto;overflow-y:hidden}
+  svg.chart{display:block;width:100%;min-width:560px;height:320px}
+  .chart-foot{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.12em;padding:10px 2px 6px;gap:8px;flex-wrap:wrap}
+
+  /* about */
+  .about-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:46px;align-items:start}
+  .about-lede{font-size:clamp(20px,3vw,27px);line-height:1.42;letter-spacing:-.01em}
+  .about-lede b{color:var(--cyan);font-weight:600}
+  .about-body p{color:var(--muted);font-size:15.5px;line-height:1.7;margin:0 0 16px;max-width:60ch}
+  .about-body p strong{color:var(--ink);font-weight:600}
+  .about-tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}
+  .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);padding:7px 12px}
+
+  /* contract */
+  .ca-panel{padding:26px 28px;background:linear-gradient(120deg,rgba(10,14,23,.92),rgba(6,9,15,.5));border:1px solid var(--line)}
+  .ca-label{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:9px}
+  .ca-row{display:flex;align-items:stretch;gap:12px;flex-wrap:wrap}
+  .ca-box{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:14px 16px;background:#070b12;border:1px solid var(--line-strong);font-family:var(--mono);font-size:14px;color:var(--cyan);overflow-x:auto;white-space:nowrap}
+  .copy-btn{white-space:nowrap}
+  .copy-btn.copied{--bc:var(--green);color:var(--green)}
+  .copied-msg{font-family:var(--mono);font-size:11px;color:var(--green);letter-spacing:.14em;opacity:0;transition:opacity .2s;align-self:center;text-transform:uppercase}
+  .copied-msg.on{opacity:1}
+
+  /* trust */
+  .trust{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line)}
+  .trust .cell{padding:24px 20px;border-right:1px solid var(--line);position:relative}
+  .trust .cell:last-child{border-right:none}
+  .trust .n{font-family:var(--mono);font-size:11px;color:var(--mag);letter-spacing:.18em;margin-bottom:12px}
+  .trust .cell p{margin:0;font-size:14.5px;line-height:1.5;color:var(--ink)}
+  .trust svg{width:22px;height:22px;margin-bottom:12px;display:block}
+
+  /* links */
+  .links-row{display:flex;flex-wrap:wrap;gap:14px}
+  .link-card{flex:1;min-width:220px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 22px;background:var(--panel);border:1px solid var(--line);transition:border-color .18s,box-shadow .18s,transform .18s}
+  .link-card:hover{border-color:var(--line-strong);box-shadow:0 0 24px rgba(34,224,255,.12);transform:translateY(-2px)}
+  .link-card .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .link-card .v{font-size:18px;font-weight:600;margin-top:5px}
+  .link-card .arr{color:var(--cyan)}
+
+  /* footer */
+  footer{border-top:1px solid var(--line);margin-top:40px;padding:34px 0 48px}
+  .foot-in{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
+  .foot-in .fmark{font-family:var(--mono);letter-spacing:.14em;font-size:13px;display:flex;align-items:center;gap:10px}
+  .foot-in .fmark b{color:var(--ink)}
+  .foot-in .fmark .rt{display:inline-grid;place-items:center;width:22px;height:22px;border:1px solid var(--mag);color:var(--mag);font-weight:700;font-size:11px}
+  .foot-links{display:flex;gap:20px;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.1em;flex-wrap:wrap;align-items:center}
+  .foot-links a:hover{color:var(--cyan)}
+  .foot-handle{color:var(--dim)}
+
+  @media(max-width:900px){
+    .hero-grid{grid-template-columns:1fr;gap:34px}
+    .pod{order:-1;max-width:360px;margin-inline:auto}
+    .about-grid{grid-template-columns:1fr;gap:28px}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .trust{grid-template-columns:repeat(2,1fr)}
+    .trust .cell:nth-child(2){border-right:none}
+    .trust .cell:nth-child(1),.trust .cell:nth-child(2){border-bottom:1px solid var(--line)}
+  }
+  @media(max-width:560px){
+    .wrap{padding:0 15px}
+    .hero{padding:44px 0 18px}
+    .stats{grid-template-columns:1fr 1fr}
+    .trust{grid-template-columns:1fr}
+    .trust .cell{border-right:none;border-bottom:1px solid var(--line)}
+    .trust .cell:last-child{border-bottom:none}
+    .btn{width:100%}
+    .hero-cta{flex-direction:column}
+    .wordmark span{display:none}
+    .curve-top .pct{font-size:32px}
+  }
+  @media(prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    *{animation:none!important;transition:none!important}
+    .glitchable::after{display:none}
+    .track .fill{transform:none}
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<header class="bar">
+  <div class="wrap bar-in">
+    <a class="wordmark" href="#top" aria-label="Robin Labs home">
+      <span class="rt" aria-hidden="true">R</span>
+      <b>ROBIN&nbsp;LABS</b>
+      <span class="mono">// launchpad</span>
+    </a>
+    <a class="btn btn--ghost" href="https://robinlab.io" target="_blank" rel="noopener">Launch your own</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- HERO -->
+  <section class="hero wrap">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <div class="hero-status mono">
+          <span><span class="dot" aria-hidden="true"></span>SYSTEM ONLINE</span>
+          <span>NET: <i>ROBINHOOD CHAIN</i></span>
+          <span>STATUS: <i>BONDING</i></span>
+        </div>
+        <h1 class="title">ROBIN<span class="lab">LABS</span></h1>
+        <div class="ticker-line">
+          <span class="ticker">$ROBIN</span>
+          <span class="ticker-sub">// the home team</span>
+        </div>
+        <p class="hook">The coin of the launchpad that <em>pays its creators.</em></p>
+        <div class="hero-cta">
+          <a class="btn btn--primary" href="https://robinlab.io/token.html?c=0x6696fe29288b586017e6f264c0091dba6c5ebeaf" target="_blank" rel="noopener">Buy $ROBIN
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 8h8M8.5 4.5 12 8l-3.5 3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <a class="btn" href="#chart">View chart
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 11.5 6 7l2.5 2.5L13.5 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+        </div>
+      </div>
+
+      <aside class="pod hud glitchable" aria-label="Token identity">
+        <svg class="reticle" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M50 4 v10 M50 96 v-10 M4 50 h10 M96 50 h-10" stroke="rgba(34,224,255,.5)" stroke-width=".5"/>
+        </svg>
+        <div class="logo-ring">
+          <span class="sweep" aria-hidden="true"></span>
+          <img src="data:image/webp;base64,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" alt="ROBIN LABS token logo">
+        </div>
+        <div class="pod-caption mono">
+          <span>TOKEN&nbsp;// <b>$ROBIN</b></span>
+          <span>V3&nbsp;LP&nbsp;// <b>SECURED</b></span>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- LIVE STATS -->
+  <section class="section wrap" aria-label="Live statistics">
+    <div class="sec-head">
+      <h2>Live telemetry</h2>
+      <span class="sec-idx mono">SNAPSHOT // 2026-08-02 &nbsp;&middot;&nbsp; [ 01 / READOUT ]</span>
+    </div>
+    <div class="stats">
+      <div class="stat c1 hud">
+        <div class="lab"><svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0 10 5 5 10 0 5Z" fill="currentColor"/></svg>Market cap</div>
+        <div class="val tnum">7.20<span class="unit">ETH</span></div>
+        <svg class="spark" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true"><polyline points="0,17 18,15 34,14 52,13 70,10 86,8 100,6" fill="none" stroke="#22e0ff" stroke-width="1.4"/></svg>
+      </div>
+      <div class="stat c2 hud">
+        <div class="lab"><svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0 10 5 5 10 0 5Z" fill="currentColor"/></svg>Total volume</div>
+        <div class="val tnum">15.2<span class="unit">ETH</span></div>
+        <svg class="spark" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true"><polyline points="0,14 16,8 30,16 48,7 64,15 82,9 100,5" fill="none" stroke="#7d8fa0" stroke-width="1.4"/></svg>
+      </div>
+      <div class="stat c3 hud">
+        <div class="lab"><svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0 10 5 5 10 0 5Z" fill="currentColor"/></svg>Trades</div>
+        <div class="val tnum">9,306</div>
+        <svg class="spark" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true"><polyline points="0,18 20,18 38,14 54,14 72,9 88,9 100,6" fill="none" stroke="#7d8fa0" stroke-width="1.4"/></svg>
+      </div>
+      <div class="stat c4 hud">
+        <div class="lab"><svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0 10 5 5 10 0 5Z" fill="currentColor"/></svg>Curve progress</div>
+        <div class="val tnum">61<span class="unit">%</span></div>
+        <svg class="spark" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true"><polyline points="0,18 24,13 44,9 60,7 76,6 90,5 100,4" fill="none" stroke="#ff3d81" stroke-width="1.4"/></svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- BONDING CURVE -->
+  <section class="section wrap" aria-label="Bonding curve progress">
+    <div class="sec-head">
+      <h2>Bonding curve</h2>
+      <span class="sec-idx mono">[ 02 / GRADUATION ]</span>
+    </div>
+    <div class="curve-panel hud glitchable">
+      <div class="curve-top">
+        <div class="pct tnum">61%<small>&nbsp;filled</small></div>
+        <div class="goal">Target // Uniswap v3 graduation</div>
+      </div>
+      <div class="track" role="progressbar" aria-valuenow="61" aria-valuemin="0" aria-valuemax="100" aria-label="Bonding curve at 61 percent to graduation">
+        <div class="fill"></div>
+      </div>
+      <div class="ticks mono">
+        <span>0%</span><span>25%</span><span>50%</span><span class="tnum" style="color:var(--cyan)">// NOW 61%</span><span>GRADUATE 100%</span>
+      </div>
+      <p class="curve-note">At graduation the curve <b>moves all liquidity into a permanent Uniswap v3 floor that never leaves</b>, and the creator earns <b>0.5 ETH</b>. No presale, no team allocation, no games.</p>
+    </div>
+  </section>
+
+  <!-- CHART -->
+  <section class="section wrap" id="chart" aria-label="Price chart">
+    <div class="sec-head">
+      <h2>Price action</h2>
+      <span class="sec-idx mono">[ 03 / $ROBIN&nbsp;/&nbsp;ETH ]</span>
+    </div>
+    <div class="chart-shell hud glitchable">
+      <div class="chart-legend mono">
+        <span><i style="background:#22e0ff;box-shadow:0 0 8px #22e0ff"></i>PRICE</span>
+        <span><i style="background:#ff3d81;box-shadow:0 0 8px #ff3d81"></i>CURVE FLOOR</span>
+        <span>RANGE // 30D</span>
+        <span>TREND // <span style="color:var(--green)">ASCENDING</span></span>
+      </div>
+      <div class="chart-scroll">
+        <svg class="chart" viewBox="0 0 800 320" preserveAspectRatio="none" role="img" aria-label="Rising price chart for ROBIN over the last 30 days, up 61 percent along its bonding curve">
+          <defs>
+            <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#22e0ff" stop-opacity=".34"/>
+              <stop offset="1" stop-color="#22e0ff" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#22e0ff"/>
+              <stop offset="1" stop-color="#7affd0"/>
+            </linearGradient>
+            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <g stroke="rgba(34,224,255,.10)" stroke-width="1">
+            <line x1="0" y1="64" x2="800" y2="64"/><line x1="0" y1="128" x2="800" y2="128"/>
+            <line x1="0" y1="192" x2="800" y2="192"/><line x1="0" y1="256" x2="800" y2="256"/>
+          </g>
+          <g stroke="rgba(120,140,160,.07)" stroke-width="1">
+            <line x1="160" y1="0" x2="160" y2="292"/><line x1="320" y1="0" x2="320" y2="292"/>
+            <line x1="480" y1="0" x2="480" y2="292"/><line x1="640" y1="0" x2="640" y2="292"/>
+          </g>
+          <line x1="0" y1="292" x2="800" y2="292" stroke="rgba(34,224,255,.4)" stroke-width="1.4"/>
+          <path d="M0,268 L46,262 L92,270 L140,250 L188,256 L236,232 L284,240 L332,210 L380,200 L428,214 L476,176 L524,168 L572,150 L620,120 L668,128 L716,92 L760,70 L800,54 L800,292 L0,292 Z" fill="url(#area)"/>
+          <path filter="url(#glow)" fill="none" stroke="url(#stroke)" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"
+            d="M0,268 L46,262 L92,270 L140,250 L188,256 L236,232 L284,240 L332,210 L380,200 L428,214 L476,176 L524,168 L572,150 L620,120 L668,128 L716,92 L760,70 L800,54"/>
+          <path fill="none" stroke="#ff3d81" stroke-width="1.4" stroke-dasharray="5 6" opacity=".8" d="M0,282 L800,238"/>
+          <circle cx="800" cy="54" r="4.5" fill="#0a0e17" stroke="#22e0ff" stroke-width="2"/>
+          <circle cx="800" cy="54" r="10" fill="none" stroke="#22e0ff" stroke-width="1" opacity=".5"/>
+        </svg>
+      </div>
+      <div class="chart-foot mono">
+        <span>30D AGO</span><span>20D</span><span>10D</span><span style="color:var(--cyan)">NOW // 61% UP CURVE</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section class="section wrap" aria-label="About ROBIN">
+    <div class="sec-head">
+      <h2>The home team</h2>
+      <span class="sec-idx mono">[ 04 / DOSSIER ]</span>
+    </div>
+    <div class="about-grid">
+      <p class="about-lede">ROBIN is the home team. It is the coin of <b>Robin Labs</b>, the only launchpad that pays its successful creators.</p>
+      <div class="about-body">
+        <p>Every launch here is a <strong>fair launch into real Uniswap v3 liquidity</strong>, with a permanent floor that never leaves. No presale, no team allocation, no games.</p>
+        <p>$ROBIN is the flagship. It carries the mechanics the whole launchpad is built on, the same fair terms every creator gets, proven on the token that started it.</p>
+        <div class="about-tags">
+          <span class="tag">Fair launch</span>
+          <span class="tag">Uniswap v3</span>
+          <span class="tag">Permanent floor</span>
+          <span class="tag">No presale</span>
+          <span class="tag">Creators paid</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTRACT -->
+  <section class="section wrap" aria-label="Contract address">
+    <div class="sec-head">
+      <h2>Contract</h2>
+      <span class="sec-idx mono">[ 05 / VERIFY ]</span>
+    </div>
+    <div class="ca-panel hud">
+      <div class="ca-label"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 1 11 6 6 11 1 6Z" stroke="currentColor" stroke-width="1.2"/></svg>Token contract address // Robinhood Chain</div>
+      <div class="ca-row">
+        <div class="ca-box"><span id="ca">0x6696fe29288b586017e6f264c0091dba6c5ebeaf</span></div>
+        <button class="btn copy-btn" id="copyBtn" type="button" aria-label="Copy contract address">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="1"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>
+          <span id="copyTxt">Copy</span>
+        </button>
+        <span class="copied-msg" id="copiedMsg" role="status" aria-live="polite">Copied</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRUST STRIP -->
+  <section class="section wrap" aria-label="How Robin Labs works">
+    <div class="sec-head">
+      <h2>Guaranteed mechanics</h2>
+      <span class="sec-idx mono">[ 06 / PROTOCOL ]</span>
+    </div>
+    <div class="trust hud">
+      <div class="cell">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#22e0ff" stroke-width="1.6" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/><path d="m8.5 12 2.3 2.3L15.5 9.5"/></svg>
+        <div class="n">01</div>
+        <p>Fair launch, no presale or team allocation.</p>
+      </div>
+      <div class="cell">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#22e0ff" stroke-width="1.6" aria-hidden="true"><path d="M3 12h4l3 7 4-14 3 7h4"/></svg>
+        <div class="n">02</div>
+        <p>Real Uniswap v3 liquidity.</p>
+      </div>
+      <div class="cell">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#22e0ff" stroke-width="1.6" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="1.5"/><path d="M7.5 10V7a4.5 4.5 0 0 1 9 0v3"/></svg>
+        <div class="n">03</div>
+        <p>A permanent floor that never leaves.</p>
+      </div>
+      <div class="cell">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ff3d81" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M9.5 10.5c0-1.2 1.1-2 2.5-2s2.5.8 2.5 2-1.1 1.5-2.5 1.5-2.5.5-2.5 1.7 1.1 1.8 2.5 1.8 2.5-.8 2.5-1.8"/></svg>
+        <div class="n">04</div>
+        <p>The creator earns 0.5 ETH when a coin graduates.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- LINKS -->
+  <section class="section wrap" aria-label="Links">
+    <div class="sec-head">
+      <h2>Uplink</h2>
+      <span class="sec-idx mono">[ 07 / CHANNELS ]</span>
+    </div>
+    <div class="links-row">
+      <a class="link-card" href="https://robinlab.io" target="_blank" rel="noopener">
+        <span><span class="k">Website</span><span class="v">robinlab.io</span></span>
+        <svg class="arr" width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 11.5 11.5 4.5M5.5 4.5h6v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a class="link-card" href="https://robinlab.io/create" target="_blank" rel="noopener">
+        <span><span class="k">Create</span><span class="v">Launch a coin</span></span>
+        <svg class="arr" width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 11.5 11.5 4.5M5.5 4.5h6v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+  </section>
+
+</main>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap foot-in">
+    <div class="fmark mono">
+      <span class="rt" aria-hidden="true">R</span>
+      Powered by <b>Robin Labs</b>
+    </div>
+    <div class="foot-links">
+      <span class="foot-handle">robinlab.io/token/$ROBIN</span>
+      <a href="https://robinlab.io" target="_blank" rel="noopener">robinlab.io</a>
+      <a href="https://robinlab.io/create" target="_blank" rel="noopener">Launch a coin</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var btn=document.getElementById('copyBtn');
+    var txt=document.getElementById('copyTxt');
+    var msg=document.getElementById('copiedMsg');
+    var ca=document.getElementById('ca').textContent.trim();
+    if(!btn)return;
+    var t;
+    function done(){
+      btn.classList.add('copied');msg.classList.add('on');txt.textContent='Copied';
+      clearTimeout(t);
+      t=setTimeout(function(){btn.classList.remove('copied');msg.classList.remove('on');txt.textContent='Copy';},1900);
+    }
+    function fallback(){
+      try{
+        var ta=document.createElement('textarea');ta.value=ca;ta.setAttribute('readonly','');
+        ta.style.position='fixed';ta.style.left='-9999px';document.body.appendChild(ta);
+        ta.select();document.execCommand('copy');document.body.removeChild(ta);done();
+      }catch(e){txt.textContent='Copy failed';}
+    }
+    btn.addEventListener('click',function(){
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(ca).then(done).catch(fallback);
+      }else{fallback();}
+    });
+  })();
+</script>
+</body>
+</html>

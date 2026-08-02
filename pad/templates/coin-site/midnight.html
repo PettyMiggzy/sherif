@@ -2,581 +2,665 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Life of Milo // $MILO // Robin Labs</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ROBIN LABS // $ROBIN Terminal</title>
 <style>
   :root{
     --bg:#05060a;
     --panel:#0b0e14;
+    --panel-2:#090c11;
     --line:#1b2430;
-    --line-2:#26313f;
+    --line-soft:#131a24;
     --mint:#4ef2a8;
-    --mint-dim:#2f9c6c;
+    --mint-dim:#2f9d6e;
     --amber:#ffcf6b;
-    --slate:#8ea3b8;
-    --slate-dim:#869ab0;
-    --ink:#d7e3ee;
+    --text:#8ea3b8;
+    --text-hi:#c9d6e2;
+    --text-lo:#7d90a2;
     --mono:ui-monospace,'SF Mono','JetBrains Mono',Menlo,Consolas,monospace;
-    --maxw:1080px;
+    --maxw:1160px;
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
+  html,body{margin:0;padding:0}
   body{
-    margin:0;
     background:var(--bg);
-    color:var(--slate);
+    color:var(--text);
     font-family:var(--mono);
-    font-variant-numeric:tabular-nums;
     font-size:15px;
-    line-height:1.6;
-    letter-spacing:.01em;
-    overflow-x:hidden;
+    line-height:1.55;
+    font-variant-numeric:tabular-nums;
     -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+    position:relative;
+    min-height:100vh;
   }
-  /* dotted grid + scanline overlays */
+  /* dotted grid + subtle glow background */
   body::before{
     content:"";
     position:fixed;
     inset:0;
     z-index:0;
     pointer-events:none;
-    background-image:radial-gradient(rgba(78,242,168,.10) 1px,transparent 1px);
-    background-size:26px 26px;
-    background-position:-13px -13px;
-    -webkit-mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 40%,transparent 100%);
-            mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 40%,transparent 100%);
-    opacity:.5;
+    background-image:
+      radial-gradient(rgba(78,242,168,.05) 1px, transparent 1px),
+      radial-gradient(1000px 600px at 78% -8%, rgba(78,242,168,.06), transparent 70%),
+      radial-gradient(900px 700px at 8% 108%, rgba(255,207,107,.035), transparent 70%);
+    background-size:22px 22px, 100% 100%, 100% 100%;
+    background-position:center top, center, center;
   }
+  /* CRT scanline overlay */
   body::after{
     content:"";
     position:fixed;
     inset:0;
     z-index:60;
     pointer-events:none;
-    background:repeating-linear-gradient(to bottom,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.28) 3px,rgba(0,0,0,0) 4px);
-    opacity:.35;
+    background:repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,.16) 3px,
+      rgba(0,0,0,0) 4px
+    );
     mix-blend-mode:multiply;
+    opacity:.28;
   }
   .wrap{position:relative;z-index:1;max-width:var(--maxw);margin:0 auto;padding:0 20px}
-  a{color:inherit;text-decoration:none}
-  ::selection{background:var(--mint);color:#03130c}
 
-  :focus-visible{outline:2px solid var(--mint);outline-offset:3px;border-radius:2px}
+  a{color:inherit}
+  a:focus-visible,button:focus-visible{
+    outline:2px solid var(--mint);
+    outline-offset:2px;
+    border-radius:2px;
+  }
+  ::selection{background:rgba(78,242,168,.28);color:#eafff5}
 
   /* ---------- top bar ---------- */
   .topbar{
     position:sticky;top:0;z-index:50;
-    background:rgba(5,6,10,.86);
-    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    background:rgba(5,6,10,.82);
+    backdrop-filter:saturate(140%) blur(8px);
     border-bottom:1px solid var(--line);
   }
-  .topbar .row{
-    display:flex;align-items:center;justify-content:space-between;
-    height:56px;
+  .topbar-in{
+    max-width:var(--maxw);margin:0 auto;
+    padding:11px 20px;
+    display:flex;align-items:center;justify-content:space-between;gap:16px;
   }
-  .wordmark{display:flex;align-items:center;gap:9px;color:var(--ink);font-weight:700;font-size:12px;letter-spacing:.24em}
-  .wordmark svg{display:block}
-  .wordmark .lo{color:var(--mint)}
+  .wordmark{display:flex;align-items:center;gap:9px;text-decoration:none;letter-spacing:.02em}
+  .wm-mark{
+    width:22px;height:22px;flex:0 0 auto;
+    border:1px solid var(--line);border-radius:3px;
+    display:grid;place-items:center;background:var(--panel);
+  }
+  .wm-mark svg{display:block}
+  .wm-text{font-size:12.5px;font-weight:600;color:var(--text-hi);letter-spacing:.16em}
+  .wm-text b{color:var(--text-lo);font-weight:600}
   .ghost{
-    display:inline-flex;align-items:center;gap:8px;
-    border:1px solid var(--line-2);
-    color:var(--slate);
-    padding:8px 14px;font-size:12px;letter-spacing:.06em;font-weight:500;
-    border-radius:2px;
-    transition:border-color .15s,color .15s,background .15s;
+    text-decoration:none;
+    font-size:12px;letter-spacing:.05em;
+    color:var(--text-hi);
+    border:1px solid var(--line);
+    padding:8px 14px;border-radius:4px;
+    background:linear-gradient(180deg,rgba(27,36,48,.35),rgba(11,14,20,.35));
+    transition:border-color .18s ease,color .18s ease,background .18s ease;
+    white-space:nowrap;
   }
-  .ghost:hover{border-color:var(--mint-dim);color:var(--ink);background:rgba(255,255,255,.03)}
-  .ghost .arw{color:var(--mint)}
+  .ghost:hover{border-color:var(--mint-dim);color:var(--mint)}
 
   /* ---------- section scaffolding ---------- */
-  section{position:relative;z-index:1}
+  section{padding:64px 0;border-bottom:1px solid var(--line-soft)}
   .kicker{
+    font-size:11px;letter-spacing:.34em;text-transform:uppercase;
+    color:var(--text-lo);margin:0 0 18px;
     display:flex;align-items:center;gap:10px;
-    color:var(--slate-dim);font-size:11px;letter-spacing:.28em;text-transform:uppercase;font-weight:500;
-    margin:0 0 18px;
   }
-  .kicker::before{content:"";width:8px;height:8px;background:var(--mint);box-shadow:0 0 8px var(--mint);border-radius:1px}
-  .kicker .idx{color:var(--mint-dim)}
+  .kicker::before{content:"";width:20px;height:1px;background:var(--mint-dim);display:inline-block}
+  h2{
+    font-size:clamp(20px,3.4vw,27px);
+    color:var(--text-hi);font-weight:600;letter-spacing:-.01em;
+    margin:0 0 10px;
+  }
 
   .panel{
-    background:var(--panel);
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
     border:1px solid var(--line);
-    border-radius:4px;
+    border-radius:8px;
   }
 
   /* ---------- hero ---------- */
-  .hero{padding:64px 0 40px}
-  .hero-grid{display:grid;grid-template-columns:112px 1fr;gap:26px;align-items:start}
-  .logo-frame{
-    width:112px;height:112px;border:1px solid var(--line-2);border-radius:6px;
-    background:
-      linear-gradient(180deg,rgba(78,242,168,.06),rgba(5,6,10,0)),
-      #070a10;
-    display:flex;align-items:center;justify-content:center;
-    position:relative;overflow:hidden;
-    box-shadow:0 0 0 1px rgba(78,242,168,.05),0 20px 60px -30px rgba(78,242,168,.4);
+  .hero{padding-top:52px;padding-bottom:56px;overflow:hidden}
+  .hero-grid{
+    display:grid;grid-template-columns:1.15fr .85fr;gap:40px;align-items:center;
   }
-  .logo-frame::after{
-    content:"";position:absolute;inset:0;
-    background:repeating-linear-gradient(to bottom,transparent 0,transparent 2px,rgba(0,0,0,.25) 3px);
-    opacity:.4;pointer-events:none;
+  .term-tag{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:11px;letter-spacing:.16em;color:var(--text-lo);
+    border:1px solid var(--line);border-radius:100px;
+    padding:5px 11px 5px 9px;margin-bottom:24px;
   }
-  .logo-frame img{width:88px;height:88px;object-fit:cover;border-radius:4px;display:block}
-  .logo-corner{position:absolute;width:9px;height:9px;border:1px solid var(--mint);opacity:.7}
-  .logo-corner.tl{top:5px;left:5px;border-right:0;border-bottom:0}
-  .logo-corner.br{bottom:5px;right:5px;border-left:0;border-top:0}
-
-  .hero h1{
-    margin:6px 0 4px;font-size:clamp(30px,6vw,52px);line-height:1.02;
-    color:var(--ink);font-weight:700;letter-spacing:-.01em;
+  .dot-live{
+    width:7px;height:7px;border-radius:50%;background:var(--mint);
+    box-shadow:0 0 0 0 rgba(78,242,168,.6);
+    animation:pulse 2.4s ease-out infinite;
   }
-  .tickerline{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:18px}
-  .ticker{color:var(--mint);font-size:18px;font-weight:700;letter-spacing:.02em}
-  .chip{
-    font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--slate-dim);font-weight:500;
-    border:1px solid var(--line-2);padding:4px 8px;border-radius:2px;
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(78,242,168,.45)}
+    70%{box-shadow:0 0 0 8px rgba(78,242,168,0)}
+    100%{box-shadow:0 0 0 0 rgba(78,242,168,0)}
+  }
+  .hero-name{
+    font-size:clamp(38px,8vw,72px);
+    line-height:.98;letter-spacing:-.03em;font-weight:700;
+    color:var(--text-hi);margin:0;
+  }
+  .hero-name .ticker{
+    display:block;font-size:clamp(15px,2.4vw,19px);
+    letter-spacing:.24em;color:var(--mint);font-weight:600;margin-top:16px;
   }
   .hook{
-    color:var(--ink);font-size:clamp(16px,2.4vw,20px);line-height:1.5;
-    max-width:44ch;margin:0 0 26px;font-weight:400;
+    font-size:clamp(15px,2.2vw,18px);
+    color:var(--text);max-width:34ch;margin:22px 0 30px;line-height:1.5;
   }
-  .hook .amb{color:var(--amber)}
-  .cursor{display:inline-block;width:.56em;height:1.05em;background:var(--mint);transform:translateY(.14em);margin-left:2px;animation:blink 1.1s steps(1) infinite}
-  @keyframes blink{0%,50%{opacity:1}50.01%,100%{opacity:0}}
-
+  .hook .cursor{
+    display:inline-block;width:9px;height:1.05em;background:var(--mint);
+    margin-left:3px;vertical-align:-2px;animation:blink 1.05s steps(1) infinite;
+  }
+  @keyframes blink{50%{opacity:0}}
   .cta-row{display:flex;flex-wrap:wrap;gap:12px}
   .btn{
+    text-decoration:none;font-family:var(--mono);
+    font-size:13.5px;letter-spacing:.04em;
+    padding:13px 22px;border-radius:5px;cursor:pointer;
     display:inline-flex;align-items:center;gap:10px;
-    padding:13px 22px;border-radius:3px;font-size:13px;letter-spacing:.06em;font-weight:700;
-    border:1px solid transparent;transition:transform .12s,box-shadow .15s,background .15s,border-color .15s;
-    cursor:pointer;
+    border:1px solid transparent;transition:transform .12s ease,box-shadow .2s ease,border-color .2s ease,background .2s ease;
   }
-  .btn-primary{background:var(--mint);color:#03130c;box-shadow:0 0 0 1px rgba(78,242,168,.4),0 14px 40px -18px var(--mint)}
-  .btn-primary:hover{transform:translateY(-1px);box-shadow:0 0 0 1px rgba(78,242,168,.6),0 18px 46px -16px var(--mint)}
-  .btn-ghost{background:transparent;border-color:var(--line-2);color:var(--ink)}
-  .btn-ghost:hover{border-color:var(--mint-dim);background:rgba(255,255,255,.03)}
+  .btn-primary{
+    background:linear-gradient(180deg,#6bf6bb,#37cf8c);
+    color:#04120c;font-weight:700;
+    box-shadow:0 0 0 1px rgba(78,242,168,.35),0 10px 30px -12px rgba(78,242,168,.6);
+  }
+  .btn-primary:hover{transform:translateY(-1px);box-shadow:0 0 0 1px rgba(78,242,168,.55),0 16px 38px -14px rgba(78,242,168,.75)}
+  .btn-ghost{
+    background:var(--panel);color:var(--text-hi);border-color:var(--line);
+  }
+  .btn-ghost:hover{border-color:var(--mint-dim);color:var(--mint)}
   .btn svg{display:block}
 
-  /* ---------- stats ---------- */
-  .stats{padding:26px 0}
-  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;overflow:hidden}
-  .stat{background:var(--panel);padding:18px 18px 16px}
-  .stat .lbl{display:flex;align-items:center;gap:7px;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--slate-dim);font-weight:500;margin-bottom:10px}
-  .dot{width:6px;height:6px;border-radius:50%;background:var(--mint);box-shadow:0 0 6px var(--mint);animation:pulse 2.4s ease-in-out infinite}
-  @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
-  .stat .val{color:var(--ink);font-size:clamp(19px,3vw,26px);font-weight:700;line-height:1}
-  .stat .val .unit{color:var(--mint);font-size:.56em;font-weight:500;margin-left:5px;letter-spacing:.04em}
-  .stat .sub{font-size:11px;color:var(--slate-dim);margin-top:7px}
+  /* hero logo panel */
+  .hero-logo{
+    position:relative;
+    border:1px solid var(--line);border-radius:12px;
+    background:
+      radial-gradient(120% 120% at 50% 0%, rgba(78,242,168,.10), transparent 60%),
+      linear-gradient(180deg,var(--panel),var(--panel-2));
+    padding:30px;
+    display:flex;flex-direction:column;gap:18px;
+  }
+  .hero-logo-head{display:flex;align-items:center;justify-content:space-between;font-size:11px;letter-spacing:.14em;color:var(--text-lo)}
+  .logo-frame{
+    aspect-ratio:1/1;border-radius:12px;overflow:hidden;
+    border:1px solid var(--line);
+    background:
+      linear-gradient(180deg,#0a0d13,#070a0e);
+    display:grid;place-items:center;position:relative;
+  }
+  .logo-frame::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(70% 70% at 50% 30%,rgba(78,242,168,.12),transparent 70%);
+  }
+  .logo-frame img{width:74%;height:74%;object-fit:contain;display:block;filter:drop-shadow(0 8px 24px rgba(78,242,168,.18))}
+  .mini-ticks{display:flex;gap:5px;align-items:flex-end;height:26px}
+  .mini-ticks i{flex:1;background:linear-gradient(180deg,var(--mint),transparent);border-radius:1px;opacity:.5}
 
-  /* ---------- curve ---------- */
-  .curve{padding:34px 0}
-  .curve .panel{padding:24px}
-  .curve-top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:16px}
-  .curve-top .big{color:var(--ink);font-size:15px;font-weight:700;letter-spacing:.02em}
-  .curve-pct{color:var(--mint);font-size:22px;font-weight:700}
-  .track{height:12px;background:#070a10;border:1px solid var(--line-2);border-radius:2px;overflow:hidden;position:relative}
-  .fill{height:100%;width:11%;background:
+  /* ---------- stats ---------- */
+  .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .stat{
+    padding:20px 18px;border-radius:8px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border:1px solid var(--line);position:relative;overflow:hidden;
+  }
+  .stat::before{
+    content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--mint);opacity:.5;
+  }
+  .stat .lbl{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--text-lo);margin-bottom:14px;font-weight:500}
+  .stat .val{font-size:clamp(24px,3.7vw,34px);color:var(--text-hi);font-weight:700;letter-spacing:-.025em;line-height:1}
+  .stat .val .unit{font-size:.46em;color:var(--mint);letter-spacing:.06em;margin-left:5px;font-weight:600;vertical-align:.12em}
+  .stat .sub{font-size:11px;color:var(--text-lo);margin-top:11px;letter-spacing:.02em}
+  .stat .sub .up{color:var(--mint)}
+
+  /* ---------- curve progress ---------- */
+  .curve-panel{padding:28px}
+  .curve-top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:16px}
+  .curve-top .pct{color:var(--mint);font-size:26px;font-weight:700;letter-spacing:-.02em}
+  .curve-top .goal{font-size:12px;letter-spacing:.12em;color:var(--text-lo)}
+  .track{
+    height:14px;border-radius:100px;background:#070a0e;border:1px solid var(--line);
+    overflow:hidden;position:relative;
+  }
+  .fill{
+    height:100%;width:61%;border-radius:100px;
+    background:
       linear-gradient(90deg,var(--mint-dim),var(--mint));
-      box-shadow:0 0 12px rgba(78,242,168,.7);position:relative}
-  .fill::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(0,0,0,.18) 0 6px,transparent 6px 12px)}
-  .track-ticks{display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:var(--slate-dim);font-weight:500;letter-spacing:.12em}
-  .curve-note{margin:16px 0 0;font-size:13px;color:var(--slate);max-width:70ch}
-  .curve-note b{color:var(--mint);font-weight:500}
+    box-shadow:0 0 18px rgba(78,242,168,.45);
+    position:relative;
+  }
+  .fill::after{
+    content:"";position:absolute;inset:0;
+    background:repeating-linear-gradient(90deg,rgba(4,18,12,.0) 0 10px,rgba(4,18,12,.22) 10px 12px);
+  }
+  .curve-note{margin-top:16px;font-size:13px;color:var(--text);max-width:70ch;line-height:1.6}
+  .curve-note b{color:var(--text-hi);font-weight:600}
+  .amb{color:var(--amber);font-weight:600}
 
   /* ---------- chart ---------- */
-  .chartsec{padding:12px 0 34px}
-  .chart-panel{padding:22px}
-  .chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:14px}
-  .chart-head .price{color:var(--ink);font-size:26px;font-weight:700;line-height:1}
-  .chart-head .price .flick{color:var(--mint)}
-  .chart-head .delta{color:var(--mint);font-size:12px;margin-top:6px;letter-spacing:.04em}
-  .chart-head .rt{display:flex;align-items:center;gap:7px;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--slate-dim);font-weight:500}
-  .chart-head .rt .blk{color:var(--slate)}
-  .chart-head .rt .sep{opacity:.5}
-  .chart-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .chart-wrap{min-width:520px}
-  svg.chart{display:block;width:100%;height:auto}
-  .axis-row{display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:var(--slate-dim);font-weight:500;letter-spacing:.1em;min-width:520px}
-  .chart-foot{margin-top:14px;font-size:11px;color:var(--slate-dim)}
+  .chart-shell{padding:22px 20px 14px;overflow:hidden}
+  .chart-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
+  .price-now{display:flex;align-items:baseline;gap:12px}
+  .price-now .p{font-size:clamp(24px,4vw,34px);color:var(--mint);font-weight:700;letter-spacing:-.01em}
+  .price-now .p .flick{color:var(--mint)}
+  .price-now .chg{font-size:13px;color:var(--mint);background:rgba(78,242,168,.09);border:1px solid rgba(78,242,168,.25);padding:3px 8px;border-radius:4px}
+  .chart-legend{font-size:11px;letter-spacing:.12em;color:var(--text-lo)}
+  .chart-scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+  .chart-svg{display:block;width:100%;min-width:520px;height:300px}
 
   /* ---------- about ---------- */
-  .about{padding:40px 0}
-  .about-grid{display:grid;grid-template-columns:1fr 1.6fr;gap:32px;align-items:start}
-  .about aside{position:sticky;top:76px}
-  .about .marker{color:var(--slate-dim);font-size:11px;letter-spacing:.2em;font-weight:500;line-height:2}
-  .about .marker b{color:var(--mint);font-weight:500}
-  .story{font-size:clamp(18px,3vw,24px);line-height:1.55;color:var(--ink);font-weight:400;letter-spacing:-.005em}
-  .story .lead{color:var(--mint)}
-  .story .quiet{color:var(--slate)}
+  .about-grid{display:grid;grid-template-columns:1fr;gap:26px;max-width:none}
+  .story{
+    font-size:clamp(17px,2.6vw,22px);line-height:1.62;color:var(--text-hi);
+    max-width:44ch;font-weight:400;letter-spacing:-.005em;
+  }
+  .story .hl{color:var(--text-hi);font-weight:600}
+  .story .hl-a{color:var(--text-hi);font-weight:600}
 
   /* ---------- contract ---------- */
-  .contract{padding:14px 0 34px}
-  .ca-panel{padding:20px 22px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between}
-  .ca-left{min-width:0;flex:1 1 320px}
-  .ca-left .lbl{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--slate-dim);font-weight:500;margin-bottom:8px}
-  .ca-addr{font-size:clamp(11px,2.4vw,15px);color:var(--ink);word-break:break-all;letter-spacing:.02em}
-  .ca-addr .p{color:var(--mint)}
-  .copybtn{
-    display:inline-flex;align-items:center;gap:9px;
-    border:1px solid var(--line-2);background:#070a10;color:var(--ink);
-    padding:11px 18px;border-radius:3px;font-family:var(--mono);font-size:12px;letter-spacing:.08em;font-weight:500;cursor:pointer;
-    transition:border-color .15s,color .15s,background .15s;white-space:nowrap;
+  .ca-panel{padding:22px 22px;display:flex;flex-wrap:wrap;align-items:center;gap:16px;justify-content:space-between}
+  .ca-left{min-width:0;flex:1 1 340px}
+  .ca-left .lbl{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--text-lo);margin-bottom:9px}
+  .ca-addr{
+    font-size:13.5px;color:var(--text-hi);letter-spacing:.01em;
+    background:#070a0e;border:1px solid var(--line);border-radius:5px;
+    padding:11px 13px;overflow-x:auto;white-space:nowrap;
   }
-  .copybtn:hover{border-color:var(--mint-dim);background:#0d1119}
-  .copybtn.ok{border-color:var(--mint);color:var(--mint)}
-  .copybtn svg{display:block}
+  .ca-addr .pre{color:var(--mint)}
+  .copy-btn{
+    flex:0 0 auto;
+    background:var(--panel);border:1px solid var(--line);color:var(--text-hi);
+    font-family:var(--mono);font-size:12.5px;letter-spacing:.05em;
+    padding:12px 18px;border-radius:5px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:9px;
+    transition:border-color .18s ease,color .18s ease;
+  }
+  .copy-btn:hover{border-color:var(--mint-dim);color:var(--mint)}
+  .copy-btn.done{border-color:var(--mint);color:var(--mint)}
+  .copy-btn svg{display:block}
 
-  /* ---------- socials ---------- */
-  .socials{padding:20px 0}
-  .soc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;overflow:hidden}
-  .soc{background:var(--panel);padding:20px;display:flex;flex-direction:column;gap:6px;transition:background .15s}
-  .soc:hover{background:#0d1119}
-  .soc .k{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--slate-dim);font-weight:500}
-  .soc .v{color:var(--ink);font-size:14px;display:flex;align-items:center;gap:8px}
-  .soc:hover .v{color:var(--mint)}
-  .soc .arw{color:var(--mint-dim);transition:transform .15s}
-  .soc:hover .arw{transform:translate(2px,-2px)}
+  /* ---------- trust strip ---------- */
+  .trust-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .trust{
+    display:flex;gap:13px;align-items:flex-start;
+    padding:18px;border:1px solid var(--line);border-radius:8px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+  }
+  .trust svg{flex:0 0 auto;margin-top:2px}
+  .trust p{margin:0;font-size:13.5px;color:var(--text-hi);line-height:1.5}
+  .trust:nth-child(4) p .k{color:var(--amber);font-weight:600}
 
-  /* ---------- trust ---------- */
-  .trust{padding:34px 0}
-  .trust-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;overflow:hidden}
-  .trust-item{background:var(--panel);padding:20px;display:flex;gap:14px;align-items:flex-start}
-  .trust-item svg{flex:none;margin-top:1px;color:var(--mint)}
-  .trust-item p{margin:0;color:var(--ink);font-size:14px;line-height:1.45}
-  .trust-item .m{display:block;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--slate-dim);font-weight:500;margin-bottom:6px}
+  /* ---------- links ---------- */
+  .links-row{display:flex;flex-wrap:wrap;gap:12px}
+  .lnk{
+    text-decoration:none;flex:1 1 240px;
+    border:1px solid var(--line);border-radius:8px;padding:18px 20px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+    transition:border-color .18s ease,transform .12s ease;
+  }
+  .lnk:hover{border-color:var(--mint-dim);transform:translateY(-1px)}
+  .lnk .lnk-lbl{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--text-lo);margin-bottom:6px}
+  .lnk .lnk-val{font-size:15px;color:var(--text-hi)}
+  .lnk:hover .lnk-val{color:var(--mint)}
+  .lnk .arr{color:var(--text-lo)}
+  .lnk:hover .arr{color:var(--mint)}
 
   /* ---------- footer ---------- */
-  footer{border-top:1px solid var(--line);margin-top:30px;padding:30px 0 46px}
-  .foot-row{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
-  .foot-brand{display:flex;align-items:center;gap:11px;color:var(--ink);font-size:13px;font-weight:700;letter-spacing:.02em}
-  .foot-brand .lo{color:var(--mint)}
-  .foot-meta{font-size:12px;color:var(--slate-dim)}
-  .foot-meta .h{color:var(--slate)}
-  .foot-meta a:hover{color:var(--mint)}
-  .foot-line{margin-top:18px;font-size:11px;color:var(--slate-dim);line-height:1.6;max-width:70ch}
-
-  @media (max-width:760px){
-    .hero{padding:40px 0 26px}
-    .hero-grid{grid-template-columns:1fr;gap:20px}
-    .logo-frame{width:96px;height:96px}
-    .logo-frame img{width:76px;height:76px}
-    .stat-grid{grid-template-columns:repeat(2,1fr)}
-    .soc-grid{grid-template-columns:1fr}
-    .trust-grid{grid-template-columns:1fr}
-    .about-grid{grid-template-columns:1fr;gap:18px}
-    .about aside{position:static}
-    .btn{flex:1 1 auto;justify-content:center}
+  footer{padding:40px 0 60px;border-bottom:none}
+  .foot-in{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px}
+  .foot-left{display:flex;align-items:center;gap:12px;font-size:12.5px;color:var(--text-lo)}
+  .foot-left .handle{color:var(--text);letter-spacing:.04em}
+  .foot-right a{font-size:12.5px;color:var(--text);text-decoration:none;letter-spacing:.04em;border-bottom:1px solid var(--line);padding-bottom:2px}
+  .foot-right a:hover{color:var(--mint);border-color:var(--mint-dim)}
+  .foot-mm{
+    width:20px;height:20px;border:1px solid var(--line);border-radius:3px;
+    display:grid;place-items:center;background:var(--panel);
   }
-  @media (max-width:420px){
-    .stat-grid{grid-template-columns:1fr}
+
+  /* ---------- responsive ---------- */
+  @media (max-width:900px){
+    .hero-grid{grid-template-columns:1fr;gap:34px}
+    .hero-logo{order:-1;max-width:360px}
+    .stats-grid{grid-template-columns:repeat(2,1fr)}
+  }
+  @media (max-width:560px){
+    section{padding:48px 0}
+    .hero{padding-top:38px}
+    .trust-grid{grid-template-columns:1fr}
+    .ca-panel{flex-direction:column;align-items:stretch}
+    .copy-btn{justify-content:center}
+    .cta-row{flex-direction:column}
+    .btn{justify-content:center}
+    .wm-text{font-size:11px;letter-spacing:.12em}
   }
 
   @media (prefers-reduced-motion:reduce){
-    *{animation:none!important;transition:none!important}
-    .cursor{opacity:1}
+    *{animation:none !important;transition:none !important;scroll-behavior:auto !important}
+    .hook .cursor{opacity:1}
   }
 </style>
 </head>
 <body>
 
-<!-- ============ TOP BAR ============ -->
-<header class="topbar">
-  <div class="wrap row">
-    <a class="wordmark" href="https://robinslab.fun" aria-label="Robin Labs home">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <rect x="1.5" y="1.5" width="17" height="17" rx="3" stroke="#4ef2a8" stroke-width="1.3"/>
-        <path d="M6 14V6h4.2a2.4 2.4 0 0 1 .3 4.78L13 14M6 10.4h4.4" stroke="#d7e3ee" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span>ROBIN<span class="lo">LABS</span></span>
-    </a>
-    <a class="ghost" href="https://robinlab.io">Launch your own <svg class="arw" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><path d="M3 8L8 3M8 3H4M8 3v4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-  </div>
-</header>
-
-<main>
-
-<!-- ============ 01 // HERO ============ -->
-<section class="hero">
-  <div class="wrap hero-grid">
-    <div class="logo-frame">
-      <span class="logo-corner tl" aria-hidden="true"></span>
-      <span class="logo-corner br" aria-hidden="true"></span>
-      <img src="data:image/webp;base64,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" alt="Life of Milo logo">
+  <!-- ========== TOP BAR ========== -->
+  <header class="topbar">
+    <div class="topbar-in">
+      <a class="wordmark" href="https://robinlab.io">
+        <span class="wm-mark" aria-hidden="true">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M2 10V2h4a2.5 2.5 0 0 1 0 5H3.5" stroke="#4ef2a8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M5.5 7 8 10" stroke="#4ef2a8" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span class="wm-text">ROBIN<b>_</b>LABS</span>
+      </a>
+      <a class="ghost" href="https://robinlab.io">Launch your own</a>
     </div>
-    <div>
-      <div class="kicker"><span class="idx">01 //</span> Robinhood Chain launch</div>
-      <h1>Life of Milo</h1>
-      <div class="tickerline">
-        <span class="ticker">$MILO</span>
-        <span class="chip">Bonding curve live</span>
-        <span class="chip">Fair launch</span>
-      </div>
-      <p class="hook">He runs on hopium and refusal. No perfect strategy, <span class="amb">just the decision to keep going</span> when most people would stop.<span class="cursor" aria-hidden="true"></span></p>
-      <div class="cta-row">
-        <a class="btn btn-primary" href="https://robinlab.io/token.html?c=0xf4321881277437d2ebe71ebbae967a2e07242565">
-          Buy $MILO
-          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M3 12L12 3M12 3H5.5M12 3v6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </a>
-        <a class="btn btn-ghost" href="#chart">
-          View chart
-          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M2 12h11M3.5 9l3-3 2.2 2 3-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </a>
-      </div>
-    </div>
-  </div>
-</section>
+  </header>
 
-<!-- ============ 02 // LIVE STATS ============ -->
-<section class="stats" aria-label="Live market stats">
-  <div class="wrap">
-    <div class="kicker"><span class="idx">02 //</span> Live market</div>
-    <div class="stat-grid">
-      <div class="stat">
-        <div class="lbl"><span class="dot" aria-hidden="true"></span>Market cap</div>
-        <div class="val">2.27<span class="unit">ETH</span></div>
-        <div class="sub">Fully diluted, on curve</div>
-      </div>
-      <div class="stat">
-        <div class="lbl"><span class="dot" aria-hidden="true"></span>24h volume</div>
-        <div class="val">0.27<span class="unit">ETH</span></div>
-        <div class="sub">Trailing 24 hours</div>
-      </div>
-      <div class="stat">
-        <div class="lbl"><span class="dot" aria-hidden="true"></span>Trades</div>
-        <div class="val">4</div>
-        <div class="sub">Since launch</div>
-      </div>
-      <div class="stat">
-        <div class="lbl"><span class="dot" aria-hidden="true"></span>Curve progress</div>
-        <div class="val" style="color:var(--mint)">11<span class="unit" style="color:var(--slate-dim)">%</span></div>
-        <div class="sub">To graduation</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ 03 // BONDING CURVE ============ -->
-<section class="curve" aria-label="Bonding curve progress">
-  <div class="wrap">
-    <div class="kicker"><span class="idx">03 //</span> Bonding curve</div>
-    <div class="panel">
-      <div class="curve-top">
-        <div class="big">Progress to graduation</div>
-        <div class="curve-pct">11%</div>
-      </div>
-      <div class="track" role="progressbar" aria-valuenow="11" aria-valuemin="0" aria-valuemax="100" aria-label="Bonding curve progress to graduation">
-        <div class="fill"></div>
-      </div>
-      <div class="track-ticks"><span>LAUNCH</span><span>GRADUATION</span></div>
-      <p class="curve-note">At graduation the curve closes and liquidity moves into a <b>permanent Uniswap v3 floor</b> that never leaves. Early buyers set the base of the climb before that liquidity locks in for good.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============ 04 // PRICE CHART ============ -->
-<section class="chartsec" id="chart" aria-label="Price chart">
-  <div class="wrap">
-    <div class="kicker"><span class="idx">04 //</span> Price feed</div>
-    <div class="panel chart-panel">
-      <div class="chart-head">
+  <main>
+  <!-- ========== HERO ========== -->
+  <section class="hero" aria-labelledby="heroName">
+    <div class="wrap">
+      <div class="hero-grid">
         <div>
-          <div class="price">0.0000<span class="flick" id="flick">6</span><span style="color:var(--slate-dim);font-size:.5em;margin-left:6px">ETH</span></div>
-          <div class="delta">+38.2% since first block</div>
+          <span class="term-tag"><span class="dot-live" aria-hidden="true"></span>LIVE ON ROBINHOOD CHAIN</span>
+          <h1 class="hero-name" id="heroName">ROBIN LABS<span class="ticker">$ROBIN</span></h1>
+          <p class="hook">The coin of the launchpad that pays its creators.<span class="cursor" aria-hidden="true"></span></p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="https://robinlab.io/token.html?c=0x6696fe29288b586017e6f264c0091dba6c5ebeaf">
+              Buy $ROBIN
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M8 4l3 3-3 3" stroke="#04120c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </a>
+            <a class="btn btn-ghost" href="#chart">
+              View chart
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 10l3-3 2 2 4-5" stroke="#4ef2a8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </a>
+          </div>
         </div>
-        <div class="rt"><span class="dot" aria-hidden="true"></span>Streaming <span class="sep" aria-hidden="true">//</span> <span class="blk" id="blk">BLK 18,442,097</span></div>
+
+        <div class="hero-logo">
+          <div class="hero-logo-head">
+            <span>ROBIN / ETH</span>
+            <span>FAIR LAUNCH</span>
+          </div>
+          <div class="logo-frame">
+            <img src="data:image/webp;base64,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" alt="ROBIN LABS logo">
+          </div>
+          <div class="mini-ticks" aria-hidden="true">
+            <i style="height:32%"></i><i style="height:44%"></i><i style="height:38%"></i><i style="height:58%"></i><i style="height:50%"></i><i style="height:70%"></i><i style="height:64%"></i><i style="height:82%"></i><i style="height:76%"></i><i style="height:96%"></i>
+          </div>
+        </div>
       </div>
-      <div class="chart-scroll">
-        <div class="chart-wrap">
-          <svg class="chart" viewBox="0 0 720 260" preserveAspectRatio="none" role="img" aria-label="Illustrative price chart, mostly flat early then rising">
+    </div>
+  </section>
+
+  <!-- ========== LIVE STATS ========== -->
+  <section aria-labelledby="statsH">
+    <div class="wrap">
+      <p class="kicker" id="statsH">Live market data</p>
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="lbl">Market cap</div>
+          <div class="val">7.20<span class="unit">ETH</span></div>
+          <div class="sub">Fully on-curve</div>
+        </div>
+        <div class="stat">
+          <div class="lbl">Total volume</div>
+          <div class="val">42.6<span class="unit">ETH</span></div>
+          <div class="sub"><span class="up">&#9650;</span> traded to date</div>
+        </div>
+        <div class="stat">
+          <div class="lbl">Trades</div>
+          <div class="val">1,284</div>
+          <div class="sub">buys and sells</div>
+        </div>
+        <div class="stat">
+          <div class="lbl">Curve progress</div>
+          <div class="val">61<span class="unit">%</span></div>
+          <div class="sub">to graduation</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== BONDING CURVE ========== -->
+  <section aria-labelledby="curveH">
+    <div class="wrap">
+      <p class="kicker" id="curveH">Bonding curve</p>
+      <h2>61% of the way to graduation</h2>
+      <div class="panel curve-panel">
+        <div class="curve-top">
+          <span class="pct">61%</span>
+          <span class="goal">TARGET // GRADUATION</span>
+        </div>
+        <div class="track" role="progressbar" aria-valuenow="61" aria-valuemin="0" aria-valuemax="100" aria-label="Bonding curve progress to graduation">
+          <div class="fill"></div>
+        </div>
+        <p class="curve-note">At graduation the bonding curve closes and liquidity migrates into a <b>permanent Uniswap v3 floor</b> that never leaves, and the creator earns <span class="amb">0.5 ETH</span>. The floor stays locked so the market underneath $ROBIN is real and it holds.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== CHART ========== -->
+  <section id="chart" aria-labelledby="chartH">
+    <div class="wrap">
+      <p class="kicker" id="chartH">Price // ROBIN·ETH</p>
+      <div class="panel chart-shell">
+        <div class="chart-head">
+          <div class="price-now">
+            <span class="p">0.0000<span class="flick" id="flick">7</span></span>
+            <span class="chg">+214.8%</span>
+          </div>
+          <span class="chart-legend">30D · CURVE-WEIGHTED</span>
+        </div>
+        <div class="chart-scroll">
+          <svg class="chart-svg" viewBox="0 0 720 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Rising price chart for ROBIN over 30 days, up 214.8 percent">
             <defs>
               <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stop-color="#4ef2a8" stop-opacity="0.32"/>
                 <stop offset="100%" stop-color="#4ef2a8" stop-opacity="0"/>
               </linearGradient>
               <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stop-color="#2f9c6c"/>
-                <stop offset="60%" stop-color="#4ef2a8"/>
-                <stop offset="100%" stop-color="#4ef2a8"/>
+                <stop offset="0%" stop-color="#2f9d6e"/>
+                <stop offset="100%" stop-color="#6bf6bb"/>
               </linearGradient>
             </defs>
-            <!-- gridlines -->
-            <g stroke="#1b2430" stroke-width="1">
-              <line x1="0" y1="52" x2="720" y2="52"/>
-              <line x1="0" y1="104" x2="720" y2="104"/>
-              <line x1="0" y1="156" x2="720" y2="156"/>
-              <line x1="0" y1="208" x2="720" y2="208"/>
+            <!-- grid -->
+            <g stroke="#131a24" stroke-width="1">
+              <line x1="0" y1="60" x2="720" y2="60"/>
+              <line x1="0" y1="120" x2="720" y2="120"/>
+              <line x1="0" y1="180" x2="720" y2="180"/>
+              <line x1="0" y1="240" x2="720" y2="240"/>
             </g>
-            <!-- baseline -->
-            <line x1="0" y1="248" x2="720" y2="248" stroke="#26313f" stroke-width="1.5"/>
-            <!-- area -->
-            <path d="M0,236 L60,235 L120,236 L180,233 L240,231 L300,232 L360,224 L420,206 L480,178 L540,150 L600,120 L660,86 L720,58 L720,248 L0,248 Z" fill="url(#area)"/>
-            <!-- line -->
-            <path d="M0,236 L60,235 L120,236 L180,233 L240,231 L300,232 L360,224 L420,206 L480,178 L540,150 L600,120 L660,86 L720,58" fill="none" stroke="url(#stroke)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
-            <!-- last point (driven by the same streaming loop as the price digit) -->
-            <circle id="mdot" cx="720" cy="58" r="4.5" fill="#4ef2a8"/>
-            <circle id="mring" cx="720" cy="58" r="8.5" fill="none" stroke="#4ef2a8" stroke-opacity="0.4" stroke-width="1.4"/>
+            <!-- baseline / axis -->
+            <line x1="0" y1="288" x2="720" y2="288" stroke="#1b2430" stroke-width="1.5"/>
+            <!-- area fill -->
+            <path d="M0,262 L40,258 L80,266 L120,250 L160,254 L200,236 L240,242 L280,220 L320,226 L360,198 L400,206 L440,172 L480,180 L520,140 L560,150 L600,104 L640,116 L680,64 L720,44 L720,288 L0,288 Z" fill="url(#area)"/>
+            <!-- price line -->
+            <path d="M0,262 L40,258 L80,266 L120,250 L160,254 L200,236 L240,242 L280,220 L320,226 L360,198 L400,206 L440,172 L480,180 L520,140 L560,150 L600,104 L640,116 L680,64 L720,44" fill="none" stroke="url(#stroke)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <!-- last point marker -->
+            <circle cx="720" cy="44" r="4.5" fill="#6bf6bb"/>
+            <circle cx="720" cy="44" r="9" fill="none" stroke="#4ef2a8" stroke-opacity="0.4" stroke-width="1.5"/>
           </svg>
         </div>
       </div>
-      <div class="axis-row"><span>BLOCK 0</span><span>EARLY ACCUMULATION</span><span>NOW</span></div>
-      <p class="chart-foot">Illustrative. $MILO is newly launched; the shape shows an early flat base moving into its first climb, not a guarantee of price.</p>
     </div>
-  </div>
-</section>
+  </section>
 
-<!-- ============ 05 // ABOUT ============ -->
-<section class="about" aria-label="About Life of Milo">
-  <div class="wrap about-grid">
-    <aside>
-      <div class="kicker"><span class="idx">05 //</span> The story</div>
-      <div class="marker">
-        FILE&nbsp;&nbsp;<b>milo.txt</b><br>
-        STATUS&nbsp;&nbsp;climbing<br>
-        FUEL&nbsp;&nbsp;<b>hopium</b><br>
-        RULE&nbsp;&nbsp;do not stop
-      </div>
-    </aside>
-    <div>
-      <p class="story"><span class="lead">Milo is just an average kid trying to make it.</span> Every block is another rung, <span class="quiet">every buy a small vote that the climb is worth finishing.</span> No roadmap and no promises, only the people who showed up early and the ground they choose to hold.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============ 06 // CONTRACT ============ -->
-<section class="contract" aria-label="Contract address">
-  <div class="wrap">
-    <div class="kicker"><span class="idx">06 //</span> Contract</div>
-    <div class="panel ca-panel">
-      <div class="ca-left">
-        <div class="lbl">Contract address // Robinhood Chain</div>
-        <div class="ca-addr" id="ca"><span class="p">0x</span>f4321881277437d2ebe71ebbae967a2e07242565</div>
-      </div>
-      <button class="copybtn" id="copy" type="button" aria-live="polite">
-        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 10V3a1 1 0 0 1 1-1h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-        <span id="copytext">Copy</span>
-      </button>
-    </div>
-  </div>
-</section>
-
-<!-- ============ 07 // SOCIALS ============ -->
-<section class="socials" aria-label="Community links">
-  <div class="wrap">
-    <div class="kicker"><span class="idx">07 //</span> Community</div>
-    <div class="soc-grid">
-      <a class="soc" href="https://x.com/milolifeonchain">
-        <span class="k">X</span>
-        <span class="v">x.com/milolifeonchain <svg class="arw" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><path d="M3 8L8 3M8 3H4M8 3v4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      </a>
-      <a class="soc" href="https://t.me/+ffqO_B3B879iYzc0">
-        <span class="k">Telegram</span>
-        <span class="v">Join the group <svg class="arw" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><path d="M3 8L8 3M8 3H4M8 3v4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      </a>
-      <a class="soc" href="https://lifeofmilo.com">
-        <span class="k">Website</span>
-        <span class="v">lifeofmilo.com <svg class="arw" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><path d="M3 8L8 3M8 3H4M8 3v4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      </a>
-    </div>
-  </div>
-</section>
-
-<!-- ============ 08 // TRUST ============ -->
-<section class="trust" aria-label="Robin Labs launch mechanics">
-  <div class="wrap">
-    <div class="kicker"><span class="idx">08 //</span> How it works</div>
-    <div class="trust-grid">
-      <div class="trust-item">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 1.5l6 2.5v4c0 4-2.7 6.4-6 7.5C5.7 14.4 3 12 3 8V4l6-2.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6.4 9l1.8 1.8L11.8 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <p><span class="m">Fair launch</span>No presale and no team allocation. Everyone buys on the same curve.</p>
-      </div>
-      <div class="trust-item">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M2 13c2-5 4-5 5.5-2.5S11 12 16 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="14" cy="14" r="1.4" fill="currentColor"/></svg>
-        <p><span class="m">Liquidity</span>Real Uniswap v3 liquidity, not a paper pool.</p>
-      </div>
-      <div class="trust-item">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3" y="8" width="12" height="7" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M6 8V6a3 3 0 0 1 6 0v2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-        <p><span class="m">The floor</span>A permanent floor that never leaves once the coin graduates.</p>
-      </div>
-      <div class="trust-item">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.4"/><path d="M9 5.5v7M7 7.2c0-1 .9-1.6 2-1.6s2 .5 2 1.5-1 1.3-2 1.4-2 .5-2 1.5.9 1.5 2 1.5 2-.6 2-1.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-        <p><span class="m">Creator reward</span>The creator earns 0.5 ETH when the coin graduates. Aligned to reach the finish, not to dump.</p>
+  <!-- ========== ABOUT / STORY ========== -->
+  <section aria-labelledby="aboutH">
+    <div class="wrap">
+      <p class="kicker" id="aboutH">The story</p>
+      <div class="about-grid">
+        <p class="story">
+          ROBIN is the <span class="hl">home team</span>. It is the coin of Robin Labs, the only launchpad that pays its successful creators. Every launch here is a fair launch into real Uniswap v3 liquidity, with a <span class="hl-a">permanent floor that never leaves</span>. No presale, no team allocation, no games.
+        </p>
       </div>
     </div>
-  </div>
-</section>
+  </section>
 
-</main>
-
-<!-- ============ FOOTER ============ -->
-<footer>
-  <div class="wrap">
-    <div class="foot-row">
-      <div class="foot-brand">
-        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <rect x="1.5" y="1.5" width="17" height="17" rx="3" stroke="#4ef2a8" stroke-width="1.3"/>
-          <path d="M6 14V6h4.2a2.4 2.4 0 0 1 .3 4.78L13 14M6 10.4h4.4" stroke="#d7e3ee" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <span>Powered by Robin<span class="lo">Labs</span></span>
-      </div>
-      <div class="foot-meta">
-        <span class="h">milo.robinslab.fun</span> &nbsp;//&nbsp; <a href="https://robinslab.fun">robinslab.fun</a>
+  <!-- ========== CONTRACT ========== -->
+  <section aria-labelledby="caH">
+    <div class="wrap">
+      <p class="kicker" id="caH">Contract address</p>
+      <div class="panel ca-panel">
+        <div class="ca-left">
+          <div class="lbl">$ROBIN // verified contract</div>
+          <div class="ca-addr" id="caAddr" tabindex="0"><span class="pre">0x</span>6696fe29288b586017e6f264c0091dba6c5ebeaf</div>
+        </div>
+        <button class="copy-btn" id="copyBtn" type="button" aria-label="Copy contract address">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" id="copyIcon"><rect x="4.5" y="4.5" width="7" height="7" rx="1.3" stroke="currentColor" stroke-width="1.3"/><path d="M2.5 8.5V3a.5.5 0 0 1 .5-.5h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          <span id="copyLabel">Copy</span>
+        </button>
       </div>
     </div>
-    <p class="foot-line">Life of Milo is a community memecoin launched on Robinhood Chain through Robin Labs. Nothing here is financial advice. Do your own research before you buy.</p>
-  </div>
-</footer>
+  </section>
+
+  <!-- ========== TRUST STRIP ========== -->
+  <section aria-labelledby="trustH">
+    <div class="wrap">
+      <p class="kicker" id="trustH">Robin Labs mechanics</p>
+      <div class="trust-grid">
+        <div class="trust">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 1.5 2 4v4.5c0 4 3 6.5 7 8 4-1.5 7-4 7-8V4L9 1.5Z" stroke="#8ea3b8" stroke-width="1.3" stroke-linejoin="round"/><path d="M6.2 9 8 10.8l4-4" stroke="#8ea3b8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <p>Fair launch, no presale or team allocation.</p>
+        </div>
+        <div class="trust">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2.5 12c2-4 3.5-4 5.5-1s3.5 3 7.5-4" stroke="#8ea3b8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="9" r="7.3" stroke="#1b2430" stroke-width="1.2"/></svg>
+          <p>Real Uniswap v3 liquidity.</p>
+        </div>
+        <div class="trust">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="7.5" width="12" height="7.5" rx="1.4" stroke="#8ea3b8" stroke-width="1.3"/><path d="M6 7.5V6a3 3 0 0 1 6 0v1.5" stroke="#8ea3b8" stroke-width="1.3" stroke-linecap="round"/></svg>
+          <p>A permanent floor that never leaves.</p>
+        </div>
+        <div class="trust">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="#8ea3b8" stroke-width="1.3"/><path d="M9 5.2v7.6M6.9 6.7c0-1 .9-1.6 2.1-1.6s2.1.6 2.1 1.5c0 2-4.2 1-4.2 3 0 1 .9 1.6 2.1 1.6s2.1-.6 2.1-1.5" stroke="#8ea3b8" stroke-width="1.2" stroke-linecap="round"/></svg>
+          <p>The creator earns <span class="k">0.5 ETH</span> when a coin graduates.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== LINKS ========== -->
+  <section aria-labelledby="linksH">
+    <div class="wrap">
+      <p class="kicker" id="linksH">Links</p>
+      <div class="links-row">
+        <a class="lnk" href="https://robinlab.io">
+          <span>
+            <span class="lnk-lbl" style="display:block">Website</span>
+            <span class="lnk-val">robinlab.io</span>
+          </span>
+          <span class="arr" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 12 12 4M6 4h6v6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </a>
+        <a class="lnk" href="https://robinlab.io">
+          <span>
+            <span class="lnk-lbl" style="display:block">Create</span>
+            <span class="lnk-val">Launch a coin</span>
+          </span>
+          <span class="arr" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 12 12 4M6 4h6v6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </a>
+      </div>
+    </div>
+  </section>
+  </main>
+
+  <!-- ========== FOOTER ========== -->
+  <footer>
+    <div class="wrap foot-in">
+      <div class="foot-left">
+        <span class="foot-mm" aria-hidden="true">
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 10V2h4a2.5 2.5 0 0 1 0 5H3.5" stroke="#4ef2a8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 7 8 10" stroke="#4ef2a8" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </span>
+        <span>Powered by Robin Labs</span>
+        <span class="handle">robinlab.io</span>
+      </div>
+      <div class="foot-right">
+        <a href="https://robinlab.io">robinlab.io</a>
+      </div>
+    </div>
+  </footer>
 
 <script>
 (function(){
-  // copy contract
-  var addr = "0xf4321881277437d2ebe71ebbae967a2e07242565";
-  var btn = document.getElementById("copy");
-  var txt = document.getElementById("copytext");
-  if(btn){
-    btn.addEventListener("click", function(){
-      var done = function(){
-        btn.classList.add("ok");
-        txt.textContent = "Copied";
-        setTimeout(function(){ btn.classList.remove("ok"); txt.textContent = "Copy"; }, 1800);
-      };
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(addr).then(done).catch(function(){ fallback(); });
-      } else { fallback(); }
-      function fallback(){
-        var t = document.createElement("textarea");
-        t.value = addr; t.style.position="fixed"; t.style.opacity="0";
-        document.body.appendChild(t); t.select();
-        try{ document.execCommand("copy"); done(); }catch(e){}
-        document.body.removeChild(t);
+  "use strict";
+
+  // ---- Copy contract ----
+  var addr = "0x6696fe29288b586017e6f264c0091dba6c5ebeaf";
+  var btn = document.getElementById("copyBtn");
+  var label = document.getElementById("copyLabel");
+  var resetT;
+  function flash(ok){
+    label.textContent = ok ? "Copied" : "Press Ctrl+C";
+    btn.classList.add("done");
+    clearTimeout(resetT);
+    resetT = setTimeout(function(){ label.textContent = "Copy"; btn.classList.remove("done"); }, 1900);
+  }
+  btn.addEventListener("click", function(){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(addr).then(function(){ flash(true); }, function(){ selectFallback(); });
+    } else { selectFallback(); }
+  });
+  function selectFallback(){
+    var node = document.getElementById("caAddr");
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var sel = window.getSelection();
+    sel.removeAllRanges(); sel.addRange(range);
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch(e){}
+    flash(ok);
+  }
+
+  // ---- Flickering last price digit (streaming feed feel) ----
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var flick = document.getElementById("flick");
+  if(flick && !reduce){
+    var digits = [7,8,7,6,7,9,7,8,7,7,6,8];
+    var i = 0;
+    setInterval(function(){
+      i = (i + 1) % digits.length;
+      flick.textContent = digits[i];
+      flick.style.opacity = "0.55";
+      setTimeout(function(){ flick.style.opacity = "1"; }, 90);
+    }, 1400);
+  }
+
+  // ---- Smooth scroll for View chart ----
+  var vc = document.querySelector('a[href="#chart"]');
+  if(vc){
+    vc.addEventListener("click", function(e){
+      var t = document.getElementById("chart");
+      if(t){
+        e.preventDefault();
+        t.scrollIntoView({behavior: reduce ? "auto" : "smooth", block: "start"});
       }
     });
   }
-
-  // one streaming loop drives the price digit, the chart marker, and the block readout
-  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var flick = document.getElementById("flick");
-  var blk = document.getElementById("blk");
-  var mdot = document.getElementById("mdot");
-  var mring = document.getElementById("mring");
-  if(flick && !reduce){
-    var seq = [6,7,5,6,8,6,7,6];
-    var i = 0;
-    var block = 18442097;
-    setInterval(function(){
-      i = (i+1) % seq.length;
-      var d = seq[i];
-      flick.textContent = d;
-      // nudge the last-price marker to track the flickering digit
-      var cy = 58 - (d - 6) * 2.2;
-      if(mdot){ mdot.setAttribute("cy", cy); }
-      if(mring){ mring.setAttribute("cy", cy); }
-      // advance the live block number
-      block += 1 + (i % 3);
-      if(blk){ blk.textContent = "BLK " + block.toLocaleString("en-US"); }
-    }, 900);
-  }
 })();
 </script>
-
 </body>
 </html>

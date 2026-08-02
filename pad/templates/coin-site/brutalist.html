@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ROBIN LABS / $ROBIN</title>
+<meta name="description" content="ROBIN is the coin of Robin Labs, the only launchpad that pays its successful creators. Fair launch into real Uniswap v3 liquidity with a permanent floor.">
+<style>
+  :root{
+    --paper:#faf9f6;
+    --ink:#0d0d0d;
+    --red:#e0301e;
+    --red-ink:#c62411;
+    --line:#0d0d0d;
+    --muted:#5a5852;
+    --paper-2:#f2f0ea;
+    --disp: -apple-system, system-ui, "Arial Black", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --body: system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  html,body{max-width:100%;overflow-x:hidden}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--body);
+    font-size:17px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      linear-gradient(rgba(13,13,13,.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(13,13,13,.035) 1px, transparent 1px);
+    background-size:34px 34px;
+    background-position:-1px -1px;
+  }
+  a{color:inherit}
+  ::selection{background:var(--red);color:#fff}
+
+  .skip{position:absolute;left:-999px;top:0;background:var(--ink);color:#fff;padding:10px 14px;z-index:200;font-family:var(--mono);text-transform:uppercase;font-size:12px;letter-spacing:.08em}
+  .skip:focus{left:8px;top:8px}
+
+  a:focus-visible, button:focus-visible{
+    outline:3px solid var(--red);
+    outline-offset:3px;
+  }
+
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+
+  /* ---------- TOP BAR ---------- */
+  header.bar{
+    position:sticky;top:0;z-index:100;
+    background:var(--paper);
+    border-bottom:2px solid var(--ink);
+  }
+  .bar-in{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+    height:62px;
+  }
+  .mark{display:flex;align-items:center;gap:11px;text-decoration:none}
+  .mark .glyph{width:26px;height:26px;display:block;border:2px solid var(--ink);position:relative;background:var(--paper)}
+  .mark .glyph:after{content:"";position:absolute;right:-2px;top:-2px;width:11px;height:11px;background:var(--red)}
+  .mark .wm{font-family:var(--disp);font-weight:900;letter-spacing:-.02em;font-size:18px;line-height:1;text-transform:uppercase}
+  .mark .wm b{color:var(--red)}
+  .ghost{
+    font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.09em;
+    text-decoration:none;color:var(--ink);
+    border:2px solid var(--ink);padding:9px 14px;background:var(--paper);
+    white-space:nowrap;
+    transition:background .12s ease,color .12s ease;
+  }
+  .ghost:hover{background:var(--ink);color:var(--paper)}
+
+  /* ---------- exposed section label ---------- */
+  .tag{
+    font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink);display:inline-flex;align-items:center;gap:8px;
+  }
+  .tag .sq{width:8px;height:8px;background:var(--red);display:inline-block}
+  .rule{height:2px;background:var(--ink);border:0;margin:0}
+
+  section{border-bottom:2px solid var(--ink)}
+  .pad{padding:56px 0}
+
+  /* ---------- HERO ---------- */
+  .hero{position:relative;overflow:hidden}
+  .hero-grid{display:grid;grid-template-columns:1.35fr .9fr;gap:0;align-items:stretch}
+  .hero-left{padding:44px 40px 40px}
+  .hero-right{
+    border-left:2px solid var(--ink);
+    display:flex;flex-direction:column;
+    background:var(--paper-2);
+  }
+  .kick{display:flex;align-items:center;gap:14px;margin-bottom:26px;flex-wrap:wrap}
+  .ticker-chip{
+    font-family:var(--mono);font-weight:700;font-size:13px;letter-spacing:.06em;
+    border:2px solid var(--ink);padding:5px 10px;background:var(--red);color:#fff;
+  }
+  h1.title{
+    font-family:var(--disp);font-weight:900;
+    font-size:clamp(52px,10.5vw,132px);
+    line-height:.86;letter-spacing:-.035em;
+    margin:0 0 4px;text-transform:uppercase;
+  }
+  h1.title .lab{color:var(--ink)}
+  @supports((-webkit-text-stroke:2px #000) or (text-stroke:2px #000)){
+    h1.title .lab{-webkit-text-stroke:2px var(--ink);text-stroke:2px var(--ink);color:transparent}
+  }
+  .hook{
+    font-family:var(--disp);font-weight:800;
+    font-size:clamp(19px,2.6vw,27px);
+    line-height:1.12;letter-spacing:-.01em;
+    margin:26px 0 0;max-width:19ch;
+  }
+  .hook em{font-style:normal;color:var(--red)}
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;margin-top:32px}
+  .btn{
+    font-family:var(--disp);font-weight:900;text-transform:uppercase;letter-spacing:.01em;
+    font-size:16px;text-decoration:none;
+    display:inline-flex;align-items:center;gap:10px;
+    padding:16px 24px;border:2px solid var(--ink);cursor:pointer;
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .btn-primary{background:var(--red);color:#fff;box-shadow:6px 6px 0 var(--ink)}
+  .btn-primary:hover{transform:translate(-2px,-2px);box-shadow:8px 8px 0 var(--ink)}
+  .btn-primary:active{transform:translate(3px,3px);box-shadow:2px 2px 0 var(--ink)}
+  .btn-secondary{background:var(--paper);color:var(--ink);box-shadow:6px 6px 0 var(--red)}
+  .btn-secondary:hover{transform:translate(-2px,-2px);box-shadow:8px 8px 0 var(--red)}
+  .btn-secondary:active{transform:translate(3px,3px);box-shadow:2px 2px 0 var(--red)}
+  .arrow{width:16px;height:16px;flex:none}
+
+  .logo-box{
+    flex:1;display:flex;align-items:center;justify-content:center;
+    padding:44px 34px;position:relative;min-height:300px;
+  }
+  .logo-box:before{
+    content:"FIG. 00 / MARK";position:absolute;top:14px;left:16px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;
+  }
+  .logo-frame{
+    width:min(260px,60vw);aspect-ratio:1/1;border:2px solid var(--ink);
+    background:var(--paper);box-shadow:8px 8px 0 var(--red);
+    display:flex;align-items:center;justify-content:center;overflow:hidden;
+  }
+  .logo-frame img{width:100%;height:100%;object-fit:cover;display:block}
+  .hero-meta{
+    border-top:2px solid var(--ink);
+    font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;
+    display:flex;justify-content:space-between;padding:12px 18px;color:var(--muted);
+  }
+  .hero-meta b{color:var(--ink)}
+  .blink{width:9px;height:9px;background:var(--red);border-radius:0;display:inline-block;margin-right:7px;vertical-align:middle;animation:blink 1.4s steps(1) infinite}
+  @keyframes blink{50%{opacity:.15}}
+
+  /* ---------- STATS ---------- */
+  .band-head{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 20px;flex-wrap:wrap}
+  .band-head .sub{font-family:var(--mono);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;text-align:right}
+  .band-head .sub b{color:var(--ink)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:2px solid var(--ink)}
+  .stat{padding:26px 22px;border-right:2px solid var(--ink)}
+  .stat:last-child{border-right:0}
+  .stat .lab{font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:12px}
+  .stat .val{
+    font-family:var(--mono);font-weight:700;
+    font-size:clamp(28px,4.4vw,44px);line-height:1;letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums;
+  }
+  .stat .val small{font-size:.5em;font-weight:700;color:var(--red-ink);margin-left:5px;letter-spacing:.02em;vertical-align:baseline}
+  .stat .val .u{font-size:.42em;color:var(--muted);margin-left:7px;letter-spacing:.06em;vertical-align:baseline}
+
+  /* ---------- CURVE PROGRESS ---------- */
+  .grad{padding:52px 40px}
+  .grad-top{display:flex;align-items:baseline;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:20px}
+  .grad-top h2{font-family:var(--disp);font-weight:900;text-transform:uppercase;letter-spacing:-.02em;font-size:clamp(24px,4vw,40px);margin:0;line-height:.95}
+  .pct-big{font-family:var(--mono);font-weight:700;font-size:clamp(30px,5vw,52px);color:var(--red);font-variant-numeric:tabular-nums;line-height:1}
+  .track{
+    height:44px;border:2px solid var(--ink);background:var(--paper);position:relative;overflow:hidden;
+    background-image:repeating-linear-gradient(45deg, rgba(13,13,13,.06) 0 10px, transparent 10px 20px);
+  }
+  .fill{
+    height:100%;background:var(--red);width:61%;position:relative;
+    border-right:2px solid var(--ink);
+    background-image:repeating-linear-gradient(45deg, rgba(0,0,0,.14) 0 10px, transparent 10px 20px);
+  }
+  .fill-anim{width:0;animation:fillgrow 1.3s cubic-bezier(.2,.7,.2,1) forwards}
+  @keyframes fillgrow{to{width:61%}}
+  .track .goal{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink)}
+  .track-legend{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-top:10px}
+  .grad-note{margin:22px 0 0;max-width:64ch;font-size:16px;color:var(--ink)}
+  .grad-note b{color:var(--red-ink)}
+
+  /* ---------- CHART ---------- */
+  .chart-sec .band-head{border-bottom:2px solid var(--ink)}
+  .chart-hold{padding:30px 30px 20px}
+  .chart-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg.chart{display:block;width:100%;min-width:560px;height:auto}
+  .chart-foot{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:6px 30px 30px;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+  .chart-foot b{color:var(--ink)}
+
+  /* ---------- ABOUT ---------- */
+  .about{display:grid;grid-template-columns:.7fr 1.3fr}
+  .about-l{border-right:2px solid var(--ink);padding:44px 30px}
+  .about-l .big-num{font-family:var(--disp);font-weight:900;font-size:clamp(64px,10vw,120px);line-height:.8;color:var(--red);letter-spacing:-.04em}
+  .about-r{padding:44px 40px}
+  .about-r p{font-size:clamp(20px,2.4vw,28px);line-height:1.42;font-weight:500;margin:0;max-width:32ch;letter-spacing:-.01em}
+  .about-r p .hl{background:linear-gradient(transparent 62%, rgba(224,48,30,.28) 62%)}
+  .drop:first-letter{
+    font-family:var(--disp);font-weight:900;float:left;font-size:88px;line-height:.72;
+    padding:6px 14px 0 0;color:var(--ink);
+  }
+
+  /* ---------- CONTRACT ---------- */
+  .contract{padding:44px 40px}
+  .contract h2{font-family:var(--disp);font-weight:900;text-transform:uppercase;font-size:clamp(22px,3.4vw,34px);letter-spacing:-.02em;margin:14px 0 20px;line-height:.95}
+  .ca-box{display:flex;flex-wrap:wrap;align-items:stretch;border:2px solid var(--ink);box-shadow:6px 6px 0 var(--ink);background:var(--paper)}
+  .ca-val{
+    flex:1 1 320px;min-width:0;padding:18px 20px;
+    font-family:var(--mono);font-weight:700;font-size:clamp(13px,2.1vw,18px);
+    letter-spacing:.01em;word-break:break-all;display:flex;align-items:center;
+  }
+  .copy{
+    flex:none;border:0;border-left:2px solid var(--ink);
+    background:var(--ink);color:var(--paper);cursor:pointer;
+    font-family:var(--disp);font-weight:900;text-transform:uppercase;letter-spacing:.03em;
+    font-size:15px;padding:0 26px;min-height:56px;display:flex;align-items:center;gap:9px;
+    transition:background .12s ease;
+  }
+  .copy:hover{background:var(--red)}
+  .copy.done{background:var(--red)}
+  .ca-hint{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-top:14px}
+
+  /* ---------- TRUST ---------- */
+  .trust{display:grid;grid-template-columns:repeat(4,1fr)}
+  .trust .cell{padding:34px 24px;border-right:2px solid var(--ink);position:relative}
+  .trust .cell:last-child{border-right:0}
+  .trust .n{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--red-ink);text-transform:uppercase;display:block;margin-bottom:16px}
+  .trust .t{font-family:var(--disp);font-weight:800;font-size:clamp(17px,2vw,21px);line-height:1.08;text-transform:uppercase;letter-spacing:-.01em}
+  .trust .cell svg{width:22px;height:22px;position:absolute;right:18px;bottom:18px;opacity:.85}
+
+  /* ---------- LINKS ---------- */
+  .links{padding:44px 40px;display:flex;flex-wrap:wrap;gap:44px;align-items:flex-start}
+  .links .col .tag{margin-bottom:18px}
+  .lk{display:block;text-decoration:none;font-family:var(--disp);font-weight:900;text-transform:uppercase;letter-spacing:-.01em;font-size:clamp(22px,3vw,32px);line-height:1.05;border-bottom:2px solid transparent;width:max-content;max-width:100%}
+  .lk:hover{color:var(--red);border-bottom-color:var(--red)}
+  .lk .u{font-family:var(--mono);font-weight:400;font-size:12px;letter-spacing:.06em;color:var(--muted);text-transform:none;display:block;margin-top:4px}
+  .lk:hover .u{color:var(--ink)}
+
+  /* ---------- FOOTER ---------- */
+  footer{background:var(--ink);color:var(--paper);border-bottom:0}
+  .foot-in{display:flex;flex-wrap:wrap;justify-content:space-between;gap:18px;align-items:center;padding:26px 20px}
+  .foot-in .fm{display:flex;align-items:center;gap:11px}
+  .foot-in .fm .glyph{width:24px;height:24px;border:2px solid var(--paper);position:relative}
+  .foot-in .fm .glyph:after{content:"";position:absolute;right:-2px;top:-2px;width:10px;height:10px;background:var(--red)}
+  .foot-in .fm b{font-family:var(--disp);font-weight:900;text-transform:uppercase;letter-spacing:-.01em;font-size:16px}
+  .foot-in .handle{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:#cfcbc2}
+  .foot-in a.flink{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.1em;text-decoration:none;color:var(--paper);border:2px solid var(--paper);padding:8px 14px}
+  .foot-in a.flink:hover{background:var(--red);border-color:var(--red)}
+
+  @media (max-width:860px){
+    .hero-grid{grid-template-columns:1fr}
+    .hero-right{border-left:0;border-top:2px solid var(--ink)}
+    .hero-left{padding:34px 22px 30px}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .stat:nth-child(2){border-right:0}
+    .stat:nth-child(1),.stat:nth-child(2){border-bottom:2px solid var(--ink)}
+    .about{grid-template-columns:1fr}
+    .about-l{border-right:0;border-bottom:2px solid var(--ink);display:flex;align-items:center;gap:18px}
+    .about-r{padding:34px 22px}
+    .trust{grid-template-columns:repeat(2,1fr)}
+    .trust .cell:nth-child(2){border-right:0}
+    .trust .cell:nth-child(1),.trust .cell:nth-child(2){border-bottom:2px solid var(--ink)}
+    .grad,.contract,.links{padding-left:22px;padding-right:22px}
+    .band-head .sub{text-align:left}
+  }
+  @media (max-width:520px){
+    body{font-size:16px}
+    .stats{grid-template-columns:1fr}
+    .stat{border-right:0;border-bottom:2px solid var(--ink)}
+    .stat:last-child{border-bottom:0}
+    .trust{grid-template-columns:1fr}
+    .trust .cell{border-right:0;border-bottom:2px solid var(--ink)}
+    .trust .cell:last-child{border-bottom:0}
+    .cta-row .btn{flex:1 1 100%;justify-content:center}
+    .ghost{padding:8px 10px;font-size:11px}
+    .copy{flex:1 1 100%;border-left:0;border-top:2px solid var(--ink);justify-content:center}
+    .links{gap:30px}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important;transition:none !important}
+    .fill-anim{width:61%}
+    .btn:hover,.btn:active{transform:none}
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+
+<header class="bar">
+  <div class="wrap bar-in">
+    <a class="mark" href="#top" aria-label="Robin Labs home">
+      <span class="glyph" aria-hidden="true"></span>
+      <span class="wm">ROBIN<b>LABS</b></span>
+    </a>
+    <a class="ghost" href="https://robinlab.io">Launch your own</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-grid">
+      <div class="hero-left">
+        <div class="kick">
+          <span class="tag"><span class="sq"></span>FIG. 01 / FLAGSHIP TOKEN</span>
+          <span class="ticker-chip">$ROBIN</span>
+        </div>
+        <h1 class="title">Robin<br><span class="lab">Labs</span></h1>
+        <p class="hook">The coin of the launchpad that <em>pays its creators.</em></p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://robinlab.io/token.html?c=0x6696fe29288b586017e6f264c0091dba6c5ebeaf">
+            Buy $ROBIN
+            <svg class="arrow" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="2"/></svg>
+          </a>
+          <a class="btn btn-secondary" href="#chart">View chart</a>
+        </div>
+      </div>
+      <div class="hero-right">
+        <div class="logo-box">
+          <div class="logo-frame">
+            <img src="data:image/webp;base64,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" alt="ROBIN LABS">
+          </div>
+        </div>
+        <div class="hero-meta">
+          <span><span class="blink" aria-hidden="true"></span>LIVE ON CURVE</span>
+          <span>ROBINHOOD CHAIN / <b>UNISWAP V3</b></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section>
+    <div class="band-head">
+      <span class="tag"><span class="sq"></span>FIG. 02 / LIVE DATA</span>
+      <span class="sub">Denominated in ETH / AS OF <b>2026-08-02 14:00 UTC</b></span>
+    </div>
+    <div class="stats">
+      <div class="stat">
+        <span class="lab">Market Cap</span>
+        <span class="val">7.20<span class="u">ETH</span></span>
+      </div>
+      <div class="stat">
+        <span class="lab">Total Volume</span>
+        <span class="val">15.2<span class="u">ETH</span></span>
+      </div>
+      <div class="stat">
+        <span class="lab">Trades</span>
+        <span class="val">9,306</span>
+      </div>
+      <div class="stat">
+        <span class="lab">Curve Progress</span>
+        <span class="val">61<small>%</small></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- BONDING CURVE -->
+  <section>
+    <div class="grad">
+      <span class="tag"><span class="sq"></span>FIG. 03 / BONDING CURVE</span>
+      <div class="grad-top">
+        <h2>Progress to graduation</h2>
+        <span class="pct-big">61%</span>
+      </div>
+      <div class="track" role="progressbar" aria-valuenow="61" aria-valuemin="0" aria-valuemax="100" aria-label="Bonding curve progress to graduation">
+        <div class="fill fill-anim"></div>
+        <span class="goal">Graduation / 100%</span>
+      </div>
+      <div class="track-legend"><span>Launch</span><span>39% remaining</span></div>
+      <p class="grad-note">At graduation the liquidity moves into a <b>permanent Uniswap v3 floor that never leaves</b>, and the creator earns <b>0.5 ETH</b>. No presale, no team allocation, no games.</p>
+    </div>
+  </section>
+
+  <!-- CHART -->
+  <section class="chart-sec" id="chart">
+    <div class="band-head">
+      <span class="tag"><span class="sq"></span>FIG. 04 / PRICE ACTION</span>
+      <span class="sub">$ROBIN / ETH</span>
+    </div>
+    <div class="chart-hold">
+      <div class="chart-scroll">
+        <svg class="chart" viewBox="0 0 840 360" role="img" aria-label="Rising price chart for ROBIN, up its bonding curve with strong volume">
+          <defs>
+            <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#e0301e" stop-opacity="0.22"/>
+              <stop offset="1" stop-color="#e0301e" stop-opacity="0.02"/>
+            </linearGradient>
+          </defs>
+
+          <!-- frame -->
+          <rect x="1" y="1" width="838" height="358" fill="none" stroke="#0d0d0d" stroke-width="2"/>
+
+          <!-- horizontal gridlines -->
+          <g stroke="#0d0d0d" stroke-opacity="0.14" stroke-width="1">
+            <line x1="60" y1="70" x2="800" y2="70"/>
+            <line x1="60" y1="130" x2="800" y2="130"/>
+            <line x1="60" y1="190" x2="800" y2="190"/>
+            <line x1="60" y1="250" x2="800" y2="250"/>
+          </g>
+
+          <!-- y axis labels -->
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#5a5852">
+            <text x="14" y="74">.040</text>
+            <text x="14" y="134">.030</text>
+            <text x="14" y="194">.020</text>
+            <text x="14" y="254">.010</text>
+            <text x="14" y="304">.000</text>
+          </g>
+
+          <!-- baseline / x axis -->
+          <line x1="60" y1="300" x2="800" y2="300" stroke="#0d0d0d" stroke-width="2"/>
+          <line x1="60" y1="40" x2="60" y2="300" stroke="#0d0d0d" stroke-width="2"/>
+
+          <!-- graduation target line -->
+          <line x1="60" y1="60" x2="800" y2="60" stroke="#0d0d0d" stroke-width="1.5" stroke-dasharray="7 5"/>
+          <rect x="636" y="46" width="150" height="18" fill="#0d0d0d"/>
+          <text x="644" y="59" font-family="ui-monospace, Menlo, monospace" font-size="10.5" letter-spacing="1" fill="#faf9f6">GRADUATION 100%</text>
+
+          <!-- volume bars -->
+          <g fill="#0d0d0d" fill-opacity="0.32">
+            <rect x="70" y="288" width="8" height="12"/>
+            <rect x="118" y="284" width="8" height="16"/>
+            <rect x="166" y="290" width="8" height="10"/>
+            <rect x="214" y="280" width="8" height="20"/>
+            <rect x="262" y="286" width="8" height="14"/>
+            <rect x="310" y="276" width="8" height="24"/>
+            <rect x="358" y="282" width="8" height="18"/>
+            <rect x="406" y="270" width="8" height="30"/>
+            <rect x="454" y="278" width="8" height="22"/>
+            <rect x="502" y="266" width="8" height="34"/>
+            <rect x="550" y="272" width="8" height="28"/>
+            <rect x="598" y="260" width="8" height="40"/>
+            <rect x="646" y="268" width="8" height="32"/>
+            <rect x="694" y="256" width="8" height="44"/>
+            <rect x="742" y="262" width="8" height="38"/>
+          </g>
+
+          <!-- area under curve -->
+          <path d="M60,292 L110,288 L160,283 L210,278 L260,270 L310,265 L360,255 L410,245 L460,231 L510,219 L560,199 L610,181 L660,157 L710,131 L760,103 L800,80 L800,300 L60,300 Z" fill="url(#area)"/>
+
+          <!-- the curve -->
+          <path d="M60,292 L110,288 L160,283 L210,278 L260,270 L310,265 L360,255 L410,245 L460,231 L510,219 L560,199 L610,181 L660,157 L710,131 L760,103 L800,80" fill="none" stroke="#e0301e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+
+          <!-- current position marker -->
+          <line x1="800" y1="80" x2="800" y2="300" stroke="#e0301e" stroke-width="1" stroke-dasharray="4 4"/>
+          <rect x="788" y="68" width="24" height="24" fill="#faf9f6" stroke="#0d0d0d" stroke-width="2"/>
+          <rect x="794" y="74" width="12" height="12" fill="#e0301e"/>
+          <rect x="700" y="46" width="86" height="18" fill="#e0301e"/>
+          <text x="708" y="59" font-family="ui-monospace, Menlo, monospace" font-size="10.5" letter-spacing="1" fill="#ffffff">NOW / 61%</text>
+
+          <!-- x axis labels -->
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#5a5852">
+            <text x="60" y="322">LAUNCH</text>
+            <text x="392" y="322">9,306 TRADES</text>
+            <text x="726" y="322">TODAY</text>
+          </g>
+        </svg>
+      </div>
+      <div class="chart-foot">
+        <span>SOURCE / <b>ON-CHAIN</b></span>
+        <span>15.2 ETH TOTAL VOLUME</span>
+        <span>TREND / <b>RISING</b></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section>
+    <div class="band-head">
+      <span class="tag"><span class="sq"></span>FIG. 05 / THE STORY</span>
+      <span class="sub">Read the record</span>
+    </div>
+    <div class="about">
+      <div class="about-l">
+        <span class="big-num">01</span>
+      </div>
+      <div class="about-r">
+        <p class="drop">ROBIN is <span class="hl">the home team.</span> It is the coin of Robin Labs, the only launchpad that pays its successful creators. Every launch here is a fair launch into real Uniswap v3 liquidity, with a permanent floor that never leaves. No presale, no team allocation, no games.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTRACT -->
+  <section>
+    <div class="contract">
+      <span class="tag"><span class="sq"></span>FIG. 06 / CONTRACT</span>
+      <h2>Verify the address</h2>
+      <div class="ca-box">
+        <div class="ca-val" id="ca">0x6696fe29288b586017e6f264c0091dba6c5ebeaf</div>
+        <button class="copy" id="copyBtn" type="button" aria-label="Copy contract address">
+          <span id="copyLabel">Copy</span>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" id="copyIcon"><rect x="3" y="3" width="8" height="8" stroke="currentColor" stroke-width="1.6"/><path d="M6 6h7v7H6z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+        </button>
+      </div>
+      <p class="ca-hint" id="copyStatus" role="status" aria-live="polite">Always confirm the address before you buy.</p>
+    </div>
+  </section>
+
+  <!-- TRUST -->
+  <section>
+    <div class="band-head">
+      <span class="tag"><span class="sq"></span>FIG. 07 / MECHANICS</span>
+      <span class="sub">How Robin Labs works</span>
+    </div>
+    <div class="trust">
+      <div class="cell">
+        <span class="n">01</span>
+        <div class="t">Fair launch, no presale or team allocation</div>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2v20M4 8l8-4 8 4M6 12h12" stroke="#e0301e" stroke-width="2"/></svg>
+      </div>
+      <div class="cell">
+        <span class="n">02</span>
+        <div class="t">Real Uniswap v3 liquidity</div>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 20l6-8 4 5 8-11" stroke="#e0301e" stroke-width="2"/></svg>
+      </div>
+      <div class="cell">
+        <span class="n">03</span>
+        <div class="t">A permanent floor that never leaves</div>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="4" width="16" height="16" stroke="#e0301e" stroke-width="2"/><path d="M4 14h16" stroke="#e0301e" stroke-width="2"/></svg>
+      </div>
+      <div class="cell">
+        <span class="n">04</span>
+        <div class="t">The creator earns 0.5 ETH when a coin graduates</div>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="#e0301e" stroke-width="2"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 010 3h-3a1.5 1.5 0 000 3h4" stroke="#e0301e" stroke-width="2"/></svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- LINKS -->
+  <section>
+    <div class="links">
+      <div class="col">
+        <span class="tag"><span class="sq"></span>FIG. 08 / LINKS</span>
+        <a class="lk" href="https://robinlab.io">Website<span class="u">robinlab.io</span></a>
+      </div>
+      <div class="col">
+        <span class="tag"><span class="sq"></span>BUILD</span>
+        <a class="lk" href="https://robinlab.io">Launch a coin<span class="u">robinlab.io</span></a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot-in">
+    <div class="fm">
+      <span class="glyph" aria-hidden="true"></span>
+      <b>Powered by Robin Labs</b>
+    </div>
+    <span class="handle">robin.robinlab.io</span>
+    <a class="flink" href="https://robinlab.io">robinlab.io</a>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var btn = document.getElementById('copyBtn');
+  var label = document.getElementById('copyLabel');
+  var status = document.getElementById('copyStatus');
+  var ca = document.getElementById('ca').textContent.trim();
+  var resetTimer;
+
+  function confirm(){
+    btn.classList.add('done');
+    label.textContent = 'Copied';
+    status.textContent = 'Contract address copied to your clipboard.';
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(function(){
+      btn.classList.remove('done');
+      label.textContent = 'Copy';
+      status.textContent = 'Always confirm the address before you buy.';
+    }, 2200);
+  }
+
+  btn.addEventListener('click', function(){
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(ca).then(confirm, fallback);
+    } else {
+      fallback();
+    }
+  });
+
+  function fallback(){
+    try{
+      var t = document.createElement('textarea');
+      t.value = ca;
+      t.setAttribute('readonly','');
+      t.style.position='absolute'; t.style.left='-9999px';
+      document.body.appendChild(t);
+      t.select();
+      document.execCommand('copy');
+      document.body.removeChild(t);
+      confirm();
+    }catch(e){
+      status.textContent = 'Copy failed. Select the address manually.';
+    }
+  }
+})();
+</script>
+</body>
+</html>
