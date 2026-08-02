@@ -274,6 +274,7 @@ async function connectWith(wallet) {
 
   // keep UI in sync if the user switches account/chain in their wallet
   eip.removeAllListeners?.("accountsChanged");
+  eip.removeAllListeners?.("chainChanged");   // avoid stacking a stale listener if eagerConnect also ran
   eip.on?.("accountsChanged", () => location.reload());
   eip.on?.("chainChanged", () => { if (!_bridgeMode) location.reload(); });
   return _account;
@@ -1565,8 +1566,11 @@ async function eagerConnect() {
     _signer = await _provider.getSigner();
     _account = await _signer.getAddress();
     eip.removeAllListeners?.("accountsChanged");
+    eip.removeAllListeners?.("chainChanged");
     eip.on?.("accountsChanged", () => location.reload());
-    eip.on?.("chainChanged", () => location.reload());
+    // Guard the reload with _bridgeMode, same as connectWith(): the bridge deliberately hops the wallet
+    // to a source chain, and an unguarded reload here would abort the bridge flow for a returning user.
+    eip.on?.("chainChanged", () => { if (!_bridgeMode) location.reload(); });
     window.dispatchEvent(new Event("robinpad:ready"));   // re-fire so the UI shows the restored address
     window.dispatchEvent(new Event("sheriffpad:ready"));
   } catch { /* stays disconnected - the Connect button still works */ }

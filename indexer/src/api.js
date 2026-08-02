@@ -182,7 +182,8 @@ function getLogsRangeOk(params) {
   // legitimate "recent block N .. latest" tail still works but "block 1 .. latest" does not.
   if (from !== null && headish(p.toBlock)) {
     let head = 0n; try { head = BigInt(getHead() || 0); } catch { head = 0n; }
-    if (head > from && head - from > MAX_LOGS_SPAN) return false;
+    if (head === 0n) return false;                       // head unknown (startup): can't bound an open upper range, refuse
+    if (head - from > MAX_LOGS_SPAN) return false;        // head is known and >0 here; reject a too-wide "N..latest" span
   }
   if (from !== null && to !== null && to - from > MAX_LOGS_SPAN) return false; // explicit span too wide
   return true;

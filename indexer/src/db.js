@@ -241,6 +241,14 @@ export const liveCoinsAll = db.prepare(`
   SELECT token, symbol, pool, token0, start_tick, grad_tick, launch_block FROM coins
   WHERE graduated = 0 AND pool IS NOT NULL
 `);
+// Coins that graduated within the reorg re-scan window. The first-chunk purge deletes trades by block
+// (purgeTradesFrom), so a coin that just graduated (and is therefore no longer in liveCoinsAll) would
+// have its final on-curve trades, including the graduation-triggering buy, purged and never re-inserted,
+// corrupting volume/holder stats and the reward balance reconstruction. Re-scan their pools too.
+export const coinsGraduatedSince = db.prepare(`
+  SELECT token, symbol, pool, token0, start_tick, grad_tick, launch_block FROM coins
+  WHERE graduated = 1 AND pool IS NOT NULL AND grad_block >= @from
+`);
 export const tradeCountForToken = db.prepare("SELECT COUNT(*) AS n FROM trades WHERE token = ?");
 
 export const coinByCurve = db.prepare("SELECT token FROM coins WHERE curve = ?");

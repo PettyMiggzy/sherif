@@ -198,7 +198,7 @@ import { UNI_TOKENS } from './assets/config.js';
 
 const $ = (id) => document.getElementById(id);
 const cbtn = $('connectBtn'), cta = $('buyCta');
-const esc = (s) => String(s == null ? '' : s);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const PREVIEW_ADDR = '0x742d35Cc6634C0532925a3b844Bc454e4438f44e'; // for indicative quotes before connect
 const ETH_LOGO = 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png';
 const DST_LIST = () => [Bridge.NATIVE, ...UNI_TOKENS]; // ETH on Robinhood Chain first (the easy default), then the coins

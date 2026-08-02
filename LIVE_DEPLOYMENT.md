@@ -17,7 +17,8 @@ OWNER = the cold wallet. Factory deploy block: **17752965**. Deployed: 2026-07-2
 | LaunchTokenDeployer | `0xb3748cB6ba4e47b885f8333aCa8C004A4657383d` | ✅ |
 | CurvePoolDeployer | `0x020524511aD8B99828b19DA0FD3Bb7BE919A080c` | ✅ |
 | BondDeployer | `0x8B04d9e55C904d6D371eA6e81ecb2a0911843AD3` | ✅ |
-| RewardVault | _(not deployed — rewards program disabled)_ | n/a |
+| RewardVault | `0x03d5d26E492B288e62D897E7dde91af3CceB4347` | ✅ (wired via router.setRewardVault; reward legs on) |
+| TokenVestingLock | `0x7453856c3E5f6832dc660e48c7Daa6f46f3355DF` | ✅ |
 | WETH (chain infra, unchanged) | `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` | n/a |
 | Uniswap v3 Factory (chain infra) | `0x1f7d7550b1b028f7571e69a784071f0205fd2efa` | n/a |
 

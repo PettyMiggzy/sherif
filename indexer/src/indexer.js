@@ -10,7 +10,7 @@ import {
   db, getCursor, setCursor, setHeadTs, upsertCoin, markGraduated, ungraduateFrom, insertTrade,
   coinByCurve, purgeTradesFrom, setGeometry,
   setSnapshot, coinGeom, insertAccrual, purgeAccrualsFrom, insertDevLock, purgeDevLocksFrom,
-  liveCoinsAll, tradeCountForToken, getMeta, setMeta,
+  liveCoinsAll, coinsGraduatedSince, tradeCountForToken, getMeta, setMeta,
 } from "./db.js";
 
 const WETH = (process.env.WETH || "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73").toLowerCase();
@@ -430,6 +430,11 @@ export async function tick() {
   // launched mid-pass (added below). pool(lc) -> { pool, token, token0 }.
   const poolMap = new Map();
   for (const c of liveCoinsAll.all()) {
+    if (c.pool && c.token0) poolMap.set(c.pool.toLowerCase(), { pool: c.pool.toLowerCase(), token: c.token, token0: c.token0 });
+  }
+  // Also re-scan pools of coins that graduated within this purge window, so the purge (which deletes
+  // trades by block, ignoring graduation) can re-insert their final on-curve trades instead of losing them.
+  for (const c of coinsGraduatedSince.all({ from })) {
     if (c.pool && c.token0) poolMap.set(c.pool.toLowerCase(), { pool: c.pool.toLowerCase(), token: c.token, token0: c.token0 });
   }
 

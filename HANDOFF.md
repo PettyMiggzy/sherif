@@ -57,7 +57,9 @@ docs/          GitBook- + Mintlify-ready docs generated from docs/src/*.md
   Sherwood LP fees compound back into the Bond via `poke()`.
 - **Graduation is ceiling-only at 4.2 ETH raised** (~$34k FDV). No dev-settable target, no timeout, no
   "let it ride" — a coin graduates at exactly one price, the top of the curve.
-- **Rewards program disabled** — no `RewardVault` deployed; no reward legs on any trade.
+- **Rewards program live** — `RewardVault` `0x03d5d26E492B288e62D897E7dde91af3CceB4347` is deployed and wired
+  via `router.setRewardVault`, so the 0.25% trader + 0.25% holder legs accrue on every trade. Set
+  `REWARD_VAULT` + `POSTER_KEY` on the indexer to compute and post the merkle roots.
 - Fees are all owner-tunable live via `FeeConfig` (`pad/admin.html` → Fee dials) — no redeploy.
 
 ## Status
