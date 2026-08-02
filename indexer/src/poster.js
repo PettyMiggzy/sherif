@@ -81,11 +81,23 @@ export function computePending() {
 
 // Post any computed-but-unposted roots on-chain. Requires POSTER_KEY + REWARD_VAULT. Skips an epoch that already
 // carries a root on-chain (writes the on-chain tx back so we don't retry). Returns the epochs posted.
+// Robinhood Chain (4663) has no EIP-1559: its blocks still carry a baseFeePerGas, so ethers v6 would
+// otherwise default postRoot to a type-2 (1559) tx the chain rejects. Broadcast a legacy (type-0) tx
+// with an explicit base-fee-floored gasPrice, mirroring keeper.js's legacyGasPrice.
+async function legacyGasPrice(provider) {
+  let gp = 0n, base = 0n;
+  try { gp = (await provider.getFeeData()).gasPrice || 0n; } catch {}
+  try { const b = await provider.getBlock("latest"); base = (b && b.baseFeePerGas) || 0n; } catch {}
+  const floor = base > 0n ? (base * 12n) / 10n : ethers.parseUnits("0.1", "gwei");
+  return gp > floor ? gp : floor;
+}
+
 export async function postPending() {
   if (!CFG.posterKey || !CFG.rewardVault) return [];
   const provider = new ethers.JsonRpcProvider(CFG.rpcUrl, undefined, { staticNetwork: true });
   const wallet = new ethers.Wallet(CFG.posterKey, provider);
   const vault = new ethers.Contract(CFG.rewardVault, VAULT_ABI, wallet);
+  const gasPrice = await legacyGasPrice(provider); // legacy (type-0) tx; no EIP-1559 on this chain
   const posted = [];
   const now = Math.floor(Date.now() / 1000);
   const cur = currentEpoch(now);
@@ -119,7 +131,7 @@ export async function postPending() {
       continue;
     }
     try {
-      const tx = await vault.postRoot(epoch, row.root, row.algo_hash || ALGO_HASH, row.uri || uriFor(epoch));
+      const tx = await vault.postRoot(epoch, row.root, row.algo_hash || ALGO_HASH, row.uri || uriFor(epoch), { type: 0, gasPrice });
       const rc = await tx.wait();
       setRewardRootPostedTx.run({ epoch, posted_tx: rc.hash });
       setRewardRootPostedTs.run({ epoch, posted_ts: Math.floor(Date.now() / 1000) });

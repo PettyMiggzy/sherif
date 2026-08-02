@@ -45,7 +45,7 @@ export const CFG = {
   // fresh deploy indexes the right factory even before .env is filled in. Override via env as needed.
   factory: (process.env.FACTORY || "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074").toLowerCase(),
   router: (process.env.ROUTER || "0xA6BaAB820809C7fC8350311776627298f91F07eC").toLowerCase(),
-  startBlock: num("START_BLOCK", 15944153),
+  startBlock: num("START_BLOCK", 17752965),
   port: num("PORT", 8787),
   pollMs: num("POLL_MS", 6000),
   chunk: num("CHUNK", 1500),

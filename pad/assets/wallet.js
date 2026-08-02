@@ -685,6 +685,7 @@ export async function cancelLimitOrder(order) {
 // PadRouter only, simulated first. The sell tax comes off the ETH out.
 export async function sell({ token, tokenAmount, slippagePct = 8 }) {
   if (!_signer) await connect();
+  await ensureOnChain();   // never broadcast the approve on a wrong-chain (eager-restored) session — guardedSend guards the sell, but the approve here fires first
   requireRouter();
   const erc = new ethers.Contract(token, ABIS.erc20, _signer);
   const amountIn = ethers.parseUnits(plainAmount(tokenAmount), 18);
@@ -1282,6 +1283,7 @@ function requireVesting() {
 export async function createVestingLock(token, beneficiary, amount, startTs = 0, cliffDays = 0, durationDays = 30) {
   requireVesting();
   if (!_signer) await connect();
+  await ensureOnChain();   // the approve below broadcasts before guardedSend's guard — switch first so an eager-restored wrong-chain session can't approve there
   // Accept wei BigInt directly so callers can pass an exact balance-derived amount
   // without a lossy Number()/formatUnits round-trip.
   const amt = typeof amount === "bigint" ? amount : ethers.parseUnits(plainAmount(amount), 18);

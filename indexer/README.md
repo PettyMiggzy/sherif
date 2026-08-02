@@ -82,8 +82,8 @@ cat > .env <<'ENV'
 SITE_DOMAIN=api.robinlab.io
 FACTORY=0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074
 ROUTER=0xA6BaAB820809C7fC8350311776627298f91F07eC
-REWARD_VAULT=0x0F07dC315e332084129c1D00bEbADAb05edf79Dc
-START_BLOCK=15944153
+REWARD_VAULT=0x03d5d26E492B288e62D897E7dde91af3CceB4347
+START_BLOCK=17752965
 CORS_ORIGIN=*
 # RPC_URL=<your private Robinhood Chain RPC>   # optional; else the public RPC
 ENV
@@ -127,8 +127,8 @@ Already baked into `fly.toml` / use in `.env` — no need to look them up:
 |-----|-------|
 | `FACTORY` | `0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074` |
 | `ROUTER` | `0xA6BaAB820809C7fC8350311776627298f91F07eC` |
-| `REWARD_VAULT` | `0x0F07dC315e332084129c1D00bEbADAb05edf79Dc` |
-| `START_BLOCK` | `15944153` (the factory's deploy block — fast first sync) |
+| `REWARD_VAULT` | `0x03d5d26E492B288e62D897E7dde91af3CceB4347` |
+| `START_BLOCK` | `17752965` (the factory's deploy block — fast first sync) |
 
 ## Scaling to a launch-day crowd (10k concurrent)
 

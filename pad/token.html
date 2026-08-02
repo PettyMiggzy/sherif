@@ -543,7 +543,7 @@ async function loadBal(){
     BAL_STR = await Pad.tokenBalance(TOKEN);
     BAL = Number(BAL_STR) || 0;
     const show = BAL >= 1e6 ? (BAL/1e6).toFixed(2)+'M' : BAL >= 1e3 ? (BAL/1e3).toFixed(2)+'k' : (+BAL.toFixed(4));
-    el.innerHTML = `You hold <b style="color:var(--ink)">${show}</b> ${disp(COIN.symbol)}`;
+    el.innerHTML = `You hold <b style="color:var(--ink)">${show}</b> ${esc(disp(COIN.symbol))}`;
     el.style.display = 'block';
   } catch { el.style.display = 'none'; }
 }
@@ -1144,7 +1144,7 @@ async function loadLocks(){
       // button to the beneficiary themselves when they have something vested to pull.
       const canRel = me && l.beneficiary.toLowerCase() === me && BigInt(l.releasable || 0n) > 0n;
       const relBtn = canRel ? ` <button class="relbtn" data-id="${l.id}" type="button">Release ${fmtTok(l.releasable)}</button>` : '';
-      return `<div class="lockrow"><span class="who">${who}</span><span class="amt"><b>${fmtTok(l.total)}</b> ${disp(COIN.symbol)} · ${Math.round((l.lockedPct||0)/100)}% locked${relBtn}</span><span class="when">${when}</span></div>`;
+      return `<div class="lockrow"><span class="who">${who}</span><span class="amt"><b>${fmtTok(l.total)}</b> ${esc(disp(COIN.symbol))} · ${Math.round((l.lockedPct||0)/100)}% locked${relBtn}</span><span class="when">${when}</span></div>`;
     }).join('');
     $('locksMeta').textContent = locks.length + (locks.length === 1 ? ' lock' : ' locks');
     panel.style.display = '';
@@ -1301,24 +1301,6 @@ async function renderPriceChart(){
   if ($('pHi')) $('pHi').textContent = fmtPrice(hi);
   if ($('pLo')) $('pLo').textContent = fmtPrice(lo);
   if ($('pLast')) $('pLast').textContent = fmtPrice(pts[pts.length - 1]);
-}
-
-// ── trending-tokens marquee in the banner ──
-async function renderBanner(){
-  if (COIN_HAS_BANNER) return;              // coin has its own banner → don't overlay other projects
-  const el = $('bmq'); if (!el) return;
-  let list = [];
-  if (DEMO) list = DEMO_COINS.slice();
-  else { try { list = (await Pad.feed({ sort:'trending', limit:14 })).coins || []; } catch { list = []; } }
-  list = list.filter((c) => !COIN || c.token !== COIN.token).slice(0, 12);
-  if (!list.length){ const w = el.parentNode; if (w) w.style.display = 'none'; return; }
-  const pill = (c) => {
-    const img = c.image ? `<img src="${esc(c.image)}" alt="" onerror="this.style.visibility='hidden'" />` : `<img alt="" />`;
-    const ch = c.chg; const chg = ch == null ? '' : `<span class="c ${ch>=0?'up':'dn'}">${ch>=0?'▲':'▼'}${Math.abs(ch).toFixed(1)}%</span>`;
-    return `<a class="bt" href="token.html?c=${encodeURIComponent(c.token)}${DEMO?'&demo=1':''}">${img}<span class="s">${esc(disp(c.symbol))}</span>${chg}</a>`;
-  };
-  const html = list.map(pill).join('');
-  el.innerHTML = html + html; // duplicate → seamless -50% loop
 }
 
 // ── public fees for this coin (creator take + what deepens the floor) ──

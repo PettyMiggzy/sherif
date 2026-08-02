@@ -410,6 +410,12 @@ export async function tick() {
   if (safeHead < CFG.startBlock) return 0;
 
   const stored = getCursor();
+  // If the safe head has RECEDED below our committed cursor (a transient tip regression, or an RPC
+  // briefly returning a lower head), skip this pass. The first-chunk purge below deletes block >= from,
+  // but only the [from, safeHead] loop re-inserts; proceeding here would drop committed trades/accruals
+  // in the (safeHead, stored] gap that this pass never re-writes. Waiting for the head to recover is safe
+  // (the cursor stays put; the next pass re-scans the reorg window normally once safeHead >= stored).
+  if (stored !== null && safeHead < stored) return 0;
   // Start at the stored cursor minus a reorg window (re-scan the tip); first run
   // starts at the configured deploy block.
   const reorgWindow = Math.max(CFG.confirmations * 4, 12);

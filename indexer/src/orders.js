@@ -39,9 +39,14 @@ CREATE INDEX IF NOT EXISTS idx_lo_maker ON limit_orders(maker);
 const MAX_OPEN_PER_MAKER = Number(process.env.MAX_OPEN_ORDERS_PER_MAKER || 25);
 const MAX_OPEN_GLOBAL = Number(process.env.MAX_OPEN_ORDERS_GLOBAL || 20000); // backstop against a Sybil flood
 
-const insertStmt = db.prepare(`INSERT OR REPLACE INTO limit_orders
+// INSERT OR REPLACE would DELETE+reinsert on a hash (PK) conflict, resetting `filled`/`attempts` back
+// to their defaults (and clearing `cancelled`), so a re-POST of the same order would wipe the keeper's
+// fill progress and resurrect a cancelled order. The order is immutable (the hash is deterministic over
+// its fields), so a re-post must be a no-op that keeps the existing row and its progress.
+const insertStmt = db.prepare(`INSERT INTO limit_orders
   (hash, maker, sell_token, buy_token, order_json, signature, expiry, slices, cancelled, created_ts)
-  VALUES (@hash, @maker, @sell_token, @buy_token, @order_json, @signature, @expiry, @slices, 0, @created_ts)`);
+  VALUES (@hash, @maker, @sell_token, @buy_token, @order_json, @signature, @expiry, @slices, 0, @created_ts)
+  ON CONFLICT(hash) DO NOTHING`);
 const byMakerStmt = db.prepare(`SELECT * FROM limit_orders WHERE maker = ? ORDER BY created_ts DESC LIMIT 200`);
 // Open = not cancelled, not expired, and not fully filled (filled < slices). Ordered by `attempts`
 // FIRST so orders that keep reverting when the keeper probes them (never-fillable junk / Sybil flood)

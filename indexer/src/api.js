@@ -500,6 +500,20 @@ const coinNameStmt = db.prepare("SELECT name, symbol FROM coins WHERE token = ?"
 const rewardAccruedStmt = db.prepare(
   "SELECT COALESCE(SUM(CAST(amount AS REAL)),0)/1e18 AS eth, COUNT(DISTINCT coin) AS coins FROM reward_accruals");
 const rewardRootsPostedStmt = db.prepare("SELECT COUNT(*) AS posted FROM reward_roots WHERE posted_tx IS NOT NULL");
+
+// /health + / run two COUNT(*) scans (coins, trades). trades grows unbounded, so on a hot health-check
+// path these become full-table scans. Prepare once and cache the counts for a few seconds so a burst of
+// unauthenticated / and /health hits can't turn into a scan-per-request. head/cursor stay live (cheap).
+const healthCoinsStmt = db.prepare("SELECT COUNT(*) n FROM coins");
+const healthTradesStmt = db.prepare("SELECT COUNT(*) n FROM trades");
+let _healthCounts = { at: 0, coins: 0, trades: 0 };
+function healthCounts() {
+  const nowMs = Date.now();
+  if (nowMs - _healthCounts.at > 5000) {
+    _healthCounts = { at: nowMs, coins: healthCoinsStmt.get().n, trades: healthTradesStmt.get().n };
+  }
+  return _healthCounts;
+}
 const rewardClaimsStmt = db.prepare(
   "SELECT COALESCE(SUM(CAST(amount AS REAL)),0)/1e18 AS eth, COUNT(*) AS n FROM reward_claims");
 // Per-side split (0=traders, 1=holders) + distinct claimants, for the rewards page totals strip.
@@ -772,8 +786,7 @@ export function startApi() {
 
     try {
       if (path === "/" || path === "/health") {
-        const c = db.prepare("SELECT COUNT(*) n FROM coins").get().n;
-        const t = db.prepare("SELECT COUNT(*) n FROM trades").get().n;
+        const { coins: c, trades: t } = healthCounts();   // cached ~5s so a health-check burst can't scan-per-request
         const cur = db.prepare("SELECT v FROM meta WHERE k='cursor'").get();
         // `img` proves this build has the image-conversion toolchain loaded (HEIC etc.) —
         // a quick way to confirm a redeploy actually took and the deps installed.
@@ -793,7 +806,10 @@ export function startApi() {
         const ALLOWED = new Set(["cdn.dexscreener.com", "dd.dexscreener.com", "media.dexscreener.com", "dexscreener.com"]);
         if (u.protocol !== "https:" || !ALLOWED.has(u.hostname)) return send(res, 400, { error: "host not allowed" }, origin);
         try {
-          const up = await fetch(u.toString(), { signal: AbortSignal.timeout(8000), headers: { accept: "image/*" }, redirect: "follow" });
+          // redirect: "manual" — the host allowlist above only vetted the INITIAL url. Following a 3xx
+          // would let an allowlisted (or open-redirecting) host bounce us to an arbitrary internal host
+          // (SSRF). Refuse redirects: a 3xx surfaces as !up.ok below and returns 502.
+          const up = await fetch(u.toString(), { signal: AbortSignal.timeout(8000), headers: { accept: "image/*" }, redirect: "manual" });
           if (!up.ok) return send(res, 502, { error: "upstream " + up.status }, origin);
           const ct = up.headers.get("content-type") || "";
           if (!/^image\//.test(ct)) return send(res, 415, { error: "not an image" }, origin);

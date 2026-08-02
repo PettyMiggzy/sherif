@@ -20,7 +20,7 @@
   .stage{flex:1 1 auto;position:relative;background:#000}
   iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:#05060a}
   .foot{flex:0 0 auto;border-top:1px solid var(--line);padding:8px 16px;font-size:11.5px;color:var(--dim);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
-  .foot a{color:var(--accent);text-decoration:none}.note{font-size:11.5px;color:#69727f}
+  .foot a{color:var(--accent);text-decoration:none}.note{font-size:11.5px;color:var(--dim)}
 </style>
 </head>
 <body>
@@ -28,26 +28,39 @@
   <div class="titlerow"><div class="brand">ROBIN <b>LABS</b> &nbsp;/&nbsp; Coin Site Templates</div><div class="note">10 styles</div></div>
   <p class="sub">This is <b>$ROBIN</b>, the Robin Labs flagship, rendered as its own website in <b>10 template styles</b>, all from the coin real on-chain data. Every launch can get a page like this at <b>&lt;ticker&gt;.robinslab.fun</b>. Pick a style.</p>
   <div class="pills" role="tablist" aria-label="Template styles">
-    <button class="pill" role="tab" aria-selected="true" data-k="neonvault">Neon Vault</button>
-    <button class="pill" role="tab" aria-selected="false" data-k="aurora">Aurora Glass</button>
-    <button class="pill" role="tab" aria-selected="false" data-k="midnight">Midnight Terminal</button>
-    <button class="pill" role="tab" aria-selected="false" data-k="blackgold">Blackgold</button>
-    <button class="pill" role="tab" aria-selected="false" data-k="chromesunset">Chrome Sunset</button>
-    <button class="pill" role="tab" aria-selected="false" data-k="cyberhud">Cyber HUD</button>
-    <button class="pill" role="tab" aria-selected="false" data-k="reserve">Reserve</button>
-    <button class="pill" role="tab" aria-selected="false" data-k="brutalist">Brutalist Ink</button>
-    <button class="pill" role="tab" aria-selected="false" data-k="halftone">Halftone Pop</button>
-    <button class="pill" role="tab" aria-selected="false" data-k="monomax">Mono Max</button>
+    <button class="pill" role="tab" id="tab-neonvault" aria-controls="preview" aria-selected="true" tabindex="0" data-k="neonvault">Neon Vault</button>
+    <button class="pill" role="tab" id="tab-aurora" aria-controls="preview" aria-selected="false" tabindex="-1" data-k="aurora">Aurora Glass</button>
+    <button class="pill" role="tab" id="tab-midnight" aria-controls="preview" aria-selected="false" tabindex="-1" data-k="midnight">Midnight Terminal</button>
+    <button class="pill" role="tab" id="tab-blackgold" aria-controls="preview" aria-selected="false" tabindex="-1" data-k="blackgold">Blackgold</button>
+    <button class="pill" role="tab" id="tab-chromesunset" aria-controls="preview" aria-selected="false" tabindex="-1" data-k="chromesunset">Chrome Sunset</button>
+    <button class="pill" role="tab" id="tab-cyberhud" aria-controls="preview" aria-selected="false" tabindex="-1" data-k="cyberhud">Cyber HUD</button>
+    <button class="pill" role="tab" id="tab-reserve" aria-controls="preview" aria-selected="false" tabindex="-1" data-k="reserve">Reserve</button>
+    <button class="pill" role="tab" id="tab-brutalist" aria-controls="preview" aria-selected="false" tabindex="-1" data-k="brutalist">Brutalist Ink</button>
+    <button class="pill" role="tab" id="tab-halftone" aria-controls="preview" aria-selected="false" tabindex="-1" data-k="halftone">Halftone Pop</button>
+    <button class="pill" role="tab" id="tab-monomax" aria-controls="preview" aria-selected="false" tabindex="-1" data-k="monomax">Mono Max</button>
   </div>
 </header>
-<div class="stage"><iframe id="frame" title="Coin site preview" sandbox="allow-scripts allow-popups allow-same-origin"></iframe></div>
+<div class="stage"><iframe id="preview" title="Coin site preview" role="tabpanel" aria-live="polite" sandbox="allow-scripts allow-popups allow-same-origin"></iframe></div>
 <div class="foot"><span>Preview only. One data-driven engine renders any coin into any style.</span><span>Powered by Robin Labs &nbsp;/&nbsp; <a href="https://robinslab.fun" target="_blank" rel="noopener">robinslab.fun</a></span></div>
 <script>
   const DOCS=null;
-  var f=document.getElementById("frame"), pills=[].slice.call(document.querySelectorAll(".pill"));
-  function show(k){ f.removeAttribute('srcdoc'); f.src='./'+k+'.html'; pills.forEach(function(p){p.setAttribute("aria-selected",p.dataset.k===k?"true":"false");}); }
-  pills.forEach(function(p){p.addEventListener("click",function(){show(p.dataset.k);});});
-  show("neonvault");
+  var f=document.getElementById("preview");
+  var pills=[].slice.call(document.querySelectorAll(".pill"));
+  function show(k, focus){
+    f.removeAttribute('srcdoc'); f.src='./'+k+'.html';
+    pills.forEach(function(p){ var sel=p.dataset.k===k; p.setAttribute("aria-selected",sel?"true":"false"); p.tabIndex=sel?0:-1; if(sel){ f.setAttribute("aria-labelledby",p.id); if(focus) p.focus(); } });
+  }
+  pills.forEach(function(p,i){
+    p.addEventListener("click",function(){show(p.dataset.k,false);});
+    p.addEventListener("keydown",function(e){
+      var n=pills.length;
+      if(e.key==="ArrowRight"||e.key==="ArrowDown"){e.preventDefault();show(pills[(i+1)%n].dataset.k,true);}
+      else if(e.key==="ArrowLeft"||e.key==="ArrowUp"){e.preventDefault();show(pills[(i-1+n)%n].dataset.k,true);}
+      else if(e.key==="Home"){e.preventDefault();show(pills[0].dataset.k,true);}
+      else if(e.key==="End"){e.preventDefault();show(pills[n-1].dataset.k,true);}
+    });
+  });
+  show("neonvault",false);
 </script>
 </body>
 </html>
