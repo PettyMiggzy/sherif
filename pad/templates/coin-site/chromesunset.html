@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ROBIN LABS &middot; $ROBIN</title>
-<meta name="description" content="ROBIN is the coin of Robin Labs, the only launchpad that pays its creators. Fair launch into real Uniswap v3 liquidity with a permanent floor.">
+<title>{{NAME_UPPER}} &middot; {{TICKER}}</title>
+<meta name="description" content="{{NAME}} on Robin Labs — {{DESCRIPTION}}">
 <style>
   :root{
     --bg:#0a0616;
@@ -399,7 +399,7 @@
     overflow:hidden;
   }
   .track .fill{
-    position:absolute;inset:0;right:auto;width:61%;
+    position:absolute;inset:0;right:auto;width:{{GRAD_PCT}}%;
     background:linear-gradient(90deg,var(--magenta),var(--orange) 60%,var(--gold));
     box-shadow:0 0 24px rgba(255,120,60,.55);
     border-radius:999px;
@@ -588,16 +588,16 @@
   <section class="hero">
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <p class="eyebrow">Robinhood Chain &middot; Fair launch</p>
-        <h1 class="title"><span class="chrome">ROBIN</span><span class="lab">LABS</span></h1>
+        <p class="eyebrow">{{CHAIN}} &middot; Fair launch</p>
+        <h1 class="title"><span class="chrome">{{NAME_UPPER}}</span></h1>
         <div class="ticker-row">
-          <span class="ticker"><b>$ROBIN</b></span>
-          <span class="tag-note">Home team token</span>
+          <span class="ticker"><b>{{TICKER}}</b></span>
+          <span class="tag-note">{{STATUS}}</span>
         </div>
-        <p class="hook">The coin of the launchpad that pays its creators.</p>
+        <p class="hook">{{TAGLINE}}</p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://robinlab.io/token.html?c=0x6696fe29288b586017e6f264c0091dba6c5ebeaf" rel="noopener">
-            Buy $ROBIN
+          <a class="btn btn-primary" href="{{BUY_URL}}" rel="noopener">
+            Buy {{TICKER}}
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 8h8M8.5 4.5 12 8l-3.5 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </a>
           <a class="btn btn-ghost" href="#chart">
@@ -622,22 +622,22 @@
       <div class="stats">
         <div class="stat">
           <div class="lbl"><span class="dot"></span>Market cap</div>
-          <div class="val">7.20<span class="u">ETH</span></div>
+          <div class="val">{{MCAP}}<span class="u">{{MCAP_UNIT}}</span></div>
           <div class="sub">On the bonding curve</div>
         </div>
         <div class="stat">
           <div class="lbl"><span class="dot"></span>Total volume</div>
-          <div class="val">15.2<span class="u">ETH</span></div>
+          <div class="val">{{VOLUME}}<span class="u">{{VOL_UNIT}}</span></div>
           <div class="sub">Cumulative traded</div>
         </div>
         <div class="stat">
           <div class="lbl"><span class="dot"></span>Trades</div>
-          <div class="val">9,306</div>
+          <div class="val">{{TRADES}}</div>
           <div class="sub">Buys and sells</div>
         </div>
         <div class="stat">
           <div class="lbl"><span class="dot"></span>Curve progress</div>
-          <div class="val">61<span class="u">%</span></div>
+          <div class="val">{{GRAD_PCT}}<span class="u">%</span></div>
           <div class="sub">Toward graduation</div>
         </div>
       </div>
@@ -651,9 +651,9 @@
       <div class="panel">
         <div class="curve-head">
           <h2 class="h">Progress to graduation</h2>
-          <div class="pct">61%<small>to graduation</small></div>
+          <div class="pct">{{GRAD_PCT}}%<small>to graduation</small></div>
         </div>
-        <div class="track" role="progressbar" aria-valuenow="61" aria-valuemin="0" aria-valuemax="100" aria-label="Bonding curve progress to graduation">
+        <div class="track" role="progressbar" aria-valuenow="{{GRAD_PCT}}" aria-valuemin="0" aria-valuemax="100" aria-label="Bonding curve progress to graduation">
           <div class="fill"></div>
           <div class="ticks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
         </div>
@@ -669,11 +669,11 @@
       <h2 class="h">Up the curve, on real volume.</h2>
       <div class="chart-wrap" style="margin-top:22px">
         <div class="chart-top">
-          <span class="price">$ROBIN / ETH</span>
-          <span class="chg">+61% up the curve</span>
+          <span class="price">{{TICKER}} / ETH</span>
+          <span class="chg">+{{GRAD_PCT}}% up the curve</span>
           <span class="span">Since launch</span>
         </div>
-        <svg class="chart" viewBox="0 0 800 300" preserveAspectRatio="none" role="img" aria-label="Illustrative rising price chart for ROBIN, shown up 61 percent along its bonding curve">
+        <svg class="chart" viewBox="0 0 800 300" preserveAspectRatio="none" role="img" aria-label="Illustrative rising price chart for {{NAME_UPPER}}, shown up {{GRAD_PCT}} percent along its bonding curve">
           <defs>
             <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stop-color="rgba(255,45,149,.42)"/>
@@ -715,13 +715,13 @@
     <div class="wrap about-grid">
       <div>
         <p class="kicker">The story</p>
-        <h2 class="h">The home team.</h2>
+        <h2 class="h">{{NAME}}.</h2>
         <div class="side" style="margin-top:16px">
-          <p>Contract lives on <span class="num">Robinhood Chain</span>. Every launch on Robin Labs is a fair launch into real Uniswap v3 liquidity.</p>
+          <p>Contract lives on <span class="num">{{CHAIN}}</span>. Every launch on Robin Labs is a fair launch into real Uniswap v3 liquidity.</p>
         </div>
       </div>
       <div>
-        <p class="lead">ROBIN is the home team. It is the coin of Robin Labs, the only launchpad that <span class="hl">pays its successful creators</span>. Every launch here is a fair launch into real Uniswap v3 liquidity, with a permanent floor that never leaves. No presale, no team allocation, no games.</p>
+        <p class="lead">{{DESCRIPTION}} {{NAME}} is a coin on Robin Labs, the only launchpad that <span class="hl">pays its successful creators</span>. Every launch here is a fair launch into real Uniswap v3 liquidity, with a permanent floor that never leaves. No presale, no team allocation, no games.</p>
       </div>
     </div>
   </section>
@@ -731,7 +731,7 @@
       <p class="kicker">Contract address</p>
       <div class="ca">
         <span class="ca-lbl">CA</span>
-        <code id="ca">0x6696fe29288b586017e6f264c0091dba6c5ebeaf</code>
+        <code id="ca">{{CONTRACT}}</code>
         <button class="copy" id="copyBtn" type="button" aria-live="polite" aria-label="Copy contract address">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <rect x="9" y="9" width="11" height="11" rx="2"/>
@@ -773,6 +773,9 @@
       <div class="links">
         <a href="https://robinlab.io" rel="noopener"><span class="k">Web</span> robinlab.io <span class="arw" aria-hidden="true">&#8599;</span></a>
         <a href="https://robinlab.io" rel="noopener"><span class="k">Create</span> Launch a coin <span class="arw" aria-hidden="true">&#8599;</span></a>
+        <!--IF:telegram--><a href="{{TELEGRAM_URL}}" rel="noopener"><span class="k">Telegram</span> Join chat <span class="arw" aria-hidden="true">&#8599;</span></a><!--/IF:telegram-->
+        <!--IF:twitter--><a href="{{TWITTER_URL}}" rel="noopener"><span class="k">Twitter</span> Follow <span class="arw" aria-hidden="true">&#8599;</span></a><!--/IF:twitter-->
+        <!--IF:website--><a href="{{WEBSITE_URL}}" rel="noopener"><span class="k">Site</span> Website <span class="arw" aria-hidden="true">&#8599;</span></a><!--/IF:website-->
       </div>
     </div>
   </section>
@@ -786,7 +789,7 @@
       Powered by Robin Labs
     </div>
     <div class="foot-meta">
-      <span class="handle">robin.robinlabs.fun</span>
+      <span class="handle">{{SITE_HOST}}</span>
       &nbsp;&middot;&nbsp;
       <a href="https://robinlabs.fun" rel="noopener">robinlabs.fun</a>
     </div>
@@ -801,7 +804,7 @@
   /* copy button */
   var btn = document.getElementById("copyBtn");
   var txt = document.getElementById("copyTxt");
-  var ca  = "0x6696fe29288b586017e6f264c0091dba6c5ebeaf";
+  var ca  = "{{CONTRACT}}";
   if(btn){
     btn.addEventListener("click", function(){
       var done = function(){
