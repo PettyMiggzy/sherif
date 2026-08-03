@@ -118,6 +118,13 @@ const _wallets = new Map(); // rdns -> { info:{uuid,name,icon,rdns}, provider }
 let _eip = null;            // the currently-connected provider
 let _bridgeMode = false;    // while true, a chainChanged does NOT reload (the bridge deliberately hops chains)
 const WALLET_KEY = "rl_wallet_rdns";
+// Set when the user explicitly disconnects, so eagerConnect() does NOT silently
+// re-authorize on the next load. Without this, a single injected wallet gets
+// auto-restored every navigation and you can never actually drop it to switch
+// accounts. connect() clears it (an explicit Connect always re-enables restore).
+const DISC_KEY = "rl_wallet_off";
+function isDisconnected() { try { return localStorage.getItem(DISC_KEY) === "1"; } catch { return false; } }
+function markDisconnected(on) { try { on ? localStorage.setItem(DISC_KEY, "1") : localStorage.removeItem(DISC_KEY); } catch { /* private mode */ } }
 if (typeof window !== "undefined") {
   window.addEventListener("eip6963:announceProvider", (e) => {
     const d = e.detail;
@@ -245,6 +252,7 @@ function showMobileWalletPrompt() {
 
 // ── connect + chain guard ───────────────────────────────────────────────────
 export async function connect() {
+  markDisconnected(false); // an explicit Connect always re-enables auto-restore
   requestAnnounce();
   await new Promise((r) => setTimeout(r, 60)); // let 6963 wallets announce (event-driven, async)
   const wallets = availableWallets();
@@ -283,6 +291,26 @@ async function connectWith(wallet) {
 
 /** Forget the remembered wallet so the next Connect re-shows the picker. */
 export function forgetWallet() { try { localStorage.removeItem(WALLET_KEY); } catch { /* ignore */ } }
+
+/**
+ * Fully disconnect: drop the in-memory session, stop the account/chain listeners,
+ * forget the remembered wallet, and set the flag so eagerConnect() won't silently
+ * re-authorize on reload. Best-effort it also asks the wallet to REVOKE the site's
+ * eth_accounts permission (modern MetaMask/Rabby support wallet_revokePermissions),
+ * so the next Connect re-prompts and you can pick a different account or wallet.
+ */
+export async function disconnect() {
+  try { await _eip?.request?.({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] }); }
+  catch { /* wallet lacks revoke — the flag below still stops auto-reconnect */ }
+  try { _eip?.removeAllListeners?.("accountsChanged"); _eip?.removeAllListeners?.("chainChanged"); } catch { /* ignore */ }
+  _account = null; _signer = null; _provider = null; _eip = null;
+  forgetWallet();
+  markDisconnected(true);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("robinpad:ready"));
+    window.dispatchEvent(new Event("sheriffpad:ready"));
+  }
+}
 
 // ── bridge support ────────────────────────────────────────────────────────────
 // The cross-chain bridge (bridge.html) deliberately switches the wallet to a SOURCE chain
@@ -1553,6 +1581,7 @@ export async function uniSwap(quoteResp, opts = {}) {
 
 async function eagerConnect() {
   try {
+    if (isDisconnected()) return; // user explicitly disconnected — don't silently reconnect
     requestAnnounce();
     await new Promise((r) => setTimeout(r, 60)); // let 6963 wallets announce first
     // Restore the SAME wallet the user picked last time; if none remembered and there's
@@ -1577,10 +1606,41 @@ async function eagerConnect() {
   } catch { /* stays disconnected - the Connect button still works */ }
 }
 
+// A single global "Disconnect" chip, injected next to whatever #connectBtn the page
+// shows — so every page gets a disconnect with no per-page edits. Visible only while
+// connected; clicking it drops the session (and revokes the site permission so you can
+// switch accounts/wallets). Runs on every robinpad:ready.
+function ensureDisconnectUI() {
+  if (typeof document === "undefined") return;
+  const btn = document.getElementById("connectBtn");
+  if (!btn) return;
+  let chip = document.getElementById("rp-disconnect");
+  if (_account) {
+    if (!chip) {
+      chip = document.createElement("button");
+      chip.id = "rp-disconnect";
+      chip.type = "button";
+      chip.textContent = "Disconnect";
+      chip.title = "Disconnect / switch wallet";
+      chip.setAttribute("aria-label", "Disconnect wallet");
+      chip.style.cssText = "margin-left:8px;padding:8px 12px;border-radius:10px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font:inherit;font-size:.8rem;line-height:1;cursor:pointer;opacity:.85;vertical-align:middle";
+      chip.addEventListener("click", async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        chip.disabled = true; chip.textContent = "Disconnecting…";
+        try { await disconnect(); } catch { /* ready event resets the UI regardless */ }
+      });
+      btn.insertAdjacentElement("afterend", chip);
+    }
+  } else if (chip) {
+    chip.remove();
+  }
+}
+
 // expose a tiny global for the plain-HTML pages (no bundler)
 if (typeof window !== "undefined") {
+  window.addEventListener("robinpad:ready", ensureDisconnectUI);
   window.RobinPad = {
-    connect, forgetWallet, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax,
+    connect, disconnect, forgetWallet, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax,
     setCoinProfile, getCoinProfile, profileMessage,
     estimateDevBuyEth, isDeployed, tokenBalance, tokenBalances, holdings, coinHolders,
     curveInfo, devEscrow, graduate, withdrawDev, burnDev, listCoins, tokenMeta,
