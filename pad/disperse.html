@@ -112,6 +112,9 @@ async function loadToken(){
   if(!/^0x[0-9a-fA-F]{40}$/.test(t)) { validate(); return; }
   try{
     const m = await Pad.tokenMeta(t);
+    // Latest-wins: if the field changed while this read was in flight, drop this (stale) result so a slow
+    // RPC for an old token can't clobber the newer token's decimals/loadedFor and wedge Send.
+    if ($('token').value.trim().toLowerCase() !== t.toLowerCase()) return;
     // Keep a real 0 (0-decimal tokens); only null/undefined/NaN falls back to 18. (`0 || 18` is the bug.)
     const d = m ? Number(m.decimals) : NaN;
     decimals = Number.isFinite(d) && d >= 0 ? d : 18;
@@ -158,7 +161,7 @@ $('send').addEventListener('click', async () => {
   const res = $('result'); res.style.display='none';
   if(!Pad.account()){ log('Connect your wallet first.','bad'); return; }
   const disp = (w)=>{ try{ return (+ethers.formatUnits(w, decimals)).toLocaleString('en-US',{maximumFractionDigits:6}); }catch{ return '?'; } };
-  if(!confirm(`Send ${disp(parsed.total)} ${symbol} to ${parsed.recs.length} wallet(s)? This signs an approval then one send.`)) return;
+  if(!confirm(`Send ${disp(parsed.total)} ${symbol} to ${parsed.recs.length} wallet(s)? This signs one or two approvals, then one send.`)) return;
   $('send').disabled=true;
   try{
     log(`Approving + dispersing to ${parsed.recs.length} wallets…`);

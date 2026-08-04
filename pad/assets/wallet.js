@@ -587,10 +587,13 @@ export async function disperse(token, recipients, amounts) {
   const erc = new ethers.Contract(token, ABIS.erc20, _signer);
   const bal = await erc.balanceOf(_account);
   if (bal < total) throw new Error("You don't have enough of this token to send that much.");
-  const cur = await erc.allowance(_account, CONTRACTS.disperse).catch(() => 0n);
-  if (cur < total) {
-    // USDT-safe: a token that forbids a non-zero -> non-zero approve needs the stale allowance reset to 0 first.
-    if (cur > 0n) { const z = await erc.approve(CONTRACTS.disperse, 0n, await legacyOverrides()); await z.wait(); }
+  let cur = null; // null = allowance read failed (unknown) — treat as possibly-stale, not as 0
+  try { cur = await erc.allowance(_account, CONTRACTS.disperse); } catch { cur = null; }
+  if (cur === null || cur < total) {
+    // USDT-safe: a token that forbids a non-zero -> non-zero approve needs the stale allowance reset to 0
+    // first. Reset when it's non-zero OR unknown (a redundant reset is harmless for a normal token), so a
+    // transient allowance-read failure can't skip the reset and make the second approve revert.
+    if (cur === null || cur > 0n) { const z = await erc.approve(CONTRACTS.disperse, 0n, await legacyOverrides()); await z.wait(); }
     const atx = await erc.approve(CONTRACTS.disperse, total, await legacyOverrides());
     await atx.wait();
   }
