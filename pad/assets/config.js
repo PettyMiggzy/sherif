@@ -82,7 +82,7 @@ export const CONTRACTS = {
   // Disperse - non-custodial multi-send (airdrop + "split my dev buy"). Standalone helper,
   // never touches the factory. DEPLOY: fill in AFTER deploy + verify; isDeployed('disperse')
   // gates the airdrop tool + the dev-buy split until then.
-  disperse: "",
+  disperse: "0xBF2904b4e31F751441C85590EDF10D8a592A9a38",
 };
 
 // 1% pool tier - the fee is collected as Uniswap LP fees IN-PROTOCOL. There is
