@@ -363,7 +363,7 @@ function dbSync(){
     : `Buying ≈ ${v} ETH of your own coin in the same transaction, before trading opens, so you're never sniped. No cap: it climbs the curve as far as your ETH reaches, and anything past the graduation ceiling is refunded.`;
   // The "Lock your dev bag" + "Split your dev buy" cards only make sense when there's a bag.
   const lc=document.getElementById('lockCard'); if(lc) lc.style.display = v>0 ? 'block' : 'none';
-  const sc=document.getElementById('splitCard'); if(sc) sc.style.display = v>0 ? 'block' : 'none';
+  const sc=document.getElementById('splitCard'); if(sc) sc.style.display = (v>0 && window.__disperseLive) ? 'block' : 'none';
 }
 document.getElementById('dbPresets').addEventListener('click',(e)=>{const b=e.target.closest('button[data-eth]');if(!b)return;document.getElementById('db').value=b.dataset.eth;dbSync();});
 dbSync();
@@ -416,6 +416,12 @@ lockSync();
   // Validated spec for the launch handler. Returns null when unused; THROWS a friendly
   // message on a bad address / percent / over-100 so the handler can abort BEFORE launching.
   window.__splitSpec = () => {
+    // Never offer/enforce a split unless the disperser is actually deployed AND the card is
+    // visible: a not-yet-live disperser must not look available, and a hidden card (dev buy
+    // set back to 0) must never block launch with an unreachable "clear the wallets" message.
+    if(!window.__disperseLive) return null;
+    const card=document.getElementById('splitCard');
+    if(card && card.style.display === 'none') return null;
     const rows=[...rowsEl.querySelectorAll('.splitrow')].map(r=>({
       addr:(r.querySelector('.splitAddr').value||'').trim(),
       pct:Math.max(0, parseFloat(r.querySelector('.splitPct').value)||0),
@@ -456,6 +462,12 @@ taxSync();
 <script type="module">
 import * as Pad from './assets/wallet.js';
 import { isDeployed, API_BASE } from './assets/config.js';
+
+// Tell the (non-module) split-card UI whether the disperser is actually deployed, so the
+// "Split your dev buy" card is only offered once the contract is live (CONTRACTS.disperse set).
+// Refresh the card once now that the flag is known.
+window.__disperseLive = isDeployed('disperse');
+if (typeof window.dbSync === 'function') window.dbSync();
 
 const $ = (id) => document.getElementById(id);
 const PENDING_LOCK_KEY = (token) => 'rl_pending_lock:' + String(token).toLowerCase();
@@ -619,14 +631,15 @@ $('launchBtn').addEventListener('click', async () => {
     // Optional: split the dev buy - send shares of the just-bought tokens to up to 6 wallets.
     // Runs BEFORE any dev-bag lock so the lock applies to whatever the creator keeps. The coin is
     // already live; a failed/declined split never blocks the redirect. Amounts are % of the REAL
-    // post-launch balance in exact wei (sum of %s is <= 100, so it can never exceed the balance).
+    // post-launch balance in exact wei. FLOORing each share's bps guarantees the summed amounts can
+    // never exceed the balance (sum of floors <= sum of %s*100 <= 10000), so it never over-commits.
     if (token && splitSpec && splitSpec.length && devEth > 0 && isDeployed('disperse')) {
       try {
         setNote('Launched ✓, splitting your dev buy to ' + splitSpec.length + ' wallet(s) (approve + send)…', 'ok');
         const bal = await Pad.tokenBalanceWei(token, Pad.account());
         const recs = [], amts = [];
         for (const r of splitSpec) {
-          const amt = (bal * BigInt(Math.round(r.pct * 100))) / 10000n; // pct -> bps of the balance
+          const amt = (bal * BigInt(Math.floor(r.pct * 100))) / 10000n; // pct -> bps of the balance (floor: never overshoots)
           if (amt > 0n) { recs.push(r.addr); amts.push(amt.toString()); }
         }
         if (recs.length) {

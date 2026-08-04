@@ -125,6 +125,10 @@ const WALLET_KEY = "rl_wallet_rdns";
 const DISC_KEY = "rl_wallet_off";
 function isDisconnected() { try { return localStorage.getItem(DISC_KEY) === "1"; } catch { return false; } }
 function markDisconnected(on) { try { on ? localStorage.setItem(DISC_KEY, "1") : localStorage.removeItem(DISC_KEY); } catch { /* private mode */ } }
+// Max recipients per disperse tx. The contract allows 600, but this chain's per-tx gas ceiling
+// (~16.7M) can't fit ~500+ fresh-recipient transfers, so cap the UI well under that. Exported so
+// the airdrop page enforces the SAME number instead of the contract's un-reachable 600.
+export const DISPERSE_MAX_PER_TX = 300;
 if (typeof window !== "undefined") {
   window.addEventListener("eip6963:announceProvider", (e) => {
     const d = e.detail;
@@ -572,7 +576,10 @@ export async function disperse(token, recipients, amounts) {
   const recs = (recipients || []).map((r) => String(r).trim());
   const vals = (amounts || []).map((a) => BigInt(a));
   if (recs.length === 0 || recs.length !== vals.length) throw new Error("Recipients and amounts must line up.");
-  if (recs.length > 600) throw new Error("Too many recipients (max 600 per tx).");
+  // Cap per tx well BELOW the contract's 600 backstop: fresh (zero-balance) recipients cost ~32k gas
+  // each, and this chain's per-tx gas ceiling (~16.7M, and guardedSend's 16M clamp) can't fit ~500+.
+  // 300 leaves comfortable headroom (~10M); larger airdrops are sent in batches by the caller.
+  if (recs.length > DISPERSE_MAX_PER_TX) throw new Error(`Too many recipients for one transaction (max ${DISPERSE_MAX_PER_TX}). Send it in batches.`);
   for (const r of recs) if (!/^0x[0-9a-fA-F]{40}$/.test(r)) throw new Error("Bad recipient address: " + r);
   for (const v of vals) if (v <= 0n) throw new Error("Every amount must be greater than zero.");
   const total = vals.reduce((s, v) => s + v, 0n);
@@ -582,6 +589,8 @@ export async function disperse(token, recipients, amounts) {
   if (bal < total) throw new Error("You don't have enough of this token to send that much.");
   const cur = await erc.allowance(_account, CONTRACTS.disperse).catch(() => 0n);
   if (cur < total) {
+    // USDT-safe: a token that forbids a non-zero -> non-zero approve needs the stale allowance reset to 0 first.
+    if (cur > 0n) { const z = await erc.approve(CONTRACTS.disperse, 0n, await legacyOverrides()); await z.wait(); }
     const atx = await erc.approve(CONTRACTS.disperse, total, await legacyOverrides());
     await atx.wait();
   }

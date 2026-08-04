@@ -77,9 +77,12 @@
 <script type="module">
 import { ethers } from "./assets/ethers.min.js";
 import * as Pad from "./assets/wallet.js";
+import { isDeployed } from "./assets/config.js";
 
 const $ = (id) => document.getElementById(id);
-let decimals = 18, symbol = "", parsed = { recs: [], vals: [], total: 0n };
+// loadedFor = the token address the current `decimals`/`parsed` amounts were scaled for; Send is
+// gated on it matching the field, so changing the token can never send amounts scaled for the old one.
+let decimals = 18, symbol = "", parsed = { recs: [], vals: [], total: 0n }, loadedFor = "";
 
 function log(msg, cls){ const d=document.createElement('div'); d.className='step';
   d.innerHTML=msg; if(cls)d.style.color=cls==='ok'?'var(--green)':cls==='bad'?'var(--red)':'';
@@ -100,15 +103,21 @@ $('connect').addEventListener('click', async () => {
 
 // load token decimals/symbol so amounts convert correctly
 let tokTimer;
-$('token').addEventListener('input', ()=>{ clearTimeout(tokTimer); tokTimer=setTimeout(loadToken, 300); });
+// Changing the token immediately invalidates any parse scaled for the old token (clears loadedFor
+// and disables Send) BEFORE the debounced reload, so a fast change+Send can't use stale decimals.
+$('token').addEventListener('input', ()=>{ loadedFor=""; validate(); clearTimeout(tokTimer); tokTimer=setTimeout(loadToken, 300); });
 async function loadToken(){
   const t = $('token').value.trim();
-  decimals = 18; symbol = ""; $('tokenInfo').textContent = "";
+  decimals = 18; symbol = ""; loadedFor = ""; $('tokenInfo').textContent = "";
   if(!/^0x[0-9a-fA-F]{40}$/.test(t)) { validate(); return; }
   try{
     const m = await Pad.tokenMeta(t);
-    if(m){ decimals = Number(m.decimals ?? 18) || 18; symbol = m.symbol || ""; $('tokenInfo').textContent = (m.name?m.name+' ':'')+(symbol?('('+symbol+') '):'')+'· '+decimals+' decimals'; }
-  }catch{ $('tokenInfo').textContent = "Couldn't read token metadata - assuming 18 decimals."; }
+    // Keep a real 0 (0-decimal tokens); only null/undefined/NaN falls back to 18. (`0 || 18` is the bug.)
+    const d = m ? Number(m.decimals) : NaN;
+    decimals = Number.isFinite(d) && d >= 0 ? d : 18;
+    if(m){ symbol = m.symbol || ""; $('tokenInfo').textContent = (m.name?m.name+' ':'')+(symbol?('('+symbol+') '):'')+'· '+decimals+' decimals'; }
+  }catch{ decimals = 18; $('tokenInfo').textContent = "Couldn't read token metadata - assuming 18 decimals."; }
+  loadedFor = t.toLowerCase(); // amounts are now scaled for THIS token
   validate();
 }
 
@@ -131,12 +140,17 @@ function validate(){
   });
   const total = vals.reduce((s,v)=>s+v,0n);
   parsed = { recs, vals, total };
+  const MAXR = Pad.DISPERSE_MAX_PER_TX || 300;
   const disp = (w)=>{ try{ return (+ethers.formatUnits(w, decimals)).toLocaleString('en-US',{maximumFractionDigits:6}); }catch{ return '?'; } };
   $('stat').innerHTML = `<span>Recipients: <b>${recs.length}</b></span><span>Total: <b>${disp(total)} ${esc(symbol)}</b></span>`
-    + (recs.length>600?'<span style="color:var(--red)">over 600 - split into batches</span>':'');
+    + (recs.length>MAXR?`<span style="color:var(--red)">over ${MAXR} - split into batches</span>`:'');
   $('warn').textContent = errs.slice(0,6).join('\n');
   const t = $('token').value.trim();
-  $('send').disabled = !(Pad.account() && /^0x[0-9a-fA-F]{40}$/.test(t) && recs.length>0 && recs.length<=600 && errs.filter(e=>!e.includes('duplicate')).length===0);
+  // Send requires: connected, disperser deployed, a valid token whose metadata is loaded (t===loadedFor),
+  // <= the per-tx cap, and no hard errors. The t===loadedFor gate closes the stale-decimals race.
+  $('send').disabled = !(Pad.account() && isDeployed('disperse') && /^0x[0-9a-fA-F]{40}$/.test(t)
+    && t.toLowerCase()===loadedFor && recs.length>0 && recs.length<=MAXR
+    && errs.filter(e=>!e.includes('duplicate')).length===0);
 }
 
 $('send').addEventListener('click', async () => {
@@ -158,6 +172,10 @@ $('send').addEventListener('click', async () => {
 });
 
 loadToken(); refreshAcct();
+if(!isDeployed('disperse')){
+  const r=$('result'); r.textContent='The disperser isn’t live yet — this tool activates once it’s deployed.';
+  r.className='big'; r.style.cssText='display:block;color:var(--dim);border:1px solid var(--line)';
+}
 </script>
 </body>
 </html>
