@@ -120,6 +120,9 @@ async function loadToken(){
     decimals = Number.isFinite(d) && d >= 0 ? d : 18;
     if(m){ symbol = m.symbol || ""; $('tokenInfo').textContent = (m.name?m.name+' ':'')+(symbol?('('+symbol+') '):'')+'· '+decimals+' decimals'; }
   }catch{ decimals = 18; $('tokenInfo').textContent = "Couldn't read token metadata - assuming 18 decimals."; }
+  // Latest-wins on the error path too: if the field changed while the read was in flight, don't stamp
+  // loadedFor for the stale token (mirrors the success-path guard above).
+  if ($('token').value.trim().toLowerCase() !== t.toLowerCase()) return;
   loadedFor = t.toLowerCase(); // amounts are now scaled for THIS token
   validate();
 }
