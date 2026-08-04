@@ -78,6 +78,11 @@ export const CONTRACTS = {
   // verified deployed on Robinhood Chain). Used to collapse many independent view reads
   // (e.g. a portfolio's balanceOf fan-out) into ONE eth_call, cutting RPC load. Reads only.
   multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11",
+
+  // Disperse - non-custodial multi-send (airdrop + "split my dev buy"). Standalone helper,
+  // never touches the factory. DEPLOY: fill in AFTER deploy + verify; isDeployed('disperse')
+  // gates the airdrop tool + the dev-buy split until then.
+  disperse: "",
 };
 
 // 1% pool tier - the fee is collected as Uniswap LP fees IN-PROTOCOL. There is
@@ -192,6 +197,12 @@ export const ABIS = {
   // allowFailure, so one bad target can't sink the batch. We only ever eth_call this (reads).
   multicall3: [
     "function aggregate3((address target,bool allowFailure,bytes callData)[] calls) view returns ((bool success,bytes returnData)[] returnData)",
+  ],
+  // Disperse — non-custodial multi-send. Token paths require a prior approve(disperse, sum(values)).
+  disperse: [
+    "function disperseTokenDirect(address token, address[] recipients, uint256[] values)",
+    "function disperseToken(address token, address[] recipients, uint256[] values)",
+    "function disperseEther(address[] recipients, uint256[] values) payable",
   ],
   // RobinLimit — non-custodial limit orders + DCA. The Order tuple must match the contract's struct order.
   robinLimit: [

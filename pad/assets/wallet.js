@@ -558,6 +558,37 @@ async function safeGasPrice() {
   return gp;
 }
 
+// ── DISPERSE - non-custodial multi-send (airdrop + "split my dev buy") ─────────
+// recipients[i] receives amounts[i] (wei) of `token`, all in one tx via the
+// Disperse helper. Sends ONE approve (for the summed amount, only if the current
+// allowance is short) then disperseTokenDirect - funds move straight from the
+// sender to each recipient and never touch the helper. Legacy txs (type:0) like
+// every money path on this chain. `amounts` are token base units (wei), as strings/BigInt.
+export async function disperse(token, recipients, amounts) {
+  if (!_signer) await connect();
+  await ensureOnChain();
+  if (!isDeployed("disperse")) throw new Error("The disperser isn't live yet.");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(token || "")) throw new Error("Bad token address.");
+  const recs = (recipients || []).map((r) => String(r).trim());
+  const vals = (amounts || []).map((a) => BigInt(a));
+  if (recs.length === 0 || recs.length !== vals.length) throw new Error("Recipients and amounts must line up.");
+  if (recs.length > 600) throw new Error("Too many recipients (max 600 per tx).");
+  for (const r of recs) if (!/^0x[0-9a-fA-F]{40}$/.test(r)) throw new Error("Bad recipient address: " + r);
+  for (const v of vals) if (v <= 0n) throw new Error("Every amount must be greater than zero.");
+  const total = vals.reduce((s, v) => s + v, 0n);
+
+  const erc = new ethers.Contract(token, ABIS.erc20, _signer);
+  const bal = await erc.balanceOf(_account);
+  if (bal < total) throw new Error("You don't have enough of this token to send that much.");
+  const cur = await erc.allowance(_account, CONTRACTS.disperse).catch(() => 0n);
+  if (cur < total) {
+    const atx = await erc.approve(CONTRACTS.disperse, total, await legacyOverrides());
+    await atx.wait();
+  }
+  const d = new ethers.Contract(CONTRACTS.disperse, ABIS.disperse, _signer);
+  return guardedSend(d, "disperseTokenDirect", [token, recs, vals], 0n, "Disperse tokens");
+}
+
 // ── LAUNCH - one call, one recipient, optional dev buy, approval-free [Rule 1] ─
 // devBuyEth: string ETH amount to spend on the creator's OWN opening buy (uncapped;
 // it climbs the curve up to the graduation ceiling and the contract refunds any excess). "0" = no dev buy.
@@ -1640,7 +1671,7 @@ function ensureDisconnectUI() {
 if (typeof window !== "undefined") {
   window.addEventListener("robinpad:ready", ensureDisconnectUI);
   window.RobinPad = {
-    connect, disconnect, forgetWallet, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax,
+    connect, disconnect, forgetWallet, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax, disperse,
     setCoinProfile, getCoinProfile, profileMessage,
     estimateDevBuyEth, isDeployed, tokenBalance, tokenBalances, holdings, coinHolders,
     curveInfo, devEscrow, graduate, withdrawDev, burnDev, listCoins, tokenMeta,

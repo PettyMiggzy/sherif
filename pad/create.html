@@ -226,6 +226,20 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
         </div>
       </div>
 
+      <!-- Split the dev buy: after launch, auto-send shares of the just-bought tokens to up to 6 wallets.
+           Runs as its own step right after the launch tx (one approval + one send via the Disperse helper). -->
+      <div class="field" id="splitCard" style="display:none">
+        <label>Split your dev buy <span class="hint">auto-send shares to up to 6 wallets, right after launch</span></label>
+        <div class="devbuy">
+          <div id="splitRows"></div>
+          <div class="sc" style="margin-top:10px">
+            <button type="button" id="splitAdd" style="flex:1">+ Add wallet</button>
+            <span class="amt" id="splitSum">0%</span>
+          </div>
+          <p id="splitNote">Optional. Give each wallet a share of your dev-buy tokens; whatever you don't assign stays in your wallet. It runs right after launch (one approval + one send), so it never delays the launch itself.</p>
+        </div>
+      </div>
+
       <div class="field">
         <label>Trading fee <span class="hint">1% default (the house) · raise up to 4% to fund your coin</span></label>
         <div class="devbuy">
@@ -347,8 +361,9 @@ function dbSync(){
   document.getElementById('dbNote').textContent= v===0
     ? 'No dev buy, you start with 0 tokens, same as everyone.'
     : `Buying ≈ ${v} ETH of your own coin in the same transaction, before trading opens, so you're never sniped. No cap: it climbs the curve as far as your ETH reaches, and anything past the graduation ceiling is refunded.`;
-  // The "Lock your dev bag" card only makes sense when there's a bag to lock.
+  // The "Lock your dev bag" + "Split your dev buy" cards only make sense when there's a bag.
   const lc=document.getElementById('lockCard'); if(lc) lc.style.display = v>0 ? 'block' : 'none';
+  const sc=document.getElementById('splitCard'); if(sc) sc.style.display = v>0 ? 'block' : 'none';
 }
 document.getElementById('dbPresets').addEventListener('click',(e)=>{const b=e.target.closest('button[data-eth]');if(!b)return;document.getElementById('db').value=b.dataset.eth;dbSync();});
 dbSync();
@@ -372,6 +387,51 @@ function lockSync(){
 document.getElementById('lockDurs').addEventListener('click',(e)=>{const b=e.target.closest('button[data-d]');if(!b)return;__lockDays=+b.dataset.d;[...b.parentNode.children].forEach(x=>x.classList.toggle('on',x===b));lockSync();});
 document.getElementById('lockModes').addEventListener('click',(e)=>{const b=e.target.closest('button[data-m]');if(!b)return;__lockMode=b.dataset.m;[...b.parentNode.children].forEach(x=>x.classList.toggle('on',x===b));lockSync();});
 lockSync();
+
+// ── Split-the-dev-buy spec: up to 6 wallets each get a % of the just-bought tokens.
+// Bridged to the module launch handler via window.__splitSpec(); the disperse itself runs
+// AFTER launch confirms (module handler), so it never delays the launch tx. ──
+(function(){
+  const rowsEl=document.getElementById('splitRows'), sumEl=document.getElementById('splitSum'), addBtn=document.getElementById('splitAdd');
+  if(!rowsEl||!addBtn) return; const MAX=6;
+  const count=()=>rowsEl.querySelectorAll('.splitrow').length;
+  function recount(){
+    let sum=0; rowsEl.querySelectorAll('.splitPct').forEach(i=>{ sum+=Math.max(0,parseFloat(i.value)||0); });
+    sum=Math.round(sum*100)/100; const over=sum>100;
+    sumEl.textContent = sum + '%' + (over ? ' · over 100%!' : (sum>0 ? ' · '+ (Math.round((100-sum)*100)/100) +'% stays with you' : ''));
+    sumEl.style.color = over ? 'var(--red,#ff5a52)' : '';
+    addBtn.disabled = count()>=MAX; addBtn.textContent = count()>=MAX ? 'Max 6 wallets' : '+ Add wallet';
+  }
+  function addRow(){
+    if(count()>=MAX) return;
+    const d=document.createElement('div'); d.className='splitrow'; d.style.cssText='display:flex;gap:8px;margin-top:8px;align-items:center';
+    d.innerHTML='<input class="inp splitAddr" placeholder="0x… wallet" autocomplete="off" spellcheck="false" style="flex:1;font-family:var(--mono);font-size:.82rem" />'
+      +'<input class="inp splitPct" type="number" min="1" max="100" step="1" placeholder="%" style="width:82px;font-family:var(--mono)" />'
+      +'<button type="button" class="splitDel" aria-label="Remove wallet" style="width:44px">×</button>';
+    rowsEl.appendChild(d); recount();
+  }
+  rowsEl.addEventListener('input', recount);
+  rowsEl.addEventListener('click',(e)=>{ const x=e.target.closest('.splitDel'); if(x){ x.closest('.splitrow').remove(); recount(); } });
+  addBtn.addEventListener('click', addRow);
+  // Validated spec for the launch handler. Returns null when unused; THROWS a friendly
+  // message on a bad address / percent / over-100 so the handler can abort BEFORE launching.
+  window.__splitSpec = () => {
+    const rows=[...rowsEl.querySelectorAll('.splitrow')].map(r=>({
+      addr:(r.querySelector('.splitAddr').value||'').trim(),
+      pct:Math.max(0, parseFloat(r.querySelector('.splitPct').value)||0),
+    })).filter(x=>x.addr||x.pct);
+    if(!rows.length) return null;
+    if(rows.length>MAX) throw new Error('Split: max 6 wallets.');
+    let total=0;
+    for(const r of rows){
+      if(!/^0x[0-9a-fA-F]{40}$/.test(r.addr)) throw new Error('Split: a wallet address is invalid.');
+      if(!(r.pct>0)) throw new Error('Split: every wallet needs a % greater than 0.');
+      total+=r.pct;
+    }
+    if(total>100) throw new Error('Split: percentages add up to more than 100%.');
+    return rows;
+  };
+})();
 function taxSync(){
   const bt=parseFloat(document.getElementById('buyTax').value);
   const st=parseFloat(document.getElementById('sellTax').value);
@@ -507,6 +567,13 @@ $('launchBtn').addEventListener('click', async () => {
                 walletBps: w * 100, floorBps: f * 100, burnBps: b * 100,
                 projectWallet: ($('pw').value || '').trim() || Pad.account() };
 
+  // Validate the optional dev-buy split UP FRONT (before any gas) so a bad address / percent
+  // is caught here, not after the coin is already live. null = no split.
+  let splitSpec = null;
+  try { splitSpec = (typeof window.__splitSpec === 'function') ? window.__splitSpec() : null; }
+  catch (e) { return setNote(e.message, 'err'); }
+  if (splitSpec && devEth <= 0) return setNote('Add a dev buy to split, or clear the split wallets.', 'err');
+
   try {
     if (!Pad.account()) { await Pad.connect(); await refreshConnect(); }
     setNote(devEth > 0
@@ -547,6 +614,30 @@ $('launchBtn').addEventListener('click', async () => {
       }
     } else if (wantsProfile && !Pad.hasApi()) {
       setNote('Launched ✓, your coin is live. (Images & socials save once the indexer API is connected.)', 'ok');
+    }
+
+    // Optional: split the dev buy - send shares of the just-bought tokens to up to 6 wallets.
+    // Runs BEFORE any dev-bag lock so the lock applies to whatever the creator keeps. The coin is
+    // already live; a failed/declined split never blocks the redirect. Amounts are % of the REAL
+    // post-launch balance in exact wei (sum of %s is <= 100, so it can never exceed the balance).
+    if (token && splitSpec && splitSpec.length && devEth > 0 && isDeployed('disperse')) {
+      try {
+        setNote('Launched ✓, splitting your dev buy to ' + splitSpec.length + ' wallet(s) (approve + send)…', 'ok');
+        const bal = await Pad.tokenBalanceWei(token, Pad.account());
+        const recs = [], amts = [];
+        for (const r of splitSpec) {
+          const amt = (bal * BigInt(Math.round(r.pct * 100))) / 10000n; // pct -> bps of the balance
+          if (amt > 0n) { recs.push(r.addr); amts.push(amt.toString()); }
+        }
+        if (recs.length) {
+          const dtx = await Pad.disperse(token, recs, amts);
+          await dtx.wait();
+          setNote('Launched ✓ and dev buy split to ' + recs.length + ' wallet(s).', 'ok');
+        }
+      } catch (e) {
+        // Coin is live; the creator can finish the split from the Disperse tool anytime.
+        setNote('Launched ✓. The split didn’t finish (' + (e.message || e) + ') — send anytime from the Disperse tool.', 'ok');
+      }
     }
 
     // Optional: lock the dev bag. Only after the coin is confirmed live, only when the vesting lock

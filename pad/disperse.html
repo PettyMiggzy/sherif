@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Disperse - airdrop tokens to many wallets - Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<meta name="description" content="Send one of your coins to many wallets in a single transaction." />
+<link rel="canonical" href="https://robinlab.io/disperse.html" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<style>
+  :root{--bg:#060803;--panel:#0c1108;--panel2:#0a0d06;--ink:#f4f7ee;--dim:#93a382;--lime:#dce905;
+    --red:#ff5a52;--green:#5fd16a;--line:rgba(220,233,5,.2)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,sans-serif;line-height:1.5;padding:20px}
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:1.5rem;margin:0 0 4px}
+  .sub{color:var(--dim);margin:0 0 20px;font-size:.92rem;max-width:70ch}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
+  label{display:block;font-weight:600;margin:0 0 6px;font-size:.9rem}
+  input[type=text],textarea{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font-family:ui-monospace,monospace;font-size:.85rem}
+  textarea{min-height:170px;resize:vertical;line-height:1.6}
+  button{background:var(--lime);color:#0a0e05;border:none;border-radius:10px;padding:12px 18px;font-weight:800;cursor:pointer;font-size:.95rem}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .mono{font-family:ui-monospace,monospace;font-size:.82rem;word-break:break-all}
+  .big{font-size:1.02rem;font-weight:800;padding:12px;border-radius:10px;text-align:center;margin-top:10px}
+  .ok{background:rgba(95,209,106,.12);color:var(--green);border:1px solid rgba(95,209,106,.4)}
+  .bad{background:rgba(255,90,82,.12);color:var(--red);border:1px solid rgba(255,90,82,.4)}
+  .stat{display:flex;gap:18px;flex-wrap:wrap;font-size:.85rem;color:var(--dim);margin-top:10px}
+  .stat b{color:var(--ink);font-family:ui-monospace,monospace}
+  .warnline{color:var(--red);font-size:.82rem;margin-top:6px;white-space:pre-wrap}
+  #log{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;font-family:ui-monospace,monospace;font-size:.78rem;white-space:pre-wrap;max-height:240px;overflow:auto;margin-top:12px}
+  .step{color:var(--dim)}.step b{color:var(--ink)}
+  a{color:var(--lime)}
+  .hint{font-size:.8rem;color:var(--dim);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Disperse</h1>
+  <p class="sub">Send one of your coins to many wallets in a <b>single transaction</b>. Non-custodial:
+    the tokens go straight from your wallet to each recipient - they never touch any middle contract.
+    You pay one approval + one send, no matter how many wallets.</p>
+
+  <div class="card">
+    <div class="row">
+      <button id="connect">Connect wallet</button>
+      <div class="mono" id="acct" style="color:var(--dim)">not connected</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Token address (the coin you're sending)</label>
+    <input type="text" id="token" placeholder="0x…" />
+    <div class="hint" id="tokenInfo"></div>
+  </div>
+
+  <div class="card">
+    <label>Recipients - one per line: <span class="mono">address, amount</span></label>
+    <textarea id="list" placeholder="0xabc…, 1000&#10;0xdef…, 2500&#10;0x123…, 500"></textarea>
+    <div class="stat" id="stat"></div>
+    <div class="warnline" id="warn"></div>
+  </div>
+
+  <div class="row">
+    <button id="send" disabled>Review &amp; send</button>
+    <span class="hint">Amounts are in whole tokens (e.g. 1000 = 1000 coins).</span>
+  </div>
+  <div id="result" class="big" style="display:none"></div>
+  <div id="log"></div>
+  <p class="sub" style="margin-top:14px">Tip: this is the same engine that powers "split my dev buy" on the
+    <a href="create.html">create page</a>.</p>
+</div>
+
+<script type="module">
+import { ethers } from "./assets/ethers.min.js";
+import * as Pad from "./assets/wallet.js";
+
+const $ = (id) => document.getElementById(id);
+let decimals = 18, symbol = "", parsed = { recs: [], vals: [], total: 0n };
+
+function log(msg, cls){ const d=document.createElement('div'); d.className='step';
+  d.innerHTML=msg; if(cls)d.style.color=cls==='ok'?'var(--green)':cls==='bad'?'var(--red)':'';
+  $('log').appendChild(d); $('log').scrollTop=1e9; }
+const esc=(s)=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// token from ?c= / ?token=
+const q = new URLSearchParams(location.search);
+$('token').value = q.get('c') || q.get('token') || '';
+
+function refreshAcct(){ const a = Pad.account(); $('acct').textContent = a || 'not connected'; $('acct').style.color = a?'var(--ink)':'var(--dim)'; validate(); }
+window.addEventListener('robinpad:ready', refreshAcct);
+
+$('connect').addEventListener('click', async () => {
+  try { await Pad.connect(); refreshAcct(); log('Connected: <b>'+esc(Pad.account())+'</b>'); }
+  catch(e){ log('Connect failed: '+esc(e.message||e),'bad'); }
+});
+
+// load token decimals/symbol so amounts convert correctly
+let tokTimer;
+$('token').addEventListener('input', ()=>{ clearTimeout(tokTimer); tokTimer=setTimeout(loadToken, 300); });
+async function loadToken(){
+  const t = $('token').value.trim();
+  decimals = 18; symbol = ""; $('tokenInfo').textContent = "";
+  if(!/^0x[0-9a-fA-F]{40}$/.test(t)) { validate(); return; }
+  try{
+    const m = await Pad.tokenMeta(t);
+    if(m){ decimals = Number(m.decimals ?? 18) || 18; symbol = m.symbol || ""; $('tokenInfo').textContent = (m.name?m.name+' ':'')+(symbol?('('+symbol+') '):'')+'· '+decimals+' decimals'; }
+  }catch{ $('tokenInfo').textContent = "Couldn't read token metadata - assuming 18 decimals."; }
+  validate();
+}
+
+// parse "address, amount" (comma / whitespace / tab separated), one per line
+$('list').addEventListener('input', validate);
+function validate(){
+  const lines = $('list').value.split('\n').map(l=>l.trim()).filter(Boolean);
+  const recs=[], vals=[], errs=[]; const seen=new Set();
+  lines.forEach((line, i)=>{
+    const parts = line.split(/[\s,]+/).filter(Boolean);
+    if(parts.length < 2){ errs.push(`line ${i+1}: need "address, amount"`); return; }
+    const addr = parts[0]; const amt = parts[1];
+    if(!/^0x[0-9a-fA-F]{40}$/.test(addr)){ errs.push(`line ${i+1}: bad address`); return; }
+    if(!/^\d+(\.\d+)?$/.test(amt) || Number(amt)<=0){ errs.push(`line ${i+1}: bad amount`); return; }
+    let wei; try{ wei = ethers.parseUnits(amt, decimals); }catch{ errs.push(`line ${i+1}: amount too precise for ${decimals} decimals`); return; }
+    if(wei<=0n){ errs.push(`line ${i+1}: amount must be > 0`); return; }
+    if(seen.has(addr.toLowerCase())) errs.push(`line ${i+1}: duplicate address (still allowed)`);
+    seen.add(addr.toLowerCase());
+    recs.push(addr); vals.push(wei);
+  });
+  const total = vals.reduce((s,v)=>s+v,0n);
+  parsed = { recs, vals, total };
+  const disp = (w)=>{ try{ return (+ethers.formatUnits(w, decimals)).toLocaleString('en-US',{maximumFractionDigits:6}); }catch{ return '?'; } };
+  $('stat').innerHTML = `<span>Recipients: <b>${recs.length}</b></span><span>Total: <b>${disp(total)} ${esc(symbol)}</b></span>`
+    + (recs.length>600?'<span style="color:var(--red)">over 600 - split into batches</span>':'');
+  $('warn').textContent = errs.slice(0,6).join('\n');
+  const t = $('token').value.trim();
+  $('send').disabled = !(Pad.account() && /^0x[0-9a-fA-F]{40}$/.test(t) && recs.length>0 && recs.length<=600 && errs.filter(e=>!e.includes('duplicate')).length===0);
+}
+
+$('send').addEventListener('click', async () => {
+  const token = $('token').value.trim();
+  const res = $('result'); res.style.display='none';
+  if(!Pad.account()){ log('Connect your wallet first.','bad'); return; }
+  const disp = (w)=>{ try{ return (+ethers.formatUnits(w, decimals)).toLocaleString('en-US',{maximumFractionDigits:6}); }catch{ return '?'; } };
+  if(!confirm(`Send ${disp(parsed.total)} ${symbol} to ${parsed.recs.length} wallet(s)? This signs an approval then one send.`)) return;
+  $('send').disabled=true;
+  try{
+    log(`Approving + dispersing to ${parsed.recs.length} wallets…`);
+    const tx = await Pad.disperse(token, parsed.recs, parsed.vals.map(String));
+    log('Sent, waiting for confirmation… tx '+esc(tx.hash).slice(0,12)+'…');
+    await tx.wait();
+    res.textContent='✅ Done. '+disp(parsed.total)+' '+symbol+' sent to '+parsed.recs.length+' wallets.'; res.className='big ok'; res.style.display='block';
+    log('Confirmed.','ok');
+  }catch(e){ log('Failed: '+esc(e.message||e),'bad'); res.textContent='❌ '+esc(e.message||e); res.className='big bad'; res.style.display='block'; }
+  $('send').disabled=false; validate();
+});
+
+loadToken(); refreshAcct();
+</script>
+</body>
+</html>
