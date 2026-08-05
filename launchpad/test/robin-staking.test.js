@@ -77,28 +77,43 @@ describe("RobinStaking", () => {
 
     expect(await staking.earned(a.address, ETH)).to.be.closeTo(2n * ONE, 10n ** 12n);
 
-    // b unstakes fully -> forfeits ~2 ETH -> goes to a (the only stayer)
+    // b unstakes fully -> forfeits ~2 ETH; b loses ALL pending immediately
     await staking.connect(b).unstake(1000n * ONE);
     expect(await staking.earned(b.address, ETH)).to.equal(0n);
-    // a now has its own ~2 + b's forfeited ~2 = ~4
+    // the forfeited ~2 now STREAMS to a (the only stayer) over the window — not an instant bump
+    await mineAt((await now()) + WEEK + 5);
     expect(await staking.earned(a.address, ETH)).to.be.closeTo(4n * ONE, 10n ** 12n);
   });
 
-  it("partial unstake forfeits ALL pending; leaver cannot recapture via remaining stake", async () => {
+  it("partial unstake forfeits ALL pending immediately (leaver's accrued zeroed at exit)", async () => {
     const { a, b, funder, staking } = await setup();
     await staking.connect(a).stake(1000n * ONE);
     await staking.connect(b).stake(1000n * ONE);
     await fundEthFull(staking, funder, 4n * ONE); // a:2, b:2
 
-    // a partially unstakes 1 wei worth -> forfeits ALL of a's ~2 ETH to b
+    // a partially unstakes -> forfeits ALL of a's ~2 ETH at the moment of exit
     await staking.connect(a).unstake(1n * ONE);
     expect(await staking.earned(a.address, ETH)).to.equal(0n);
-    // b (the stayer) collects a's forfeited ~2 on top of its own ~2 = ~4
-    expect(await staking.earned(b.address, ETH)).to.be.closeTo(4n * ONE, 10n ** 12n);
+    // the forfeited ~2 re-streams to the pool; b (a stayer) ends with more than its own 2 after the window
+    await mineAt((await now()) + WEEK + 5);
+    expect(await staking.earned(b.address, ETH)).to.be.gt(2n * ONE + ONE / 2n);
+  });
 
-    // no future accrual (stream ended) means a stays at 0 — did not recapture its own forfeiture
-    await mineAt((await now()) + DAY);
-    expect(await staking.earned(a.address, ETH)).to.equal(0n);
+  it("forfeiture cannot be sniped by a same-block flash-staker (streamed, not instant)", async () => {
+    const { a, b, funder, staking } = await setup();
+    await staking.connect(a).stake(1000n * ONE); // honest staker
+    await fundEthFull(staking, funder, 5n * ONE); // a accrues ~5 as sole staker, fully streamed
+    expect(await staking.earned(a.address, ETH)).to.be.closeTo(5n * ONE, 10n ** 12n);
+
+    // attacker flash-stakes a huge amount right before the honest whale's exit
+    await staking.connect(b).stake(1_000_000n * ONE);
+    // whale exits, forfeiting ~5 ETH
+    await staking.connect(a).unstake(1000n * ONE);
+    // with STREAMED forfeiture the attacker has accrued ≈0 (no instant bump to snipe)
+    expect(await staking.earned(b.address, ETH)).to.be.lt(ONE / 100n);
+    // attacker exits same block -> gets ~nothing and forfeits even that
+    await staking.connect(b).unstake(1_000_000n * ONE);
+    expect(await staking.earned(b.address, ETH)).to.equal(0n);
   });
 
   it("JIT flash-stake earns ≈nothing due to streaming", async () => {
@@ -240,13 +255,14 @@ describe("RobinStaking", () => {
       await staking.connect(b).stake(2000n * ONE);
       await staking.connect(c).stake(3000n * ONE);
       await staking.connect(funder).notifyRewardETH({ value: 6n * ONE });
-      await mineAt((await now()) + WEEK + 5);
+      await mineAt((await now()) + WEEK + 5); // stream 6: a≈1, b≈2, c≈3
 
-      // b bails (forfeits ~2 to a & c); a and c claim
+      // b bails (forfeits ~2, which RE-STREAMS to a & c over a fresh window)
       await staking.connect(b).unstake(2000n * ONE);
+      await mineAt((await now()) + WEEK + 5); // let the forfeiture finish streaming
       await staking.connect(a).claim(ETH);
       await staking.connect(c).claim(ETH);
-      // whatever a & c didn't cover stays in the contract (dust / rounding), never negative
+      // everything funded (6 ETH) is either claimed or tiny dust — never over-paid, never stuck
       const remaining = await ethers.provider.getBalance(saddr);
       expect(remaining).to.be.gte(0n);
       expect(remaining).to.be.lt(10n ** 13n); // tiny rounding dust only

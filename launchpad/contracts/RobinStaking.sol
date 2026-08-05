@@ -76,7 +76,7 @@ contract RobinStaking is ReentrancyGuard, Ownable2Step {
 
     event Staked(address indexed user, uint256 amount);
     event Unstaked(address indexed user, uint256 amount, uint256 stakeReturned);
-    event Forfeited(address indexed user, address indexed asset, uint256 amount, uint256 toStayers);
+    event Forfeited(address indexed user, address indexed asset, uint256 amount);
     event Claimed(address indexed user, address indexed asset, uint256 amount);
     event RewardAdded(address indexed asset, uint256 amount, bool streamingNow);
     event RewardTokenListed(address indexed asset, uint32 duration);
@@ -110,8 +110,11 @@ contract RobinStaking is ReentrancyGuard, Ownable2Step {
     function rewardPerToken(address asset) public view returns (uint256) {
         RewardInfo storage r = rewardInfo[asset];
         if (totalStaked == 0) return r.rewardPerTokenStored;
-        uint256 dt = _lastTimeApplicable(asset) - r.lastUpdateTime;
-        if (dt == 0) return r.rewardPerTokenStored;
+        uint256 tApp = _lastTimeApplicable(asset);
+        // Guard the subtraction: for an inactive/finished/never-funded stream, `lastUpdateTime` can sit at
+        // or beyond `periodFinish` (e.g. after a zero-stake pause set it to now), so tApp <= lastUpdateTime.
+        if (tApp <= r.lastUpdateTime) return r.rewardPerTokenStored;
+        uint256 dt = tApp - r.lastUpdateTime;
         return r.rewardPerTokenStored + Math.mulDiv(dt * r.rewardRate, ACC, totalStaked);
     }
 
@@ -134,13 +137,28 @@ contract RobinStaking is ReentrancyGuard, Ownable2Step {
 
     /// @dev Advance every reward accumulator to now, and (if `account` != 0) settle that account's earned
     /// balance into `rewardsAccrued`. Math only — never transfers, so this can't be bricked by a paused asset.
+    /// @dev No-lock pools routinely hit totalStaked == 0. A live stream must NOT keep "streaming" into an empty
+    /// pool (those rewards would credit nobody and strand forever). So when the pool is empty we PAUSE each
+    /// live stream: capture its entire un-streamed remainder back into `pending` and kill the rate. The next
+    /// stake re-streams it fresh over a full window — lossless, and no instant lump (JIT stays closed).
     function _updateReward(address account) internal {
+        bool empty = totalStaked == 0;
         uint256 len = rewardTokens.length;
         for (uint256 i; i < len; ++i) {
             address asset = rewardTokens[i];
             RewardInfo storage r = rewardInfo[asset];
-            r.rewardPerTokenStored = rewardPerToken(asset);
-            r.lastUpdateTime = uint64(_lastTimeApplicable(asset));
+            if (empty) {
+                if (r.rewardRate > 0 && r.periodFinish > r.lastUpdateTime) {
+                    r.pending += (r.periodFinish - r.lastUpdateTime) * r.rewardRate;
+                    r.rewardRate = 0;
+                    r.periodFinish = uint64(block.timestamp);
+                }
+                r.lastUpdateTime = uint64(block.timestamp);
+                // rewardPerTokenStored is unchanged — there is no stake to accrue to.
+            } else {
+                r.rewardPerTokenStored = rewardPerToken(asset);
+                r.lastUpdateTime = uint64(_lastTimeApplicable(asset));
+            }
             if (account != address(0)) {
                 rewardsAccrued[asset][account] = earned(account, asset);
                 userRewardPerTokenPaid[asset][account] = r.rewardPerTokenStored;
@@ -202,34 +220,25 @@ contract RobinStaking is ReentrancyGuard, Ownable2Step {
 
         _updateReward(msg.sender);
 
-        // Everyone except the leaver — the forfeited rewards are divided over this stake.
-        uint256 otherStake = totalStaked - bal;
-
-        // Remove the leaver's stake BEFORE redistribution so they cannot earn on their own forfeiture.
+        // Remove the leaver's stake first; the forfeited rewards then re-stream to whoever remains.
         staked[msg.sender] = bal - amount;
         totalStaked -= amount;
 
-        // Forfeit every unclaimed reward asset and hand it to the stayers.
+        // Forfeit every unclaimed reward asset. The forfeiture is RE-STREAMED (via _fund), not handed out as
+        // an instant per-share bump: an instant bump could be sniped by a searcher who flash-stakes in the
+        // same block as a big exit, grabs the bump, and unstakes — stealing the forfeiture from the stakers
+        // who actually stayed. Streaming it over the window means a same-block sniper accrues ~0, exactly the
+        // way notify-JIT is defeated. A full exit (staked -> 0) parks it in `pending` to re-stream on the next
+        // stake. The leaver keeps NO claim on it — their rewardsAccrued is zeroed here; only stake they KEEP
+        // (a partial exit) earns future streams pro-rata, like any staker.
         uint256 len = rewardTokens.length;
         for (uint256 i; i < len; ++i) {
             address asset = rewardTokens[i];
             uint256 f = rewardsAccrued[asset][msg.sender];
             if (f > 0) {
                 rewardsAccrued[asset][msg.sender] = 0;
-                RewardInfo storage r = rewardInfo[asset];
-                uint256 toStayers;
-                if (otherStake > 0) {
-                    // Instant per-share bump for the stayers (excludes the leaver's remaining stake below).
-                    r.rewardPerTokenStored += Math.mulDiv(f, ACC, otherStake);
-                    toStayers = f;
-                } else {
-                    // No one else is staked — park it; it re-streams on the next stake.
-                    r.pending += f;
-                }
-                // Reset the leaver's checkpoint to the POST-bump value so their remaining stake (on a partial
-                // unstake) does not recapture any of what they just forfeited.
-                userRewardPerTokenPaid[asset][msg.sender] = r.rewardPerTokenStored;
-                emit Forfeited(msg.sender, asset, f, toStayers);
+                _fund(asset, f);
+                emit Forfeited(msg.sender, asset, f);
             }
         }
 
@@ -284,8 +293,13 @@ contract RobinStaking is ReentrancyGuard, Ownable2Step {
         if (!rewardInfo[asset].listed) revert NotListed();
         if (amount == 0) revert Zero();
         _updateReward(address(0));
+        // Credit the ACTUAL balance delta, not the nominal amount — a fee-on-transfer/rebasing reward token
+        // would otherwise have the stream promise more than the contract holds.
+        uint256 balBefore = IERC20(asset).balanceOf(address(this));
         IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
-        _fund(asset, amount);
+        uint256 received = IERC20(asset).balanceOf(address(this)) - balBefore;
+        if (received == 0) revert Zero();
+        _fund(asset, received);
     }
 
     /// @notice Fund the native-ETH reward stream with the attached value.
@@ -342,8 +356,9 @@ contract RobinStaking is ReentrancyGuard, Ownable2Step {
     }
 
     /// @notice Accept plain ETH sends from an authorized rewarder as an ETH reward (e.g. an ATH-vault flush).
-    receive() external payable {
+    receive() external payable nonReentrant {
         if (!isRewarder[msg.sender]) revert NotRewarder();
+        if (msg.value == 0) return;
         _updateReward(address(0));
         _fund(ETH, msg.value);
     }
