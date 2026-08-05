@@ -93,6 +93,16 @@ header.nav{position:sticky;top:0;z-index:50;background:rgba(6,8,3,.82);backdrop-
 .nav-links{display:flex;gap:22px;margin-left:14px}
 .nav-links a{color:var(--dim);font-size:.9rem;font-weight:600;white-space:nowrap}
 .nav-links a:hover{color:var(--ink)}
+.nav-dd{position:relative}
+.nav-dd>summary{color:var(--dim);font-size:.9rem;font-weight:600;white-space:nowrap;cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:4px}
+.nav-dd>summary::-webkit-details-marker{display:none}
+.nav-dd>summary::after{content:"▾";font-size:.68em;opacity:.75;transition:transform .15s}
+.nav-dd[open]>summary,.nav-dd>summary:hover{color:var(--ink)}
+.nav-dd[open]>summary::after{transform:rotate(180deg)}
+.nav-dd-menu{position:absolute;top:calc(100% + 12px);left:50%;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line-2);border-radius:12px;padding:6px;min-width:172px;display:flex;flex-direction:column;gap:1px;z-index:60;box-shadow:0 14px 34px rgba(0,0,0,.55)}
+.nav-dd-menu a{color:var(--dim);font-size:.86rem;font-weight:600;padding:9px 12px;border-radius:8px;white-space:nowrap}
+.nav-dd-menu a:hover{color:var(--ink);background:rgba(255,255,255,.05)}
+.nav-dd-menu a.on{color:var(--lime)}
 .nav-cta{margin-left:auto;display:flex;gap:10px;align-items:center}
 /* mobile menu */
 .navtoggle{display:none;background:transparent;border:1px solid var(--line-2);border-radius:9px;width:40px;height:40px;color:var(--ink);cursor:pointer;align-items:center;justify-content:center;flex:none}
@@ -422,8 +432,11 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 <header class="nav"><div class="nav-in">
   <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN <b>LABS</b></a>
   <nav class="nav-links">
-    <a href="browse.html">Browse</a><a href="swap.html">Swap</a><a href="bridge.html">Bridge</a><a href="migrate.html">Migrate</a><a href="#graduates">Graduated</a>
-    <a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="disperse.html">Airdrop</a><a href="profile.html">Portfolio</a><a href="rewards.html" id="rewardsNav" style="display:none">Rewards</a><a href="stats.html">Stats</a><a href="docs.html">Docs</a><a href="admin.html" id="adminLink" style="display:none">⚙ Admin</a>
+    <a href="browse.html" class="on">Browse</a><a href="swap.html">Swap</a><a href="bridge.html">Bridge</a>
+    <details class="nav-dd"><summary>Tools</summary><div class="nav-dd-menu">
+      <a href="disperse.html">Airdrop</a><a href="liquidity.html">Liquidity</a><a href="add-lp.html">Add&nbsp;LP</a><a href="migrate.html">Migrate</a><a href="#graduates">Graduated</a><a href="stats.html">Stats</a><a href="rewards.html" id="rewardsNav" style="display:none">Rewards</a><a href="admin.html" id="adminLink" style="display:none">⚙ Admin</a>
+    </div></details>
+    <a href="profile.html">Portfolio</a><a href="docs.html">Docs</a>
   </nav>
   <div class="nav-cta">
     <button class="btn btn-dark" id="connectBtn" type="button">Connect Wallet</button>
@@ -1168,5 +1181,6 @@ loadStats(); initBoard();
   }
 })();
 </script>
+<script>document.addEventListener("click",function(e){document.querySelectorAll("details.nav-dd[open]").forEach(function(d){if(!d.contains(e.target))d.removeAttribute("open");});});</script>
 </body>
 </html>
