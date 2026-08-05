@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Earn real stocks — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<meta name="description" content="Stake $ROBIN and get paid in real Robinhood Stock Tokens — Apple, SpaceX, Tesla and more. Fees buy real equities on-chain and stream them to stakers." />
+<link rel="canonical" href="https://robinlab.io/stocks.html" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<style>
+  :root{
+    --bg:#060803;--bg2:#0a0d06;--panel:#0c1108;--panel2:#101609;
+    --line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.12);
+    --ink:#f4f7ee;--dim:#93a382;--dim2:#6c7b5d;--lime:#dce905;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:
+      radial-gradient(1100px 600px at 78% -8%, rgba(220,233,5,.10), transparent 60%),
+      radial-gradient(800px 500px at 0% 6%, rgba(80,120,90,.10), transparent 55%),
+      var(--bg);
+    color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.55;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--lime);text-decoration:none}
+  .wrap{max-width:1000px;margin:0 auto;padding:26px 20px 60px}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;letter-spacing:.02em;color:var(--ink)}
+  .brand b{color:var(--lime)}
+  .eyebrow{font-size:.74rem;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--dim);margin:52px 0 14px}
+  h1{font-size:clamp(2.1rem,5.4vw,3.5rem);line-height:1.04;margin:0;letter-spacing:-.02em;text-wrap:balance;font-weight:850}
+  h1 .hl{color:var(--lime)}
+  .lede{color:var(--dim);font-size:1.06rem;max-width:60ch;margin:18px 0 0}
+  .cta{display:inline-flex;align-items:center;gap:9px;margin-top:26px;background:var(--lime);color:#0a0e05;
+    font-weight:850;padding:13px 22px;border-radius:12px;font-size:1rem}
+  .cta.ghost{background:transparent;color:var(--ink);border:1px solid var(--line2);margin-left:10px}
+  .cta:hover{transform:translateY(-1px)}
+
+  .trioHead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:58px 0 16px}
+  .trioHead h2{font-size:1.15rem;margin:0;letter-spacing:-.01em}
+  .trioHead .note{color:var(--dim2);font-size:.82rem}
+  .trio{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:720px){.trio{grid-template-columns:1fr}}
+  .stock{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+    border-radius:18px;padding:22px;position:relative;overflow:hidden;transition:border-color .15s,transform .15s}
+  .stock:hover{border-color:var(--line2);transform:translateY(-2px)}
+  .stock .glow{position:absolute;inset:-40% 40% auto -40%;height:150px;filter:blur(46px);opacity:.5;border-radius:50%}
+  .emblem{width:76px;height:76px;border-radius:50%;display:grid;place-items:center;position:relative;
+    background:#0c1006;border:1px solid var(--line2);box-shadow:inset 0 0 0 3px rgba(0,0,0,.35)}
+  .emblem span{font-weight:900;font-size:1.02rem;letter-spacing:.02em}
+  .stock h3{margin:16px 0 2px;font-size:1.32rem;letter-spacing:-.01em}
+  .tick{display:inline-flex;align-items:center;gap:7px;color:var(--dim);font-size:.82rem;font-weight:700}
+  .tick .rh{color:var(--dim2);font-weight:600}
+  .stock .addr{margin-top:14px;font-family:ui-monospace,monospace;font-size:.72rem}
+  .stock .addr a{color:var(--dim)}
+  .badge{position:absolute;top:16px;right:16px;font-size:.66rem;font-weight:800;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--lime);border:1px solid rgba(220,233,5,.3);border-radius:999px;padding:3px 9px}
+
+  .how{margin-top:60px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:720px){.how{grid-template-columns:1fr}}
+  .step{border:1px solid var(--line);border-radius:14px;padding:18px;background:rgba(255,255,255,.012)}
+  .step .n{font-size:.72rem;font-weight:800;letter-spacing:.16em;color:var(--lime)}
+  .step h4{margin:8px 0 4px;font-size:1rem}
+  .step p{margin:0;color:var(--dim);font-size:.88rem}
+
+  .strip{margin-top:44px;border:1px dashed var(--line2);border-radius:14px;padding:16px 18px;display:flex;
+    flex-wrap:wrap;gap:10px 18px;align-items:center;color:var(--dim);font-size:.84rem}
+  .strip b{color:var(--ink)}
+  .chip{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--dim);border:1px solid var(--line);
+    border-radius:8px;padding:3px 9px}
+  .foot{margin-top:46px;color:var(--dim2);font-size:.78rem;max-width:74ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="brand" href="index.html">ROBIN <b>LABS</b></a>
+    <div><a href="stake.html" style="font-weight:700">Stake →</a></div>
+  </div>
+
+  <div class="eyebrow">Memecoins · meet real assets</div>
+  <h1>Stake&nbsp;$ROBIN.<br />Get paid in <span class="hl">real stocks.</span></h1>
+  <p class="lede">Robinhood Chain is the only launchpad substrate that natively hosts tokenized equities. So we
+    do the thing no other pad can: the platform's fees buy <b>real stock tokens</b> on-chain and stream them to
+    stakers. Stake the token, earn shares of the companies you actually want to own.</p>
+  <div>
+    <a class="cta" href="stake.html">Start staking</a>
+    <a class="cta ghost" href="#how">How it works</a>
+  </div>
+
+  <div class="trioHead">
+    <h2>This week's featured payouts</h2>
+    <span class="note">the marquee three — rotates with volume</span>
+  </div>
+  <div class="trio" id="trio"></div>
+
+  <div class="strip">
+    <b>Also streamable:</b>
+    <span class="chip">NVDA</span><span class="chip">SPY</span><span class="chip">SGOV · T-bill</span>
+    <span class="chip">GOOGL</span><span class="chip">META</span><span class="chip">COIN</span>
+    <span>+ 90 more Robinhood Stock Tokens</span>
+  </div>
+
+  <h2 id="how" style="margin:60px 0 0;font-size:1.15rem">How it works</h2>
+  <div class="how">
+    <div class="step"><div class="n">01 · STAKE</div><h4>Lock nothing, stake anytime</h4>
+      <p>Stake $ROBIN (or any launched coin with a pool). No lock — pull your stake whenever you want.</p></div>
+    <div class="step"><div class="n">02 · FEES BUY STOCK</div><h4>Real equities, on-chain</h4>
+      <p>Platform fees are swapped to real Robinhood Stock Tokens and streamed to the pool over ~7 days.</p></div>
+    <div class="step"><div class="n">03 · CLAIM SHARES</div><h4>Your stocks, your wallet</h4>
+      <p>Claim your streamed AAPL / SPCX / TSLA anytime — claiming never touches your stake.</p></div>
+  </div>
+
+  <p class="foot">Robinhood Stock Tokens are on-chain tokens that track their underlying equities; they are
+    standard transferable ERC-20s on Robinhood Chain. Robin Labs is not affiliated with Robinhood, Apple, Tesla,
+    or SpaceX — tickers and names identify the tradeable token only. Rewards depend on platform activity; nothing
+    here is investment advice.</p>
+</div>
+
+<script type="module">
+// Pull canonical addresses from config when served on the pad; fall back to the inline ones so the page also
+// renders standalone.
+let STOCKS = {};
+try { ({ STOCKS } = await import("./assets/config.js")); } catch { /* standalone preview */ }
+
+// The marquee three — Apple, SpaceX, Tesla (a clean ticker emblem each; drop in licensed logo art if you have it).
+const FEATURED = [
+  { key: "AAPL", name: "Apple",  accent: "#b9c0c6", ring: "rgba(185,192,198,.5)", addr: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9" },
+  { key: "SPCX", name: "SpaceX", accent: "#4a9bd8", ring: "rgba(74,155,216,.5)", addr: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa" },
+  { key: "TSLA", name: "Tesla",  accent: "#e6484d", ring: "rgba(230,72,77,.5)", addr: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d" },
+];
+const short = (a) => a.slice(0, 6) + "…" + a.slice(-4);
+
+document.getElementById("trio").innerHTML = FEATURED.map((f) => {
+  const s = (STOCKS || {})[f.key] || {};
+  const addr = s.address || f.addr || "";
+  const link = addr ? `https://robinhoodchain.blockscout.com/address/${addr}` : "#";
+  return `<div class="stock">
+    <div class="glow" style="background:${f.accent}"></div>
+    <div class="badge">Live</div>
+    <div class="emblem" style="border-color:${f.ring};box-shadow:inset 0 0 22px ${f.ring},inset 0 0 0 3px rgba(0,0,0,.35)">
+      <span style="color:${f.accent}">${f.key}</span>
+    </div>
+    <h3>${f.name}</h3>
+    <div class="tick">${f.key} <span class="rh">· Robinhood Token</span></div>
+    <div class="addr">${addr ? `<a href="${link}" target="_blank" rel="noopener">${short(addr)} ↗</a>` : "coming soon"}</div>
+  </div>`;
+}).join("");
+</script>
+</body>
+</html>

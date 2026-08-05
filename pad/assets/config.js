@@ -104,6 +104,7 @@ export const STOCKS = {
   AAPL: { address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9", name: "Apple", wethFee: 500 },
   NVDA: { address: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC", name: "NVIDIA", wethFee: 3000 },
   TSLA: { address: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d", name: "Tesla", wethFee: 3000 },
+  SPCX: { address: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa", name: "SpaceX", wethFee: 0 },
   SPY: { address: "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C", name: "SPDR S&P 500", wethFee: 500 },
 };
 
