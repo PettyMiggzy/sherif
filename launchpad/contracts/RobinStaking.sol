@@ -176,24 +176,35 @@ contract RobinStaking is ReentrancyGuard, Ownable2Step {
             if (r.pending > 0) {
                 uint256 amt = r.pending;
                 r.pending = 0;
-                _startStream(asset, amt);
+                // A kickstart follows an empty pool — no live stream to grief — so open a fresh window.
+                _applyReward(asset, amt, true);
+                emit RewardAdded(asset, amt, true);
             }
         }
     }
 
-    /// @dev Start or top-up the linear stream for `asset` with `amount` fresh reward units. Standard Synthetix
-    /// top-up: any not-yet-streamed remainder of the current window is rolled into the new rate.
-    function _startStream(address asset, uint256 amount) internal {
+    /// @dev Core stream math for `asset` given `amount` fresh reward units. `extend == true` (external funding)
+    /// opens/rolls a FRESH full window (standard Synthetix top-up, rolling the un-streamed remainder into the
+    /// new rate). `extend == false` (recycled forfeiture) tops up the rate over the REMAINING window WITHOUT
+    /// pushing `periodFinish` out — otherwise a griefer could stake, accrue a crumb, unstake, and repeat to
+    /// perpetually reset the window and dilute everyone's rate. Parks in `pending` if there's no stake yet.
+    function _applyReward(address asset, uint256 amount, bool extend) internal {
         RewardInfo storage r = rewardInfo[asset];
-        uint256 dur = r.duration;
-        if (block.timestamp >= r.periodFinish) {
-            r.rewardRate = amount / dur;
-        } else {
-            uint256 leftover = (r.periodFinish - block.timestamp) * r.rewardRate;
+        if (totalStaked == 0) {
+            r.pending += amount;
+            return;
+        }
+        if (extend || block.timestamp >= r.periodFinish) {
+            uint256 dur = r.duration;
+            uint256 leftover = block.timestamp < r.periodFinish ? (r.periodFinish - block.timestamp) * r.rewardRate : 0;
             r.rewardRate = (amount + leftover) / dur;
+            r.periodFinish = uint64(block.timestamp + dur);
+        } else {
+            // recycle into the remaining window, preserving periodFinish
+            uint256 remaining = r.periodFinish - block.timestamp;
+            r.rewardRate = ((remaining * r.rewardRate) + amount) / remaining;
         }
         r.lastUpdateTime = uint64(block.timestamp);
-        r.periodFinish = uint64(block.timestamp + dur);
     }
 
     // ──────────────────────────────────────────────────────── user actions ──
@@ -202,11 +213,17 @@ contract RobinStaking is ReentrancyGuard, Ownable2Step {
     function stake(uint256 amount) external nonReentrant {
         if (amount == 0) revert Zero();
         _updateReward(msg.sender);
+        // Credit the ACTUAL received amount, not the nominal `amount` — a launched coin may tax transfers
+        // (fee-on-transfer). Crediting nominal would make Σstaked exceed the real balance and brick the last
+        // unstaker's principal transfer. Crediting the measured delta keeps stake accounting solvent.
+        uint256 balBefore = stakeToken.balanceOf(address(this));
         stakeToken.safeTransferFrom(msg.sender, address(this), amount);
-        staked[msg.sender] += amount;
-        totalStaked += amount;
+        uint256 received = stakeToken.balanceOf(address(this)) - balBefore;
+        if (received == 0) revert Zero();
+        staked[msg.sender] += received;
+        totalStaked += received;
         _kickstartPending();
-        emit Staked(msg.sender, amount);
+        emit Staked(msg.sender, received);
     }
 
     /// @notice Unstake `amount`. NO LOCK — always succeeds. FORFEITS all your unclaimed rewards (every asset),
@@ -237,7 +254,8 @@ contract RobinStaking is ReentrancyGuard, Ownable2Step {
             uint256 f = rewardsAccrued[asset][msg.sender];
             if (f > 0) {
                 rewardsAccrued[asset][msg.sender] = 0;
-                _fund(asset, f);
+                // extend=false: recycle into the remaining window so a forfeiter can't reset/dilute the stream.
+                _applyReward(asset, f, false);
                 emit Forfeited(msg.sender, asset, f);
             }
         }
@@ -310,15 +328,12 @@ contract RobinStaking is ReentrancyGuard, Ownable2Step {
         _fund(ETH, msg.value);
     }
 
+    /// @dev External funding (notify / ETH send): opens a fresh streaming window, or parks it if the pool is
+    /// empty. Emits RewardAdded (= a stream (re)started, whether from external revenue or a kickstart).
     function _fund(address asset, uint256 amount) internal {
-        RewardInfo storage r = rewardInfo[asset];
-        if (totalStaked == 0) {
-            r.pending += amount; // no stakers yet — park it, kickstarts on next stake
-            emit RewardAdded(asset, amount, false);
-        } else {
-            _startStream(asset, amount);
-            emit RewardAdded(asset, amount, true);
-        }
+        bool streaming = totalStaked > 0;
+        _applyReward(asset, amount, true);
+        emit RewardAdded(asset, amount, streaming);
     }
 
     // ─────────────────────────────────────────────────────────── admin ──

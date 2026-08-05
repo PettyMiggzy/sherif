@@ -248,6 +248,31 @@ describe("RobinStaking", () => {
     });
   });
 
+  describe("fee-on-transfer stake token (launched coins may tax transfers)", () => {
+    it("credits the ACTUAL received amount; last unstaker's principal never bricks", async () => {
+      const [owner, a, b] = await ethers.getSigners();
+      const FEE = await (await ethers.getContractFactory("MintFeeERC20")).deploy("Taxed", "TAX", 500); // 5% burn
+      const staking = await (await ethers.getContractFactory("RobinStaking")).deploy(
+        await FEE.getAddress(),
+        owner.address
+      );
+      const saddr = await staking.getAddress();
+      for (const u of [a, b]) {
+        await FEE.mint(u.address, 10_000n * ONE);
+        await FEE.connect(u).approve(saddr, ethers.MaxUint256);
+      }
+      await staking.connect(a).stake(1000n * ONE); // 5% burned -> ~950 received
+      await staking.connect(b).stake(1000n * ONE);
+      // credited stake == actual received, not nominal
+      expect(await staking.staked(a.address)).to.equal(950n * ONE);
+      expect(await staking.totalStaked()).to.equal(1900n * ONE);
+      // contract holds exactly what it credited -> both can fully exit, last one included
+      await staking.connect(a).unstake(950n * ONE);
+      await staking.connect(b).unstake(950n * ONE); // would revert if accounting were nominal
+      expect(await staking.totalStaked()).to.equal(0n);
+    });
+  });
+
   describe("conservation", () => {
     it("total claimed + forfeited-then-claimed never exceeds funded", async () => {
       const { a, b, c, funder, staking, saddr } = await setup();
