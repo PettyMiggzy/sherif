@@ -4,6 +4,7 @@ const { ethers, network } = require("hardhat");
 const ONE = 10n ** 18n;
 const WEEK = 7 * 86400;
 const FEE = 3000;
+const FAR = 99999999999n; // far-future deadline
 
 async function now() {
   return (await ethers.provider.getBlock("latest")).timestamp;
@@ -55,7 +56,9 @@ describe("RewardConverter", () => {
       await STOCK.getAddress(),
       FEE,
       2n * ONE,
-      (2n * ONE * 99n) / 100n
+      (2n * ONE * 99n) / 100n,
+      0,
+      FAR
     );
     await jump(WEEK + 5);
     const earned = await staking.earned(user.address, await STOCK.getAddress());
@@ -69,7 +72,7 @@ describe("RewardConverter", () => {
     await keeper.sendTransaction({ to: await conv.getAddress(), value: ONE });
     await router.setRate(ONE / 2n); // 1 ETH -> 0.5 STOCK
     await expect(
-      conv.connect(keeper).convertAndFund(await staking.getAddress(), await STOCK.getAddress(), FEE, ONE, ONE)
+      conv.connect(keeper).convertAndFund(await staking.getAddress(), await STOCK.getAddress(), FEE, ONE, ONE, 0, FAR)
     ).to.be.reverted; // router's "Too little received"
   });
 
@@ -90,10 +93,19 @@ describe("RewardConverter", () => {
     expect(await staking.earned(user.address, await STOCK.getAddress())).to.be.closeTo(100n * ONE, 10n ** 11n);
   });
 
+  it("reverts on an expired deadline", async () => {
+    const { keeper, STOCK, staking, conv } = await setup();
+    await keeper.sendTransaction({ to: await conv.getAddress(), value: ONE });
+    const past = BigInt(await now()) - 1n;
+    await expect(
+      conv.connect(keeper).convertAndFund(await staking.getAddress(), await STOCK.getAddress(), FEE, ONE, 1n, 0, past)
+    ).to.be.revertedWithCustomError(conv, "Expired");
+  });
+
   it("only a keeper can convert/fund", async () => {
     const { user, STOCK, staking, conv } = await setup();
     await expect(
-      conv.connect(user).convertAndFund(await staking.getAddress(), await STOCK.getAddress(), FEE, ONE, 1n)
+      conv.connect(user).convertAndFund(await staking.getAddress(), await STOCK.getAddress(), FEE, ONE, 1n, 0, FAR)
     ).to.be.revertedWithCustomError(conv, "NotKeeper");
     await expect(conv.connect(user).fundEth(await staking.getAddress(), ONE)).to.be.revertedWithCustomError(
       conv,

@@ -58,6 +58,7 @@ contract RewardConverter is Ownable2Step, ReentrancyGuard {
     error Zero();
     error InsufficientEth();
     error Slippage();
+    error Expired();
 
     event KeeperSet(address indexed who, bool allowed);
     event Converted(
@@ -83,21 +84,29 @@ contract RewardConverter is Ownable2Step, ReentrancyGuard {
     /// @notice Swap `ethIn` of this contract's ETH into `stock` (via the WETH/`stock` V3 pool at `fee`), then
     /// stream the stock tokens into `pool`. Reverts unless the swap yields at least `minOut` (slippage guard).
     /// This contract must be an authorized rewarder on `pool`.
-    function convertAndFund(address pool, address stock, uint24 fee, uint256 ethIn, uint256 minOut)
-        external
-        onlyKeeper
-        nonReentrant
-        returns (uint256 stockOut)
-    {
+    /// @param sqrtPriceLimitX96 optional in-pool price ceiling (0 = none) — a hard on-chain cap on price impact
+    ///        that bounds a sandwich beyond `minOut`, useful on the shallow stock pools.
+    /// @param deadline latest block timestamp the swap may execute — SwapRouter02's own struct has no deadline,
+    ///        so a slow legacy (type-0) tx could otherwise be held in the mempool and mined at the worst price.
+    function convertAndFund(
+        address pool,
+        address stock,
+        uint24 fee,
+        uint256 ethIn,
+        uint256 minOut,
+        uint160 sqrtPriceLimitX96,
+        uint256 deadline
+    ) external onlyKeeper nonReentrant returns (uint256 stockOut) {
         if (pool == address(0) || stock == address(0)) revert ZeroAddr();
         if (ethIn == 0 || minOut == 0) revert Zero();
+        if (block.timestamp > deadline) revert Expired();
         if (ethIn > address(this).balance) revert InsufficientEth();
 
         IWETH9(WETH).deposit{value: ethIn}();
         IERC20(WETH).forceApprove(swapRouter, ethIn);
 
         stockOut = ISwapRouter02(swapRouter).exactInputSingle(
-            ISwapRouter02.ExactInputSingleParams(WETH, stock, fee, address(this), ethIn, minOut, 0)
+            ISwapRouter02.ExactInputSingleParams(WETH, stock, fee, address(this), ethIn, minOut, sqrtPriceLimitX96)
         );
         if (stockOut < minOut) revert Slippage(); // defense-in-depth beyond the router's own check
 
