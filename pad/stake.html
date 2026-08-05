@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stake $ROBIN — earn ETH + real stocks — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<meta name="description" content="Stake $ROBIN (or any launched coin) and earn a streaming basket of ETH and real Robinhood Stock Tokens. No lock — leave anytime, but unstaking forfeits unclaimed rewards to the stakers who stayed." />
+<link rel="canonical" href="https://robinlab.io/stake.html" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<style>
+  :root{--bg:#060803;--panel:#0c1108;--panel2:#0a0d06;--ink:#f4f7ee;--dim:#93a382;--lime:#dce905;
+    --red:#ff5a52;--green:#5fd16a;--line:rgba(220,233,5,.2)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,sans-serif;line-height:1.5;padding:20px}
+  .wrap{max-width:780px;margin:0 auto}
+  a{color:var(--lime)}
+  h1{font-size:1.5rem;margin:0 0 4px}
+  .sub{color:var(--dim);margin:0 0 18px;font-size:.92rem;max-width:74ch}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
+  label{display:block;font-weight:600;margin:0 0 6px;font-size:.9rem}
+  input[type=text]{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font-family:ui-monospace,monospace;font-size:.9rem}
+  button{background:var(--lime);color:#0a0e05;border:none;border-radius:10px;padding:11px 16px;font-weight:800;cursor:pointer;font-size:.92rem}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  button.danger{background:transparent;color:var(--red);border:1px solid rgba(255,90,82,.5)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .between{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .mono{font-family:ui-monospace,monospace;font-size:.82rem;word-break:break-all}
+  .dim{color:var(--dim)}
+  .stat{font-size:1.35rem;font-weight:800}
+  .pill{display:inline-block;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+  .pill.live{color:var(--green);border-color:rgba(95,209,106,.4)}
+  .reward{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-top:1px solid rgba(255,255,255,.06)}
+  .reward:first-child{border-top:none}
+  .warn{background:rgba(255,90,82,.09);border:1px solid rgba(255,90,82,.35);border-radius:10px;padding:11px 12px;font-size:.86rem;color:#ffb9b4;margin-top:8px}
+  .big{font-size:.98rem;font-weight:800;padding:11px;border-radius:10px;text-align:center;margin-top:10px}
+  .ok{background:rgba(95,209,106,.12);color:var(--green);border:1px solid rgba(95,209,106,.4)}
+  .bad{background:rgba(255,90,82,.12);color:var(--red);border:1px solid rgba(255,90,82,.4)}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:560px){.split{grid-template-columns:1fr}}
+  .foot{margin-top:22px;font-size:.82rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="between">
+    <div><a href="index.html" class="dim">← Robin Labs</a></div>
+    <div class="row">
+      <button id="connect" class="ghost">Connect wallet</button>
+      <span class="mono dim" id="acct">not connected</span>
+    </div>
+  </div>
+
+  <h1 style="margin-top:14px">Stake &amp; earn</h1>
+  <p class="sub">Stake <b>$ROBIN</b> (or any launched coin that has a pool) and earn a streaming basket —
+    ETH and real <b>Robinhood Stock Tokens</b>. <b>No lock:</b> pull your stake anytime. But unstaking
+    <b>forfeits your unclaimed rewards</b> to the stakers who stayed, so <b>claim first</b> if you want to keep them.</p>
+
+  <div id="gate" class="card" style="display:none">
+    <b>Staking isn't live yet.</b> <span class="dim">The pool factory is deploying — this page turns on the moment it's set in config.</span>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="card">
+      <label for="poolToken">Pool (stake token)</label>
+      <div class="row">
+        <input type="text" id="poolToken" placeholder="0x… launched coin, or leave as $ROBIN" />
+        <button id="loadPool" class="ghost">Load</button>
+      </div>
+      <div class="mono dim" id="poolAddr" style="margin-top:8px"></div>
+    </div>
+
+    <div id="pool" style="display:none">
+      <div class="split">
+        <div class="card">
+          <div class="dim" style="font-size:.82rem">Total staked</div>
+          <div class="stat" id="totalStaked">—</div>
+          <div class="dim mono" id="stakeSym" style="font-size:.78rem"></div>
+        </div>
+        <div class="card">
+          <div class="dim" style="font-size:.82rem">Your stake</div>
+          <div class="stat" id="myStake">—</div>
+          <div class="dim mono" id="myStake2" style="font-size:.78rem"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="between"><b>Your rewards</b> <span class="pill" id="streamPill">—</span></div>
+        <div id="rewards"></div>
+        <div class="row" style="margin-top:12px">
+          <button id="claimAll">Claim all</button>
+          <span class="dim" style="font-size:.82rem">Claiming never forfeits — it leaves your stake in place.</span>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="card">
+          <label for="stakeAmt">Stake</label>
+          <input type="text" id="stakeAmt" placeholder="0.0" inputmode="decimal" />
+          <div class="row" style="margin-top:8px">
+            <button id="stakeBtn">Stake</button>
+            <button id="maxStake" class="ghost">Max</button>
+          </div>
+        </div>
+        <div class="card">
+          <label for="unstakeAmt">Unstake</label>
+          <input type="text" id="unstakeAmt" placeholder="0.0" inputmode="decimal" />
+          <div class="row" style="margin-top:8px">
+            <button id="unstakeBtn" class="danger">Unstake</button>
+            <button id="maxUnstake" class="ghost">Max</button>
+          </div>
+          <div class="warn" id="forfeitWarn" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="msg"></div>
+  </div>
+
+  <div class="foot dim">
+    Rewards <b>stream</b> over ~7 days, so a flash-stake earns almost nothing — staying is what pays.
+    Forfeited rewards are redistributed to whoever's still staked. Not investment advice.
+  </div>
+</div>
+
+<script type="module">
+import { ethers } from "./assets/ethers.min.js";
+import * as Pad from "./assets/wallet.js";
+import { isDeployed, CONTRACTS, STOCKS } from "./assets/config.js";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ETH = Pad.STAKE_ETH;
+let state = { pool: null, info: null, stakeDecimals: 18, stakeSymbol: "" };
+
+// address -> symbol for the known reward assets (ETH sentinel + $ROBIN + the stock registry)
+const SYM = { [ETH.toLowerCase()]: "ETH" };
+if (CONTRACTS.platformToken) SYM[CONTRACTS.platformToken.toLowerCase()] = "ROBIN";
+for (const [sym, s] of Object.entries(STOCKS || {})) SYM[s.address.toLowerCase()] = sym;
+const symOf = (a) => SYM[a.toLowerCase()] || (a.slice(0, 6) + "…" + a.slice(-4));
+
+function msg(html, cls) { $("msg").innerHTML = html ? `<div class="big ${cls || ""}">${html}</div>` : ""; }
+function fmt(wei, dp = 18) {
+  const n = Number(ethers.formatUnits(wei, dp));
+  if (n === 0) return "0";
+  if (n < 0.0001) return "<0.0001";
+  return n.toLocaleString(undefined, { maximumFractionDigits: n < 1 ? 6 : 4 });
+}
+
+async function refreshAcct() {
+  const a = Pad.account();
+  $("acct").textContent = a ? Pad.short(a) : "not connected";
+  $("connect").textContent = a ? "Connected" : "Connect wallet";
+}
+
+$("connect").addEventListener("click", async () => {
+  try { await Pad.connect(); await refreshAcct(); if (state.pool) await render(); }
+  catch (e) { msg(esc(e.message || "Failed to connect"), "bad"); }
+});
+
+async function loadPool() {
+  msg("");
+  const token = ($("poolToken").value || "").trim() || CONTRACTS.platformToken;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(token)) { msg("Enter a valid token address.", "bad"); return; }
+  const pool = await Pad.stakingPoolOf(token);
+  if (!pool) {
+    $("poolAddr").innerHTML = `No staking pool exists for that token yet.`;
+    $("pool").style.display = "none";
+    state.pool = null;
+    return;
+  }
+  state.pool = pool;
+  // read stake-token symbol/decimals via the indexer/chain helper
+  const meta = await Pad.tokenMeta(token).catch(() => null);
+  state.stakeSymbol = (meta && meta.symbol) || symOf(token);
+  state.stakeDecimals = (meta && Number(meta.decimals)) || 18;
+  $("poolAddr").innerHTML = `Pool: <a href="https://robinhoodchain.blockscout.com/address/${pool}" target="_blank" rel="noopener">${pool}</a>`;
+  $("pool").style.display = "";
+  await render();
+}
+$("loadPool").addEventListener("click", () => loadPool().catch((e) => msg(esc(e.message), "bad")));
+
+async function render() {
+  if (!state.pool) return;
+  const info = await Pad.stakingInfo(state.pool, Pad.account());
+  state.info = info;
+  const dp = state.stakeDecimals, sym = state.stakeSymbol;
+  $("totalStaked").textContent = fmt(info.totalStaked, dp);
+  $("stakeSym").textContent = sym;
+  $("myStake").textContent = fmt(info.myStake, dp);
+  $("myStake2").textContent = sym;
+
+  const anyStreaming = info.rewards.some((r) => r.rewardRate > 0n);
+  $("streamPill").textContent = anyStreaming ? "streaming" : "idle";
+  $("streamPill").className = "pill" + (anyStreaming ? " live" : "");
+
+  $("rewards").innerHTML = info.rewards.map((r) => {
+    const perDay = r.rewardRate * 86400n;
+    const rate = r.rewardRate > 0n ? `${fmt(perDay)} ${esc(symOf(r.asset))}/day to the pool` : "idle";
+    return `<div class="reward">
+      <div><b>${esc(symOf(r.asset))}</b> <span class="dim" style="font-size:.78rem">${rate}</span></div>
+      <div class="row">
+        <span class="mono">${fmt(r.earned)}</span>
+        <button class="ghost claim1" data-asset="${r.asset}" ${r.earned > 0n ? "" : "disabled"}>Claim</button>
+      </div>
+    </div>`;
+  }).join("") || `<div class="dim" style="padding:10px 0">No reward assets listed yet.</div>`;
+
+  document.querySelectorAll(".claim1").forEach((b) =>
+    b.addEventListener("click", () => act(() => Pad.stakingClaim(state.pool, b.dataset.asset), "Claiming " + symOf(b.dataset.asset))));
+  updateForfeitWarn();
+}
+
+function updateForfeitWarn() {
+  const info = state.info; if (!info) return;
+  const pend = info.rewards.filter((r) => r.earned > 0n);
+  const el = $("forfeitWarn");
+  if (pend.length && info.myStake > 0n) {
+    el.style.display = "";
+    el.innerHTML = "⚠ Unstaking forfeits your unclaimed rewards: " +
+      pend.map((r) => `<b>${fmt(r.earned)} ${esc(symOf(r.asset))}</b>`).join(", ") +
+      '. <a href="#" id="claimFirst">Claim them first</a>.';
+    const cf = $("claimFirst");
+    if (cf) cf.addEventListener("click", (e) => { e.preventDefault(); act(() => Pad.stakingClaimAll(state.pool), "Claiming all rewards"); });
+  } else el.style.display = "none";
+}
+
+async function act(fn, label) {
+  try {
+    msg(esc(label) + "…");
+    const r = await fn();
+    if (r && r.wait) await r.wait();
+    msg("Done ✓", "ok");
+    await render();
+  } catch (e) { msg(esc(e.reason || e.message || "Transaction failed"), "bad"); }
+}
+
+function toWei(v, dp) { try { return ethers.parseUnits(String(v).trim(), dp); } catch { return 0n; } }
+
+$("stakeBtn").addEventListener("click", () => {
+  const amt = toWei($("stakeAmt").value, state.stakeDecimals);
+  if (amt <= 0n) return msg("Enter an amount to stake.", "bad");
+  act(() => Pad.stakingStake(state.pool, amt), "Staking");
+});
+$("unstakeBtn").addEventListener("click", () => {
+  const amt = toWei($("unstakeAmt").value, state.stakeDecimals);
+  if (amt <= 0n) return msg("Enter an amount to unstake.", "bad");
+  act(() => Pad.stakingUnstake(state.pool, amt), "Unstaking");
+});
+$("maxStake").addEventListener("click", async () => {
+  const bal = await Pad.tokenBalanceWei(state.info.stakeToken, Pad.account()).catch(() => 0n);
+  $("stakeAmt").value = ethers.formatUnits(bal, state.stakeDecimals);
+});
+$("maxUnstake").addEventListener("click", () => {
+  if (state.info) $("unstakeAmt").value = ethers.formatUnits(state.info.myStake, state.stakeDecimals);
+});
+$("claimAll").addEventListener("click", () => act(() => Pad.stakingClaimAll(state.pool), "Claiming all rewards"));
+
+// boot
+if (!isDeployed("stakingFactory")) {
+  $("gate").style.display = "";
+} else {
+  $("app").style.display = "";
+  $("poolToken").value = "";
+  $("poolToken").placeholder = CONTRACTS.platformToken ? "$ROBIN (default) — or paste a launched coin" : "0x…";
+  refreshAcct();
+  loadPool().catch(() => {}); // default to the $ROBIN pool
+}
+</script>
+</body>
+</html>

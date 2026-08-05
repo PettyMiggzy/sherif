@@ -1679,6 +1679,105 @@ function ensureDisconnectUI() {
   }
 }
 
+// ── STAKING — no-lock, forfeit-to-stayers, multi-asset streaming pools ─────────
+// The sentinel address RobinStaking uses to mean native ETH as a reward asset.
+export const STAKE_ETH = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+
+function requireStaking() {
+  if (!isDeployed("stakingFactory"))
+    throw new Error("Staking goes live once the pool factory is deployed (pre-deploy audit).");
+}
+
+/// Resolve the canonical staking pool address for a stake token (e.g. $ROBIN, or a launched coin).
+/// Returns null if no pool exists yet. Read-only.
+export async function stakingPoolOf(stakeToken) {
+  if (!isDeployed("stakingFactory")) return null;
+  try {
+    const f = new ethers.Contract(CONTRACTS.stakingFactory, ABIS.stakingFactory, _read);
+    const pool = await f.poolOf(stakeToken);
+    return /^0x0{40}$/i.test(pool) ? null : pool;
+  } catch { return null; }
+}
+
+/// Read a pool's full state for `who`: total staked, the user's stake, and every reward asset with the
+/// user's live `earned` amount and the current stream rate (for APR display). Read-only, one multicall-free
+/// fan-out (pools are small). `assets[i]` uses STAKE_ETH for native ETH.
+export async function stakingInfo(pool, who) {
+  const addr = who || _account || ethers.ZeroAddress;
+  const s = new ethers.Contract(pool, ABIS.robinStaking, _read);
+  const [stakeToken, totalStaked, myStake, rewardTokens] = await Promise.all([
+    s.stakeToken(), s.totalStaked(), s.staked(addr), s.getRewardTokens(),
+  ]);
+  const rewards = await Promise.all(rewardTokens.map(async (asset) => {
+    const [earned, info] = await Promise.all([s.earned(addr, asset), s.rewardInfo(asset)]);
+    return {
+      asset,
+      isEth: asset.toLowerCase() === STAKE_ETH.toLowerCase(),
+      earned, // wei of that asset
+      rewardRate: info.rewardRate, // units/sec currently streaming (0 = idle)
+      periodFinish: Number(info.periodFinish),
+      pending: info.pending,
+    };
+  }));
+  return { pool, stakeToken, totalStaked, myStake, rewards };
+}
+
+/// Stake `amountWei` of the pool's stake token. Handles the ERC-20 approve (USDT-safe reset) then stake.
+export async function stakingStake(pool, amountWei) {
+  requireStaking();
+  if (!_signer) await connect();
+  await ensureOnChain();
+  const amount = BigInt(amountWei);
+  if (amount <= 0n) throw new Error("Enter an amount to stake.");
+  const s = new ethers.Contract(pool, ABIS.robinStaking, _signer);
+  const stakeToken = await s.stakeToken();
+  const erc = new ethers.Contract(stakeToken, ABIS.erc20, _signer);
+  const bal = await erc.balanceOf(_account);
+  if (bal < amount) throw new Error("You don't have that many tokens to stake.");
+  let cur = null;
+  try { cur = await erc.allowance(_account, pool); } catch { cur = null; }
+  if (cur === null || cur < amount) {
+    if (cur === null || cur > 0n) { const z = await erc.approve(pool, 0n, await legacyOverrides()); await z.wait(); }
+    const a = await erc.approve(pool, amount, await legacyOverrides()); await a.wait();
+  }
+  return guardedSend(s, "stake", [amount], 0n, "Stake");
+}
+
+/// Unstake `amountWei`. NO LOCK — always succeeds. WARNING: forfeits ALL unclaimed rewards (they re-stream to
+/// the stakers who stay). Callers MUST warn the user and offer "claim first". Returns the tx.
+export async function stakingUnstake(pool, amountWei) {
+  requireStaking();
+  if (!_signer) await connect();
+  await ensureOnChain();
+  const amount = BigInt(amountWei);
+  if (amount <= 0n) throw new Error("Enter an amount to unstake.");
+  const s = new ethers.Contract(pool, ABIS.robinStaking, _signer);
+  return guardedSend(s, "unstake", [amount], 0n, "Unstake");
+}
+
+/// Claim ONE reward asset (does NOT forfeit; leaves your stake in place). `asset` = STAKE_ETH for native ETH.
+export async function stakingClaim(pool, asset) {
+  requireStaking();
+  if (!_signer) await connect();
+  await ensureOnChain();
+  const s = new ethers.Contract(pool, ABIS.robinStaking, _signer);
+  return guardedSend(s, "claim", [asset], 0n, "Claim reward");
+}
+
+/// Claim every reward asset that currently has a non-zero balance. Skips a paused/blocked asset by claiming
+/// each singly (so one bad token can't strand the rest), waiting for each to confirm. Returns count claimed.
+export async function stakingClaimAll(pool, who) {
+  requireStaking();
+  const info = await stakingInfo(pool, who || _account);
+  let n = 0;
+  for (const r of info.rewards) {
+    if (r.earned > 0n) {
+      try { const tx = await stakingClaim(pool, r.asset); if (tx && tx.wait) await tx.wait(); n++; } catch { /* skip paused/blocked asset */ }
+    }
+  }
+  return n;
+}
+
 // expose a tiny global for the plain-HTML pages (no bundler)
 if (typeof window !== "undefined") {
   window.addEventListener("robinpad:ready", ensureDisconnectUI);
