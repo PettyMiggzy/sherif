@@ -68,11 +68,19 @@ export const CONTRACTS = {
   // the keeper (indexer) must also run with ROBIN_LIMIT set for orders to fill.
   robinLimit: "0xe1d37524E2992Aeb8943B229c42293264c8fA99C",
 
-  // The platform's buy-back token + its WETH pool (for links / a future buy widget).
+  // The platform's buy-back token ($ROBIN) + its WETH pool (for links / a future buy widget).
   // The above-default fee's 25% cut is paid to the platform, which buys+burns the
-  // platform token off-chain - the router does not swap it on-chain. TBD for Robin Labs.
-  platformToken: "",
+  // platform token. $ROBIN LABS launched on Robinhood Chain; 1,000,000,000 supply, 18 dp.
+  platformToken: "0x6696fe29288b586017e6f264c0091dba6c5ebeaf",
   platformPool: "",
+
+  // Staking — stake $ROBIN (or a launched coin) and earn a basket of ETH + real Robinhood
+  // Stock Tokens. StakingFactory mints one pool per stake token; RobinStaking is the pool;
+  // RewardConverter turns fee ETH into stock rewards for the liquid names. DEPLOY: fill in
+  // after deploy + verify; the staking UI is gated by isDeployed('stakingFactory') until then.
+  stakingFactory: "",
+  robinStaking: "", // the canonical $ROBIN pool (also discoverable via stakingFactory.poolOf(platformToken))
+  rewardConverter: "",
 
   // Multicall3 - the canonical read-batcher (same address on nearly every EVM chain;
   // verified deployed on Robinhood Chain). Used to collapse many independent view reads
@@ -83,6 +91,20 @@ export const CONTRACTS = {
   // never touches the factory. DEPLOY: fill in AFTER deploy + verify; isDeployed('disperse')
   // gates the airdrop tool + the dev-buy split until then.
   disperse: "0xBF2904b4e31F751441C85590EDF10D8a592A9a38",
+};
+
+// Robinhood Stock Tokens — the native tokenized equities/ETFs on Robinhood Chain (source of truth is
+// the on-chain asset registry; docs.robinhood.com/chain/contracts). These are standard ERC-20s with a
+// BLOCKLIST + pause model (like USDC) — NOT a KYC allowlist — so any wallet can hold/receive them, which
+// is what lets a pool stream them as staking rewards. `wethFee` is the V3 fee tier of the token/WETH pool
+// that actually holds liquidity (verified on-chain), used by RewardConverter to auto-convert fee ETH into
+// the reward; `wethFee: 0` means no liquid WETH pool yet (e.g. SGOV) → stream it pre-funded, no swap.
+export const STOCKS = {
+  SGOV: { address: "0x92FD66527192E3e61d4DDd13322Aa222DE86F9B5", name: "iShares 0-3M T-Bill", wethFee: 0 },
+  AAPL: { address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9", name: "Apple", wethFee: 500 },
+  NVDA: { address: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC", name: "NVIDIA", wethFee: 3000 },
+  TSLA: { address: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d", name: "Tesla", wethFee: 3000 },
+  SPY: { address: "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C", name: "SPDR S&P 500", wethFee: 500 },
 };
 
 // 1% pool tier - the fee is collected as Uniswap LP fees IN-PROTOCOL. There is
@@ -211,6 +233,28 @@ export const ABIS = {
     "function filledSlices(bytes32) view returns (uint256)",
     "function remainingSlices((address maker,address sellToken,address buyToken,uint256 sliceIn,uint256 minOut,uint256 slices,uint256 interval,uint256 expiry,uint256 salt) o) view returns (uint256)",
     "function execute((address maker,address sellToken,address buyToken,uint256 sliceIn,uint256 minOut,uint256 slices,uint256 interval,uint256 expiry,uint256 salt) o, bytes signature) returns (uint256)",
+  ],
+  // RobinStaking — no-lock, forfeit-to-stayers, multi-asset streaming pool. ETH reward asset is the
+  // sentinel 0xEeee…EEeE. stake() needs a prior approve(pool, amount) of the stake token.
+  robinStaking: [
+    "function stakeToken() view returns (address)",
+    "function totalStaked() view returns (uint256)",
+    "function staked(address) view returns (uint256)",
+    "function getRewardTokens() view returns (address[])",
+    "function earned(address user, address asset) view returns (uint256)",
+    "function earnedAll(address user) view returns (address[] assets, uint256[] amounts)",
+    "function rewardInfo(address) view returns (bool listed, uint32 duration, uint64 periodFinish, uint64 lastUpdateTime, uint256 rewardRate, uint256 rewardPerTokenStored, uint256 pending)",
+    "function stake(uint256 amount)",
+    "function unstake(uint256 amount)",
+    "function claim(address asset) returns (uint256)",
+    "function claimMany(address[] assets) returns (uint256[])",
+    "function ETH() view returns (address)",
+  ],
+  // StakingFactory — one pool per stake token. poolOf(token) is the canonical pool (0x0 if none yet).
+  stakingFactory: [
+    "function poolOf(address stakeToken) view returns (address)",
+    "function allPools(uint256) view returns (address)",
+    "function allPoolsLength() view returns (uint256)",
   ],
 };
 
