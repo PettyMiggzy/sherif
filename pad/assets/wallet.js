@@ -221,7 +221,18 @@ function friendly(err, label) {
   // user did anything wrong — the auto-graduate keeper will bond it the moment it settles. Tag it so the
   // caller can show a calm note (and re-gate the button) instead of a red failure. `NotReady` is only ever
   // emitted by graduate(), so this match is safe. (`err.revert?.name` catches the decoded custom error too.)
-  if (s.includes("notready") || s.includes("not ready") || err?.revert?.name === "NotReady") {
+  // Already bonded — with the auto-graduate keeper this is the COMMON result of a fallback click that lands a
+  // block after the keeper won. It's a success, not a failure; tag it so the caller shows a happy note.
+  if (err?.revert?.name === "AlreadyGraduated" || s.includes("alreadygraduated") || s.includes("already graduated")) {
+    const e2 = new Error("Already graduated ✓ — the Bond is live.");
+    e2.graduated = true;
+    return e2;
+  }
+  // Graduation race: spot drifted a hair off the ceiling between the check and the send. `NotReady` is a custom
+  // error (selector 0x9488aaa6); match the decoded name (works on 4663) OR the selector in the revert data for
+  // provider-independence. Tag it so the caller shows a calm note (and re-gates), not a red failure.
+  const data = (err?.data || err?.info?.error?.data || "").toString();
+  if (err?.revert?.name === "NotReady" || s.includes("notready") || s.includes("not ready") || data.startsWith("0x9488aaa6")) {
     const e2 = new Error("Not at the ceiling this instant — it auto-bonds the moment it settles there. Nothing was sent.");
     e2.notReady = true;
     return e2;

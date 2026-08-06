@@ -657,7 +657,8 @@ $('gradBtn').addEventListener('click', async () => {
     // NotReady = spot drifted a tick off the ceiling between the check and the send (the unavoidable
     // click-to-mine race). Not the user's fault and no gas spent (caught in pre-sim) — show a calm note
     // and re-gate the button off the live chain; the keeper will bond it the moment it settles.
-    if (e && (e.notReady || /not\s*ready/i.test(e.message || ''))) { setNote(e.message, ''); refreshStatsLive(); }
+    if (e && e.graduated) { setNote(e.message, 'ok'); refreshStatsLive(); setTimeout(loadCoin, 6000); }
+    else if (e && (e.notReady || /not\s*ready/i.test(e.message || ''))) { setNote(e.message, ''); refreshStatsLive(); }
     else setNote(e.message, 'err');
   }
 });
@@ -1448,7 +1449,10 @@ function renderBond(info){
     // button — a manual click here is the exact race that reverts NotReady; the keeper catches it instead.
     t.textContent = 'At the ceiling';
     lab.innerHTML = '<b>Curve full</b><span>auto-bonds the moment it settles</span>';
-    grad.style.display = 'none';
+    // Only hide on an AUTHORITATIVE render. On a snapshot render (readyAuthoritative false) leave the button
+    // as-is and let paintStats' pending live read set it — else a genuinely-ready coin's 12s poll would blink
+    // the button off for ~1s each cycle.
+    if (info.readyAuthoritative) grad.style.display = 'none';
   } else {
     t.textContent = pct + '% to the Bond';
     lab.innerHTML = '<span>Road to the Bond</span><b>' + pct + '%</b>';
