@@ -217,6 +217,15 @@ function friendly(err, label) {
     return new Error("The opening anti-snipe window caps buy size right now. Try a smaller amount or wait a minute.");
   if (s.includes("slippage") || s.includes("too little received") || s.includes("price"))
     return new Error("Price moved past your slippage. Raise slippage a touch or retry.");
+  // Graduation race: spot drifted a hair off the ceiling between the check and the send. Not an error the
+  // user did anything wrong — the auto-graduate keeper will bond it the moment it settles. Tag it so the
+  // caller can show a calm note (and re-gate the button) instead of a red failure. `NotReady` is only ever
+  // emitted by graduate(), so this match is safe. (`err.revert?.name` catches the decoded custom error too.)
+  if (s.includes("notready") || s.includes("not ready") || err?.revert?.name === "NotReady") {
+    const e2 = new Error("Not at the ceiling this instant — it auto-bonds the moment it settles there. Nothing was sent.");
+    e2.notReady = true;
+    return e2;
+  }
   return new Error(label ? `${label} failed: ${raw || "unknown error"}` : (raw || "Transaction failed."));
 }
 
@@ -879,6 +888,11 @@ export async function curveInfo(curve, token) {
   const wethPerToken = inBand ? priceFromSqrt(slot0.sqrtPriceX96, token) : null;
   return {
     graduated, ready, bond, dev, seedTime: Number(seedTime), pool: poolAddr, tick,
+    // `ready` here is the AUTHORITATIVE on-chain flag; `readyAuthoritative` lets the UI tell this apart from
+    // the indexer-snapshot shape (viewFromApi), which must never infer "ready" from progress. `atCeiling`
+    // means the bar is visually full but the chain hasn't flipped ready() — show "auto-bonding", not a button.
+    readyAuthoritative: true,
+    atCeiling: !graduated && progress >= 1 - 1e-9,
     mcapEth: wethPerToken != null ? wethPerToken * 1e9 : null, wethPerToken,
     progress, // position along the curve (0..1), sanitised
     gradTick: cl, startTick: st,

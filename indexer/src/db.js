@@ -255,6 +255,30 @@ export const coinsGraduatedSince = db.prepare(`
   SELECT token, symbol, pool, token0, start_tick, grad_tick, launch_block FROM coins
   WHERE graduated = 1 AND pool IS NOT NULL AND grad_block >= @from
 `);
+
+// ── auto-graduate keeper candidate sets ──────────────────────────────────────
+// The keeper only needs the curve address (curve.ready()/graduate() read the pool themselves); the DB
+// filters merely BOUND the working set — the authoritative gate is always the on-chain ready() call.
+// Near-ceiling coins (the common case): snapshot progress >= a threshold.
+export const gradCandidates = db.prepare(`
+  SELECT token, curve, symbol, progress FROM coins
+  WHERE graduated = 0 AND curve IS NOT NULL AND pool IS NOT NULL AND start_tick IS NOT NULL
+    AND progress >= @minProgress
+`);
+// Full sweep (run periodically) — every live curve, so a coin the snapshot missed still gets checked.
+export const liveCurvesAll = db.prepare(`
+  SELECT token, curve, symbol FROM coins
+  WHERE graduated = 0 AND curve IS NOT NULL AND pool IS NOT NULL AND start_tick IS NOT NULL
+`);
+// Fast-ramp catch: any live coin that traded since @since. A single mega-buy can ramp a coin to the
+// ceiling and retrace inside one indexer poll, before the progress snapshot ever crosses the threshold,
+// so we also seed candidates straight from recent trade activity.
+export const recentTradeCurves = db.prepare(`
+  SELECT DISTINCT c.token, c.curve, c.symbol FROM coins c
+  JOIN trades t ON t.token = c.token
+  WHERE c.graduated = 0 AND c.curve IS NOT NULL AND c.pool IS NOT NULL AND c.start_tick IS NOT NULL
+    AND t.ts >= @since
+`);
 // Coins whose graduation reward-epoch is not yet safely finalized (grad_ts within the last epoch +
 // finality window). Their pools must keep being scanned so post-graduation Uniswap sells (which bypass
 // PadRouter) are indexed BEFORE the poster finalizes that epoch's holder/trader weights from the trades

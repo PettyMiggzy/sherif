@@ -13,6 +13,7 @@
 import { ethers } from "ethers";
 import { CFG } from "./config.js";
 import { openOrders, cancelOrder, setFilled, bumpAttempts } from "./orders.js";
+import { runGradKeeper } from "./gradkeeper.js";
 
 const ABI = [
   "function execute((address maker,address sellToken,address buyToken,uint256 sliceIn,uint256 minOut,uint256 slices,uint256 interval,uint256 expiry,uint256 salt) o, bytes signature) returns (uint256)",
@@ -99,6 +100,11 @@ async function tick(contract, provider, feeBps) {
 }
 
 export async function runKeeper() {
+  // Auto-graduate keeper runs on KEEPER_KEY alone (it needs no RobinLimit deploy), so start it BEFORE the
+  // limit-order early-return. It self-disables unless KEEPER_KEY is set and GRAD_KEEPER!=0, and owns its
+  // own poll loop, so we fire-and-forget it and let the limit-order keeper proceed independently.
+  runGradKeeper().catch((e) => console.log("[grad] fatal:", (e && e.message) || e));
+
   if (!KEY || !/^0x[0-9a-f]{40}$/.test(CFG.robinLimit)) {
     console.log("[keeper] disabled (set KEEPER_KEY and ROBIN_LIMIT to run)");
     // Stay alive idle instead of exiting, so a `restart: unless-stopped` container doesn't crash-loop

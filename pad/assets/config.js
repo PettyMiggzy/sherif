@@ -201,6 +201,11 @@ export const ABIS = {
     "function gradTick() view returns (int24)",
     "function graduate()",
     "function collectFees() returns (uint256 wethFees, uint256 tokenFees)",
+    // Custom errors so ethers can DECODE a graduate() revert into a real name (not a blank "execution
+    // reverted"), which lets the UI show a calm "not at the ceiling yet" note for the NotReady race.
+    "error NotReady()",
+    "error NotSeeded()",
+    "error AlreadyGraduated()",
   ],
   erc20: [
     "function balanceOf(address) view returns (uint256)",

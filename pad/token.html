@@ -653,7 +653,13 @@ $('gradBtn').addEventListener('click', async () => {
     setNote('Graduated ✓ the Bond is live. ' + rc.hash.slice(0, 12) + '…', 'ok');
     refreshStatsLive();                          // stage flips to Graduated immediately
     setTimeout(loadCoin, 9000);                  // full reconcile once the indexer has it
-  } catch (e) { setNote(e.message, 'err'); }
+  } catch (e) {
+    // NotReady = spot drifted a tick off the ceiling between the check and the send (the unavoidable
+    // click-to-mine race). Not the user's fault and no gas spent (caught in pre-sim) — show a calm note
+    // and re-gate the button off the live chain; the keeper will bond it the moment it settles.
+    if (e && (e.notReady || /not\s*ready/i.test(e.message || ''))) { setNote(e.message, ''); refreshStatsLive(); }
+    else setNote(e.message, 'err');
+  }
 });
 
 // ── dev controls ──
@@ -1377,10 +1383,12 @@ function viewFromApi(c){
   const frac = (t) => (t == null || st == null) ? 0 : Math.max(0, Math.min(1, Math.abs(t - st) / span));
   const progress = (c.progress != null) ? c.progress : frac(c.lastTick);
   return {
-    // A coin graduates ONLY at the full ceiling (gradTick, ~4.2 ETH). Require real tick data before
-    // calling it "ready": if the indexer's one-shot geometry read hiccuped at launch, gradTick is null
-    // and frac()→0, which would otherwise make a fresh coin falsely show "Ready to graduate".
-    graduated: !!c.graduated, ready: !c.graduated && cl != null && st != null && progress >= 1 - 1e-9,
+    // NEVER infer "ready" from a snapshot: the indexer's progress can stay pinned at the ceiling after the
+    // chain's ready() has already flipped false — the exact stale-button trap that made a hand-click revert
+    // NotReady. "ready" is AUTHORITATIVE-only (curveInfo's live on-chain read). Here we only flag `atCeiling`
+    // so the UI shows "auto-bonding", never a doomed button. paintStats does one live read to resolve it.
+    graduated: !!c.graduated, ready: false, readyAuthoritative: false,
+    atCeiling: !c.graduated && cl != null && st != null && progress >= 1 - 1e-9,
     mcapEth: c.mcapEth != null ? c.mcapEth : null,
     wethPerToken: c.mcapEth != null ? c.mcapEth / 1e9 : null,
     progress,
@@ -1399,6 +1407,12 @@ function paintStats(view){
   $('stStage').textContent = view.graduated ? 'Graduated' : view.ready ? 'Ready' : 'Bonding';
   $('stStage').className = 'v' + (view.graduated ? ' g' : '');
   renderBond(view);
+  // Snapshot says we're pinned at the ceiling but we don't yet have the AUTHORITATIVE on-chain ready() —
+  // do ONE live read to resolve ready vs merely-at-ceiling, so the graduate button reflects the chain, not
+  // a stale snapshot (the stale-button trap). Self-terminates: curveInfo's view carries readyAuthoritative.
+  if (view.atCeiling && !view.readyAuthoritative && !view.graduated && COIN && COIN.curve && !DEMO) {
+    Pad.curveInfo(COIN.curve, TOKEN).then((v) => { if (v) paintStats(v); }).catch(() => {});
+  }
 }
 // Instant refresh from a LIVE chain read - used right after the user trades, before the
 // indexer has caught up, so MC/price move the moment their buy/sell confirms.
@@ -1425,9 +1439,16 @@ function renderBond(info){
   mark.style.display = 'none';
   s.textContent = 'Bonding up the curve. Graduation posts the Bond floor at the full ceiling (~4.2 ETH).';
   if (info.ready){
+    // AUTHORITATIVE on-chain ready() only. The button is now a FALLBACK — the keeper bonds it automatically.
     t.textContent = 'Ready to graduate';
-    lab.innerHTML = '<b>Ceiling reached</b><span>curve is full, post the Bond</span>';
+    lab.innerHTML = '<b>Ceiling reached</b><span>auto-bonding now — or post the Bond yourself</span>';
     grad.style.display = 'block';
+  } else if (info.atCeiling){
+    // Bar is full but the chain hasn't flipped ready() this instant (spot oscillating at the ceiling). No
+    // button — a manual click here is the exact race that reverts NotReady; the keeper catches it instead.
+    t.textContent = 'At the ceiling';
+    lab.innerHTML = '<b>Curve full</b><span>auto-bonds the moment it settles</span>';
+    grad.style.display = 'none';
   } else {
     t.textContent = pct + '% to the Bond';
     lab.innerHTML = '<span>Road to the Bond</span><b>' + pct + '%</b>';
