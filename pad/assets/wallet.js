@@ -867,11 +867,20 @@ export async function curveInfo(curve, token) {
   const st = Number(startTick), cl = Number(gradTick);
   const span = Math.abs(cl - st) || 1;
   const frac = (t) => Math.max(0, Math.min(1, Math.abs(t - st) / span)); // 0 at start … 1 at ceiling
-  const wethPerToken = priceFromSqrt(slot0.sqrtPriceX96, token);
+  // A non-graduated curve tick must sit within [gradTick, startTick] (± one span of slack). A read far
+  // outside that (a hiccupped slot0, or a flash micro-swap printing an extreme spot) is NOT real state:
+  // serving it would clamp progress to 100% (false "ready to graduate") and blow mcap into garbage. The
+  // stage is driven by the AUTHORITATIVE on-chain graduated()/ready() above, so here we only sanitise the
+  // cosmetic bar + mcap: cap progress below full unless truly ready, and drop an untrustworthy mcap.
+  const lo = Math.min(st, cl), hi = Math.max(st, cl);
+  const inBand = Number.isFinite(tick) && tick >= lo - span && tick <= hi + span;
+  // out-of-band spot while not truly ready: cap the bar just under full so it can never flash 100%
+  const progress = (!inBand && !ready) ? Math.min(frac(tick), 0.999) : frac(tick);
+  const wethPerToken = inBand ? priceFromSqrt(slot0.sqrtPriceX96, token) : null;
   return {
     graduated, ready, bond, dev, seedTime: Number(seedTime), pool: poolAddr, tick,
-    mcapEth: wethPerToken * 1e9, wethPerToken,
-    progress: frac(tick), // position along the curve (0..1)
+    mcapEth: wethPerToken != null ? wethPerToken * 1e9 : null, wethPerToken,
+    progress, // position along the curve (0..1), sanitised
     gradTick: cl, startTick: st,
   };
 }

@@ -32,6 +32,19 @@ function frac(tick, startTick, gradTick) {
   return Math.max(0, Math.min(1, Math.abs(tick - startTick) / span));
 }
 
+// A live curve tick MUST sit inside the curve's band: buys walk the tick from startTick down to the
+// graduation ceiling (gradTick), and a non-graduated pool can't legitimately be outside that range.
+// A read far beyond either end (a hiccupped slot0, or a flash micro-swap that momentarily prints an
+// extreme spot like Uniswap's MIN/MAX tick ±887272) is NOT real curve state. Persisting it would clamp
+// progress to 100% — falsely flashing "ready to graduate" — and blow mcap up to a garbage number. We
+// allow one full curve span of slack on each side (rounding / near-ceiling overshoot) and reject the rest.
+function tickInBand(tick, startTick, gradTick) {
+  if (!Number.isFinite(tick)) return false;
+  const lo = Math.min(startTick, gradTick), hi = Math.max(startTick, gradTick);
+  const span = (hi - lo) || 1;
+  return tick >= lo - span && tick <= hi + span;
+}
+
 // The primary RPC does all the work. When a DISTINCT backup is configured (RPC_BACKUP), wrap both in a
 // FallbackProvider so a primary outage or stall fails over to the backup instead of stalling the indexer.
 // The backup is priority 2 (quorum 1 = one good answer wins), so it is only touched when the primary
@@ -349,6 +362,11 @@ async function readSnapshotValues(g) {
     const p = new ethers.Contract(g.pool, POOL, provider);
     const slot0 = await withRetry(() => p.slot0(), "pool.slot0", 3);
     const tick = Number(slot0.tick);
+    if (!tickInBand(tick, g.start_tick, g.grad_tick)) {
+      // Out-of-band spot: discard, keep the last good snapshot rather than serving a fake 100%/garbage-mcap.
+      console.warn(`[indexer] discarding out-of-band tick ${tick} for ${g.token || g.pool} (band ${g.grad_tick}..${g.start_tick})`);
+      return null;
+    }
     const wethPerToken = priceFromSqrt(slot0.sqrtPriceX96, g.token0);
     return {
       last_tick: tick,
@@ -385,6 +403,10 @@ async function readSnapshotsBatch(entries) {
     if (!r) return;                 // per-pool failure: skip (matches the single-read try/catch)
     try {
       const tick = Number(r.tick);
+      if (!tickInBand(tick, e.g.start_tick, e.g.grad_tick)) {  // out-of-band spot: skip, keep last good snapshot
+        console.warn(`[indexer] discarding out-of-band tick ${tick} for ${e.token} (band ${e.g.grad_tick}..${e.g.start_tick})`);
+        return;
+      }
       const wethPerToken = priceFromSqrt(r.sqrtPriceX96, e.g.token0);
       out.set(e.token, { last_tick: tick, progress: frac(tick, e.g.start_tick, e.g.grad_tick), mcap_eth: wethPerToken * TOTAL_SUPPLY });
     } catch { /* skip malformed decode */ }
