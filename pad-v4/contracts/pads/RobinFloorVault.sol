@@ -94,7 +94,11 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         // strictly ABOVE the anchor (pure-currency0 region), so the wall sits just below the launch price.
         int24 lower = _alignUp(anchorTick + 1, tickSpacing_);
         int24 upper = lower + int24(int256(uint256(bandWidthSpacings))) * tickSpacing_;
-        if (upper > TickMath.maxUsableTick(tickSpacing_)) revert BadBand();
+        // [re-audit] `upper <= lower` also catches an int24 wrap from an absurd bandWidthSpacings (>=2^23)
+        // that would otherwise deploy an inverted, permanently-bricked band.
+        if (upper <= lower || lower < TickMath.minUsableTick(tickSpacing_) || upper > TickMath.maxUsableTick(tickSpacing_)) {
+            revert BadBand();
+        }
         floorTickLower = lower;
         floorTickUpper = upper;
     }
