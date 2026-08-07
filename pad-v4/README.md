@@ -10,8 +10,9 @@ Sibling to the untouched v3 pad in `../launchpad`. Full design: `ROBIN-V4-ARCHIT
 > dual staking, a USDG-yield ERC-4626 locked floor, and a tokenized-stock pad, all under one
 > immutable factory.
 
-## Status — Feature 1 (the spine) ✅ built & tested
+## Status — Features 1 & 2 ✅ built & tested (26 unit tests passing)
 
+**Feature 1 — the spine**
 | Contract | Role |
 |---|---|
 | `hooks/RobinFeeHook.sol` | **The heart.** afterSwap 3-way skim (exact-input only, additional not carved), O(1) holder accumulator, beforeSwap stock curb. Flags `0x00C4`, self-asserted. |
@@ -23,7 +24,12 @@ Sibling to the untouched v3 pad in `../launchpad`. Full design: `ROBIN-V4-ARCHIT
 | `core/PadFactory.sol` | Immutable one-tx launch orchestrator (ETH pad). |
 | `pads/PadToken.sol` | Fixed-supply ERC20, no owner/mint/pause after ctor. |
 
-**Next:** Feature 2 dual staking → Feature 3 RobinVault (USDG floor) → Feature 4 RobinBlue (stock pad).
+**Feature 2 — dual staking**
+| Contract | Role |
+|---|---|
+| `pads/DualStaking.sol` | Two-book "earn the other" streaming staking. Stake token **or** stock; each side streams a reward basket (ETH, the other asset, extra tokens). Audited RobinStaking engine per side (forfeit-to-stayers, empty-pool pause, measured-delta) + SheriffStaking anti-JIT hold + bounded boost (≤4x, oracle try/catch) + `fundTokenPushed` hook path. Reports the weighted side's weight to `RobinFeeHook` so the 3-way holder cut streams to stakers. |
+
+**Next:** Feature 3 RobinVault (USDG floor) → Feature 4 RobinBlue (stock pad).
 
 ## The A3 gate (P0)
 
