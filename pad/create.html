@@ -229,13 +229,18 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
       <!-- Split the dev buy: after launch, auto-send shares of the just-bought tokens to up to 6 wallets.
            Runs as its own step right after the launch tx (one approval + one send via the Disperse helper). -->
       <div class="field" id="splitCard" style="display:none">
-        <label>Split your dev buy <span class="hint">auto-send shares to up to 6 wallets, right after launch</span></label>
+        <label>Split your dev buy <span class="hint">auto-send shares to up to 600 wallets, right after launch</span></label>
         <div class="devbuy">
           <div id="splitRows"></div>
           <div class="sc" style="margin-top:10px">
             <button type="button" id="splitAdd" style="flex:1">+ Add wallet</button>
             <span class="amt" id="splitSum">0%</span>
           </div>
+          <div class="sc" style="margin-top:10px;gap:8px">
+            <input type="file" id="splitCsv" accept=".csv,.txt,text/csv,text/plain" style="font-size:.76rem;color:var(--ink-faint)" />
+            <span class="hint" style="font-size:.72rem">or upload a CSV — <span class="mono">address,percent</span> (address-only = equal split) · up to 600</span>
+          </div>
+          <div id="splitBulkInfo" class="hint" style="display:none;margin-top:6px"></div>
           <p id="splitNote">Optional. Give each wallet a share of your dev-buy tokens; whatever you don't assign stays in your wallet. It runs right after launch (one approval + one send), so it never delays the launch itself.</p>
         </div>
       </div>
@@ -393,17 +398,20 @@ lockSync();
 // AFTER launch confirms (module handler), so it never delays the launch tx. ──
 (function(){
   const rowsEl=document.getElementById('splitRows'), sumEl=document.getElementById('splitSum'), addBtn=document.getElementById('splitAdd');
-  if(!rowsEl||!addBtn) return; const MAX=6;
+  if(!rowsEl||!addBtn) return; const MAX=600;
+  const csvEl=document.getElementById('splitCsv'), infoEl=document.getElementById('splitBulkInfo');
+  let bulk=null; // when a CSV is loaded, [{addr,pct}] supersedes the manual rows
   const count=()=>rowsEl.querySelectorAll('.splitrow').length;
   function recount(){
     let sum=0; rowsEl.querySelectorAll('.splitPct').forEach(i=>{ sum+=Math.max(0,parseFloat(i.value)||0); });
     sum=Math.round(sum*100)/100; const over=sum>100;
     sumEl.textContent = sum + '%' + (over ? ' · over 100%!' : (sum>0 ? ' · '+ (Math.round((100-sum)*100)/100) +'% stays with you' : ''));
     sumEl.style.color = over ? 'var(--red,#ff5a52)' : '';
-    addBtn.disabled = count()>=MAX; addBtn.textContent = count()>=MAX ? 'Max 6 wallets' : '+ Add wallet';
+    addBtn.disabled = count()>=MAX; addBtn.textContent = count()>=MAX ? 'Max 600 wallets' : '+ Add wallet';
   }
   function addRow(){
     if(count()>=MAX) return;
+    if(bulk){ bulk=null; if(infoEl) infoEl.style.display='none'; } // adding a row by hand clears a loaded CSV
     const d=document.createElement('div'); d.className='splitrow'; d.style.cssText='display:flex;gap:8px;margin-top:8px;align-items:center';
     d.innerHTML='<input class="inp splitAddr" placeholder="0x… wallet" autocomplete="off" spellcheck="false" style="flex:1;font-family:var(--mono);font-size:.82rem" />'
       +'<input class="inp splitPct" type="number" min="1" max="100" step="1" placeholder="%" style="width:82px;font-family:var(--mono)" />'
@@ -413,6 +421,29 @@ lockSync();
   rowsEl.addEventListener('input', recount);
   rowsEl.addEventListener('click',(e)=>{ const x=e.target.closest('.splitDel'); if(x){ x.closest('.splitrow').remove(); recount(); } });
   addBtn.addEventListener('click', addRow);
+  // CSV upload → bulk mode: "address" or "address,percent" per line. Header/junk lines are dropped.
+  // Address-only lists split 100% equally; explicit percents are used as-is (must total <= 100%).
+  csvEl && csvEl.addEventListener('change', async (e) => {
+    const f = e.target.files && e.target.files[0]; if(!f) return;
+    const say=(m,bad)=>{ if(infoEl){ infoEl.textContent=m; infoEl.style.color=bad?'var(--red,#ff5a52)':'var(--lime)'; infoEl.style.display='block'; } };
+    try{
+      const rows=[]; let hasPct=false;
+      (await f.text()).split(/\r?\n/).forEach(line=>{
+        const p=line.trim().split(/[\s,]+/).filter(Boolean);
+        if(!/^0x[0-9a-fA-F]{40}$/.test(p[0]||'')) return;
+        const pct=p.length>1?parseFloat(p[1]):NaN;
+        if(Number.isFinite(pct)&&pct>0) hasPct=true;
+        rows.push({addr:p[0],pct});
+      });
+      if(!rows.length){ bulk=null; return say('No "0x… wallet" rows found in that file.', true); }
+      if(rows.length>MAX){ bulk=null; return say(`Too many wallets (${rows.length}); max ${MAX}.`, true); }
+      if(!hasPct){ const each=Math.floor((100/rows.length)*1e6)/1e6; rows.forEach(x=>x.pct=each); }
+      const total=Math.round(rows.reduce((s,x)=>s+(x.pct>0?x.pct:0),0)*100)/100;
+      bulk=rows; rowsEl.innerHTML=''; recount(); // CSV supersedes any manual rows
+      say(`${rows.length} wallets loaded · ${total}% of your dev buy`+(total>100?' · OVER 100%!':''), total>100);
+    }catch(err){ bulk=null; say('Could not read that file: '+(err.message||err), true); }
+    e.target.value='';
+  });
   // Validated spec for the launch handler. Returns null when unused; THROWS a friendly
   // message on a bad address / percent / over-100 so the handler can abort BEFORE launching.
   window.__splitSpec = () => {
@@ -422,12 +453,14 @@ lockSync();
     if(!window.__disperseLive) return null;
     const card=document.getElementById('splitCard');
     if(card && card.style.display === 'none') return null;
-    const rows=[...rowsEl.querySelectorAll('.splitrow')].map(r=>({
-      addr:(r.querySelector('.splitAddr').value||'').trim(),
-      pct:Math.max(0, parseFloat(r.querySelector('.splitPct').value)||0),
-    })).filter(x=>x.addr||x.pct);
+    // A loaded CSV supersedes the manual rows.
+    const rows=((bulk && bulk.length) ? bulk.map(r=>({addr:(r.addr||'').trim(), pct:Math.max(0, r.pct||0)}))
+      : [...rowsEl.querySelectorAll('.splitrow')].map(r=>({
+          addr:(r.querySelector('.splitAddr').value||'').trim(),
+          pct:Math.max(0, parseFloat(r.querySelector('.splitPct').value)||0),
+        }))).filter(x=>x.addr||x.pct);
     if(!rows.length) return null;
-    if(rows.length>MAX) throw new Error('Split: max 6 wallets.');
+    if(rows.length>MAX) throw new Error('Split: max '+MAX+' wallets.');
     let total=0;
     for(const r of rows){
       if(!/^0x[0-9a-fA-F]{40}$/.test(r.addr)) throw new Error('Split: a wallet address is invalid.');

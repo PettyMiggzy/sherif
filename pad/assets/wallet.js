@@ -128,7 +128,7 @@ function markDisconnected(on) { try { on ? localStorage.setItem(DISC_KEY, "1") :
 // Max recipients per disperse tx. The contract allows 600, but this chain's per-tx gas ceiling
 // (~16.7M) can't fit ~500+ fresh-recipient transfers, so cap the UI well under that. Exported so
 // the airdrop page enforces the SAME number instead of the contract's un-reachable 600.
-export const DISPERSE_MAX_PER_TX = 300;
+export const DISPERSE_MAX_PER_TX = 600; // matches the Disperse contract's MAX_RECIPIENTS
 if (typeof window !== "undefined") {
   window.addEventListener("eip6963:announceProvider", (e) => {
     const d = e.detail;
