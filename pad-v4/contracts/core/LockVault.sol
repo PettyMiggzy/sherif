@@ -26,7 +26,8 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
 
     IPositionManager public immutable positionManager;
     IFeeWalletRegistry public immutable feeRegistry; // platform treasury = single timelocked source
-    address public immutable factory;
+    address public immutable initializer; // bootstrap deployer; may set `factory` exactly once
+    address public factory; // set once at bootstrap, then permanently frozen (effectively immutable)
 
     struct Lock {
         bool registered;
@@ -48,6 +49,8 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
 
     error NotFactory();
     error NotPositionManager();
+    error NotInitializer();
+    error FactoryAlreadySet();
     error AlreadyRegistered();
     error NotRegistered();
     error InvalidCreatorFee();
@@ -55,13 +58,24 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
     error NothingToClaim();
     error PayoutFailed();
 
-    constructor(address positionManager_, address feeRegistry_, address factory_) {
-        if (positionManager_ == address(0) || feeRegistry_ == address(0) || factory_ == address(0)) {
-            revert ZeroAddress();
-        }
+    event FactorySet(address indexed factory);
+
+    constructor(address positionManager_, address feeRegistry_) {
+        if (positionManager_ == address(0) || feeRegistry_ == address(0)) revert ZeroAddress();
         positionManager = IPositionManager(positionManager_);
         feeRegistry = IFeeWalletRegistry(feeRegistry_);
+        initializer = msg.sender;
+    }
+
+    /// @notice Bind the factory exactly once at bootstrap. Breaks the factory↔vault ctor cycle
+    /// (the factory ctor needs the vault address; the vault only needs the factory address for the
+    /// `registerLaunch` guard). After this one call `factory` is permanently frozen.
+    function setFactory(address factory_) external {
+        if (msg.sender != initializer) revert NotInitializer();
+        if (factory != address(0)) revert FactoryAlreadySet();
+        if (factory_ == address(0)) revert ZeroAddress();
         factory = factory_;
+        emit FactorySet(factory_);
     }
 
     /// @notice Bind a locked position's creator/fee/currencies. Called by the factory in the
