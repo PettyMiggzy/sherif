@@ -10,7 +10,12 @@ Sibling to the untouched v3 pad in `../launchpad`. Full design: `ROBIN-V4-ARCHIT
 > dual staking, a USDG-yield ERC-4626 locked floor, and a tokenized-stock pad, all under one
 > immutable factory.
 
-## Status — Features 1 & 2 ✅ built & tested (26 unit tests passing)
+## Status — Features 1 & 2 ✅ built & tested (40 unit tests + 2 live-fork tests passing)
+
+Coverage includes adversarial cases: unregistered-pool inertness, the D2 guarded-take (a
+blocklisted stock fee currency skips the skim instead of bricking the swap), both-leg fee accrual,
+the beforeSwap stock curb, bad-config rejection, and — on staking — partial unstake, empty-pool
+pause→kickstart, forfeiture-without-window-reset (anti-grief), and rewarder gating.
 
 **Feature 1 — the spine**
 | Contract | Role |
