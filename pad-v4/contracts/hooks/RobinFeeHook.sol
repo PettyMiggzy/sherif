@@ -84,11 +84,15 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     error BadTax();
     error BadShares();
     error NotCreator();
+    error NotPlatform();
+    error FloorRecipientAlreadySet();
     error ZeroAddress();
     error NoFloorRecipient();
     error NothingToClaim();
     error PayoutFailed();
     error CorporateActionCurb();
+
+    event FloorRecipientSet(PoolId indexed id, address recipient);
 
     constructor(IPoolManager _pm, address _factory, IFeeWalletRegistry _feeRegistry) BaseHook(_pm) {
         if (_factory == address(0) || address(_feeRegistry) == address(0)) revert ZeroAddress();
@@ -259,6 +263,20 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     // --------------------------------------------------------------------- //
     //                         creator slot repoint                          //
     // --------------------------------------------------------------------- //
+
+    /// @notice Wire the floor vault for a pool exactly ONCE (from unset), by the platform. The vault
+    /// is deployed after the pad (its ctor reads the live pool), so it can't be known at registerPool;
+    /// this lets the platform point the carve at it, then it is permanently frozen. Any carve that
+    /// parked in `floorOwed` before wiring becomes claimable to the vault afterwards.
+    function setFloorRecipient(PoolId id, address recipient) external {
+        if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
+        PoolConfig storage c = config[id];
+        if (!c.registered) revert NotRegistered();
+        if (c.floorRecipient != address(0)) revert FloorRecipientAlreadySet();
+        if (recipient == address(0)) revert ZeroAddress();
+        c.floorRecipient = recipient;
+        emit FloorRecipientSet(id, recipient);
+    }
 
     function startCreatorRepoint(PoolId id, address pending) external {
         PoolConfig storage c = config[id];

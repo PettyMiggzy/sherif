@@ -49,6 +49,17 @@ describe("LockVault — collect-only, locked forever, routes fees platform/staki
       .to.be.revertedWithCustomError(vault, "AlreadyRegistered");
   });
 
+  it("setStakingRecipient is platform-only and one-shot", async () => {
+    // platform wallet is `other` (the registry's initial wallet)
+    await vault.connect(factory).registerLaunch(2, ZERO, c1.address, ZERO); // unset at launch
+    await expect(vault.connect(factory).setStakingRecipient(2, staking.address))
+      .to.be.revertedWithCustomError(vault, "NotPlatform");
+    await vault.connect(other).setStakingRecipient(2, staking.address);
+    expect((await vault.locks(2)).stakingRecipient).to.equal(staking.address);
+    await expect(vault.connect(other).setStakingRecipient(2, factory.address))
+      .to.be.revertedWithCustomError(vault, "StakingRecipientAlreadySet");
+  });
+
   it("claims revert with NothingToClaim before any fees are collected", async () => {
     await vault.connect(factory).registerLaunch(1, ZERO, c1.address, staking.address);
     await expect(vault.claimPlatform(1, 0)).to.be.revertedWithCustomError(vault, "NothingToClaim");

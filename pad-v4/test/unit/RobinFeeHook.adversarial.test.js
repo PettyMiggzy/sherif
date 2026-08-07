@@ -176,6 +176,18 @@ describe("RobinFeeHook — adversarial", () => {
     await expect(hook.claimFloor(id, 0)).to.be.revertedWithCustomError(hook, "NoFloorRecipient");
   });
 
+  it("setFloorRecipient is platform-only and one-shot", async () => {
+    const hook = await deployHook(pm, dep, reg, factory);
+    const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    const id = poolIdOf({ currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: await hook.getAddress() });
+    await hook.connect(factory).registerPool(id, CFG(ZERO, await tok.getAddress(), creator.address)); // floorRecipient = 0
+    // platform wallet is `platform` (registry initial wallet)
+    await expect(hook.connect(mallory).setFloorRecipient(id, mallory.address)).to.be.revertedWithCustomError(hook, "NotPlatform");
+    await hook.connect(platform).setFloorRecipient(id, mallory.address);
+    expect((await hook.config(id)).floorRecipient).to.equal(mallory.address);
+    await expect(hook.connect(platform).setFloorRecipient(id, creator.address)).to.be.revertedWithCustomError(hook, "FloorRecipientAlreadySet");
+  });
+
   it("creator repoint is 2-step and creator-only", async () => {
     const hook = await deployHook(pm, dep, reg, factory);
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);

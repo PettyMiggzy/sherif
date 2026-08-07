@@ -48,7 +48,9 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
     error NotFactory();
     error NotPositionManager();
     error NotInitializer();
+    error NotPlatform();
     error FactoryAlreadySet();
+    error StakingRecipientAlreadySet();
     error AlreadyRegistered();
     error NotRegistered();
     error ZeroAddress();
@@ -56,6 +58,7 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
     error PayoutFailed();
 
     event FactorySet(address indexed factory);
+    event StakingRecipientSet(uint256 indexed tokenId, address recipient);
 
     constructor(address positionManager_, address feeRegistry_) {
         if (positionManager_ == address(0) || feeRegistry_ == address(0)) revert ZeroAddress();
@@ -82,6 +85,19 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
         locks[tokenId] =
             Lock({registered: true, currency0: currency0, currency1: currency1, stakingRecipient: stakingRecipient});
         emit LaunchRegistered(tokenId, stakingRecipient);
+    }
+
+    /// @notice Wire a launch's staking recipient exactly ONCE (from unset), by the platform. The pad's
+    /// staking pool is deployed after the launch, so it can't be known at registerLaunch; this points
+    /// the token-leg LP fee at it, then it is permanently frozen.
+    function setStakingRecipient(uint256 tokenId, address recipient) external {
+        if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
+        Lock storage lk = locks[tokenId];
+        if (!lk.registered) revert NotRegistered();
+        if (lk.stakingRecipient != address(0)) revert StakingRecipientAlreadySet();
+        if (recipient == address(0)) revert ZeroAddress();
+        lk.stakingRecipient = recipient;
+        emit StakingRecipientSet(tokenId, recipient);
     }
 
     /// @notice Collect the locked position's accrued LP fees (a zero-liquidity decrease poke) into this
