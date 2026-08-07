@@ -47,6 +47,11 @@ async function main() {
   await tx.wait();
   console.log(`  lockVault.setFactory -> ${await factory.getAddress()}\n`);
 
+  // Staking: one factory spins up a stake-to-earn pool for ANY token (5% claim fee, no lock).
+  const CLAIM_FEE_BPS = Number(process.env.STAKING_CLAIM_FEE_BPS || 500); // 5%
+  const stakingFactory = await legacyDeploy("StakingFactory", [platform, deployer.address, CLAIM_FEE_BPS]);
+  console.log("");
+
   const out = {
     chainId: Number(network.config.chainId || 4663),
     deployer: deployer.address,
@@ -59,6 +64,8 @@ async function main() {
     feeWalletRegistry: await reg.getAddress(),
     lockVault: await lockVault.getAddress(),
     padFactory: await factory.getAddress(),
+    stakingFactory: await stakingFactory.getAddress(),
+    stakingClaimFeeBps: CLAIM_FEE_BPS,
   };
   const file = path.join(__dirname, "..", "deploy.local.json");
   fs.writeFileSync(file, JSON.stringify(out, null, 2));
