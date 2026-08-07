@@ -45,6 +45,10 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
 
     address public immutable factory;
     IFeeWalletRegistry public immutable feeRegistry;
+    /// @dev The pad token this hook was minted for. Included in the ctor so each pad's hook init-code
+    /// (and therefore its mined CREATE2 address) is UNIQUE — otherwise every launch from a factory would
+    /// build byte-identical init-code and the second launch would collide on AlreadyDeployed. [audit]
+    address public immutable pad;
 
     struct PoolConfig {
         bool registered;
@@ -91,13 +95,15 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     error NothingToClaim();
     error PayoutFailed();
     error CorporateActionCurb();
+    error ExactOutputNotSupported();
 
     event FloorRecipientSet(PoolId indexed id, address recipient);
 
-    constructor(IPoolManager _pm, address _factory, IFeeWalletRegistry _feeRegistry) BaseHook(_pm) {
-        if (_factory == address(0) || address(_feeRegistry) == address(0)) revert ZeroAddress();
+    constructor(IPoolManager _pm, address _factory, IFeeWalletRegistry _feeRegistry, address _padToken) BaseHook(_pm) {
+        if (_factory == address(0) || address(_feeRegistry) == address(0) || _padToken == address(0)) revert ZeroAddress();
         factory = _factory;
         feeRegistry = _feeRegistry;
+        pad = _padToken;
     }
 
     // --------------------------------------------------------------------- //
@@ -134,9 +140,11 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     //                              beforeSwap                               //
     // --------------------------------------------------------------------- //
 
-    /// @notice Stock corporate-action curb only [D4]. For ETH/USDG pads (guardWindow==0) this is a
-    /// single SLOAD + return. The adapter read is try/caught so a broken adapter can never freeze trading.
-    function beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
+    /// @notice Two jobs: (1) [audit H1] REJECT exact-output swaps on registered pads, so the directional
+    /// trade tax cannot be dodged — the afterSwap skim is exact-input only, and an untaxed exact-output
+    /// path would let any aggregator pay 0% and fund no floor. Pad swaps must be exact-input. (2) the stock
+    /// corporate-action curb [D4]. The adapter read is try/caught so a broken adapter can't freeze trading.
+    function beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         external
         view
         override
@@ -144,6 +152,8 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         PoolConfig storage c = config[key.toId()];
+        // exact-input == amountSpecified < 0; anything else (exact-output) is untaxable → reject on pads.
+        if (c.registered && params.amountSpecified >= 0) revert ExactOutputNotSupported();
         if (c.guardWindow > 0 && c.quoteIsStock && c.guardAdapter != address(0)) {
             uint256 ea = _scheduledEffectiveAt(c.guardAdapter);
             if (ea != 0) {

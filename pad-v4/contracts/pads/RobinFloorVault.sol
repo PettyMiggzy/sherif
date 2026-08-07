@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
@@ -32,6 +33,7 @@ import {IStateView} from "@uniswap/v4-periphery/src/interfaces/IStateView.sol";
 contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
+    using SafeERC20 for IERC20;
 
     enum Op {
         ADD,
@@ -72,6 +74,7 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         uint24 fee_,
         int24 tickSpacing_,
         IHooks hooks_,
+        int24 anchorTick, // the pad's intended launch tick — the band anchors here, NOT to live spot
         uint24 bandWidthSpacings // how many tickSpacings wide the wall is (>=1)
     ) {
         if (poolManager_ == address(0) || stateView_ == address(0) || feeRecipient_ == address(0)) revert ZeroAddress();
@@ -85,9 +88,11 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         tickSpacing = tickSpacing_;
         hooks = hooks_;
 
-        // Place the band in the pure-currency0 region: the first spacing boundary strictly ABOVE spot.
-        (, int24 tick,,) = IStateView(stateView_).getSlot0(_key(currency0_, currency1_, fee_, tickSpacing_, hooks_).toId());
-        int24 lower = _alignUp(tick + 1, tickSpacing_);
+        // [audit L1] Anchor the band to an EXPLICIT launch tick the platform passes — never to a live
+        // getSlot0 read, which an attacker could push right before the (non-atomic) vault deploy to
+        // permanently mis-place the add-only, no-remove wall. The band is the first spacing boundary
+        // strictly ABOVE the anchor (pure-currency0 region), so the wall sits just below the launch price.
+        int24 lower = _alignUp(anchorTick + 1, tickSpacing_);
         int24 upper = lower + int24(int256(uint256(bandWidthSpacings))) * tickSpacing_;
         if (upper > TickMath.maxUsableTick(tickSpacing_)) revert BadBand();
         floorTickLower = lower;
@@ -166,7 +171,7 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
                 poolManager.settle{value: owed}();
             } else {
                 poolManager.sync(currency);
-                IERC20(Currency.unwrap(currency)).transfer(address(poolManager), owed);
+                IERC20(Currency.unwrap(currency)).safeTransfer(address(poolManager), owed); // [audit L2]
                 poolManager.settle();
             }
         } else if (amt > 0) {

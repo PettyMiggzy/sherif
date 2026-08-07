@@ -32,7 +32,7 @@ describe("SIM — fee conservation over many buys & sells", () => {
     const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
     const HookF = await ethers.getContractFactory("RobinFeeHook");
-    const initCode = ethers.concat([HookF.bytecode, abi.encode(["address", "address", "address"], [await pm.getAddress(), factory.address, await reg.getAddress()])]);
+    const initCode = ethers.concat([HookF.bytecode, abi.encode(["address", "address", "address", "address"], [await pm.getAddress(), factory.address, await reg.getAddress(), await tok.getAddress()])]);
     const { salt, addr } = mineHookSalt(await dep.getAddress(), ethers.keccak256(initCode));
     await dep.deploy(salt, initCode);
     const hook = HookF.attach(addr);
@@ -108,7 +108,7 @@ describe("SIM — the floor only ever grows and absorbs dumps", () => {
     await mod.connect(lp).modifyLiquidity(key, { tickLower: -12000, tickUpper: 12000, liquidityDelta: 10n ** 19n, salt: ethers.ZeroHash }, "0x", { value: ethers.parseEther("500") });
 
     const vault = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), platform.address, ZERO, await tok.getAddress(), 3000, 60, ZERO, 20
+      await pm.getAddress(), await stateView.getAddress(), platform.address, ZERO, await tok.getAddress(), 3000, 60, ZERO, 0, 20
     );
     const vaultAddr = await vault.getAddress();
 

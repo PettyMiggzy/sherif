@@ -30,12 +30,6 @@ describe("PadFactory — full ETH-pad launch on live 0x8366", function () {
     );
     await lockVault.setFactory(await factory.getAddress());
 
-    // mine the hook salt against the exact init-code the factory will build
-    const HookF = await ethers.getContractFactory("RobinFeeHook");
-    const initCode = hookInitCode(HookF.bytecode, POOL_MANAGER, await factory.getAddress(), await reg.getAddress());
-    const { salt: hookSalt } = mineHookSalt(await dep.getAddress(), initCode);
-    const tokenSalt = ethers.id("robin-blue-1");
-
     const cfg = {
       name: "Robin Test", symbol: "RTEST", decimals: 18,
       supply: 10n ** 24n, lpTokenAmount: 5n * 10n ** 23n,
@@ -43,6 +37,20 @@ describe("PadFactory — full ETH-pad launch on live 0x8366", function () {
       buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000,
       creator: creator.address, floorRecipient: ethers.ZeroAddress, stakingRecipient: ethers.ZeroAddress,
     };
+    const tokenSalt = ethers.id("robin-blue-1");
+
+    // predict the token address (deployed by the factory via CREATE2) so we can build the hook init-code
+    const TokenF = await ethers.getContractFactory("PadToken");
+    const tokenInit = ethers.concat([
+      TokenF.bytecode,
+      abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()]),
+    ]);
+    const predictedToken = ethers.getCreate2Address(await dep.getAddress(), tokenSalt, ethers.keccak256(tokenInit));
+
+    // mine the hook salt against the exact init-code the factory will build (includes the token)
+    const HookF = await ethers.getContractFactory("RobinFeeHook");
+    const initCode = hookInitCode(HookF.bytecode, POOL_MANAGER, await factory.getAddress(), await reg.getAddress(), predictedToken);
+    const { salt: hookSalt } = mineHookSalt(await dep.getAddress(), initCode);
 
     const seedEth = ethers.parseEther("10");
     const ret = await factory.launch.staticCall(cfg, tokenSalt, hookSalt, { value: seedEth });
@@ -62,8 +70,10 @@ describe("PadFactory — full ETH-pad launch on live 0x8366", function () {
     const posm = await ethers.getContractAt("IPositionManagerMinimal", POSITION_MANAGER);
     expect(await posm.ownerOf(lpTokenId)).to.equal(await lockVault.getAddress());
 
-    // creator received the non-LP token remainder
+    // creator received the non-LP token remainder (>= supply - lpTokenAmount, since the seed may
+    // consume less than lpTokenAmount when the ETH leg binds — M1 fix routes the true surplus)
+    expect(token).to.equal(predictedToken);
     const tokenC = await ethers.getContractAt("PadToken", token);
-    expect(await tokenC.balanceOf(creator.address)).to.equal(cfg.supply - cfg.lpTokenAmount);
+    expect(await tokenC.balanceOf(creator.address)).to.be.gte(cfg.supply - cfg.lpTokenAmount);
   });
 });

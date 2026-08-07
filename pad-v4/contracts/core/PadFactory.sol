@@ -128,9 +128,11 @@ contract PadFactory {
         if (token <= address(0)) revert TokenMisordered(); // defensive; any address > 0
 
         // 2) deploy the hook at its mined, flag-correct address
+        // token is part of the hook's init-code so each pad's hook address is unique (no second-launch
+        // collision). token was deployed just above, so its address is known here. [audit]
         hook = deployer.deploy(
             hookSalt,
-            abi.encodePacked(type(RobinFeeHook).creationCode, abi.encode(poolManager, address(this), feeRegistry))
+            abi.encodePacked(type(RobinFeeHook).creationCode, abi.encode(poolManager, address(this), feeRegistry, token))
         );
         // cross-check both the mined flags and the hook's own declared REQUIRED_FLAGS [G1]
         if (uint160(hook) & 0x3FFF != HOOK_FLAGS) revert HookFlagsMismatch();
@@ -171,7 +173,11 @@ contract PadFactory {
         // 6) register the lock, distribute the remainder, refund ETH dust
         lockVault.registerLaunch(lpTokenId, currency0, currency1, cfg.stakingRecipient);
 
-        uint256 remainder = cfg.supply - cfg.lpTokenAmount;
+        // [audit M1] Send the creator whatever token the factory actually still holds — the seed mint
+        // consumes min(liquidity0, liquidity1) worth, so when the ETH leg binds it pulls LESS than
+        // lpTokenAmount and the surplus stays here. Using the live balance (not supply - lpTokenAmount)
+        // ensures no token is ever silently stranded in the factory.
+        uint256 remainder = IERC20(token).balanceOf(address(this));
         if (remainder > 0) IERC20(token).transfer(cfg.creator, remainder);
 
         uint256 dust = address(this).balance;
@@ -224,6 +230,11 @@ contract PadFactory {
         uint256 before = positionManager.nextTokenId();
         positionManager.modifyLiquidities{value: msg.value}(abi.encode(actions, params), block.timestamp);
         tokenId = before; // the id just minted (nextTokenId was `before`, now `before+1`)
+
+        // [audit L4] Revoke the seed approvals — the mint pulls only `used <= lpTokenAmount`, leaving a
+        // dangling max-expiry Permit2 grant otherwise. Zero both so no standing authority remains.
+        permit2.approve(Currency.unwrap(currency1), address(positionManager), 0, 0);
+        IERC20(Currency.unwrap(currency1)).approve(address(permit2), 0);
     }
 
     receive() external payable {}

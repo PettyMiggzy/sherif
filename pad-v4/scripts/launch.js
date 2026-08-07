@@ -55,11 +55,19 @@ async function main() {
 
   const factory = await ethers.getContractAt("PadFactory", d.padFactory);
   const HookF = await ethers.getContractFactory("RobinFeeHook");
+  const abi = ethers.AbiCoder.defaultAbiCoder();
 
-  // 1) mine the hook salt against the exact init-code the factory builds
-  const initCode = hookInitCode(HookF.bytecode, d.poolManager, d.padFactory, d.feeWalletRegistry);
+  // 1) predict the token CREATE2 address (factory deploys it), then mine the hook salt against the
+  //    exact init-code the factory builds — which now includes the token so each hook is unique.
+  const tokenSalt = ethers.id(`${cfg.symbol}-${cfg.name}-${d.padFactory}-${process.env.SALT_NONCE || "0"}`);
+  const TokenF = await ethers.getContractFactory("PadToken");
+  const tokenInit = ethers.concat([
+    TokenF.bytecode,
+    abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, d.padFactory]),
+  ]);
+  const predictedToken = ethers.getCreate2Address(d.deterministicDeployer, tokenSalt, ethers.keccak256(tokenInit));
+  const initCode = hookInitCode(HookF.bytecode, d.poolManager, d.padFactory, d.feeWalletRegistry, predictedToken);
   const { salt: hookSalt } = mineHookSalt(d.deterministicDeployer, initCode);
-  const tokenSalt = ethers.id(`${cfg.symbol}-${Date.now ? "" : ""}${cfg.name}-${d.padFactory}`);
 
   // 2) launch the pad atomically
   console.log(`Launching ${cfg.name} (${cfg.symbol})…`);
@@ -68,10 +76,13 @@ async function main() {
   const { token, hook, poolId, lpTokenId } = ev.args;
   console.log(`  token ${token}\n  hook  ${hook}\n  pool  ${poolId}\n  lpNFT ${lpTokenId}`);
 
-  // 3) deploy + wire the floor vault
+  // 3) deploy + wire the floor vault — anchor the band to the INTENDED launch tick (from sqrtPriceX96),
+  //    never a live read, so it can't be pushed off before the (non-atomic) vault deploy.
   const FloorF = await ethers.getContractFactory("RobinFloorVault");
+  const ratio = Number(cfg.sqrtPriceX96) / 2 ** 96;
+  const anchorTick = Math.floor(Math.log(ratio * ratio) / Math.log(1.0001));
   const floor = await FloorF.deploy(
-    d.poolManager, d.stateView, platform, ethers.ZeroAddress, token, FEE, TS, hook, FLOOR_BAND_SPACINGS, { type: 0 }
+    d.poolManager, d.stateView, platform, ethers.ZeroAddress, token, FEE, TS, hook, anchorTick, FLOOR_BAND_SPACINGS, { type: 0 }
   );
   await floor.waitForDeployment();
   const floorAddr = await floor.getAddress();

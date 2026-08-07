@@ -110,6 +110,7 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     error Locked();
     error PayFail();
     error BadParam();
+    error RenounceDisabled();
 
     event Staked(uint8 indexed side, address indexed user, uint256 amount, uint256 newWeight);
     event Unstaked(uint8 indexed side, address indexed user, uint256 amount);
@@ -280,6 +281,11 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         if (received == 0) revert Zero();
         staked[side][msg.sender] += received;
         totalStaked[side] += received;
+        // [audit C1] Staked principal is part of the contract's accounted balance. Counting it here
+        // keeps the invariant accountedReserve[asset] == balanceOf(asset), so the pushed-funding path
+        // (received = balanceOf - accountedReserve) can NEVER mistake principal for an arrived reward —
+        // critical when a stake asset is also a listed reward on the other side ("earn the other").
+        accountedReserve[address(asset)] += received;
         stakedAt[side][msg.sender] = uint64(block.timestamp);
         _reweigh(side, msg.sender);
         _kickstartPending(side);
@@ -311,6 +317,8 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         }
 
         _reweigh(side, msg.sender);
+        // [audit C1] mirror the stake-time accounting: principal leaving the contract lowers the reserve.
+        accountedReserve[address(_stakeAsset(side))] -= amount;
         _stakeAsset(side).safeTransfer(msg.sender, amount);
         emit Unstaked(side, msg.sender, amount);
     }
@@ -453,6 +461,11 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         if (treasury == address(0)) revert Zero();
         platformTreasury = treasury;
         emit PlatformTreasurySet(treasury);
+    }
+
+    /// @notice [audit L5] Disabled — renouncing would brick every reward/config setter on this pool.
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
     }
 
     // ──────────────────────────────────────────────────────────── helpers ──

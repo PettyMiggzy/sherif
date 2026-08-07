@@ -15,11 +15,15 @@ function mineHookSalt(deployerAddr, initCode, maxTries = 5_000_000) {
   throw new Error("hook salt not found within maxTries");
 }
 
-/// Build the exact hook init-code the PadFactory builds on-chain.
-function hookInitCode(hookBytecode, poolManager, factory, feeRegistry) {
+/// Build the exact hook init-code the PadFactory builds on-chain. `padToken` is included so each pad's
+/// hook address is unique (no second-launch CREATE2 collision).
+function hookInitCode(hookBytecode, poolManager, factory, feeRegistry, padToken) {
   return ethers.concat([
     hookBytecode,
-    ethers.AbiCoder.defaultAbiCoder().encode(["address", "address", "address"], [poolManager, factory, feeRegistry]),
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["address", "address", "address", "address"],
+      [poolManager, factory, feeRegistry, padToken]
+    ),
   ]);
 }
 

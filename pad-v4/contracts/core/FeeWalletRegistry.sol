@@ -25,6 +25,7 @@ contract FeeWalletRegistry is Ownable2Step {
     error ZeroAddress();
     error NoProposal();
     error TimelockNotElapsed(uint256 eta);
+    error RenounceDisabled();
 
     constructor(address initialWallet, address initialOwner) Ownable(initialOwner) {
         if (initialWallet == address(0)) revert ZeroAddress();
@@ -48,6 +49,12 @@ contract FeeWalletRegistry is Ownable2Step {
         pendingWallet = address(0);
         pendingEta = 0;
         emit PlatformFeeWalletCommitted(w);
+    }
+
+    /// @notice [audit L5] Disabled — this is the system's only mutable knob; dropping ownership to zero
+    /// would freeze `platformFeeWallet` forever. Ownership can only be transferred (2-step), never renounced.
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
     }
 
     function cancelProposal() external onlyOwner {

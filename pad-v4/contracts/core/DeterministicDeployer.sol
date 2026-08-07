@@ -13,11 +13,15 @@ contract DeterministicDeployer {
 
     event Deployed(address indexed addr, bytes32 indexed salt);
 
-    /// @notice Deploy `initCode` at the CREATE2 address for `salt`. Reverts if the target
-    /// address already has code (so a griefed pre-deploy surfaces instead of silently no-op'ing).
+    /// @notice Deploy `initCode` at the CREATE2 address for `salt`, or ADOPT it if already present.
+    /// [audit L6] The address is bound to keccak256(initCode), so any code already at `predicted` was
+    /// necessarily created from this exact `initCode` — a byte-identical deployment. So instead of
+    /// reverting AlreadyDeployed (which lets anyone brick a launch by front-running an identical
+    /// pre-deploy), we return the existing address. Griefing a launch is impossible; the outcome is
+    /// the same contract either way. (No value is forwarded on adoption; our callers deploy value-free.)
     function deploy(bytes32 salt, bytes calldata initCode) external payable returns (address addr) {
         address predicted = addressOf(salt, keccak256(initCode));
-        if (predicted.code.length != 0) revert AlreadyDeployed();
+        if (predicted.code.length != 0) return predicted;
 
         bytes memory code = initCode;
         assembly ("memory-safe") {

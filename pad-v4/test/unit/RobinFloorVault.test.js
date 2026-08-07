@@ -45,7 +45,7 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
 
     vault = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
       await pm.getAddress(), await stateView.getAddress(), platform.address,
-      ZERO, await tok.getAddress(), FEE, TS, ZERO, 10 // band = 10 spacings wide, above spot
+      ZERO, await tok.getAddress(), FEE, TS, ZERO, 0 /* anchorTick = launch tick 0 */, 10 // band = 10 spacings wide
     );
   });
 

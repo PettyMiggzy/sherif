@@ -26,6 +26,7 @@ contract StakingFactory {
 
     error Zero();
     error FeeTooHigh();
+    error StockEqualsToken();
 
     constructor(address platformTreasury_, address platformOwner_, uint16 defaultClaimFeeBps_) {
         if (platformTreasury_ == address(0) || platformOwner_ == address(0)) revert Zero();
@@ -45,6 +46,7 @@ contract StakingFactory {
         returns (address pool)
     {
         if (token == address(0)) revert Zero();
+        if (stock == token) revert StockEqualsToken(); // [audit C1] never let one asset be principal on both sides
         // Factory is the temporary owner so it can configure, then hands off to the platform multisig.
         DualStaking ds = new DualStaking(token, stock, address(this), antiJitDelay, address(0), PoolId.wrap(bytes32(0)), 0);
         ds.setPlatformTreasury(platformTreasury);

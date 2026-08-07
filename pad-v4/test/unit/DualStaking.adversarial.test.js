@@ -150,4 +150,30 @@ describe("DualStaking — adversarial", () => {
   it("claim fee is capped at 10%", async () => {
     await expect(ds.connect(owner).setPlatformClaimFee(1500)).to.be.revertedWithCustomError(ds, "BadParam");
   });
+
+  it("[audit C1] fundTokenPushed can NEVER pay out staked principal (stake asset == other-side reward)", async () => {
+    // The 'earn the other' config: stk is the STOCK-side stake asset AND a listed TOKEN-side reward.
+    await ds.connect(owner).listReward(TOKEN, await stk.getAddress(), 7 * DAY);
+    // alice stakes 1000e18 stk as PRINCIPAL on the STOCK side
+    const principal = 1000n * 10n ** 18n;
+    await ds.connect(alice).stake(STOCK, principal);
+
+    // With only principal present, a pushed-fund sees NO arrived reward (received = bal - reserve = 0).
+    // Before the fix this credited alice's entire principal as a TOKEN-side reward.
+    await expect(ds.connect(rewarder).fundTokenPushed(TOKEN, await stk.getAddress()))
+      .to.be.revertedWithCustomError(ds, "Zero");
+
+    // A genuine push credits ONLY the actually-arrived amount, never the principal.
+    const realPush = 500n * 10n ** 18n;
+    await stk.connect(owner).transfer(await ds.getAddress(), realPush);
+    await ds.connect(bob).stake(TOKEN, 1000n); // give the TOKEN side weight to receive the stream
+    await ds.connect(rewarder).fundTokenPushed(TOKEN, await stk.getAddress());
+    await time.increase(7 * DAY + 10);
+    expect(await ds.earned(TOKEN, bob.address, await stk.getAddress())).to.be.lte(realPush);
+
+    // alice's STOCK principal is fully intact and withdrawable — she gets every wei back
+    await ds.connect(alice).unstake(STOCK, principal);
+    expect(await ds.staked(STOCK, alice.address)).to.equal(0n);
+    expect(await stk.balanceOf(alice.address)).to.equal(10n ** 24n); // exactly her original balance
+  });
 });

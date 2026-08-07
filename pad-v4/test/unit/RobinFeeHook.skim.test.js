@@ -49,7 +49,7 @@ describe("RobinFeeHook — directional tax + A3 skim closes clean (local real Po
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const initCode = ethers.concat([
       HookF.bytecode,
-      abi.encode(["address", "address", "address"], [await pm.getAddress(), factory.address, await reg.getAddress()]),
+      abi.encode(["address", "address", "address", "address"], [await pm.getAddress(), factory.address, await reg.getAddress(), await tok.getAddress()]),
     ]);
     const { salt, addr } = mineHookSalt(await dep.getAddress(), ethers.keccak256(initCode));
     await dep.deploy(salt, initCode);
@@ -115,13 +115,14 @@ describe("RobinFeeHook — directional tax + A3 skim closes clean (local real Po
     expect((await ethers.provider.getBalance(await hook.getAddress())) - hookEthBefore).to.equal(totalSell);
   });
 
-  it("exact-output swap is skim-free", async () => {
-    const hookBefore = await tok.balanceOf(await hook.getAddress());
-    await sw.connect(trader).swap(
-      key, { zeroForOne: true, amountSpecified: ethers.parseEther("0.1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
-      { takeClaims: false, settleUsingBurn: false }, "0x", { value: ethers.parseEther("2") }
-    );
-    expect(await tok.balanceOf(await hook.getAddress())).to.equal(hookBefore);
+  it("[audit H1] exact-output swaps are REJECTED so the tax can't be bypassed", async () => {
+    // exact-output (amountSpecified > 0) would skip the skim → beforeSwap reverts on registered pads.
+    await expect(
+      sw.connect(trader).swap(
+        key, { zeroForOne: true, amountSpecified: ethers.parseEther("0.1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+        { takeClaims: false, settleUsingBurn: false }, "0x", { value: ethers.parseEther("2") }
+      )
+    ).to.be.reverted; // ExactOutputNotSupported (wrapped by PoolManager)
   });
 
   it("claims: platform→registry (token), creator→creator (quote), floor→floorRecipient (quote)", async () => {

@@ -30,15 +30,18 @@ const CFG = (c0, c1, creator, extra = {}) => ({
   buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, guardWindow: 0, quoteIsStock: false, ...extra,
 });
 
-async function deployHook(pm, dep, reg, factorySigner) {
+async function deployHook(pm, dep, reg, factorySigner, tokenAddr) {
   const HookF = await ethers.getContractFactory("RobinFeeHook");
   const initCode = ethers.concat([
     HookF.bytecode,
-    abi.encode(["address", "address", "address"], [await pm.getAddress(), factorySigner.address, await reg.getAddress()]),
+    abi.encode(["address", "address", "address", "address"], [await pm.getAddress(), factorySigner.address, await reg.getAddress(), tokenAddr]),
   ]);
   const { salt, addr } = mineHookSalt(await dep.getAddress(), ethers.keccak256(initCode));
   await dep.deploy(salt, initCode);
   return HookF.attach(addr);
+}
+async function newToken(owner) {
+  return (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
 }
 
 describe("RobinFeeHook — adversarial", () => {
@@ -67,8 +70,8 @@ describe("RobinFeeHook — adversarial", () => {
   }
 
   it("unregistered pool is inert: swap succeeds with no skim", async () => {
-    const hook = await deployHook(pm, dep, reg, factory);
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());
     const key = await seedPool(hook, tok);
     await sw.connect(trader).swap(
       key, { zeroForOne: true, amountSpecified: -ethers.parseEther("1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
@@ -78,8 +81,8 @@ describe("RobinFeeHook — adversarial", () => {
   });
 
   it("D2: a blocklisted fee currency SKIPS the skim, swap still completes", async () => {
-    const hook = await deployHook(pm, dep, reg, factory);
     const blk = await (await ethers.getContractFactory("BlocklistERC20")).connect(owner).deploy(10n ** 30n);
+    const hook = await deployHook(pm, dep, reg, factory, await blk.getAddress());
     const key = await seedPool(hook, blk);
     const poolId = poolIdOf(key);
     await hook.connect(factory).registerPool(poolId, CFG(ZERO, await blk.getAddress(), creator.address));
@@ -97,8 +100,8 @@ describe("RobinFeeHook — adversarial", () => {
   });
 
   it("buy routes to platform, sell routes to creator + floor", async () => {
-    const hook = await deployHook(pm, dep, reg, factory);
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());
     const key = await seedPool(hook, tok);
     const poolId = poolIdOf(key);
     await hook.connect(factory).registerPool(poolId, CFG(ZERO, await tok.getAddress(), creator.address));
@@ -122,8 +125,8 @@ describe("RobinFeeHook — adversarial", () => {
   });
 
   it("stock curb: beforeSwap reverts in-window, passes out-of-window and when adapter reverts", async () => {
-    const hook = await deployHook(pm, dep, reg, factory);
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());
     const adapter = await (await ethers.getContractFactory("MockGuardAdapter")).deploy();
     const key = await seedPool(hook, tok);
     const poolId = poolIdOf(key);
@@ -147,8 +150,8 @@ describe("RobinFeeHook — adversarial", () => {
   });
 
   it("registration rejects bad config and double-register", async () => {
-    const hook = await deployHook(pm, dep, reg, factory);
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());
     const t = await tok.getAddress();
     const id = poolIdOf({ currency0: ZERO, currency1: t, fee: 3000, tickSpacing: 60, hooks: await hook.getAddress() });
 
@@ -169,16 +172,16 @@ describe("RobinFeeHook — adversarial", () => {
   });
 
   it("claimFloor reverts when no floor recipient is set", async () => {
-    const hook = await deployHook(pm, dep, reg, factory);
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());
     const id = poolIdOf({ currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: await hook.getAddress() });
     await hook.connect(factory).registerPool(id, CFG(ZERO, await tok.getAddress(), creator.address)); // floorRecipient = 0
     await expect(hook.claimFloor(id, 0)).to.be.revertedWithCustomError(hook, "NoFloorRecipient");
   });
 
   it("setFloorRecipient is platform-only and one-shot", async () => {
-    const hook = await deployHook(pm, dep, reg, factory);
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());
     const id = poolIdOf({ currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: await hook.getAddress() });
     await hook.connect(factory).registerPool(id, CFG(ZERO, await tok.getAddress(), creator.address)); // floorRecipient = 0
     // platform wallet is `platform` (registry initial wallet)
@@ -189,8 +192,8 @@ describe("RobinFeeHook — adversarial", () => {
   });
 
   it("creator repoint is 2-step and creator-only", async () => {
-    const hook = await deployHook(pm, dep, reg, factory);
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());
     const id = poolIdOf({ currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: await hook.getAddress() });
     await hook.connect(factory).registerPool(id, CFG(ZERO, await tok.getAddress(), creator.address));
     await expect(hook.connect(mallory).startCreatorRepoint(id, mallory.address)).to.be.revertedWithCustomError(hook, "NotCreator");

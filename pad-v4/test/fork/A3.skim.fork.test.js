@@ -46,7 +46,7 @@ describe("A3 fork — exact-input skim closes clean against live 0x8366", functi
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const initCode = ethers.concat([
       HookF.bytecode,
-      abi.encode(["address", "address", "address"], [POOL_MANAGER, factory.address, await reg.getAddress()]),
+      abi.encode(["address", "address", "address", "address"], [POOL_MANAGER, factory.address, await reg.getAddress(), await tok.getAddress()]),
     ]);
     const { salt, addr } = mineHookSalt(await dep.getAddress(), ethers.keccak256(initCode));
     await dep.deploy(salt, initCode);
