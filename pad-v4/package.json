@@ -5,9 +5,10 @@
   "description": "Robin V4 — 'pad of pads' multi-pad launchpad on Uniswap V4 (Robinhood Chain 4663). Immutable factory, 3-way afterSwap fee hook, dual staking, USDG-yield floor vault, tokenized-stock pad.",
   "scripts": {
     "build": "hardhat compile",
-    "test": "hardhat test",
-    "test:fork": "hardhat test test/fork/*.js",
-    "test:unit": "hardhat test test/unit/*.js",
+    "test": "hardhat test test/unit/RobinFeeHook.skim.test.js test/unit/RobinFeeHook.holders.test.js test/unit/FeeWalletRegistry.test.js test/unit/LockVault.test.js test/unit/DualStaking.test.js",
+    "test:all": "hardhat test",
+    "test:fork": "hardhat test test/fork/A3.skim.fork.test.js test/fork/PadFactory.launch.fork.test.js",
+    "test:unit": "hardhat test test/unit/RobinFeeHook.skim.test.js test/unit/RobinFeeHook.holders.test.js test/unit/FeeWalletRegistry.test.js test/unit/LockVault.test.js test/unit/DualStaking.test.js",
     "postinstall": "node scripts/link-v4-libs.js"
   },
   "devDependencies": {
