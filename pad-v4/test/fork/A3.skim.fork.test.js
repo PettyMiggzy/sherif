@@ -57,7 +57,7 @@ describe("A3 fork — exact-input skim closes clean against live 0x8366", functi
     await pm.initialize(key, SQRT_1_1);
     await hook.connect(factory).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address,
-      weightSource: ZERO, guardAdapter: ZERO, feeBps: 100, platformShareBps: 4000, creatorShareBps: 3000,
+      floorRecipient: ZERO, guardAdapter: ZERO, buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000,
       guardWindow: 0, quoteIsStock: false,
     });
 
@@ -78,9 +78,7 @@ describe("A3 fork — exact-input skim closes clean against live 0x8366", functi
     );
     const skim = (await tok.balanceOf(hookAddr)) - hb;
     expect(skim).to.be.gt(0n);
-    const plat = await hook.platformOwed(poolId, 1);
-    const crea = await hook.creatorOwed(poolId, 1);
-    const parked = await hook.unallocated(poolId, 1);
-    expect(plat + crea + parked).to.equal(skim);
+    // buy → the whole token-leg skim books to platform
+    expect(await hook.platformOwed(poolId, 1)).to.equal(skim);
   });
 });

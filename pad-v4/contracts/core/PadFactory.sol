@@ -50,11 +50,12 @@ contract PadFactory {
         uint160 sqrtPriceX96; // initial pool price
         int24 tickSpacing;
         uint24 fee; // STATIC lp fee (must NOT carry the dynamic-fee flag)
-        uint16 skimFeeBps; // hook skim fee (bps of output)
-        uint16 platformShareBps; // platform share of the skim
-        uint16 creatorShareBps; // creator share of the skim; holder = remainder
+        uint16 buyTaxBps; // trade tax on buys → platform (bps of token output)
+        uint16 sellTaxBps; // trade tax on sells → creator + floor (bps of quote output)
+        uint16 sellFloorShareBps; // share of the sell tax carved to the floor
         uint16 creatorLpFeeBps; // creator share of the locked seed-LP fees (1%–10%)
         address creator;
+        address floorRecipient; // floor carve destination; 0 => it parks in the hook
     }
 
     struct Launch {
@@ -154,11 +155,11 @@ contract PadFactory {
                 currency0: currency0,
                 currency1: currency1,
                 creator: cfg.creator,
-                weightSource: address(0), // wired in Feature 2 (DualStaking); holder cut parks until then
+                floorRecipient: cfg.floorRecipient, // 0 => floor carve parks in the hook until a vault is wired
                 guardAdapter: address(0), // ETH pad: no stock curb
-                feeBps: cfg.skimFeeBps,
-                platformShareBps: cfg.platformShareBps,
-                creatorShareBps: cfg.creatorShareBps,
+                buyTaxBps: cfg.buyTaxBps,
+                sellTaxBps: cfg.sellTaxBps,
+                sellFloorShareBps: cfg.sellFloorShareBps,
                 guardWindow: 0,
                 quoteIsStock: false
             })

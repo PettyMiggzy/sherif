@@ -2,18 +2,19 @@ const { ethers } = require("hardhat");
 const { expect } = require("chai");
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FEATURE 1 — the A3 gate, run LOCALLY against a real Uniswap V4 PoolManager
-// (same source/compiler as the live 0x8366). Proves the afterSwapReturnDelta skim
-// idiom: an exact-input swap closes the unlock with ZERO residual delta (no revert),
-// the hook holds exactly the skim, and the 3-way split books correctly. Exact-output
-// is skim-free. The fork variant (test/fork) points the same assertions at 0x8366.
+// FEATURE 1 — the directional trade-tax + the A3 gate, run against a real Uniswap V4
+// PoolManager (same source/compiler as live 0x8366). Proves the afterSwapReturnDelta
+// idiom (exact-input skim closes the unlock with zero residual delta) AND the money model:
+//   BUY  → buyTax of the token output  → platform
+//   SELL → sellTax of the quote output → creator + floor carve
+// Exact-output is skim-free.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ZERO = ethers.ZeroAddress;
-const SQRT_1_1 = 79228162514264337593543950336n; // price 1:1
-const MIN_SQRT_LIMIT = 4295128739n + 1n; // zeroForOne price floor
-const FLAGS = 0xc4n;
-const MASK = 0x3fffn;
+const SQRT_1_1 = 79228162514264337593543950336n;
+const MIN_SQRT_LIMIT = 4295128739n + 1n;
+const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
+const FLAGS = 0xc4n, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(deployerAddr, initCodeHash) {
@@ -23,36 +24,28 @@ function mineHookSalt(deployerAddr, initCodeHash) {
     if ((BigInt(addr) & MASK) === FLAGS) return { salt, addr };
   }
 }
-
 function poolIdOf(key) {
   return ethers.keccak256(
-    abi.encode(
-      ["tuple(address,address,uint24,int24,address)"],
-      [[key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks]]
-    )
+    abi.encode(["tuple(address,address,uint24,int24,address)"], [[key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks]])
   );
 }
 
-describe("RobinFeeHook — A3 skim closes clean + 3-way split (local real PoolManager)", () => {
-  const FEE = 3000; // static lp fee
-  const TS = 60;
-  const SKIM_BPS = 100n; // 1%
-  const PLAT_BPS = 4000n;
-  const CREA_BPS = 3000n; // holder = 3000
+describe("RobinFeeHook — directional tax + A3 skim closes clean (local real PoolManager)", () => {
+  const FEE = 3000, TS = 60;
+  const BUY_BPS = 100n; // 1% buy tax → platform
+  const SELL_BPS = 100n; // 1% sell tax → creator + floor
+  const FLOOR_SHARE_BPS = 2000n; // 20% of the sell tax → floor (0.2% of trade); creator keeps 80%
 
-  let owner, factory, platform, lp, trader, creator;
-  let pm, dep, reg, tok, hook, mod, sw, key, poolId, ucIndex;
+  let owner, factory, platform, lp, trader, creator, floor;
+  let pm, dep, reg, tok, hook, mod, sw, key, poolId;
 
   before(async () => {
-    [owner, factory, platform, lp, trader, creator] = await ethers.getSigners();
-
+    [owner, factory, platform, lp, trader, creator, floor] = await ethers.getSigners();
     pm = await (await ethers.getContractFactory("PoolManager")).deploy(owner.address);
     dep = await (await ethers.getContractFactory("DeterministicDeployer")).deploy();
     reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
-    // TestERC20 mints the whole supply to the deployer (owner)
     tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
 
-    // token must be currency1 (native 0 is currency0). TestERC20 address > 0 always.
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const initCode = ethers.concat([
       HookF.bytecode,
@@ -61,108 +54,93 @@ describe("RobinFeeHook — A3 skim closes clean + 3-way split (local real PoolMa
     const { salt, addr } = mineHookSalt(await dep.getAddress(), ethers.keccak256(initCode));
     await dep.deploy(salt, initCode);
     hook = HookF.attach(addr);
-    expect(BigInt(addr) & MASK).to.equal(FLAGS);
 
     key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: addr };
     poolId = poolIdOf(key);
-    ucIndex = 1; // zeroForOne output = currency1
-
     await pm.initialize(key, SQRT_1_1);
     await hook.connect(factory).registerPool(poolId, {
-      currency0: ZERO,
-      currency1: await tok.getAddress(),
-      creator: creator.address,
-      weightSource: ZERO,
-      guardAdapter: ZERO,
-      feeBps: SKIM_BPS,
-      platformShareBps: PLAT_BPS,
-      creatorShareBps: CREA_BPS,
-      guardWindow: 0,
-      quoteIsStock: false,
+      currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address,
+      floorRecipient: floor.address, guardAdapter: ZERO,
+      buyTaxBps: BUY_BPS, sellTaxBps: SELL_BPS, sellFloorShareBps: FLOOR_SHARE_BPS,
+      guardWindow: 0, quoteIsStock: false,
     });
 
     mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());
     sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
-
-    // seed full-range liquidity: give LP tokens, approve, add with generous native (refunded)
     await tok.connect(owner).transfer(lp.address, 10n ** 24n);
     await tok.connect(lp).approve(await mod.getAddress(), ethers.MaxUint256);
-    // full-range L≈1e20 needs ≈100 ETH + ≈100 tokens at price 1:1; send generous value (refunded)
     await mod.connect(lp).modifyLiquidity(
-      key,
-      { tickLower: -887220, tickUpper: 887220, liquidityDelta: 10n ** 20n, salt: ethers.ZeroHash },
-      "0x",
+      key, { tickLower: -887220, tickUpper: 887220, liquidityDelta: 10n ** 20n, salt: ethers.ZeroHash }, "0x",
       { value: ethers.parseEther("2000") }
     );
   });
 
-  it("exact-input swap: unlock closes clean, hook holds the skim, split is exact", async () => {
+  it("BUY: exact-input closes clean, buy tax of the token output → platform", async () => {
     const hookAddr = await hook.getAddress();
     const hookBefore = await tok.balanceOf(hookAddr);
     const traderBefore = await tok.balanceOf(trader.address);
 
-    // exact-input: amountSpecified < 0 (sell 1 ETH for token)
-    const amountIn = ethers.parseEther("1");
     await sw.connect(trader).swap(
-      key,
-      { zeroForOne: true, amountSpecified: -amountIn, sqrtPriceLimitX96: MIN_SQRT_LIMIT },
-      { takeClaims: false, settleUsingBurn: false },
-      "0x",
-      { value: amountIn }
+      key, { zeroForOne: true, amountSpecified: -ethers.parseEther("1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: ethers.parseEther("1") }
     );
 
-    const hookAfter = await tok.balanceOf(hookAddr);
-    const traderAfter = await tok.balanceOf(trader.address);
-    const skim = hookAfter - hookBefore;
-    const traderGot = traderAfter - traderBefore;
+    const skim = (await tok.balanceOf(hookAddr)) - hookBefore;
+    const traderGot = (await tok.balanceOf(trader.address)) - traderBefore;
+    expect(skim).to.be.gt(0n);
+    expect(skim).to.equal(((traderGot + skim) * BUY_BPS) / 10000n); // 1% of gross token output
+    // buy tax → platform (token leg, index 1). creator/floor untouched.
+    expect(await hook.platformOwed(poolId, 1)).to.equal(skim);
+    expect(await hook.creatorOwed(poolId, 0)).to.equal(0n);
+    expect(await hook.floorOwed(poolId, 0)).to.equal(0n);
+  });
 
-    // 1) the swap did not revert (implicit) and the hook actually skimmed
-    expect(skim).to.be.gt(0n, "hook must have taken a skim");
-    // 2) trader received the output minus the skim (both positive)
-    expect(traderGot).to.be.gt(0n);
-    // 3) fee == 1% of the gross output (traderGot + skim), rounded down
-    const grossOut = traderGot + skim;
-    expect(skim).to.equal((grossOut * SKIM_BPS) / 10000n);
+  it("SELL: quote output tax splits creator (80%) + floor (20%)", async () => {
+    await tok.connect(owner).transfer(trader.address, 10n ** 22n);
+    await tok.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
+    const hookEthBefore = await ethers.provider.getBalance(await hook.getAddress());
 
-    // 4) 3-way split books exactly, dust conserved into holder bucket
-    const plat = await hook.platformOwed(poolId, ucIndex);
-    const crea = await hook.creatorOwed(poolId, ucIndex);
-    const parked = await hook.unallocated(poolId, ucIndex); // holder cut parks (no weight yet)
-    expect(plat).to.equal((skim * PLAT_BPS) / 10000n);
-    expect(crea).to.equal((skim * CREA_BPS) / 10000n);
-    expect(plat + crea + parked).to.equal(skim);
+    await sw.connect(trader).swap(
+      key, { zeroForOne: false, amountSpecified: -(10n ** 21n), sqrtPriceLimitX96: MAX_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x"
+    );
+
+    const creatorCut = await hook.creatorOwed(poolId, 0); // quote leg (native)
+    const floorCut = await hook.floorOwed(poolId, 0);
+    const totalSell = creatorCut + floorCut;
+    expect(totalSell).to.be.gt(0n);
+    // floor gets 20% of the sell tax, creator the remaining 80% (dust conserved into creator)
+    expect(floorCut).to.equal((totalSell * FLOOR_SHARE_BPS) / 10000n);
+    // hook holds the native fees it took
+    expect((await ethers.provider.getBalance(await hook.getAddress())) - hookEthBefore).to.equal(totalSell);
   });
 
   it("exact-output swap is skim-free", async () => {
-    const hookAddr = await hook.getAddress();
-    const hookBefore = await tok.balanceOf(hookAddr);
-
-    // exact-output: amountSpecified > 0 (buy exactly 0.1 token, paying ETH)
+    const hookBefore = await tok.balanceOf(await hook.getAddress());
     await sw.connect(trader).swap(
-      key,
-      { zeroForOne: true, amountSpecified: ethers.parseEther("0.1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
-      { takeClaims: false, settleUsingBurn: false },
-      "0x",
-      { value: ethers.parseEther("2") }
+      key, { zeroForOne: true, amountSpecified: ethers.parseEther("0.1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: ethers.parseEther("2") }
     );
-
-    expect(await tok.balanceOf(hookAddr)).to.equal(hookBefore, "exact-output must not skim");
+    expect(await tok.balanceOf(await hook.getAddress())).to.equal(hookBefore);
   });
 
-  it("platform claim pulls to the timelocked registry wallet", async () => {
-    const owed = await hook.platformOwed(poolId, ucIndex);
-    expect(owed).to.be.gt(0n);
-    const before = await tok.balanceOf(platform.address);
-    await hook.claimPlatform(poolId, ucIndex);
-    expect(await tok.balanceOf(platform.address)).to.equal(before + owed);
-    expect(await hook.platformOwed(poolId, ucIndex)).to.equal(0n);
-  });
+  it("claims: platform→registry (token), creator→creator (quote), floor→floorRecipient (quote)", async () => {
+    // platform (token leg)
+    const pOwed = await hook.platformOwed(poolId, 1);
+    const pBefore = await tok.balanceOf(platform.address);
+    await hook.claimPlatform(poolId, 1);
+    expect((await tok.balanceOf(platform.address)) - pBefore).to.equal(pOwed);
 
-  it("creator claim pulls to the creator slot", async () => {
-    const owed = await hook.creatorOwed(poolId, ucIndex);
-    expect(owed).to.be.gt(0n);
-    const before = await tok.balanceOf(creator.address);
-    await hook.claimCreator(poolId, ucIndex);
-    expect(await tok.balanceOf(creator.address)).to.equal(before + owed);
+    // creator (quote/native leg)
+    const cOwed = await hook.creatorOwed(poolId, 0);
+    const cBefore = await ethers.provider.getBalance(creator.address);
+    await hook.connect(owner).claimCreator(poolId, 0); // permissionless; funds go to creator slot
+    expect((await ethers.provider.getBalance(creator.address)) - cBefore).to.equal(cOwed);
+
+    // floor (quote/native leg) → floorRecipient
+    const fOwed = await hook.floorOwed(poolId, 0);
+    const fBefore = await ethers.provider.getBalance(floor.address);
+    await hook.connect(owner).claimFloor(poolId, 0);
+    expect((await ethers.provider.getBalance(floor.address)) - fBefore).to.equal(fOwed);
   });
 });

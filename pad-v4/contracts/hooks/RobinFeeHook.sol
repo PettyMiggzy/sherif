@@ -11,30 +11,27 @@ import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 
 import {BaseHook} from "./BaseHook.sol";
-import {
-    IFeeWalletRegistry,
-    IStockGuardAdapter,
-    IRobinFeeHookAdmin
-} from "../interfaces/IRobinInterfaces.sol";
+import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin} from "../interfaces/IRobinInterfaces.sol";
 
-/// @title RobinFeeHook — the 3-way afterSwap fee engine (the heart of Robin V4)
-/// @notice On every exact-input swap the hook skims `feeBps` of the OUTPUT leg as an
-/// ADDITIONAL fee (the trader pays LP fee + skim — nothing is "carved" from the pool,
-/// because the hook holds no liquidity) and splits it three ways:
-///   • platform  → accrue-and-pull to the timelocked platform wallet
-///   • creator   → accrue-and-pull to the creator's own repointable slot
-///   • holders   → an O(1) Synthetix-style accumulator, weighted by a per-pool weight
-///                 source (DualStaking). No holder is ever iterated.
+/// @title RobinFeeHook — directional trade-tax engine (the heart of Robin V4)
+/// @notice On every exact-input swap the hook skims an ADDITIONAL fee from the OUTPUT leg (the trader
+/// pays LP fee + tax — nothing is "carved" from the pool, because the hook holds no liquidity) and
+/// routes it by DIRECTION:
 ///
-/// Design decisions that resolve the red-team findings (see ROBIN-V4-ARCHITECTURE.md):
-///   [A1] Skim is always additional — the hook owns no position to carve from.
-///   [A2] Pool uses a STATIC lp fee (not the dynamic-fee flag) so the locked seed LP
-///        and the floor actually earn. beforeSwap never overrides the fee.
-///   [A4/B1] Skim is EXACT-INPUT ONLY; the unspecified (output) leg is already held by
-///        the PoolManager, so `take` never fronts foreign reserves. Exact-output is skim-free.
-///   [D2] The fee `take` is try/caught — a blocklisted/paused stock fee currency makes the
-///        skim silently skip, it never bricks the swap.
-///   [F2] With no holder weight, the holder cut PARKS (never routes to platform).
+///   • BUY  (quote → token, `zeroForOne`): `buyTaxBps` of the TOKEN output  → platform
+///   • SELL (token → quote, `oneForZero`): `sellTaxBps` of the QUOTE output → creator, minus a
+///          `sellFloorShareBps` carve that funds the pad's permanent price FLOOR.
+///
+/// Holders are rewarded separately, by staking (DualStaking) — funded by the sell-side LP fee — so the
+/// hook itself has no holder accumulator. All payouts are accrue-and-pull: nothing is pushed to an
+/// external wallet inside a swap, so a reverting recipient can never block trading.
+///
+/// Red-team invariants preserved from the spine:
+///   [A1] The skim is always ADDITIONAL (the hook owns no position to carve from).
+///   [A2] The pool uses a STATIC lp fee; beforeSwap never overrides it (only the stock curb lives there).
+///   [A4/B1] Skim is EXACT-INPUT ONLY; the unspecified (output) leg is already held by the PoolManager,
+///           so `take` never fronts foreign reserves. Exact-output is skim-free.
+///   [D2] The fee `take` is try/caught — a blocklisted/paused stock fee currency skips the skim, never bricks.
 ///   [G1] REQUIRED_FLAGS == 0x00C4, self-asserted in the ctor and cross-checked by the factory.
 ///   [G2] No beforeInitialize; config is bound by `registerPool` in the same launch tx.
 contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
@@ -42,9 +39,8 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     using CurrencyLibrary for Currency;
 
     uint256 internal constant BPS = 10_000;
-    uint256 internal constant RAY = 1e27;
-    uint16 public constant MAX_FEE_BPS = 300; // 3% skim ceiling, immutable
-    /// @dev afterSwap returns an int128, so a skim leg must never exceed int128 max (invariant #5).
+    uint16 public constant MAX_TAX_BPS = 300; // 3% per-direction ceiling, immutable
+    /// @dev afterSwap returns an int128, so a skim leg must never exceed int128 max.
     int128 internal constant MAX_SKIM = type(int128).max;
 
     address public immutable factory;
@@ -53,51 +49,43 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     struct PoolConfig {
         bool registered;
         bool quoteIsStock;
-        uint16 feeBps;
-        uint16 platformShareBps;
-        uint16 creatorShareBps;
+        uint16 buyTaxBps;
+        uint16 sellTaxBps;
+        uint16 sellFloorShareBps; // share of the sell tax carved to the floor
         uint32 guardWindow;
-        Currency currency0;
-        Currency currency1;
+        Currency currency0; // quote
+        Currency currency1; // token
         address creator; // 2-step repointable by the creator only
         address pendingCreator;
-        address weightSource; // DualStaking; 0 => park holder cut
+        address floorRecipient; // where claimFloor forwards; 0 => floor parks in floorOwed
         address guardAdapter; // stock guard; 0 => no curb
     }
 
-    // poolId => config (frozen at registerPool except the creator's own slot)
     mapping(PoolId => PoolConfig) public config;
 
-    // Accrue-and-pull books. currencyIndex ∈ {0,1}.
-    mapping(PoolId => mapping(uint256 => uint256)) public platformOwed;
-    mapping(PoolId => mapping(uint256 => uint256)) public creatorOwed;
+    // Accrue-and-pull books. currencyIndex ∈ {0 = quote, 1 = token}.
+    mapping(PoolId => mapping(uint256 => uint256)) public platformOwed; // from buys (token leg)
+    mapping(PoolId => mapping(uint256 => uint256)) public creatorOwed; // from sells (quote leg)
+    mapping(PoolId => mapping(uint256 => uint256)) public floorOwed; // carve from sells (quote leg)
 
-    // O(1) holder accumulator (per pool, per currency).
-    mapping(PoolId => mapping(uint256 => uint256)) public rewardPerTokenStored; // scaled by RAY
-    mapping(PoolId => mapping(uint256 => uint256)) public unallocated; // parked when totalWeight==0
-    mapping(PoolId => uint256) public totalWeight;
-    mapping(PoolId => mapping(address => uint256)) public weightOf;
-    mapping(PoolId => mapping(address => mapping(uint256 => uint256))) public userRptPaid;
-    mapping(PoolId => mapping(address => mapping(uint256 => uint256))) public holderOwed;
-
-    event PoolRegistered(PoolId indexed id, address indexed creator, uint16 feeBps);
-    event Skimmed(PoolId indexed id, uint256 currencyIndex, uint256 fee, uint256 pCut, uint256 cCut, uint256 hCut);
+    event PoolRegistered(PoolId indexed id, address indexed creator, uint16 buyTaxBps, uint16 sellTaxBps);
+    event BuyTaxed(PoolId indexed id, uint256 fee); // platform, token leg
+    event SellTaxed(PoolId indexed id, uint256 creatorCut, uint256 floorCut); // quote leg
     event SkimSkipped(PoolId indexed id, uint256 currencyIndex, uint256 fee);
-    event HolderWeightChanged(PoolId indexed id, address indexed user, uint256 oldWeight, uint256 newWeight);
     event PlatformClaimed(PoolId indexed id, uint256 currencyIndex, address to, uint256 amount);
     event CreatorClaimed(PoolId indexed id, uint256 currencyIndex, address to, uint256 amount);
-    event HolderClaimed(PoolId indexed id, address indexed user, uint256 currencyIndex, uint256 amount);
+    event FloorClaimed(PoolId indexed id, uint256 currencyIndex, address to, uint256 amount);
     event CreatorRepointStarted(PoolId indexed id, address pending);
     event CreatorRepointed(PoolId indexed id, address creator);
 
     error NotFactory();
     error AlreadyRegistered();
     error NotRegistered();
-    error BadFee();
+    error BadTax();
     error BadShares();
-    error NotWeightSource();
     error NotCreator();
     error ZeroAddress();
+    error NoFloorRecipient();
     error NothingToClaim();
     error PayoutFailed();
     error CorporateActionCurb();
@@ -112,40 +100,38 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     //                             registration                              //
     // --------------------------------------------------------------------- //
 
-    /// @notice Bind a pool's immutable fee config. Called ONLY by the factory, once per pool,
-    /// in the same tx as `PoolManager.initialize` and before any swap can occur. [G2]
+    /// @notice Bind a pool's immutable fee config. Factory-only, once per pool, in the launch tx. [G2]
     function registerPool(PoolId id, PoolFeeConfig calldata cfg) external override {
         if (msg.sender != factory) revert NotFactory();
         if (config[id].registered) revert AlreadyRegistered();
         if (cfg.creator == address(0)) revert ZeroAddress();
-        if (cfg.feeBps == 0 || cfg.feeBps > MAX_FEE_BPS) revert BadFee();
-        // platform + creator must leave room for a non-negative holder remainder.
-        if (uint256(cfg.platformShareBps) + uint256(cfg.creatorShareBps) > BPS) revert BadShares();
+        if (cfg.buyTaxBps > MAX_TAX_BPS || cfg.sellTaxBps > MAX_TAX_BPS) revert BadTax();
+        if (cfg.buyTaxBps == 0 && cfg.sellTaxBps == 0) revert BadTax();
+        if (cfg.sellFloorShareBps > BPS) revert BadShares();
 
         config[id] = PoolConfig({
             registered: true,
             quoteIsStock: cfg.quoteIsStock,
-            feeBps: cfg.feeBps,
-            platformShareBps: cfg.platformShareBps,
-            creatorShareBps: cfg.creatorShareBps,
+            buyTaxBps: cfg.buyTaxBps,
+            sellTaxBps: cfg.sellTaxBps,
+            sellFloorShareBps: cfg.sellFloorShareBps,
             guardWindow: cfg.guardWindow,
             currency0: cfg.currency0,
             currency1: cfg.currency1,
             creator: cfg.creator,
             pendingCreator: address(0),
-            weightSource: cfg.weightSource,
+            floorRecipient: cfg.floorRecipient,
             guardAdapter: cfg.guardAdapter
         });
-        emit PoolRegistered(id, cfg.creator, cfg.feeBps);
+        emit PoolRegistered(id, cfg.creator, cfg.buyTaxBps, cfg.sellTaxBps);
     }
 
     // --------------------------------------------------------------------- //
     //                              beforeSwap                               //
     // --------------------------------------------------------------------- //
 
-    /// @notice Stock corporate-action curb only [D4]. For ETH/USDG pads (guardWindow==0)
-    /// this is a single SLOAD + return. The adapter read is try/caught so a broken adapter
-    /// can never freeze trading — a revert is read as "no scheduled action".
+    /// @notice Stock corporate-action curb only [D4]. For ETH/USDG pads (guardWindow==0) this is a
+    /// single SLOAD + return. The adapter read is try/caught so a broken adapter can never freeze trading.
     function beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
         external
         view
@@ -184,96 +170,53 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         nonReentrant
         returns (bytes4, int128)
     {
-        // Our own operations (fee takes, future floor/staking ops) never skim themselves.
         if (sender == address(this)) return (IHooks.afterSwap.selector, int128(0));
 
         PoolId id = key.toId();
         PoolConfig storage c = config[id];
-        if (!c.registered || c.feeBps == 0) return (IHooks.afterSwap.selector, int128(0));
+        if (!c.registered) return (IHooks.afterSwap.selector, int128(0));
 
-        // [A4/B1] EXACT-INPUT ONLY. amountSpecified < 0 == exact-input; the unspecified leg is
-        // the OUTPUT, which the PoolManager already holds, so `take` never fronts reserves.
+        // [A4/B1] EXACT-INPUT ONLY.
         if (params.amountSpecified >= 0) return (IHooks.afterSwap.selector, int128(0));
 
-        // Unspecified (output) currency index: selling token0→token1 (zeroForOne) outputs currency1.
-        uint256 uc = params.zeroForOne ? 1 : 0;
+        // zeroForOne == spend quote(currency0) → get token(currency1) == a BUY. Output leg = currency1.
+        bool isBuy = params.zeroForOne;
+        uint256 uc = isBuy ? 1 : 0;
+        uint16 rate = isBuy ? c.buyTaxBps : c.sellTaxBps;
+        if (rate == 0) return (IHooks.afterSwap.selector, int128(0));
+
         int128 ucAmt = uc == 0 ? delta.amount0() : delta.amount1();
-        // Output leg is credited to the swapper => positive. Guard defensively anyway.
         uint256 mag = ucAmt > 0 ? uint256(uint128(ucAmt)) : uint256(uint128(-ucAmt));
         if (mag == 0) return (IHooks.afterSwap.selector, int128(0));
 
-        uint256 fee = (mag * c.feeBps) / BPS; // rounds down; truncation dust stays with the trader
+        uint256 fee = (mag * rate) / BPS;
         if (fee == 0) return (IHooks.afterSwap.selector, int128(0));
-        // Clamp to int128 max so the returned delta can represent it (invariant #5).
         if (fee > uint256(uint128(MAX_SKIM))) fee = uint256(uint128(MAX_SKIM));
 
         Currency ucCurrency = uc == 0 ? key.currency0 : key.currency1;
 
-        // [D2] Guard the take. A blocklisted/paused stock fee currency must NOT brick the swap.
-        try poolManager.take(ucCurrency, address(this), fee) {
-            // ok — hook now holds `fee` of the output currency and owes `fee` on its delta,
-            // which the returned +fee below nets back to zero.
-        } catch {
+        // [D2] Guard the take. A blocklisted/paused fee currency must NOT brick the swap.
+        try poolManager.take(ucCurrency, address(this), fee) {}
+        catch {
             emit SkimSkipped(id, uc, fee);
             return (IHooks.afterSwap.selector, int128(0));
         }
 
-        uint256 pCut = (fee * c.platformShareBps) / BPS;
-        uint256 cCut = (fee * c.creatorShareBps) / BPS;
-        uint256 hCut = fee - pCut - cCut; // subtraction conserves all rounding dust into the holder bucket
+        if (isBuy) {
+            // buy → platform (token leg)
+            platformOwed[id][uc] += fee;
+            emit BuyTaxed(id, fee);
+        } else {
+            // sell → creator + floor (quote leg); subtraction conserves dust into the creator's cut
+            uint256 floorCut = (fee * c.sellFloorShareBps) / BPS;
+            uint256 creatorCut = fee - floorCut;
+            creatorOwed[id][uc] += creatorCut;
+            floorOwed[id][uc] += floorCut;
+            emit SellTaxed(id, creatorCut, floorCut);
+        }
 
-        platformOwed[id][uc] += pCut;
-        creatorOwed[id][uc] += cCut;
-        _accrueHolders(id, uc, hCut);
-
-        emit Skimmed(id, uc, fee, pCut, cCut, hCut);
-        // Return the +fee delta LAST (CEI). Nets the -fee from `take` → unlock closes clean.
+        // Return the +fee delta LAST (CEI). Nets the -fee from `take` → unlock closes clean. [A3]
         return (IHooks.afterSwap.selector, int128(uint128(fee)));
-    }
-
-    // --------------------------------------------------------------------- //
-    //                        O(1) holder accumulator                        //
-    // --------------------------------------------------------------------- //
-
-    /// @dev [F2] Park when there is no weight; NEVER route holder funds to the platform.
-    function _accrueHolders(PoolId id, uint256 c, uint256 amt) internal {
-        if (amt == 0) return;
-        uint256 ts = totalWeight[id];
-        if (ts == 0) {
-            unallocated[id][c] += amt;
-            return;
-        }
-        uint256 pending = amt + unallocated[id][c];
-        unallocated[id][c] = 0;
-        uint256 inc = (pending * RAY) / ts;
-        rewardPerTokenStored[id][c] += inc;
-        // carry the truncation remainder forward so no dust is lost
-        unallocated[id][c] += pending - (inc * ts) / RAY;
-    }
-
-    /// @notice Called by the pool's weight source (DualStaking) on every stake/unstake.
-    /// Settles the user's owed rewards at the OLD weight for BOTH currencies, then re-weights.
-    function onWeightChange(PoolId id, address user, uint256 newWeight) external {
-        PoolConfig storage cfg = config[id];
-        if (msg.sender != cfg.weightSource || cfg.weightSource == address(0)) revert NotWeightSource();
-
-        uint256 old = weightOf[id][user];
-        // settle both currency legs at the old weight before the weight moves
-        _settleHolder(id, user, 0, old);
-        _settleHolder(id, user, 1, old);
-
-        weightOf[id][user] = newWeight;
-        totalWeight[id] = totalWeight[id] - old + newWeight;
-        emit HolderWeightChanged(id, user, old, newWeight);
-    }
-
-    function _settleHolder(PoolId id, address user, uint256 c, uint256 w) internal {
-        uint256 rpt = rewardPerTokenStored[id][c];
-        uint256 paid = userRptPaid[id][user][c];
-        if (w != 0 && rpt > paid) {
-            holderOwed[id][user][c] += (w * (rpt - paid)) / RAY;
-        }
-        userRptPaid[id][user][c] = rpt;
     }
 
     // --------------------------------------------------------------------- //
@@ -292,7 +235,6 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     }
 
     /// @notice Pull the creator's accrued cut for one currency to the creator's slot.
-    /// Permissionless — funds always go to the registered creator address, never the caller.
     function claimCreator(PoolId id, uint256 currencyIndex) external nonReentrant returns (uint256 amount) {
         amount = creatorOwed[id][currencyIndex];
         if (amount == 0) revert NothingToClaim();
@@ -302,25 +244,16 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         emit CreatorClaimed(id, currencyIndex, to, amount);
     }
 
-    /// @notice [F1] Per-currency holder claim. A blocked stock leg fails only its own leg;
-    /// the ETH/token leg is untouched. `user` claims to themselves.
-    function claimHolder(PoolId id, uint256 currencyIndex) external nonReentrant returns (uint256 amount) {
-        address user = msg.sender;
-        _settleHolder(id, user, currencyIndex, weightOf[id][user]);
-        amount = holderOwed[id][user][currencyIndex];
+    /// @notice Forward the accrued floor carve for one currency to the pool's floor recipient
+    /// (the floor vault / keeper). Permissionless; funds always go to the registered recipient.
+    function claimFloor(PoolId id, uint256 currencyIndex) external nonReentrant returns (uint256 amount) {
+        address to = config[id].floorRecipient;
+        if (to == address(0)) revert NoFloorRecipient();
+        amount = floorOwed[id][currencyIndex];
         if (amount == 0) revert NothingToClaim();
-        holderOwed[id][user][currencyIndex] = 0;
-        _payout(_currencyAt(id, currencyIndex), user, amount);
-        emit HolderClaimed(id, user, currencyIndex, amount);
-    }
-
-    /// @notice View a holder's currently-claimable amount for one currency (settled + pending).
-    function holderClaimable(PoolId id, address user, uint256 currencyIndex) external view returns (uint256) {
-        uint256 w = weightOf[id][user];
-        uint256 rpt = rewardPerTokenStored[id][currencyIndex];
-        uint256 paid = userRptPaid[id][user][currencyIndex];
-        uint256 pending = (w != 0 && rpt > paid) ? (w * (rpt - paid)) / RAY : 0;
-        return holderOwed[id][user][currencyIndex] + pending;
+        floorOwed[id][currencyIndex] = 0;
+        _payout(_currencyAt(id, currencyIndex), to, amount);
+        emit FloorClaimed(id, currencyIndex, to, amount);
     }
 
     // --------------------------------------------------------------------- //
@@ -353,10 +286,9 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         return index == 0 ? c.currency0 : c.currency1;
     }
 
-    /// @dev Native → low-level call; ERC20 → CurrencyLibrary.transfer (reverts on failure).
-    /// Callers zero the owed slot before calling under the nonReentrant guard. If the send
-    /// reverts, the whole claim tx reverts and the owed slot is restored — funds are never
-    /// lost, the claim just fails, and the failure is isolated to that one caller/currency [F1/F3].
+    /// @dev Native → low-level call; ERC20 → CurrencyLibrary.transfer (reverts on failure). Callers
+    /// zero the owed slot before calling under nonReentrant; a failed send reverts the whole claim and
+    /// restores the slot — funds are never lost, and the failure is isolated to that one caller/currency.
     function _payout(Currency currency, address to, uint256 amount) internal {
         if (to == address(0)) revert ZeroAddress();
         if (currency.isAddressZero()) {

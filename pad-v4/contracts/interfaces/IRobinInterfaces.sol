@@ -19,24 +19,21 @@ interface IStockGuardAdapter {
     function scheduledEffectiveAt() external view returns (uint256 effectiveAt);
 }
 
-/// @notice The per-pool weight source for the O(1) holder accumulator. In Feature 1
-/// this is unset (holder cuts park); in Feature 2 it is the pool's DualStaking, which
-/// calls `onWeightChange` on every stake/unstake so the hook can checkpoint rewards.
-interface IHolderWeightSource {
-    function totalHolderWeight(PoolId id) external view returns (uint256);
-}
-
 /// @notice Minimal registration surface the factory calls on the hook in the launch tx.
+/// The trade tax routes by DIRECTION:
+///   • BUY  (spend quote → get token): `buyTaxBps` of the token output → platform
+///   • SELL (spend token → get quote): `sellTaxBps` of the quote output → creator + floor,
+///          where `sellFloorShareBps` of that sell tax is carved to the floor (out of the creator's cut).
 interface IRobinFeeHookAdmin {
     struct PoolFeeConfig {
-        Currency currency0;
-        Currency currency1;
-        address creator;
-        address weightSource; // DualStaking; address(0) => holder cut parks
+        Currency currency0; // quote (native ETH / USDG / stock)
+        Currency currency1; // the launched token
+        address creator; // receives the sell tax (less the floor carve)
+        address floorRecipient; // receives the floor carve; address(0) => it parks in floorOwed
         address guardAdapter; // stock guard; address(0) => no curb
-        uint16 feeBps; // fee as bps of the swap's output (unspecified) leg
-        uint16 platformShareBps; // share of the fee to platform
-        uint16 creatorShareBps; // share of the fee to creator; holder = remainder
+        uint16 buyTaxBps; // tax on buys → platform (bps of token output)
+        uint16 sellTaxBps; // tax on sells → creator + floor (bps of quote output)
+        uint16 sellFloorShareBps; // share of the SELL tax carved to the floor (bps of the sell fee)
         uint32 guardWindow; // seconds around a scheduled stock action; 0 => no curb
         bool quoteIsStock;
     }

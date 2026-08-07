@@ -10,17 +10,27 @@ Sibling to the untouched v3 pad in `../launchpad`. Full design: `ROBIN-V4-ARCHIT
 > dual staking, a USDG-yield ERC-4626 locked floor, and a tokenized-stock pad, all under one
 > immutable factory.
 
-## Status — Features 1 & 2 ✅ built & tested (40 unit tests + 2 live-fork tests passing)
+## Status — Features 1 & 2 ✅ built & tested (36 unit tests + 2 live-fork tests passing)
 
-Coverage includes adversarial cases: unregistered-pool inertness, the D2 guarded-take (a
-blocklisted stock fee currency skips the skim instead of bricking the swap), both-leg fee accrual,
+### Fee model (per pad)
+| | On a **BUY** (quote→token) | On a **SELL** (token→quote) |
+|---|---|---|
+| **LP fee** (pool's own, from the locked seed LP) | → Platform | → Project staking pool |
+| **1% trade tax** (the hook) | → Platform | → Creator **0.8%** + Floor **0.2%** |
+
+Holders are rewarded by **staking** (stake the coin → earn stocks/ETH via DualStaking), funded by the
+sell-side LP fee. The floor carve comes out of the creator's sell tax and builds a permanent, un-ruggable
+USDG buy-wall under the price. All numbers are per-pool config.
+
+Coverage includes adversarial cases: unregistered-pool inertness, the D2 guarded-take (a blocklisted
+fee currency skips the skim instead of bricking the swap), buy→platform / sell→creator+floor routing,
 the beforeSwap stock curb, bad-config rejection, and — on staking — partial unstake, empty-pool
 pause→kickstart, forfeiture-without-window-reset (anti-grief), and rewarder gating.
 
 **Feature 1 — the spine**
 | Contract | Role |
 |---|---|
-| `hooks/RobinFeeHook.sol` | **The heart.** afterSwap 3-way skim (exact-input only, additional not carved), O(1) holder accumulator, beforeSwap stock curb. Flags `0x00C4`, self-asserted. |
+| `hooks/RobinFeeHook.sol` | **The heart.** afterSwap directional trade tax — buy→platform, sell→creator+floor carve (exact-input only, additional not carved). beforeSwap stock curb. Flags `0x00C4`, self-asserted. |
 | `hooks/BaseHook.sol` | Flag self-assert + PM-only guards + transient reentrancy guard. |
 | `core/DeterministicDeployer.sol` | Minimal CREATE2 factory (pin its address; hook salts mine off it). |
 | `core/FeeWalletRegistry.sol` | The **only** mutable knob: platform wallet, Ownable2Step + 2-day timelock. |
@@ -32,7 +42,7 @@ pause→kickstart, forfeiture-without-window-reset (anti-grief), and rewarder ga
 **Feature 2 — dual staking**
 | Contract | Role |
 |---|---|
-| `pads/DualStaking.sol` | Two-book "earn the other" streaming staking. Stake token **or** stock; each side streams a reward basket (ETH, the other asset, extra tokens). Audited RobinStaking engine per side (forfeit-to-stayers, empty-pool pause, measured-delta) + SheriffStaking anti-JIT hold + bounded boost (≤4x, oracle try/catch) + `fundTokenPushed` hook path. Reports the weighted side's weight to `RobinFeeHook` so the 3-way holder cut streams to stakers. |
+| `pads/DualStaking.sol` | Two-book "earn the other" streaming staking. Stake token **or** stock; each side streams a reward basket (ETH, the other asset, extra tokens). Audited RobinStaking engine per side (forfeit-to-stayers, empty-pool pause, measured-delta) + SheriffStaking anti-JIT hold + bounded boost (≤4x, oracle try/catch) + `fundTokenPushed` push-funding path. **Works for ANY ERC20** — every existing Robin coin can get a stake-to-earn pool, not just V4 pads. |
 
 **Next:** Feature 3 RobinVault (USDG floor) → Feature 4 RobinBlue (stock pad).
 
