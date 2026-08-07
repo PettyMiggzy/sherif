@@ -2,19 +2,19 @@ const { ethers } = require("hardhat");
 const { expect } = require("chai");
 
 // Feature 1 — LockVault: the seed-LP lock is STRUCTURAL. This suite proves the surface has no
-// liquidity-exit selector at all (invariant #2), the NFT is only acceptable from the canonical
-// PositionManager (that acceptance IS the lock), and registration is factory-only / one-shot /
-// fee-bounded. The actual collectFees flow needs the real PositionManager → covered in test/fork.
+// liquidity-exit selector (invariant #2), the NFT is only acceptable from the canonical PositionManager
+// (that acceptance IS the lock), registration is factory-only / one-shot, and the LP-fee routing
+// (quote→platform, token→staking) books correctly. The actual collectFees flow needs the real
+// PositionManager → covered in test/fork.
 
 const ZERO = ethers.ZeroAddress;
 
-describe("LockVault — collect-only, locked forever", () => {
-  let factory, pmSigner, other, creator, reg, vault, c0, c1;
+describe("LockVault — collect-only, locked forever, routes fees platform/staking", () => {
+  let factory, pmSigner, other, staking, reg, vault, c1;
 
   beforeEach(async () => {
-    [factory, pmSigner, other, creator, c0, c1] = await ethers.getSigners();
+    [factory, pmSigner, other, staking, c1] = await ethers.getSigners();
     reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(other.address, factory.address);
-    // positionManager is just an address for these surface/guard tests; use pmSigner's address
     vault = await (await ethers.getContractFactory("LockVault")).deploy(pmSigner.address, await reg.getAddress());
     await vault.setFactory(factory.address); // bootstrap one-shot (deployer == this test signer)
   });
@@ -30,43 +30,28 @@ describe("LockVault — collect-only, locked forever", () => {
     const banned = ["decreaseLiquidity", "burn", "transfer", "transferFrom", "approve", "setApprovalForAll", "modifyLiquidity"];
     const names = vault.interface.fragments.filter((f) => f.type === "function").map((f) => f.name);
     for (const b of banned) expect(names, `must not expose ${b}`).to.not.include(b);
-    // the ONLY outward path:
-    expect(names).to.include("collectFees");
+    expect(names).to.include("collectFees"); // the ONLY outward path
   });
 
   it("accepts the NFT only from the PositionManager", async () => {
-    // from PM → ok (returns the magic selector)
-    expect(
-      await vault.connect(pmSigner).onERC721Received.staticCall(ZERO, ZERO, 1, "0x")
-    ).to.equal("0x150b7a02");
-    // from anyone else → revert
+    expect(await vault.connect(pmSigner).onERC721Received.staticCall(ZERO, ZERO, 1, "0x")).to.equal("0x150b7a02");
     await expect(vault.connect(other).onERC721Received(ZERO, ZERO, 1, "0x")).to.be.revertedWithCustomError(
-      vault,
-      "NotPositionManager"
+      vault, "NotPositionManager"
     );
   });
 
-  it("registerLaunch is factory-only, fee-bounded, one-shot", async () => {
-    await expect(
-      vault.connect(other).registerLaunch(1, creator.address, 500, ZERO, c1.address)
-    ).to.be.revertedWithCustomError(vault, "NotFactory");
-
-    await expect(
-      vault.connect(factory).registerLaunch(1, creator.address, 50, ZERO, c1.address)
-    ).to.be.revertedWithCustomError(vault, "InvalidCreatorFee"); // < 1%
-    await expect(
-      vault.connect(factory).registerLaunch(1, creator.address, 1500, ZERO, c1.address)
-    ).to.be.revertedWithCustomError(vault, "InvalidCreatorFee"); // > 10%
-
-    await vault.connect(factory).registerLaunch(1, creator.address, 500, ZERO, c1.address);
-    await expect(
-      vault.connect(factory).registerLaunch(1, creator.address, 500, ZERO, c1.address)
-    ).to.be.revertedWithCustomError(vault, "AlreadyRegistered");
+  it("registerLaunch is factory-only and one-shot", async () => {
+    await expect(vault.connect(other).registerLaunch(1, ZERO, c1.address, staking.address))
+      .to.be.revertedWithCustomError(vault, "NotFactory");
+    await vault.connect(factory).registerLaunch(1, ZERO, c1.address, staking.address);
+    expect((await vault.locks(1)).stakingRecipient).to.equal(staking.address);
+    await expect(vault.connect(factory).registerLaunch(1, ZERO, c1.address, staking.address))
+      .to.be.revertedWithCustomError(vault, "AlreadyRegistered");
   });
 
   it("claims revert with NothingToClaim before any fees are collected", async () => {
-    await vault.connect(factory).registerLaunch(1, creator.address, 500, ZERO, c1.address);
-    await expect(vault.claimCreator(1, 0)).to.be.revertedWithCustomError(vault, "NothingToClaim");
-    await expect(vault.claimPlatform(1, 1)).to.be.revertedWithCustomError(vault, "NothingToClaim");
+    await vault.connect(factory).registerLaunch(1, ZERO, c1.address, staking.address);
+    await expect(vault.claimPlatform(1, 0)).to.be.revertedWithCustomError(vault, "NothingToClaim");
+    await expect(vault.claimStaking(1, 1)).to.be.revertedWithCustomError(vault, "NothingToClaim");
   });
 });

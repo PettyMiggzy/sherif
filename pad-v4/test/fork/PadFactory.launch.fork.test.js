@@ -40,8 +40,8 @@ describe("PadFactory — full ETH-pad launch on live 0x8366", function () {
       name: "Robin Test", symbol: "RTEST", decimals: 18,
       supply: 10n ** 24n, lpTokenAmount: 5n * 10n ** 23n,
       sqrtPriceX96: SQRT_1_1, tickSpacing: 60, fee: 3000,
-      buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, creatorLpFeeBps: 1000,
-      creator: creator.address, floorRecipient: ethers.ZeroAddress,
+      buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000,
+      creator: creator.address, floorRecipient: ethers.ZeroAddress, stakingRecipient: ethers.ZeroAddress,
     };
 
     const seedEth = ethers.parseEther("10");

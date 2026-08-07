@@ -53,9 +53,9 @@ contract PadFactory {
         uint16 buyTaxBps; // trade tax on buys → platform (bps of token output)
         uint16 sellTaxBps; // trade tax on sells → creator + floor (bps of quote output)
         uint16 sellFloorShareBps; // share of the sell tax carved to the floor
-        uint16 creatorLpFeeBps; // creator share of the locked seed-LP fees (1%–10%)
         address creator;
         address floorRecipient; // floor carve destination; 0 => it parks in the hook
+        address stakingRecipient; // token-side LP fee destination (the pad's staking pool); 0 => platform
     }
 
     struct Launch {
@@ -169,7 +169,7 @@ contract PadFactory {
         lpTokenId = _mintSeedLp(key, cfg, currency0, currency1);
 
         // 6) register the lock, distribute the remainder, refund ETH dust
-        lockVault.registerLaunch(lpTokenId, cfg.creator, cfg.creatorLpFeeBps, currency0, currency1);
+        lockVault.registerLaunch(lpTokenId, currency0, currency1, cfg.stakingRecipient);
 
         uint256 remainder = cfg.supply - cfg.lpTokenAmount;
         if (remainder > 0) IERC20(token).transfer(cfg.creator, remainder);
