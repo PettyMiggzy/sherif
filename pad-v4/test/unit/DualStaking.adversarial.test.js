@@ -112,4 +112,42 @@ describe("DualStaking — adversarial", () => {
     await expect(ds.connect(alice).stake(2, 1n)).to.be.revertedWithCustomError(ds, "BadSide");
     await expect(ds.connect(rewarder).fundETH(2, { value: 1n })).to.be.revertedWithCustomError(ds, "BadSide");
   });
+
+  it("platform claim fee: staker gets 95%, platform accrues 5%, no lock", async () => {
+    await ds.connect(owner).setPlatformClaimFee(500); // 5%
+    await ds.connect(owner).setPlatformTreasury(bob.address);
+    await ds.connect(alice).stake(TOKEN, 1000n);
+    await ds.connect(rewarder).fundETH(TOKEN, { value: ethers.parseEther("10") });
+    await time.increase(7 * DAY + 10);
+
+    const gross = await ds.earned(TOKEN, alice.address, ETH);
+    expect(gross).to.be.gt(0n);
+    const aBefore = await ethers.provider.getBalance(alice.address);
+    const tx = await (await ds.connect(alice).claim(TOKEN, ETH)).wait();
+    const gasPaid = tx.gasUsed * tx.gasPrice;
+    const got = (await ethers.provider.getBalance(alice.address)) - aBefore + gasPaid;
+
+    const fee = (gross * 500n) / 10000n;
+    expect(got).to.equal(gross - fee); // staker got 95%
+    expect(await ds.platformFeesOwed(ETH)).to.equal(fee); // 5% accrued
+
+    // platform pulls its cut to the treasury (bob)
+    const bBefore = await ethers.provider.getBalance(bob.address);
+    await ds.connect(rewarder).claimPlatformFees(ETH); // permissionless; goes to treasury
+    expect((await ethers.provider.getBalance(bob.address)) - bBefore).to.equal(fee);
+  });
+
+  it("single-book pool (no paired stock): TOKEN stakes, STOCK side is disabled", async () => {
+    const solo = await (await ethers.getContractFactory("DualStaking")).deploy(
+      await tok.getAddress(), ethers.ZeroAddress, owner.address, 0, ethers.ZeroAddress, ethers.ZeroHash, TOKEN
+    );
+    await tok.connect(alice).approve(await solo.getAddress(), ethers.MaxUint256);
+    await solo.connect(alice).stake(TOKEN, 100n); // works
+    expect(await solo.totalStaked(TOKEN)).to.equal(100n);
+    await expect(solo.connect(alice).stake(STOCK, 100n)).to.be.revertedWithCustomError(solo, "SideDisabled");
+  });
+
+  it("claim fee is capped at 10%", async () => {
+    await expect(ds.connect(owner).setPlatformClaimFee(1500)).to.be.revertedWithCustomError(ds, "BadParam");
+  });
 });
