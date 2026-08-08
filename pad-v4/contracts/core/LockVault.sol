@@ -37,9 +37,10 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
     }
 
     mapping(uint256 tokenId => Lock) public locks;
-    // tokenId => currencyIndex => owed
-    mapping(uint256 => mapping(uint256 => uint256)) public platformOwed; // quote leg (buys)
-    mapping(uint256 => mapping(uint256 => uint256)) public stakingOwed; // token leg (sells)
+    // tokenId => currencyIndex => owed. Locked model: platformOwed holds BOTH legs ([0]=quote/ETH, [1]=token);
+    // stakingOwed holds ONLY the optional ETH slice at [0] ([1] is unused).
+    mapping(uint256 => mapping(uint256 => uint256)) public platformOwed;
+    mapping(uint256 => mapping(uint256 => uint256)) public stakingOwed;
 
     event LaunchRegistered(uint256 indexed tokenId, address indexed stakingRecipient);
     event FeesCollected(uint256 indexed tokenId, uint256 amount0, uint256 amount1);

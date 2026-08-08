@@ -71,9 +71,11 @@ describe("RobinCurveV4 — single-sided free curve on live-local PoolManager", (
     const t1 = (await stateView.getSlot0(await poolId()))[1];
     expect(t1).to.be.lt(t0); // tick moved DOWN (buy)
 
-    // collectFees → the platform wallet receives the ETH-side LP fees
-    const before = await ethers.provider.getBalance(platform.address);
+    // collectFees books the ETH-side LP fees to the platform (accrue-and-pull, non-bricking)
     await curve.collectFees();
+    expect(await curve.platformEthOwed()).to.be.gt(0n);
+    const before = await ethers.provider.getBalance(platform.address);
+    await curve.claimPlatform(); // pull the booked fees to the platform wallet
     expect(await ethers.provider.getBalance(platform.address)).to.be.gt(before);
     expect(await curve.ready()).to.equal(false); // still mid-curve
 

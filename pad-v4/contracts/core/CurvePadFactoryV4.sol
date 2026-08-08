@@ -2,12 +2,14 @@
 pragma solidity 0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {IStateView} from "@uniswap/v4-periphery/src/interfaces/IStateView.sol";
 
 import {DeterministicDeployer} from "./DeterministicDeployer.sol";
 import {CurveV4Deployer} from "./CurveV4Deployer.sol";
@@ -29,6 +31,8 @@ import {IRobinFeeHookAdmin} from "../interfaces/IRobinInterfaces.sol";
 /// set their own tax, and an already-launched pad's fee can never change (retuning the FeeConfig only affects
 /// FUTURE launches, no factory redeploy). This is the "right the first time" rule made structural.
 contract CurvePadFactoryV4 {
+    using SafeERC20 for IERC20;
+
     IPoolManager public immutable poolManager;
     address public immutable positionManager;
     address public immutable permit2;
@@ -46,9 +50,10 @@ contract CurvePadFactoryV4 {
         string symbol;
         uint8 decimals;
         uint256 supply; // total minted to the factory
-        uint256 curveSupply; // tokens seeded into the single-sided curve (sold + unsold reserve); rest → creator
+        uint256 curveSupply; // tokens SOLD via the single-sided curve
+        uint256 reserveSupply; // tokens HELD BACK (never in the curve) to pair the permanent LP + feed staking
         int24 tickSpacing;
-        address creator;
+        address creator; // gets supply - curveSupply - reserveSupply
     }
 
     struct Launch {
@@ -71,6 +76,7 @@ contract CurvePadFactoryV4 {
     error BadConfig();
     error BadGeometry();
     error NotCurve();
+    error PoolAlreadyInit();
 
     constructor(
         address poolManager_,
@@ -100,9 +106,10 @@ contract CurvePadFactoryV4 {
         external
         returns (address token, address hook, address curve, PoolId poolId)
     {
-        if (cfg.creator == address(0) || cfg.supply == 0 || cfg.curveSupply == 0 || cfg.curveSupply > cfg.supply) {
-            revert BadConfig();
-        }
+        if (
+            cfg.creator == address(0) || cfg.supply == 0 || cfg.curveSupply == 0 || cfg.reserveSupply == 0
+                || cfg.curveSupply + cfg.reserveSupply > cfg.supply
+        ) revert BadConfig();
 
         // 1) governed defaults, snapshotted + stamped immutably
         RobinV4FeeConfig.Defaults memory d = feeConfig.defaults();
@@ -141,8 +148,15 @@ contract CurvePadFactoryV4 {
         });
         poolId = key.toId();
 
-        // 4) initialize at the curve top, then bind the IMMUTABLE fee config BEFORE any liquidity/swap
-        poolManager.initialize(key, TickMath.getSqrtPriceAtTick(startTick));
+        // 4) initialize at the curve top, then bind the IMMUTABLE fee config BEFORE any liquidity/swap.
+        //    [MEDIUM-3] idempotent: a same-block front-run that pre-inits the pool only survives if it landed at
+        //    OUR exact start price (a byte-identical init) — any other price is hostile and we revert.
+        uint160 sqrtStart = TickMath.getSqrtPriceAtTick(startTick);
+        try poolManager.initialize(key, sqrtStart) returns (int24) {}
+        catch {
+            (uint160 sp,,,) = IStateView(stateView).getSlot0(poolId);
+            if (sp != sqrtStart) revert PoolAlreadyInit();
+        }
         RobinFeeHook(payable(hook)).registerPool(
             poolId,
             IRobinFeeHookAdmin.PoolFeeConfig({
@@ -182,12 +196,13 @@ contract CurvePadFactoryV4 {
             )
         );
         isCurve[curve] = true;
-        IERC20(token).transfer(curve, cfg.curveSupply);
+        IERC20(token).safeTransfer(curve, cfg.curveSupply); // the SOLD portion → seeded into the curve
         RobinCurveV4(payable(curve)).seed();
+        IERC20(token).safeTransfer(curve, cfg.reserveSupply); // the HELD reserve → pairs the permanent LP + staking
 
-        // 6) send the non-curve remainder to the creator
+        // 6) send the non-curve, non-reserve remainder to the creator
         uint256 rem = IERC20(token).balanceOf(address(this));
-        if (rem > 0) IERC20(token).transfer(cfg.creator, rem);
+        if (rem > 0) IERC20(token).safeTransfer(cfg.creator, rem);
 
         uint256 index = launchCount++;
         launches[index] = Launch({token: token, hook: hook, curve: curve, poolId: poolId});

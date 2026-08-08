@@ -11,7 +11,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
-import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
@@ -34,17 +34,18 @@ interface IStakingFund {
 /// @notice The token seeds its OWN liquidity as one token-only (currency1) range `[gradTick, startTick]` with
 /// the pool initialized at `startTick` (the range's upper bound ⇒ 100% token, so NO ETH is ever required).
 /// Buyers (`zeroForOne`, ETH-in) walk the tick DOWN, converting token→ETH; ETH accumulates as the raise. When
-/// price reaches the ceiling (`gradTick`) the token ladder is exhausted ⇒ `ready()` ⇒ anyone `graduate()`s:
-///   • sweep the final LP fees → platform,
-///   • pull the raised ETH + unsold tokens out of the curve,
-///   • seed a PERMANENT, LOCKED full-range 2-sided LP (raised ETH + matching tokens) whose NFT goes to the
-///     LockVault (can never be pulled), its LP fees → platform,
-///   • stream the REMAINING unsold tokens into the pad's staking pool (holder rewards).
+/// price reaches the ceiling (`gradTick`, the range's LOWER bound ⇒ the curve is fully sold), anyone graduate()s.
 ///
-/// The curve position is held via the RAW PoolManager (owner-keyed, no NFT) so it is fully withdrawable at
-/// graduation — the LockVault, by design, can never release, which is why the permanent LP is a separate
-/// PositionManager NFT. Curve-phase LP fees go ENTIRELY to platform (the locked model). All economic params are
-/// stamped IMMUTABLY by the factory from the governed RobinV4FeeConfig — this contract cannot self-set fees.
+/// A held-back token RESERVE (transferred by the factory AFTER seed, so it is never in the sellable range) funds
+/// graduation — because a fully-sold curve holds ~0 token. graduate():
+///   • pulls the raised ETH out of the curve (its accrued LP fees accrue to the platform book),
+///   • seeds a PERMANENT, LOCKED full-range 2-sided LP from (raised ETH + reserve tokens); its NFT goes to the
+///     LockVault (can never be pulled), its LP fees → platform,
+///   • streams the LEFTOVER reserve tokens into the pad's staking pool (holder rewards).
+///
+/// Platform LP fees are accrue-and-pull (`claimPlatform`), never sent inline, so a bad platform wallet can never
+/// brick collectFees/graduate. All economic params are stamped IMMUTABLY by the factory from the governed
+/// RobinV4FeeConfig — this contract cannot self-set fees.
 contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
@@ -66,7 +67,6 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     address public immutable factory;
     IFeeWalletRegistry public immutable feeRegistry;
 
-    // pool (stored as components; PoolKey rebuilt in memory)
     Currency public immutable currency0; // ETH (address 0)
     Currency public immutable currency1; // token
     address public immutable token; // = Currency.unwrap(currency1)
@@ -83,8 +83,13 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint128 public curveL; // liquidity minted at seed (removed whole at graduation)
     address public staking; // the pad's DualStaking pool — set once, platform-gated
 
+    // accrue-and-pull platform LP fees (never sent inline → cannot brick collect/graduate)
+    uint256 public platformEthOwed;
+    uint256 public platformTokenOwed;
+
     event Seeded(uint128 liquidity, uint256 tokens);
-    event CurveFeesCollected(uint256 eth, uint256 tokenFees);
+    event CurveFeesAccrued(uint256 eth, uint256 tokenFees);
+    event PlatformClaimed(uint256 eth, uint256 tokenAmt, address to);
     event StakingSet(address staking);
     event Graduated(uint256 lpTokenId, uint256 raisedEth, uint256 toStaking);
     event StakingFunded(uint256 amount);
@@ -99,6 +104,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     error AlreadySet();
     error NotReady();
     error EmptyRaise();
+    error NoReserve();
     error BadLiquidity();
 
     constructor(
@@ -143,8 +149,9 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
 
     // ── seed ────────────────────────────────────────────────────────────────────
 
-    /// @notice Seed the single-sided token-only curve. Factory-only, one-shot. The factory has already
-    /// transferred the curve tokens to this contract; all of them go into the `[gradTick, startTick]` range.
+    /// @notice Seed the single-sided token-only curve with THIS contract's whole current token balance (the
+    /// factory transfers exactly the sellable `curveSupply` before calling, then transfers the graduation reserve
+    /// AFTER — so the reserve is never in the sellable range). Factory-only, one-shot.
     function seed() external nonReentrant {
         if (msg.sender != factory) revert NotFactory();
         if (seeded) revert AlreadySeeded();
@@ -156,12 +163,26 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
 
     // ── live LP-fee sweep (curve phase) ───────────────────────────────────────────
 
-    /// @notice Sweep the curve position's accrued LP fees to the platform. Permissionless; principal untouched.
-    /// Per the locked model, ALL curve-phase LP fees → platform.
+    /// @notice Realize the curve position's accrued LP fees to this contract's platform book. Permissionless;
+    /// principal untouched. Pull with claimPlatform(). Per the locked model, ALL curve-phase LP fees → platform.
     function collectFees() external nonReentrant {
         if (!seeded) revert NotSeeded();
         if (graduated) revert AlreadyGraduated();
         poolManager.unlock(abi.encode(Op.COLLECT, uint256(0)));
+    }
+
+    /// @notice Forward accrued platform LP fees (+ post-graduation dust) to the platform wallet. Permissionless;
+    /// the only sink is the governed wallet. Standalone + retriable, so a bad recipient can never brick the pad.
+    function claimPlatform() external nonReentrant {
+        uint256 e = platformEthOwed;
+        uint256 t = platformTokenOwed;
+        if (e == 0 && t == 0) return;
+        platformEthOwed = 0;
+        platformTokenOwed = 0;
+        address plat = feeRegistry.platformFeeWallet();
+        if (t > 0) IERC20(token).safeTransfer(plat, t);
+        if (e > 0) _payEth(plat, e);
+        emit PlatformClaimed(e, t, plat);
     }
 
     // ── graduation ────────────────────────────────────────────────────────────────
@@ -169,44 +190,44 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     function ready() public view returns (bool) {
         if (!seeded || graduated) return false;
         (, int24 tick,,) = stateView.getSlot0(_poolId());
-        return tick <= gradTick; // token=currency1: buyers drove the tick down to the ceiling
+        return tick <= gradTick; // curve fully sold (spot at the ceiling, or below it if a buy overshot)
     }
 
-    /// @notice Graduate at the ceiling: sweep fees→platform, pull raise+unsold, seed the permanent LOCKED
-    /// 2-sided LP, route leftover tokens→staking. Permissionless, atomic where it must be, unbrickable.
+    /// @notice Graduate at the ceiling: pull the raise from the curve, seed the permanent LOCKED 2-sided LP from
+    /// (raise + reserve), stream leftover reserve → staking. Permissionless; CEI-ordered; unbrickable.
     function graduate() external nonReentrant {
         if (!seeded) revert NotSeeded();
         if (graduated) revert AlreadyGraduated();
         (, int24 tick,,) = stateView.getSlot0(_poolId());
-        // ready + anti-grief: spot must sit AT the honest ceiling (within one spacing), never shoved far below
-        // into empty space — otherwise the permanent LP would seed at a manipulated price. Self-heals via arb.
-        if (tick > gradTick || tick < gradTick - tickSpacing) revert NotReady();
+        if (tick > gradTick) revert NotReady(); // curve not fully sold yet
         graduated = true; // CEI: flip before any external interaction
 
-        // 1) pull funds inside our own unlock: final fee sweep → platform, then curve principal → this contract
+        // 1) pull the raise out of the curve. The unlock FIRST nudges spot back up to the exact ceiling if a buy
+        //    (or a griefer's planted liquidity) overshot below it, so the permanent LP always seeds at gradTick —
+        //    never a manipulated price. Then it accrues fees and takes the principal to this contract.
         poolManager.unlock(abi.encode(Op.GRADUATE_PULL, uint256(0)));
 
-        // 2) now this contract holds the raised ETH (native) + the unsold tokens
-        uint256 raisedEth = address(this).balance;
-        uint256 tokenPool = IERC20(token).balanceOf(address(this));
+        // 2) the raise is this contract's ETH minus the platform-owed fee book; the reserve is its token minus
+        //    the platform-owed token fees. A fully-sold curve yields ~0 token, so the LP token leg is the RESERVE.
+        uint256 raisedEth = address(this).balance - platformEthOwed;
+        uint256 tokenReserve = IERC20(token).balanceOf(address(this)) - platformTokenOwed;
         if (raisedEth == 0) revert EmptyRaise();
+        if (tokenReserve == 0) revert NoReserve(); // [CRITICAL-1] must have a held-back reserve to pair the LP
 
-        // 3) seed the PERMANENT LOCKED full-range 2-sided LP (NFT → LockVault). The ETH leg binds, so the
-        //    surplus tokens stay here for staking.
-        uint256 lpTokenId = _mintPermanentLp(raisedEth, tokenPool);
+        // 3) seed the PERMANENT LOCKED full-range 2-sided LP (NFT → LockVault). The reserve is sized so the ETH
+        //    leg binds; the surplus reserve tokens stay here for staking.
+        uint256 lpTokenId = _mintPermanentLp(raisedEth, tokenReserve);
 
         // 4) register the lock through the factory (LockVault's sole registrar) — carries the immutable slice
         ICurveFactoryCallback(factory).onGraduated(lpTokenId, currency0, currency1, staking, stakingEthShareBps);
 
-        // 5) stream the leftover unsold tokens → staking (non-bricking; flushStaking() finishes if unwired)
-        uint256 toStaking = IERC20(token).balanceOf(address(this));
-        _fundStaking(toStaking);
+        // 5) stream the leftover reserve tokens → staking (non-bricking; flushStaking() finishes if unwired)
+        uint256 leftoverToken = IERC20(token).balanceOf(address(this)) - platformTokenOwed;
+        _fundStaking(leftoverToken);
 
-        // 6) sweep any ETH dust → platform
-        uint256 dust = address(this).balance;
-        if (dust > 0) _payEth(feeRegistry.platformFeeWallet(), dust);
-
-        emit Graduated(lpTokenId, raisedEth, toStaking);
+        // 6) sweep the fee book + any LP dust into the platform book (claimed later, never sent inline here)
+        platformEthOwed = address(this).balance;
+        emit Graduated(lpTokenId, raisedEth, leftoverToken);
     }
 
     /// @notice Finish staking funding if the pool wasn't wired/listed at graduation. Permissionless.
@@ -214,7 +235,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (!graduated) revert NotReady();
         address s = staking;
         if (s == address(0)) revert ZeroAddress();
-        uint256 bal = IERC20(token).balanceOf(address(this));
+        uint256 bal = IERC20(token).balanceOf(address(this)) - platformTokenOwed; // never sweep platform fees
         if (bal > 0) IERC20(token).safeTransfer(s, bal);
         IStakingFund(s).fundTokenPushed(uint8(0), token); // Side.TOKEN; credits balanceOf - accountedReserve
         emit StakingFunded(bal);
@@ -256,7 +277,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
             ModifyLiquidityParams({tickLower: gradTick, tickUpper: startTick, liquidityDelta: int256(uint256(L)), salt: bytes32(0)}),
             ""
         );
-        // pure currency1 (token) position: amount0 should be 0, amount1 negative (we owe token)
+        // pure currency1 (token) position: amount0 == 0, amount1 negative (we owe token) — NO ETH pulled
         _resolve(currency0, delta.amount0());
         _resolve(currency1, delta.amount1());
         emit Seeded(L, amount);
@@ -268,27 +289,44 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
             ModifyLiquidityParams({tickLower: gradTick, tickUpper: startTick, liquidityDelta: 0, salt: bytes32(0)}),
             ""
         );
-        address plat = feeRegistry.platformFeeWallet();
-        int128 a0 = delta.amount0();
-        int128 a1 = delta.amount1();
-        if (a0 > 0) poolManager.take(currency0, plat, uint256(uint128(a0)));
-        if (a1 > 0) poolManager.take(currency1, plat, uint256(uint128(a1)));
-        emit CurveFeesCollected(a0 > 0 ? uint256(uint128(a0)) : 0, a1 > 0 ? uint256(uint128(a1)) : 0);
+        (uint256 e, uint256 t) = _takeFeesToBook(delta);
+        emit CurveFeesAccrued(e, t);
     }
 
     function _graduatePull() internal {
         PoolKey memory key = _poolKey();
-        // (a) final LP-fee sweep → platform (so the last batch honors the platform-all rule)
+
+        // (0) anti-grief nudge: if spot overshot BELOW the ceiling (a big buy into the empty zone, or a third
+        // party planted liquidity under gradTick to shove it there), sell on-hand token UP to the ceiling limit.
+        // In the empty zone this consumes ~0 (no liquidity below gradTick); against any planted liquidity it powers
+        // through — bounded by our balance — until spot lands EXACTLY at gradTick, so the permanent LP seeds honest.
+        (, int24 curTick,,) = stateView.getSlot0(_poolId());
+        if (curTick < gradTick) {
+            uint256 bal = IERC20(token).balanceOf(address(this)); // the held reserve powers the nudge
+            if (bal > 0) {
+                BalanceDelta sd = poolManager.swap(
+                    key,
+                    SwapParams({
+                        zeroForOne: false, // token-in → price UP toward the ceiling
+                        amountSpecified: -int256(bal),
+                        sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(gradTick)
+                    }),
+                    ""
+                );
+                _resolve(currency0, sd.amount0()); // take any ETH out
+                _resolve(currency1, sd.amount1()); // settle the (tiny) token consumed
+            }
+        }
+
+        // (a) realize accrued fees → platform book (taken to this contract, accrued, NOT sent to platform inline)
         (BalanceDelta fees,) = poolManager.modifyLiquidity(
             key,
             ModifyLiquidityParams({tickLower: gradTick, tickUpper: startTick, liquidityDelta: 0, salt: bytes32(0)}),
             ""
         );
-        address plat = feeRegistry.platformFeeWallet();
-        if (fees.amount0() > 0) poolManager.take(currency0, plat, uint256(uint128(fees.amount0())));
-        if (fees.amount1() > 0) poolManager.take(currency1, plat, uint256(uint128(fees.amount1())));
+        _takeFeesToBook(fees);
 
-        // (b) remove the whole curve principal → this contract (raised ETH + unsold tokens)
+        // (b) remove the whole curve principal → this contract (the raised ETH; token ≈ 0 at the ceiling)
         (BalanceDelta d,) = poolManager.modifyLiquidity(
             key,
             ModifyLiquidityParams({tickLower: gradTick, tickUpper: startTick, liquidityDelta: -int256(uint256(curveL)), salt: bytes32(0)}),
@@ -296,6 +334,22 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         );
         if (d.amount0() > 0) poolManager.take(currency0, address(this), uint256(uint128(d.amount0())));
         if (d.amount1() > 0) poolManager.take(currency1, address(this), uint256(uint128(d.amount1())));
+    }
+
+    /// @dev Take a fee delta to this contract and accrue it to the platform book.
+    function _takeFeesToBook(BalanceDelta delta) internal returns (uint256 e, uint256 t) {
+        int128 a0 = delta.amount0();
+        int128 a1 = delta.amount1();
+        if (a0 > 0) {
+            e = uint256(uint128(a0));
+            poolManager.take(currency0, address(this), e);
+            platformEthOwed += e;
+        }
+        if (a1 > 0) {
+            t = uint256(uint128(a1));
+            poolManager.take(currency1, address(this), t);
+            platformTokenOwed += t;
+        }
     }
 
     function _mintPermanentLp(uint256 ethAmt, uint256 tokAmt) internal returns (uint256 tokenId) {
@@ -330,14 +384,14 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         address s = staking;
         if (s == address(0) || amount == 0) return; // parks on this contract; flushStaking() completes later
         IERC20(token).safeTransfer(s, amount);
-        // if the token isn't listed as a TOKEN-side reward yet, this reverts — caught so the LP lock stays final;
-        // the tokens are already in the pool and a later flushStaking() credits them via balanceOf-accountedReserve.
+        // if the token isn't listed / this curve isn't a rewarder yet, this reverts — caught so the LP lock stays
+        // final; the tokens are already in the pool and a later flushStaking() credits them (balanceOf-accounted).
         try IStakingFund(s).fundTokenPushed(uint8(0), token) {
             emit StakingFunded(amount);
         } catch {}
     }
 
-    /// @dev Settle what we owe (negative delta). At seed only currency1 is owed; currency0 should be 0.
+    /// @dev Settle what we owe (negative delta). At seed only currency1 is owed; currency0 must be 0.
     function _resolve(Currency currency, int128 amt) internal {
         if (amt < 0) {
             uint256 owed = uint256(uint128(-amt));
