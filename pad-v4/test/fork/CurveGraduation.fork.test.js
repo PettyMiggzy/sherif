@@ -107,5 +107,13 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
     expect(await tok.balanceOf(await ds.getAddress())).to.be.gt(0n);
     // platform fee book is non-negative and claimable without reverting
     await expect(curve.claimPlatform()).to.not.be.reverted;
+
+    // v2 graduation waterfall: the creator-side reward is booked (gradRewardWei=0.5, capped raise/4) and
+    // claimable; the 20% buy-LP carve is parked (no floor wired here) and flushable once a floor is set.
+    expect(await curve.creatorEthOwed()).to.be.gt(0n);
+    const creatorBefore = await ethers.provider.getBalance(creator.address);
+    await (await curve.claimCreator()).wait();
+    expect(await ethers.provider.getBalance(creator.address)).to.be.gt(creatorBefore);
+    expect(await curve.creatorEthOwed()).to.equal(0n);
   });
 });

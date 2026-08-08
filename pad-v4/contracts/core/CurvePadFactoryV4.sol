@@ -203,7 +203,8 @@ contract CurvePadFactoryV4 {
                 startTick,
                 gradTick,
                 d.buyLpFloorShareBps,
-                d.gradRewardWei
+                d.gradRewardWei,
+                cfg.creator
             )
         );
         isCurve[curve] = true;

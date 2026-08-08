@@ -12,8 +12,8 @@ const ZERO = ethers.ZeroAddress;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
 const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
 
-describe("SIM — curve raise + LP fees conserve to platform", () => {
-  it("buys/sells accrue all LP fees to the platform book; claim drains exactly; nothing stuck", async () => {
+describe("SIM — curve raise + LP fees route 80/20 (platform/floor) + token to staking", () => {
+  it("buys split ETH fees 80/20; sells hold token for staking; claimPlatform drains only the platform book", async () => {
     const [owner, factory, trader, platform] = await ethers.getSigners();
     const pm = await (await ethers.getContractFactory("PoolManager")).deploy(owner.address);
     const stateView = await (await ethers.getContractFactory("RobinStateView")).deploy(await pm.getAddress());
@@ -30,7 +30,7 @@ describe("SIM — curve raise + LP fees conserve to platform", () => {
     const curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), owner.address, owner.address, await stateView.getAddress(),
       owner.address, factory.address, await reg.getAddress(),
-      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 0
+      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 0, owner.address
     );
     const curveAddr = await curve.getAddress();
 
@@ -56,25 +56,27 @@ describe("SIM — curve raise + LP fees conserve to platform", () => {
     await buy("4");
     await curve.collectFees();
 
-    const ethOwed = await curve.platformEthOwed();
-    const tokOwed = await curve.platformTokenOwed();
-    expect(ethOwed).to.be.gt(0n); // ETH LP fees from buys
-    expect(tokOwed).to.be.gt(0n); // token LP fees from the sell
+    const platEthOwed = await curve.platformEthOwed();
+    const floorEthOwed = await curve.floorEthOwed();
+    const tokHeld = await tok.balanceOf(curveAddr);
+    expect(platEthOwed).to.be.gt(0n); // 80% of the ETH (buy) LP fees
+    expect(floorEthOwed).to.be.gt(0n); // 20% held for the floor
+    expect(platEthOwed).to.be.gt(floorEthOwed); // 80 > 20
+    expect(tokHeld).to.be.gt(0n); // token (sell) LP fee held on the controller → staking
 
-    // the controller physically holds exactly the booked fees (raise is inside the pool, not here)
-    expect(await ethers.provider.getBalance(curveAddr)).to.equal(ethOwed);
-    expect(await tok.balanceOf(curveAddr)).to.equal(tokOwed);
+    // the split is exact: the ETH physically on the controller == platform book + floor book (raise is in the pool)
+    expect(await ethers.provider.getBalance(curveAddr)).to.equal(platEthOwed + floorEthOwed);
 
-    // claim drains the book to the platform EXACTLY; nothing stuck on the controller
+    // claimPlatform drains ONLY the platform ETH book; the floor carve + the staking-bound token stay put
     const ethBefore = await ethers.provider.getBalance(platform.address);
     const tokBefore = await tok.balanceOf(platform.address);
     await curve.claimPlatform();
-    expect((await ethers.provider.getBalance(platform.address)) - ethBefore).to.equal(ethOwed);
-    expect((await tok.balanceOf(platform.address)) - tokBefore).to.equal(tokOwed);
+    expect((await ethers.provider.getBalance(platform.address)) - ethBefore).to.equal(platEthOwed);
+    expect((await tok.balanceOf(platform.address)) - tokBefore).to.equal(0n); // platform gets NO token in v2
     expect(await curve.platformEthOwed()).to.equal(0n);
-    expect(await curve.platformTokenOwed()).to.equal(0n);
-    expect(await ethers.provider.getBalance(curveAddr)).to.equal(0n);
-    expect(await tok.balanceOf(curveAddr)).to.equal(0n);
+    expect(await curve.floorEthOwed()).to.equal(floorEthOwed); // untouched — swept to the floor at graduation
+    expect(await ethers.provider.getBalance(curveAddr)).to.equal(floorEthOwed); // only the floor carve remains
+    expect(await tok.balanceOf(curveAddr)).to.equal(tokHeld); // token still held for staking
 
     // buy out the rest → ceiling reached
     await buy("6000");
