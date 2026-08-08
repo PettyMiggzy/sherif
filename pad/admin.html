@@ -182,6 +182,7 @@
 <script type="module">
 import { ethers } from './assets/ethers.min.js';
 import { CHAIN, CONTRACTS, ADMIN_ABI, API_BASE, isDeployed } from './assets/config.js';
+import * as Pad from './assets/wallet.js';
 
 const $ = (id) => document.getElementById(id);
 // FallbackProvider so the owner dashboard's reads survive an indexer outage (prefer the cached proxy,
@@ -229,37 +230,28 @@ const TARGET = {
 const UINT_ACTS = new Set(['setChallengeWindow', 'setClaimWindow', 'setFinalityDelay', 'veto', 'setRobinShareBps', 'setLpCreatorBps']);
 const NOARG_ACTS = new Set(['withdrawPlatform', 'withdrawPlatformCut', 'acceptOwnership']);
 
-// Pick a standard EVM wallet. Robinhood Chain is EVM, but Phantom ALSO injects window.ethereum (isPhantom)
-// and, if preferred, hijacks the connect prompt every time — that's the "phantom keeps opening" bug. Prefer a
-// non-Phantom provider (MetaMask/Rabby/etc.), and only fall back to Phantom's shim if it's the ONLY wallet.
-function pickWallet() {
-  const eth = window.ethereum;
-  if (eth && Array.isArray(eth.providers) && eth.providers.length) {
-    return eth.providers.find((p) => p && p.isMetaMask && !p.isPhantom)
-        || eth.providers.find((p) => p && !p.isPhantom)
-        || eth.providers[0];
-  }
-  if (eth && !eth.isPhantom) return eth;
-  return eth || window.phantom?.ethereum || null;
+// Wallet connect goes through the shared wallet.js picker (EIP-6963 multi-wallet chooser) so the admin panel
+// shows the same "pick your wallet" popup as the rest of the site — instead of grabbing whatever injected
+// itself into window.ethereum, which let Phantom hijack the prompt. Pad.connect() shows the picker, connects,
+// and switches to Robinhood Chain; we then wrap the chosen provider in an ethers signer for the admin calls.
+async function useConnected() {
+  account = Pad.account();
+  if (!account) return;
+  signer = await new ethers.BrowserProvider(Pad.rawEip(), 'any').getSigner();
+  $('connectBtn').textContent = short(account);
+  $('netDot').className = 'dot ok'; $('netTxt').textContent = 'connected';
+  refresh();
 }
 
 async function connect() {
-  const eip = pickWallet();
-  if (!eip) { toast('No wallet found, open in a wallet browser or install one.', true); return; }
   try {
-    await eip.request({ method: 'eth_requestAccounts' });
-    const cur = await eip.request({ method: 'eth_chainId' });
-    if (cur !== CHAIN.hexId) {
-      try { await eip.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN.hexId }] }); }
-      catch (e) { if (e.code === 4902) await eip.request({ method: 'wallet_addEthereumChain', params: [{ chainId: CHAIN.hexId, chainName: CHAIN.name, nativeCurrency: CHAIN.currency, rpcUrls: CHAIN.walletRpcUrls || CHAIN.rpc, blockExplorerUrls: [CHAIN.explorer] }] }); }
-    }
-    signer = await new ethers.BrowserProvider(eip, 'any').getSigner();
-    account = (await signer.getAddress());
-    $('connectBtn').textContent = short(account);
-    $('netDot').className = 'dot ok'; $('netTxt').textContent = 'connected';
-    refresh();
+    await Pad.connect();
+    await useConnected();
   } catch (e) { toast(e.shortMessage || e.message || 'connect failed', true); }
 }
+
+// If wallet.js auto-restores a previously-chosen wallet, reflect it in the admin UI without a manual click.
+window.addEventListener('robinpad:ready', () => { if (Pad.account() && !account) useConnected(); });
 
 async function refresh() {
   const acct = account ? account.toLowerCase() : null;
