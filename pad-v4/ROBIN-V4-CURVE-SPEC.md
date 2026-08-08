@@ -11,31 +11,38 @@ This doc is the locked reference — build to it.
 - Free launches (single-sided, self-seeded) — no one has to seed ETH.
 
 ## Locked economic model
-Every trade pays **1% LP fee** (pool) + **1% directional trade tax** (hook).
+Every trade pays **1% LP fee** (pool) + **1% directional trade tax** (hook). (v2 — refined economics.)
 
-| Flow | Rate | → Destination |
-|---|---|---|
-| LP fee (buys, ETH-side) | 1% | **Platform** |
-| LP fee (sells, token-side) | 1% | **Platform** |
-| Trade tax — buy | 1% | **Platform** |
-| Trade tax — sell | 1% | **Creator 0.8% + Floor 0.2%** |
-| Unsold curve tokens @ graduation | — | **Staking pool** (streamed to holders) |
-| Staking reward claim | 5% | **Platform** |
+| Flow | → Destination |
+|---|---|
+| **Buy** LP fee | **80% → platform** now · **20% → held in the curve → floor at graduation** (governed `buyLpFloorShareBps`, default 2000) |
+| **Buy** trade tax | **Platform** |
+| **Sell** LP fee (token side) | **Staking pool** — holders earn the token, **no reserve injection needed** |
+| **Sell** trade tax (1%) | **Creator 0.8% + Floor 0.2%** |
+| **Graduation @ ceiling (~4.2 ETH raised)** | **0.5 ETH → platform + 0.5 ETH → creator** (`GRAD_REWARD`, capped raise/4 each); graduate() **gas reimbursed from the curve ETH**; rest → **locked LP** (paired with the ambush reserve) + **floor** |
+| Staking reward claim | **5% → platform** |
 
-- **Platform net:** ~2% of buy volume (1% LP + 1% buy tax) + 1% of sell volume (token-side LP).
-- **Creator:** 0.8% of sell volume.
-- **Floor:** 0.2% of sell volume → permanent, add-only ETH buy-wall that grows from every sell.
-- **Stakers:** the unsold curve-token reserve at graduation, streamed via the Synthetix accumulator.
-- **Optional ETH-to-stakers slice:** a governed knob (`stakingEthShareBps`), **default 0** — turn it on later
-  to route part of the platform LP fee to stakers as real ETH yield, no redeploy.
+- **Platform:** buy tax + 80% of buy LP fee (ongoing) + 0.5 ETH at graduation. (The 20% buy-LP slice is deferred into the floor.)
+- **Creator:** 0.8% of sells + 0.5 ETH at graduation. Can also **deposit ETH into staking directly** (no platform cut touched).
+- **Floor:** permanent, add-only ETH buy-wall (rug-proof), fed by the **0.2% sell carve + the 20% buy-LP slice (@grad) + the ambush's pump sales**. Never pullable.
+- **Stakers:** the **sell-side (token) LP fees**, streamed via the Synthetix accumulator — funded by trading, no token injection.
 
-## Graduation (LOCKED)
-When buys carry price to the curve **ceiling**:
-1. Pull the raised ETH + all leftover curve tokens from the single-sided position.
-2. Seed a **permanent, LOCKED full-range 2-sided LP** (raised ETH + a matching token amount) → held forever
-   in `LockVault`; its LP fees → **platform**.
-3. Route the **remaining unsold tokens → the staking pool** (streamed to holders).
-4. Floor vault + hook keep running. No dev payout knob here beyond the locked fee flows.
+## Ambush (held reserve, active from launch)
+At launch some tokens are **held back** (not sold on the curve) as the ambush reserve. It is placed as a **passive
+single-sided TOKEN sell-wall above the price**: when the coin pumps into it, AMM mechanics sell those tokens for
+ETH which is routed to the **floor** — capping pumps and growing the rug-proof floor. Combined with the floor's
+ETH buy-wall (which catches dumps), this is a **passive two-sided support band** — "buy and sell to support the
+floor" WITHOUT a gameable active market-maker. At graduation, the remaining ambush tokens **pair the permanent
+locked LP**; the ETH it earned has already deepened the floor.
+
+## Graduation (v2)
+At the ceiling (geometry set so the raise ≈ 4.2 ETH):
+1. Nudge spot to the exact ceiling (anti-grief), then pull the raised ETH from the curve.
+2. Pay **0.5 ETH → platform + 0.5 ETH → creator** (capped raise/4 each), **reimburse the graduate() caller's gas
+   from the curve ETH**, and sweep the **held 20% buy-LP slice → the floor**.
+3. Seed a **permanent, LOCKED full-range 2-sided LP** (remaining raise + ambush reserve tokens, ETH leg binds)
+   → held forever in `LockVault`; its LP fees route buy→platform, **sell→staking**.
+4. Floor vault + ambush + hook keep running.
 
 ## Governance = "right the first time"
 - **Per-pad fee config: IMMUTABLE at its launch** (the hook's `PoolFeeConfig`, registered once). Creators and
