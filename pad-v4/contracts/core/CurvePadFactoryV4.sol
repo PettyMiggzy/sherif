@@ -113,11 +113,20 @@ contract CurvePadFactoryV4 {
 
         // 1) governed defaults, snapshotted + stamped immutably
         RobinV4FeeConfig.Defaults memory d = feeConfig.defaults();
+        if (d.stakingEthShareBps > 10_000) revert BadConfig(); // [LOW-2] else the pad launches but can never graduate
         int24 ts = cfg.tickSpacing;
         if (ts <= 0 || d.startTickMag % ts != 0 || d.curveWidth % ts != 0) revert BadGeometry();
         int24 startTick = int24(d.startTickMag); // token = currency1 ⇒ launch at the high (top) tick
         int24 gradTick = startTick - int24(d.curveWidth); // ceiling (lower); startTick/gradTick are ts-aligned
         if (startTick > TickMath.maxUsableTick(ts) || gradTick < TickMath.minUsableTick(ts)) revert BadGeometry();
+        // [HIGH-2] the reserve must be big enough that the ETH leg binds at graduation — otherwise the raise
+        // would leak to the platform book, or (too small) brick graduation and trap the raise forever. Require
+        // reserveSupply ≥ curveSupply·√grad/√start with a 5% margin (√grad < √start ⇒ threshold < curveSupply).
+        {
+            uint256 sg = uint256(TickMath.getSqrtPriceAtTick(gradTick));
+            uint256 ss = uint256(TickMath.getSqrtPriceAtTick(startTick));
+            if (uint256(cfg.reserveSupply) * ss * 100 < uint256(cfg.curveSupply) * sg * 105) revert BadConfig();
+        }
 
         // 2) deploy the token (supply minted to this factory)
         token = deployer.deploy(

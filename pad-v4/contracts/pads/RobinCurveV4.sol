@@ -58,6 +58,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     }
 
     uint48 internal constant MAX_UINT48 = type(uint48).max;
+    uint256 internal constant NUDGE_MAX_FRACTION = 100; // the ceiling nudge may spend ≤ 1/100 of the reserve
 
     IPoolManager public immutable poolManager;
     IPositionManagerMinimal public immutable positionManager;
@@ -106,6 +107,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     error EmptyRaise();
     error NoReserve();
     error BadLiquidity();
+    error CeilingNotRestored();
+    error InsufficientReserve();
 
     constructor(
         address poolManager_,
@@ -245,7 +248,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     function setStaking(address s) external {
         if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
         if (staking != address(0)) revert AlreadySet();
-        if (s == address(0)) revert ZeroAddress();
+        if (s == address(0) || s.code.length == 0) revert ZeroAddress(); // [LOW-3] must be a contract (the pool)
         staking = s;
         emit StakingSet(s);
     }
@@ -302,13 +305,18 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         // through — bounded by our balance — until spot lands EXACTLY at gradTick, so the permanent LP seeds honest.
         (, int24 curTick,,) = stateView.getSlot0(_poolId());
         if (curTick < gradTick) {
-            uint256 bal = IERC20(token).balanceOf(address(this)); // the held reserve powers the nudge
-            if (bal > 0) {
+            // Budget the nudge to ≤1% of the reserve ONLY (never the platform fee book — that avoids the
+            // underflow at raisedEth/tokenReserve below), and FAIL CLOSED: if it can't restore spot to the
+            // exact ceiling (e.g. a griefer planted deep liquidity under gradTick), revert rather than bleed the
+            // reserve into their position. In the honest overshoot case the zone below gradTick is empty, so the
+            // swap crosses it for ~0 and lands exactly at gradTick.
+            uint256 budget = (IERC20(token).balanceOf(address(this)) - platformTokenOwed) / NUDGE_MAX_FRACTION;
+            if (budget > 0) {
                 BalanceDelta sd = poolManager.swap(
                     key,
                     SwapParams({
                         zeroForOne: false, // token-in → price UP toward the ceiling
-                        amountSpecified: -int256(bal),
+                        amountSpecified: -int256(budget),
                         sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(gradTick)
                     }),
                     ""
@@ -316,6 +324,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
                 _resolve(currency0, sd.amount0()); // take any ETH out
                 _resolve(currency1, sd.amount1()); // settle the (tiny) token consumed
             }
+            (, int24 nowTick,,) = stateView.getSlot0(_poolId());
+            if (nowTick != gradTick) revert CeilingNotRestored(); // never seed the permanent LP at a fake price
         }
 
         // (a) realize accrued fees → platform book (taken to this contract, accrued, NOT sent to platform inline)
@@ -352,25 +362,32 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         }
     }
 
-    function _mintPermanentLp(uint256 ethAmt, uint256 tokAmt) internal returns (uint256 tokenId) {
+    function _mintPermanentLp(uint256 ethAmt, uint256 tokAvail) internal returns (uint256 tokenId) {
         PoolKey memory key = _poolKey();
         int24 tl = TickMath.minUsableTick(tickSpacing);
         int24 tu = TickMath.maxUsableTick(tickSpacing);
-        (uint160 sp,,,) = stateView.getSlot0(_poolId());
-        uint128 L = LiquidityAmounts.getLiquidityForAmounts(
-            sp, TickMath.getSqrtPriceAtTick(tl), TickMath.getSqrtPriceAtTick(tu), ethAmt, tokAmt
-        );
+        // Spot is guaranteed == gradTick here (the nudge + CeilingNotRestored check), so price at the canonical
+        // ceiling. [HIGH-2] Size the LP by the ETH leg so the ENTIRE raise binds into the locked position — never
+        // let the token leg bind and leak unbound raise ETH to the platform book. Revert if the reserve can't
+        // cover the token side the raise requires (fail closed; the launch-time check makes this unreachable).
+        uint160 spGrad = TickMath.getSqrtPriceAtTick(gradTick);
+        uint128 L = LiquidityAmounts.getLiquidityForAmount0(spGrad, TickMath.getSqrtPriceAtTick(tu), ethAmt);
         if (L == 0) revert BadLiquidity();
+        // the reserve must supply at least L on the token leg, else the token binds and unbound raise ETH leaks
+        if (LiquidityAmounts.getLiquidityForAmount1(TickMath.getSqrtPriceAtTick(tl), spGrad, tokAvail) < L) {
+            revert InsufficientReserve();
+        }
 
-        IERC20(token).forceApprove(address(permit2), tokAmt);
-        permit2.approve(token, address(positionManager), uint160(tokAmt), MAX_UINT48);
+        IERC20(token).forceApprove(address(permit2), tokAvail);
+        permit2.approve(token, address(positionManager), uint160(tokAvail), MAX_UINT48);
 
         bytes memory actions =
             abi.encodePacked(uint8(Actions.MINT_POSITION), uint8(Actions.SETTLE_PAIR), uint8(Actions.SWEEP));
         bytes[] memory params = new bytes[](3);
-        params[0] = abi.encode(key, tl, tu, uint256(L), uint128(ethAmt), uint128(tokAmt), lockVault, bytes(""));
+        // amount1Max = tokAvail (the mint pulls only what L needs, ≤ tokAvail; the surplus stays for staking)
+        params[0] = abi.encode(key, tl, tu, uint256(L), uint128(ethAmt), uint128(tokAvail), lockVault, bytes(""));
         params[1] = abi.encode(currency0, currency1); // settle both (this contract pays)
-        params[2] = abi.encode(currency0, address(this)); // sweep native dust back
+        params[2] = abi.encode(currency0, address(this)); // sweep the tiny ETH rounding dust back
 
         uint256 before = positionManager.nextTokenId();
         positionManager.modifyLiquidities{value: ethAmt}(abi.encode(actions, params), block.timestamp);
