@@ -223,10 +223,8 @@ contract CurvePadFactoryV4 {
 
     /// @notice Called by a graduating curve controller to register its permanent locked LP. LockVault accepts
     /// registerLaunch only from this factory, so routing through here keeps the vault's sole-registrar invariant.
-    function onGraduated(uint256 lpTokenId, Currency c0, Currency c1, address staking, uint16 stakingEthShareBps)
-        external
-    {
+    function onGraduated(uint256 lpTokenId, Currency c0, Currency c1, address staking) external {
         if (!isCurve[msg.sender]) revert NotCurve();
-        lockVault.registerLaunch(lpTokenId, c0, c1, staking, stakingEthShareBps);
+        lockVault.registerLaunch(lpTokenId, c0, c1, staking);
     }
 }

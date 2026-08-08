@@ -171,7 +171,7 @@ contract StockPadFactory {
         lpTokenId = _mintSeedLp(key, cfg, stock, token);
 
         // 4) register the lock, send the token remainder to the creator, return any unused stock
-        lockVault.registerLaunch(lpTokenId, currency0, currency1, cfg.stakingRecipient, 0); // 0 => all LP fees → platform
+        lockVault.registerLaunch(lpTokenId, currency0, currency1, cfg.stakingRecipient);
         uint256 tokenRemainder = IERC20(token).balanceOf(address(this));
         if (tokenRemainder > 0) IERC20(token).safeTransfer(cfg.creator, tokenRemainder);
         uint256 stockRemainder = IERC20(stock).balanceOf(address(this));

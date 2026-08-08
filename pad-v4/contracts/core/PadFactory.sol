@@ -171,7 +171,7 @@ contract PadFactory {
         lpTokenId = _mintSeedLp(key, cfg, currency0, currency1);
 
         // 6) register the lock, distribute the remainder, refund ETH dust
-        lockVault.registerLaunch(lpTokenId, currency0, currency1, cfg.stakingRecipient, 0); // 0 => all LP fees → platform
+        lockVault.registerLaunch(lpTokenId, currency0, currency1, cfg.stakingRecipient);
 
         // [audit M1] Send the creator whatever token the factory actually still holds — the seed mint
         // consumes min(liquidity0, liquidity1) worth, so when the ETH leg binds it pulls LESS than

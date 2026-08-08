@@ -22,8 +22,7 @@ import {IPositionManagerMinimal} from "../interfaces/IPositionManagerMinimal.sol
 import {IPermit2Minimal} from "../interfaces/IPermit2Minimal.sol";
 
 interface ICurveFactoryCallback {
-    function onGraduated(uint256 lpTokenId, Currency c0, Currency c1, address staking, uint16 stakingEthShareBps)
-        external;
+    function onGraduated(uint256 lpTokenId, Currency c0, Currency c1, address staking) external;
 }
 
 interface IStakingFund {
@@ -222,7 +221,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         uint256 lpTokenId = _mintPermanentLp(raisedEth, tokenReserve);
 
         // 4) register the lock through the factory (LockVault's sole registrar) — carries the immutable slice
-        ICurveFactoryCallback(factory).onGraduated(lpTokenId, currency0, currency1, staking, stakingEthShareBps);
+        ICurveFactoryCallback(factory).onGraduated(lpTokenId, currency0, currency1, staking);
 
         // 5) stream the leftover reserve tokens → staking (non-bricking; flushStaking() finishes if unwired)
         uint256 leftoverToken = IERC20(token).balanceOf(address(this)) - platformTokenOwed;
