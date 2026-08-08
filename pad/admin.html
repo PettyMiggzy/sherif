@@ -437,12 +437,28 @@ async function collectAll() {
     const j = await (await fetch(`${API_BASE}/api/coins?limit=500`)).json();
     const coins = (j.coins || j || []).filter((c) => c.curve && !c.graduated);
     if (!coins.length) throw new Error('no live (bonding) coins to collect');
-    let ok = 0, fail = 0;
-    for (let i = 0; i < coins.length; i++) {
-      btn.textContent = `Collecting ${i + 1}/${coins.length}…`;
-      try { await collectCurve(coins[i].curve); ok++; } catch { fail++; }
+
+    // Pre-filter with a READ-ONLY collectFees() simulation (no gas). Skip coins that would revert — already
+    // graduated on-chain but stale in the index (fees swept at graduation), a pre-v2 curve without
+    // collectFees(), or not-seeded — and coins with zero accrued fees. This way "failed" only ever counts a
+    // REAL send failure, instead of alarming you with benign graduated/empty coins (the old "5 failed").
+    btn.textContent = 'Checking…';
+    const targets = [];
+    let skipped = 0;
+    for (const co of coins) {
+      try {
+        const r = await new ethers.Contract(co.curve, CURVE_ABI, read).collectFees.staticCall();
+        if (r[0] > 0n || r[1] > 0n) targets.push(co); else skipped++; // nothing accrued → skip
+      } catch { skipped++; } // graduated / no collectFees / not seeded → nothing to collect
     }
-    toast(`collected ${ok}/${coins.length}${fail ? ` · ${fail} failed` : ''} ✓`, fail > 0);
+    if (!targets.length) { toast(`nothing to collect · ${skipped} graduated or empty`); return; }
+
+    let ok = 0, fail = 0;
+    for (let i = 0; i < targets.length; i++) {
+      btn.textContent = `Collecting ${i + 1}/${targets.length}…`;
+      try { await collectCurve(targets[i].curve); ok++; } catch { fail++; }
+    }
+    toast(`collected ${ok}/${targets.length}${skipped ? ` · ${skipped} skipped` : ''}${fail ? ` · ${fail} failed` : ''} ✓`, fail > 0);
   } catch (e) { toast('✗ ' + (e.shortMessage || e.reason || e.message || 'failed'), true); }
   finally { btn.disabled = false; btn.textContent = label; }
 }
