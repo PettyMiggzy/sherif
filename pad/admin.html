@@ -229,9 +229,23 @@ const TARGET = {
 const UINT_ACTS = new Set(['setChallengeWindow', 'setClaimWindow', 'setFinalityDelay', 'veto', 'setRobinShareBps', 'setLpCreatorBps']);
 const NOARG_ACTS = new Set(['withdrawPlatform', 'withdrawPlatformCut', 'acceptOwnership']);
 
+// Pick a standard EVM wallet. Robinhood Chain is EVM, but Phantom ALSO injects window.ethereum (isPhantom)
+// and, if preferred, hijacks the connect prompt every time — that's the "phantom keeps opening" bug. Prefer a
+// non-Phantom provider (MetaMask/Rabby/etc.), and only fall back to Phantom's shim if it's the ONLY wallet.
+function pickWallet() {
+  const eth = window.ethereum;
+  if (eth && Array.isArray(eth.providers) && eth.providers.length) {
+    return eth.providers.find((p) => p && p.isMetaMask && !p.isPhantom)
+        || eth.providers.find((p) => p && !p.isPhantom)
+        || eth.providers[0];
+  }
+  if (eth && !eth.isPhantom) return eth;
+  return eth || window.phantom?.ethereum || null;
+}
+
 async function connect() {
-  if (!window.ethereum && !window.phantom?.ethereum) { toast('No wallet found, open in a wallet browser or install one.', true); return; }
-  const eip = window.phantom?.ethereum || window.ethereum;
+  const eip = pickWallet();
+  if (!eip) { toast('No wallet found, open in a wallet browser or install one.', true); return; }
   try {
     await eip.request({ method: 'eth_requestAccounts' });
     const cur = await eip.request({ method: 'eth_chainId' });
