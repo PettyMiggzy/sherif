@@ -67,7 +67,7 @@ contract RobinStockSwap is Ownable2Step, ReentrancyGuard {
     mapping(address => Listing) public listing;
     mapping(address => bool) public isCurator; // allowlist governors (owner-managed)
 
-    uint16 public feeBps = 100; // platform fee, default 1% of the WETH mid-leg; ≤ MAX_FEE_BPS
+    uint16 public feeBps = 200; // platform fee, default 2% of the WETH mid-leg; ≤ MAX_FEE_BPS
     address public platformWallet; // fee recipient (0 → owner())
     uint256 public platformEscrowWeth; // accrued platform fees, held as WETH until withdrawn
 
