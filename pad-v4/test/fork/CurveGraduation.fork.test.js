@@ -34,8 +34,9 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
 
     const START = 6000, GRAD = 3000, SPACING = 60, FEE = 3000;
     const feeCfg = await (await ethers.getContractFactory("RobinV4FeeConfig")).deploy(deployer.address, {
-      buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, stakingEthShareBps: 0,
+      buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyLpFloorShareBps: 2000,
       lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: 1800,
+      gradRewardWei: ethers.parseEther("0.5"),
     });
 
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(

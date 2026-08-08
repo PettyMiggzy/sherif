@@ -76,7 +76,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
 
     int24 public immutable startTick; // launch price (curve top; pure-token boundary)
     int24 public immutable gradTick; // ceiling (lower); buys stop here
-    uint16 public immutable stakingEthShareBps; // snapshot → carried to the graduated lock
+    uint16 public immutable buyLpFloorShareBps; // share of the BUY LP fee held in-curve → floor at graduation
+    uint256 public immutable gradRewardWei; // per-side ETH reward → platform + creator at graduation (capped raise/4)
 
     bool public seeded;
     bool public graduated;
@@ -124,7 +125,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         address hooks_,
         int24 startTick_,
         int24 gradTick_,
-        uint16 stakingEthShareBps_
+        uint16 buyLpFloorShareBps_,
+        uint256 gradRewardWei_
     ) {
         if (
             poolManager_ == address(0) || positionManager_ == address(0) || permit2_ == address(0)
@@ -146,7 +148,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         hooks = IHooks(hooks_);
         startTick = startTick_;
         gradTick = gradTick_;
-        stakingEthShareBps = stakingEthShareBps_;
+        buyLpFloorShareBps = buyLpFloorShareBps_;
+        gradRewardWei = gradRewardWei_;
     }
 
     // ── seed ────────────────────────────────────────────────────────────────────

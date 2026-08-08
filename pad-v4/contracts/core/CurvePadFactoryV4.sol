@@ -112,8 +112,7 @@ contract CurvePadFactoryV4 {
         ) revert BadConfig();
 
         // 1) governed defaults, snapshotted + stamped immutably
-        RobinV4FeeConfig.Defaults memory d = feeConfig.defaults();
-        if (d.stakingEthShareBps > 10_000) revert BadConfig(); // [LOW-2] else the pad launches but can never graduate
+        RobinV4FeeConfig.Defaults memory d = feeConfig.defaults(); // buyLpFloorShareBps + gradRewardWei validated there
         int24 ts = cfg.tickSpacing;
         if (ts <= 0 || d.startTickMag % ts != 0 || d.curveWidth % ts != 0) revert BadGeometry();
         int24 startTick = int24(d.startTickMag); // token = currency1 ⇒ launch at the high (top) tick
@@ -203,7 +202,8 @@ contract CurvePadFactoryV4 {
                 hook,
                 startTick,
                 gradTick,
-                d.stakingEthShareBps
+                d.buyLpFloorShareBps,
+                d.gradRewardWei
             )
         );
         isCurve[curve] = true;

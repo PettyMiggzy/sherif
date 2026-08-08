@@ -16,17 +16,19 @@ contract RobinV4FeeConfig is Ownable2Step {
     uint16 public constant BPS = 10000;
     uint16 public constant MAX_TAX_BPS = 200; // ≤2% per side on any future launch
     uint16 public constant MAX_FLOOR_SHARE_BPS = 5000; // ≤50% of the sell tax may go to the floor
+    uint256 public constant MAX_GRAD_REWARD = 2 ether; // per-side graduation reward ceiling
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
 
     struct Defaults {
         uint16 buyTaxBps; // hook: buy trade tax → platform
         uint16 sellTaxBps; // hook: sell trade tax → creator + floor
         uint16 sellFloorShareBps; // share of the SELL tax carved to the floor (rest → creator)
-        uint16 stakingEthShareBps; // share of the platform LP fee routed to stakers as ETH yield (default 0)
+        uint16 buyLpFloorShareBps; // share of the BUY LP fee held in the curve → swept to the floor at grad (v2)
         uint24 lpFee; // static pool LP fee tier (must NOT carry the dynamic-fee flag)
         int24 startTickMag; // curve start-price magnitude (sign set by token/quote ordering at launch)
         int24 curveWidth; // tick span from start to the graduation CEILING
         int24 minGradWidth; // informational min-grad marker (< curveWidth)
+        uint256 gradRewardWei; // per-side ETH reward paid to platform + creator at graduation (capped raise/4)
     }
 
     Defaults private _d;
@@ -35,11 +37,12 @@ contract RobinV4FeeConfig is Ownable2Step {
         uint16 buyTaxBps,
         uint16 sellTaxBps,
         uint16 sellFloorShareBps,
-        uint16 stakingEthShareBps,
+        uint16 buyLpFloorShareBps,
         uint24 lpFee,
         int24 startTickMag,
         int24 curveWidth,
-        int24 minGradWidth
+        int24 minGradWidth,
+        uint256 gradRewardWei
     );
 
     error BadParam();
@@ -65,7 +68,8 @@ contract RobinV4FeeConfig is Ownable2Step {
     function _validate(Defaults memory d) internal pure {
         if (d.buyTaxBps > MAX_TAX_BPS || d.sellTaxBps > MAX_TAX_BPS) revert BadParam();
         if (d.sellFloorShareBps > MAX_FLOOR_SHARE_BPS) revert BadParam();
-        if (d.stakingEthShareBps > BPS) revert BadParam();
+        if (d.buyLpFloorShareBps > BPS) revert BadParam();
+        if (d.gradRewardWei > MAX_GRAD_REWARD) revert BadParam();
         if (d.lpFee & DYNAMIC_FEE_FLAG != 0) revert BadParam(); // static fee only
         if (d.startTickMag <= 0 || d.curveWidth <= 0) revert BadParam();
         if (d.minGradWidth <= 0 || d.minGradWidth >= d.curveWidth) revert BadParam();
@@ -78,11 +82,12 @@ contract RobinV4FeeConfig is Ownable2Step {
             d.buyTaxBps,
             d.sellTaxBps,
             d.sellFloorShareBps,
-            d.stakingEthShareBps,
+            d.buyLpFloorShareBps,
             d.lpFee,
             d.startTickMag,
             d.curveWidth,
-            d.minGradWidth
+            d.minGradWidth,
+            d.gradRewardWei
         );
     }
 
