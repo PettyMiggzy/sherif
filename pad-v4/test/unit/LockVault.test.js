@@ -4,12 +4,12 @@ const { expect } = require("chai");
 // Feature 1 — LockVault: the seed-LP lock is STRUCTURAL. This suite proves the surface has no
 // liquidity-exit selector (invariant #2), the NFT is only acceptable from the canonical PositionManager
 // (that acceptance IS the lock), registration is factory-only / one-shot, and the LP-fee routing
-// (quote→platform, token→staking) books correctly. The actual collectFees flow needs the real
-// PositionManager → covered in test/fork.
+// (locked model: ALL LP fees → platform, with an optional immutable ETH-slice → staking) books its config
+// correctly. The actual collectFees flow needs the real PositionManager → covered in test/fork + sim.
 
 const ZERO = ethers.ZeroAddress;
 
-describe("LockVault — collect-only, locked forever, routes fees platform/staking", () => {
+describe("LockVault — collect-only, locked forever, all LP fees → platform (+ optional ETH slice)", () => {
   let factory, pmSigner, other, staking, reg, vault, c1;
 
   beforeEach(async () => {
@@ -40,18 +40,25 @@ describe("LockVault — collect-only, locked forever, routes fees platform/staki
     );
   });
 
-  it("registerLaunch is factory-only and one-shot", async () => {
-    await expect(vault.connect(other).registerLaunch(1, ZERO, c1.address, staking.address))
+  it("registerLaunch is factory-only and one-shot, and stores the immutable ETH-slice", async () => {
+    await expect(vault.connect(other).registerLaunch(1, ZERO, c1.address, staking.address, 0))
       .to.be.revertedWithCustomError(vault, "NotFactory");
-    await vault.connect(factory).registerLaunch(1, ZERO, c1.address, staking.address);
-    expect((await vault.locks(1)).stakingRecipient).to.equal(staking.address);
-    await expect(vault.connect(factory).registerLaunch(1, ZERO, c1.address, staking.address))
+    await vault.connect(factory).registerLaunch(1, ZERO, c1.address, staking.address, 1500);
+    const lk = await vault.locks(1);
+    expect(lk.stakingRecipient).to.equal(staking.address);
+    expect(lk.stakingEthShareBps).to.equal(1500n);
+    await expect(vault.connect(factory).registerLaunch(1, ZERO, c1.address, staking.address, 0))
       .to.be.revertedWithCustomError(vault, "AlreadyRegistered");
+  });
+
+  it("rejects an ETH-slice above 100%", async () => {
+    await expect(vault.connect(factory).registerLaunch(9, ZERO, c1.address, staking.address, 10001))
+      .to.be.revertedWithCustomError(vault, "BadShare");
   });
 
   it("setStakingRecipient is platform-only and one-shot", async () => {
     // platform wallet is `other` (the registry's initial wallet)
-    await vault.connect(factory).registerLaunch(2, ZERO, c1.address, ZERO); // unset at launch
+    await vault.connect(factory).registerLaunch(2, ZERO, c1.address, ZERO, 500); // recipient unset at launch
     await expect(vault.connect(factory).setStakingRecipient(2, staking.address))
       .to.be.revertedWithCustomError(vault, "NotPlatform");
     await vault.connect(other).setStakingRecipient(2, staking.address);
@@ -61,8 +68,9 @@ describe("LockVault — collect-only, locked forever, routes fees platform/staki
   });
 
   it("claims revert with NothingToClaim before any fees are collected", async () => {
-    await vault.connect(factory).registerLaunch(1, ZERO, c1.address, staking.address);
+    await vault.connect(factory).registerLaunch(1, ZERO, c1.address, staking.address, 0);
     await expect(vault.claimPlatform(1, 0)).to.be.revertedWithCustomError(vault, "NothingToClaim");
-    await expect(vault.claimStaking(1, 1)).to.be.revertedWithCustomError(vault, "NothingToClaim");
+    await expect(vault.claimPlatform(1, 1)).to.be.revertedWithCustomError(vault, "NothingToClaim"); // token leg → platform now
+    await expect(vault.claimStaking(1, 0)).to.be.revertedWithCustomError(vault, "NothingToClaim");
   });
 });

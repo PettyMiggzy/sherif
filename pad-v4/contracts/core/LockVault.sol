@@ -16,10 +16,10 @@ import {IPositionManagerMinimal as IPositionManager} from "../interfaces/IPositi
 /// outward path is `collectFees`, encoded as exactly a `DECREASE_LIQUIDITY(tokenId, 0, …)` fee-poke
 /// plus `TAKE_PAIR` to THIS vault — never a caller-supplied recipient, never a nonzero decrease.
 ///
-/// Collected LP fees route by currency, matching the pad's fee model:
-///   • currency0 (the QUOTE, accrued from BUYS)  → platform (timelocked treasury)
-///   • currency1 (the TOKEN, accrued from SELLS) → the pad's staking recipient (fed to stakers)
-/// Both are accrue-and-pull. If a launch has no staking recipient, its token leg falls back to platform.
+/// Collected LP fees route to the PLATFORM on BOTH legs (the locked V4 model — "platform takes all LP
+/// fees"), with ONE governed exception: an immutable `stakingEthShareBps` slice of the currency0 (ETH/quote,
+/// accrued from BUYS) leg may be routed to the pad's staking recipient as real ETH yield. Default 0 =>
+/// everything to platform. The currency1 (TOKEN, from SELLS) leg is always platform. All are accrue-and-pull.
 contract LockVault is IERC721Receiver, ReentrancyGuard {
     using CurrencyLibrary for Currency;
 
@@ -32,7 +32,8 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
         bool registered;
         Currency currency0; // quote
         Currency currency1; // token
-        address stakingRecipient; // where the token (sell-side) LP fee goes; 0 => platform
+        address stakingRecipient; // recipient of the optional ETH (currency0) staking slice; 0 => platform
+        uint16 stakingEthShareBps; // immutable slice of the currency0 (ETH/buy) LP fee → staking (0 => none)
     }
 
     mapping(uint256 tokenId => Lock) public locks;
@@ -56,6 +57,7 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
     error ZeroAddress();
     error NothingToClaim();
     error PayoutFailed();
+    error BadShare();
 
     event FactorySet(address indexed factory);
     event StakingRecipientSet(uint256 indexed tokenId, address recipient);
@@ -76,20 +78,33 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
         emit FactorySet(factory_);
     }
 
-    /// @notice Bind a locked position's currencies + staking recipient. Factory-only, one-shot.
-    function registerLaunch(uint256 tokenId, Currency currency0, Currency currency1, address stakingRecipient)
-        external
-    {
+    /// @notice Bind a locked position's currencies + staking recipient + the immutable ETH-slice. Factory-only,
+    /// one-shot. `stakingEthShareBps` is the share of the currency0 (ETH/buy) LP fee routed to staking (0 => all
+    /// LP fees to platform); it is frozen here for the life of the lock — the pad's fee split can never change.
+    function registerLaunch(
+        uint256 tokenId,
+        Currency currency0,
+        Currency currency1,
+        address stakingRecipient,
+        uint16 stakingEthShareBps
+    ) external {
         if (msg.sender != factory) revert NotFactory();
         if (locks[tokenId].registered) revert AlreadyRegistered();
-        locks[tokenId] =
-            Lock({registered: true, currency0: currency0, currency1: currency1, stakingRecipient: stakingRecipient});
+        if (stakingEthShareBps > 10_000) revert BadShare();
+        locks[tokenId] = Lock({
+            registered: true,
+            currency0: currency0,
+            currency1: currency1,
+            stakingRecipient: stakingRecipient,
+            stakingEthShareBps: stakingEthShareBps
+        });
         emit LaunchRegistered(tokenId, stakingRecipient);
     }
 
     /// @notice Wire a launch's staking recipient exactly ONCE (from unset), by the platform. The pad's
-    /// staking pool is deployed after the launch, so it can't be known at registerLaunch; this points
-    /// the token-leg LP fee at it, then it is permanently frozen.
+    /// staking pool is deployed after the launch, so it can't be known at registerLaunch; this points the
+    /// optional ETH-slice (currency0/buy leg) at it, then it is permanently frozen. Only meaningful when the
+    /// lock's immutable `stakingEthShareBps` > 0; with a 0 share, all LP fees go to platform regardless.
     function setStakingRecipient(uint256 tokenId, address recipient) external {
         if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
         Lock storage lk = locks[tokenId];
@@ -119,8 +134,15 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
         uint256 got0 = after0 - before0;
         uint256 got1 = after1 - before1;
 
-        if (got0 > 0) platformOwed[tokenId][0] += got0; // quote (buys) → platform
-        if (got1 > 0) stakingOwed[tokenId][1] += got1; // token (sells) → staking
+        // Locked model: all LP fees → platform, minus an OPTIONAL immutable ETH-slice of the currency0 (buy)
+        // leg routed to staking as real ETH yield. The currency1 (token/sell) leg is always platform.
+        if (got1 > 0) platformOwed[tokenId][1] += got1; // token (sells) → platform
+        if (got0 > 0) {
+            uint256 toStaking =
+                lk.stakingRecipient == address(0) ? 0 : (got0 * lk.stakingEthShareBps) / 10_000;
+            if (toStaking > 0) stakingOwed[tokenId][0] += toStaking; // optional ETH yield → staking
+            platformOwed[tokenId][0] += got0 - toStaking; // remainder (all, by default) → platform
+        }
         emit FeesCollected(tokenId, got0, got1);
     }
 
