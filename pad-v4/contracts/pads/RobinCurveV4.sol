@@ -311,7 +311,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
             // reserve into their position. In the honest overshoot case the zone below gradTick is empty, so the
             // swap crosses it for ~0 and lands exactly at gradTick.
             uint256 budget = (IERC20(token).balanceOf(address(this)) - platformTokenOwed) / NUDGE_MAX_FRACTION;
-            if (budget > 0) {
+            if (budget == 0) budget = 1; // [D-1] never truncate to 0 (tiny/low-decimal reserve) → false brick
+            {
                 BalanceDelta sd = poolManager.swap(
                     key,
                     SwapParams({
