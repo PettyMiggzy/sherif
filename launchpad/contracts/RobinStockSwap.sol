@@ -215,6 +215,21 @@ contract RobinStockSwap is Ownable2Step, ReentrancyGuard {
         emit PlatformWithdrawn(to, amt);
     }
 
+    /// @notice Owner rescue for assets that are NOT part of the fee escrow: native ETH sent directly here, and
+    /// any WETH in excess of `platformEscrowWeth`. The escrow is bounded below, so accrued platform fees can
+    /// never be swept out through this — only stranded/donated funds. Prevents accidental deposits being lost.
+    function rescue(address to) external onlyOwner nonReentrant {
+        if (to == address(0)) revert BadArg();
+        uint256 bal = IERC20(WETH).balanceOf(address(this));
+        uint256 wethExtra = bal > platformEscrowWeth ? bal - platformEscrowWeth : 0;
+        if (wethExtra > 0) IERC20(WETH).safeTransfer(to, wethExtra);
+        uint256 ethBal = address(this).balance;
+        if (ethBal > 0) {
+            (bool ok,) = to.call{value: ethBal}("");
+            if (!ok) revert PayFailed();
+        }
+    }
+
     // ── curation (register-once, curator-gated) ─────────────────────────────────────
 
     function list(address token, uint24 poolFee) external {

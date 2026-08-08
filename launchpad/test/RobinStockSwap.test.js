@@ -101,6 +101,30 @@ describe("RobinStockSwap", () => {
     ).to.be.revertedWithCustomError(swap, "Paused");
   });
 
+  it("rescue recovers stranded ETH + donated WETH but never the fee escrow", async () => {
+    // accrue 2 WETH of real escrow via a swap
+    await meme.mint(user.address, E(100));
+    await meme.connect(user).approve(await swap.getAddress(), E(100));
+    await swap.connect(user).swap(await meme.getAddress(), await stock.getAddress(), E(100), 0, user.address);
+    expect(await swap.platformEscrowWeth()).to.equal(E(2));
+
+    // donate 5 WETH + send 3 ETH directly to the contract
+    await weth.connect(user2).deposit({ value: E(5) });
+    await weth.connect(user2).transfer(await swap.getAddress(), E(5));
+    await user2.sendTransaction({ to: await swap.getAddress(), value: E(3) });
+
+    const ethBefore = await ethers.provider.getBalance(recipient.address);
+    await swap.rescue(recipient.address);
+    const ethAfter = await ethers.provider.getBalance(recipient.address);
+
+    expect(ethAfter - ethBefore).to.equal(E(3)); // stranded ETH out
+    expect(await weth.balanceOf(recipient.address)).to.equal(E(5)); // only the donated excess WETH
+    expect(await swap.platformEscrowWeth()).to.equal(E(2)); // escrow untouched
+    expect(await weth.balanceOf(await swap.getAddress())).to.equal(E(2)); // escrow still backed
+
+    await expect(swap.connect(user).rescue(user.address)).to.be.revertedWithCustomError(swap, "OwnableUnauthorizedAccount");
+  });
+
   it("caps the fee at 3% and gates config/curation", async () => {
     await expect(swap.setFeeBps(301)).to.be.revertedWithCustomError(swap, "BadArg");
     await swap.setFeeBps(150);
