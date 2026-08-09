@@ -44,6 +44,8 @@ describe("RobinV4FeeConfig", () => {
     await expect(cfg.setDefaults({ ...GOOD, sellFloorShareBps: 5001 })).to.be.revertedWithCustomError(cfg, "BadParam");
     await expect(cfg.setDefaults({ ...GOOD, buyLpFloorShareBps: 10001 })).to.be.revertedWithCustomError(cfg, "BadParam");
     await expect(cfg.setDefaults({ ...GOOD, gradRewardWei: ethers.parseEther("2") + 1n })).to.be.revertedWithCustomError(cfg, "BadParam"); // > MAX_GRAD_REWARD
+    await expect(cfg.setDefaults({ ...GOOD, buyTaxBps: 0, sellTaxBps: 0 })).to.be.revertedWithCustomError(cfg, "BadParam"); // 0/0 tax bricks the hook
+    await expect(cfg.setDefaults({ ...GOOD, lpFee: 1_000_001 })).to.be.revertedWithCustomError(cfg, "BadParam"); // > MAX_LP_FEE
     await expect(cfg.setDefaults({ ...GOOD, lpFee: DYNAMIC_FEE_FLAG | 3000 })).to.be.revertedWithCustomError(cfg, "BadParam");
     await expect(cfg.setDefaults({ ...GOOD, startTickMag: 0 })).to.be.revertedWithCustomError(cfg, "BadParam");
     await expect(cfg.setDefaults({ ...GOOD, minGradWidth: 25800 })).to.be.revertedWithCustomError(cfg, "BadParam"); // >= curveWidth

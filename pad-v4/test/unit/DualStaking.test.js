@@ -76,6 +76,9 @@ describe("DualStaking — two-book earn-the-other staking", () => {
     );
     await expect(solo.connect(alice).donateETH(STOCK, { value: ethers.parseEther("1") }))
       .to.be.revertedWithCustomError(solo, "NotListed");
+    // [audit] fundETH carries the same guard — a rewarder can't strand ETH on the disabled side either
+    await expect(solo.connect(owner).fundETH(STOCK, { value: ethers.parseEther("1") }))
+      .to.be.revertedWithCustomError(solo, "NotListed");
   });
 
   it("earn-the-other: TOKEN stakers earn the STOCK reward, streamed over the window", async () => {

@@ -17,6 +17,7 @@ contract RobinV4FeeConfig is Ownable2Step {
     uint16 public constant MAX_TAX_BPS = 200; // ≤2% per side on any future launch
     uint16 public constant MAX_FLOOR_SHARE_BPS = 5000; // ≤50% of the sell tax may go to the floor
     uint256 public constant MAX_GRAD_REWARD = 2 ether; // per-side graduation reward ceiling
+    uint24 public constant MAX_LP_FEE = 1_000_000; // Uniswap's LPFeeLibrary max (100%); a static fee above it bricks initialize
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
 
     struct Defaults {
@@ -67,10 +68,15 @@ contract RobinV4FeeConfig is Ownable2Step {
 
     function _validate(Defaults memory d) internal pure {
         if (d.buyTaxBps > MAX_TAX_BPS || d.sellTaxBps > MAX_TAX_BPS) revert BadParam();
+        // [AUDIT] the hook rejects a zero/zero tax (RobinFeeHook.registerPool → BadTax), so a 0/0 default would
+        // brick EVERY future launch; require at least one side to carry a tax.
+        if (d.buyTaxBps == 0 && d.sellTaxBps == 0) revert BadParam();
         if (d.sellFloorShareBps > MAX_FLOOR_SHARE_BPS) revert BadParam();
         if (d.buyLpFloorShareBps > BPS) revert BadParam();
         if (d.gradRewardWei > MAX_GRAD_REWARD) revert BadParam();
-        if (d.lpFee & DYNAMIC_FEE_FLAG != 0) revert BadParam(); // static fee only
+        // [AUDIT] static fee only AND ≤ Uniswap's MAX_LP_FEE — an over-max static fee reverts poolManager.initialize
+        // (surfacing as a misleading PoolAlreadyInit) and bricks the launch.
+        if (d.lpFee & DYNAMIC_FEE_FLAG != 0 || d.lpFee > MAX_LP_FEE) revert BadParam();
         if (d.startTickMag <= 0 || d.curveWidth <= 0) revert BadParam();
         if (d.minGradWidth <= 0 || d.minGradWidth >= d.curveWidth) revert BadParam();
         // Exact tick-spacing alignment (startTick/curveWidth % tickSpacing) is enforced by the factory/pool at

@@ -376,6 +376,7 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     function fundETH(uint8 side) external payable nonReentrant {
         _requireSide(side);
         if (!isRewarder[msg.sender]) revert NotRewarder();
+        if (!rewardInfo[side][ETH].listed) revert NotListed(); // [AUDIT] a disabled side can never stream → would strand
         if (msg.value == 0) revert Zero();
         _updateReward(side, address(0));
         _applyReward(side, ETH, msg.value, true);
