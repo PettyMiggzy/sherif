@@ -8,7 +8,7 @@
     "test": "hardhat test test/unit/RobinFeeHook.skim.test.js test/unit/RobinFeeHook.adversarial.test.js test/unit/FeeWalletRegistry.test.js test/unit/LockVault.test.js test/unit/DualStaking.test.js test/unit/DualStaking.adversarial.test.js test/unit/StakingFactory.test.js test/unit/RobinFloorVault.test.js test/unit/RobinAmbushVault.test.js test/unit/StockQuoteAdapter.test.js test/unit/RobinV4FeeConfig.test.js test/unit/RobinCurveV4.test.js test/unit/RobinCurveV4.graduation.test.js",
     "test:all": "hardhat test",
     "test:fork": "hardhat test test/fork/A3.skim.fork.test.js test/fork/PadFactory.launch.fork.test.js test/fork/StockPadFactory.launch.fork.test.js test/fork/CurveGraduation.fork.test.js",
-    "test:sim": "hardhat test test/sim/economics.sim.test.js test/sim/curve.economics.sim.test.js test/sim/curve.slippage.sim.test.js test/sim/curve.graduation.sim.test.js",
+    "test:sim": "hardhat test test/sim/economics.sim.test.js test/sim/curve.economics.sim.test.js test/sim/curve.slippage.sim.test.js test/sim/curve.graduation.sim.test.js test/sim/curve.e2e.sim.test.js",
     "test:unit": "hardhat test test/unit/RobinFeeHook.skim.test.js test/unit/RobinFeeHook.adversarial.test.js test/unit/FeeWalletRegistry.test.js test/unit/LockVault.test.js test/unit/DualStaking.test.js test/unit/DualStaking.adversarial.test.js test/unit/StakingFactory.test.js test/unit/RobinFloorVault.test.js test/unit/RobinAmbushVault.test.js test/unit/StockQuoteAdapter.test.js test/unit/RobinV4FeeConfig.test.js test/unit/RobinCurveV4.test.js test/unit/RobinCurveV4.graduation.test.js",
     "postinstall": "node scripts/link-v4-libs.js"
   },
