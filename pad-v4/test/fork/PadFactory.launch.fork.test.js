@@ -1,4 +1,5 @@
 const { ethers } = require("hardhat");
+const abi = ethers.AbiCoder.defaultAbiCoder();
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode, HOOK_FLAGS, FLAG_MASK } = require("../../scripts/mine");
 
