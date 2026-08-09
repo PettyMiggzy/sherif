@@ -1,5 +1,6 @@
 const { ethers, network } = require("hardhat");
 const { expect } = require("chai");
+const { time } = require("@nomicfoundation/hardhat-network-helpers");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
 
 // SIM E2E — the full trade lifecycle THROUGH THE REAL FEE HOOK on a real local Uniswap v4 PoolManager.
@@ -171,23 +172,50 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
     });
   });
 
-  it("scenario C — no dev buy + medium airdrop, shallow curve, then busy tape GRADUATES", async () => {
+  it("scenario C — no dev buy + airdrop + STAKING; busy tape GRADUATES; holders stake→earn→claim→unstake", async () => {
     const creator = signers[2];
     const curveSupply = 1000n * 10n ** 18n, reserveSupply = 1000n * 10n ** 18n, airdropPool = 500n * 10n ** 18n;
     const P = await launchPad(S, deployer, creator, "PADC", { supply: curveSupply + reserveSupply + airdropPool, curveSupply, reserveSupply });
-    const { key, tok, curve, curveAddr } = P;
+    const { key, tok, curve } = P;
 
-    // airdrop, then a busy multi-wallet buy tape that buys the shallow curve OUT
-    for (const h of signers.slice(5, 11)) await tok.connect(creator).transfer(h.address, 50n * 10n ** 18n);
-    for (const w of signers.slice(8, 14)) await expect(buy(key, w, "2")).to.not.be.reverted;
-    await expect(buy(key, signers[14], "6000")).to.not.be.reverted; // buy out → ceiling
+    // ── wire the pad's holder-staking pool (stake the token, earn the streamed token; 5% claim fee, no hold) ──
+    const ds = await (await ethers.getContractFactory("DualStaking")).deploy(P.token, ZERO, deployer.address, 0, ZERO, ethers.ZeroHash, 0);
+    await ds.setRewarder(await curve.getAddress(), true);
+    await ds.listReward(0, P.token, 7 * 86400); // Side.TOKEN earns the token
+    await curve.connect(platform).setStaking(await ds.getAddress());
+
+    // ── airdrop, and the holders STAKE their airdrop into the pool ──
+    const stakers = signers.slice(5, 9);
+    const AIR = 50n * 10n ** 18n;
+    for (const h of stakers) await tok.connect(creator).transfer(h.address, AIR);
+    for (const h of stakers) {
+      await tok.connect(h).approve(await ds.getAddress(), ethers.MaxUint256);
+      await expect(ds.connect(h).stake(0, AIR)).to.not.be.reverted;
+    }
+    expect(await ds.totalStaked(0)).to.equal(AIR * BigInt(stakers.length));
+
+    // ── busy multi-wallet tape buys the shallow curve OUT ──
+    for (const w of signers.slice(9, 15)) await expect(buy(key, w, "2")).to.not.be.reverted;
+    await expect(buy(key, signers[15], "6000")).to.not.be.reverted; // buy out → ceiling
     expect(await curve.ready()).to.equal(true);
 
-    // graduate after the busy tape — must succeed end to end
+    // ── graduate: streams the leftover token → the staking pool as the holder reward ──
     const idBefore = await S.posm.nextTokenId();
     await expect(curve.graduate()).to.not.be.reverted;
     expect(await curve.graduated()).to.equal(true);
     expect(await S.posm.ownerOf(idBefore)).to.equal(await S.lockVault.getAddress());
     expect((await S.stateView.getSlot0(P.poolId))[1]).to.equal(GRAD); // ceiling restored
+    expect(await tok.balanceOf(await ds.getAddress())).to.be.gt(AIR * BigInt(stakers.length)); // reward arrived on top of principal
+
+    // ── stream the window, then a holder EARNS, CLAIMS the reward, and UNSTAKES the principal ──
+    await time.increase(7 * 86400 + 10);
+    const alice = stakers[0];
+    expect(await ds.earned(0, alice.address, P.token)).to.be.gt(0n);
+    const before = await tok.balanceOf(alice.address);
+    await expect(ds.connect(alice).claim(0, P.token)).to.not.be.reverted;
+    const afterClaim = await tok.balanceOf(alice.address);
+    expect(afterClaim).to.be.gt(before); // received the streamed reward (net of the 5% claim fee)
+    await expect(ds.connect(alice).unstake(0, AIR)).to.not.be.reverted; // principal returned
+    expect(await tok.balanceOf(alice.address)).to.equal(afterClaim + AIR);
   });
 });
