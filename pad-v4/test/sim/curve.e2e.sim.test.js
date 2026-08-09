@@ -172,6 +172,47 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
     });
   });
 
+  // ⚠️ COMPLIANCE: tokenized-stock (RWA) rewards are SECURITIES. Per SEC 2026 guidance + the live market
+  // (xStocks/Backed geo-block the US, and their stock rewards are "not available in the US"), this path must be
+  // geo/KYC-GATED to eligible NON-US users and requires legal sign-off. It is OPT-IN only — the default pad
+  // reward is the token itself + ETH (US-safe). This test proves the plumbing; it does NOT bless US distribution.
+  it("scenario D — [gated, non-US] RWA rewards: stake the pad coin, EARN a tokenized real-world asset", async () => {
+    const creator = signers[2];
+    const curveSupply = 1000n * 10n ** 18n, reserveSupply = 1000n * 10n ** 18n, airdropPool = 1000n * 10n ** 18n;
+    const P = await launchPad(S, deployer, creator, "PADD", { supply: curveSupply + reserveSupply + airdropPool, curveSupply, reserveSupply });
+    const { tok } = P;
+
+    // the RWA: a tokenized real-world asset (a stock on Robinhood Chain), governed by its access registry
+    const stockReg = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
+    const rwa = await (await ethers.getContractFactory("MockStock")).connect(deployer).deploy(await stockReg.getAddress(), 10n ** 24n);
+
+    // the pad's staking pool: stake the PAD COIN (single-book), earn the RWA as the streamed reward
+    const ds = await (await ethers.getContractFactory("DualStaking")).deploy(P.token, ZERO, deployer.address, 0, ZERO, ethers.ZeroHash, 0);
+    await ds.listReward(0, await rwa.getAddress(), 7 * 86400); // Side.TOKEN earns the tokenized real-world asset
+
+    // holders receive the pad coin (airdrop) and STAKE it
+    const holders = signers.slice(5, 9);
+    const AIR = 50n * 10n ** 18n;
+    for (const h of holders) await tok.connect(creator).transfer(h.address, AIR);
+    for (const h of holders) {
+      await tok.connect(h).approve(await ds.getAddress(), ethers.MaxUint256);
+      await ds.connect(h).stake(0, AIR);
+    }
+
+    // the platform funds the RWA reward stream (in prod: a slice of fees → buy the RWA via RobinStockSwap → fundToken)
+    await rwa.connect(deployer).approve(await ds.getAddress(), ethers.MaxUint256);
+    await expect(ds.connect(deployer).fundToken(0, await rwa.getAddress(), 100000n * 10n ** 18n)).to.not.be.reverted;
+
+    // stream the window; a holder EARNS and CLAIMS the tokenized real-world asset for staking the coin
+    await time.increase(7 * 86400 + 10);
+    const alice = holders[0];
+    expect(await ds.earned(0, alice.address, await rwa.getAddress())).to.be.gt(0n);
+    const before = await rwa.balanceOf(alice.address);
+    await expect(ds.connect(alice).claim(0, await rwa.getAddress())).to.not.be.reverted;
+    expect(await rwa.balanceOf(alice.address)).to.be.gt(before); // holder now holds a REAL-WORLD ASSET earned by staking
+    await expect(ds.connect(alice).unstake(0, AIR)).to.not.be.reverted; // pad-coin principal returns untouched
+  });
+
   it("scenario C — no dev buy + airdrop + STAKING; busy tape GRADUATES; holders stake→earn→claim→unstake", async () => {
     const creator = signers[2];
     const curveSupply = 1000n * 10n ** 18n, reserveSupply = 1000n * 10n ** 18n, airdropPool = 500n * 10n ** 18n;

@@ -42,8 +42,8 @@ interface IFloorVault {
 /// A held-back token RESERVE (transferred by the factory AFTER seed, so it is never in the sellable range) funds
 /// graduation — because a fully-sold curve holds ~0 token. graduate() waterfalls the raise (V3 parity):
 ///   • pulls the raised ETH out of the curve,
-///   • carves the per-side rewards — platform + creator, each ≤ raise/4 — and the graduator's gas stipend
-///     (≤ raise/20, so whoever triggers graduation is paid back from the curve, never out of pocket),
+///   • carves the per-side rewards — platform + creator, each ≤ raise/4 (the graduation work runs on the curve's
+///     own ETH, so there is no separate gas reimbursement),
 ///   • seeds a PERMANENT, LOCKED full-range 2-sided LP from (remaining ETH + reserve tokens); its NFT goes to the
 ///     LockVault (can never be pulled),
 ///   • streams the LEFTOVER reserve tokens (+ any token/sell LP fees) into the pad's staking pool (holder rewards),
@@ -67,11 +67,6 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint48 internal constant MAX_UINT48 = type(uint48).max;
     uint256 internal constant NUDGE_MAX_FRACTION = 100; // the ceiling nudge may spend ≤ 1/100 of the reserve
     uint256 internal constant BPS = 10000;
-    // [AUDIT] Reimburse MEASURED gas (gasStart-gasleft + a conservative overhead for the work still ahead of the
-    // measurement point) at tx.gasprice — so the payout equals the graduator's REAL cost and can never exceed it
-    // (a flat stipend over-refunded whenever actual gas < the constant, letting the caller skim via a high tip).
-    uint256 internal constant GRAD_GAS_OVERHEAD = 400_000; // covers the LP mint + funding + payouts after the carve point
-    uint256 internal constant GRAD_GAS_CAP_FRACTION = 20; // gas reimbursement ≤ 1/20 (5%) of the raise
     uint256 internal constant GRAD_REWARD_CAP_FRACTION = 4; // each side's grad reward ≤ 1/4 of the raise (V3 parity)
 
     IPoolManager public immutable poolManager;
@@ -117,7 +112,6 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     event Graduated(uint256 lpTokenId, uint256 raisedEth, uint256 toStaking, uint256 platformReward, uint256 creatorReward);
     event StakingFunded(uint256 amount);
     event FloorFunded(uint256 amount);
-    event GasReimbursed(address to, uint256 amount);
 
     error NotPoolManager();
     error NotFactory();
@@ -238,7 +232,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     }
 
     /// @notice Graduate at the ceiling. Waterfall on the raised ETH (V3 parity): carve the per-side rewards
-    /// (platform + creator, each ≤ raise/4) and the graduator's gas stipend (≤ raise/20) FIRST, then seed the
+    /// (platform + creator, each ≤ raise/4) FIRST, then seed the
     /// permanent LOCKED 2-sided LP from (remaining ETH + reserve), stream the leftover token → staking, and
     /// sweep the held buy-LP carve → the permanent floor. Permissionless; CEI-ordered; unbrickable.
     function graduate() external nonReentrant {
@@ -247,7 +241,6 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         (, int24 tick,,) = stateView.getSlot0(_poolId());
         if (tick > gradTick) revert NotReady(); // curve not fully sold yet
         graduated = true; // CEI: flip before any external interaction
-        uint256 gasStart = gasleft(); // measured-gas reimbursement (see step 3)
 
         // [AUDIT-HIGH] Snapshot any pre-existing UNBOOKED ETH (e.g. a hostile donation to receive()) BEFORE the
         // pull, so it is never counted as raise. Deriving the raise from raw balance let a donor inflate lpEth
@@ -268,17 +261,14 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (raisedEth == 0) revert EmptyRaise();
         if (tokenReserve == 0) revert NoReserve(); // [CRITICAL-1] must have a held-back reserve to pair the LP
 
-        // 3) carve the V3-parity rewards + the graduator's MEASURED gas from the raise. Each side ≤ raise/4, gas ≤
-        //    raise/20, so the LP leg (lpEth) is always strictly positive (rewards+gas ≤ 0.55·raise). [AUDIT] Gas is
-        //    reimbursed as (gas actually used so far + a conservative overhead for the mint/funding/payouts still
-        //    ahead) × tx.gasprice — the caller's REAL cost, so a high tip can never make the payout exceed it.
+        // 3) carve the V3-parity per-side rewards from the raise (platform + creator, each ≤ raise/4), so the LP
+        //    leg (lpEth) is always strictly positive (rewards ≤ 0.5·raise). The graduation work itself runs on the
+        //    curve's own ETH, so there is no separate gas reimbursement — whoever triggers it (the platform keeper)
+        //    is the platform, and the raise flows into the LP + rewards rather than a gas skim.
         uint256 cap = raisedEth / GRAD_REWARD_CAP_FRACTION;
         uint256 platReward = gradRewardWei > cap ? cap : gradRewardWei;
         uint256 creatReward = gradRewardWei > cap ? cap : gradRewardWei;
-        uint256 gasCost = (gasStart - gasleft() + GRAD_GAS_OVERHEAD) * tx.gasprice;
-        uint256 gasCap = raisedEth / GRAD_GAS_CAP_FRACTION;
-        if (gasCost > gasCap) gasCost = gasCap;
-        uint256 lpEth = raisedEth - platReward - creatReward - gasCost;
+        uint256 lpEth = raisedEth - platReward - creatReward;
         if (lpEth == 0) revert EmptyRaise();
 
         // 4) seed the PERMANENT LOCKED full-range 2-sided LP (NFT → LockVault). The reserve is sized so the ETH
@@ -292,21 +282,14 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         platformEthOwed += platReward;
         creatorEthOwed += creatReward;
 
-        // 7) reimburse the graduator's gas from the curve (non-bricking: on a failed send it falls to the platform)
-        if (gasCost > 0) {
-            (bool ok,) = payable(msg.sender).call{value: gasCost}("");
-            if (!ok) platformEthOwed += gasCost;
-            else emit GasReimbursed(msg.sender, gasCost);
-        }
-
-        // 8) stream the leftover reserve tokens → staking (non-bricking; flushStaking() finishes if unwired)
+        // 7) stream the leftover reserve tokens → staking (non-bricking; flushStaking() finishes if unwired)
         uint256 leftoverToken = IERC20(token).balanceOf(address(this));
         _fundStaking(leftoverToken);
 
-        // 9) sweep the held buy-LP carve → the permanent floor (non-bricking; flushFloor() finishes if unwired)
+        // 8) sweep the held buy-LP carve → the permanent floor (non-bricking; flushFloor() finishes if unwired)
         _fundFloor();
 
-        // 10) any unbooked ETH dust → platform book (preserving the floor + creator books still owed)
+        // 9) any unbooked ETH dust → platform book (preserving the floor + creator books still owed)
         platformEthOwed = address(this).balance - floorEthOwed - creatorEthOwed;
         emit Graduated(lpTokenId, raisedEth, leftoverToken, platReward, creatReward);
     }
