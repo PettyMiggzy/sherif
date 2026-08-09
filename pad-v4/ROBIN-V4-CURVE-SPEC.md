@@ -29,8 +29,11 @@ Every trade pays **1% LP fee** (pool) + **1% directional trade tax** (hook). (v2
 
 ## Ambush (held reserve, active from launch)
 At launch some tokens are **held back** (not sold on the curve) as the ambush reserve. It is placed as a **passive
-single-sided TOKEN sell-wall above the price**: when the coin pumps into it, AMM mechanics sell those tokens for
-ETH which is routed to the **floor** — capping pumps and growing the rug-proof floor. Combined with the floor's
+single-sided TOKEN sell-wall above the price in value terms** — a fixed band of liquidity at ticks *below* the
+graduation tick (in V4, a higher token value = a lower tick), implemented in `RobinAmbushVault` as the exact
+mirror of the audited `RobinFloorVault` (add-only, no remove path). When the coin pumps into it, AMM mechanics
+sell those tokens for ETH and the wall's ETH-side LP fees are routed to the **floor** — capping pumps and growing
+the rug-proof floor. Combined with the floor's
 ETH buy-wall (which catches dumps), this is a **passive two-sided support band** — "buy and sell to support the
 floor" WITHOUT a gameable active market-maker. At graduation, the remaining ambush tokens **pair the permanent
 locked LP**; the ETH it earned has already deepened the floor.
@@ -47,9 +50,9 @@ At the ceiling (geometry set so the raise ≈ 4.2 ETH):
 ## Governance = "right the first time"
 - **Per-pad fee config: IMMUTABLE at its launch** (the hook's `PoolFeeConfig`, registered once). Creators and
   traders get a hard guarantee the tax on their coin can never be raised.
-- **Factory DEFAULTS (fee bps, floor share, curve geometry, stakingEthShareBps): read from a governed
-  `RobinV4FeeConfig`** (Ownable2Step, capped). Retune the defaults for *future* launches with a setter —
-  **never a factory redeploy.** This is the single rule that avoids the V3 redeploy trap.
+- **Factory DEFAULTS (fee bps, sell-floor share, `buyLpFloorShareBps`, `gradRewardWei`, curve geometry): read
+  from a governed `RobinV4FeeConfig`** (Ownable2Step, capped). Retune the defaults for *future* launches with a
+  setter — **never a factory redeploy.** This is the single rule that avoids the V3 redeploy trap.
 
 ## Components
 Already built + audited (reused as-is): `RobinFeeHook`, `DualStaking`, `RobinFloorVault`, `LockVault`,
@@ -59,8 +62,11 @@ New for this suite:
 1. **`RobinV4FeeConfig`** — governed default params (capped, Ownable2Step).
 2. **`CurvePadFactoryV4`** — free single-sided launch: deploy token → init V4 pool w/ hook → seed single-sided
    curve (no ETH) → register immutable per-pad fee from the FeeConfig defaults → wire staking + floor.
-3. **Curve/graduation logic** — single-sided position management + `graduate()` (seed locked 2-sided LP +
-   unsold → staking). (V4 analogue of the V3 `CurvePool`.)
+3. **Curve/graduation logic** (`RobinCurveV4`) — single-sided position management + the v2 `graduate()` waterfall
+   (per-side rewards + gas-from-curve → locked 2-sided LP → leftover → staking → held buy-LP carve → floor).
+4. **`RobinAmbushVault`** — passive single-sided TOKEN sell-wall (floor-vault mirror); pump sales' LP fees → floor.
+5. **`DualStaking.donateETH`** — permissionless ETH top-up so the creator can feed holders (no platform cut).
+6. **`scripts/auto-verify.cjs`** — watches `CurvePadFactoryV4.CurvePadLaunched`, auto-verifies token/hook/curve on Blockscout.
 
 ## Reward asset
 - **ETH** is the reliable staking/yield asset (always payable from fees).
