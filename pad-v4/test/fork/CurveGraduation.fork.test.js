@@ -93,6 +93,10 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
     );
     expect(await curve.ready()).to.equal(true);
 
+    // ── [audit] a hostile ETH donation to the curve before graduation must NOT brick graduate() ──
+    // (the raise is measured from the pull delta, not raw balance, so the donation cannot inflate lpEth)
+    await deployer.sendTransaction({ to: curveAddr, value: ethers.parseEther("2") });
+
     // ── graduate ──
     const posm = await ethers.getContractAt("IPositionManagerMinimal", POSITION_MANAGER);
     const idBefore = await posm.nextTokenId();

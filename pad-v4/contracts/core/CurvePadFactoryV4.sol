@@ -119,7 +119,15 @@ contract CurvePadFactoryV4 {
         int24 gradTick = startTick - int24(d.curveWidth); // ceiling (lower); startTick/gradTick are ts-aligned
         // gradTick must be strictly ABOVE minUsableTick: at == it, √grad == √minTick and _mintPermanentLp's
         // getLiquidityForAmount1(√min, √grad, …) divides by zero (reverting graduation). [D-2]
-        if (startTick > TickMath.maxUsableTick(ts) || gradTick <= TickMath.minUsableTick(ts)) revert BadGeometry();
+        // gradTick must also sit a safe margin BELOW maxUsableTick: the permanent LP's full-range token leg costs
+        // curveSupply·(√grad/√start)·√max/(√max−√grad), and that √max/(√max−√grad) factor only stays within the
+        // reserve check's 5% margin below while √grad/√max is small. An 80,000-tick gap keeps √grad/√max ≲ 1.8%
+        // (factor ≲ 1.019), leaving comfortable headroom so the ETH leg always binds and the raise can never be
+        // trapped by InsufficientReserve. [AUDIT] Only reachable via an absurd near-max launch price anyway. [D-3]
+        int24 maxTick = TickMath.maxUsableTick(ts);
+        if (startTick > maxTick || gradTick <= TickMath.minUsableTick(ts) || gradTick > maxTick - 80000) {
+            revert BadGeometry();
+        }
         // [HIGH-2] the reserve must be big enough that the ETH leg binds at graduation — otherwise the raise
         // would leak to the platform book, or (too small) brick graduation and trap the raise forever. Require
         // reserveSupply ≥ curveSupply·√grad/√start with a 5% margin (√grad < √start ⇒ threshold < curveSupply).

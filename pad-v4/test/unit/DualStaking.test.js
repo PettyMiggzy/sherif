@@ -58,6 +58,26 @@ describe("DualStaking — two-book earn-the-other staking", () => {
     expect(earned).to.be.gt(0n); // the donated ETH streamed to the sole staker
   });
 
+  it("[audit] donateETH tops up WITHOUT stretching the window (no periodFinish reset griefing)", async () => {
+    await ds.connect(alice).stake(TOKEN, 1000n);
+    await ds.connect(bob).donateETH(TOKEN, { value: ethers.parseEther("7") }); // start a live stream
+    const pf0 = (await ds.rewardInfo(TOKEN, ETH)).periodFinish;
+    await time.increase(2 * DAY);
+    // a dust top-up MUST NOT push periodFinish out (the Synthetix period-extension griefing vector)
+    await ds.connect(bob).donateETH(TOKEN, { value: 1n });
+    const pf1 = (await ds.rewardInfo(TOKEN, ETH)).periodFinish;
+    expect(pf1).to.equal(pf0); // window unchanged — donation raised the rate, did not reset the clock
+  });
+
+  it("[audit] donateETH reverts on a disabled side instead of stranding the ETH", async () => {
+    // single-book pool: STOCK side is disabled (stockAsset == 0) → ETH is not listed there
+    const solo = await (await ethers.getContractFactory("DualStaking")).deploy(
+      await tok.getAddress(), ethers.ZeroAddress, owner.address, DAY, ethers.ZeroAddress, ethers.ZeroHash, TOKEN
+    );
+    await expect(solo.connect(alice).donateETH(STOCK, { value: ethers.parseEther("1") }))
+      .to.be.revertedWithCustomError(solo, "NotListed");
+  });
+
   it("earn-the-other: TOKEN stakers earn the STOCK reward, streamed over the window", async () => {
     // list STOCK as a reward asset on the TOKEN side
     await ds.connect(owner).listReward(TOKEN, await stk.getAddress(), 7 * DAY);

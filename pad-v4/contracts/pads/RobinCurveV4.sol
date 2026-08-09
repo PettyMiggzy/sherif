@@ -67,7 +67,10 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint48 internal constant MAX_UINT48 = type(uint48).max;
     uint256 internal constant NUDGE_MAX_FRACTION = 100; // the ceiling nudge may spend ≤ 1/100 of the reserve
     uint256 internal constant BPS = 10000;
-    uint256 internal constant GRAD_GAS_STIPEND = 2_000_000; // gas units reimbursed to the graduator (× tx.gasprice)
+    // [AUDIT] Reimburse MEASURED gas (gasStart-gasleft + a conservative overhead for the work still ahead of the
+    // measurement point) at tx.gasprice — so the payout equals the graduator's REAL cost and can never exceed it
+    // (a flat stipend over-refunded whenever actual gas < the constant, letting the caller skim via a high tip).
+    uint256 internal constant GRAD_GAS_OVERHEAD = 400_000; // covers the LP mint + funding + payouts after the carve point
     uint256 internal constant GRAD_GAS_CAP_FRACTION = 20; // gas reimbursement ≤ 1/20 (5%) of the raise
     uint256 internal constant GRAD_REWARD_CAP_FRACTION = 4; // each side's grad reward ≤ 1/4 of the raise (V3 parity)
 
@@ -244,26 +247,35 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         (, int24 tick,,) = stateView.getSlot0(_poolId());
         if (tick > gradTick) revert NotReady(); // curve not fully sold yet
         graduated = true; // CEI: flip before any external interaction
+        uint256 gasStart = gasleft(); // measured-gas reimbursement (see step 3)
+
+        // [AUDIT-HIGH] Snapshot any pre-existing UNBOOKED ETH (e.g. a hostile donation to receive()) BEFORE the
+        // pull, so it is never counted as raise. Deriving the raise from raw balance let a donor inflate lpEth
+        // past the reserve's pairing capacity and brick the LP mint (InsufficientReserve) permanently. Instead we
+        // measure the NET new unbooked ETH the pull delivers; the donation falls through to the step-10 sweep.
+        uint256 donatedBefore = address(this).balance - platformEthOwed - floorEthOwed; // creatorEthOwed == 0 pre-grad
 
         // 1) pull the raise out of the curve. The unlock FIRST nudges spot back up to the exact ceiling if a buy
         //    (or a griefer's planted liquidity) overshot below it, so the permanent LP always seeds at gradTick —
         //    never a manipulated price. Then it accrues fees and takes the principal to this contract.
         poolManager.unlock(abi.encode(Op.GRADUATE_PULL, uint256(0)));
 
-        // 2) the raise is this contract's ETH minus the fee books (platform + floor carve). A fully-sold curve
-        //    yields ~0 token, so the LP token leg is the held-back RESERVE (all on-hand token → LP then staking).
-        uint256 raisedEth = address(this).balance - platformEthOwed - floorEthOwed;
+        // 2) the raise = the NET new unbooked ETH the pull delivered (principal + nudge proceeds), excluding both
+        //    the fee books AND any pre-existing donation. A fully-sold curve yields ~0 token, so the LP token leg
+        //    is the held-back RESERVE (all on-hand token → LP then staking).
+        uint256 raisedEth = (address(this).balance - platformEthOwed - floorEthOwed) - donatedBefore;
         uint256 tokenReserve = IERC20(token).balanceOf(address(this));
         if (raisedEth == 0) revert EmptyRaise();
         if (tokenReserve == 0) revert NoReserve(); // [CRITICAL-1] must have a held-back reserve to pair the LP
 
-        // 3) carve the V3-parity rewards + the graduator's gas from the raise. Each side ≤ raise/4, gas ≤ raise/20,
-        //    so the LP leg (lpEth) is always strictly positive (rewards+gas ≤ 0.55·raise). Gas comes from the curve
-        //    so whoever triggers graduation (a bot/keeper) is never out of pocket — the user's "gas from the curve".
+        // 3) carve the V3-parity rewards + the graduator's MEASURED gas from the raise. Each side ≤ raise/4, gas ≤
+        //    raise/20, so the LP leg (lpEth) is always strictly positive (rewards+gas ≤ 0.55·raise). [AUDIT] Gas is
+        //    reimbursed as (gas actually used so far + a conservative overhead for the mint/funding/payouts still
+        //    ahead) × tx.gasprice — the caller's REAL cost, so a high tip can never make the payout exceed it.
         uint256 cap = raisedEth / GRAD_REWARD_CAP_FRACTION;
         uint256 platReward = gradRewardWei > cap ? cap : gradRewardWei;
         uint256 creatReward = gradRewardWei > cap ? cap : gradRewardWei;
-        uint256 gasCost = GRAD_GAS_STIPEND * tx.gasprice;
+        uint256 gasCost = (gasStart - gasleft() + GRAD_GAS_OVERHEAD) * tx.gasprice;
         uint256 gasCap = raisedEth / GRAD_GAS_CAP_FRACTION;
         if (gasCost > gasCap) gasCost = gasCap;
         uint256 lpEth = raisedEth - platReward - creatReward - gasCost;

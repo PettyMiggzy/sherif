@@ -383,13 +383,17 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     }
 
     /// @notice Permissionless ETH top-up of a side's reward stream — anyone (typically the CREATOR) can deposit
-    /// ETH straight to holders WITHOUT being a rewarder and WITHOUT touching the platform cut. Accounting-only,
-    /// same as fundETH; it only ever ADDS to the stream, so leaving it un-gated is safe.
+    /// ETH straight to holders WITHOUT being a rewarder and WITHOUT touching the platform cut. Accounting-only.
+    /// [AUDIT] Two guards make un-gated donations safe: (1) require the side's ETH stream is LISTED — a donation
+    /// to a disabled side (e.g. STOCK on a single-book pool) can never be staked or kickstarted and would strand
+    /// forever; (2) pass extend=FALSE so a donation TOPS UP the live stream (raising the rate) but can NEVER push
+    /// periodFinish out — otherwise a 1-wei spammer could perpetually reset the window and dilute holder rewards.
     function donateETH(uint8 side) external payable nonReentrant {
         _requireSide(side);
+        if (!rewardInfo[side][ETH].listed) revert NotListed(); // side must be able to actually stream ETH
         if (msg.value == 0) revert Zero();
         _updateReward(side, address(0));
-        _applyReward(side, ETH, msg.value, true);
+        _applyReward(side, ETH, msg.value, false); // top-up only — never extend/reset the period
         emit RewardAdded(side, ETH, msg.value, totalWeight[side] > 0);
     }
 
