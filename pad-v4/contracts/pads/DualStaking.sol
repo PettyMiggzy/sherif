@@ -382,6 +382,17 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         emit RewardAdded(side, ETH, msg.value, totalWeight[side] > 0);
     }
 
+    /// @notice Permissionless ETH top-up of a side's reward stream — anyone (typically the CREATOR) can deposit
+    /// ETH straight to holders WITHOUT being a rewarder and WITHOUT touching the platform cut. Accounting-only,
+    /// same as fundETH; it only ever ADDS to the stream, so leaving it un-gated is safe.
+    function donateETH(uint8 side) external payable nonReentrant {
+        _requireSide(side);
+        if (msg.value == 0) revert Zero();
+        _updateReward(side, address(0));
+        _applyReward(side, ETH, msg.value, true);
+        emit RewardAdded(side, ETH, msg.value, totalWeight[side] > 0);
+    }
+
     /// @notice Fund a side's ERC-20 stream by PULLING from the caller (converter/creator). Measured delta.
     function fundToken(uint8 side, address asset, uint256 amount) external nonReentrant {
         _requireSide(side);

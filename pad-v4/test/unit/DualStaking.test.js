@@ -43,6 +43,21 @@ describe("DualStaking — two-book earn-the-other staking", () => {
     expect(await ds.weight(TOKEN, alice.address)).to.equal(100n); // 1x boost by default
   });
 
+  it("donateETH lets ANYONE (the creator) top up the ETH stream without being a rewarder", async () => {
+    await ds.connect(alice).stake(TOKEN, 1000n);
+    // alice is NOT a rewarder → the gated fundETH must reject her
+    await expect(ds.connect(alice).fundETH(TOKEN, { value: ethers.parseEther("1") }))
+      .to.be.revertedWithCustomError(ds, "NotRewarder");
+    // but donateETH is permissionless — the creator can feed holders directly, no platform cut involved
+    await expect(ds.connect(alice).donateETH(TOKEN, { value: ethers.parseEther("3") }))
+      .to.emit(ds, "RewardAdded");
+    await expect(ds.connect(alice).donateETH(TOKEN, { value: 0 })).to.be.revertedWithCustomError(ds, "Zero");
+
+    await time.increase(7 * DAY + 10);
+    const earned = await ds.earned(TOKEN, alice.address, ETH);
+    expect(earned).to.be.gt(0n); // the donated ETH streamed to the sole staker
+  });
+
   it("earn-the-other: TOKEN stakers earn the STOCK reward, streamed over the window", async () => {
     // list STOCK as a reward asset on the TOKEN side
     await ds.connect(owner).listReward(TOKEN, await stk.getAddress(), 7 * DAY);
