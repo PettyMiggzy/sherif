@@ -8,3 +8,4 @@ coverage.json
 .env.*
 !.env.example
 deploy.local.json
+deploy.curve.json

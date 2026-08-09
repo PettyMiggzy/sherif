@@ -27,7 +27,10 @@ const { BLOCKSCOUT, COIN_KINDS, verifyAddress, sleep } = require("./lib/blocksco
 // Fall back to the deploy manifest (written by scripts/deploy.js) for the factory + its block, so the
 // operator doesn't have to hand-set anything after a deploy — just run the script.
 let manifest = {};
-try { manifest = JSON.parse(fs.readFileSync(process.env.DEPLOY_JSON || path.resolve(__dirname, "..", "deploy.json"), "utf8")); } catch { /* env-only */ }
+for (const p of [process.env.DEPLOY_JSON, path.resolve(__dirname, "..", "deploy.curve.json"), path.resolve(__dirname, "..", "deploy.json")]) {
+  if (!p) continue;
+  try { manifest = JSON.parse(fs.readFileSync(p, "utf8")); break; } catch { /* try next */ }
+}
 
 const RPC_URL = process.env.RPC_URL || "https://robinhoodchain.blockscout.com/api/eth-rpc";
 const FACTORY = (process.env.FACTORY || (manifest.contracts && manifest.contracts.curveFactory) || "").toLowerCase();
