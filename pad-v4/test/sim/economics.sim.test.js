@@ -42,7 +42,7 @@ describe("SIM — fee conservation over many buys & sells", () => {
     await pm.initialize(key, SQRT_1_1);
     await hook.connect(factory).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address, floorRecipient: floor.address,
-      guardAdapter: ZERO, buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyBufferShareBps: 2000, guardWindow: 0, quoteIsStock: false,
+      guardAdapter: ZERO, buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,
     });
     // the curve-buffer recipient (in prod, the pad's curve controller) — the buy-tax buffer carve is forwarded here
     await hook.connect(factory).setBufferRecipient(poolId, lp.address);

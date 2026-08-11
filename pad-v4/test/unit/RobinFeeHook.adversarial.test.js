@@ -27,7 +27,7 @@ function poolIdOf(k) {
 }
 const CFG = (c0, c1, creator, extra = {}) => ({
   currency0: c0, currency1: c1, creator, floorRecipient: ZERO, guardAdapter: ZERO,
-  buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyBufferShareBps: 2000, guardWindow: 0, quoteIsStock: false, ...extra,
+  buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 0, guardWindow: 0, quoteIsStock: false, ...extra,
 });
 
 async function deployHook(pm, dep, reg, factorySigner, tokenAddr) {

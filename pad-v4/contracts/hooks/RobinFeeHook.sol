@@ -57,6 +57,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         uint16 sellTaxBps;
         uint16 sellFloorShareBps; // share of the sell tax carved to the floor
         uint16 buyBufferShareBps; // share of the buy tax kept as a curve buffer (rest → platform)
+        uint16 referralShareBps; // share of the platform buy cut paid to a referrer (rest → platform)
         uint32 guardWindow;
         Currency currency0; // quote
         Currency currency1; // token
@@ -74,6 +75,9 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     mapping(PoolId => mapping(uint256 => uint256)) public creatorOwed; // from sells (quote leg)
     mapping(PoolId => mapping(uint256 => uint256)) public floorOwed; // carve from sells (quote leg)
     mapping(PoolId => uint256) public bufferOwed; // curve-buffer carve from buys (token leg) → forwarded to the curve
+    // referral carve from buys (token leg): the referrer (passed in swap hookData) earns a slice of the platform's
+    // buy cut. Keyed by referrer → token, since each pad's buy tax is denominated in that pad's own token.
+    mapping(address referrer => mapping(address token => uint256)) public referralOwed;
 
     event PoolRegistered(PoolId indexed id, address indexed creator, uint16 buyTaxBps, uint16 sellTaxBps);
     event BuyTaxed(PoolId indexed id, uint256 platformCut, uint256 bufferCut); // token leg
@@ -83,6 +87,8 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     event CreatorClaimed(PoolId indexed id, uint256 currencyIndex, address to, uint256 amount);
     event FloorClaimed(PoolId indexed id, uint256 currencyIndex, address to, uint256 amount);
     event BufferClaimed(PoolId indexed id, address to, uint256 amount);
+    event ReferralAccrued(PoolId indexed id, address indexed referrer, address token, uint256 amount);
+    event ReferralClaimed(address indexed referrer, address indexed token, uint256 amount);
     event CreatorRepointStarted(PoolId indexed id, address pending);
     event CreatorRepointed(PoolId indexed id, address creator);
 
@@ -126,6 +132,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         if (cfg.buyTaxBps == 0 && cfg.sellTaxBps == 0) revert BadTax();
         if (cfg.sellFloorShareBps > BPS) revert BadShares();
         if (cfg.buyBufferShareBps > BPS) revert BadShares();
+        if (cfg.referralShareBps > BPS) revert BadShares(); // ≤100% of the platform buy cut (FeeConfig caps tighter)
 
         config[id] = PoolConfig({
             registered: true,
@@ -134,6 +141,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
             sellTaxBps: cfg.sellTaxBps,
             sellFloorShareBps: cfg.sellFloorShareBps,
             buyBufferShareBps: cfg.buyBufferShareBps,
+            referralShareBps: cfg.referralShareBps,
             guardWindow: cfg.guardWindow,
             currency0: cfg.currency0,
             currency1: cfg.currency1,
@@ -187,7 +195,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     //                               afterSwap                               //
     // --------------------------------------------------------------------- //
 
-    function afterSwap(address sender, PoolKey calldata key, SwapParams calldata params, BalanceDelta delta, bytes calldata)
+    function afterSwap(address sender, PoolKey calldata key, SwapParams calldata params, BalanceDelta delta, bytes calldata hookData)
         external
         override
         onlyPoolManager
@@ -227,13 +235,27 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         }
 
         if (isBuy) {
-            // buy → platform + curve buffer (token leg). The buffer carve is forwarded to the curve (claimBuffer),
-            // hardening the LP-binding reserve margin + deepening staking rewards; dust conserved into the platform cut.
+            // buy tax (token leg) → curve buffer + referrer + platform. The buffer carve is forwarded to the curve
+            // (claimBuffer), hardening the LP-binding reserve margin + deepening staking. A referrer passed in the
+            // swap hookData then earns a slice of the PLATFORM cut (never the buffer, never the trader); platform
+            // takes the rest. Every subtraction conserves dust into the platform cut.
             uint256 bufferCut = (fee * c.buyBufferShareBps) / BPS;
             uint256 platformCut = fee - bufferCut;
-            platformOwed[id][uc] += platformCut;
             bufferOwed[id] += bufferCut;
-            emit BuyTaxed(id, platformCut, bufferCut);
+            uint256 referralCut = 0;
+            if (c.referralShareBps != 0) {
+                address referrer = _decodeReferrer(hookData);
+                if (referrer != address(0)) {
+                    referralCut = (platformCut * c.referralShareBps) / BPS;
+                    if (referralCut != 0) {
+                        address padToken = Currency.unwrap(key.currency1);
+                        referralOwed[referrer][padToken] += referralCut;
+                        emit ReferralAccrued(id, referrer, padToken, referralCut);
+                    }
+                }
+            }
+            platformOwed[id][uc] += platformCut - referralCut;
+            emit BuyTaxed(id, platformCut - referralCut, bufferCut);
         } else {
             // sell → creator + floor (quote leg); subtraction conserves dust into the creator's cut
             uint256 floorCut = (fee * c.sellFloorShareBps) / BPS;
@@ -298,6 +320,16 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         emit BufferClaimed(id, to, amount);
     }
 
+    /// @notice Pull your accrued referral rewards for one pad `token` to yourself. Permissionless; funds only ever
+    /// go to msg.sender (the referrer). Reward is the pad token (the buy tax is token-denominated).
+    function claimReferral(address token) external nonReentrant returns (uint256 amount) {
+        amount = referralOwed[msg.sender][token];
+        if (amount == 0) revert NothingToClaim();
+        referralOwed[msg.sender][token] = 0;
+        _payout(Currency.wrap(token), msg.sender, amount); // token is currency1 (ERC20) → transfer
+        emit ReferralClaimed(msg.sender, token, amount);
+    }
+
     // --------------------------------------------------------------------- //
     //                         creator slot repoint                          //
     // --------------------------------------------------------------------- //
@@ -348,6 +380,16 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     // --------------------------------------------------------------------- //
     //                               helpers                                 //
     // --------------------------------------------------------------------- //
+
+    /// @dev Extract a referrer address from swap hookData WITHOUT ever reverting on malformed data — a bad hookData
+    /// must never brick a swap. Reads the low 20 bytes of the first word; empty/short hookData → address(0) (no ref).
+    function _decodeReferrer(bytes calldata hookData) internal pure returns (address r) {
+        if (hookData.length >= 32) {
+            assembly {
+                r := and(calldataload(hookData.offset), 0xffffffffffffffffffffffffffffffffffffffff)
+            }
+        }
+    }
 
     function _currencyAt(PoolId id, uint256 index) internal view returns (Currency) {
         PoolConfig storage c = config[id];

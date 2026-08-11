@@ -84,7 +84,9 @@ describe("SIM — RobinLockStaking fed by the curve at graduation (monthly-lock 
     }
     await inv();
 
-    // buy the curve OUT → ready → graduate
+    // buy the curve OUT → ready → graduate. Top up the trader first so the 6000-ETH sell-out never depends on
+    // cross-file cumulative balance drift (signer balances persist across test files in one hardhat run).
+    await ethers.provider.send("hardhat_setBalance", [trader.address, "0x21e19e0c9bab2400000"]); // 10,000 ETH
     await sw.connect(trader).swap(
       key, { zeroForOne: true, amountSpecified: -E(6000), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
       { takeClaims: false, settleUsingBurn: false }, "0x", { value: E(6000) }

@@ -62,7 +62,7 @@ describe("RobinFeeHook — directional tax + A3 skim closes clean (local real Po
     await hook.connect(factory).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address,
       floorRecipient: floor.address, guardAdapter: ZERO,
-      buyTaxBps: BUY_BPS, sellTaxBps: SELL_BPS, sellFloorShareBps: FLOOR_SHARE_BPS, buyBufferShareBps: BUFFER_SHARE_BPS,
+      buyTaxBps: BUY_BPS, sellTaxBps: SELL_BPS, sellFloorShareBps: FLOOR_SHARE_BPS, buyBufferShareBps: BUFFER_SHARE_BPS, referralShareBps: 0,
       guardWindow: 0, quoteIsStock: false,
     });
 

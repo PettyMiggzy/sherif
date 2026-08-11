@@ -45,7 +45,7 @@ describe("SIM — production-geometry calibration (start ~$3.4k, graduate ~$34k,
     const lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await posm.getAddress(), await reg.getAddress());
     const curveDep = await (await ethers.getContractFactory("CurveV4Deployer")).deploy(await dep.getAddress());
     const feeCfg = await (await ethers.getContractFactory("RobinV4FeeConfig")).deploy(deployer.address, {
-      buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 0, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000,
+      buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 0, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 0,
       platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
       lpFee: FEE, startTickMag: START, curveWidth: WIDTH, minGradWidth: MINGRAD,
     });

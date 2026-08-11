@@ -190,6 +190,7 @@ contract CurvePadFactoryV4 {
                 sellTaxBps: d.sellTaxBps,
                 sellFloorShareBps: d.sellFloorShareBps,
                 buyBufferShareBps: d.buyBufferShareBps,
+                referralShareBps: d.referralShareBps,
                 guardWindow: 0,
                 quoteIsStock: false
             })

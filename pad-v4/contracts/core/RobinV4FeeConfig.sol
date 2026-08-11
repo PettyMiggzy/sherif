@@ -17,6 +17,7 @@ contract RobinV4FeeConfig is Ownable2Step {
     uint16 public constant MAX_TAX_BPS = 200; // ≤2% per side on any future launch
     uint16 public constant MAX_FLOOR_SHARE_BPS = 5000; // ≤50% of the sell tax may go to the floor
     uint16 public constant MAX_BUFFER_SHARE_BPS = 5000; // ≤50% of the buy tax may be diverted to the curve buffer
+    uint16 public constant MAX_REFERRAL_SHARE_BPS = 5000; // ≤50% of the PLATFORM buy cut may be paid to a referrer
     uint16 public constant MAX_GRAD_SHARE_BPS = 2500; // ≤25% of the raise to any single non-LP grad bucket
     uint24 public constant MAX_LP_FEE = 1_000_000; // Uniswap's LPFeeLibrary max (100%); a static fee above it bricks initialize
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
@@ -30,6 +31,7 @@ contract RobinV4FeeConfig is Ownable2Step {
         uint16 sellFloorShareBps; // share of the SELL tax carved to the floor (rest → creator)
         uint16 buyLpFloorShareBps; // share of the BUY LP fee held in the curve → swept to the floor at grad
         uint16 buyBufferShareBps; // share of the BUY tax kept in the curve as a liquidity buffer (rest → platform)
+        uint16 referralShareBps; // share of the PLATFORM buy cut paid to a referrer (from swap hookData); rest → platform
         uint16 platformGradBps; // platform share of the raise at graduation
         uint16 creatorGradBps; // creator share of the raise at graduation
         uint16 ambushGradBps; // ambush-vault share of the raise (active two-sided floor support); LP = the remainder
@@ -47,6 +49,7 @@ contract RobinV4FeeConfig is Ownable2Step {
         uint16 sellFloorShareBps,
         uint16 buyLpFloorShareBps,
         uint16 buyBufferShareBps,
+        uint16 referralShareBps,
         uint16 platformGradBps,
         uint16 creatorGradBps,
         uint16 ambushGradBps,
@@ -85,6 +88,8 @@ contract RobinV4FeeConfig is Ownable2Step {
         if (d.buyLpFloorShareBps > BPS) revert BadParam();
         // ≤50% of the buy tax may divert to the buffer — a retune can never starve platform buy revenue to zero.
         if (d.buyBufferShareBps > MAX_BUFFER_SHARE_BPS) revert BadParam();
+        // ≤50% of the platform's buy cut may be paid to a referrer — the platform can never be zeroed on buys.
+        if (d.referralShareBps > MAX_REFERRAL_SHARE_BPS) revert BadParam();
         // graduation shares are a % of the raise; each ≤25%, and the three non-LP buckets must leave a POSITIVE
         // LP remainder (LP = BPS - platform - creator - ambush), so the locked liquidity can never be starved.
         if (d.platformGradBps > MAX_GRAD_SHARE_BPS || d.creatorGradBps > MAX_GRAD_SHARE_BPS || d.ambushGradBps > MAX_GRAD_SHARE_BPS) {
@@ -107,6 +112,7 @@ contract RobinV4FeeConfig is Ownable2Step {
             d.sellFloorShareBps,
             d.buyLpFloorShareBps,
             d.buyBufferShareBps,
+            d.referralShareBps,
             d.platformGradBps,
             d.creatorGradBps,
             d.ambushGradBps,

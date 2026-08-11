@@ -36,6 +36,7 @@ const DEFAULTS = {
   sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 0), // sell tax goes fully to the creator
   buyLpFloorShareBps: Number(process.env.BUY_LP_FLOOR_SHARE_BPS || 2000), // 20% of the buy LP fee → floor at grad
   buyBufferShareBps: Number(process.env.BUY_BUFFER_SHARE_BPS || 2000), // 20% of the buy tax (=0.2% of trade) → curve buffer
+  referralShareBps: Number(process.env.REFERRAL_SHARE_BPS || 2500), // 25% of the platform buy cut (=0.2% of trade) → referrer
   platformGradBps: Number(process.env.PLATFORM_GRAD_BPS || 1000), // 10% of the raise → platform at graduation
   creatorGradBps: Number(process.env.CREATOR_GRAD_BPS || 1000), // 10% of the raise → creator at graduation
   ambushGradBps: Number(process.env.AMBUSH_GRAD_BPS || 500), // 5% of the raise → two-sided ambush (LP = 75% remainder)

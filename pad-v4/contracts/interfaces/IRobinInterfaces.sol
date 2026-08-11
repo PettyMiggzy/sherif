@@ -35,6 +35,7 @@ interface IRobinFeeHookAdmin {
         uint16 sellTaxBps; // tax on sells → creator + floor (bps of quote output)
         uint16 sellFloorShareBps; // share of the SELL tax carved to the floor (bps of the sell fee)
         uint16 buyBufferShareBps; // share of the BUY tax kept as a curve buffer (rest → platform); token leg
+        uint16 referralShareBps; // share of the PLATFORM buy cut paid to a referrer passed in swap hookData (token leg)
         uint32 guardWindow; // seconds around a scheduled stock action; 0 => no curb
         bool quoteIsStock;
     }

@@ -163,6 +163,7 @@ contract PadFactory {
                 sellTaxBps: cfg.sellTaxBps,
                 sellFloorShareBps: cfg.sellFloorShareBps,
                 buyBufferShareBps: 0, // no curve buffer on the plain ETH pad
+                referralShareBps: 0, // no referral on the plain ETH pad
                 guardWindow: 0,
                 quoteIsStock: false
             })
