@@ -168,30 +168,17 @@ const ERRORS = new ethers.Interface([
   "error Panic(uint256 code)",
 ]);
 
-// Dig the revert-data hex out of wherever ethers stashed it on this RPC (it varies: e.data, nested
-// e.info.error.data, or embedded in a message string).
-function revertHex(e) {
-  const seen = new Set();
-  const stack = [e];
-  while (stack.length) {
-    const v = stack.pop();
-    if (v == null || seen.has(v)) continue;
-    if (typeof v === "string") {
-      const m = v.match(/0x[0-9a-fA-F]{8,}/);
-      if (m) return m[0];
-      continue;
-    }
-    if (typeof v !== "object") continue;
-    seen.add(v);
-    for (const k of ["data", "error", "info", "value", "cause", "shortMessage", "message", "body", "reason"]) {
-      if (k in v) stack.push(v[k]);
-    }
-  }
-  return null;
+// Pull the GENUINE EVM revert data — only from ethers' structured `.data` fields, NEVER from message
+// strings. Ethers embeds the OUTGOING calldata in its error message, and a swap's calldata begins with
+// the swap() selector (0x2229d0b4) — scraping that misreported an out-of-gas as a phantom revert. When
+// there is no real revert data, the failure is NOT a contract revert (almost always gas), so we say so.
+function revertData(e) {
+  const hex = (x) => (typeof x === "string" && /^0x[0-9a-fA-F]{8,}$/.test(x)) ? x : null;
+  return hex(e?.data) || hex(e?.info?.error?.data) || hex(e?.error?.data) || hex(e?.error?.error?.data) || hex(e?.value?.data);
 }
 function reason(e) {
-  const d = revertHex(e);
-  if (d && d.length >= 10) {
+  const d = revertData(e);
+  if (d) {
     try {
       const p = ERRORS.parseError(d);
       if (p) {
@@ -199,9 +186,11 @@ function reason(e) {
         return p.name + args;
       }
     } catch {}
-    return "revert " + d.slice(0, 10) + " — unrecognized selector (paste this to the dev)";
+    return "revert " + d.slice(0, 10) + " — unrecognized custom error";
   }
-  return e?.shortMessage || e?.reason || (e?.info && e.info.error && e.info.error.message) || e?.message || "unknown error";
+  const msg = e?.shortMessage || (e?.info && e.info.error && e.info.error.message) || (e?.error && e.error.message) || e?.message || "";
+  if (/gas|coalesce|exceed|out of|reverted/i.test(msg)) return "no revert reason from the node (likely out-of-gas / swap too large) — try a smaller amount";
+  return msg || (e?.code ? String(e.code) : "unknown error");
 }
 
 // ── BUY / SELL (via PoolSwapTest router) ─────────────────────────────────────────

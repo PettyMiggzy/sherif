@@ -19,7 +19,18 @@ module.exports = {
     // FORK_RPC set → in-process hardhat forks Robinhood Chain so tests run against the
     // REAL v4 PoolManager 0x8366. Never commit the key: FORK_RPC=<url> npx hardhat test test/fork/*.js
     hardhat: process.env.FORK_RPC
-      ? { forking: { url: process.env.FORK_RPC }, chainId: 4663 }
+      ? {
+          forking: { url: process.env.FORK_RPC },
+          chainId: Number(process.env.FORK_CHAINID || 4663),
+          hardfork: "cancun",
+          // EDR needs the hardfork for historical blocks on these non-standard chains; both Robinhood
+          // mainnet (4663) and testnet (46630) are Cancun from genesis. Without this, forking a testnet
+          // block fails with "No known hardfork for execution on historical block".
+          chains: {
+            4663: { hardforkHistory: { cancun: 0 } },
+            46630: { hardforkHistory: { cancun: 0 } },
+          },
+        }
       : {},
     robinhood: {
       url: process.env.ROBINHOOD_RPC || "https://rpc.mainnet.chain.robinhood.com",
