@@ -10,6 +10,39 @@ const MAX_SQRT = 1461446703485210103287273052203988822378723970342n - 1n;
 const FEE = 10000, TS = 60; // 1% pool fee, tickSpacing 60 (matches the governed geometry)
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
+// Exact port of Uniswap TickMath.getSqrtPriceAtTick (Q64.96). We cap each swap's price limit at the
+// curve's own boundary tick instead of the absolute MIN/MAX — a swap that would cross the boundary then
+// fills up to it and STOPS, rather than walking into the zero-liquidity zone (which the deployed
+// PoolManager rejects with an opaque custom error). Must match on-chain bit-for-bit, so BigInt not float.
+function sqrtAtTick(tick) {
+  const t = BigInt(tick);
+  const abs = t < 0n ? -t : t;
+  if (abs > 887272n) throw new Error("tick out of range");
+  let r = (abs & 0x1n) !== 0n ? 0xfffcb933bd6fad37aa2d162d1a594001n : 0x100000000000000000000000000000000n;
+  const M = (h) => { r = (r * h) >> 128n; };
+  if (abs & 0x2n) M(0xfff97272373d413259a46990580e213an);
+  if (abs & 0x4n) M(0xfff2e50f5f656932ef12357cf3c7fdccn);
+  if (abs & 0x8n) M(0xffe5caca7e10e4e61c3624eaa0941cd0n);
+  if (abs & 0x10n) M(0xffcb9843d60f6159c9db58835c926644n);
+  if (abs & 0x20n) M(0xff973b41fa98c081472e6896dfb254c0n);
+  if (abs & 0x40n) M(0xff2ea16466c96a3843ec78b326b52861n);
+  if (abs & 0x80n) M(0xfe5dee046a99a2a811c461f1969c3053n);
+  if (abs & 0x100n) M(0xfcbe86c7900a88aedcffc83b479aa3a4n);
+  if (abs & 0x200n) M(0xf987a7253ac413176f2b074cf7815e54n);
+  if (abs & 0x400n) M(0xf3392b0822b70005940c7a398e4b70f3n);
+  if (abs & 0x800n) M(0xe7159475a2c29b7443b29c7fa6e889d9n);
+  if (abs & 0x1000n) M(0xd097f3bdfd2022b8845ad8f792aa5825n);
+  if (abs & 0x2000n) M(0xa9f746462d870fdf8a65dc1f90e061e5n);
+  if (abs & 0x4000n) M(0x70d869a156d2a1b890bb3df62baf32f7n);
+  if (abs & 0x8000n) M(0x31be135f97d08fd981231505542fcfa6n);
+  if (abs & 0x10000n) M(0x9aa508b5b7a84e1c677de54f3e99bc9n);
+  if (abs & 0x20000n) M(0x5d6af8dedb81196699c329225ee604n);
+  if (abs & 0x40000n) M(0x2216e584f5fa1ea926041bedfe98n);
+  if (abs & 0x80000n) M(0x48a170391f7dc42444e8fa2n);
+  if (t > 0n) r = ((1n << 256n) - 1n) / r;
+  return (r >> 32n) + ((r & 0xffffffffn) === 0n ? 0n : 1n);
+}
+
 let provider, signer, me;
 let launched = null; // { token, hook, curve, poolId, key }
 
@@ -92,7 +125,16 @@ async function launch() {
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((p) => p && p.name === "CurvePadLaunched");
     const [, tk, , hk, cv] = ev.args;
     const key = poolKey(tk, hk);
-    launched = { token: tk, hook: hk, curve: cv, poolId: poolIdOf(key), key };
+    launched = { token: tk, hook: hk, curve: cv, poolId: poolIdOf(key), key, buyLimit: MIN_SQRT, sellLimit: MAX_SQRT };
+    // Read the curve's immutable boundary ticks so buys cap at the ceiling (gradTick) and sells at the
+    // launch top (startTick) — never crossing into empty liquidity, which reverts on this chain.
+    try {
+      const cc = new ethers.Contract(cv, CFG.ABI.curve, provider);
+      const [gt, st] = await Promise.all([cc.gradTick(), cc.startTick()]);
+      launched.gradTick = Number(gt); launched.startTick = Number(st);
+      launched.buyLimit = sqrtAtTick(launched.gradTick);
+      launched.sellLimit = sqrtAtTick(launched.startTick);
+    } catch (e) { log("note: couldn't read curve ticks — using absolute price limits (buys may revert near sell-out)", "warn"); }
     log(`🚀 LAUNCHED <b>${symbol}</b> — token <a href="${exA(tk)}" target="_blank">${tk.slice(0, 8)}…</a> · curve <a href="${exA(cv)}" target="_blank">${cv.slice(0, 8)}…</a>`, "ok");
     $("trade").style.display = "block";
     $("coinLabel").textContent = `${name} (${symbol})`;
@@ -171,9 +213,13 @@ function router() {
 async function buy() {
   if (!launched) return;
   try {
+    const curveC = new ethers.Contract(launched.curve, CFG.ABI.curve, provider);
+    if (await curveC.ready()) return log("Curve is sold out (ready=true) — hit <b>Graduate</b>, no more buys.", "warn");
     const amt = ethers.parseEther($("buyAmt").value || "0.001");
     const r = router();
-    const args = [launched.key, { zeroForOne: true, amountSpecified: -amt, sqrtPriceLimitX96: MIN_SQRT },
+    // cap the buy at the ceiling (gradTick): a buy bigger than the remaining curve fills up to sell-out
+    // and stops, instead of crossing into empty liquidity and reverting.
+    const args = [launched.key, { zeroForOne: true, amountSpecified: -amt, sqrtPriceLimitX96: launched.buyLimit ?? MIN_SQRT },
       { takeClaims: false, settleUsingBurn: false }, "0x"];
     try { await r.swap.staticCall(...args, { value: amt }); }
     catch (pe) { return log("buy would revert → " + reason(pe), "err"); }
@@ -193,7 +239,9 @@ async function sell() {
     const rAddr = await r.getAddress();
     log("approving token → router…");
     await (await tok.approve(rAddr, ethers.MaxUint256, { type: 0, gasLimit: GAS.approve })).wait();
-    const args = [launched.key, { zeroForOne: false, amountSpecified: -amt, sqrtPriceLimitX96: MAX_SQRT },
+    // cap the sell at the launch top (startTick) so a large sell fills up to it and stops, never
+    // crossing above the range into empty liquidity.
+    const args = [launched.key, { zeroForOne: false, amountSpecified: -amt, sqrtPriceLimitX96: launched.sellLimit ?? MAX_SQRT },
       { takeClaims: false, settleUsingBurn: false }, "0x"];
     try { await r.swap.staticCall(...args); }
     catch (pe) { return log("sell would revert → " + reason(pe), "err"); }
@@ -226,6 +274,7 @@ async function refresh() {
     const myTok = await tok.balanceOf(me);
     $("state").innerHTML = `tick <b>${tick}</b> · you hold <b>${(+ethers.formatEther(myTok)).toLocaleString()}</b> ${$("symbol").value} · ready=${ready} · graduated=${grad}`;
     $("btnGrad").disabled = !ready || grad;
+    $("btnBuy").disabled = ready || grad; // sold out or graduated → nothing left to buy
   } catch (e) { /* pool may not be readable until first read */ }
 }
 
