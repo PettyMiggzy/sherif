@@ -72,6 +72,13 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint48 internal constant MAX_UINT48 = type(uint48).max;
     uint256 internal constant NUDGE_MAX_FRACTION = 100; // the ceiling nudge may spend ≤ 1/100 of the reserve
     uint256 internal constant BPS = 10000;
+    // Auto-graduation keeper bounty: whoever triggers graduate() is paid a flat slice of the raise, carved OFF THE
+    // TOP before the waterfall, so graduation is triggered automatically with the gas paid FROM THE CURVE ETH — no
+    // keeper needs a subsidy and no one has to babysit the launch. A flat bps (not tx.gasprice-based) can't be gamed
+    // by a caller inflating gasprice; the absolute cap bounds it on large raises. On a cheap Orbit L2 this comfortably
+    // covers the graduation tx and leaves a small tip.
+    uint256 internal constant GRAD_BOUNTY_BPS = 20; // 0.2% of the raise to the graduation trigger
+    uint256 internal constant GRAD_BOUNTY_MAX_WEI = 0.02 ether; // absolute ceiling (raise ≳ 10 ETH)
 
     IPoolManager public immutable poolManager;
     IPositionManagerMinimal public immutable positionManager;
@@ -112,6 +119,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint256 public floorEthOwed; // the buyLpFloorShareBps carve of buy fees, swept to the floor at graduation
     uint256 public creatorEthOwed; // the creator-side graduation reward (claimCreator)
     uint256 public ambushEthOwed; // the ambushGradBps share of the raise, swept to the ambush vault at graduation
+    mapping(address => uint256) public gasBountyOwed; // graduation keeper bounty booked here iff its inline send failed
 
     event Seeded(uint128 liquidity, uint256 tokens);
     event CurveFeesAccrued(uint256 eth, uint256 tokenFees);
@@ -131,6 +139,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     event StakingFunded(uint256 amount);
     event FloorFunded(uint256 amount);
     event AmbushFunded(uint256 amount);
+    event GradBountyPaid(address indexed keeper, uint256 amount, bool booked);
+    event GradBountyClaimed(address indexed to, uint256 amount);
     event CeilingRestored(address indexed by, uint256 tokenSpent, uint256 ethOut);
 
     error NotPoolManager();
@@ -247,6 +257,20 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         emit CreatorClaimed(c, creator);
     }
 
+    /// @notice Claim a graduation keeper bounty that was booked because its inline send failed at graduation.
+    /// Permissionless; retriable (re-parks on a failed send so a reverting keeper can never trap the ETH).
+    function claimGasBounty(address to) external nonReentrant {
+        uint256 a = gasBountyOwed[to];
+        if (a == 0) return;
+        gasBountyOwed[to] = 0;
+        (bool ok,) = payable(to).call{value: a}("");
+        if (!ok) {
+            gasBountyOwed[to] = a; // restore → retriable
+            revert EthSendFailed();
+        }
+        emit GradBountyClaimed(to, a);
+    }
+
     // ── graduation ────────────────────────────────────────────────────────────────
 
     function ready() public view returns (bool) {
@@ -294,14 +318,17 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (raisedEth == 0) revert EmptyRaise();
         if (tokenReserve == 0) revert NoReserve(); // [CRITICAL-1] must have a held-back reserve to pair the LP
 
-        // 3) V3-parity graduation waterfall — each bucket a % (bps) of the raise; the LOCKED LP takes the whole
-        //    remainder, so it can never be starved (config enforces platform+creator+ambush < 100%). The graduation
-        //    work runs on the curve's OWN ETH (whoever triggers it is the platform keeper), so there is no separate
-        //    gas reimbursement — the raise flows into the LP + the reward buckets rather than a gas skim.
-        uint256 platReward = (raisedEth * platformGradBps) / BPS;
-        uint256 creatReward = (raisedEth * creatorGradBps) / BPS;
-        uint256 ambushReward = (raisedEth * ambushGradBps) / BPS;
-        uint256 lpEth = raisedEth - platReward - creatReward - ambushReward;
+        // 3) carve the auto-graduation keeper bounty OFF THE TOP (flat slice, capped), then run the V3-parity
+        //    waterfall on what's left. Each bucket is a % (bps) of the DISTRIBUTABLE raise; the LOCKED LP takes the
+        //    whole remainder, so it can never be starved (config enforces platform+creator+ambush < 100%). The
+        //    graduation runs on the curve's OWN ETH and pays its trigger from it, so nobody has to babysit the launch.
+        uint256 bounty = (raisedEth * GRAD_BOUNTY_BPS) / BPS;
+        if (bounty > GRAD_BOUNTY_MAX_WEI) bounty = GRAD_BOUNTY_MAX_WEI;
+        uint256 distributable = raisedEth - bounty;
+        uint256 platReward = (distributable * platformGradBps) / BPS;
+        uint256 creatReward = (distributable * creatorGradBps) / BPS;
+        uint256 ambushReward = (distributable * ambushGradBps) / BPS;
+        uint256 lpEth = distributable - platReward - creatReward - ambushReward;
         if (lpEth == 0) revert EmptyRaise();
 
         // 4) seed the PERMANENT LOCKED full-range 2-sided LP (NFT → LockVault). The reserve is sized so the ETH
@@ -326,9 +353,17 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         // 8b) sweep the ambush share → the two-sided ambush vault (non-bricking; flushAmbush() finishes if unwired)
         _fundAmbush();
 
-        // 9) any unbooked ETH dust → platform book (preserving the floor + creator + ambush books still owed)
-        platformEthOwed = address(this).balance - floorEthOwed - creatorEthOwed - ambushEthOwed;
+        // 9) reserve the keeper bounty, sweep any remaining unbooked ETH dust → platform book (preserving the floor
+        //    + creator + ambush books still owed), then pay the bounty LAST (max reentrancy distance; all state is
+        //    final). A failed send books it to gasBountyOwed (retriable via claimGasBounty) — never traps, never
+        //    lets the platform book absorb the keeper's ETH.
+        platformEthOwed = address(this).balance - floorEthOwed - creatorEthOwed - ambushEthOwed - bounty;
         emit Graduated(lpTokenId, raisedEth, leftoverToken, platReward, creatReward, ambushReward);
+        if (bounty > 0) {
+            (bool ok,) = payable(msg.sender).call{value: bounty}("");
+            if (!ok) gasBountyOwed[msg.sender] += bounty;
+            emit GradBountyPaid(msg.sender, bounty, !ok);
+        }
     }
 
     /// @notice Finish staking funding if the pool wasn't wired/listed at graduation. Permissionless. Sweeps all

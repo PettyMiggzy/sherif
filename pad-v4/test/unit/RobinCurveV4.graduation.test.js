@@ -90,7 +90,17 @@ describe("RobinCurveV4 — full graduation waterfall (real PoolManager + mock po
     const dsAddr = await ds.getAddress();
     const floorAddr = await floor.getAddress();
 
-    await curve.graduate();
+    const rc = await (await curve.graduate()).wait();
+
+    // auto-graduation keeper bounty: the trigger (owner) is paid a flat slice of the raise off the top
+    const paid = rc.logs.map((l) => { try { return curve.interface.parseLog(l); } catch { return null; } })
+      .find((e) => e && e.name === "GradBountyPaid");
+    expect(paid, "GradBountyPaid emitted").to.not.equal(undefined);
+    expect(paid.args.keeper).to.equal(owner.address);
+    expect(paid.args.amount).to.be.gt(0n);
+    expect(paid.args.amount).to.be.lte(ethers.parseEther("0.02")); // capped
+    expect(paid.args.booked).to.equal(false); // owner is an EOA → inline send succeeded, nothing booked
+    expect(await curve.gasBountyOwed(owner.address)).to.equal(0n);
 
     expect(await curve.graduated()).to.equal(true);
     // the permanent LP "NFT" is owned by the LockVault (locked forever)
