@@ -1,16 +1,17 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 
-// RobinAmbushVault — the mirror of RobinFloorVault: a fee-funded, permanent, single-sided TOKEN sell-wall placed
-// just BELOW the graduation price. Verified against a real PoolManager: the allotment deploys as pure currency1
-// liquidity in a band under spot, the wall is add-only (no remove selector), it parks token when spot is inside
-// the band, and a PUMP (a buy that pushes price down into the wall) is absorbed (the wall sells token) with the
-// ETH-side LP fees swept to the floor recipient.
+// RobinAmbushVault — the two-sided ambush band: an ETH-seeded, single-sided concentrated range placed strictly
+// ABOVE gradTick (below the graduation PRICE). Passive: a dip (sell pushes tick up into the band) converts its ETH
+// to token (buys the dip); a recovery (buy pushes tick back down) sells that token for ETH. Add-only, un-pullable,
+// anchor read from the curve's gradTick() on-chain. Verified against a real PoolManager on a plain (hookless) pool.
 
 const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n; // tick 0
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
+const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
 const abi = ethers.AbiCoder.defaultAbiCoder();
+const E = (x) => ethers.parseEther(String(x));
 
 function poolIdOf(k) {
   return ethers.keccak256(
@@ -18,17 +19,15 @@ function poolIdOf(k) {
   );
 }
 
-describe("RobinAmbushVault — permanent single-sided token sell-wall → floor", () => {
+describe("RobinAmbushVault — two-sided ETH-seeded ambush band", () => {
   const FEE = 3000, TS = 60;
-  let owner, lp, trader, floorSink, pm, stateView, tok, mod, sw, key, poolId, vault;
+  let owner, lp, trader, floorSink, pm, stateView, tok, mod, sw, key, poolId;
 
-  before(async () => {
+  beforeEach(async () => {
     [owner, lp, trader, floorSink] = await ethers.getSigners();
     pm = await (await ethers.getContractFactory("PoolManager")).deploy(owner.address);
     stateView = await (await ethers.getContractFactory("RobinStateView")).deploy(await pm.getAddress());
     tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
-
-    // plain pool (no hook) to isolate the ambush mechanics
     key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: ZERO };
     poolId = poolIdOf(key);
     await pm.initialize(key, SQRT_1_1); // tick 0
@@ -37,61 +36,123 @@ describe("RobinAmbushVault — permanent single-sided token sell-wall → floor"
     sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
     await tok.connect(owner).transfer(lp.address, 10n ** 24n);
     await tok.connect(lp).approve(await mod.getAddress(), ethers.MaxUint256);
-    // modest base liquidity so a buy can push price down into the ambush band
+    // deep base liquidity spanning the band so trades can move spot up through [60,660] and back
     await mod.connect(lp).modifyLiquidity(
-      key, { tickLower: -6000, tickUpper: 6000, liquidityDelta: 10n ** 18n, salt: ethers.ZeroHash }, "0x",
-      { value: ethers.parseEther("50") }
-    );
-
-    // floorSink stands in for the RobinFloorVault (ETH LP fees are swept there)
-    vault = await (await ethers.getContractFactory("RobinAmbushVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), floorSink.address,
-      ZERO, await tok.getAddress(), FEE, TS, ZERO, 0 /* anchorTick = graduation tick 0 */, 10 // band = 10 spacings wide
+      key, { tickLower: -6000, tickUpper: 6000, liquidityDelta: E(5), salt: ethers.ZeroHash }, "0x",
+      { value: E(200) }
     );
   });
 
-  it("places the band just below spot (pure currency1 region)", async () => {
-    expect(await vault.ambushTickUpper()).to.equal(-60n); // first spacing boundary below tick 0
-    expect(await vault.ambushTickLower()).to.equal(-660n); // - 10 * 60
+  async function deployVault(gradTick, floorRecipient, stakingRecipient) {
+    const curve = await (await ethers.getContractFactory("MockCurveGrad")).deploy(gradTick);
+    return (await ethers.getContractFactory("RobinAmbushVault")).deploy(
+      await pm.getAddress(), await stateView.getAddress(), floorRecipient, stakingRecipient ?? ZERO,
+      await curve.getAddress(), ZERO, await tok.getAddress(), FEE, TS, ZERO, 0 /* gap */, 10 /* width spacings */
+    );
+  }
+
+  it("anchors the band ABOVE gradTick, read from the curve on-chain (not a param)", async () => {
+    const v0 = await deployVault(0, floorSink.address);
+    expect(await v0.ambushTickLower()).to.equal(60n); // first spacing boundary above gradTick 0
+    expect(await v0.ambushTickUpper()).to.equal(660n); // + 10 * 60
+    const v120 = await deployVault(120, floorSink.address);
+    expect(await v120.ambushTickLower()).to.equal(180n); // anchor shifted with the curve's gradTick
+    expect(await v120.ambushTickUpper()).to.equal(780n);
   });
 
-  it("exposes NO remove/withdraw selector (add-only wall)", () => {
-    const banned = ["remove", "removeambush", "withdraw", "decreaseliquidity", "burn"];
-    const names = vault.interface.fragments.filter((f) => f.type === "function").map((f) => f.name.toLowerCase());
+  it("exposes NO remove/withdraw selector (add-only band)", async () => {
+    const v = await deployVault(0, floorSink.address);
+    const banned = ["remove", "removeambush", "withdraw", "decreaseliquidity", "burn", "unseed"];
+    const names = v.interface.fragments.filter((f) => f.type === "function").map((f) => f.name.toLowerCase());
     for (const b of banned) expect(names).to.not.include(b);
-    expect(names).to.include("addambush");
+    expect(names).to.include("seedambush");
   });
 
-  it("deploys the allotment as single-sided token liquidity (pulls NO ETH)", async () => {
-    await tok.connect(owner).transfer(await vault.getAddress(), 10n ** 21n); // 1,000 token allotment
-    await vault.addAmbush();
-
-    const L = await vault.ambushLiquidity();
+  it("seeds the band as SINGLE-SIDED ETH (pulls no token) when spot is below it", async () => {
+    const v = await deployVault(0, floorSink.address);
+    await owner.sendTransaction({ to: await v.getAddress(), value: E(1) });
+    await v.seedAmbush();
+    const L = await v.ambushLiquidity();
     expect(L).to.be.gt(0n);
-    const [posL] = await stateView.getPositionInfo(poolId, await vault.getAddress(), -660, -60, ethers.ZeroHash);
+    const [posL] = await stateView.getPositionInfo(poolId, await v.getAddress(), 60, 660, ethers.ZeroHash);
     expect(posL).to.equal(L);
-    // single-sided: the wall used token, required no ETH
-    expect(await ethers.provider.getBalance(await vault.getAddress())).to.equal(0n);
-    // nearly all the token went into the wall
-    expect(await tok.balanceOf(await vault.getAddress())).to.be.lt(10n ** 18n);
+    expect(await tok.balanceOf(await v.getAddress())).to.equal(0n); // used only ETH, pulled no token
+    expect(await ethers.provider.getBalance(await v.getAddress())).to.equal(0n); // all seed ETH went in
   });
 
-  it("absorbs a pump that pushes price into the wall, sweeping ETH fees to the floor", async () => {
-    // a big BUY (zeroForOne: ETH → token) pushes tick DOWN into the ambush band [-660,-60]
+  it("PARKS the seed instead of reverting when spot is inside/above the band", async () => {
+    const v = await deployVault(0, floorSink.address);
+    // push spot UP above the band with a big sell (token in → tick up)
+    await tok.connect(owner).transfer(trader.address, E(50));
+    await tok.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
     await sw.connect(trader).swap(
-      key, { zeroForOne: true, amountSpecified: -ethers.parseEther("6"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
-      { takeClaims: false, settleUsingBurn: false }, "0x", { value: ethers.parseEther("6") }
+      key, { zeroForOne: false, amountSpecified: -E(20), sqrtPriceLimitX96: MAX_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x"
     );
-    // the wall sold token into the pump and earned ETH-side LP fees → swept to the floor sink
-    const beforeEth = await ethers.provider.getBalance(floorSink.address);
-    await vault.collectFees();
-    expect(await ethers.provider.getBalance(floorSink.address)).to.be.gt(beforeEth);
+    expect((await stateView.getSlot0(poolId))[1]).to.be.gte(60n); // spot now inside/above the band
+    await owner.sendTransaction({ to: await v.getAddress(), value: E(1) });
+    await expect(v.seedAmbush()).to.emit(v, "AmbushParked");
+    expect(await v.parkedEth()).to.equal(E(1));
+    expect(await v.ambushLiquidity()).to.equal(0n);
   });
 
-  it("parks the allotment when spot is inside/below the band instead of reverting", async () => {
-    // spot is now inside/below the band; sending more token and calling addAmbush must park, not revert
-    await tok.connect(owner).transfer(await vault.getAddress(), 10n ** 20n);
-    await expect(vault.addAmbush()).to.emit(vault, "AmbushSkipped");
-    expect(await vault.parkedToken()).to.be.gt(0n);
+  it("buys the dip and sells the rip: a round-trip through the band sweeps ETH fees to the floor", async () => {
+    const v = await deployVault(0, floorSink.address);
+    await owner.sendTransaction({ to: await v.getAddress(), value: E(2) });
+    await v.seedAmbush();
+
+    await tok.connect(owner).transfer(trader.address, E(100));
+    await tok.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
+    // DIP: sell pushes tick UP through the band → band buys (ETH→token)
+    await sw.connect(trader).swap(
+      key, { zeroForOne: false, amountSpecified: -E(30), sqrtPriceLimitX96: MAX_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x"
+    );
+    // RECOVERY: buy pushes tick back DOWN through the band → band sells (token→ETH), earning ETH-leg fees
+    await sw.connect(trader).swap(
+      key, { zeroForOne: true, amountSpecified: -E(30), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: E(30) }
+    );
+
+    const Lbefore = await v.ambushLiquidity();
+    const floorBefore = await ethers.provider.getBalance(floorSink.address);
+    await v.collectFees();
+    expect(await ethers.provider.getBalance(floorSink.address)).to.be.gt(floorBefore); // ETH fees → floor
+    expect(await v.ambushLiquidity()).to.equal(Lbefore); // principal untouched (only fees moved)
+  });
+
+  it("fee forwarding is NON-BRICKING: a reverting floor sink parks the ETH, never reverts collectFees", async () => {
+    const badSink = await (await ethers.getContractFactory("RevertingEthSink")).deploy();
+    const v = await deployVault(0, await badSink.getAddress());
+    await owner.sendTransaction({ to: await v.getAddress(), value: E(2) });
+    await v.seedAmbush();
+
+    await tok.connect(owner).transfer(trader.address, E(100));
+    await tok.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
+    await sw.connect(trader).swap(
+      key, { zeroForOne: false, amountSpecified: -E(30), sqrtPriceLimitX96: MAX_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x"
+    );
+    await sw.connect(trader).swap(
+      key, { zeroForOne: true, amountSpecified: -E(30), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: E(30) }
+    );
+
+    const L = await v.ambushLiquidity();
+    await expect(v.collectFees()).to.not.be.reverted; // never bricks
+    expect(await v.pendingFloorEth()).to.be.gt(0n); // ETH parked, retriable
+    expect(await v.ambushLiquidity()).to.equal(L); // principal untouched
+    // the parked ETH is EXCLUDED from a re-seed (band L must not grow from parked fees)
+    await v.seedAmbush();
+    expect(await v.ambushLiquidity()).to.equal(L);
+  });
+
+  it("rejects an inverted / out-of-range band at deploy", async () => {
+    const F = await ethers.getContractFactory("RobinAmbushVault");
+    const curve = await (await ethers.getContractFactory("MockCurveGrad")).deploy(0);
+    await expect(
+      F.deploy(await pm.getAddress(), await stateView.getAddress(), floorSink.address, ZERO,
+        await curve.getAddress(), ZERO, await tok.getAddress(), FEE, TS, ZERO, 0, 0) // width 0
+    ).to.be.revertedWithCustomError(F, "BadBand");
   });
 });

@@ -16,22 +16,31 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {IStateView} from "@uniswap/v4-periphery/src/interfaces/IStateView.sol";
 
-/// @title RobinAmbushVault — a permanent, passive token sell-wall that supports the floor
-/// @notice The mirror of RobinFloorVault. Where the floor is a single-sided QUOTE (currency0) BUY wall placed
-/// just ABOVE spot that catches dumps, the ambush is a single-sided TOKEN (currency1) SELL wall placed just
-/// BELOW the graduation price. It is seeded at graduation from a held-back token allotment (the "unsold tokens
-/// that go there so it can support the project"). As the token PUMPS (buys push the tick DOWN into the band),
-/// the wall automatically sells token for ETH — a passive cap on runaway pumps — and the LP fees it earns are
-/// swept to the permanent floor, so the pump's own volume deepens the rug-proof floor.
+interface IRobinCurveGrad {
+    function gradTick() external view returns (int24);
+}
+
+interface IStakingFund {
+    function fundTokenPushed(uint8 side, address asset) external returns (uint256);
+}
+
+/// @title RobinAmbushVault — a permanent, two-sided ambush band (buys dips, sells rips) seeded from the raise
+/// @notice At graduation the curve sends this vault ~5% of the raise in ETH (ambushGradBps). `seedAmbush()` places
+/// it as a SINGLE-SIDED currency0 (ETH) concentrated range in a narrow band strictly BELOW the graduation price
+/// (i.e. ABOVE gradTick in tick space) and above the deep floor. It is a PASSIVE Uniswap-v4 position — no keeper,
+/// no oracle, no market orders, no on-swap logic:
+///   • a DIP (a dump pushes tick up into the band) converts the band's ETH → token in clips: it BUYS the dip;
+///   • a RECOVERY (buys push tick back down through the band) sells that token back for ETH: it SELLS into buy
+///     pressure, recharging itself;
+///   • at/above the graduation price the band holds only ETH and is INERT, so it can NEVER cap the chart.
 ///
-/// It is ADD-ONLY: there is deliberately NO remove/withdraw path, exactly like the floor, so the wall can only
-/// ever deepen and can never be pulled. It is PASSIVE and UN-GAMEABLE — it never chases price, quotes on a
-/// schedule, or reads an oracle; it is a fixed band of liquidity that the market trades against on its own terms.
+/// It is ADD-ONLY — there is deliberately NO remove/withdraw/burn path, so the band can only deepen and its ETH
+/// can only ever leave by TRADING at the AMM's own marginal price. Round-tripping a passive add-only LP is always a
+/// LOSS to the attacker (spread + 2× LP fee), so the band is sandwich-proof and its principal is never extractable.
 ///
-/// Placement: in V4 a range ENTIRELY BELOW spot (currentTick ≥ tickUpper) holds 100% currency1 (token). So the
-/// band sits just under the launch/graduation tick; a pump that pushes the tick down into it converts the token
-/// into ETH — that is the ambush doing its job. Managed as raw liquidity inside its own `unlock` callback (no
-/// NFT), via exactly two ops — ADD and COLLECT — with no code path that passes a negative liquidity delta.
+/// The band anchor is read from the curve's IMMUTABLE gradTick() on-chain (never a deploy param, never a live
+/// getSlot0), so no front-run or bad param can mis-place the wall. Only accrued LP fees ever leave (ETH → floor,
+/// token → staking), forwarded AFTER the PoolManager unlock returns with parked-and-retriable failure isolation.
 contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
     using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
@@ -44,24 +53,25 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
 
     IPoolManager public immutable poolManager;
     IStateView public immutable stateView;
-    address public immutable floorRecipient; // the RobinFloorVault — ETH (currency0) LP fees are swept here
+    address public immutable floorRecipient; // ETH LP-fee sink (immutable)
+    address public immutable stakingRecipient; // token LP-fee sink; may be 0 (then token fees stay idle-in-vault)
 
-    // the pool (stored as components; PoolKey is rebuilt in memory)
-    Currency public immutable currency0; // quote (ETH)
+    Currency public immutable currency0; // ETH (address 0)
     Currency public immutable currency1; // token
     uint24 public immutable fee;
     int24 public immutable tickSpacing;
     IHooks public immutable hooks;
 
-    int24 public immutable ambushTickLower; // fixed band, set at deploy just BELOW launch/graduation spot
+    int24 public immutable ambushTickLower; // band strictly ABOVE gradTick (below grad price); single-sided ETH
     int24 public immutable ambushTickUpper;
 
-    uint128 public ambushLiquidity; // total liquidity permanently locked in the wall (only grows)
-    uint256 public parkedToken; // token received while spot is inside/below the band (added on recovery)
+    uint128 public ambushLiquidity; // total liquidity permanently locked in the band (only grows)
+    uint256 public parkedEth; // seed ETH received while spot is inside/above the band (added on recovery)
+    uint256 public pendingFloorEth; // ETH LP-fees that failed to forward to the floor (EXCLUDED from the seed)
 
-    event AmbushAdded(uint256 tokenUsed, uint128 liquidityAdded, uint128 totalLiquidity);
-    event AmbushSkipped(int24 currentTick, uint256 parked);
-    event AmbushFeesCollected(uint256 ethToFloor, uint256 tokenReparked);
+    event AmbushSeeded(uint256 ethUsed, uint128 liquidityAdded, uint128 totalLiquidity);
+    event AmbushParked(int24 currentTick, uint256 parked);
+    event AmbushFeesCollected(uint256 ethToFloor, uint256 tokenToStaking, uint256 ethParked);
 
     error NotPoolManager();
     error ZeroAddress();
@@ -71,77 +81,121 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         address poolManager_,
         address stateView_,
         address floorRecipient_,
+        address stakingRecipient_, // may be 0
+        address curve_,
         Currency currency0_,
         Currency currency1_,
         uint24 fee_,
         int24 tickSpacing_,
         IHooks hooks_,
-        int24 anchorTick, // the pad's graduation tick — the band anchors here, NOT to live spot
-        uint24 bandWidthSpacings // how many tickSpacings wide the wall is (>=1)
+        uint24 gapSpacings, // spacings ABOVE gradTick before the band starts (0 => engages on the first dip)
+        uint24 bandWidthSpacings // band width in tickSpacings (>=1)
     ) {
-        if (poolManager_ == address(0) || stateView_ == address(0) || floorRecipient_ == address(0)) {
+        if (poolManager_ == address(0) || stateView_ == address(0) || floorRecipient_ == address(0) || curve_ == address(0)) {
             revert ZeroAddress();
         }
         if (bandWidthSpacings == 0) revert BadBand();
         poolManager = IPoolManager(poolManager_);
         stateView = IStateView(stateView_);
         floorRecipient = floorRecipient_;
+        stakingRecipient = stakingRecipient_;
         currency0 = currency0_;
         currency1 = currency1_;
         fee = fee_;
         tickSpacing = tickSpacing_;
         hooks = hooks_;
 
-        // Anchor the band to an EXPLICIT graduation tick the caller passes — never to a live getSlot0 read (an
-        // attacker could push spot right before the non-atomic deploy to mis-place the add-only, no-remove wall).
-        // The band is the first spacing boundary strictly BELOW the anchor (pure-currency1 region), so the wall
-        // sits just under the launch price and only sells token once a pump pushes spot down into it.
-        int24 upper = _alignDown(anchorTick - 1, tickSpacing_);
-        int24 lower = upper - int24(int256(uint256(bandWidthSpacings))) * tickSpacing_;
-        // `upper <= lower` also catches an int24 wrap from an absurd bandWidthSpacings (>=2^23) that would
-        // otherwise deploy an inverted, permanently-bricked band.
-        if (upper <= lower || lower < TickMath.minUsableTick(tickSpacing_) || upper > TickMath.maxUsableTick(tickSpacing_))
-        {
-            revert BadBand();
-        }
+        // [H1] Anchor to the curve's IMMUTABLE gradTick() read on-chain — never a passed hint, never a live spot.
+        // The band is the first spacing boundary strictly ABOVE gradTick, plus an optional gap: it sits just below
+        // the graduation price in the pure-currency0 (ETH) region, so at spot==gradTick it seeds 100% ETH.
+        int24 anchorTick = IRobinCurveGrad(curve_).gradTick();
+        int24 lower = _alignUp(anchorTick + 1, tickSpacing_) + int24(int256(uint256(gapSpacings))) * tickSpacing_;
+        int24 upper = lower + int24(int256(uint256(bandWidthSpacings))) * tickSpacing_;
+        // upper<=lower also catches an int24 wrap from an absurd gap/width (>=2^23 spacings)
+        if (
+            upper <= lower || lower <= anchorTick || lower < TickMath.minUsableTick(tickSpacing_)
+                || upper > TickMath.maxUsableTick(tickSpacing_)
+        ) revert BadBand();
         ambushTickLower = lower;
         ambushTickUpper = upper;
     }
 
-    /// @notice Deploy all on-hand token (the ambush allotment) into the permanent wall. Permissionless. If spot
-    /// has fallen into/below the band (so a single-sided currency1 add is not clean), the token parks and is
-    /// added on the next call once spot is back above the band.
-    function addAmbush() external nonReentrant returns (uint128 added) {
-        uint256 amt = currency1.balanceOfSelf();
+    /// @notice Seed all on-hand seed ETH (never the parked fee ETH) into the permanent band. Permissionless. If
+    /// spot has risen into/above the band (a griefer dumped first) a clean single-sided ETH add isn't possible, so
+    /// the ETH PARKS and any later call seeds it once spot is back below the band. The tick read and the add happen
+    /// atomically under the PoolManager lock, so `_add` can never be asked to settle a token debt it doesn't hold.
+    function seedAmbush() external nonReentrant returns (uint128 added) {
+        uint256 amt = currency0.balanceOfSelf() - pendingFloorEth; // seed only true seed ETH
         if (amt == 0) return 0;
         (, int24 tick,,) = stateView.getSlot0(_poolId());
-        if (tick < ambushTickUpper) {
-            parkedToken = amt;
-            emit AmbushSkipped(tick, amt);
+        if (tick >= ambushTickLower) {
+            parkedEth = amt;
+            emit AmbushParked(tick, amt);
             return 0;
         }
         added = abi.decode(poolManager.unlock(abi.encode(Op.ADD, amt)), (uint128));
     }
 
-    /// @notice Collect the wall's accrued LP fees. The ETH (currency0) side — earned as the wall sells token into
-    /// pumps — is swept to the permanent floor; the token (currency1) side is re-parked to deepen the wall on the
-    /// next addAmbush(). Never removes principal.
+    /// @notice Realize the band's accrued LP fees and forward them: ETH → floor vault, token → staking. Never
+    /// removes principal. Both legs are taken to self INSIDE the lock, then forwarded AFTER unlock returns (no
+    /// recipient call under the pool lock); a reverting/unwired sink parks the ETH (pendingFloorEth, excluded from
+    /// the seed) or leaves the token idle-in-vault — collection can never revert and principal is never at risk.
     function collectFees() external nonReentrant {
-        poolManager.unlock(abi.encode(Op.COLLECT, uint256(0)));
+        (uint256 ethFee,) = abi.decode(poolManager.unlock(abi.encode(Op.COLLECT, uint256(0))), (uint256, uint256));
+        uint256 ethToFloor = _forwardFloor(ethFee);
+        uint256 tokenToStaking = _forwardStaking();
+        emit AmbushFeesCollected(ethToFloor, tokenToStaking, pendingFloorEth);
+    }
+
+    /// @notice Permissionless retry of any parked ETH fees + idle token fees, without a fresh fee realization.
+    function flushFees() external nonReentrant {
+        uint256 ethToFloor = _forwardFloor(0);
+        uint256 tokenToStaking = _forwardStaking();
+        emit AmbushFeesCollected(ethToFloor, tokenToStaking, pendingFloorEth);
+    }
+
+    // ── internals ───────────────────────────────────────────────────────────────────
+
+    /// @dev Forward `fresh` ETH fees plus any previously parked ETH to the floor; re-park the whole amount on a
+    /// failed send. Returns the amount successfully forwarded.
+    function _forwardFloor(uint256 fresh) internal returns (uint256) {
+        uint256 e = fresh + pendingFloorEth;
+        if (e == 0) return 0;
+        pendingFloorEth = 0;
+        (bool ok,) = floorRecipient.call{value: e}("");
+        if (!ok) {
+            pendingFloorEth = e;
+            return 0;
+        }
+        return e;
+    }
+
+    /// @dev Push the vault's idle token (collected token fees + any donated token) to staking; a revert leaves the
+    /// token in the staking pool to be credited by balance-accounting on a later push (mirrors the curve). If no
+    /// staking sink is wired, the token stays idle-in-vault (un-ruggable, retried later).
+    function _forwardStaking() internal returns (uint256) {
+        address s = stakingRecipient;
+        if (s == address(0)) return 0;
+        address tok = Currency.unwrap(currency1);
+        uint256 tb = IERC20(tok).balanceOf(address(this));
+        if (tb == 0) return 0;
+        IERC20(tok).safeTransfer(s, tb);
+        try IStakingFund(s).fundTokenPushed(uint8(0), tok) {} catch {}
+        return tb;
     }
 
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
         (Op op, uint256 amt) = abi.decode(data, (Op, uint256));
         if (op == Op.ADD) return abi.encode(_add(amt));
-        _collect();
-        return "";
+        (uint256 e, uint256 t) = _collect();
+        return abi.encode(e, t);
     }
 
     function _add(uint256 amt) internal returns (uint128 L) {
         uint160 sLower = TickMath.getSqrtPriceAtTick(ambushTickLower);
         uint160 sUpper = TickMath.getSqrtPriceAtTick(ambushTickUpper);
-        L = LiquidityAmounts.getLiquidityForAmount1(sLower, sUpper, amt);
+        L = LiquidityAmounts.getLiquidityForAmount0(sLower, sUpper, amt);
         if (L == 0) return 0;
         (BalanceDelta delta,) = poolManager.modifyLiquidity(
             _poolKey(),
@@ -153,15 +207,14 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
             }),
             ""
         );
-        _resolve(currency0, delta.amount0(), address(this));
-        _resolve(currency1, delta.amount1(), address(this));
+        _resolve(currency0, delta.amount0());
+        _resolve(currency1, delta.amount1());
         ambushLiquidity += L;
-        parkedToken = 0;
-        emit AmbushAdded(amt, L, ambushLiquidity);
+        parkedEth = 0;
+        emit AmbushSeeded(amt, L, ambushLiquidity);
     }
 
-    function _collect() internal {
-        // a zero-liquidity poke realizes fees as a positive delta; sweep the ETH to the floor, re-park the token
+    function _collect() internal returns (uint256 e, uint256 t) {
         (BalanceDelta delta,) = poolManager.modifyLiquidity(
             _poolKey(),
             ModifyLiquidityParams({tickLower: ambushTickLower, tickUpper: ambushTickUpper, liquidityDelta: 0, salt: bytes32(0)}),
@@ -169,21 +222,18 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         );
         int128 a0 = delta.amount0();
         int128 a1 = delta.amount1();
-        uint256 ethOut;
-        uint256 tokBack;
         if (a0 > 0) {
-            ethOut = uint256(uint128(a0));
-            poolManager.take(currency0, floorRecipient, ethOut); // ETH LP fees → strengthen the permanent floor
+            e = uint256(uint128(a0));
+            poolManager.take(currency0, address(this), e); // to self; forwarded after unlock
         }
         if (a1 > 0) {
-            tokBack = uint256(uint128(a1));
-            poolManager.take(currency1, address(this), tokBack); // token fees → re-parked, added on next addAmbush
+            t = uint256(uint128(a1));
+            poolManager.take(currency1, address(this), t); // to self; forwarded after unlock
         }
-        emit AmbushFeesCollected(ethOut, tokBack);
     }
 
-    /// @dev Settle what the vault owes / take what it is owed for one currency.
-    function _resolve(Currency currency, int128 amt, address takeTo) internal {
+    /// @dev Settle what the band owes (negative delta). A single-sided ETH add owes only currency0.
+    function _resolve(Currency currency, int128 amt) internal {
         if (amt < 0) {
             uint256 owed = uint256(uint128(-amt));
             if (currency.isAddressZero()) {
@@ -194,13 +244,13 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
                 poolManager.settle();
             }
         } else if (amt > 0) {
-            poolManager.take(currency, takeTo, uint256(uint128(amt)));
+            poolManager.take(currency, address(this), uint256(uint128(amt)));
         }
     }
 
-    function _alignDown(int24 tick, int24 spacing) internal pure returns (int24) {
+    function _alignUp(int24 tick, int24 spacing) internal pure returns (int24) {
         int24 rounded = (tick / spacing) * spacing;
-        if (rounded > tick) rounded -= spacing; // floor for negative remainder (Solidity truncates toward zero)
+        if (rounded < tick) rounded += spacing; // ceil for positive remainder
         return rounded;
     }
 
@@ -212,5 +262,5 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         return _poolKey().toId();
     }
 
-    receive() external payable {} // may transiently hold ETH (e.g. add rounding dust)
+    receive() external payable {} // holds the seed ETH + native LP fees transiently
 }

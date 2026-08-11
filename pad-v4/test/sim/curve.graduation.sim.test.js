@@ -64,9 +64,11 @@ describe("SIM — graduation value conservation (nothing stranded, every sink fu
       await pm.getAddress(), await stateView.getAddress(), platform.address, ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
     );
     await curve.connect(platform).setFloor(await floor.getAddress());
-    // wire the two-sided ambush vault — the ambushGradBps (5%) share of the raise is swept here at graduation
+    // wire the two-sided ambush vault — the ambushGradBps (5%) share of the raise is swept here at graduation.
+    // Anchor is read from the curve's gradTick() on-chain; floor sink = the floor vault, staking sink = DualStaking.
     const ambush = await (await ethers.getContractFactory("RobinAmbushVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), platform.address, ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
+      await pm.getAddress(), await stateView.getAddress(), await floor.getAddress(), await ds.getAddress(),
+      curveAddr, ZERO, tokAddr, FEE, SPACING, ZERO, 0 /* gap */, 10 /* width spacings */
     );
     await curve.connect(platform).setAmbush(await ambush.getAddress());
 
