@@ -127,6 +127,17 @@ contract RobinLockStaking is ReentrancyGuard, IStakingFund {
         balanceOf[msg.sender] -= amount;
         totalStaked -= amount;
 
+        // [audit] if this empties the pool, PAUSE the live drip: bank the still-undripped remaining schedule into
+        // pendingRewards and stop the clock. Otherwise the reward-per-token accumulator freezes while totalStaked==0
+        // but lastUpdateTime keeps advancing, so the rewards scheduled for the empty window would be stranded forever
+        // (the classic Synthetix empty-pool leak). Banking + pausing means the NEXT stake restarts the drip from
+        // pendingRewards with nothing lost — upholding the "rewards are never wasted" reservoir invariant.
+        if (totalStaked == 0 && rewardRate > 0 && periodFinish > block.timestamp) {
+            pendingRewards += (periodFinish - block.timestamp) * rewardRate;
+            rewardRate = 0;
+            periodFinish = block.timestamp;
+        }
+
         uint256 penalty = 0;
         if (block.timestamp < lockedUntil[msg.sender]) {
             penalty = (amount * EARLY_EXIT_PENALTY_BPS) / BPS;

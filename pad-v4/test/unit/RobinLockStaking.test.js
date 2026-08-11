@@ -150,4 +150,41 @@ describe("RobinLockStaking", () => {
     expect(total).to.be.closeTo(E(1000), E(3));
     await inv();
   });
+
+  // [audit pass #3] empty-pool leak: if the pool empties MID-DRIP (last staker exits penalty-free), the drip must
+  // PAUSE and bank its remainder — otherwise the rewards scheduled for the empty window are stranded forever.
+  it("banks the remaining drip when the pool empties mid-window (nothing stranded)", async () => {
+    const SHORT = 7 * 86400; // lock < the 30d drip, so alice can exit penalty-free while the drip is still live
+    const s2 = await (await ethers.getContractFactory("RobinLockStaking")).deploy(await tok.getAddress(), SHORT, DUR);
+    for (const u of [owner, alice, bob]) await tok.connect(u).approve(await s2.getAddress(), ethers.MaxUint256);
+    const bal = async () => expect(await tok.balanceOf(await s2.getAddress())).to.equal((await s2.totalStaked()) + (await s2.rewardsBalance()));
+
+    await s2.connect(alice).stake(E(100));
+    await s2.connect(owner).fund(E(1000)); // drip 1000 over 30d
+    await time.increase(8 * 86400);        // day 8: past alice's 7d lock, drip still live (22d remain)
+
+    const a0 = await tok.balanceOf(alice.address);
+    await s2.connect(alice).getReward();
+    const aliceReward = (await tok.balanceOf(alice.address)) - a0;
+    await s2.connect(alice).withdraw(E(100)); // penalty-free exit empties the pool
+
+    expect(await s2.totalStaked()).to.equal(0n);
+    expect(await s2.rewardRate()).to.equal(0n);       // the drip PAUSED (not left running over an empty pool)
+    expect(await s2.pendingRewards()).to.be.gt(E(600)); // ~22/30 of 1000 banked, not stranded
+    await bal();
+
+    await time.increase(10 * 86400); // pool sits EMPTY for 10 days — this window would leak ~E(333) without the fix
+
+    await s2.connect(bob).stake(E(100)); // restarts the drip from pendingRewards
+    expect(await s2.rewardRate()).to.be.gt(0n);
+    await time.increase(DUR + 100);
+    const b0 = await tok.balanceOf(bob.address);
+    await s2.connect(bob).getReward();
+    const bobReward = (await tok.balanceOf(bob.address)) - b0;
+
+    // NOTHING stranded: alice + bob together received ~the whole E(1000), and the reservoir drained to dust
+    expect(aliceReward + bobReward).to.be.closeTo(E(1000), E(3));
+    expect(await s2.rewardsBalance()).to.be.closeTo(0n, E(3));
+    await bal();
+  });
 });
