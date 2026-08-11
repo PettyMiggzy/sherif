@@ -3,47 +3,40 @@
      (or the connected wallet); falls back to DEMO_PROFILE so the page always renders. -->
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#060803" />
 <title>Robin Pad — Profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
+  /* Robin Labs vibe (robinlab.io): near-black green ground, acid-lime accent, warm ink,
+     Plus Jakarta Sans. Dark-first; the manual toggle can opt into a coherent light variant. */
   :root {
-    --bg: #f4f4fa; --surface-1: #ffffff; --surface-2: #f0eff7; --surface-3: #e8e7f2;
-    --border: rgba(26,22,55,.10); --border-strong: rgba(26,22,55,.17);
-    --text-1: #14121e; --text-2: #56536b; --text-3: #8a8799;
-    --accent: #6a4bff; --accent-2: #7c5cff; --accent-ink: #ffffff; --accent-soft: rgba(106,75,255,.10);
-    --good: #12a866; --good-soft: rgba(18,168,102,.12);
-    --warn: #b8791f; --warn-soft: rgba(184,121,31,.14);
-    --bad: #e14b4b;  --bad-soft: rgba(225,75,75,.12);
-    --grid: #e6e5ef; --glow: rgba(106,75,255,.10);
-    --shadow: 0 1px 2px rgba(20,18,40,.05), 0 10px 30px rgba(20,18,40,.07); --radius: 16px;
+    --bg: #060803; --bg-2: #0b0f06; --surface-1: #0c1108; --surface-2: #101609; --surface-3: #141b0c;
+    --border: rgba(220,233,5,.16); --border-strong: rgba(220,233,5,.40);
+    --text-1: #f4f7ee; --text-2: #93a382; --text-3: #808c68;
+    --accent: #dce905; --accent-2: #c3d400; --accent-ink: #060803; --accent-soft: rgba(220,233,5,.10);
+    --good: #5fd16a; --good-soft: rgba(95,209,106,.14);
+    --warn: #ffb020; --warn-soft: rgba(255,176,32,.14);
+    --bad: #ff5a52;  --bad-soft: rgba(255,90,82,.14);
+    --grid: rgba(220,233,5,.07); --glow: rgba(220,233,5,.22);
+    --shadow: 0 1px 2px rgba(0,0,0,.5), 0 16px 40px rgba(0,0,0,.55); --radius: 12px;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0a0a10; --surface-1: #14141d; --surface-2: #1b1b26; --surface-3: #23222f;
-      --border: rgba(255,255,255,.08); --border-strong: rgba(255,255,255,.15);
-      --text-1: #f4f3fb; --text-2: #a6a3bd; --text-3: #706d86;
-      --accent: #8b6dff; --accent-2: #a68bff; --accent-ink: #0a0a10; --accent-soft: rgba(139,109,255,.15);
-      --good: #3ecf8e; --good-soft: rgba(62,207,142,.14);
-      --warn: #f5b544; --warn-soft: rgba(245,181,68,.14);
-      --bad: #f26d6d;  --bad-soft: rgba(242,109,109,.14);
-      --grid: #26252f; --glow: rgba(139,109,255,.16);
-      --shadow: 0 1px 2px rgba(0,0,0,.45), 0 14px 44px rgba(0,0,0,.4);
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #0a0a10; --surface-1: #14141d; --surface-2: #1b1b26; --surface-3: #23222f;
-    --border: rgba(255,255,255,.08); --border-strong: rgba(255,255,255,.15);
-    --text-1: #f4f3fb; --text-2: #a6a3bd; --text-3: #706d86;
-    --accent: #8b6dff; --accent-2: #a68bff; --accent-ink: #0a0a10; --accent-soft: rgba(139,109,255,.15);
-    --good: #3ecf8e; --good-soft: rgba(62,207,142,.14);
-    --warn: #f5b544; --warn-soft: rgba(245,181,68,.14);
-    --bad: #f26d6d;  --bad-soft: rgba(242,109,109,.14);
-    --grid: #26252f; --glow: rgba(139,109,255,.16);
-    --shadow: 0 1px 2px rgba(0,0,0,.45), 0 14px 44px rgba(0,0,0,.4);
+  :root[data-theme="light"] {
+    --bg: #f6f7f0; --bg-2: #eef0e5; --surface-1: #ffffff; --surface-2: #f2f4e9; --surface-3: #e9ecdc;
+    --border: rgba(40,50,10,.12); --border-strong: rgba(120,135,0,.42);
+    --text-1: #171b0c; --text-2: #59623f; --text-3: #8a936c;
+    --accent: #7f9000; --accent-2: #6a7c00; --accent-ink: #ffffff; --accent-soft: rgba(127,144,0,.12);
+    --good: #2f9d3f; --good-soft: rgba(47,157,63,.12);
+    --warn: #a9720f; --warn-soft: rgba(169,114,15,.14);
+    --bad: #d23b32;  --bad-soft: rgba(210,59,50,.12);
+    --grid: #e2e5d4; --glow: rgba(127,144,0,.10);
+    --shadow: 0 1px 2px rgba(30,35,10,.05), 0 12px 32px rgba(30,35,10,.08); --radius: 12px;
   }
 
   * { box-sizing: border-box; }
   body {
-    margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0; font-family: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     background: var(--bg); color: var(--text-1); line-height: 1.45; overflow-x: hidden;
     background-image: radial-gradient(1100px 520px at 82% -8%, var(--glow), transparent 60%),
                       radial-gradient(900px 480px at -6% 0%, var(--accent-soft), transparent 55%);
