@@ -22,11 +22,19 @@ module.exports = {
       ? { forking: { url: process.env.FORK_RPC }, chainId: 4663 }
       : {},
     robinhood: {
-      url: process.env.ROBINHOOD_RPC || "https://robinhoodchain.blockscout.com/api/eth-rpc",
+      url: process.env.ROBINHOOD_RPC || "https://rpc.mainnet.chain.robinhood.com",
       chainId: 4663,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       // Robinhood Chain (Orbit) has NO EIP-1559. Deploy scripts must send legacy type-0
       // txs with an explicit gasPrice; hardhat-ethers reads this hint but scripts set it too.
+      gasPrice: 30_180_000,
+    },
+    // Testnet (chainId 46630). Fund a hot deployer at faucet.testnet.chain.robinhood.com, then:
+    //   POSITION_MANAGER=<testnet v4 posm> npx hardhat run scripts/deploy-curve.js --network robinhoodTestnet
+    robinhoodTestnet: {
+      url: process.env.TESTNET_RPC || "https://rpc.testnet.chain.robinhood.com",
+      chainId: 46630,
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       gasPrice: 30_180_000,
     },
   },

@@ -19,9 +19,12 @@ const { ethers, network } = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 
-const POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
-const POSITION_MANAGER = "0x174c1130aD96Ff0BB5492dD2BF81ccd549572EFA";
-const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+// Uniswap v4 dependency addresses. Defaults are the live Robinhood Chain MAINNET deployments; override via env
+// for testnet (PoolManager 0x8366… + Permit2 are the same on testnet, but the PositionManager differs — set
+// POSITION_MANAGER to the testnet v4 PositionManager from the Uniswap deployments page).
+const POOL_MANAGER = process.env.POOL_MANAGER || "0x8366a39CC670B4001A1121B8F6A443A643e40951";
+const POSITION_MANAGER = process.env.POSITION_MANAGER || "0x174c1130aD96Ff0BB5492dD2BF81ccd549572EFA";
+const PERMIT2 = process.env.PERMIT2 || "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 
 // Governed v2 DEFAULT launch params (stamped IMMUTABLY per-pad at launch; retunable for future launches only).
 // Geometry magnitudes are tick-spacing-aligned for ts=60 (201600/60, 25800/60, 22800/60 are integers).
