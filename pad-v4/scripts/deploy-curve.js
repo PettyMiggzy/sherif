@@ -81,6 +81,12 @@ async function main() {
   console.log(`  lockVault.setFactory -> ${await factory.getAddress()}\n`);
 
   const curveFactory = await factory.getAddress();
+
+  // presale add-on (singletons): the clone implementation + the factory that mints per-presale clones. This is
+  // fully standalone — it only consumes CurvePadFactoryV4's public launch()/feeConfig()/poolManager() interface and
+  // changes nothing in the audited curve suite.
+  const presaleImpl = await legacyDeploy("PresaleVault");
+  const presaleFactory = await legacyDeploy("PresaleVaultFactory", [curveFactory, await presaleImpl.getAddress()]);
   const out = {
     chainId: Number(network.config.chainId || 4663),
     deployer: deployer.address,
@@ -99,6 +105,8 @@ async function main() {
       curveDeployer: await curveDeployer.getAddress(),
       feeConfig: await feeConfig.getAddress(),
       curveFactory,
+      presaleImpl: await presaleImpl.getAddress(),
+      presaleFactory: await presaleFactory.getAddress(),
     },
   };
   const file = path.join(__dirname, "..", "deploy.curve.json");
@@ -107,8 +115,12 @@ async function main() {
   console.log("\nNext:");
   console.log("  1. transfer FeeWalletRegistry + RobinV4FeeConfig ownership to the platform multisig (Ownable2Step)");
   console.log(`  2. FACTORY=${curveFactory} node scripts/auto-verify.cjs --once   (verify token/hook/curve on Blockscout)`);
-  console.log("  3. per graduated pad: deploy RobinFloorVault + RobinAmbushVault + RobinLockStaking, then");
-  console.log("     curve.setFloor(floor) / curve.setAmbush(ambush) / curve.setStaking(staking) (platform-gated, one-shot each)");
+  console.log("  3. per launched pad, once deployed: RobinLockStaking(token, 30d, 30d) for holder staking; and at/near");
+  console.log("     graduation deploy RobinFloorVault + the two-sided RobinAmbushVault(…, curve, …), then platform calls");
+  console.log("     curve.setStaking(staking) / curve.setFloor(floor) / curve.setAmbush(ambush) (one-shot each). The");
+  console.log("     ambush reads its band anchor from curve.gradTick() on-chain; seedAmbush()/graduate() arm it.");
+  console.log("  4. presales (optional, per coin): presaleFactory.createPresale(cfg, keccak(tokenSalt,hookSalt,curveSalt),");
+  console.log("     target, deadline, perWalletCap, minContribution, finalizeGrace) — reveal the salts in finalize().");
 }
 
 main().catch((e) => {
