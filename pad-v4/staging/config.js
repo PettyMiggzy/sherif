@@ -18,7 +18,7 @@ export const CFG = {
     "curveDeployer": "0x214EE2E1eFB64f7571C0B768b22e4c3273317642",
     "feeConfig": "0x6B1E7eC3D17B829E0dEE7224cA53F2fD59aA8eD9",
     "factory": "0xfE1CaAb7c8c024Dfb8D696262F206dE9964E3537",
-    "swapRouter": ""
+    "swapRouter": "0x5465091F4f71EE34B35E3697e0805E9310f43119"
   },
   "HOOK_FLAGS": "0xc4",
   "FLAG_MASK": "0x3fff",
