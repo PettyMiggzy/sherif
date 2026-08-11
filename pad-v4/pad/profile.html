@@ -1,0 +1,363 @@
+<!-- Robin V4 pad — PER-USER profile. Self-contained: inline CSS+JS, ethers loaded
+     lazily from ./ethers.min.js (copied from node_modules at deploy). Reads ?address=0x…
+     (or the connected wallet); falls back to DEMO_PROFILE so the page always renders. -->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Robin Pad — Profile</title>
+<style>
+  :root {
+    --bg: #f4f4fa; --surface-1: #ffffff; --surface-2: #f0eff7; --surface-3: #e8e7f2;
+    --border: rgba(26,22,55,.10); --border-strong: rgba(26,22,55,.17);
+    --text-1: #14121e; --text-2: #56536b; --text-3: #8a8799;
+    --accent: #6a4bff; --accent-2: #7c5cff; --accent-ink: #ffffff; --accent-soft: rgba(106,75,255,.10);
+    --good: #12a866; --good-soft: rgba(18,168,102,.12);
+    --warn: #b8791f; --warn-soft: rgba(184,121,31,.14);
+    --bad: #e14b4b;  --bad-soft: rgba(225,75,75,.12);
+    --grid: #e6e5ef; --glow: rgba(106,75,255,.10);
+    --shadow: 0 1px 2px rgba(20,18,40,.05), 0 10px 30px rgba(20,18,40,.07); --radius: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0a0a10; --surface-1: #14141d; --surface-2: #1b1b26; --surface-3: #23222f;
+      --border: rgba(255,255,255,.08); --border-strong: rgba(255,255,255,.15);
+      --text-1: #f4f3fb; --text-2: #a6a3bd; --text-3: #706d86;
+      --accent: #8b6dff; --accent-2: #a68bff; --accent-ink: #0a0a10; --accent-soft: rgba(139,109,255,.15);
+      --good: #3ecf8e; --good-soft: rgba(62,207,142,.14);
+      --warn: #f5b544; --warn-soft: rgba(245,181,68,.14);
+      --bad: #f26d6d;  --bad-soft: rgba(242,109,109,.14);
+      --grid: #26252f; --glow: rgba(139,109,255,.16);
+      --shadow: 0 1px 2px rgba(0,0,0,.45), 0 14px 44px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0a10; --surface-1: #14141d; --surface-2: #1b1b26; --surface-3: #23222f;
+    --border: rgba(255,255,255,.08); --border-strong: rgba(255,255,255,.15);
+    --text-1: #f4f3fb; --text-2: #a6a3bd; --text-3: #706d86;
+    --accent: #8b6dff; --accent-2: #a68bff; --accent-ink: #0a0a10; --accent-soft: rgba(139,109,255,.15);
+    --good: #3ecf8e; --good-soft: rgba(62,207,142,.14);
+    --warn: #f5b544; --warn-soft: rgba(245,181,68,.14);
+    --bad: #f26d6d;  --bad-soft: rgba(242,109,109,.14);
+    --grid: #26252f; --glow: rgba(139,109,255,.16);
+    --shadow: 0 1px 2px rgba(0,0,0,.45), 0 14px 44px rgba(0,0,0,.4);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text-1); line-height: 1.45; overflow-x: hidden;
+    background-image: radial-gradient(1100px 520px at 82% -8%, var(--glow), transparent 60%),
+                      radial-gradient(900px 480px at -6% 0%, var(--accent-soft), transparent 55%);
+    background-attachment: fixed;
+  }
+  .tnum { font-variant-numeric: tabular-nums; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+
+  .topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 14px;
+    padding: 12px clamp(14px,4vw,28px); background: color-mix(in srgb, var(--bg) 78%, transparent);
+    backdrop-filter: blur(14px); border-bottom: 1px solid var(--border); }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: -.02em; }
+  .brand .mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: grid; place-items: center; color: var(--accent-ink); font-size: 15px; font-weight: 800;
+    box-shadow: 0 0 0 1px var(--border-strong), 0 6px 16px var(--glow); }
+  .spacer { flex: 1; }
+  .btn { font: inherit; font-weight: 600; cursor: pointer; padding: 9px 15px; border-radius: 11px;
+    border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-1); transition: .14s; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); border-color: transparent; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.sm { padding: 6px 12px; font-size: 12.5px; border-radius: 9px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .icon-btn { width: 38px; height: 38px; padding: 0; display: grid; place-items: center; font-size: 16px; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: clamp(16px,3vw,30px) clamp(14px,4vw,28px) 64px; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+  .pad { padding: clamp(16px,2.4vw,22px); }
+  .section { margin-bottom: 22px; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 4px 12px; }
+  .section-head h2 { margin: 0; font-size: 17px; letter-spacing: -.01em; }
+  .section-head .count { font-size: 12.5px; color: var(--text-3); font-weight: 600; background: var(--surface-2); border: 1px solid var(--border); padding: 3px 9px; border-radius: 999px; }
+
+  /* portfolio header */
+  .phead { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; }
+  .pavatar { width: 76px; height: 76px; border-radius: 22px; flex: none; box-shadow: 0 0 0 1px var(--border-strong), 0 10px 26px rgba(0,0,0,.3); }
+  .pmeta { min-width: 0; }
+  .pmeta .k { font-size: 12.5px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
+  .paddr { display: flex; align-items: center; gap: 9px; margin-top: 4px; }
+  .paddr code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; color: var(--text-1); font-weight: 600; }
+  .mini-copy { cursor: pointer; border: 1px solid var(--border); background: var(--surface-2); border-radius: 7px; padding: 3px 8px; font-size: 11px; color: var(--text-2); }
+  .mini-copy:hover { border-color: var(--accent); color: var(--text-1); }
+  .pvalue { margin-left: auto; text-align: right; }
+  .pvalue .k { font-size: 12.5px; color: var(--text-3); font-weight: 600; }
+  .pvalue .v { font-size: clamp(30px,5vw,44px); font-weight: 700; letter-spacing: -.03em; line-height: 1; margin-top: 4px; }
+
+  /* table */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 520px; }
+  th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); font-weight: 700; padding: 4px 14px 10px; border-bottom: 1px solid var(--border); }
+  th.r, td.r { text-align: right; }
+  td { padding: 13px 14px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  .asset { display: flex; align-items: center; gap: 11px; }
+  .asset .ava { width: 34px; height: 34px; border-radius: 10px; flex: none; box-shadow: 0 0 0 1px var(--border-strong); display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 12px; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  .asset .nm { font-weight: 700; } .asset .sy { color: var(--text-3); font-size: 12px; }
+  .chg { font-weight: 700; } .chg.up { color: var(--good); } .chg.down { color: var(--bad); }
+
+  /* position cards */
+  .pos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .pos { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); }
+  .pos .top { display: flex; align-items: center; gap: 11px; margin-bottom: 13px; }
+  .pos .ava { width: 38px; height: 38px; border-radius: 11px; flex: none; box-shadow: 0 0 0 1px var(--border-strong); display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  .pos .nm { font-weight: 700; } .pos .sy { color: var(--text-3); font-size: 12px; }
+  .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; }
+  .kv .k { color: var(--text-3); } .kv .v { font-weight: 700; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 4px 9px; border-radius: 999px; }
+  .badge.lock { background: var(--warn-soft); color: var(--warn); }
+  .badge.open { background: var(--good-soft); color: var(--good); }
+  .badge.grad { background: var(--good-soft); color: var(--good); }
+  .badge.oncurve { background: var(--accent-soft); color: var(--accent); }
+  .badge.fail { background: var(--bad-soft); color: var(--bad); }
+  .meter { height: 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; margin: 4px 0 2px; }
+  .meter > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 999px; }
+  .meter.good > i { background: linear-gradient(90deg, var(--good), #2ee6a0); }
+  .pos-actions { margin-top: 13px; display: flex; gap: 8px; }
+  .pos-actions .btn { flex: 1; }
+
+  .empty { text-align: center; padding: 34px 20px; color: var(--text-3); }
+  .empty .ic { font-size: 30px; opacity: .7; margin-bottom: 8px; }
+  .empty .t { font-weight: 700; color: var(--text-2); margin-bottom: 3px; }
+  .empty .s { font-size: 13px; }
+  .empty a { font-weight: 600; }
+
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px);
+    background: var(--text-1); color: var(--bg); padding: 11px 18px; border-radius: 12px; font-size: 13.5px; font-weight: 600;
+    opacity: 0; pointer-events: none; transition: .22s; z-index: 90; box-shadow: 0 10px 30px rgba(0,0,0,.35); max-width: 90vw; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  footer { text-align: center; color: var(--text-3); font-size: 12px; padding: 26px 14px 8px; }
+  .demo-banner { display: none; align-items: center; gap: 8px; justify-content: center; font-size: 12.5px; color: var(--warn);
+    background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); border-radius: 10px; padding: 7px 12px; margin-bottom: 18px; }
+  .demo-banner.show { display: flex; }
+</style>
+
+<div class="topbar">
+  <div class="brand"><span class="mark">R</span><span>Robin&nbsp;Pad</span></div>
+  <a class="btn sm" href="index.html">← Dashboard</a>
+  <div class="spacer"></div>
+  <button class="btn icon-btn" id="themeBtn" aria-label="Toggle theme">◒</button>
+  <button class="btn primary" id="connectBtn">Connect wallet</button>
+</div>
+
+<main>
+  <div class="demo-banner" id="demoBanner"><span>◇</span><span>Preview profile — showing illustrative holdings until this wallet is read on-chain.</span></div>
+
+  <!-- PORTFOLIO HEADER -->
+  <section class="card pad section phead">
+    <div class="pavatar" id="pavatar"></div>
+    <div class="pmeta">
+      <div class="k">Wallet</div>
+      <div class="paddr">
+        <code id="addrText">0x…</code>
+        <button class="mini-copy" id="copyAddr">Copy</button>
+        <a id="explorerLink" target="_blank" rel="noopener">Explorer ↗</a>
+      </div>
+    </div>
+    <div class="pvalue">
+      <div class="k">Portfolio value</div>
+      <div class="v tnum" id="totalValue">—</div>
+    </div>
+  </section>
+
+  <!-- HOLDINGS -->
+  <section class="section">
+    <div class="section-head"><h2>Holdings</h2><span class="count" id="holdCount">—</span></div>
+    <div class="card pad" id="holdCard"></div>
+  </section>
+
+  <!-- STAKING POSITIONS -->
+  <section class="section">
+    <div class="section-head"><h2>Staking positions</h2><span class="count" id="stakeCount">—</span></div>
+    <div id="stakeCard"></div>
+  </section>
+
+  <!-- LAUNCHED COINS -->
+  <section class="section">
+    <div class="section-head"><h2>Launched coins</h2><span class="count" id="launchCount">—</span></div>
+    <div id="launchCard"></div>
+  </section>
+
+  <!-- PRESALE POSITIONS -->
+  <section class="section">
+    <div class="section-head"><h2>Presale positions</h2><span class="count" id="presaleCount">—</span></div>
+    <div id="presaleCard"></div>
+  </section>
+
+  <footer>Robin V4 · curve-on-V4 launchpad · Robinhood Chain (4663). Lock countdowns tick live. Positions are mock-fed until on-chain reads are wired in <code>config.js</code>.</footer>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { DEMO_PROFILE, GRAD, CHAIN, COINS } from './config.js';
+  import {
+    initTheme, connectWallet, ethersLib, readProvider, ABI,
+    fmtUsd, fmtEth, fmtPct, compact, shortAddr, fmtDuration,
+    avatarGradient, copy, param, explorerUrl, qs, PRESALE_STATE,
+  } from './lib.js';
+
+  const toastEl = qs('#toast');
+  function toast(m) { toastEl.textContent = m; toastEl.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => toastEl.classList.remove('show'), 2600); }
+  initTheme(qs('#themeBtn'));
+
+  let addr = (param('address') || DEMO_PROFILE.address);
+  let account = null, signer = null;
+  const live = false; // becomes true once COINS holdings are read on-chain per wallet
+  const P = DEMO_PROFILE;
+  if (!live) qs('#demoBanner').classList.add('show');
+
+  // deadlines for live countdowns
+  const now = Date.now();
+  const unlockAt = P.staking.map(s => now + s.unlockInDays * 86400e3);
+
+  function ava(sym, cls) {
+    const g = avatarGradient(sym + 'seed' + sym);
+    return `<div class="${cls}" style="background:${g}">${sym.slice(0, 2).toUpperCase()}</div>`;
+  }
+
+  function renderHeader() {
+    qs('#pavatar').style.background = avatarGradient(addr);
+    qs('#addrText').textContent = shortAddr(addr, 8, 6);
+    qs('#explorerLink').href = explorerUrl(addr);
+    const total = P.holdings.reduce((s, h) => s + h.balance * h.priceUsd, 0)
+      + P.staking.reduce((s, k) => s + k.staked * k.priceUsd, 0);
+    qs('#totalValue').textContent = fmtUsd(total, { compact: total >= 1000 });
+  }
+
+  function renderHoldings() {
+    qs('#holdCount').textContent = P.holdings.length + ' coins';
+    if (!P.holdings.length) {
+      qs('#holdCard').innerHTML = emptyState('🪙', 'No pad coins yet', 'Buy into a coin on the <a href="index.html">dashboard</a> to see it here.');
+      return;
+    }
+    const rows = P.holdings.map(h => {
+      const val = h.balance * h.priceUsd, up = h.changePct >= 0;
+      return `<tr>
+        <td><div class="asset">${ava(h.symbol, 'ava')}<div><div class="nm">${h.name}</div><div class="sy">$${h.symbol}</div></div></div></td>
+        <td class="r tnum">${compact(h.balance)}</td>
+        <td class="r tnum">${fmtUsd(h.priceUsd)}</td>
+        <td class="r tnum">${fmtUsd(val, { compact: val >= 1000 })}</td>
+        <td class="r tnum chg ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${fmtPct(Math.abs(h.changePct))}</td>
+      </tr>`;
+    }).join('');
+    qs('#holdCard').innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Coin</th><th class="r">Balance</th><th class="r">Price</th><th class="r">Value</th><th class="r">24h</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+  }
+
+  function renderStaking() {
+    qs('#stakeCount').textContent = P.staking.length + ' positions';
+    if (!P.staking.length) {
+      qs('#stakeCard').innerHTML = `<div class="card pad">${emptyState('🔒', 'Nothing staked', 'Stake a pad coin to earn more of it — 30-day lock, self-filling rewards.')}</div>`;
+      return;
+    }
+    qs('#stakeCard').innerHTML = `<div class="pos-grid">${P.staking.map((k, i) => {
+      const val = k.staked * k.priceUsd;
+      return `<div class="pos">
+        <div class="top">${ava(k.symbol, 'ava')}<div><div class="nm">$${k.symbol}</div><div class="sy">Staked position</div></div>
+          <div style="margin-left:auto">${k.locked ? '<span class="badge lock">🔒 Locked</span>' : '<span class="badge open">✓ Unlocked</span>'}</div></div>
+        <div class="kv"><span class="k">Staked</span><span class="v tnum">${compact(k.staked)} <span style="color:var(--text-3)">(${fmtUsd(val)})</span></span></div>
+        <div class="kv"><span class="k">Claimable</span><span class="v tnum" style="color:var(--good)">+${compact(k.claimable)} $${k.symbol}</span></div>
+        <div class="kv"><span class="k">Unlocks in</span><span class="v tnum" data-unlock="${i}">${k.locked ? '…' : 'Unlocked'}</span></div>
+        ${k.locked ? `<div class="kv"><span class="k" style="color:var(--warn)">Early exit</span><span class="v" style="color:var(--warn)">−${k.penaltyBps / 100}% penalty</span></div>` : ''}
+        <div class="pos-actions">
+          <button class="btn primary claim-btn" data-sym="${k.symbol}">Claim</button>
+          <button class="btn unstake-btn" data-sym="${k.symbol}" data-locked="${k.locked}">Unstake</button>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+    qs('#stakeCard').querySelectorAll('.claim-btn').forEach(b => b.onclick = () => act('claim', b.dataset.sym));
+    qs('#stakeCard').querySelectorAll('.unstake-btn').forEach(b => b.onclick = () => {
+      if (b.dataset.locked === 'true' && !confirm('Still locked — unstaking forfeits 10% as an early-exit penalty. Continue?')) return;
+      act('unstake', b.dataset.sym);
+    });
+  }
+
+  function renderLaunched() {
+    qs('#launchCount').textContent = P.launched.length + ' coins';
+    if (!P.launched.length) {
+      qs('#launchCard').innerHTML = `<div class="card pad">${emptyState('🚀', 'No launches yet', 'Launch a free single-sided curve — no ETH required to seed.')}</div>`;
+      return;
+    }
+    qs('#launchCard').innerHTML = `<div class="pos-grid">${P.launched.map(c => {
+      const prog = Math.min(1, c.raisedEth / c.targetEth);
+      return `<div class="pos">
+        <div class="top">${ava(c.symbol, 'ava')}<div><div class="nm">${c.name}</div><div class="sy">$${c.symbol} · you created</div></div>
+          <div style="margin-left:auto">${c.graduated ? '<span class="badge grad">✓ Graduated</span>' : '<span class="badge oncurve">● On the curve</span>'}</div></div>
+        <div class="kv"><span class="k">Curve progress</span><span class="v tnum">${(prog * 100).toFixed(0)}%</span></div>
+        <div class="meter ${c.graduated ? 'good' : ''}"><i style="width:${(prog * 100).toFixed(1)}%"></i></div>
+        <div class="kv"><span class="k">Raised</span><span class="v tnum">${c.raisedEth.toFixed(2)} / ${c.targetEth} ETH</span></div>
+        <div class="kv"><span class="k">Holders</span><span class="v tnum">${c.holders.toLocaleString()}</span></div>
+        <div class="pos-actions"><a class="btn" style="flex:1;text-align:center" href="index.html?token=${P.address}">View pad ↗</a></div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  function renderPresales() {
+    qs('#presaleCount').textContent = P.presales.length + ' positions';
+    if (!P.presales.length) {
+      qs('#presaleCard').innerHTML = `<div class="card pad">${emptyState('🎟️', 'No presale positions', 'Contribute to a PresaleVault to reserve an allocation before the curve opens.')}</div>`;
+      return;
+    }
+    qs('#presaleCard').innerHTML = `<div class="pos-grid">${P.presales.map(v => {
+      const prog = Math.min(1, v.raisedEth / v.targetEth);
+      const st = PRESALE_STATE[v.state];
+      const badge = v.state === 1 ? 'grad' : v.state === 2 ? 'fail' : 'oncurve';
+      const action = v.state === 1 ? `<button class="btn primary presale-btn" data-act="claim" data-sym="${v.symbol}" style="flex:1">Claim tokens</button>`
+        : v.state === 2 ? `<button class="btn presale-btn" data-act="refund" data-sym="${v.symbol}" style="flex:1">Refund ETH</button>`
+        : `<button class="btn" disabled style="flex:1">Open · ends in ${v.deadlineInDays}d</button>`;
+      return `<div class="pos">
+        <div class="top">${ava(v.symbol, 'ava')}<div><div class="nm">${v.name}</div><div class="sy">$${v.symbol} presale</div></div>
+          <div style="margin-left:auto"><span class="badge ${badge}">${st}</span></div></div>
+        <div class="kv"><span class="k">Raised</span><span class="v tnum">${v.raisedEth.toFixed(2)} / ${v.targetEth} ETH</span></div>
+        <div class="meter ${v.state === 1 ? 'good' : ''}"><i style="width:${(prog * 100).toFixed(1)}%"></i></div>
+        <div class="kv"><span class="k">Your contribution</span><span class="v tnum">${v.contributedEth.toFixed(3)} ETH</span></div>
+        <div class="pos-actions">${action}</div>
+      </div>`;
+    }).join('')}</div>`;
+    qs('#presaleCard').querySelectorAll('.presale-btn').forEach(b => b.onclick = () => act(b.dataset.act, b.dataset.sym));
+  }
+
+  function emptyState(ic, t, s) {
+    return `<div class="empty"><div class="ic">${ic}</div><div class="t">${t}</div><div class="s">${s}</div></div>`;
+  }
+
+  // action stubs — real contract calls fire once addresses are wired + wallet connected
+  async function act(kind, sym) {
+    if (!account) return toast('Connect a wallet to ' + kind);
+    const wired = !!(COINS[addr] && COINS[addr].staking);
+    if (!wired) return toast(`${kind[0].toUpperCase() + kind.slice(1)} for $${sym} — on-chain address not wired yet`);
+    toast(`${kind} $${sym}: submit in wallet…`); // real getReward()/withdraw()/claim()/refund() go here
+  }
+
+  // live lock countdowns
+  function tick() {
+    P.staking.forEach((k, i) => {
+      if (!k.locked) return;
+      const cell = qs(`[data-unlock="${i}"]`);
+      if (cell) cell.textContent = fmtDuration((unlockAt[i] - Date.now()) / 1000);
+    });
+  }
+  setInterval(tick, 1000);
+
+  qs('#connectBtn').addEventListener('click', async () => {
+    try {
+      const w = await connectWallet();
+      account = w.address; signer = w.signer; addr = w.address;
+      qs('#connectBtn').textContent = shortAddr(account);
+      renderHeader();
+      toast('Wallet connected — showing ' + shortAddr(account));
+    } catch (err) { toast(err.message === 'No injected wallet found' ? 'No wallet detected' : 'Connection cancelled'); }
+  });
+  qs('#copyAddr').addEventListener('click', async () => toast(await copy(addr) ? 'Address copied' : 'Copy failed'));
+
+  // boot
+  renderHeader(); renderHoldings(); renderStaking(); renderLaunched(); renderPresales(); tick();
+</script>

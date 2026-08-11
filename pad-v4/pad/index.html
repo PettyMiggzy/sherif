@@ -1,0 +1,774 @@
+<!-- Robin V4 pad — COIN / PAD dashboard. Self-contained: inline CSS+JS, ethers loaded
+     lazily from ./ethers.min.js (copied from node_modules at deploy). Reads ?token=0x…;
+     falls back to the DEMO config so the page always renders. -->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Robin Pad — Coin</title>
+<style>
+  /* ── palette tokens: light on bare :root; dark under prefers-color-scheme AND the
+        manual [data-theme] toggle (toggle wins both ways). Near-black is the crypto
+        default for the majority of users on dark OS themes. ── */
+  :root {
+    --bg: #f4f4fa;
+    --surface-1: #ffffff;
+    --surface-2: #f0eff7;
+    --surface-3: #e8e7f2;
+    --border: rgba(26,22,55,.10);
+    --border-strong: rgba(26,22,55,.17);
+    --text-1: #14121e;
+    --text-2: #56536b;
+    --text-3: #8a8799;
+    --accent: #6a4bff;
+    --accent-2: #7c5cff;
+    --accent-ink: #ffffff;
+    --accent-soft: rgba(106,75,255,.10);
+    --accent-line: #6a4bff;
+    --good: #12a866; --good-soft: rgba(18,168,102,.12);
+    --warn: #b8791f; --warn-soft: rgba(184,121,31,.14);
+    --bad: #e14b4b;  --bad-soft: rgba(225,75,75,.12);
+    --grid: #e6e5ef;
+    --glow: rgba(106,75,255,.10);
+    --shadow: 0 1px 2px rgba(20,18,40,.05), 0 10px 30px rgba(20,18,40,.07);
+    --radius: 16px;
+  }
+  :root:not([data-theme="light"]) { }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0a0a10;
+      --surface-1: #14141d;
+      --surface-2: #1b1b26;
+      --surface-3: #23222f;
+      --border: rgba(255,255,255,.08);
+      --border-strong: rgba(255,255,255,.15);
+      --text-1: #f4f3fb;
+      --text-2: #a6a3bd;
+      --text-3: #706d86;
+      --accent: #8b6dff;
+      --accent-2: #a68bff;
+      --accent-ink: #0a0a10;
+      --accent-soft: rgba(139,109,255,.15);
+      --accent-line: #9a7dff;
+      --good: #3ecf8e; --good-soft: rgba(62,207,142,.14);
+      --warn: #f5b544; --warn-soft: rgba(245,181,68,.14);
+      --bad: #f26d6d;  --bad-soft: rgba(242,109,109,.14);
+      --grid: #26252f;
+      --glow: rgba(139,109,255,.16);
+      --shadow: 0 1px 2px rgba(0,0,0,.45), 0 14px 44px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0a10; --surface-1: #14141d; --surface-2: #1b1b26; --surface-3: #23222f;
+    --border: rgba(255,255,255,.08); --border-strong: rgba(255,255,255,.15);
+    --text-1: #f4f3fb; --text-2: #a6a3bd; --text-3: #706d86;
+    --accent: #8b6dff; --accent-2: #a68bff; --accent-ink: #0a0a10;
+    --accent-soft: rgba(139,109,255,.15); --accent-line: #9a7dff;
+    --good: #3ecf8e; --good-soft: rgba(62,207,142,.14);
+    --warn: #f5b544; --warn-soft: rgba(245,181,68,.14);
+    --bad: #f26d6d;  --bad-soft: rgba(242,109,109,.14);
+    --grid: #26252f; --glow: rgba(139,109,255,.16);
+    --shadow: 0 1px 2px rgba(0,0,0,.45), 0 14px 44px rgba(0,0,0,.4);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text-1);
+    line-height: 1.45;
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(1100px 520px at 82% -8%, var(--glow), transparent 60%),
+      radial-gradient(900px 480px at -6% 0%, var(--accent-soft), transparent 55%);
+    background-attachment: fixed;
+  }
+  .tnum { font-variant-numeric: tabular-nums; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* topbar */
+  .topbar {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px clamp(14px, 4vw, 28px);
+    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: -.02em; }
+  .brand .mark {
+    width: 26px; height: 26px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: grid; place-items: center; color: var(--accent-ink); font-size: 15px; font-weight: 800;
+    box-shadow: 0 0 0 1px var(--border-strong), 0 6px 16px var(--glow);
+  }
+  .spacer { flex: 1; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2);
+  }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
+  .btn {
+    font: inherit; font-weight: 600; cursor: pointer;
+    padding: 9px 15px; border-radius: 11px; border: 1px solid var(--border-strong);
+    background: var(--surface-2); color: var(--text-1); transition: .14s ease;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--text-1); }
+  .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); border-color: transparent; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .icon-btn { width: 38px; height: 38px; padding: 0; display: grid; place-items: center; font-size: 16px; border-radius: 11px; }
+
+  main { max-width: 1180px; margin: 0 auto; padding: clamp(16px, 3vw, 30px) clamp(14px, 4vw, 28px) 64px; }
+
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+  }
+  .pad { padding: clamp(16px, 2.4vw, 22px); }
+  .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--text-3); font-weight: 700; }
+
+  /* hero */
+  .hero { display: grid; gap: 22px; margin-bottom: 20px; }
+  .hero-top { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .avatar {
+    width: 64px; height: 64px; border-radius: 18px; flex: none;
+    box-shadow: 0 0 0 1px var(--border-strong), 0 8px 22px rgba(0,0,0,.28);
+    display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 22px;
+    text-shadow: 0 1px 3px rgba(0,0,0,.35);
+  }
+  .coin-id { min-width: 0; }
+  .coin-name { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .coin-name h1 { margin: 0; font-size: clamp(22px, 3.4vw, 30px); letter-spacing: -.02em; }
+  .ticker { color: var(--text-3); font-weight: 700; font-size: 15px; }
+  .addr-row { display: flex; align-items: center; gap: 8px; margin-top: 7px; color: var(--text-2); font-size: 13px; }
+  .addr-row code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  .mini-copy { cursor: pointer; border: 1px solid var(--border); background: var(--surface-2); border-radius: 7px; padding: 2px 7px; font-size: 11px; color: var(--text-2); }
+  .mini-copy:hover { border-color: var(--accent); color: var(--text-1); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px;
+    font-size: 12.5px; font-weight: 700;
+  }
+  .pill .d { width: 7px; height: 7px; border-radius: 50%; }
+  .pill.on { background: var(--accent-soft); color: var(--accent); }
+  .pill.on .d { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .pill.grad { background: var(--good-soft); color: var(--good); }
+  .pill.grad .d { background: var(--good); }
+
+  .price-block { margin-left: auto; text-align: right; }
+  .price-now { font-size: clamp(30px, 5vw, 46px); font-weight: 700; letter-spacing: -.03em; line-height: 1; }
+  .delta { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 14px; margin-top: 8px; }
+  .delta.up { color: var(--good); } .delta.down { color: var(--bad); }
+  .price-sub { color: var(--text-2); font-size: 13px; margin-top: 6px; }
+
+  /* curve progress meter */
+  .curve-wrap { display: grid; gap: 12px; }
+  .curve-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .curve-pct { font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
+  .meter { position: relative; height: 20px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+  .meter-fill {
+    height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    box-shadow: 0 0 18px var(--glow); position: relative;
+    transition: width .8s cubic-bezier(.22,1,.36,1);
+  }
+  .meter-fill::after {
+    content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 3px;
+    background: #fff; opacity: .85; border-radius: 2px;
+  }
+  .curve-ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-3); }
+  .curve-ends b { color: var(--text-2); }
+
+  /* stat grid */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .stat {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px 16px 15px; display: grid; gap: 6px; box-shadow: var(--shadow);
+  }
+  .stat .lbl { font-size: 12.5px; color: var(--text-3); font-weight: 600; }
+  .stat .val { font-size: clamp(22px, 2.6vw, 27px); font-weight: 700; letter-spacing: -.02em; line-height: 1.05; }
+  .stat .sub { font-size: 12.5px; color: var(--text-2); }
+  .stat .sub b { color: var(--text-1); font-weight: 700; }
+  .stat .track { height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-top: 3px; }
+  .stat .track > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 3px; }
+
+  /* layout rows */
+  .grid-2 { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; margin-bottom: 20px; }
+  .grid-2.rev { grid-template-columns: .85fr 1.15fr; }
+  @media (max-width: 900px) { .grid-2, .grid-2.rev { grid-template-columns: 1fr; } }
+
+  .card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .card-head h2 { margin: 0; font-size: 16px; letter-spacing: -.01em; }
+
+  /* chart */
+  .chart-box { position: relative; }
+  .chart-canvas-wrap { position: relative; width: 100%; height: 280px; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .chart-tip {
+    position: absolute; pointer-events: none; opacity: 0; transform: translate(-50%, -120%);
+    background: var(--text-1); color: var(--bg); font-size: 12px; font-weight: 600;
+    padding: 5px 9px; border-radius: 8px; white-space: nowrap; transition: opacity .1s; z-index: 5;
+    box-shadow: 0 6px 18px rgba(0,0,0,.3);
+  }
+  .range-toggle { display: inline-flex; gap: 2px; background: var(--surface-2); padding: 3px; border-radius: 10px; border: 1px solid var(--border); }
+  .range-toggle button { font: inherit; font-size: 12px; font-weight: 600; padding: 5px 11px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); cursor: pointer; }
+  .range-toggle button.active { background: var(--surface-1); color: var(--text-1); box-shadow: var(--shadow); }
+
+  /* tabs (trade) */
+  .tabs { display: flex; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 12px; margin-bottom: 16px; }
+  .tabs button { flex: 1; font: inherit; font-weight: 700; padding: 9px; border: 0; border-radius: 9px; background: transparent; color: var(--text-2); cursor: pointer; transition: .12s; }
+  .tabs button.active { background: var(--surface-1); color: var(--text-1); box-shadow: var(--shadow); }
+  .tabs button.active[data-side="buy"] { color: var(--good); }
+  .tabs button.active[data-side="sell"] { color: var(--bad); }
+
+  .field { margin-bottom: 12px; }
+  .field label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-3); margin-bottom: 6px; }
+  .input-wrap { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 10px 12px; }
+  .input-wrap:focus-within { border-color: var(--accent); }
+  .input-wrap input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text-1); font: inherit; font-size: 18px; font-weight: 600; outline: none; }
+  .input-wrap .unit { font-weight: 700; color: var(--text-2); font-size: 14px; }
+  .est-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-2); padding: 4px 2px; }
+  .est-row b { color: var(--text-1); font-weight: 700; }
+  .note { font-size: 12px; color: var(--text-3); margin: 8px 0 14px; display: flex; align-items: center; gap: 7px; }
+  .note .tag { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; color: var(--text-2); font-weight: 600; }
+
+  .slippage { display: flex; gap: 6px; margin-bottom: 14px; }
+  .slippage button { font: inherit; font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); cursor: pointer; }
+  .slippage button.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+  .divider { height: 1px; background: var(--border); margin: 18px 0; }
+
+  /* airdrop */
+  .airdrop textarea {
+    width: 100%; min-height: 96px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px; padding: 11px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-1); outline: none;
+  }
+  .airdrop textarea:focus { border-color: var(--accent); }
+
+  /* staking */
+  .pool-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+  .pool-cell { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; }
+  .pool-cell .lbl { font-size: 11.5px; color: var(--text-3); font-weight: 600; }
+  .pool-cell .val { font-size: 19px; font-weight: 700; letter-spacing: -.01em; margin-top: 3px; }
+  .pool-cell .val small { font-size: 12px; color: var(--text-3); font-weight: 600; }
+  .pool-cell.apr .val { color: var(--good); }
+  .warn-box { display: flex; gap: 10px; align-items: flex-start; background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 34%, transparent); border-radius: 11px; padding: 11px 12px; font-size: 12.5px; color: var(--text-2); margin: 14px 0; }
+  .warn-box .ic { color: var(--warn); font-weight: 800; flex: none; }
+  .warn-box b { color: var(--text-1); }
+  .stake-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stake-actions .btn { width: 100%; }
+  .userpos { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-top: 14px; }
+  .userpos .k { font-size: 11.5px; color: var(--text-3); }
+  .userpos .v { font-weight: 700; }
+  .lock-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 4px 9px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+  .lock-badge.open { background: var(--good-soft); color: var(--good); }
+
+  /* trust cards */
+  .trust-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .trust { display: flex; gap: 14px; align-items: flex-start; }
+  .trust .ic { width: 42px; height: 42px; border-radius: 12px; flex: none; display: grid; place-items: center; font-size: 20px; background: var(--accent-soft); color: var(--accent); }
+  .trust h3 { margin: 0 0 3px; font-size: 15px; }
+  .trust p { margin: 0; font-size: 12.5px; color: var(--text-2); }
+  .trust .big { font-size: 20px; font-weight: 800; letter-spacing: -.01em; margin-top: 5px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px);
+    background: var(--text-1); color: var(--bg); padding: 11px 18px; border-radius: 12px;
+    font-size: 13.5px; font-weight: 600; opacity: 0; pointer-events: none; transition: .22s; z-index: 90;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35); max-width: 90vw;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  footer { text-align: center; color: var(--text-3); font-size: 12px; padding: 26px 14px 8px; }
+  .demo-banner { display: none; align-items: center; gap: 8px; justify-content: center; font-size: 12.5px; color: var(--warn); background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); border-radius: 10px; padding: 7px 12px; margin-bottom: 18px; }
+  .demo-banner.show { display: flex; }
+</style>
+
+<div class="topbar">
+  <div class="brand"><span class="mark">R</span><span>Robin&nbsp;Pad</span></div>
+  <span class="chip"><span class="dot"></span><span id="chainName">Robinhood Chain</span></span>
+  <div class="spacer"></div>
+  <a class="btn" id="profileLink" href="profile.html">Profile</a>
+  <button class="btn icon-btn" id="themeBtn" aria-label="Toggle theme">◒</button>
+  <button class="btn primary" id="connectBtn">Connect wallet</button>
+</div>
+
+<main>
+  <div class="demo-banner" id="demoBanner"><span>◇</span><span>Preview data — this coin's on-chain addresses aren't wired yet. Figures are illustrative.</span></div>
+
+  <!-- HERO -->
+  <section class="card pad hero">
+    <div class="hero-top">
+      <div class="avatar" id="avatar"></div>
+      <div class="coin-id">
+        <div class="coin-name">
+          <h1 id="coinName">—</h1>
+          <span class="ticker" id="coinTicker">—</span>
+          <span class="pill on" id="statusPill"><span class="d"></span><span id="statusText">On the curve</span></span>
+        </div>
+        <div class="addr-row">
+          <code id="coinAddr">0x…</code>
+          <button class="mini-copy" id="copyAddr">Copy</button>
+          <a id="explorerLink" target="_blank" rel="noopener">Explorer ↗</a>
+        </div>
+      </div>
+      <div class="price-block">
+        <div class="price-now tnum" id="priceNow">—</div>
+        <div class="delta up" id="priceDelta">—</div>
+        <div class="price-sub">Market cap <b class="tnum" id="mcNow">—</b></div>
+      </div>
+    </div>
+
+    <div class="curve-wrap">
+      <div class="curve-head">
+        <span class="section-label">Curve progress · start → graduation ceiling</span>
+        <span class="curve-pct tnum" id="curvePct">—</span>
+      </div>
+      <div class="meter"><div class="meter-fill" id="curveFill" style="width:0%"></div></div>
+      <div class="curve-ends">
+        <span>Raised <b class="tnum" id="raisedEnd">—</b></span>
+        <span>Graduates at <b class="tnum" id="targetEnd">4.2 ETH</b> · <b class="tnum" id="targetMc">~$34k</b> MC</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- STAT GRID -->
+  <section class="stat-grid" id="statGrid"></section>
+
+  <!-- CHART + TRADE -->
+  <section class="grid-2">
+    <div class="card pad chart-box">
+      <div class="card-head">
+        <h2>Price · <span id="chartSym" style="color:var(--text-3);font-weight:600">—</span></h2>
+        <div class="range-toggle" id="rangeToggle">
+          <button data-r="24h">24h</button>
+          <button data-r="7d">7d</button>
+          <button data-r="all" class="active">All</button>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="priceChart"></canvas>
+        <div class="chart-tip" id="chartTip"></div>
+      </div>
+    </div>
+
+    <div class="card pad">
+      <div class="tabs" id="tradeTabs">
+        <button data-side="buy" class="active">Buy</button>
+        <button data-side="sell">Sell</button>
+      </div>
+      <div class="field">
+        <label><span id="payLabel">You pay</span><span id="balHint">FCFS · no bot protection</span></label>
+        <div class="input-wrap">
+          <input id="amountIn" type="text" inputmode="decimal" placeholder="0.0" value="0.25" />
+          <span class="unit" id="payUnit">ETH</span>
+        </div>
+      </div>
+      <div class="est-row"><span id="estLabel">Est. tokens out</span><b class="tnum" id="estOut">—</b></div>
+      <div class="est-row"><span>Price impact (est.)</span><b class="tnum" id="impact">~0.4%</b></div>
+      <div class="note"><span class="tag">1% tax</span><span>+ 1% LP fee on every swap — unbypassable (V4 hook).</span></div>
+      <div class="slippage" id="slippage">
+        <span style="font-size:12px;color:var(--text-3);align-self:center;margin-right:2px">Slippage</span>
+        <button>0.5%</button><button class="active">1%</button><button>3%</button>
+      </div>
+      <button class="btn primary" id="tradeBtn" style="width:100%">Connect wallet to trade</button>
+
+      <div class="divider"></div>
+      <div class="airdrop">
+        <div class="card-head" style="margin-bottom:10px"><h2>Airdrop</h2><span style="font-size:11.5px;color:var(--text-3)">addr,amount per line</span></div>
+        <textarea id="airdropList" placeholder="0xabc…,10000&#10;0xdef…,5000"></textarea>
+        <div class="est-row" style="margin-top:8px"><span>Recipients</span><b class="tnum" id="dropCount">0</b></div>
+        <div class="est-row"><span>Total to send</span><b class="tnum" id="dropTotal">0</b></div>
+        <button class="btn" id="airdropBtn" style="width:100%;margin-top:8px">Send airdrop</button>
+        <div class="note" style="margin-bottom:0"><span class="tag">FCFS</span><span>No bot protection — first come, first served.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STAKING -->
+  <section class="card pad" style="margin-bottom:20px">
+    <div class="card-head">
+      <h2>Holder staking · <span style="color:var(--text-3);font-weight:600">RobinLockStaking</span></h2>
+      <span class="lock-badge"><span>🔒</span><span id="lockDaysBadge">30-day lock</span></span>
+    </div>
+    <div class="pool-grid">
+      <div class="pool-cell"><div class="lbl">Pool amount (rewards)</div><div class="val tnum" id="poolAmount">—</div></div>
+      <div class="pool-cell"><div class="lbl">Total staked</div><div class="val tnum" id="poolStaked">—</div></div>
+      <div class="pool-cell"><div class="lbl">Reservoir (undripped)</div><div class="val tnum" id="poolReservoir">—</div></div>
+      <div class="pool-cell apr"><div class="lbl">APR estimate</div><div class="val tnum" id="poolApr">—</div></div>
+    </div>
+    <div class="warn-box"><span class="ic">⚠</span><span>Staking <b>locks for 30 days</b>. You keep earning the coin the whole time and can claim rewards anytime, but withdrawing principal <b>before unlock costs a 10% early-exit penalty</b> — recycled into the reservoir for diamond hands.</span></div>
+
+    <div class="field">
+      <label><span>Amount to stake</span><span id="stakeBal">Balance —</span></label>
+      <div class="input-wrap"><input id="stakeAmount" type="text" inputmode="decimal" placeholder="0" value="100000" /><span class="unit" id="stakeUnit">TOKEN</span></div>
+    </div>
+    <div class="stake-actions">
+      <button class="btn primary" id="stakeBtn">Stake</button>
+      <button class="btn" id="unstakeBtn">Unstake</button>
+    </div>
+    <button class="btn" id="claimBtn" style="width:100%;margin-top:8px">Claim rewards</button>
+
+    <div class="userpos" id="userPos">
+      <div><div class="k">Your stake</div><div class="v tnum" id="usStaked">—</div></div>
+      <div><div class="k">Claimable</div><div class="v tnum" id="usClaimable">—</div></div>
+      <div><div class="k">Unlocks in</div><div class="v tnum" id="usUnlock">—</div></div>
+      <div id="usLockWrap"><span class="lock-badge" id="usLock">🔒 Locked</span></div>
+    </div>
+  </section>
+
+  <!-- TRUST -->
+  <section class="stat-grid trust-grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
+    <div class="card pad trust">
+      <div class="ic">🛡️</div>
+      <div><div class="section-label">Permanent floor</div><h3>Rug-proof ETH buy-wall</h3><div class="big tnum" id="floorEth">—</div><p>Add-only. No remove path exists — fed by the 0.2% sell carve + the 20% buy-LP slice at graduation.</p></div>
+    </div>
+    <div class="card pad trust">
+      <div class="ic">🎯</div>
+      <div><div class="section-label">Ambush band</div><h3 id="ambushTitle">Two-sided support — armed</h3><div class="big tnum" id="ambushEth">—</div><p>Passive sell-wall above spot. Pumps into it grow the floor; no gameable market-maker.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <div id="footNote">Robin V4 · curve-on-V4 launchpad · Robinhood Chain (4663). Values shown are mock-fed until this coin's on-chain addresses are wired in <code>config.js</code>.</div>
+  </footer>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import {
+    DEMO, GRAD, CHAIN, COINS, ADDR, demoSeries,
+  } from './config.js';
+  import {
+    initTheme, connectWallet, readProvider, walletProvider, ethersLib, ABI,
+    curveProgress, fmtUsd, fmtEth, fmtPct, fmtToken, compact, shortAddr,
+    fmtDuration, avatarGradient, copy, param, explorerUrl, qs,
+  } from './lib.js';
+
+  // ── state ────────────────────────────────────────────────────────────────
+  const tokenParam = (param('token') || '').toLowerCase();
+  const coinCfg = COINS[tokenParam] || null;   // per-coin addresses (deploy-filled)
+  const wired = !!(coinCfg && coinCfg.curve);   // do we have live addresses?
+  let S = structuredClone(DEMO);                // working coin state (mock-first)
+  if (tokenParam && tokenParam.startsWith('0x')) S.token = tokenParam;
+  let series = demoSeries();
+  let account = null, signer = null;
+  let side = 'buy', slippage = 1;
+
+  const toastEl = qs('#toast');
+  function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => toastEl.classList.remove('show'), 2600); }
+
+  // ── theme + chain chrome ────────────────────────────────────────────────
+  initTheme(qs('#themeBtn'));
+  qs('#chainName').textContent = CHAIN.name;
+  qs('#explorerLink').href = explorerUrl(S.token);
+  qs('#profileLink').href = 'profile.html' + (account ? `?address=${account}` : '');
+  if (!wired) qs('#demoBanner').classList.add('show');
+
+  // ── live reads (best-effort; silently degrades to mock) ─────────────────
+  async function hydrateLive() {
+    if (!wired) return;
+    const prov = await readProvider();
+    const e = await ethersLib();
+    if (!prov || !e) return;
+    try {
+      const curve = new e.Contract(coinCfg.curve, ABI.curve, prov);
+      const [startTick, gradTick, graduated, seeded] = await Promise.all([
+        curve.startTick(), curve.gradTick(), curve.graduated(), curve.seeded(),
+      ]);
+      S.startTick = Number(startTick); S.gradTick = Number(gradTick);
+      S.graduated = graduated; S.seeded = seeded;
+      // current tick via stateView.getSlot0(poolId) — poolId derivation belongs to the
+      // indexer; left as mock here. See note in report.
+      if (coinCfg.staking) {
+        const st = new e.Contract(coinCfg.staking, ABI.staking, prov);
+        const [pool, apr, resv] = await Promise.all([st.poolInfo(), st.aprBps(), st.reservoir()]);
+        S.staking.totalStaked = Number(e.formatUnits(pool.staked, S.decimals));
+        S.staking.rewardsBalance = Number(e.formatUnits(pool.rewardsHeld, S.decimals));
+        S.staking.reservoir = Number(e.formatUnits(resv, S.decimals));
+        S.staking.aprBps = Number(apr);
+      }
+      renderAll();
+    } catch (_) { /* stay on mock */ }
+  }
+
+  // ── render ──────────────────────────────────────────────────────────────
+  function renderHeader() {
+    qs('#avatar').style.background = avatarGradient(S.token);
+    qs('#avatar').textContent = (S.symbol || '?').slice(0, 2).toUpperCase();
+    qs('#coinName').textContent = S.name;
+    qs('#coinTicker').textContent = '$' + S.symbol;
+    qs('#coinAddr').textContent = shortAddr(S.token, 10, 8);
+    qs('#chartSym').textContent = '$' + S.symbol;
+    qs('#priceNow').textContent = fmtUsd(S.priceUsd);
+    const up = S.price24hChangePct >= 0;
+    const d = qs('#priceDelta');
+    d.className = 'delta ' + (up ? 'up' : 'down');
+    d.innerHTML = `<span>${up ? '▲' : '▼'}</span><span>${fmtPct(Math.abs(S.price24hChangePct))} 24h</span>`;
+    const mc = S.priceUsd * S.totalSupply;
+    qs('#mcNow').textContent = fmtUsd(mc, { compact: true });
+
+    // status pill
+    const pill = qs('#statusPill'), txt = qs('#statusText');
+    if (S.graduated) { pill.className = 'pill grad'; txt.textContent = 'Graduated'; }
+    else { pill.className = 'pill on'; txt.textContent = 'On the curve'; }
+
+    // curve meter
+    const p = curveProgress(S.startTick, S.gradTick, S.currentTick);
+    qs('#curveFill').style.width = (p * 100).toFixed(1) + '%';
+    qs('#curvePct').textContent = (p * 100).toFixed(1) + '%';
+    qs('#raisedEnd').textContent = fmtEth(S.raisedEth, 3);
+    qs('#targetEnd').textContent = fmtEth(GRAD.targetEth, 1);
+    qs('#targetMc').textContent = '~' + fmtUsd(GRAD.targetMcUsd, { compact: true });
+  }
+
+  function renderStats() {
+    const mc = S.priceUsd * S.totalSupply;
+    const cards = [
+      { lbl: 'ETH raised', val: S.raisedEth.toFixed(3) + ' ETH', sub: `of <b>${GRAD.targetEth} ETH</b> target`, prog: S.raisedEth / GRAD.targetEth },
+      { lbl: 'Market cap', val: fmtUsd(mc, { compact: true }), sub: `graduates ~<b>${fmtUsd(GRAD.targetMcUsd, { compact: true })}</b>`, prog: mc / GRAD.targetMcUsd },
+      { lbl: 'Tokens sold', val: compact(S.tokensSold), sub: `of <b>${compact(S.curveSupply)}</b> curve supply`, prog: S.tokensSold / S.curveSupply },
+      { lbl: 'Holders', val: S.holders.toLocaleString(), sub: 'unique wallets' },
+      { lbl: '24h volume', val: fmtUsd(S.volume24hUsd, { compact: true }), sub: 'across buys + sells' },
+    ];
+    qs('#statGrid').innerHTML = cards.map(c => `
+      <div class="stat">
+        <div class="lbl">${c.lbl}</div>
+        <div class="val tnum">${c.val}</div>
+        <div class="sub">${c.sub || ''}</div>
+        ${c.prog != null ? `<div class="track"><i style="width:${Math.min(100, c.prog * 100).toFixed(1)}%"></i></div>` : ''}
+      </div>`).join('');
+  }
+
+  function renderStaking() {
+    const k = S.staking;
+    qs('#poolAmount').textContent = compact(k.rewardsBalance) + ' ' + S.symbol;
+    qs('#poolStaked').textContent = compact(k.totalStaked) + ' ' + S.symbol;
+    qs('#poolReservoir').textContent = compact(k.reservoir) + ' ' + S.symbol;
+    qs('#poolApr').textContent = (k.aprBps / 100).toFixed(1) + '%';
+    qs('#lockDaysBadge').textContent = k.lockDays + '-day lock';
+    qs('#stakeUnit').textContent = S.symbol;
+    // user position
+    qs('#usStaked').textContent = compact(k.user.staked) + ' ' + S.symbol;
+    qs('#usClaimable').textContent = '+' + compact(k.user.claimable) + ' ' + S.symbol;
+    const lock = qs('#usLock');
+    if (k.user.locked) { lock.className = 'lock-badge'; lock.innerHTML = '🔒 Locked'; }
+    else { lock.className = 'lock-badge open'; lock.innerHTML = '✓ Unlocked'; }
+  }
+
+  function renderTrust() {
+    qs('#floorEth').textContent = fmtEth(S.floorEth, 2);
+    qs('#ambushEth').textContent = fmtEth(S.ambushBandEth, 2) + ' → floor';
+    qs('#ambushTitle').textContent = S.ambushArmed ? 'Two-sided support — armed' : 'Ambush — inactive';
+  }
+
+  function renderAll() { renderHeader(); renderStats(); renderStaking(); renderTrust(); drawChart(); }
+
+  // ── live countdowns ─────────────────────────────────────────────────────
+  const stakeFinishAt = Date.now() + S.staking.finishInDays * 86400e3;
+  const userUnlockAt = Date.now() + S.staking.user.unlockInDays * 86400e3;
+  function tickCountdowns() {
+    qs('#usUnlock').textContent = S.staking.user.locked ? fmtDuration((userUnlockAt - Date.now()) / 1000) : 'Unlocked';
+  }
+  setInterval(tickCountdowns, 1000);
+
+  // ── chart (hand-rolled canvas area + crosshair) ─────────────────────────
+  const cv = qs('#priceChart'), tip = qs('#chartTip');
+  let chartPts = [];
+  function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+  function seriesForRange(r) {
+    if (r === '24h') return series.slice(-24);
+    if (r === '7d') return series.slice(-42);
+    return series;
+  }
+  let curRange = 'all';
+  function drawChart() {
+    const data = seriesForRange(curRange);
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const padL = 8, padR = 72, padT = 14, padB = 20;
+    const plotW = w - padL - padR, plotH = h - padT - padB;
+    const min = Math.min(...data), max = Math.max(...data);
+    const rng = (max - min) || max || 1;
+    const lo = min - rng * 0.12, hi = max + rng * 0.12;
+    const X = i => padL + (i / (data.length - 1)) * plotW;
+    const Y = v => padT + (1 - (v - lo) / (hi - lo)) * plotH;
+    chartPts = data.map((v, i) => ({ x: X(i), y: Y(v), v }));
+
+    // gridlines + right-axis ticks (recessive, hairline)
+    ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1; ctx.fillStyle = css('--text-3');
+    ctx.font = '11px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+    const ticks = 4;
+    for (let i = 0; i <= ticks; i++) {
+      const val = lo + (hi - lo) * (i / ticks), y = Y(val);
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+      ctx.fillText(fmtUsd(val), w - 6, y);
+    }
+    ctx.textAlign = 'left';
+
+    // area fill
+    const line = css('--accent-line');
+    const grad = ctx.createLinearGradient(0, padT, 0, padT + plotH);
+    grad.addColorStop(0, hexA(line, .28)); grad.addColorStop(1, hexA(line, 0));
+    ctx.beginPath(); ctx.moveTo(chartPts[0].x, padT + plotH);
+    chartPts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(chartPts.at(-1).x, padT + plotH); ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+
+    // 2px line
+    ctx.beginPath(); chartPts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ctx.strokeStyle = line; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+
+    // emphasized endpoint: dot + 2px surface ring
+    const last = chartPts.at(-1);
+    ctx.beginPath(); ctx.arc(last.x, last.y, 5, 0, 7); ctx.fillStyle = line; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = css('--surface-1'); ctx.stroke();
+  }
+  function hexA(hex, a) {
+    hex = hex.replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const n = parseInt(hex, 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  }
+  cv.addEventListener('mousemove', ev => {
+    if (!chartPts.length) return;
+    const rect = cv.getBoundingClientRect(), mx = ev.clientX - rect.left;
+    let best = chartPts[0], bd = Infinity;
+    for (const p of chartPts) { const d = Math.abs(p.x - mx); if (d < bd) { bd = d; best = p; } }
+    tip.style.left = best.x + 'px'; tip.style.top = best.y + 'px';
+    tip.textContent = fmtUsd(best.v); tip.style.opacity = 1;
+  });
+  cv.addEventListener('mouseleave', () => tip.style.opacity = 0);
+  qs('#rangeToggle').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    qs('#rangeToggle').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+    curRange = b.dataset.r; drawChart();
+  });
+
+  // ── trade panel ─────────────────────────────────────────────────────────
+  function recalcTrade() {
+    const amt = parseFloat(qs('#amountIn').value) || 0;
+    const px = S.priceUsd, ethUsd = GRAD.ethUsd;
+    if (side === 'buy') {
+      qs('#payUnit').textContent = 'ETH'; qs('#estLabel').textContent = 'Est. tokens out';
+      const usdIn = amt * ethUsd * 0.99; // 1% tax
+      qs('#estOut').textContent = compact(usdIn / px) + ' ' + S.symbol;
+    } else {
+      qs('#payUnit').textContent = S.symbol; qs('#estLabel').textContent = 'Est. ETH out';
+      const usdOut = amt * px * 0.99;
+      qs('#estOut').textContent = (usdOut / ethUsd).toFixed(5) + ' ETH';
+    }
+  }
+  qs('#tradeTabs').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    side = b.dataset.side;
+    qs('#tradeTabs').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+    qs('#payLabel').textContent = side === 'buy' ? 'You pay' : 'You sell';
+    recalcTrade();
+  });
+  qs('#amountIn').addEventListener('input', recalcTrade);
+  qs('#slippage').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    qs('#slippage').querySelectorAll('button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active'); slippage = parseFloat(b.textContent);
+  });
+  qs('#tradeBtn').addEventListener('click', async () => {
+    if (!account) return toast('Connect a wallet to trade');
+    if (!wired) return toast('This coin isn\'t wired to on-chain addresses yet');
+    // Buys/sells route through the V4 pool + swap router (not a simple curve method).
+    // The router address + swap calldata are provided by deploy — wire here.
+    toast(`${side === 'buy' ? 'Buy' : 'Sell'} routes through the V4 pool — swap router wiring pending`);
+  });
+
+  // ── airdrop ─────────────────────────────────────────────────────────────
+  function parseAirdrop() {
+    const lines = qs('#airdropList').value.split('\n').map(l => l.trim()).filter(Boolean);
+    let count = 0, total = 0; const rows = [];
+    for (const l of lines) {
+      const [addr, amt] = l.split(',').map(s => (s || '').trim());
+      const a = parseFloat(amt);
+      if (/^0x[0-9a-fA-F]{40}$/.test(addr) && a > 0) { rows.push([addr, a]); count++; total += a; }
+    }
+    qs('#dropCount').textContent = count;
+    qs('#dropTotal').textContent = compact(total) + ' ' + S.symbol;
+    return rows;
+  }
+  qs('#airdropList').addEventListener('input', parseAirdrop);
+  qs('#airdropBtn').addEventListener('click', async () => {
+    const rows = parseAirdrop();
+    if (!rows.length) return toast('Add at least one valid "addr,amount" line');
+    if (!account || !signer) return toast('Connect a wallet to airdrop');
+    if (!wired) return toast('Token address not wired yet');
+    try {
+      const e = await ethersLib();
+      const token = new e.Contract(S.token, ABI.erc20, signer);
+      toast(`Sending ${rows.length} transfers… confirm in wallet`);
+      for (const [to, amt] of rows) {
+        await (await token.transfer(to, e.parseUnits(String(amt), S.decimals))).wait();
+      }
+      toast('Airdrop complete');
+    } catch (err) { toast('Airdrop failed: ' + (err.shortMessage || err.message || 'error')); }
+  });
+
+  // ── staking actions ─────────────────────────────────────────────────────
+  async function stakingContract() {
+    if (!account || !signer || !wired || !coinCfg.staking) return null;
+    const e = await ethersLib();
+    return { e, st: new e.Contract(coinCfg.staking, ABI.staking, signer), token: new e.Contract(S.token, ABI.erc20, signer) };
+  }
+  qs('#stakeBtn').addEventListener('click', async () => {
+    const c = await stakingContract();
+    if (!c) return toast(account ? 'Staking not wired for this coin yet' : 'Connect a wallet to stake');
+    try {
+      const amt = c.e.parseUnits(qs('#stakeAmount').value || '0', S.decimals);
+      toast('Approving…'); await (await c.token.approve(coinCfg.staking, amt)).wait();
+      toast('Staking — locks for 30 days…'); await (await c.st.stake(amt)).wait();
+      toast('Staked ✓'); hydrateLive();
+    } catch (err) { toast('Stake failed: ' + (err.shortMessage || err.message)); }
+  });
+  qs('#unstakeBtn').addEventListener('click', async () => {
+    const c = await stakingContract();
+    if (!c) return toast(account ? 'Staking not wired yet' : 'Connect a wallet');
+    if (S.staking.user.locked && !confirm('Still locked — unstaking now forfeits 10% as an early-exit penalty. Continue?')) return;
+    try {
+      const amt = c.e.parseUnits(qs('#stakeAmount').value || '0', S.decimals);
+      toast('Withdrawing…'); await (await c.st.withdraw(amt)).wait(); toast('Withdrawn ✓'); hydrateLive();
+    } catch (err) { toast('Withdraw failed: ' + (err.shortMessage || err.message)); }
+  });
+  qs('#claimBtn').addEventListener('click', async () => {
+    const c = await stakingContract();
+    if (!c) return toast(account ? 'Staking not wired yet' : 'Connect a wallet');
+    try { toast('Claiming…'); await (await c.st.getReward()).wait(); toast('Rewards claimed ✓'); hydrateLive(); }
+    catch (err) { toast('Claim failed: ' + (err.shortMessage || err.message)); }
+  });
+
+  // ── wallet ──────────────────────────────────────────────────────────────
+  qs('#connectBtn').addEventListener('click', async () => {
+    try {
+      const w = await connectWallet();
+      account = w.address; signer = w.signer;
+      qs('#connectBtn').textContent = shortAddr(account);
+      qs('#tradeBtn').textContent = side === 'buy' ? 'Buy ' + S.symbol : 'Sell ' + S.symbol;
+      qs('#profileLink').href = `profile.html?address=${account}`;
+      toast('Wallet connected');
+    } catch (err) { toast(err.message === 'No injected wallet found' ? 'No wallet detected — install one to trade' : 'Connection cancelled'); }
+  });
+
+  // copy address
+  qs('#copyAddr').addEventListener('click', async () => { toast(await copy(S.token) ? 'Address copied' : 'Copy failed'); });
+
+  // redraw chart on theme change + resize
+  new MutationObserver(drawChart).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawChart);
+  let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(drawChart, 120); });
+
+  // ── boot ────────────────────────────────────────────────────────────────
+  renderAll(); recalcTrade(); parseAirdrop(); tickCountdowns();
+  hydrateLive();
+</script>
