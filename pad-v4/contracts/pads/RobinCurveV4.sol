@@ -328,8 +328,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (!seeded) revert NotSeeded();
         if (graduated) revert AlreadyGraduated();
         if (tokenIn == 0) revert BadLiquidity();
-        (, int24 t,,) = stateView.getSlot0(_poolId());
-        if (t >= gradTick) revert NotReady(); // spot already at/above the ceiling — nothing to restore
+        (uint160 curSqrt,,,) = stateView.getSlot0(_poolId());
+        if (curSqrt >= TickMath.getSqrtPriceAtTick(gradTick)) revert NotReady(); // already at/above the ceiling
         IERC20(token).safeTransferFrom(msg.sender, address(this), tokenIn);
         uint256 consumed;
         (ethOut, consumed) = abi.decode(poolManager.unlock(abi.encode(Op.RESTORE, tokenIn)), (uint256, uint256));
@@ -414,13 +414,18 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         // party planted liquidity under gradTick to shove it there), sell on-hand token UP to the ceiling limit.
         // In the empty zone this consumes ~0 (no liquidity below gradTick); against any planted liquidity it powers
         // through — bounded by our balance — until spot lands EXACTLY at gradTick, so the permanent LP seeds honest.
-        (, int24 curTick,,) = stateView.getSlot0(_poolId());
-        if (curTick < gradTick) {
+        // Compare SQRT PRICE, not tick. A buy capped exactly at the ceiling lands sqrtPrice == gradSqrt but
+        // tick == gradTick-1 (downward-crossing convention) — that is already AT the ceiling, so the nudge must
+        // be SKIPPED; running it would swap with limit == current price and revert PriceLimitAlreadyExceeded.
+        uint160 gradSqrt = TickMath.getSqrtPriceAtTick(gradTick);
+        (uint160 curSqrt,,,) = stateView.getSlot0(_poolId());
+        if (curSqrt < gradSqrt) {
             // Budget the nudge to ≤1% of the reserve ONLY (never the platform fee book — that avoids the
             // underflow at raisedEth/tokenReserve below), and FAIL CLOSED: if it can't restore spot to the
             // exact ceiling (e.g. a griefer planted deep liquidity under gradTick), revert rather than bleed the
-            // reserve into their position. In the honest overshoot case the zone below gradTick is empty, so the
-            // swap crosses it for ~0 and lands exactly at gradTick.
+            // reserve into their position (restoreCeiling() then recovers it with caller-supplied token). In the
+            // honest overshoot case the zone below gradTick is empty, so the swap crosses it for ~0 and lands
+            // exactly at gradTick.
             uint256 budget = IERC20(token).balanceOf(address(this)) / NUDGE_MAX_FRACTION;
             if (budget == 0) budget = 1; // [D-1] never truncate to 0 (tiny/low-decimal reserve) → false brick
             {
@@ -429,15 +434,15 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
                     SwapParams({
                         zeroForOne: false, // token-in → price UP toward the ceiling
                         amountSpecified: -int256(budget),
-                        sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(gradTick)
+                        sqrtPriceLimitX96: gradSqrt
                     }),
                     ""
                 );
                 _resolve(currency0, sd.amount0()); // take any ETH out
                 _resolve(currency1, sd.amount1()); // settle the (tiny) token consumed
             }
-            (, int24 nowTick,,) = stateView.getSlot0(_poolId());
-            if (nowTick != gradTick) revert CeilingNotRestored(); // never seed the permanent LP at a fake price
+            (uint160 nowSqrt,,,) = stateView.getSlot0(_poolId());
+            if (nowSqrt != gradSqrt) revert CeilingNotRestored(); // never seed the permanent LP at a fake price
         }
 
         // (a) realize accrued fees → platform book (taken to this contract, accrued, NOT sent to platform inline)
