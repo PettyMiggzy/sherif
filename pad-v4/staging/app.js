@@ -100,6 +100,68 @@ async function launch() {
   } catch (e) { log("launch failed: " + (e.shortMessage || e.message), "err"); }
 }
 
+// ── revert decoding + gas ────────────────────────────────────────────────────────
+// This Orbit L2 has no EIP-1559. We send legacy type-0 txs with an EXPLICIT gasLimit so ethers never
+// calls eth_estimateGas — the testnet RPC returns revert errors in a shape ethers v6 can't classify
+// ("could not coalesce error"), which hides the real reason. We preview with staticCall instead, and
+// decode the revert data ourselves against the hook / v4-core / PoolSwapTest / Solidity error sets.
+const GAS = { swap: 900000n, approve: 120000n, graduate: 1600000n };
+const ERRORS = new ethers.Interface([
+  "error ExactOutputNotSupported()",
+  "error CorporateActionCurb()",
+  "error SwapAmountCannotBeZero()",
+  "error PriceLimitAlreadyExceeded(uint160 current, uint160 limit)",
+  "error PriceLimitOutOfBounds(uint160 limit)",
+  "error NotEnoughLiquidity(bytes32 poolId)",
+  "error PoolNotInitialized()",
+  "error PoolAlreadyInitialized()",
+  "error CurrencyNotSettled()",
+  "error ManagerLocked()",
+  "error TicksMisordered(int24 lower, int24 upper)",
+  "error TickLowerOutOfBounds(int24 tick)",
+  "error TickUpperOutOfBounds(int24 tick)",
+  "error NoSwapOccurred()",
+  "error HookDeltaExceedsSwapAmount()",
+  "error Error(string reason)",
+  "error Panic(uint256 code)",
+]);
+
+// Dig the revert-data hex out of wherever ethers stashed it on this RPC (it varies: e.data, nested
+// e.info.error.data, or embedded in a message string).
+function revertHex(e) {
+  const seen = new Set();
+  const stack = [e];
+  while (stack.length) {
+    const v = stack.pop();
+    if (v == null || seen.has(v)) continue;
+    if (typeof v === "string") {
+      const m = v.match(/0x[0-9a-fA-F]{8,}/);
+      if (m) return m[0];
+      continue;
+    }
+    if (typeof v !== "object") continue;
+    seen.add(v);
+    for (const k of ["data", "error", "info", "value", "cause", "shortMessage", "message", "body", "reason"]) {
+      if (k in v) stack.push(v[k]);
+    }
+  }
+  return null;
+}
+function reason(e) {
+  const d = revertHex(e);
+  if (d && d.length >= 10) {
+    try {
+      const p = ERRORS.parseError(d);
+      if (p) {
+        const args = p.args && p.args.length ? "(" + p.args.map((x) => x.toString()).join(", ") + ")" : "";
+        return p.name + args;
+      }
+    } catch {}
+    return "revert " + d.slice(0, 10) + " — unrecognized selector (paste this to the dev)";
+  }
+  return e?.shortMessage || e?.reason || (e?.info && e.info.error && e.info.error.message) || e?.message || "unknown error";
+}
+
 // ── BUY / SELL (via PoolSwapTest router) ─────────────────────────────────────────
 function router() {
   const r = ($("router").value || CFG.ADDR.swapRouter || "").trim();
@@ -111,11 +173,14 @@ async function buy() {
   try {
     const amt = ethers.parseEther($("buyAmt").value || "0.001");
     const r = router();
-    const tx = await r.swap(launched.key, { zeroForOne: true, amountSpecified: -amt, sqrtPriceLimitX96: MIN_SQRT },
-      { takeClaims: false, settleUsingBurn: false }, "0x", { value: amt, type: 0 });
+    const args = [launched.key, { zeroForOne: true, amountSpecified: -amt, sqrtPriceLimitX96: MIN_SQRT },
+      { takeClaims: false, settleUsingBurn: false }, "0x"];
+    try { await r.swap.staticCall(...args, { value: amt }); }
+    catch (pe) { return log("buy would revert → " + reason(pe), "err"); }
+    const tx = await r.swap(...args, { value: amt, type: 0, gasLimit: GAS.swap });
     log(`buy ${$("buyAmt").value} ETH <a href="${ex(tx.hash)}" target="_blank">${tx.hash.slice(0, 10)}…</a>`);
     await tx.wait(); log("buy filled ✓", "ok"); refresh();
-  } catch (e) { log("buy failed: " + (e.shortMessage || e.message), "err"); }
+  } catch (e) { log("buy failed: " + reason(e), "err"); }
 }
 async function sell() {
   if (!launched) return;
@@ -125,21 +190,28 @@ async function sell() {
     const amt = bal / 2n; // sell half
     if (amt === 0n) return log("Nothing to sell.", "warn");
     const r = router();
-    await (await tok.approve(await r.getAddress(), ethers.MaxUint256, { type: 0 })).wait();
-    const tx = await r.swap(launched.key, { zeroForOne: false, amountSpecified: -amt, sqrtPriceLimitX96: MAX_SQRT },
-      { takeClaims: false, settleUsingBurn: false }, "0x", { type: 0 });
+    const rAddr = await r.getAddress();
+    log("approving token → router…");
+    await (await tok.approve(rAddr, ethers.MaxUint256, { type: 0, gasLimit: GAS.approve })).wait();
+    const args = [launched.key, { zeroForOne: false, amountSpecified: -amt, sqrtPriceLimitX96: MAX_SQRT },
+      { takeClaims: false, settleUsingBurn: false }, "0x"];
+    try { await r.swap.staticCall(...args); }
+    catch (pe) { return log("sell would revert → " + reason(pe), "err"); }
+    const tx = await r.swap(...args, { type: 0, gasLimit: GAS.swap });
     log(`sell half <a href="${ex(tx.hash)}" target="_blank">${tx.hash.slice(0, 10)}…</a>`);
     await tx.wait(); log("sell filled ✓", "ok"); refresh();
-  } catch (e) { log("sell failed: " + (e.shortMessage || e.message), "err"); }
+  } catch (e) { log("sell failed: " + reason(e), "err"); }
 }
 async function graduate() {
   if (!launched) return;
   try {
     const curve = new ethers.Contract(launched.curve, CFG.ABI.curve, signer);
-    const tx = await curve.graduate({ type: 0 });
+    try { await curve.graduate.staticCall(); }
+    catch (pe) { return log("graduate would revert → " + reason(pe), "err"); }
+    const tx = await curve.graduate({ type: 0, gasLimit: GAS.graduate });
     log(`graduate <a href="${ex(tx.hash)}" target="_blank">${tx.hash.slice(0, 10)}…</a> — waiting…`);
     await tx.wait(); log("🎓 GRADUATED — permanent LP locked, floor seeded.", "ok"); refresh();
-  } catch (e) { log("graduate failed: " + (e.shortMessage || e.message), "err"); }
+  } catch (e) { log("graduate failed: " + reason(e), "err"); }
 }
 
 async function refresh() {
