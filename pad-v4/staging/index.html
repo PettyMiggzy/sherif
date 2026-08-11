@@ -25,11 +25,48 @@
   #log div { padding:2px 0; border-bottom:1px solid #171e25; }
   #log a { color:var(--acc); } .ok { color:var(--acc); } .err { color:var(--err); } .warn { color:var(--warn); }
   h3 { font-size:14px; margin:0 0 6px; } .hint { color:var(--dim); font-size:12px; }
+  #bootErr { display:none; background:#2a1518; color:#ffb4b4; border:1px solid #5a2530; border-radius:10px; padding:12px 14px; margin:14px 0; font:13px/1.5 ui-monospace,Menlo,monospace; }
+  #bootErr b { color:#ffd9a0; }
 </style>
+<script>
+// Non-module bootstrap diagnostics — runs even if the ES module (app.js) fails to load, so a
+// dead button is never a silent mystery. Surfaces the real cause (bad MIME, import error, no wallet).
+(function () {
+  window.__APP_READY__ = false;
+  var shown = false;
+  function banner(html) {
+    var b = document.getElementById("bootErr");
+    if (!b) return;
+    b.style.display = "block";
+    b.innerHTML += "<div>" + html + "</div>";
+    shown = true;
+  }
+  window.addEventListener("error", function (e) {
+    var m = e.message || (e.error && e.error.message) || "script error";
+    if (e.filename) m += "  (" + e.filename.split("/").pop() + (e.lineno ? ":" + e.lineno : "") + ")";
+    banner("<b>⚠ load error:</b> " + m);
+  }, true);
+  window.addEventListener("unhandledrejection", function (e) {
+    banner("<b>⚠</b> " + ((e.reason && (e.reason.message || e.reason)) || "promise rejected"));
+  });
+  window.addEventListener("load", function () {
+    setTimeout(function () {
+      if (!window.__APP_READY__ && !shown)
+        banner("<b>⚠ app.js did not initialize.</b> The ES module failed to load — almost always the server sent " +
+               "<b>ethers.min.js</b> / <b>config.js</b> with the wrong Content-Type (ES modules require <b>text/javascript</b>). " +
+               "Re-serve this folder with <b>node serve.js</b> and hard-refresh.");
+      if (!window.ethereum && !shown)
+        banner("<b>ℹ no wallet detected</b> (window.ethereum missing). Open in a desktop browser with the MetaMask extension, " +
+               "or your wallet app's in-app browser.");
+    }, 2500);
+  });
+})();
+</script>
 </head>
 <body>
 <div class="wrap">
   <span id="who"></span>
+  <div id="bootErr"></div>
   <h1>Robin V4 — Testnet Bench <span class="badge">team only · testnet</span></h1>
   <div class="sub">Exercises the live V4 contracts on Robinhood Chain Testnet (46630). Faucet ETH only. Not the production UI.</div>
   <button id="btnConnect">Connect wallet (testnet)</button>

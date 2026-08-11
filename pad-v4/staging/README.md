@@ -15,12 +15,23 @@ It is a throwaway test harness, not the shipping frontend. Do not point it at ma
    Copy the printed `PoolSwapTest` address — either paste it into `ADDR.swapRouter` in `staging/config.js`
    and re-serve, or just paste it into the app's “Swap router” field each session.
 
-2. **Serve the folder, team-gated.** Any of:
-   - **Vercel** (own project, password-protected): `vercel deploy pad-v4/staging --prod` then turn on
-     Deployment Protection / a password in the project settings. Share the URL + password with the team.
-   - **Quick local share:** `cd pad-v4/staging && npx serve` (or `python3 -m http.server`), expose via
-     `cloudflared tunnel` / `ngrok`, hand the team the link.
+2. **Serve the folder, team-gated.** Use the bundled server — it pins the correct `Content-Type` for
+   the ES modules (a mislabeled `.js` silently kills the whole app: every button goes dead with no
+   error) and disables caching so nobody gets a stale build:
+   ```bash
+   cd pad-v4/staging && node serve.js        # http://localhost:8080
+   ```
+   Then expose it and share the link:
+   - **Quick share:** `cloudflared tunnel --url http://localhost:8080` (or `ngrok http 8080`) → hand
+     the team the printed URL.
+   - **Vercel** (own project, password-protected): `vercel deploy pad-v4/staging --prod`, then turn on
+     Deployment Protection / a password in the project settings. (Vercel sets JS MIME correctly on its
+     own, so `serve.js` isn't needed there.)
    - It's `noindex,nofollow` + an unguessable path is enough for a short test window.
+
+   > **Dead "Connect wallet" button?** The page now self-diagnoses: if the module didn't load (wrong
+   > MIME / stale cache) or there's no wallet, a red banner at the top says exactly why. The usual fix
+   > is to serve with `node serve.js` (not `npx serve`/`http.server`) and hard-refresh.
 
 ## How the team tests (each person)
 

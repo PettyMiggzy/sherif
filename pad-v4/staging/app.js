@@ -163,3 +163,8 @@ $("btnBuy").onclick = buy;
 $("btnSell").onclick = sell;
 $("btnGrad").onclick = graduate;
 $("btnRefresh").onclick = refresh;
+
+// Signals to the non-module bootstrap diagnostic (index.html) that the ES module graph loaded and
+// every button handler is attached. If this never runs, the page shows a "did not initialize" banner.
+window.__APP_READY__ = true;
+console.log("Robin V4 bench ready — handlers attached.");
