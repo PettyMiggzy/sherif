@@ -98,6 +98,10 @@ export const ABI = {
   stateView: [
     'function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)',
   ],
+  hook: [
+    'function referralOwed(address referrer, address token) view returns (uint256)',
+    'function claimReferral(address token) returns (uint256)',
+  ],
 };
 
 export const PRESALE_STATE = { 0: 'Open', 1: 'Launched', 2: 'Failed' };

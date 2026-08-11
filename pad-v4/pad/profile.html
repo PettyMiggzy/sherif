@@ -183,6 +183,12 @@
     <div id="presaleCard"></div>
   </section>
 
+  <!-- REFERRALS -->
+  <section class="section">
+    <div class="section-head"><h2>Referrals</h2><span class="count" id="refCount">—</span></div>
+    <div id="refCard"></div>
+  </section>
+
   <footer>Robin V4 · curve-on-V4 launchpad · Robinhood Chain (4663). Lock countdowns tick live. Positions are mock-fed until on-chain reads are wired in <code>config.js</code>.</footer>
 </main>
 
@@ -318,6 +324,34 @@
     qs('#presaleCard').querySelectorAll('.presale-btn').forEach(b => b.onclick = () => act(b.dataset.act, b.dataset.sym));
   }
 
+  function renderReferrals() {
+    const refs = P.referrals || [];
+    qs('#refCount').textContent = refs.length + (refs.length === 1 ? ' coin' : ' coins');
+    const link = `${location.origin}${location.pathname.replace(/profile\.html$/, 'index.html')}?ref=${addr}`;
+    const totalUsd = refs.reduce((s, r) => s + r.earned * r.priceUsd, 0);
+    const totalBuys = refs.reduce((s, r) => s + (r.buys || 0), 0);
+    const head = `<div class="card pad" style="margin-bottom:14px">
+      <div class="kv" style="padding:0 0 11px"><span class="k">Your referral link</span><span class="v" style="color:var(--good)">${fmtUsd(totalUsd)} earned · ${totalBuys} buys</span></div>
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+        <code style="font-family:ui-monospace,monospace;font-size:12.5px;color:var(--text-1);background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 11px;overflow-x:auto;flex:1;min-width:0;white-space:nowrap">${link}</code>
+        <button class="btn sm" id="copyRef">Copy link</button>
+      </div>
+      <div style="color:var(--text-3);font-size:12.5px;margin-top:10px">Share it anywhere. When someone buys a coin through your link you earn a slice of the platform's buy fee — paid in that coin, at <b>no extra cost to them</b>.</div>
+    </div>`;
+    const cards = refs.length ? `<div class="pos-grid">${refs.map(r => {
+      const val = r.earned * r.priceUsd;
+      return `<div class="pos">
+        <div class="top">${ava(r.symbol, 'ava')}<div><div class="nm">${r.name}</div><div class="sy">$${r.symbol} · ${r.buys} referred buys</div></div></div>
+        <div class="kv"><span class="k">Earned</span><span class="v tnum" style="color:var(--good)">+${compact(r.earned)} $${r.symbol}</span></div>
+        <div class="kv"><span class="k">Value</span><span class="v tnum">${fmtUsd(val, { compact: val >= 1000 })}</span></div>
+        <div class="pos-actions"><button class="btn primary refclaim-btn" data-sym="${r.symbol}" style="flex:1">Claim $${r.symbol}</button></div>
+      </div>`;
+    }).join('')}</div>` : emptyState('🔗', 'No referral earnings yet', 'Share your link above — you earn a cut of the buy fee on every buy it brings in.');
+    qs('#refCard').innerHTML = head + cards;
+    qs('#copyRef').onclick = async () => toast(await copy(link) ? 'Referral link copied 🔗' : 'Copy failed');
+    qs('#refCard').querySelectorAll('.refclaim-btn').forEach(b => b.onclick = () => act('claim referral', b.dataset.sym));
+  }
+
   function emptyState(ic, t, s) {
     return `<div class="empty"><div class="ic">${ic}</div><div class="t">${t}</div><div class="s">${s}</div></div>`;
   }
@@ -352,5 +386,5 @@
   qs('#copyAddr').addEventListener('click', async () => toast(await copy(addr) ? 'Address copied' : 'Copy failed'));
 
   // boot
-  renderHeader(); renderHoldings(); renderStaking(); renderLaunched(); renderPresales(); tick();
+  renderHeader(); renderHoldings(); renderStaking(); renderLaunched(); renderPresales(); renderReferrals(); tick();
 </script>

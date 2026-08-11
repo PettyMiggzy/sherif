@@ -138,4 +138,11 @@ export const DEMO_PROFILE = {
     { symbol: 'MOONR', name: 'Moon Reserve', contributedEth: 0.35, raisedEth: 3.1, targetEth: 5.0, state: 0, deadlineInDays: 2 }, // Open
     { symbol: 'RUGME', name: 'Rug Me Not',   contributedEth: 0.20, raisedEth: 1.2, targetEth: 6.0, state: 2, deadlineInDays: 0 }, // Failed → refund
   ],
+  // referral earnings — a slice of the platform's buy tax on buys that came through your ref link (paid in the
+  // coin, per coin you referred). Mirrors hook.referralOwed(you, token); claim with hook.claimReferral(token).
+  referrals: [
+    { symbol: 'TROLL', name: 'Troll Cat',      earned: 1_240_000, priceUsd: 0.00002158, buys: 86 },
+    { symbol: 'PURRP', name: 'Purr Protocol',  earned: 402_000,   priceUsd: 0.00009100, buys: 41 },
+    { symbol: 'GIGA',  name: 'Gigachad',       earned: 95_000,    priceUsd: 0.00005400, buys: 12 },
+  ],
 };
