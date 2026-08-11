@@ -122,6 +122,7 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     event BoostOracleSet(address indexed oracle);
     event AntiJitDelaySet(uint32 delay);
     event Reweighed(uint8 indexed side, address indexed user, uint256 newWeight);
+    event WeightSyncFailed(uint8 indexed side, address indexed user, uint256 newWeight);
     event PlatformClaimFeeSet(uint16 bps);
     event PlatformTreasurySet(address indexed treasury);
     event PlatformClaimFeeTaken(address indexed asset, uint256 amount);
@@ -264,7 +265,13 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
             totalWeight[side] = totalWeight[side] - old + nw;
             emit Reweighed(side, user, nw);
         }
-        if (hookWired && side == weightedSide) hook.onWeightChange(poolId, user, nw);
+        // [audit M2] The hook notification is a reward-side side effect — it must NEVER be able to block
+        // principal movement (stake/unstake both call _reweigh). Mirror the boostOracle try/catch so a
+        // paused / upgraded-to-reverting / de-listed hook can't freeze a staker's principal.
+        if (hookWired && side == weightedSide) {
+            try hook.onWeightChange(poolId, user, nw) {}
+            catch { emit WeightSyncFailed(side, user, nw); }
+        }
     }
 
     // ─────────────────────────────────────────────────────── user actions ──

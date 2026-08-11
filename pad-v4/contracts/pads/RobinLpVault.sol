@@ -60,6 +60,10 @@ contract RobinLpVault is IUnlockCallback, ReentrancyGuard {
     uint256 public accFee1PerLiq; // token fees per unit liquidity
     uint256 public feeReserve0; // ETH fees physically held on this contract awaiting claims (NOT refundable deposit)
     uint256 public feeReserve1; // token fees physically held on this contract awaiting claims
+    // [audit L6] Integer-division remainder carried to the next distribution, so no fee dust is ever
+    // stranded unattributable in feeReserve (and a tiny fee that would floor the increment to 0 is not lost).
+    uint256 public feeCarry0;
+    uint256 public feeCarry1;
     mapping(address => uint256) public debt0;
     mapping(address => uint256) public debt1;
     mapping(address => uint256) public pending0;
@@ -79,6 +83,8 @@ contract RobinLpVault is IUnlockCallback, ReentrancyGuard {
     error ZeroAddress();
     error ZeroLiquidity();
     error Insufficient();
+    error Expired();
+    error Slippage();
 
     constructor(
         address poolManager_,
@@ -119,7 +125,12 @@ contract RobinLpVault is IUnlockCallback, ReentrancyGuard {
     /// @notice Provide liquidity with ETH (msg.value) + up to `tokenMax` token. The vault adds as much as both
     /// sides allow at the current price, credits you the liquidity, and refunds any unused ETH/token. You must
     /// have approved this vault for `tokenMax` of the token.
-    function deposit(uint256 tokenMax) external payable nonReentrant returns (uint128 minted) {
+    /// @param minMinted revert if fewer than this many liquidity units are minted — bounds the sqrtPrice at
+    ///        which your liquidity is composed, so a sandwich can't skew the ETH/token ratio against you. Pass 0
+    ///        only if you accept any composition.
+    /// @param deadline revert if mined after this timestamp.
+    function deposit(uint256 tokenMax, uint128 minMinted, uint256 deadline) external payable nonReentrant returns (uint128 minted) {
+        if (block.timestamp > deadline) revert Expired();
         if (msg.value == 0 || tokenMax == 0) revert ZeroLiquidity();
         _harvest();
         _settlePending(msg.sender);
@@ -130,6 +141,7 @@ contract RobinLpVault is IUnlockCallback, ReentrancyGuard {
         _tokIn = tokenMax;
         minted = abi.decode(poolManager.unlock(abi.encode(Op.ADD)), (uint128));
         if (minted == 0) revert ZeroLiquidity();
+        if (minted < minMinted) revert Slippage(); // [audit M3] add-liquidity slippage guard
 
         liquidityOf[msg.sender] += minted;
         totalLiquidity += minted;
@@ -229,17 +241,25 @@ contract RobinLpVault is IUnlockCallback, ReentrancyGuard {
         int128 a0 = delta.amount0();
         int128 a1 = delta.amount1();
         // tl > 0 always here (COLLECT only runs from _harvest, which no-ops when totalLiquidity == 0)
+        // [audit L6] Distribute (fee + carried remainder); carry forward whatever integer division can't yet
+        // attribute, so no dust is stranded and a sub-threshold fee (f*ACC < tl) accumulates instead of vanishing.
         if (a0 > 0) {
             uint256 f = uint256(uint128(a0));
             poolManager.take(currency0, address(this), f);
-            accFee0PerLiq += (f * ACC_PRECISION) / tl;
             feeReserve0 += f;
+            uint256 amt = f + feeCarry0;
+            uint256 inc = (amt * ACC_PRECISION) / tl;
+            accFee0PerLiq += inc;
+            feeCarry0 = amt - (inc * tl) / ACC_PRECISION;
         }
         if (a1 > 0) {
             uint256 f = uint256(uint128(a1));
             poolManager.take(currency1, address(this), f);
-            accFee1PerLiq += (f * ACC_PRECISION) / tl;
             feeReserve1 += f;
+            uint256 amt = f + feeCarry1;
+            uint256 inc = (amt * ACC_PRECISION) / tl;
+            accFee1PerLiq += inc;
+            feeCarry1 = amt - (inc * tl) / ACC_PRECISION;
         }
     }
 

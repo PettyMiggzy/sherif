@@ -46,7 +46,7 @@ const cfg = {
   },
   ABI: {
     factory: pick(factory.abi, ["launch"]),
-    curve: pick(curve.abi, ["ready", "graduated", "seeded", "graduate", "curveL", "startTick", "gradTick", "setStaking", "setFloor", "staking", "floor"]),
+    curve: pick(curve.abi, ["ready", "graduated", "seeded", "graduate", "curveL", "startTick", "gradTick", "fee", "setStaking", "setFloor", "staking", "floor"]),
     stateView: pick(stateView.abi, ["getSlot0"]),
     token: [
       { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "a", type: "address" }], outputs: [{ type: "uint256" }] },

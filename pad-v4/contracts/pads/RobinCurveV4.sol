@@ -61,7 +61,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     enum Op {
         SEED,
         COLLECT,
-        GRADUATE_PULL
+        GRADUATE_PULL,
+        RESTORE
     }
 
     uint48 internal constant MAX_UINT48 = type(uint48).max;
@@ -112,6 +113,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     event Graduated(uint256 lpTokenId, uint256 raisedEth, uint256 toStaking, uint256 platformReward, uint256 creatorReward);
     event StakingFunded(uint256 amount);
     event FloorFunded(uint256 amount);
+    event CeilingRestored(address indexed by, uint256 tokenSpent, uint256 ethOut);
 
     error NotPoolManager();
     error NotFactory();
@@ -314,6 +316,32 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         _fundFloor();
     }
 
+    /// @notice Permissionless anti-grief recovery for graduation. A third party can plant Uniswap-v4 liquidity
+    /// BELOW gradTick and push spot under the ceiling; graduate()'s reserve-budgeted nudge (≤1% of the reserve)
+    /// then can't buy back through that planted depth, so it reverts CeilingNotRestored and the raise is stuck.
+    /// This lets ANYONE push spot back UP to the ceiling using their OWN token (never the curve reserve, so the
+    /// permanent-LP token leg is never starved): the supplied token is swapped → ETH up to the gradTick limit,
+    /// and BOTH the ETH proceeds and any unspent token are refunded to the caller — a fair swap that merely
+    /// undoes the manipulation (the caller reclaims the griefer's planted ETH as they restore the price). After
+    /// this, graduate() finds spot at the ceiling and proceeds normally.
+    function restoreCeiling(uint256 tokenIn) external nonReentrant returns (uint256 ethOut, uint256 tokenRefunded) {
+        if (!seeded) revert NotSeeded();
+        if (graduated) revert AlreadyGraduated();
+        if (tokenIn == 0) revert BadLiquidity();
+        (, int24 t,,) = stateView.getSlot0(_poolId());
+        if (t >= gradTick) revert NotReady(); // spot already at/above the ceiling — nothing to restore
+        IERC20(token).safeTransferFrom(msg.sender, address(this), tokenIn);
+        uint256 consumed;
+        (ethOut, consumed) = abi.decode(poolManager.unlock(abi.encode(Op.RESTORE, tokenIn)), (uint256, uint256));
+        tokenRefunded = tokenIn - consumed;
+        if (tokenRefunded > 0) IERC20(token).safeTransfer(msg.sender, tokenRefunded);
+        if (ethOut > 0) {
+            (bool ok,) = payable(msg.sender).call{value: ethOut}("");
+            if (!ok) revert EthSendFailed();
+        }
+        emit CeilingRestored(msg.sender, consumed, ethOut);
+    }
+
     /// @notice Wire the pad's staking pool exactly once, by the platform (deployed after launch).
     function setStaking(address s) external {
         if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
@@ -343,6 +371,9 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
             _seed(amount);
         } else if (op == Op.COLLECT) {
             _collect();
+        } else if (op == Op.RESTORE) {
+            (, uint256 tokenIn) = abi.decode(data, (Op, uint256));
+            return _restore(tokenIn);
         } else {
             _graduatePull();
         }
@@ -425,6 +456,29 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         );
         if (d.amount0() > 0) poolManager.take(currency0, address(this), uint256(uint128(d.amount0())));
         if (d.amount1() > 0) poolManager.take(currency1, address(this), uint256(uint128(d.amount1())));
+    }
+
+    /// @dev Swap exactly the caller-supplied token → ETH, price UP toward the ceiling limit (gradTick). Returns
+    /// the ETH taken out (refunded to the caller) and the token actually consumed. Never touches the curve
+    /// reserve: the token leg is settled from the caller's just-transferred tokenIn (surplus refunded by the
+    /// external wrapper), and only the swap's own ETH output is taken here.
+    function _restore(uint256 tokenIn) internal returns (bytes memory) {
+        BalanceDelta sd = poolManager.swap(
+            _poolKey(),
+            SwapParams({
+                zeroForOne: false, // token-in → price UP toward the ceiling
+                amountSpecified: -int256(tokenIn),
+                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(gradTick)
+            }),
+            ""
+        );
+        int128 a0 = sd.amount0();
+        int128 a1 = sd.amount1();
+        uint256 ethOut = a0 > 0 ? uint256(uint128(a0)) : 0;
+        uint256 consumed = a1 < 0 ? uint256(uint128(-a1)) : 0;
+        _resolve(currency0, a0); // take ETH out to this contract (refunded to the caller by restoreCeiling)
+        _resolve(currency1, a1); // settle the token consumed from the transferred tokenIn
+        return abi.encode(ethOut, consumed);
     }
 
     /// @dev Take a fee delta to this contract and route it per the v2 model:

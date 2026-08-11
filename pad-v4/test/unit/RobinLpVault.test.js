@@ -38,7 +38,7 @@ describe("RobinLpVault — provide liquidity, earn fees (real PoolManager)", () 
 
   async function deposit(who, eth, tokMax) {
     await tok.connect(who).approve(await vault.getAddress(), ethers.MaxUint256);
-    return vault.connect(who).deposit(E(tokMax), { value: E(eth) });
+    return vault.connect(who).deposit(E(tokMax), 0, ethers.MaxUint256, { value: E(eth) });
   }
   const buy = (amt) => sw.connect(trader).swap(
     key, { zeroForOne: true, amountSpecified: -E(amt), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
@@ -106,8 +106,19 @@ describe("RobinLpVault — provide liquidity, earn fees (real PoolManager)", () 
   });
 
   it("reverts a zero-side deposit and an over-withdraw", async () => {
-    await expect(vault.connect(alice).deposit(0, { value: E(1) })).to.be.revertedWithCustomError(vault, "ZeroLiquidity");
+    await expect(vault.connect(alice).deposit(0, 0, ethers.MaxUint256, { value: E(1) })).to.be.revertedWithCustomError(vault, "ZeroLiquidity");
     await deposit(alice, 5, 5);
     await expect(vault.connect(alice).withdraw((await vault.liquidityOf(alice.address)) + 1n)).to.be.revertedWithCustomError(vault, "Insufficient");
+  });
+
+  it("enforces the deposit slippage floor + deadline [audit M3]", async () => {
+    await tok.connect(alice).approve(await vault.getAddress(), ethers.MaxUint256);
+    // past deadline → Expired (checked before any funds move)
+    await expect(vault.connect(alice).deposit(E(100), 0, 1, { value: E(1) })).to.be.revertedWithCustomError(vault, "Expired");
+    // minMinted above what the price can mint → Slippage (bounds the composition against a sandwich)
+    await expect(vault.connect(alice).deposit(E(100), ethers.parseEther("1000000000000"), ethers.MaxUint256, { value: E(1) }))
+      .to.be.revertedWithCustomError(vault, "Slippage");
+    // a sane floor still succeeds
+    await expect(vault.connect(alice).deposit(E(100), 1, ethers.MaxUint256, { value: E(1) })).to.not.be.reverted;
   });
 });

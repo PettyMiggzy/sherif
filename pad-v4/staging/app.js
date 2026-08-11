@@ -7,8 +7,13 @@ const $ = (id) => document.getElementById(id);
 const ZERO = "0x0000000000000000000000000000000000000000";
 const MIN_SQRT = 4295128739n + 1n;
 const MAX_SQRT = 1461446703485210103287273052203988822378723970342n - 1n;
-const FEE = 10000, TS = 60; // 1% pool fee, tickSpacing 60 (matches the governed geometry)
+const FEE = 10000, TS = 60; // default 1% pool fee / tickSpacing 60 — the REAL fee is read from the curve
 const abi = ethers.AbiCoder.defaultAbiCoder();
+// [audit M5] Curve read-ABI incl. fee() so we can read the pool's ACTUAL lp fee (governed on-chain) and never
+// desync the poolId by hardcoding it. Only appends fee() if the generated ABI doesn't already carry it.
+const CURVE_READ = CFG.ABI.curve.some((f) => f.name === "fee")
+  ? CFG.ABI.curve
+  : [...CFG.ABI.curve, { type: "function", name: "fee", stateMutability: "view", inputs: [], outputs: [{ type: "uint24" }] }];
 
 // Exact port of Uniswap TickMath.getSqrtPriceAtTick (Q64.96). We cap each swap's price limit at the
 // curve's own boundary tick instead of the absolute MIN/MAX — a swap that would cross the boundary then
@@ -124,17 +129,19 @@ async function launch() {
     const rc = await tx.wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((p) => p && p.name === "CurvePadLaunched");
     const [, tk, , hk, cv] = ev.args;
-    const key = poolKey(tk, hk);
-    launched = { token: tk, hook: hk, curve: cv, poolId: poolIdOf(key), key, buyLimit: MIN_SQRT, sellLimit: MAX_SQRT };
-    // Read the curve's immutable boundary ticks so buys cap at the ceiling (gradTick) and sells at the
-    // launch top (startTick) — never crossing into empty liquidity, which reverts on this chain.
+    // Read the pool fee + boundary ticks from the curve itself: fee → correct poolId even if governance
+    // retunes lpFee [audit M5]; gradTick/startTick → cap buys at the ceiling and sells at the top so a swap
+    // fills to the boundary and stops instead of crossing into empty liquidity.
     try {
-      const cc = new ethers.Contract(cv, CFG.ABI.curve, provider);
-      const [gt, st] = await Promise.all([cc.gradTick(), cc.startTick()]);
-      launched.gradTick = Number(gt); launched.startTick = Number(st);
-      launched.buyLimit = sqrtAtTick(launched.gradTick);
-      launched.sellLimit = sqrtAtTick(launched.startTick);
-    } catch (e) { log("note: couldn't read curve ticks — using absolute price limits (buys may revert near sell-out)", "warn"); }
+      const cc = new ethers.Contract(cv, CURVE_READ, provider);
+      const [gt, st, fe] = await Promise.all([cc.gradTick(), cc.startTick(), cc.fee()]);
+      const key = { currency0: ZERO, currency1: tk, fee: Number(fe), tickSpacing: TS, hooks: hk };
+      launched = { token: tk, hook: hk, curve: cv, key, poolId: poolIdOf(key), gradTick: Number(gt), startTick: Number(st), buyLimit: sqrtAtTick(Number(gt)), sellLimit: sqrtAtTick(Number(st)) };
+    } catch (e) {
+      const key = poolKey(tk, hk); // fallback: hardcoded fee + absolute limits
+      launched = { token: tk, hook: hk, curve: cv, key, poolId: poolIdOf(key), buyLimit: MIN_SQRT, sellLimit: MAX_SQRT };
+      log("note: couldn't read curve fee/ticks — using defaults (buys may revert near sell-out)", "warn");
+    }
     log(`🚀 LAUNCHED <b>${symbol}</b> — token <a href="${exA(tk)}" target="_blank">${tk.slice(0, 8)}…</a> · curve <a href="${exA(cv)}" target="_blank">${cv.slice(0, 8)}…</a>`, "ok");
     $("trade").style.display = "block";
     $("coinLabel").textContent = `${name} (${symbol})`;
@@ -193,6 +200,14 @@ function reason(e) {
   return msg || (e?.code ? String(e.code) : "unknown error");
 }
 
+// Unpack a v4 BalanceDelta (int256: amount0 in the high 128 bits, amount1 in the low 128, each signed).
+function unpackDelta(d) {
+  let raw = BigInt(d);
+  if (raw < 0n) raw += (1n << 256n);
+  const s128 = (x) => (x >= (1n << 127n) ? x - (1n << 128n) : x);
+  return { amount0: s128(raw >> 128n), amount1: s128(raw & ((1n << 128n) - 1n)) };
+}
+
 // ── BUY / SELL (via PoolSwapTest router) ─────────────────────────────────────────
 function router() {
   const r = ($("router").value || CFG.ADDR.swapRouter || "").trim();
@@ -210,11 +225,18 @@ async function buy() {
     // and stops, instead of crossing into empty liquidity and reverting.
     const args = [launched.key, { zeroForOne: true, amountSpecified: -amt, sqrtPriceLimitX96: launched.buyLimit ?? MIN_SQRT },
       { takeClaims: false, settleUsingBurn: false }, "0x"];
-    try { await r.swap.staticCall(...args, { value: amt }); }
+    let spent = null;
+    try { const { amount0 } = unpackDelta(await r.swap.staticCall(...args, { value: amt })); spent = amount0 < 0n ? -amount0 : amount0; }
     catch (pe) { return log("buy would revert → " + reason(pe), "err"); }
     const tx = await r.swap(...args, { value: amt, type: 0, gasLimit: GAS.swap });
     log(`buy ${$("buyAmt").value} ETH <a href="${ex(tx.hash)}" target="_blank">${tx.hash.slice(0, 10)}…</a>`);
-    await tx.wait(); log("buy filled ✓", "ok"); refresh();
+    await tx.wait();
+    // [audit M4] a buy that hits the ceiling only partial-fills (rest refunded) — say so, don't imply full fill.
+    if (spent !== null && spent < amt) {
+      const f = (x) => (+ethers.formatEther(x)).toFixed(6);
+      log(`PARTIAL FILL — spent ${f(spent)} of ${$("buyAmt").value} ETH (curve ceiling reached); ~${f(amt - spent)} ETH refunded to you.`, "warn");
+    } else log("buy filled ✓", "ok");
+    refresh();
   } catch (e) { log("buy failed: " + reason(e), "err"); }
 }
 async function sell() {
@@ -232,11 +254,19 @@ async function sell() {
     // crossing above the range into empty liquidity.
     const args = [launched.key, { zeroForOne: false, amountSpecified: -amt, sqrtPriceLimitX96: launched.sellLimit ?? MAX_SQRT },
       { takeClaims: false, settleUsingBurn: false }, "0x"];
-    try { await r.swap.staticCall(...args); }
+    let prev = null;
+    try { prev = unpackDelta(await r.swap.staticCall(...args)); }
     catch (pe) { return log("sell would revert → " + reason(pe), "err"); }
     const tx = await r.swap(...args, { type: 0, gasLimit: GAS.swap });
     log(`sell half <a href="${ex(tx.hash)}" target="_blank">${tx.hash.slice(0, 10)}…</a>`);
-    await tx.wait(); log("sell filled ✓", "ok"); refresh();
+    await tx.wait();
+    // [audit M4] report what actually moved (tokens sold → ETH out), flag a startTick-cap partial fill.
+    if (prev) {
+      const sold = prev.amount1 < 0n ? -prev.amount1 : prev.amount1;
+      const ethGot = prev.amount0 > 0n ? prev.amount0 : 0n;
+      log(`sold ${(+ethers.formatEther(sold)).toLocaleString()} ${$("symbol").value} → ${(+ethers.formatEther(ethGot)).toFixed(6)} ETH ✓${sold < amt ? " (partial — hit startTick cap)" : ""}`, "ok");
+    } else log("sell filled ✓", "ok");
+    refresh();
   } catch (e) { log("sell failed: " + reason(e), "err"); }
 }
 async function graduate() {
