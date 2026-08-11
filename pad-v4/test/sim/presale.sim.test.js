@@ -339,4 +339,33 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
       expect(got).to.equal(amt);
     }
   });
+
+  // 8) [audit] a contract contributor that can't receive plain ETH is stranded by refund() to itself, but the
+  //    symmetric refundTo() (mirror of claimTo) rescues it — upholds "ETH is never trapped".
+  it("refundTo: a no-receive contract contributor can still be made whole on the fail path", async () => {
+    const now = await time.latest();
+    const deadline = BigInt(now) + 2n * 86400n;
+    const { vault, vaultAddr } = await openPresale({ target: E(5), deadline, perWalletCap: E(2), minContribution: E("0.1") });
+
+    const dep = await (await ethers.getContractFactory("PresaleDepositor")).deploy();
+    const depAddr2 = await dep.getAddress();
+    await expect(dep.deposit(vaultAddr, { value: E(1) })).to.not.be.reverted; // the contract funds the presale
+    expect(await vault.contribution(depAddr2)).to.equal(E(1));
+
+    await time.increaseTo(deadline + 10n);
+    await expect(vault.fail()).to.emit(vault, "Failed").withArgs(1);
+
+    // refund() to the contract itself fails (no payable receive) — would strand the funds; the revert rolls back
+    // the claimed flag, so the escape hatch is still available.
+    await expect(dep.callRefund(vaultAddr)).to.be.revertedWithCustomError(vault, "EthSendFailed");
+
+    // refundTo(EOA) rescues the full contribution
+    const rescueTo = signers[8];
+    const before = await ethers.provider.getBalance(rescueTo.address);
+    await expect(dep.callRefundTo(vaultAddr, rescueTo.address)).to.not.be.reverted;
+    expect((await ethers.provider.getBalance(rescueTo.address)) - before).to.equal(E(1));
+
+    // one-shot: a second refund reverts (claimed flag now set)
+    await expect(dep.callRefundTo(vaultAddr, rescueTo.address)).to.be.revertedWithCustomError(vault, "AlreadyClaimed");
+  });
 });

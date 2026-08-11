@@ -263,12 +263,24 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
 
     /// @notice Reclaim 100% of your contribution after the presale failed. One-shot.
     function refund() external nonReentrant {
+        _refund(msg.sender);
+    }
+
+    /// @notice Same as refund() but routes the ETH to `to` — the fail-path mirror of claimTo(), so a contract
+    /// contributor that reverts on a plain ETH receive can still be made whole (upholds the "ETH is never trapped"
+    /// invariant). Value still only ever goes where the depositor directs.
+    function refundTo(address to) external nonReentrant {
+        if (to == address(0)) revert BadParams();
+        _refund(to);
+    }
+
+    function _refund(address to) internal {
         if (!failed) revert NotFailed();
         uint256 c = contribution[msg.sender];
         if (c == 0) revert NothingToClaim();
         if (claimed[msg.sender]) revert AlreadyClaimed();
         claimed[msg.sender] = true; // CEI (shared with claim → a user extracts value at most once)
-        (bool ok,) = payable(msg.sender).call{value: c}("");
+        (bool ok,) = payable(to).call{value: c}("");
         if (!ok) revert EthSendFailed();
         emit Refunded(msg.sender, c);
     }
