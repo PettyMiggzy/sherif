@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex,nofollow" />
+<title>Robin V4 — Testnet Bench (team)</title>
+<style>
+  :root { --bg:#0b0e11; --card:#141a20; --line:#232c35; --fg:#e7edf3; --dim:#8ca0b3; --acc:#3ddc84; --err:#ff6b6b; --warn:#ffcc66; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size:20px; margin:0 0 2px; } .sub { color:var(--dim); font-size:13px; margin-bottom:18px; }
+  .badge { display:inline-block; background:#1c2b1f; color:var(--acc); border:1px solid #274a30; border-radius:999px; padding:2px 10px; font-size:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin:14px 0; }
+  label { display:block; font-size:12px; color:var(--dim); margin:10px 0 4px; }
+  input { width:100%; background:#0d1318; border:1px solid var(--line); color:var(--fg); border-radius:9px; padding:10px 12px; font-size:14px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; } .row > * { flex:1; min-width:120px; }
+  button { background:var(--acc); color:#062611; border:0; border-radius:9px; padding:10px 16px; font-weight:600; cursor:pointer; font-size:14px; }
+  button.ghost { background:#1a222b; color:var(--fg); border:1px solid var(--line); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  #who { float:right; font-size:12px; color:var(--dim); }
+  #state { color:var(--dim); font-size:13px; margin:10px 0; }
+  #log { margin-top:10px; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; max-height:280px; overflow:auto; }
+  #log div { padding:2px 0; border-bottom:1px solid #171e25; }
+  #log a { color:var(--acc); } .ok { color:var(--acc); } .err { color:var(--err); } .warn { color:var(--warn); }
+  h3 { font-size:14px; margin:0 0 6px; } .hint { color:var(--dim); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span id="who"></span>
+  <h1>Robin V4 — Testnet Bench <span class="badge">team only · testnet</span></h1>
+  <div class="sub">Exercises the live V4 contracts on Robinhood Chain Testnet (46630). Faucet ETH only. Not the production UI.</div>
+  <button id="btnConnect">Connect wallet (testnet)</button>
+
+  <div id="app" style="display:none">
+    <div class="card">
+      <h3>1 · Launch a test coin</h3>
+      <div class="row">
+        <div><label>Name</label><input id="name" value="Test Coin" /></div>
+        <div><label>Symbol</label><input id="symbol" value="TEST" /></div>
+      </div>
+      <label>Curve supply (tokens) — ~470,000 graduates at ≈0.003 test-ETH</label>
+      <input id="curveSupply" value="470000" />
+      <div style="margin-top:12px"><button id="btnLaunch">Mine hook + Launch</button></div>
+      <div class="hint" style="margin-top:8px">Launch mines a valid V4 hook address in your browser (~instant), then calls CurvePadFactoryV4.launch.</div>
+    </div>
+
+    <div class="card" id="trade" style="display:none">
+      <h3>2 · Trade &amp; graduate — <span id="coinLabel"></span></h3>
+      <div id="state">—</div>
+      <label>Swap router (PoolSwapTest) — deploy via <code>scripts/deploy-testnet-extras.js</code>, paste here</label>
+      <input id="router" placeholder="0x… PoolSwapTest address" />
+      <div class="row" style="margin-top:12px">
+        <div><label>Buy amount (ETH)</label><input id="buyAmt" value="0.001" /></div>
+        <div style="display:flex;align-items:flex-end"><button id="btnBuy">Buy</button></div>
+        <div style="display:flex;align-items:flex-end"><button id="btnSell" class="ghost">Sell half</button></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div style="display:flex;align-items:flex-end"><button id="btnGrad" disabled>Graduate (when ready)</button></div>
+        <div style="display:flex;align-items:flex-end"><button id="btnRefresh" class="ghost">Refresh state</button></div>
+      </div>
+      <div class="hint" style="margin-top:8px">Buy repeatedly until the curve sells out → “ready=true” → Graduate. Watch the tick move and your balance grow.</div>
+    </div>
+
+    <div class="card">
+      <h3>Activity</h3>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
