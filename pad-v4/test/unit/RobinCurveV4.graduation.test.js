@@ -51,7 +51,7 @@ describe("RobinCurveV4 — full graduation waterfall (real PoolManager + mock po
     curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
-      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, GRAD_REWARD, creator.address
+      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address
     );
     curveAddr = await curve.getAddress();
 
@@ -106,13 +106,22 @@ describe("RobinCurveV4 — full graduation waterfall (real PoolManager + mock po
     expect(await ethers.provider.getBalance(floorAddr)).to.be.gte(0n);
   });
 
-  it("pays the V3-parity 0.5/0.5 rewards to platform + creator (accrue-and-pull)", async () => {
-    expect(await curve.creatorEthOwed()).to.equal(GRAD_REWARD); // raise is large ⇒ uncapped 0.5 ETH
-    expect(await curve.platformEthOwed()).to.be.gte(GRAD_REWARD);
+  it("pays the %-of-raise graduation rewards to platform + creator (accrue-and-pull)", async () => {
+    // reward is now a % of the raise, not a fixed 0.5 ETH: creator = creatorGradBps (10%), ambush = ambushGradBps
+    // (5%), so the creator share is exactly double the ambush share (within integer-division dust).
+    const creatorOwed = await curve.creatorEthOwed();
+    const ambushOwed = await curve.ambushEthOwed();
+    expect(creatorOwed).to.be.gt(0n);
+    expect(ambushOwed).to.be.gt(0n);
+    const twoAmbush = ambushOwed * 2n;
+    const gap = creatorOwed > twoAmbush ? creatorOwed - twoAmbush : twoAmbush - creatorOwed;
+    expect(gap).to.be.lte(2n); // 10% == 2×5% up to rounding
+    // platform carries its own 10% share plus fee dust and the hostile donation that fell through ⇒ ≥ creator
+    expect(await curve.platformEthOwed()).to.be.gte(creatorOwed);
 
     const cBefore = await ethers.provider.getBalance(creator.address);
     await curve.claimCreator();
-    expect((await ethers.provider.getBalance(creator.address)) - cBefore).to.equal(GRAD_REWARD);
+    expect((await ethers.provider.getBalance(creator.address)) - cBefore).to.equal(creatorOwed);
     expect(await curve.creatorEthOwed()).to.equal(0n);
 
     const platWallet = await reg.platformFeeWallet();

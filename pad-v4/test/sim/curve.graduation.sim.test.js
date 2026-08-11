@@ -48,7 +48,7 @@ describe("SIM — graduation value conservation (nothing stranded, every sink fu
     const curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
-      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, GRAD_REWARD, creator.address
+      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address
     );
     const curveAddr = await curve.getAddress();
 
@@ -64,6 +64,11 @@ describe("SIM — graduation value conservation (nothing stranded, every sink fu
       await pm.getAddress(), await stateView.getAddress(), platform.address, ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
     );
     await curve.connect(platform).setFloor(await floor.getAddress());
+    // wire the two-sided ambush vault — the ambushGradBps (5%) share of the raise is swept here at graduation
+    const ambush = await (await ethers.getContractFactory("RobinAmbushVault")).deploy(
+      await pm.getAddress(), await stateView.getAddress(), platform.address, ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
+    );
+    await curve.connect(platform).setAmbush(await ambush.getAddress());
 
     // ── a mixed buy/sell tape (accrues the platform ETH book, the 20% floor book, and token sell fees) ──
     const buy = (amt) => sw.connect(trader).swap(
@@ -91,9 +96,10 @@ describe("SIM — graduation value conservation (nothing stranded, every sink fu
     // drain every accrue-and-pull book + finish the streamed sinks
     await curve.claimPlatform();
     await curve.claimCreator();
-    // floor + staking were funded inline at graduation; flush is a no-op safety net
+    // floor + staking + ambush were funded inline at graduation; flush is a no-op safety net
     await curve.flushFloor().catch(() => {});
     await curve.flushStaking().catch(() => {});
+    await curve.flushAmbush().catch(() => {});
 
     // ── CONSERVATION: nothing stranded on the curve ──
     expect(await ethers.provider.getBalance(curveAddr)).to.equal(0n); // all ETH distributed (donation included)
@@ -101,6 +107,7 @@ describe("SIM — graduation value conservation (nothing stranded, every sink fu
     expect(await curve.platformEthOwed()).to.equal(0n);
     expect(await curve.creatorEthOwed()).to.equal(0n);
     expect(await curve.floorEthOwed()).to.equal(0n);
+    expect(await curve.ambushEthOwed()).to.equal(0n); // the 5% ambush share swept to the ambush vault
 
     // ── every sink got funded ──
     expect(await posm.ownerOf(idBefore)).to.equal(await lockVault.getAddress()); // permanent LP locked
@@ -110,5 +117,6 @@ describe("SIM — graduation value conservation (nothing stranded, every sink fu
     );
     expect(posL).to.be.gt(0n); // the locked LP holds real liquidity
     expect(await tok.balanceOf(dsAddr)).to.be.gt(0n); // staking got the leftover token
+    expect(await ethers.provider.getBalance(await ambush.getAddress())).to.be.gt(0n); // ambush vault armed with the 5% share
   });
 });

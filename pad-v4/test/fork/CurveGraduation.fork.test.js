@@ -34,9 +34,9 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
 
     const START = 6000, GRAD = 3000, SPACING = 60, FEE = 3000;
     const feeCfg = await (await ethers.getContractFactory("RobinV4FeeConfig")).deploy(deployer.address, {
-      buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyLpFloorShareBps: 2000,
+      buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 0, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000,
+      platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
       lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: 1800,
-      gradRewardWei: ethers.parseEther("0.5"),
     });
 
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
@@ -48,7 +48,8 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
 
     const cfg = {
       name: "Robin Curve", symbol: "rCRV", decimals: 18,
-      supply: 1000n * 10n ** 18n, curveSupply: 100n * 10n ** 18n, reserveSupply: 200n * 10n ** 18n,
+      // NO DEV MINT: supply == curveSupply + reserveSupply exactly (creator gets nothing at launch)
+      supply: 300n * 10n ** 18n, curveSupply: 100n * 10n ** 18n, reserveSupply: 200n * 10n ** 18n,
       tickSpacing: SPACING, creator: creator.address,
     };
 
@@ -75,8 +76,7 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
     const tok = await ethers.getContractAt("PadToken", token);
     expect(await curve.seeded()).to.equal(true);
     expect(await tok.balanceOf(curveAddr)).to.equal(cfg.reserveSupply); // reserve held, curve seeded
-    expect(await creator.getAddress()).to.equal(creator.address);
-    expect(await tok.balanceOf(creator.address)).to.equal(cfg.supply - cfg.curveSupply - cfg.reserveSupply);
+    expect(await tok.balanceOf(creator.address)).to.equal(0n); // NO premine — creator holds nothing at launch
 
     // ── wire a staking pool (token stake, token reward) + authorize the curve as rewarder ──
     const ds = await (await ethers.getContractFactory("DualStaking")).deploy(token, ZERO, deployer.address, 0, ZERO, ethers.ZeroHash, 0);
@@ -112,7 +112,7 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
     // platform fee book is non-negative and claimable without reverting
     await expect(curve.claimPlatform()).to.not.be.reverted;
 
-    // v2 graduation waterfall: the creator-side reward is booked (gradRewardWei=0.5, capped raise/4) and
+    // v3-econ graduation waterfall: the creator-side reward is booked (creatorGradBps=10% of the raise) and
     // claimable; the 20% buy-LP carve is parked (no floor wired here) and flushable once a floor is set.
     expect(await curve.creatorEthOwed()).to.be.gt(0n);
     const creatorBefore = await ethers.provider.getBalance(creator.address);

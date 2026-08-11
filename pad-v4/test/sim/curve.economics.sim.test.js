@@ -30,7 +30,7 @@ describe("SIM — curve raise + LP fees route 80/20 (platform/floor) + token to 
     const curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), owner.address, owner.address, await stateView.getAddress(),
       owner.address, factory.address, await reg.getAddress(),
-      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 0, owner.address
+      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, owner.address
     );
     const curveAddr = await curve.getAddress();
 

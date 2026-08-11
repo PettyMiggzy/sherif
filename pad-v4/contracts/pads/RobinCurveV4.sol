@@ -33,6 +33,10 @@ interface IFloorVault {
     function addFloor() external returns (uint128);
 }
 
+interface IRobinFeeHookBuffer {
+    function claimBuffer(PoolId id) external returns (uint256);
+}
+
 /// @title RobinCurveV4 — a free, single-sided bonding curve on Uniswap V4, per pad
 /// @notice The token seeds its OWN liquidity as one token-only (currency1) range `[gradTick, startTick]` with
 /// the pool initialized at `startTick` (the range's upper bound ⇒ 100% token, so NO ETH is ever required).
@@ -68,7 +72,6 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint48 internal constant MAX_UINT48 = type(uint48).max;
     uint256 internal constant NUDGE_MAX_FRACTION = 100; // the ceiling nudge may spend ≤ 1/100 of the reserve
     uint256 internal constant BPS = 10000;
-    uint256 internal constant GRAD_REWARD_CAP_FRACTION = 4; // each side's grad reward ≤ 1/4 of the raise (V3 parity)
 
     IPoolManager public immutable poolManager;
     IPositionManagerMinimal public immutable positionManager;
@@ -88,7 +91,11 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     int24 public immutable startTick; // launch price (curve top; pure-token boundary)
     int24 public immutable gradTick; // ceiling (lower); buys stop here
     uint16 public immutable buyLpFloorShareBps; // share of the BUY LP fee held in-curve → floor at graduation
-    uint256 public immutable gradRewardWei; // per-side ETH reward → platform + creator at graduation (capped raise/4)
+    // v3-economics graduation waterfall — each a % (bps) of the raise; the locked LP takes the remainder, so it
+    // can never be starved (the factory/config enforce platform+creator+ambush < 100%).
+    uint16 public immutable platformGradBps; // platform share of the raise
+    uint16 public immutable creatorGradBps; // creator share of the raise
+    uint16 public immutable ambushGradBps; // ambush-vault share of the raise (active two-sided floor support)
     address public immutable creator; // gets the creator-side graduation reward (claimCreator)
 
     bool public seeded;
@@ -96,6 +103,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint128 public curveL; // liquidity minted at seed (removed whole at graduation)
     address public staking; // the pad's DualStaking pool — set once, platform-gated
     address public floor; // the pad's RobinFloorVault — set once, platform-gated
+    address public ambush; // the pad's RobinAmbushVault (two-sided support) — set once, platform-gated
 
     // accrue-and-pull books (never sent inline → cannot brick collect/graduate). v2 routing:
     //   • buy (ETH) LP fee → 80% platformEthOwed (claimPlatform) + 20% floorEthOwed (→ floor at grad)
@@ -103,6 +111,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint256 public platformEthOwed;
     uint256 public floorEthOwed; // the buyLpFloorShareBps carve of buy fees, swept to the floor at graduation
     uint256 public creatorEthOwed; // the creator-side graduation reward (claimCreator)
+    uint256 public ambushEthOwed; // the ambushGradBps share of the raise, swept to the ambush vault at graduation
 
     event Seeded(uint128 liquidity, uint256 tokens);
     event CurveFeesAccrued(uint256 eth, uint256 tokenFees);
@@ -110,9 +119,18 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     event CreatorClaimed(uint256 eth, address to);
     event StakingSet(address staking);
     event FloorSet(address floor);
-    event Graduated(uint256 lpTokenId, uint256 raisedEth, uint256 toStaking, uint256 platformReward, uint256 creatorReward);
+    event AmbushSet(address ambush);
+    event Graduated(
+        uint256 lpTokenId,
+        uint256 raisedEth,
+        uint256 toStaking,
+        uint256 platformReward,
+        uint256 creatorReward,
+        uint256 ambushReward
+    );
     event StakingFunded(uint256 amount);
     event FloorFunded(uint256 amount);
+    event AmbushFunded(uint256 amount);
     event CeilingRestored(address indexed by, uint256 tokenSpent, uint256 ethOut);
 
     error NotPoolManager();
@@ -147,7 +165,9 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         int24 startTick_,
         int24 gradTick_,
         uint16 buyLpFloorShareBps_,
-        uint256 gradRewardWei_,
+        uint16 platformGradBps_,
+        uint16 creatorGradBps_,
+        uint16 ambushGradBps_,
         address creator_
     ) {
         if (
@@ -171,7 +191,9 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         startTick = startTick_;
         gradTick = gradTick_;
         buyLpFloorShareBps = buyLpFloorShareBps_;
-        gradRewardWei = gradRewardWei_;
+        platformGradBps = platformGradBps_;
+        creatorGradBps = creatorGradBps_;
+        ambushGradBps = ambushGradBps_;
         creator = creator_;
     }
 
@@ -244,6 +266,15 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (tick > gradTick) revert NotReady(); // curve not fully sold yet
         graduated = true; // CEI: flip before any external interaction
 
+        // Pull any buy-tax buffer the hook has parked (buyBufferShareBps carve, in TOKEN) into the reserve BEFORE we
+        // read tokenReserve below, so the buffer folds into the permanent-LP token leg / staking surplus and hardens
+        // the InsufficientReserve margin. Token-only ⇒ never perturbs the ETH raise accounting. Guarded by a code
+        // check (a codeless hook — e.g. a hookless test pool — would revert the typed call UNCAUGHT by try/catch),
+        // then try/caught + outside the PoolManager lock ⇒ a reverting/unwired hook can never brick graduation.
+        if (address(hooks).code.length > 0) {
+            try IRobinFeeHookBuffer(address(hooks)).claimBuffer(_poolId()) {} catch {}
+        }
+
         // [AUDIT-HIGH] Snapshot any pre-existing UNBOOKED ETH (e.g. a hostile donation to receive()) BEFORE the
         // pull, so it is never counted as raise. Deriving the raise from raw balance let a donor inflate lpEth
         // past the reserve's pairing capacity and brick the LP mint (InsufficientReserve) permanently. Instead we
@@ -263,14 +294,14 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (raisedEth == 0) revert EmptyRaise();
         if (tokenReserve == 0) revert NoReserve(); // [CRITICAL-1] must have a held-back reserve to pair the LP
 
-        // 3) carve the V3-parity per-side rewards from the raise (platform + creator, each ≤ raise/4), so the LP
-        //    leg (lpEth) is always strictly positive (rewards ≤ 0.5·raise). The graduation work itself runs on the
-        //    curve's own ETH, so there is no separate gas reimbursement — whoever triggers it (the platform keeper)
-        //    is the platform, and the raise flows into the LP + rewards rather than a gas skim.
-        uint256 cap = raisedEth / GRAD_REWARD_CAP_FRACTION;
-        uint256 platReward = gradRewardWei > cap ? cap : gradRewardWei;
-        uint256 creatReward = gradRewardWei > cap ? cap : gradRewardWei;
-        uint256 lpEth = raisedEth - platReward - creatReward;
+        // 3) V3-parity graduation waterfall — each bucket a % (bps) of the raise; the LOCKED LP takes the whole
+        //    remainder, so it can never be starved (config enforces platform+creator+ambush < 100%). The graduation
+        //    work runs on the curve's OWN ETH (whoever triggers it is the platform keeper), so there is no separate
+        //    gas reimbursement — the raise flows into the LP + the reward buckets rather than a gas skim.
+        uint256 platReward = (raisedEth * platformGradBps) / BPS;
+        uint256 creatReward = (raisedEth * creatorGradBps) / BPS;
+        uint256 ambushReward = (raisedEth * ambushGradBps) / BPS;
+        uint256 lpEth = raisedEth - platReward - creatReward - ambushReward;
         if (lpEth == 0) revert EmptyRaise();
 
         // 4) seed the PERMANENT LOCKED full-range 2-sided LP (NFT → LockVault). The reserve is sized so the ETH
@@ -280,9 +311,10 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         // 5) register the lock through the factory (LockVault's sole registrar) — carries the immutable slice
         ICurveFactoryCallback(factory).onGraduated(lpTokenId, currency0, currency1, staking);
 
-        // 6) book the per-side rewards (retriable via claimPlatform/claimCreator; never inline-brick graduation)
+        // 6) book the per-side rewards (retriable via claim*/flush*; never inline-brick graduation)
         platformEthOwed += platReward;
         creatorEthOwed += creatReward;
+        ambushEthOwed += ambushReward;
 
         // 7) stream the leftover reserve tokens → staking (non-bricking; flushStaking() finishes if unwired)
         uint256 leftoverToken = IERC20(token).balanceOf(address(this));
@@ -291,9 +323,12 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         // 8) sweep the held buy-LP carve → the permanent floor (non-bricking; flushFloor() finishes if unwired)
         _fundFloor();
 
-        // 9) any unbooked ETH dust → platform book (preserving the floor + creator books still owed)
-        platformEthOwed = address(this).balance - floorEthOwed - creatorEthOwed;
-        emit Graduated(lpTokenId, raisedEth, leftoverToken, platReward, creatReward);
+        // 8b) sweep the ambush share → the two-sided ambush vault (non-bricking; flushAmbush() finishes if unwired)
+        _fundAmbush();
+
+        // 9) any unbooked ETH dust → platform book (preserving the floor + creator + ambush books still owed)
+        platformEthOwed = address(this).balance - floorEthOwed - creatorEthOwed - ambushEthOwed;
+        emit Graduated(lpTokenId, raisedEth, leftoverToken, platReward, creatReward, ambushReward);
     }
 
     /// @notice Finish staking funding if the pool wasn't wired/listed at graduation. Permissionless. Sweeps all
@@ -314,6 +349,13 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (!graduated) revert NotReady();
         if (floor == address(0)) revert ZeroAddress();
         _fundFloor();
+    }
+
+    /// @notice Finish ambush funding if the ambush vault wasn't wired at graduation. Permissionless; retriable.
+    function flushAmbush() external nonReentrant {
+        if (!graduated) revert NotReady();
+        if (ambush == address(0)) revert ZeroAddress();
+        _fundAmbush();
     }
 
     /// @notice Permissionless anti-grief recovery for graduation. A third party can plant Uniswap-v4 liquidity
@@ -359,6 +401,16 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (f == address(0) || f.code.length == 0) revert ZeroAddress(); // must be a contract (the vault)
         floor = f;
         emit FloorSet(f);
+    }
+
+    /// @notice Wire the pad's two-sided ambush vault exactly once, by the platform (deployed after launch). The
+    /// ambush share of the raise (ambushEthOwed) is swept here at graduation to arm active floor support.
+    function setAmbush(address a) external {
+        if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
+        if (ambush != address(0)) revert AlreadySet();
+        if (a == address(0) || a.code.length == 0) revert ZeroAddress(); // must be a contract (the vault)
+        ambush = a;
+        emit AmbushSet(a);
     }
 
     // ── unlock callback ─────────────────────────────────────────────────────────
@@ -566,6 +618,22 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         }
         try IFloorVault(f).addFloor() {} catch {} // poke; the vault parks the quote if spot is inside the band
         emit FloorFunded(amt);
+    }
+
+    /// @dev Sweep the ambush share (ambushEthOwed) into the two-sided ambush vault. Non-bricking: if the vault
+    /// isn't wired yet the ETH stays booked (flushAmbush completes later); a failed send re-parks the book. The
+    /// vault holds the ETH and arms its own two-sided support (buy dips / sell rips) off its balance.
+    function _fundAmbush() internal {
+        address a = ambush;
+        uint256 amt = ambushEthOwed;
+        if (a == address(0) || amt == 0) return; // parks in the book; flushAmbush() completes later
+        ambushEthOwed = 0;
+        (bool ok,) = payable(a).call{value: amt}("");
+        if (!ok) {
+            ambushEthOwed = amt; // re-park → retriable
+            return;
+        }
+        emit AmbushFunded(amt);
     }
 
     /// @dev Settle what we owe (negative delta). At seed only currency1 is owed; currency0 must be 0.

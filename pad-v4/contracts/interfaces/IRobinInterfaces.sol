@@ -31,9 +31,10 @@ interface IRobinFeeHookAdmin {
         address creator; // receives the sell tax (less the floor carve)
         address floorRecipient; // receives the floor carve; address(0) => it parks in floorOwed
         address guardAdapter; // stock guard; address(0) => no curb
-        uint16 buyTaxBps; // tax on buys → platform (bps of token output)
+        uint16 buyTaxBps; // tax on buys → platform + curve buffer (bps of token output)
         uint16 sellTaxBps; // tax on sells → creator + floor (bps of quote output)
         uint16 sellFloorShareBps; // share of the SELL tax carved to the floor (bps of the sell fee)
+        uint16 buyBufferShareBps; // share of the BUY tax kept as a curve buffer (rest → platform); token leg
         uint32 guardWindow; // seconds around a scheduled stock action; 0 => no curb
         bool quoteIsStock;
     }

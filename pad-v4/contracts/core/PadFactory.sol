@@ -162,6 +162,7 @@ contract PadFactory {
                 buyTaxBps: cfg.buyTaxBps,
                 sellTaxBps: cfg.sellTaxBps,
                 sellFloorShareBps: cfg.sellFloorShareBps,
+                buyBufferShareBps: 0, // no curve buffer on the plain ETH pad
                 guardWindow: 0,
                 quoteIsStock: false
             })

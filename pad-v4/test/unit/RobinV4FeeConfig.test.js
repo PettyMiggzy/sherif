@@ -5,9 +5,9 @@ const { expect } = require("chai");
 // future launches; live pads are immutable. Caps bound what any future launch can carry.
 
 const GOOD = {
-  buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyLpFloorShareBps: 0,
+  buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyLpFloorShareBps: 0, buyBufferShareBps: 2000,
+  platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
   lpFee: 10000, startTickMag: 201600, curveWidth: 25800, minGradWidth: 22800,
-  gradRewardWei: 0n,
 };
 const DYNAMIC_FEE_FLAG = 0x800000;
 
@@ -26,7 +26,10 @@ describe("RobinV4FeeConfig", () => {
     expect(d.sellTaxBps).to.equal(100n);
     expect(d.sellFloorShareBps).to.equal(2000n);
     expect(d.buyLpFloorShareBps).to.equal(0n);
-    expect(d.gradRewardWei).to.equal(0n);
+    expect(d.buyBufferShareBps).to.equal(2000n);
+    expect(d.platformGradBps).to.equal(1000n);
+    expect(d.creatorGradBps).to.equal(1000n);
+    expect(d.ambushGradBps).to.equal(500n);
     expect(d.lpFee).to.equal(10000n);
     expect(d.curveWidth).to.equal(25800n);
   });
@@ -43,7 +46,10 @@ describe("RobinV4FeeConfig", () => {
     await expect(cfg.setDefaults({ ...GOOD, sellTaxBps: 201 })).to.be.revertedWithCustomError(cfg, "BadParam");
     await expect(cfg.setDefaults({ ...GOOD, sellFloorShareBps: 5001 })).to.be.revertedWithCustomError(cfg, "BadParam");
     await expect(cfg.setDefaults({ ...GOOD, buyLpFloorShareBps: 10001 })).to.be.revertedWithCustomError(cfg, "BadParam");
-    await expect(cfg.setDefaults({ ...GOOD, gradRewardWei: ethers.parseEther("2") + 1n })).to.be.revertedWithCustomError(cfg, "BadParam"); // > MAX_GRAD_REWARD
+    await expect(cfg.setDefaults({ ...GOOD, buyBufferShareBps: 10001 })).to.be.revertedWithCustomError(cfg, "BadParam"); // > BPS
+    await expect(cfg.setDefaults({ ...GOOD, platformGradBps: 2501 })).to.be.revertedWithCustomError(cfg, "BadParam"); // > MAX_GRAD_SHARE_BPS
+    await expect(cfg.setDefaults({ ...GOOD, ambushGradBps: 2501 })).to.be.revertedWithCustomError(cfg, "BadParam"); // > MAX_GRAD_SHARE_BPS
+    await expect(cfg.setDefaults({ ...GOOD, creatorGradBps: 2501 })).to.be.revertedWithCustomError(cfg, "BadParam"); // > MAX_GRAD_SHARE_BPS
     await expect(cfg.setDefaults({ ...GOOD, buyTaxBps: 0, sellTaxBps: 0 })).to.be.revertedWithCustomError(cfg, "BadParam"); // 0/0 tax bricks the hook
     await expect(cfg.setDefaults({ ...GOOD, lpFee: 1_000_001 })).to.be.revertedWithCustomError(cfg, "BadParam"); // > MAX_LP_FEE
     await expect(cfg.setDefaults({ ...GOOD, lpFee: DYNAMIC_FEE_FLAG | 3000 })).to.be.revertedWithCustomError(cfg, "BadParam");

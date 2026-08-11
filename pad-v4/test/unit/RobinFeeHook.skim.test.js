@@ -32,9 +32,10 @@ function poolIdOf(key) {
 
 describe("RobinFeeHook — directional tax + A3 skim closes clean (local real PoolManager)", () => {
   const FEE = 3000, TS = 60;
-  const BUY_BPS = 100n; // 1% buy tax → platform
+  const BUY_BPS = 100n; // 1% buy tax → platform + curve buffer
   const SELL_BPS = 100n; // 1% sell tax → creator + floor
   const FLOOR_SHARE_BPS = 2000n; // 20% of the sell tax → floor (0.2% of trade); creator keeps 80%
+  const BUFFER_SHARE_BPS = 2000n; // 20% of the buy tax → curve buffer; platform keeps 80%
 
   let owner, factory, platform, lp, trader, creator, floor;
   let pm, dep, reg, tok, hook, mod, sw, key, poolId;
@@ -61,7 +62,7 @@ describe("RobinFeeHook — directional tax + A3 skim closes clean (local real Po
     await hook.connect(factory).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address,
       floorRecipient: floor.address, guardAdapter: ZERO,
-      buyTaxBps: BUY_BPS, sellTaxBps: SELL_BPS, sellFloorShareBps: FLOOR_SHARE_BPS,
+      buyTaxBps: BUY_BPS, sellTaxBps: SELL_BPS, sellFloorShareBps: FLOOR_SHARE_BPS, buyBufferShareBps: BUFFER_SHARE_BPS,
       guardWindow: 0, quoteIsStock: false,
     });
 
@@ -75,7 +76,7 @@ describe("RobinFeeHook — directional tax + A3 skim closes clean (local real Po
     );
   });
 
-  it("BUY: exact-input closes clean, buy tax of the token output → platform", async () => {
+  it("BUY: exact-input closes clean, buy tax of the token output → platform + curve buffer", async () => {
     const hookAddr = await hook.getAddress();
     const hookBefore = await tok.balanceOf(hookAddr);
     const traderBefore = await tok.balanceOf(trader.address);
@@ -89,8 +90,11 @@ describe("RobinFeeHook — directional tax + A3 skim closes clean (local real Po
     const traderGot = (await tok.balanceOf(trader.address)) - traderBefore;
     expect(skim).to.be.gt(0n);
     expect(skim).to.equal(((traderGot + skim) * BUY_BPS) / 10000n); // 1% of gross token output
-    // buy tax → platform (token leg, index 1). creator/floor untouched.
-    expect(await hook.platformOwed(poolId, 1)).to.equal(skim);
+    // buy tax (token leg, index 1) splits: 20% → curve buffer, the rest → platform. creator/floor untouched.
+    const bufferCut = (skim * BUFFER_SHARE_BPS) / 10000n;
+    const platformCut = skim - bufferCut; // contract conserves dust into the platform cut
+    expect(await hook.platformOwed(poolId, 1)).to.equal(platformCut);
+    expect(await hook.bufferOwed(poolId)).to.equal(bufferCut);
     expect(await hook.creatorOwed(poolId, 0)).to.equal(0n);
     expect(await hook.floorOwed(poolId, 0)).to.equal(0n);
   });

@@ -56,12 +56,14 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         uint16 buyTaxBps;
         uint16 sellTaxBps;
         uint16 sellFloorShareBps; // share of the sell tax carved to the floor
+        uint16 buyBufferShareBps; // share of the buy tax kept as a curve buffer (rest → platform)
         uint32 guardWindow;
         Currency currency0; // quote
         Currency currency1; // token
         address creator; // 2-step repointable by the creator only
         address pendingCreator;
         address floorRecipient; // where claimFloor forwards; 0 => floor parks in floorOwed
+        address bufferRecipient; // where claimBuffer forwards (the curve → permanent LP); 0 => parks in bufferOwed
         address guardAdapter; // stock guard; 0 => no curb
     }
 
@@ -71,14 +73,16 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     mapping(PoolId => mapping(uint256 => uint256)) public platformOwed; // from buys (token leg)
     mapping(PoolId => mapping(uint256 => uint256)) public creatorOwed; // from sells (quote leg)
     mapping(PoolId => mapping(uint256 => uint256)) public floorOwed; // carve from sells (quote leg)
+    mapping(PoolId => uint256) public bufferOwed; // curve-buffer carve from buys (token leg) → forwarded to the curve
 
     event PoolRegistered(PoolId indexed id, address indexed creator, uint16 buyTaxBps, uint16 sellTaxBps);
-    event BuyTaxed(PoolId indexed id, uint256 fee); // platform, token leg
+    event BuyTaxed(PoolId indexed id, uint256 platformCut, uint256 bufferCut); // token leg
     event SellTaxed(PoolId indexed id, uint256 creatorCut, uint256 floorCut); // quote leg
     event SkimSkipped(PoolId indexed id, uint256 currencyIndex, uint256 fee);
     event PlatformClaimed(PoolId indexed id, uint256 currencyIndex, address to, uint256 amount);
     event CreatorClaimed(PoolId indexed id, uint256 currencyIndex, address to, uint256 amount);
     event FloorClaimed(PoolId indexed id, uint256 currencyIndex, address to, uint256 amount);
+    event BufferClaimed(PoolId indexed id, address to, uint256 amount);
     event CreatorRepointStarted(PoolId indexed id, address pending);
     event CreatorRepointed(PoolId indexed id, address creator);
 
@@ -90,14 +94,17 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     error NotCreator();
     error NotPlatform();
     error FloorRecipientAlreadySet();
+    error BufferRecipientAlreadySet();
     error ZeroAddress();
     error NoFloorRecipient();
+    error NoBufferRecipient();
     error NothingToClaim();
     error PayoutFailed();
     error CorporateActionCurb();
     error ExactOutputNotSupported();
 
     event FloorRecipientSet(PoolId indexed id, address recipient);
+    event BufferRecipientSet(PoolId indexed id, address recipient);
 
     constructor(IPoolManager _pm, address _factory, IFeeWalletRegistry _feeRegistry, address _padToken) BaseHook(_pm) {
         if (_factory == address(0) || address(_feeRegistry) == address(0) || _padToken == address(0)) revert ZeroAddress();
@@ -118,6 +125,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         if (cfg.buyTaxBps > MAX_TAX_BPS || cfg.sellTaxBps > MAX_TAX_BPS) revert BadTax();
         if (cfg.buyTaxBps == 0 && cfg.sellTaxBps == 0) revert BadTax();
         if (cfg.sellFloorShareBps > BPS) revert BadShares();
+        if (cfg.buyBufferShareBps > BPS) revert BadShares();
 
         config[id] = PoolConfig({
             registered: true,
@@ -125,12 +133,14 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
             buyTaxBps: cfg.buyTaxBps,
             sellTaxBps: cfg.sellTaxBps,
             sellFloorShareBps: cfg.sellFloorShareBps,
+            buyBufferShareBps: cfg.buyBufferShareBps,
             guardWindow: cfg.guardWindow,
             currency0: cfg.currency0,
             currency1: cfg.currency1,
             creator: cfg.creator,
             pendingCreator: address(0),
             floorRecipient: cfg.floorRecipient,
+            bufferRecipient: address(0),
             guardAdapter: cfg.guardAdapter
         });
         emit PoolRegistered(id, cfg.creator, cfg.buyTaxBps, cfg.sellTaxBps);
@@ -217,9 +227,13 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         }
 
         if (isBuy) {
-            // buy → platform (token leg)
-            platformOwed[id][uc] += fee;
-            emit BuyTaxed(id, fee);
+            // buy → platform + curve buffer (token leg). The buffer carve is forwarded to the curve (claimBuffer),
+            // hardening the LP-binding reserve margin + deepening staking rewards; dust conserved into the platform cut.
+            uint256 bufferCut = (fee * c.buyBufferShareBps) / BPS;
+            uint256 platformCut = fee - bufferCut;
+            platformOwed[id][uc] += platformCut;
+            bufferOwed[id] += bufferCut;
+            emit BuyTaxed(id, platformCut, bufferCut);
         } else {
             // sell → creator + floor (quote leg); subtraction conserves dust into the creator's cut
             uint256 floorCut = (fee * c.sellFloorShareBps) / BPS;
@@ -270,6 +284,20 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         emit FloorClaimed(id, currencyIndex, to, amount);
     }
 
+    /// @notice Forward the accrued curve-buffer carve (token leg) to the pool's buffer recipient (the curve
+    /// controller). Permissionless; funds always go to the registered recipient. Tokens forwarded before
+    /// graduation deepen the permanent locked LP; forwarded after, they flow to staking — either way, non-bricking.
+    function claimBuffer(PoolId id) external nonReentrant returns (uint256 amount) {
+        PoolConfig storage c = config[id];
+        address to = c.bufferRecipient;
+        if (to == address(0)) revert NoBufferRecipient();
+        amount = bufferOwed[id];
+        if (amount == 0) revert NothingToClaim();
+        bufferOwed[id] = 0;
+        _payout(c.currency1, to, amount); // token leg only
+        emit BufferClaimed(id, to, amount);
+    }
+
     // --------------------------------------------------------------------- //
     //                         creator slot repoint                          //
     // --------------------------------------------------------------------- //
@@ -286,6 +314,19 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         if (recipient == address(0)) revert ZeroAddress();
         c.floorRecipient = recipient;
         emit FloorRecipientSet(id, recipient);
+    }
+
+    /// @notice Wire the curve-buffer recipient (the pad's curve controller) exactly ONCE, by the FACTORY in the
+    /// launch tx (the curve is deployed after registerPool, so it can't be known at registration). Once set it is
+    /// permanently frozen; any buffer that parked before wiring becomes claimable to the curve afterwards.
+    function setBufferRecipient(PoolId id, address recipient) external {
+        if (msg.sender != factory) revert NotFactory();
+        PoolConfig storage c = config[id];
+        if (!c.registered) revert NotRegistered();
+        if (c.bufferRecipient != address(0)) revert BufferRecipientAlreadySet();
+        if (recipient == address(0)) revert ZeroAddress();
+        c.bufferRecipient = recipient;
+        emit BufferRecipientSet(id, recipient);
     }
 
     function startCreatorRepoint(PoolId id, address pending) external {

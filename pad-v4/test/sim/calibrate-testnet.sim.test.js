@@ -35,7 +35,7 @@ describe("CALIBRATION — tiny testnet graduation raise", () => {
       const curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
         await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
         await lockVault.getAddress(), await mf.getAddress(), await reg.getAddress(),
-        ZERO, await tok.getAddress(), FEE, TS, ZERO, START, GRAD, 2000, ethers.parseEther("0.5"), creator.address
+        ZERO, await tok.getAddress(), FEE, TS, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address
       );
       const curveAddr = await curve.getAddress();
       await tok.connect(owner).transfer(curveAddr, curveSupply);

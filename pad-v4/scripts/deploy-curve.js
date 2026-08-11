@@ -26,18 +26,23 @@ const POOL_MANAGER = process.env.POOL_MANAGER || "0x8366a39CC670B4001A1121B8F6A4
 const POSITION_MANAGER = process.env.POSITION_MANAGER || "0x174c1130aD96Ff0BB5492dD2BF81ccd549572EFA";
 const PERMIT2 = process.env.PERMIT2 || "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 
-// Governed v2 DEFAULT launch params (stamped IMMUTABLY per-pad at launch; retunable for future launches only).
-// Geometry magnitudes are tick-spacing-aligned for ts=60 (201600/60, 25800/60, 22800/60 are integers).
+// Governed v3-economics DEFAULT launch params (stamped IMMUTABLY per-pad at launch; retunable for FUTURE launches
+// only). Geometry ports the proven V3 curve (START 201600, WIDTH 23000 ≈ 10x chart, 1B supply @ 75% curve / 25%
+// reserve → start ~$3.4k, graduate ~$34k on ~4.2 ETH). Magnitudes are tick-spacing-aligned for ts=100
+// (201600/100, 23000/100, 22800/100 are integers) — launches must pass tickSpacing=100.
 const DEFAULTS = {
-  buyTaxBps: Number(process.env.BUY_TAX_BPS || 100), // 1% buy trade tax → platform
-  sellTaxBps: Number(process.env.SELL_TAX_BPS || 100), // 1% sell trade tax → creator + floor
-  sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 2000), // 20% of the sell tax → floor (0.2% of trade)
+  buyTaxBps: Number(process.env.BUY_TAX_BPS || 100), // 1% buy trade tax → 0.8% platform / 0.2% curve buffer
+  sellTaxBps: Number(process.env.SELL_TAX_BPS || 100), // 1% sell trade tax → creator (sellFloorShare=0)
+  sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 0), // sell tax goes fully to the creator
   buyLpFloorShareBps: Number(process.env.BUY_LP_FLOOR_SHARE_BPS || 2000), // 20% of the buy LP fee → floor at grad
+  buyBufferShareBps: Number(process.env.BUY_BUFFER_SHARE_BPS || 2000), // 20% of the buy tax (=0.2% of trade) → curve buffer
+  platformGradBps: Number(process.env.PLATFORM_GRAD_BPS || 1000), // 10% of the raise → platform at graduation
+  creatorGradBps: Number(process.env.CREATOR_GRAD_BPS || 1000), // 10% of the raise → creator at graduation
+  ambushGradBps: Number(process.env.AMBUSH_GRAD_BPS || 500), // 5% of the raise → two-sided ambush (LP = 75% remainder)
   lpFee: Number(process.env.LP_FEE || 10000), // 1% static pool LP fee
-  startTickMag: Number(process.env.START_TICK_MAG || 201600), // curve top (launch price magnitude)
-  curveWidth: Number(process.env.CURVE_WIDTH || 25800), // start → graduation ceiling span
+  startTickMag: Number(process.env.START_TICK_MAG || 201600), // curve top (launch price magnitude) — V3 parity
+  curveWidth: Number(process.env.CURVE_WIDTH || 23000), // start → graduation ceiling span (~10x chart)
   minGradWidth: Number(process.env.MIN_GRAD_WIDTH || 22800), // informational min-grad marker (< curveWidth)
-  gradRewardWei: (process.env.GRAD_REWARD_WEI ? BigInt(process.env.GRAD_REWARD_WEI) : ethers.parseEther("0.5")).toString(),
 };
 
 async function legacyDeploy(name, args = []) {
@@ -102,8 +107,8 @@ async function main() {
   console.log("\nNext:");
   console.log("  1. transfer FeeWalletRegistry + RobinV4FeeConfig ownership to the platform multisig (Ownable2Step)");
   console.log(`  2. FACTORY=${curveFactory} node scripts/auto-verify.cjs --once   (verify token/hook/curve on Blockscout)`);
-  console.log("  3. per graduated pad: deploy RobinFloorVault + RobinAmbushVault + DualStaking, then");
-  console.log("     curve.setFloor(floor) / curve.setStaking(staking) (platform-gated, one-shot each)");
+  console.log("  3. per graduated pad: deploy RobinFloorVault + RobinAmbushVault + RobinLockStaking, then");
+  console.log("     curve.setFloor(floor) / curve.setAmbush(ambush) / curve.setStaking(staking) (platform-gated, one-shot each)");
 }
 
 main().catch((e) => {

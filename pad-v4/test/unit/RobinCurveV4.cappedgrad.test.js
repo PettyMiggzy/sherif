@@ -37,7 +37,7 @@ describe("RobinCurveV4 — graduation after a ceiling-CAPPED buy (no PriceLimitA
     curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
-      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, ethers.parseEther("0.5"), creator.address
+      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address
     );
     const curveAddr = await curve.getAddress();
     await tok.connect(owner).transfer(curveAddr, CURVE_SUPPLY);

@@ -31,8 +31,9 @@ async function deployStack(deployer, platform) {
   const lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await posm.getAddress(), await reg.getAddress());
   const curveDep = await (await ethers.getContractFactory("CurveV4Deployer")).deploy(await dep.getAddress());
   const feeCfg = await (await ethers.getContractFactory("RobinV4FeeConfig")).deploy(deployer.address, {
-    buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyLpFloorShareBps: 2000,
-    lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: MINGRAD, gradRewardWei: E("0.5"),
+    buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 0, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000,
+    platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
+    lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: MINGRAD,
   });
   const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
     await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
@@ -94,23 +95,27 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
   });
 
   // one full scenario: dev buy → airdrop → tape (with no-bot-protection + slippage assertions)
-  async function scenario(tag, { curveSupply, reserveSupply, airdropPool, devBuyEth, airdropHolders, airdropEach, normalBuyEth, whaleBuyEth }) {
+  async function scenario(tag, { curveSupply, reserveSupply, devBuyEth, airdropHolders, normalBuyEth, whaleBuyEth }) {
     const creator = signers[2];
-    const supply = curveSupply + reserveSupply + airdropPool;
+    // NO DEV MINT: supply is exactly curve + reserve. The creator starts with ZERO tokens and gets them ONLY by
+    // buying from the curve (the "dev buy") — then airdrops from what they bought. No premine, no pre-bought bag.
+    const supply = curveSupply + reserveSupply;
     const P = await launchPad(S, deployer, creator, tag, { supply, curveSupply, reserveSupply });
     const { key, tok, curve } = P;
 
-    // creator holds the airdrop pool (supply - curve - reserve)
-    expect(await tok.balanceOf(creator.address)).to.equal(airdropPool);
+    // creator holds NOTHING at launch (no premine)
+    expect(await tok.balanceOf(creator.address)).to.equal(0n);
 
     // ── DEV BUY: the dev is simply the FIRST buyer (proves no launch-snipe / first-block protection) ──
-    if (devBuyEth > 0) {
-      await expect(buy(key, creator, devBuyEth)).to.not.be.reverted;
-      expect(await tok.balanceOf(creator.address)).to.be.gt(airdropPool); // got curve tokens on top of the allocation
-    }
+    await expect(buy(key, creator, devBuyEth)).to.not.be.reverted;
+    const devBought = await tok.balanceOf(creator.address);
+    expect(devBought).to.be.gt(0n); // got curve tokens by BUYING, like everyone else
 
-    // ── AIRDROP: plain ERC20 transfers from the creator to N holders (proves no transfer restriction) ──
+    // ── AIRDROP: the creator hands out a third of the tokens they BOUGHT, split across N holders (plain ERC20
+    //    transfers → proves no transfer restriction). Sized off devBought so it holds for any curve geometry. ──
     const holders = signers.slice(5, 5 + airdropHolders);
+    const airdropEach = devBought / BigInt(airdropHolders * 3);
+    expect(airdropEach).to.be.gt(0n);
     for (const h of holders) await expect(tok.connect(creator).transfer(h.address, airdropEach)).to.not.be.reverted;
     for (const h of holders) expect(await tok.balanceOf(h.address)).to.equal(airdropEach);
 
@@ -158,16 +163,16 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
     return { P };
   }
 
-  it("scenario A — small dev buy (0.5Ξ) + large airdrop (18 holders), deep curve", async () => {
+  it("scenario A — small dev buy (0.5Ξ) + large airdrop (8 holders), deep curve", async () => {
     await scenario("PADA", {
-      curveSupply: 100000n * 10n ** 18n, reserveSupply: 100000n * 10n ** 18n, airdropPool: 50000n * 10n ** 18n,
+      curveSupply: 100000n * 10n ** 18n, reserveSupply: 100000n * 10n ** 18n,
       devBuyEth: 0.5, airdropHolders: 8, airdropEach: 100n * 10n ** 18n, normalBuyEth: "1", whaleBuyEth: 50,
     });
   });
 
   it("scenario B — large dev buy (20Ξ) + small airdrop (3 holders), deep curve", async () => {
     await scenario("PADB", {
-      curveSupply: 100000n * 10n ** 18n, reserveSupply: 100000n * 10n ** 18n, airdropPool: 50000n * 10n ** 18n,
+      curveSupply: 100000n * 10n ** 18n, reserveSupply: 100000n * 10n ** 18n,
       devBuyEth: 20, airdropHolders: 3, airdropEach: 500n * 10n ** 18n, normalBuyEth: "2", whaleBuyEth: 80,
     });
   });
@@ -178,9 +183,9 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
   // reward is the token itself + ETH (US-safe). This test proves the plumbing; it does NOT bless US distribution.
   it("scenario D — [gated, non-US] RWA rewards: stake the pad coin, EARN a tokenized real-world asset", async () => {
     const creator = signers[2];
-    const curveSupply = 1000n * 10n ** 18n, reserveSupply = 1000n * 10n ** 18n, airdropPool = 1000n * 10n ** 18n;
-    const P = await launchPad(S, deployer, creator, "PADD", { supply: curveSupply + reserveSupply + airdropPool, curveSupply, reserveSupply });
-    const { tok } = P;
+    const curveSupply = 1000n * 10n ** 18n, reserveSupply = 1000n * 10n ** 18n;
+    const P = await launchPad(S, deployer, creator, "PADD", { supply: curveSupply + reserveSupply, curveSupply, reserveSupply });
+    const { key, tok } = P;
 
     // the RWA: a tokenized real-world asset (a stock on Robinhood Chain), governed by its access registry
     const stockReg = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
@@ -190,13 +195,15 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
     const ds = await (await ethers.getContractFactory("DualStaking")).deploy(P.token, ZERO, deployer.address, 0, ZERO, ethers.ZeroHash, 0);
     await ds.listReward(0, await rwa.getAddress(), 7 * 86400); // Side.TOKEN earns the tokenized real-world asset
 
-    // holders receive the pad coin (airdrop) and STAKE it
+    // holders BUY the pad coin from the curve (no premine), then STAKE what they bought
     const holders = signers.slice(5, 9);
-    const AIR = 50n * 10n ** 18n;
-    for (const h of holders) await tok.connect(creator).transfer(h.address, AIR);
+    const staked = {};
     for (const h of holders) {
+      await expect(buy(key, h, "2")).to.not.be.reverted;
+      const bal = await tok.balanceOf(h.address);
       await tok.connect(h).approve(await ds.getAddress(), ethers.MaxUint256);
-      await ds.connect(h).stake(0, AIR);
+      await ds.connect(h).stake(0, bal);
+      staked[h.address] = bal;
     }
 
     // the platform funds the RWA reward stream (in prod: a slice of fees → buy the RWA via RobinStockSwap → fundToken)
@@ -210,13 +217,13 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
     const before = await rwa.balanceOf(alice.address);
     await expect(ds.connect(alice).claim(0, await rwa.getAddress())).to.not.be.reverted;
     expect(await rwa.balanceOf(alice.address)).to.be.gt(before); // holder now holds a REAL-WORLD ASSET earned by staking
-    await expect(ds.connect(alice).unstake(0, AIR)).to.not.be.reverted; // pad-coin principal returns untouched
+    await expect(ds.connect(alice).unstake(0, staked[alice.address])).to.not.be.reverted; // pad-coin principal returns untouched
   });
 
   it("scenario C — no dev buy + airdrop + STAKING; busy tape GRADUATES; holders stake→earn→claim→unstake", async () => {
     const creator = signers[2];
-    const curveSupply = 1000n * 10n ** 18n, reserveSupply = 1000n * 10n ** 18n, airdropPool = 500n * 10n ** 18n;
-    const P = await launchPad(S, deployer, creator, "PADC", { supply: curveSupply + reserveSupply + airdropPool, curveSupply, reserveSupply });
+    const curveSupply = 1000n * 10n ** 18n, reserveSupply = 1000n * 10n ** 18n;
+    const P = await launchPad(S, deployer, creator, "PADC", { supply: curveSupply + reserveSupply, curveSupply, reserveSupply });
     const { key, tok, curve } = P;
 
     // ── wire the pad's holder-staking pool (stake the token, earn the streamed token; 5% claim fee, no hold) ──
@@ -225,15 +232,18 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
     await ds.listReward(0, P.token, 7 * 86400); // Side.TOKEN earns the token
     await curve.connect(platform).setStaking(await ds.getAddress());
 
-    // ── airdrop, and the holders STAKE their airdrop into the pool ──
+    // ── holders BUY from the curve (no premine), then STAKE what they bought into the pool ──
     const stakers = signers.slice(5, 9);
-    const AIR = 50n * 10n ** 18n;
-    for (const h of stakers) await tok.connect(creator).transfer(h.address, AIR);
+    const staked = {};
     for (const h of stakers) {
+      await expect(buy(key, h, "2")).to.not.be.reverted;
+      const bal = await tok.balanceOf(h.address);
       await tok.connect(h).approve(await ds.getAddress(), ethers.MaxUint256);
-      await expect(ds.connect(h).stake(0, AIR)).to.not.be.reverted;
+      await expect(ds.connect(h).stake(0, bal)).to.not.be.reverted;
+      staked[h.address] = bal;
     }
-    expect(await ds.totalStaked(0)).to.equal(AIR * BigInt(stakers.length));
+    const totalStakedExpected = Object.values(staked).reduce((a, b) => a + b, 0n);
+    expect(await ds.totalStaked(0)).to.equal(totalStakedExpected);
 
     // ── busy multi-wallet tape buys the shallow curve OUT ──
     for (const w of signers.slice(9, 15)) await expect(buy(key, w, "2")).to.not.be.reverted;
@@ -246,7 +256,7 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
     expect(await curve.graduated()).to.equal(true);
     expect(await S.posm.ownerOf(idBefore)).to.equal(await S.lockVault.getAddress());
     expect((await S.stateView.getSlot0(P.poolId))[1]).to.equal(GRAD); // ceiling restored
-    expect(await tok.balanceOf(await ds.getAddress())).to.be.gt(AIR * BigInt(stakers.length)); // reward arrived on top of principal
+    expect(await tok.balanceOf(await ds.getAddress())).to.be.gt(totalStakedExpected); // reward arrived on top of principal
 
     // ── stream the window, then a holder EARNS, CLAIMS the reward, and UNSTAKES the principal ──
     await time.increase(7 * 86400 + 10);
@@ -256,7 +266,7 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
     await expect(ds.connect(alice).claim(0, P.token)).to.not.be.reverted;
     const afterClaim = await tok.balanceOf(alice.address);
     expect(afterClaim).to.be.gt(before); // received the streamed reward (net of the 5% claim fee)
-    await expect(ds.connect(alice).unstake(0, AIR)).to.not.be.reverted; // principal returned
-    expect(await tok.balanceOf(alice.address)).to.equal(afterClaim + AIR);
+    await expect(ds.connect(alice).unstake(0, staked[alice.address])).to.not.be.reverted; // principal returned
+    expect(await tok.balanceOf(alice.address)).to.equal(afterClaim + staked[alice.address]);
   });
 });

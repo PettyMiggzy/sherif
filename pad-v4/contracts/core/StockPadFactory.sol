@@ -161,6 +161,7 @@ contract StockPadFactory {
                 buyTaxBps: cfg.buyTaxBps,
                 sellTaxBps: cfg.sellTaxBps,
                 sellFloorShareBps: cfg.sellFloorShareBps,
+                buyBufferShareBps: 0, // no curve buffer on the stock pad
                 guardWindow: cfg.guardWindow,
                 quoteIsStock: true
             })

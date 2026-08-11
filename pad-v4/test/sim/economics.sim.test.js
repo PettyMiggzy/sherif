@@ -42,8 +42,10 @@ describe("SIM — fee conservation over many buys & sells", () => {
     await pm.initialize(key, SQRT_1_1);
     await hook.connect(factory).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address, floorRecipient: floor.address,
-      guardAdapter: ZERO, buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, guardWindow: 0, quoteIsStock: false,
+      guardAdapter: ZERO, buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyBufferShareBps: 2000, guardWindow: 0, quoteIsStock: false,
     });
+    // the curve-buffer recipient (in prod, the pad's curve controller) — the buy-tax buffer carve is forwarded here
+    await hook.connect(factory).setBufferRecipient(poolId, lp.address);
     const mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());
     const sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
     await tok.connect(owner).transfer(lp.address, 10n ** 25n);
@@ -64,9 +66,12 @@ describe("SIM — fee conservation over many buys & sells", () => {
       }
     }
 
-    // INVARIANT 1: token leg (buys) — the hook's token balance == platformOwed[1] (all buy tax → platform)
+    // INVARIANT 1: token leg (buys) — the hook's token balance == platformOwed[1] + bufferOwed (buy tax splits
+    // into the platform cut and the curve-buffer carve; both sit on the hook until claimed)
     const platTok = await hook.platformOwed(poolId, 1);
-    expect(await tok.balanceOf(hookAddr)).to.equal(platTok);
+    const buffTok = await hook.bufferOwed(poolId);
+    expect(buffTok).to.be.gt(0n); // the 20% buffer carve accrued
+    expect(await tok.balanceOf(hookAddr)).to.equal(platTok + buffTok);
     expect(await hook.creatorOwed(poolId, 1)).to.equal(0n);
     expect(await hook.floorOwed(poolId, 1)).to.equal(0n);
 
@@ -86,6 +91,7 @@ describe("SIM — fee conservation over many buys & sells", () => {
 
     // INVARIANT 4: every claim succeeds (solvency proven) and drains the hook to exactly zero.
     await hook.claimPlatform(poolId, 1);
+    await hook.claimBuffer(poolId); // forward the curve-buffer carve to its recipient (token leg)
     await hook.claimCreator(poolId, 0);
     await hook.claimFloor(poolId, 0);
     expect(await tok.balanceOf(hookAddr)).to.equal(0n);

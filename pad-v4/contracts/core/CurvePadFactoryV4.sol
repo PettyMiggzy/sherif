@@ -106,13 +106,16 @@ contract CurvePadFactoryV4 {
         external
         returns (address token, address hook, address curve, PoolId poolId)
     {
+        // NO DEV MINT: the whole supply must be exactly the sellable curve + the held reserve — nothing is left
+        // over to hand the creator. The creator (dev) gets tokens ONLY by BUYING from the curve like everyone else,
+        // so there is no premine to red-flag on a scanner and no pre-bought bag that front-runs the public.
         if (
             cfg.creator == address(0) || cfg.supply == 0 || cfg.curveSupply == 0 || cfg.reserveSupply == 0
-                || cfg.curveSupply + cfg.reserveSupply > cfg.supply
+                || cfg.curveSupply + cfg.reserveSupply != cfg.supply
         ) revert BadConfig();
 
         // 1) governed defaults, snapshotted + stamped immutably
-        RobinV4FeeConfig.Defaults memory d = feeConfig.defaults(); // buyLpFloorShareBps + gradRewardWei validated there
+        RobinV4FeeConfig.Defaults memory d = feeConfig.defaults(); // all shares/geometry validated in the FeeConfig
         int24 ts = cfg.tickSpacing;
         if (ts <= 0 || d.startTickMag % ts != 0 || d.curveWidth % ts != 0) revert BadGeometry();
         int24 startTick = int24(d.startTickMag); // token = currency1 ⇒ launch at the high (top) tick
@@ -186,6 +189,7 @@ contract CurvePadFactoryV4 {
                 buyTaxBps: d.buyTaxBps,
                 sellTaxBps: d.sellTaxBps,
                 sellFloorShareBps: d.sellFloorShareBps,
+                buyBufferShareBps: d.buyBufferShareBps,
                 guardWindow: 0,
                 quoteIsStock: false
             })
@@ -211,18 +215,21 @@ contract CurvePadFactoryV4 {
                 startTick,
                 gradTick,
                 d.buyLpFloorShareBps,
-                d.gradRewardWei,
+                d.platformGradBps,
+                d.creatorGradBps,
+                d.ambushGradBps,
                 cfg.creator
             )
         );
         isCurve[curve] = true;
+        // wire the curve as the buy-tax buffer sink (hardens the LP-binding reserve + deepens staking); known only now
+        RobinFeeHook(payable(hook)).setBufferRecipient(poolId, curve);
         IERC20(token).safeTransfer(curve, cfg.curveSupply); // the SOLD portion → seeded into the curve
         RobinCurveV4(payable(curve)).seed();
         IERC20(token).safeTransfer(curve, cfg.reserveSupply); // the HELD reserve → pairs the permanent LP + staking
 
-        // 6) send the non-curve, non-reserve remainder to the creator
-        uint256 rem = IERC20(token).balanceOf(address(this));
-        if (rem > 0) IERC20(token).safeTransfer(cfg.creator, rem);
+        // 6) NO remainder: supply == curveSupply + reserveSupply is enforced above, so the factory holds 0 token
+        //    now — nothing is minted to the creator (no premine). Any stray dust is left untouched (never sent).
 
         uint256 index = launchCount++;
         launches[index] = Launch({token: token, hook: hook, curve: curve, poolId: poolId});
