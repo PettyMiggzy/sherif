@@ -27,9 +27,14 @@ import {RobinV4FeeConfig} from "../core/RobinV4FeeConfig.sol";
 /// or (b) a refund/claim to the very depositor who put it in.
 ///
 /// Trust model: no owner, no admin, no operator. Salts are COMMIT-REVEAL — only a preimage-holder (the creator, or
-/// anyone they share it with) can finalize, so the freshly-launched pool is un-addressable and un-front-runnable
-/// until the finalize tx; a FINALIZE_GRACE escape hatch converts to Failed (full refunds) if finalize is never
-/// called, so ETH can never be permanently trapped. Nothing in the audited curve/hook/factory is modified.
+/// anyone they share it with) can finalize, so the freshly-launched pool is un-addressable until the finalize tx.
+/// NOTE the reveal itself is only as un-front-runnable as the chain's tx ordering: on Robinhood Chain's single-
+/// sequencer FCFS ordering (no public mempool) the finalize tx can't be sniped, but on a public-mempool /
+/// decentralized-sequencer chain a bot could read the revealed salts and front-run curvePadFactory.launch(cfg,salts)
+/// directly (it is permissionless). finalize() defends against that: if the launch was sniped it FAILS the presale
+/// (Failed reason 3) so 100% refunds open immediately — never a brick or a lock. Separately, a FINALIZE_GRACE escape
+/// hatch converts to Failed if finalize is never called. ETH can never be permanently trapped or stolen. Nothing in
+/// the audited curve/hook/factory is modified.
 contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using BalanceDeltaLibrary for BalanceDelta;
@@ -70,7 +75,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     event Deposited(address indexed user, uint256 amount, uint256 refundedTrim);
     event Finalized(address indexed token, address indexed curve, PoolId poolId, uint256 pooledEthSpent, uint256 tokensBought);
     event Claimed(address indexed user, uint256 tokenOut, uint256 ethBack);
-    event Failed(uint8 reason); // 1 = under target at deadline, 2 = grace escape hatch
+    event Failed(uint8 reason); // 1 = under target at deadline, 2 = grace escape hatch, 3 = committed launch sniped
     event Refunded(address indexed user, uint256 amount);
 
     error NotOpen();
@@ -166,8 +171,25 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         // seed and pays the creator NO remainder (no-mint) — the creator profits only via the sell-tax stream +
         // graduation share, never presale ETH.
         LaunchConfig memory c = cfg;
-        (address tok, address hook, address curve, PoolId poolId) =
-            curvePadFactory.launch(c, tokenSalt, hookSalt, curveSalt);
+        address tok;
+        address hook;
+        address curve;
+        PoolId poolId;
+        try curvePadFactory.launch(c, tokenSalt, hookSalt, curveSalt) returns (address a, address b, address cc, PoolId pid) {
+            (tok, hook, curve, poolId) = (a, b, cc, pid);
+        } catch {
+            // [audit] The committed launch was SNIPED — curvePadFactory.launch(cfg, salts) is permissionless and fully
+            // determined by the public cfg + the just-revealed salts, so a front-runner can launch (and buy) it first,
+            // after which this re-entry reverts (registerPool AlreadyRegistered / the drained factory can't seed).
+            // Rather than revert — which would lock contributors for the whole finalizeGrace window (fail() reason 2)
+            // or permanently — FAIL the presale NOW so 100% refunds open immediately. On Robinhood Chain's
+            // single-sequencer FCFS ordering this is not reachable; it exists so a public-mempool / decentralized-
+            // sequencer deployment can never brick the vault or trap contributor ETH.
+            finalized = false;
+            failed = true;
+            emit Failed(3); // 3 = committed launch sniped / front-run
+            return;
+        }
         token = tok;
 
         // reconstruct the pool key from the SAME feeConfig read the factory just used (same tx ⇒ identical)

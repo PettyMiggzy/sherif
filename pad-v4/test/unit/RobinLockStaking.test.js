@@ -187,4 +187,21 @@ describe("RobinLockStaking", () => {
     expect(await s2.rewardsBalance()).to.be.closeTo(0n, E(3));
     await bal();
   });
+
+  it("[audit] a dust fund during an active drip can't push periodFinish out (anti-grief)", async () => {
+    await st.connect(alice).stake(E(1000));
+    await st.connect(owner).fund(E(1000)); // start a 30-day drip
+    const finishAfterStart = await st.periodFinish();
+    await time.increase(2 * 86400); // 2 days into the window
+
+    // a griefer dust-funds 1 wei repeatedly — this used to reset periodFinish to now+30d and re-stretch the reservoir
+    for (let i = 0; i < 5; i++) await st.connect(bob).fund(1n);
+    expect(await st.periodFinish()).to.equal(finishAfterStart); // window NOT extended — grief neutralised
+
+    // the drip still finishes on the ORIGINAL schedule and alice can claim ~the whole reservoir
+    await time.increase(DUR); // past the original periodFinish
+    const a0 = await tok.balanceOf(alice.address);
+    await st.connect(alice).getReward();
+    expect((await tok.balanceOf(alice.address)) - a0).to.be.closeTo(E(1000), E(3)); // full reservoir dripped on time
+  });
 });

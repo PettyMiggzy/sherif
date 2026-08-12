@@ -211,17 +211,24 @@ contract RobinLockStaking is ReentrancyGuard, IStakingFund {
         emit RewardAdded(msg.sender, amount, true);
     }
 
-    /// @dev Set rewardRate so `amount` (plus any not-yet-dripped leftover) streams over `rewardsDuration`. Bounds
-    /// the payout rate → the reservoir can never be drained instantly. Assumes _updateReward(0) already ran.
+    /// @dev Route a new reward tranche into the drip. A FRESH window (periodFinish elapsed) streams `amount` over a
+    /// full `rewardsDuration`. A top-up DURING an active window folds `amount` into the drip over the REMAINING time
+    /// and leaves `periodFinish` UNCHANGED. Bounds the payout rate → the reservoir can never be drained instantly.
+    /// [audit] Not resetting periodFinish on a mid-window top-up is deliberate: `fund`/`fundTokenPushed` are
+    /// permissionless, so if a top-up reset the window a griefer could dust-fund (1 wei) repeatedly to re-stretch the
+    /// undripped reservoir over a fresh full duration each time and push periodFinish out forever, slowing honest
+    /// stakers' rewards ~2.3-4.6x. Keeping periodFinish fixed makes the window un-extendable by dust and restores the
+    /// bounded, predictable drip. Assumes _updateReward(0) already ran.
     function _startDrip(uint256 amount) internal {
         if (block.timestamp >= periodFinish) {
             rewardRate = amount / rewardsDuration;
+            periodFinish = block.timestamp + rewardsDuration;
         } else {
-            uint256 leftover = (periodFinish - block.timestamp) * rewardRate;
-            rewardRate = (amount + leftover) / rewardsDuration;
+            uint256 remaining = periodFinish - block.timestamp;
+            uint256 leftover = remaining * rewardRate;
+            rewardRate = (amount + leftover) / remaining; // drip over the remaining window; periodFinish unchanged
         }
         lastUpdateTime = block.timestamp;
-        periodFinish = block.timestamp + rewardsDuration;
     }
 
     // ── views for the pad UI / profile ───────────────────────────────────────────────
