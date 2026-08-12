@@ -3,12 +3,13 @@ const { expect } = require("chai");
 
 // RobinFeeHook — on-chain referral revenue-share. A referrer passed in the swap hookData on a BUY earns a slice
 // (referralShareBps) of the PLATFORM's buy-tax cut — carved from the platform, never the buffer, never the trader.
-// The reward is the pad TOKEN (the buy tax is token-denominated); the referrer pulls it with claimReferral(token).
+// The reward is the MONEY SIDE (ETH — the buy tax is fee-on-input, denominated in currency0); the referrer pulls
+// it with claimReferral(address(0)), which sweeps every ETH pad they referred in one call.
 
 const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
-const FLAGS = 0xc4n, MASK = 0x3fffn;
+const FLAGS = 0xccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(deployerAddr, initCodeHash) {
@@ -24,9 +25,9 @@ function poolIdOf(key) {
   );
 }
 
-describe("RobinFeeHook — on-chain referral revenue-share", () => {
+describe("RobinFeeHook — on-chain referral revenue-share (ETH-denominated buy tax)", () => {
   const FEE = 3000, TS = 60;
-  const BUY_BPS = 100n;      // 1% buy tax
+  const BUY_BPS = 100n;      // 1% buy tax (money side)
   const BUFFER_SHARE_BPS = 2000n; // 20% of the buy tax → curve buffer
   const REFERRAL_SHARE_BPS = 2500n; // 25% of the PLATFORM cut → referrer
 
@@ -76,48 +77,48 @@ describe("RobinFeeHook — on-chain referral revenue-share", () => {
 
   it("a buy WITH a referrer in hookData carves the referral from the platform cut (not the buffer, not the trader)", async () => {
     const hookAddr = await hook.getAddress();
-    const hookBefore = await tok.balanceOf(hookAddr);
-    const traderBefore = await tok.balanceOf(trader.address);
+    const hookEthBefore = await ethers.provider.getBalance(hookAddr);
+    const spend = ethers.parseEther("1");
 
     const hookData = abi.encode(["address"], [referrer.address]);
     await buy("1", hookData);
 
-    const skim = (await tok.balanceOf(hookAddr)) - hookBefore; // total buy tax (token)
-    const traderGot = (await tok.balanceOf(trader.address)) - traderBefore;
-    expect(skim).to.equal(((traderGot + skim) * BUY_BPS) / 10000n); // trader still paid exactly 1% — no extra cost
+    const skim = (await ethers.provider.getBalance(hookAddr)) - hookEthBefore; // total buy tax (ETH, fee-on-input)
+    expect(skim).to.equal((spend * BUY_BPS) / 10000n); // trader paid exactly 1% of the ETH they spent — no extra cost
 
     const bufferCut = (skim * BUFFER_SHARE_BPS) / 10000n;
     const platformCut = skim - bufferCut;                 // platform's slice before the referral carve
     const referralCut = (platformCut * REFERRAL_SHARE_BPS) / 10000n;
 
-    expect(await hook.referralOwed(referrer.address, tokAddr)).to.equal(referralCut);
-    expect(await hook.platformOwed(poolId, 1)).to.equal(platformCut - referralCut); // platform keeps the rest
+    expect(await hook.referralOwed(referrer.address, ZERO)).to.equal(referralCut); // ETH-keyed (address(0))
+    expect(await hook.platformOwed(poolId, 0)).to.equal(platformCut - referralCut); // money side; platform keeps the rest
     expect(await hook.bufferOwed(poolId)).to.equal(bufferCut); // buffer untouched by referral
     expect(referralCut).to.be.gt(0n);
   });
 
   it("a buy with NO referrer (empty hookData) sends the whole platform cut to the platform", async () => {
-    const platBefore = await hook.platformOwed(poolId, 1);
-    const refBefore = await hook.referralOwed(referrer.address, tokAddr);
+    const platBefore = await hook.platformOwed(poolId, 0);
+    const refBefore = await hook.referralOwed(referrer.address, ZERO);
     const hookAddr = await hook.getAddress();
-    const hookBal0 = await tok.balanceOf(hookAddr);
+    const hookEth0 = await ethers.provider.getBalance(hookAddr);
 
     await buy("1", "0x"); // no referrer
 
-    const skim = (await tok.balanceOf(hookAddr)) - hookBal0;
+    const skim = (await ethers.provider.getBalance(hookAddr)) - hookEth0;
     const platformCut = skim - (skim * BUFFER_SHARE_BPS) / 10000n;
-    expect((await hook.platformOwed(poolId, 1)) - platBefore).to.equal(platformCut); // full platform cut, no referral
-    expect(await hook.referralOwed(referrer.address, tokAddr)).to.equal(refBefore); // referrer unchanged
+    expect((await hook.platformOwed(poolId, 0)) - platBefore).to.equal(platformCut); // full platform cut, no referral
+    expect(await hook.referralOwed(referrer.address, ZERO)).to.equal(refBefore); // referrer unchanged
   });
 
-  it("the referrer claims their accrued token; the book zeroes and a re-claim reverts", async () => {
-    const owed = await hook.referralOwed(referrer.address, tokAddr);
+  it("the referrer claims their accrued ETH; the book zeroes and a re-claim reverts", async () => {
+    const owed = await hook.referralOwed(referrer.address, ZERO);
     expect(owed).to.be.gt(0n);
-    const before = await tok.balanceOf(referrer.address);
-    await hook.connect(referrer).claimReferral(tokAddr); // permissionless; pays msg.sender only
-    expect((await tok.balanceOf(referrer.address)) - before).to.equal(owed);
-    expect(await hook.referralOwed(referrer.address, tokAddr)).to.equal(0n);
-    await expect(hook.connect(referrer).claimReferral(tokAddr)).to.be.revertedWithCustomError(hook, "NothingToClaim");
+    const before = await ethers.provider.getBalance(referrer.address);
+    const rc = await (await hook.connect(referrer).claimReferral(ZERO)).wait(); // permissionless; pays msg.sender only
+    const gas = rc.gasUsed * rc.gasPrice;
+    expect((await ethers.provider.getBalance(referrer.address)) - before).to.equal(owed - gas);
+    expect(await hook.referralOwed(referrer.address, ZERO)).to.equal(0n);
+    await expect(hook.connect(referrer).claimReferral(ZERO)).to.be.revertedWithCustomError(hook, "NothingToClaim");
   });
 
   it("malformed hookData never bricks a buy (defensive decode)", async () => {

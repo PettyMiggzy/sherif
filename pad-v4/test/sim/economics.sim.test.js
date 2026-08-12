@@ -12,7 +12,7 @@ const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
 const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
-const FLAGS = 0xc4n, MASK = 0x3fffn;
+const FLAGS = 0xccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(dep, h) {
@@ -66,32 +66,33 @@ describe("SIM — fee conservation over many buys & sells", () => {
       }
     }
 
-    // INVARIANT 1: token leg (buys) — the hook's token balance == platformOwed[1] + bufferOwed (buy tax splits
-    // into the platform cut and the curve-buffer carve; both sit on the hook until claimed)
-    const platTok = await hook.platformOwed(poolId, 1);
-    const buffTok = await hook.bufferOwed(poolId);
-    expect(buffTok).to.be.gt(0n); // the 20% buffer carve accrued
-    expect(await tok.balanceOf(hookAddr)).to.equal(platTok + buffTok);
+    // Both taxes are now ETH (money side): buys are taxed FEE-ON-INPUT (beforeSwap), sells on the ETH OUTPUT
+    // (afterSwap). So the hook accrues ONLY native ETH and never holds any of the pad coin.
+    // INVARIANT 1: buys → platform cut + curve buffer, both ETH.
+    const platEth = await hook.platformOwed(poolId, 0);
+    const buffEth = await hook.bufferOwed(poolId);
+    expect(buffEth).to.be.gt(0n); // the 20% buffer carve accrued
+    // INVARIANT 2: sells → creator + floor, both ETH.
+    const creaEth = await hook.creatorOwed(poolId, 0);
+    const floorEth = await hook.floorOwed(poolId, 0);
+    // SOLVENCY IS EXACT: the hook's whole native balance == every wei booked across buys + sells; nothing leaks.
+    expect(await ethers.provider.getBalance(hookAddr)).to.equal(platEth + buffEth + creaEth + floorEth);
+    // no pad coin ever accrues to the hook (the buy tax is ETH, not the coin)
+    expect(await tok.balanceOf(hookAddr)).to.equal(0n);
+    expect(await hook.platformOwed(poolId, 1)).to.equal(0n);
     expect(await hook.creatorOwed(poolId, 1)).to.equal(0n);
     expect(await hook.floorOwed(poolId, 1)).to.equal(0n);
 
-    // INVARIANT 2: quote leg (sells) — SOLVENCY IS EXACT. The hook's native balance equals exactly
-    // creatorOwed + floorOwed (every wei taken is booked; nothing leaks, nothing is over-promised).
-    const creaQuote = await hook.creatorOwed(poolId, 0);
-    const floorQuote = await hook.floorOwed(poolId, 0);
-    expect(await ethers.provider.getBalance(hookAddr)).to.equal(creaQuote + floorQuote);
-    expect(await hook.platformOwed(poolId, 0)).to.equal(0n); // sells never route native to platform
-
     // INVARIANT 3: floor ≈ 20% of the sell tax. Per-swap the carve is floor(fee*0.2), so summed it
     // lands a few wei UNDER an exact 20% — and that dust is conserved into the creator's cut (never lost).
-    const totalSell = creaQuote + floorQuote;
+    const totalSell = creaEth + floorEth;
     const exact20 = (totalSell * 2000n) / 10000n;
-    expect(floorQuote).to.be.lte(exact20); // never more than 20%
-    expect(exact20 - floorQuote).to.be.lte(BigInt(seq.length)); // dust ≤ one wei per swap, to creator
+    expect(floorEth).to.be.lte(exact20); // never more than 20%
+    expect(exact20 - floorEth).to.be.lte(BigInt(seq.length)); // dust ≤ one wei per swap, to creator
 
-    // INVARIANT 4: every claim succeeds (solvency proven) and drains the hook to exactly zero.
-    await hook.claimPlatform(poolId, 1);
-    await hook.claimBuffer(poolId); // forward the curve-buffer carve to its recipient (token leg)
+    // INVARIANT 4: every claim succeeds (solvency proven) and drains the hook's ETH to exactly zero.
+    await hook.claimPlatform(poolId, 0);
+    await hook.claimBuffer(poolId); // forward the curve-buffer carve to its recipient (ETH)
     await hook.claimCreator(poolId, 0);
     await hook.claimFloor(poolId, 0);
     expect(await tok.balanceOf(hookAddr)).to.equal(0n);

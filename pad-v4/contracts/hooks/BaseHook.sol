@@ -22,10 +22,12 @@ import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/Pool
 /// the flagged ones (beforeSwap / afterSwap). An unflagged callback is never
 /// invoked by the PoolManager, so the revert is a belt-and-suspenders guard.
 abstract contract BaseHook is IHooks {
-    /// @notice The one-and-only mining target: BEFORE_SWAP(0x80) | AFTER_SWAP(0x40) | AFTER_SWAP_RETURNS_DELTA(0x04).
+    /// @notice The one-and-only mining target: BEFORE_SWAP(0x80) | AFTER_SWAP(0x40) |
+    /// BEFORE_SWAP_RETURNS_DELTA(0x08) | AFTER_SWAP_RETURNS_DELTA(0x04) == 0x00CC. The two RETURNS_DELTA flags
+    /// are both required: the buy fee is settled via a beforeSwap specified delta, the sell fee via afterSwap.
     /// Public so the factory can require(hook.REQUIRED_FLAGS() == expected) and so the
     /// address miner and the ctor self-assert all read the same source of truth.
-    uint160 public constant REQUIRED_FLAGS = 0x00C4;
+    uint160 public constant REQUIRED_FLAGS = 0x00CC;
     /// @dev Low 14 bits are the hook-permission field the PoolManager reads from the address.
     uint160 internal constant ALL_HOOK_MASK = 0x3FFF;
 

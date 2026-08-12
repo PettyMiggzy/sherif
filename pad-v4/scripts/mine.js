@@ -1,6 +1,6 @@
 const { ethers } = require("hardhat");
 
-const HOOK_FLAGS = 0xc4n; // BEFORE_SWAP | AFTER_SWAP | AFTER_SWAP_RETURNS_DELTA
+const HOOK_FLAGS = 0xccn; // BEFORE_SWAP | AFTER_SWAP | AFTER_SWAP_RETURNS_DELTA
 const FLAG_MASK = 0x3fffn;
 
 /// Mine a CREATE2 salt so the hook deployed by `deployerAddr` lands on an address whose low 14

@@ -38,7 +38,7 @@ const cfg = {
     factory: "0xfE1CaAb7c8c024Dfb8D696262F206dE9964E3537",
     swapRouter: "0x5465091F4f71EE34B35E3697e0805E9310f43119", // PoolSwapTest (testnet swap router)
   },
-  HOOK_FLAGS: "0xc4",
+  HOOK_FLAGS: "0xcc",
   FLAG_MASK: "0x3fff",
   BYTECODE: {
     padToken: padToken.bytecode,

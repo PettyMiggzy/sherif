@@ -6,7 +6,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
-import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
+import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 
@@ -14,25 +14,29 @@ import {BaseHook} from "./BaseHook.sol";
 import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin} from "../interfaces/IRobinInterfaces.sol";
 
 /// @title RobinFeeHook — directional trade-tax engine (the heart of Robin V4)
-/// @notice On every exact-input swap the hook skims an ADDITIONAL fee from the OUTPUT leg (the trader
-/// pays LP fee + tax — nothing is "carved" from the pool, because the hook holds no liquidity) and
-/// routes it by DIRECTION:
+/// @notice Both trade taxes are denominated in the MONEY SIDE (currency0: ETH on a curve/ETH pad, or the
+/// stock ERC20 on a stock pad) — NEVER the pad coin — and routed by DIRECTION:
 ///
-///   • BUY  (quote → token, `zeroForOne`): `buyTaxBps` of the TOKEN output  → platform
-///   • SELL (token → quote, `oneForZero`): `sellTaxBps` of the QUOTE output → creator, minus a
-///          `sellFloorShareBps` carve that funds the pad's permanent price FLOOR.
+///   • BUY  (money → token, `zeroForOne`): `buyTaxBps` skimmed FEE-ON-INPUT in beforeSwap — a slice of the
+///          money the buyer spends, taken before the pool swaps the rest. Splits into a `buyBufferShareBps`
+///          curve buffer (ETH support held by the curve → platform at graduation) + a `referralShareBps`
+///          referrer slice (from the platform cut, when a ref link is used) + the platform.
+///   • SELL (token → money, `oneForZero`): `sellTaxBps` of the money-side OUTPUT in afterSwap → creator,
+///          minus a `sellFloorShareBps` carve that funds the pad's permanent price FLOOR.
 ///
-/// Holders are rewarded separately, by staking (DualStaking) — funded by the sell-side LP fee — so the
-/// hook itself has no holder accumulator. All payouts are accrue-and-pull: nothing is pushed to an
-/// external wallet inside a swap, so a reverting recipient can never block trading.
+/// Holders are rewarded separately, by staking (RobinLockStaking / DualStaking). All payouts are
+/// accrue-and-pull: nothing is pushed to an external wallet inside a swap, so a reverting recipient can
+/// never block trading.
 ///
 /// Red-team invariants preserved from the spine:
-///   [A1] The skim is always ADDITIONAL (the hook owns no position to carve from).
+///   [A1] The tax is always ADDITIONAL (the hook owns no position to carve from). Buy fee is taken from the
+///        input leg (the buyer's money the PoolManager is about to receive); sell fee from the output leg.
 ///   [A2] The pool uses a STATIC lp fee; beforeSwap never overrides it (only the stock curb lives there).
-///   [A4/B1] Skim is EXACT-INPUT ONLY; the unspecified (output) leg is already held by the PoolManager,
-///           so `take` never fronts foreign reserves. Exact-output is skim-free.
-///   [D2] The fee `take` is try/caught — a blocklisted/paused stock fee currency skips the skim, never bricks.
-///   [G1] REQUIRED_FLAGS == 0x00C4, self-asserted in the ctor and cross-checked by the factory.
+///   [A4/B1] Tax is EXACT-INPUT ONLY; the buy fee-on-input is settled via a positive specified
+///           BeforeSwapDelta, the sell fee via the afterSwap return delta — neither fronts foreign reserves.
+///           Exact-output is rejected on registered pads so the tax can't be dodged.
+///   [D2] Every fee `take` is try/caught — a blocklisted/paused stock fee currency skips the skim, never bricks.
+///   [G1] REQUIRED_FLAGS == 0x00CC, self-asserted in the ctor and cross-checked by the factory.
 ///   [G2] No beforeInitialize; config is bound by `registerPool` in the same launch tx.
 contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     using BalanceDeltaLibrary for BalanceDelta;
@@ -70,25 +74,26 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
 
     mapping(PoolId => PoolConfig) public config;
 
-    // Accrue-and-pull books. currencyIndex ∈ {0 = quote, 1 = token}.
-    mapping(PoolId => mapping(uint256 => uint256)) public platformOwed; // from buys (token leg)
-    mapping(PoolId => mapping(uint256 => uint256)) public creatorOwed; // from sells (quote leg)
-    mapping(PoolId => mapping(uint256 => uint256)) public floorOwed; // carve from sells (quote leg)
-    mapping(PoolId => uint256) public bufferOwed; // curve-buffer carve from buys (token leg) → forwarded to the curve
-    // referral carve from buys (token leg): the referrer (passed in swap hookData) earns a slice of the platform's
-    // buy cut. Keyed by referrer → token, since each pad's buy tax is denominated in that pad's own token.
-    mapping(address referrer => mapping(address token => uint256)) public referralOwed;
+    // Accrue-and-pull books. currencyIndex ∈ {0 = money side (quote/ETH), 1 = token}. Both taxes are
+    // money-side, so live entries sit at index 0; index 1 is retained only for the generic claim signature.
+    mapping(PoolId => mapping(uint256 => uint256)) public platformOwed; // from buys (money side)
+    mapping(PoolId => mapping(uint256 => uint256)) public creatorOwed; // from sells (money side)
+    mapping(PoolId => mapping(uint256 => uint256)) public floorOwed; // carve from sells (money side)
+    mapping(PoolId => uint256) public bufferOwed; // curve-buffer carve from buys (money side) → forwarded to the curve
+    // referral carve from buys (money side): the referrer (passed in swap hookData) earns a slice of the platform's
+    // buy cut. Keyed by referrer → money-side currency (address(0) for ETH), so one claim sweeps every ETH pad.
+    mapping(address referrer => mapping(address quote => uint256)) public referralOwed;
 
     event PoolRegistered(PoolId indexed id, address indexed creator, uint16 buyTaxBps, uint16 sellTaxBps);
-    event BuyTaxed(PoolId indexed id, uint256 platformCut, uint256 bufferCut); // token leg
-    event SellTaxed(PoolId indexed id, uint256 creatorCut, uint256 floorCut); // quote leg
+    event BuyTaxed(PoolId indexed id, uint256 platformCut, uint256 bufferCut); // money side
+    event SellTaxed(PoolId indexed id, uint256 creatorCut, uint256 floorCut); // money side
     event SkimSkipped(PoolId indexed id, uint256 currencyIndex, uint256 fee);
     event PlatformClaimed(PoolId indexed id, uint256 currencyIndex, address to, uint256 amount);
     event CreatorClaimed(PoolId indexed id, uint256 currencyIndex, address to, uint256 amount);
     event FloorClaimed(PoolId indexed id, uint256 currencyIndex, address to, uint256 amount);
     event BufferClaimed(PoolId indexed id, address to, uint256 amount);
-    event ReferralAccrued(PoolId indexed id, address indexed referrer, address token, uint256 amount);
-    event ReferralClaimed(address indexed referrer, address indexed token, uint256 amount);
+    event ReferralAccrued(PoolId indexed id, address indexed referrer, address quote, uint256 amount);
+    event ReferralClaimed(address indexed referrer, address indexed quote, uint256 amount);
     event CreatorRepointStarted(PoolId indexed id, address pending);
     event CreatorRepointed(PoolId indexed id, address creator);
 
@@ -158,18 +163,20 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     //                              beforeSwap                               //
     // --------------------------------------------------------------------- //
 
-    /// @notice Two jobs: (1) [audit H1] REJECT exact-output swaps on registered pads, so the directional
-    /// trade tax cannot be dodged — the afterSwap skim is exact-input only, and an untaxed exact-output
-    /// path would let any aggregator pay 0% and fund no floor. Pad swaps must be exact-input. (2) the stock
-    /// corporate-action curb [D4]. The adapter read is try/caught so a broken adapter can't freeze trading.
-    function beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
+    /// @notice Three jobs: (1) take the BUY tax as a FEE-ON-INPUT — a slice of the money-side (currency0: ETH, or
+    /// the stock on a stock pad) the buyer spends, so the buy fee is denominated in the MONEY SIDE, not the coin.
+    /// The remaining input is what the pool actually swaps (returned as a positive specified BeforeSwapDelta).
+    /// (2) [audit H1] REJECT exact-output swaps on registered pads, so the tax can't be dodged. (3) the stock
+    /// corporate-action curb [D4]; the adapter read is try/caught so a broken adapter can't freeze trading.
+    function beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
         external
-        view
         override
         onlyPoolManager
+        nonReentrant
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        PoolConfig storage c = config[key.toId()];
+        PoolId id = key.toId();
+        PoolConfig storage c = config[id];
         // exact-input == amountSpecified < 0; anything else (exact-output) is untaxable → reject on pads.
         if (c.registered && params.amountSpecified >= 0) revert ExactOutputNotSupported();
         if (c.guardWindow > 0 && c.quoteIsStock && c.guardAdapter != address(0)) {
@@ -180,7 +187,47 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
                 if (diff <= c.guardWindow) revert CorporateActionCurb();
             }
         }
-        return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+
+        // BUY tax = fee on the money-side INPUT. zeroForOne spends currency0 (the quote) → a BUY. Sells (oneForZero)
+        // are taxed in afterSwap from the money-side OUTPUT. Skip: unregistered, the hook's own swaps, sells, rate 0.
+        if (!c.registered || sender == address(this) || !params.zeroForOne || c.buyTaxBps == 0) {
+            return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        }
+        uint256 fee = (uint256(-params.amountSpecified) * c.buyTaxBps) / BPS;
+        if (fee == 0) return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        if (fee > uint256(uint128(MAX_SKIM))) fee = uint256(uint128(MAX_SKIM));
+
+        // [D2] Guard the take — a blocklisted/paused quote must NOT brick the buy; skip the skim instead.
+        try poolManager.take(key.currency0, address(this), fee) {}
+        catch {
+            emit SkimSkipped(id, 0, fee);
+            return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        }
+        _bookBuy(id, c, key.currency0, fee, hookData);
+        // positive specified delta = the hook consumed `fee` of the input; the pool swaps (input − fee).
+        return (IHooks.beforeSwap.selector, toBeforeSwapDelta(int128(int256(fee)), int128(0)), 0);
+    }
+
+    /// @dev Book a buy tax (money-side currency0) → curve buffer + referrer + platform. Buffer first, then a referrer
+    /// from hookData earns a slice of the PLATFORM cut, platform takes the rest. Subtraction conserves dust → platform.
+    function _bookBuy(PoolId id, PoolConfig storage c, Currency quote, uint256 fee, bytes calldata hookData) internal {
+        uint256 bufferCut = (fee * c.buyBufferShareBps) / BPS;
+        uint256 platformCut = fee - bufferCut;
+        bufferOwed[id] += bufferCut;
+        uint256 referralCut = 0;
+        if (c.referralShareBps != 0) {
+            address referrer = _decodeReferrer(hookData);
+            if (referrer != address(0)) {
+                referralCut = (platformCut * c.referralShareBps) / BPS;
+                if (referralCut != 0) {
+                    address q = Currency.unwrap(quote);
+                    referralOwed[referrer][q] += referralCut;
+                    emit ReferralAccrued(id, referrer, q, referralCut);
+                }
+            }
+        }
+        platformOwed[id][0] += platformCut - referralCut; // index 0 = the money side (quote)
+        emit BuyTaxed(id, platformCut - referralCut, bufferCut);
     }
 
     function _scheduledEffectiveAt(address adapter) internal view returns (uint256) {
@@ -195,7 +242,10 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     //                               afterSwap                               //
     // --------------------------------------------------------------------- //
 
-    function afterSwap(address sender, PoolKey calldata key, SwapParams calldata params, BalanceDelta delta, bytes calldata hookData)
+    /// @notice SELL tax = a slice of the money-side OUTPUT (currency0: ETH/stock the seller receives) → creator +
+    /// floor. Buys are taxed in beforeSwap (fee-on-input), so afterSwap is SELLS ONLY. Exact-input only; the take is
+    /// guarded so a blocklisted quote can't brick the sell.
+    function afterSwap(address sender, PoolKey calldata key, SwapParams calldata params, BalanceDelta delta, bytes calldata)
         external
         override
         onlyPoolManager
@@ -203,69 +253,33 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         returns (bytes4, int128)
     {
         if (sender == address(this)) return (IHooks.afterSwap.selector, int128(0));
-
         PoolId id = key.toId();
         PoolConfig storage c = config[id];
         if (!c.registered) return (IHooks.afterSwap.selector, int128(0));
+        if (params.amountSpecified >= 0) return (IHooks.afterSwap.selector, int128(0)); // [A4/B1] exact-input only
+        if (params.zeroForOne) return (IHooks.afterSwap.selector, int128(0)); // BUYS are taxed in beforeSwap
+        if (c.sellTaxBps == 0) return (IHooks.afterSwap.selector, int128(0));
 
-        // [A4/B1] EXACT-INPUT ONLY.
-        if (params.amountSpecified >= 0) return (IHooks.afterSwap.selector, int128(0));
-
-        // zeroForOne == spend quote(currency0) → get token(currency1) == a BUY. Output leg = currency1.
-        bool isBuy = params.zeroForOne;
-        uint256 uc = isBuy ? 1 : 0;
-        uint16 rate = isBuy ? c.buyTaxBps : c.sellTaxBps;
-        if (rate == 0) return (IHooks.afterSwap.selector, int128(0));
-
-        int128 ucAmt = uc == 0 ? delta.amount0() : delta.amount1();
-        uint256 mag = ucAmt > 0 ? uint256(uint128(ucAmt)) : uint256(uint128(-ucAmt));
+        // sell output = the money side (currency0); take sellTax% of it → creator + floor
+        int128 outAmt = delta.amount0();
+        uint256 mag = outAmt > 0 ? uint256(uint128(outAmt)) : 0;
         if (mag == 0) return (IHooks.afterSwap.selector, int128(0));
-
-        uint256 fee = (mag * rate) / BPS;
+        uint256 fee = (mag * c.sellTaxBps) / BPS;
         if (fee == 0) return (IHooks.afterSwap.selector, int128(0));
         if (fee > uint256(uint128(MAX_SKIM))) fee = uint256(uint128(MAX_SKIM));
 
-        Currency ucCurrency = uc == 0 ? key.currency0 : key.currency1;
-
         // [D2] Guard the take. A blocklisted/paused fee currency must NOT brick the swap.
-        try poolManager.take(ucCurrency, address(this), fee) {}
+        try poolManager.take(key.currency0, address(this), fee) {}
         catch {
-            emit SkimSkipped(id, uc, fee);
+            emit SkimSkipped(id, 0, fee);
             return (IHooks.afterSwap.selector, int128(0));
         }
-
-        if (isBuy) {
-            // buy tax (token leg) → curve buffer + referrer + platform. The buffer carve is forwarded to the curve
-            // (claimBuffer), hardening the LP-binding reserve margin + deepening staking. A referrer passed in the
-            // swap hookData then earns a slice of the PLATFORM cut (never the buffer, never the trader); platform
-            // takes the rest. Every subtraction conserves dust into the platform cut.
-            uint256 bufferCut = (fee * c.buyBufferShareBps) / BPS;
-            uint256 platformCut = fee - bufferCut;
-            bufferOwed[id] += bufferCut;
-            uint256 referralCut = 0;
-            if (c.referralShareBps != 0) {
-                address referrer = _decodeReferrer(hookData);
-                if (referrer != address(0)) {
-                    referralCut = (platformCut * c.referralShareBps) / BPS;
-                    if (referralCut != 0) {
-                        address padToken = Currency.unwrap(key.currency1);
-                        referralOwed[referrer][padToken] += referralCut;
-                        emit ReferralAccrued(id, referrer, padToken, referralCut);
-                    }
-                }
-            }
-            platformOwed[id][uc] += platformCut - referralCut;
-            emit BuyTaxed(id, platformCut - referralCut, bufferCut);
-        } else {
-            // sell → creator + floor (quote leg); subtraction conserves dust into the creator's cut
-            uint256 floorCut = (fee * c.sellFloorShareBps) / BPS;
-            uint256 creatorCut = fee - floorCut;
-            creatorOwed[id][uc] += creatorCut;
-            floorOwed[id][uc] += floorCut;
-            emit SellTaxed(id, creatorCut, floorCut);
-        }
-
-        // Return the +fee delta LAST (CEI). Nets the -fee from `take` → unlock closes clean. [A3]
+        uint256 floorCut = (fee * c.sellFloorShareBps) / BPS;
+        uint256 creatorCut = fee - floorCut; // dust conserved into the creator's cut
+        creatorOwed[id][0] += creatorCut;
+        floorOwed[id][0] += floorCut;
+        emit SellTaxed(id, creatorCut, floorCut);
+        // Return the +fee delta LAST (CEI). Nets the −fee from `take` → unlock closes clean. [A3]
         return (IHooks.afterSwap.selector, int128(uint128(fee)));
     }
 
@@ -306,9 +320,9 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         emit FloorClaimed(id, currencyIndex, to, amount);
     }
 
-    /// @notice Forward the accrued curve-buffer carve (token leg) to the pool's buffer recipient (the curve
-    /// controller). Permissionless; funds always go to the registered recipient. Tokens forwarded before
-    /// graduation deepen the permanent locked LP; forwarded after, they flow to staking — either way, non-bricking.
+    /// @notice Forward the accrued curve-buffer carve (money side, currency0) to the pool's buffer recipient (the
+    /// curve controller), which holds it as curve-phase support and books it to the PLATFORM at graduation.
+    /// Permissionless; funds always go to the registered recipient; non-bricking.
     function claimBuffer(PoolId id) external nonReentrant returns (uint256 amount) {
         PoolConfig storage c = config[id];
         address to = c.bufferRecipient;
@@ -316,18 +330,19 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         amount = bufferOwed[id];
         if (amount == 0) revert NothingToClaim();
         bufferOwed[id] = 0;
-        _payout(c.currency1, to, amount); // token leg only
+        _payout(c.currency0, to, amount); // money side (ETH/quote)
         emit BufferClaimed(id, to, amount);
     }
 
-    /// @notice Pull your accrued referral rewards for one pad `token` to yourself. Permissionless; funds only ever
-    /// go to msg.sender (the referrer). Reward is the pad token (the buy tax is token-denominated).
-    function claimReferral(address token) external nonReentrant returns (uint256 amount) {
-        amount = referralOwed[msg.sender][token];
+    /// @notice Pull your accrued referral rewards for one money-side `quote` currency to yourself. Permissionless;
+    /// funds only ever go to msg.sender (the referrer). Reward is the MONEY SIDE (ETH → pass address(0); it
+    /// aggregates across every ETH pad you referred, so one call sweeps them all).
+    function claimReferral(address quote) external nonReentrant returns (uint256 amount) {
+        amount = referralOwed[msg.sender][quote];
         if (amount == 0) revert NothingToClaim();
-        referralOwed[msg.sender][token] = 0;
-        _payout(Currency.wrap(token), msg.sender, amount); // token is currency1 (ERC20) → transfer
-        emit ReferralClaimed(msg.sender, token, amount);
+        referralOwed[msg.sender][quote] = 0;
+        _payout(Currency.wrap(quote), msg.sender, amount);
+        emit ReferralClaimed(msg.sender, quote, amount);
     }
 
     // --------------------------------------------------------------------- //

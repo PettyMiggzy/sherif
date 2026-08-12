@@ -10,7 +10,7 @@ const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
 const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
-const FLAGS = 0xc4n, MASK = 0x3fffn;
+const FLAGS = 0xccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(dep, initCodeHash) {
@@ -80,23 +80,46 @@ describe("RobinFeeHook — adversarial", () => {
     expect(await tok.balanceOf(await hook.getAddress())).to.equal(0n);
   });
 
-  it("D2: a blocklisted fee currency SKIPS the skim, swap still completes", async () => {
-    const blk = await (await ethers.getContractFactory("BlocklistERC20")).connect(owner).deploy(10n ** 30n);
-    const hook = await deployHook(pm, dep, reg, factory, await blk.getAddress());
-    const key = await seedPool(hook, blk);
-    const poolId = poolIdOf(key);
-    await hook.connect(factory).registerPool(poolId, CFG(ZERO, await blk.getAddress(), creator.address));
-    await blk.connect(owner).setBlocked(await hook.getAddress(), true); // hook can't receive the token skim
+  it("D2: a blocklisted money-side fee currency SKIPS the buy skim, swap still completes", async () => {
+    // The buy tax is fee-on-input on the MONEY SIDE (currency0). On a STOCK pad currency0 is the stock ERC20,
+    // which can pause/blocklist — so this proves the guarded `take` on the buy path: a blocked money currency
+    // SKIPS the skim instead of bricking the buy. (On an ETH pad currency0 is native ETH and can never block.)
+    const blk = await (await ethers.getContractFactory("BlocklistERC20")).connect(owner).deploy(10n ** 30n); // money side
+    // pad token (currency1) must sort ABOVE the money side (currency0): redeploy until tok > blk.
+    let tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    while (BigInt(await tok.getAddress()) <= BigInt(await blk.getAddress())) {
+      tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    }
+    const blkAddr = await blk.getAddress(), tokAddr = await tok.getAddress();
+    const hook = await deployHook(pm, dep, reg, factory, tokAddr); // pad = currency1 = tok
 
-    const tBefore = await blk.balanceOf(trader.address);
+    const key = { currency0: blkAddr, currency1: tokAddr, fee: 3000, tickSpacing: 60, hooks: await hook.getAddress() };
+    const poolId = poolIdOf(key);
+    await pm.initialize(key, SQRT_1_1);
+    // seed 2-sided ERC20/ERC20 liquidity (no ETH; both legs settle via transferFrom)
+    await blk.connect(owner).transfer(lp.address, 10n ** 24n);
+    await tok.connect(owner).transfer(lp.address, 10n ** 24n);
+    await blk.connect(lp).approve(await mod.getAddress(), ethers.MaxUint256);
+    await tok.connect(lp).approve(await mod.getAddress(), ethers.MaxUint256);
+    await mod.connect(lp).modifyLiquidity(
+      key, { tickLower: -887220, tickUpper: 887220, liquidityDelta: 10n ** 20n, salt: ethers.ZeroHash }, "0x"
+    );
+    await hook.connect(factory).registerPool(poolId, CFG(blkAddr, tokAddr, creator.address, { quoteIsStock: true }));
+    await blk.connect(owner).setBlocked(await hook.getAddress(), true); // hook can't receive the money-side skim
+
+    // trader buys: spends BLK (currency0), receives TOK. beforeSwap's take(BLK) is blocked → SkimSkipped, buy fills.
+    await blk.connect(owner).transfer(trader.address, 10n ** 22n);
+    await blk.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
+    const tBefore = await tok.balanceOf(trader.address);
     await expect(
       sw.connect(trader).swap(
         key, { zeroForOne: true, amountSpecified: -ethers.parseEther("1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
-        { takeClaims: false, settleUsingBurn: false }, "0x", { value: ethers.parseEther("1") }
+        { takeClaims: false, settleUsingBurn: false }, "0x"
       )
     ).to.emit(hook, "SkimSkipped");
-    expect(await blk.balanceOf(trader.address)).to.be.gt(tBefore); // buy still filled
-    expect(await hook.platformOwed(poolId, 1)).to.equal(0n); // nothing booked
+    expect(await tok.balanceOf(trader.address)).to.be.gt(tBefore); // buy still filled
+    expect(await hook.platformOwed(poolId, 0)).to.equal(0n); // nothing booked (money-side skim skipped)
+    expect(await hook.bufferOwed(poolId)).to.equal(0n);
   });
 
   it("buy routes to platform, sell routes to creator + floor", async () => {
@@ -119,9 +142,9 @@ describe("RobinFeeHook — adversarial", () => {
       { takeClaims: false, settleUsingBurn: false }, "0x"
     );
 
-    expect(await hook.platformOwed(poolId, 1)).to.be.gt(0n, "buy → platform (token leg)");
-    expect(await hook.creatorOwed(poolId, 0)).to.be.gt(0n, "sell → creator (quote leg)");
-    expect(await hook.floorOwed(poolId, 0)).to.be.gt(0n, "sell → floor carve (quote leg)");
+    expect(await hook.platformOwed(poolId, 0)).to.be.gt(0n, "buy → platform (money side, ETH)");
+    expect(await hook.creatorOwed(poolId, 0)).to.be.gt(0n, "sell → creator (money side, ETH)");
+    expect(await hook.floorOwed(poolId, 0)).to.be.gt(0n, "sell → floor carve (money side, ETH)");
   });
 
   it("stock curb: beforeSwap reverts in-window, passes out-of-window and when adapter reverts", async () => {

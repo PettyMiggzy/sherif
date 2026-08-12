@@ -47,7 +47,7 @@ contract StockPadFactory {
     LockVault public immutable lockVault;
 
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
-    uint160 internal constant HOOK_FLAGS = 0x00C4;
+    uint160 internal constant HOOK_FLAGS = 0x00CC;
     uint48 internal constant MAX_UINT48 = type(uint48).max;
 
     struct LaunchConfig {

@@ -4,7 +4,7 @@ const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
 
 // SIM — CALIBRATION at the REAL production geometry (not the toy START=6000 the other sims use).
 // Ports the proven V3 curve to V4 and PROVES the headline economics on the actual V4 curve impl:
-//   START_TICK_MAG 201600, CURVE_WIDTH 23000 (≈10x), ts=100, 1B supply @ 75% curve / 25% reserve
+//   START_TICK_MAG 201600, CURVE_WIDTH 23000 (≈10x), ts=100, 1B supply @ 73% curve / 27% reserve
 //   → start MC ~$3.4k, graduate MC ~$34k, ~4.2 ETH raised, 10x chart.
 // The multiple (grad/start) and the ETH raise are geometry/supply-fixed (ethUsd-independent); the USD market
 // caps are shown at ethUsd=$1900 (the FX that maps this geometry to the ~$3.4k/$34k targets).
@@ -17,8 +17,8 @@ const ONE = 10n ** 18n;
 
 const START = 201600, WIDTH = 23000, GRAD = START - WIDTH, TS = 100, FEE = 10000, MINGRAD = 22800;
 const SUPPLY = 1_000_000_000n * ONE;
-const CURVE = 750_000_000n * ONE;   // 75% sold on the curve
-const RESERVE = 250_000_000n * ONE; // 25% held back (pairs the permanent LP + feeds staking)
+const CURVE = 730_000_000n * ONE;   // 73% sold on the curve
+const RESERVE = 270_000_000n * ONE; // 27% held back (pairs the permanent LP + feeds staking)
 const ETH_USD = 1900;
 
 // token is currency1: price P (=1.0001^tick) is token-per-ETH, so ETH-per-token = 1/P and
@@ -45,7 +45,7 @@ describe("SIM — production-geometry calibration (start ~$3.4k, graduate ~$34k,
     const lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await posm.getAddress(), await reg.getAddress());
     const curveDep = await (await ethers.getContractFactory("CurveV4Deployer")).deploy(await dep.getAddress());
     const feeCfg = await (await ethers.getContractFactory("RobinV4FeeConfig")).deploy(deployer.address, {
-      buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 0, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 0,
+      buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 0,
       platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
       lpFee: FEE, startTickMag: START, curveWidth: WIDTH, minGradWidth: MINGRAD,
     });
@@ -91,7 +91,8 @@ describe("SIM — production-geometry calibration (start ~$3.4k, graduate ~$34k,
     const tokBought = Number(await tokC.balanceOf(whale.address)) / 1e18;
     expect(await curve.ready()).to.equal(true);           // reached the ceiling
     expect(gradT).to.be.closeTo(GRAD, TS);                // spot at the ceiling (gradTick)
-    expect(tokBought).to.be.within(700e6, 750e6);         // ~the whole 750M curve, net of the 1% buy tax
+    // buy tax is now ETH (fee-on-input), so NO token is skimmed — the buyer gets the whole 730M curve.
+    expect(tokBought).to.be.within(690e6, 735e6);         // ~the whole 730M curve
     const gradMc = mcUsd(GRAD);
     const multiple = mcEth(GRAD) / mcEth(startTick);
     const raiseEth = Number(raise) / 1e18;

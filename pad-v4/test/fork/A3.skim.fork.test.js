@@ -13,7 +13,7 @@ const POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
 const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
-const FLAGS = 0xc4n;
+const FLAGS = 0xccn;
 const MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
@@ -58,7 +58,7 @@ describe("A3 fork — exact-input skim closes clean against live 0x8366", functi
     await hook.connect(factory).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address,
       floorRecipient: ZERO, guardAdapter: ZERO, buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000,
-      guardWindow: 0, quoteIsStock: false,
+      buyBufferShareBps: 2000, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,
     });
 
     const mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(POOL_MANAGER);
@@ -71,14 +71,18 @@ describe("A3 fork — exact-input skim closes clean against live 0x8366", functi
     );
 
     const hookAddr = await hook.getAddress();
-    const hb = await tok.balanceOf(hookAddr);
+    const hb = await ethers.provider.getBalance(hookAddr);
+    const spend = ethers.parseEther("1");
     await sw.connect(trader).swap(
-      key, { zeroForOne: true, amountSpecified: -ethers.parseEther("1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
-      { takeClaims: false, settleUsingBurn: false }, "0x", { value: ethers.parseEther("1") }
+      key, { zeroForOne: true, amountSpecified: -spend, sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: spend }
     );
-    const skim = (await tok.balanceOf(hookAddr)) - hb;
-    expect(skim).to.be.gt(0n);
-    // buy → the whole token-leg skim books to platform
-    expect(await hook.platformOwed(poolId, 1)).to.equal(skim);
+    // buy tax is fee-on-input on the MONEY SIDE (ETH): the hook took exactly 1% of the ETH spent, closing clean.
+    const skim = (await ethers.provider.getBalance(hookAddr)) - hb;
+    expect(skim).to.equal((spend * 100n) / 10000n);
+    // the ETH skim splits 20% curve buffer / 80% platform (money side, index 0)
+    const buffer = (skim * 2000n) / 10000n;
+    expect(await hook.bufferOwed(poolId)).to.equal(buffer);
+    expect(await hook.platformOwed(poolId, 0)).to.equal(skim - buffer);
   });
 });

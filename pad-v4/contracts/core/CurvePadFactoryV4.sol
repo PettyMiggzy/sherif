@@ -43,7 +43,7 @@ contract CurvePadFactoryV4 {
     address public immutable feeRegistry;
     LockVault public immutable lockVault;
 
-    uint160 internal constant HOOK_FLAGS = 0x00C4;
+    uint160 internal constant HOOK_FLAGS = 0x00CC;
 
     struct LaunchConfig {
         string name;
@@ -101,7 +101,7 @@ contract CurvePadFactoryV4 {
     }
 
     /// @notice Launch a free single-sided curve pad. `tokenSalt` is any CREATE2 salt (token only needs to sort
-    /// above native(0), always true). `hookSalt` is mined off-chain so the hook carries flags 0x00C4.
+    /// above native(0), always true). `hookSalt` is mined off-chain so the hook carries flags 0x00CC.
     function launch(LaunchConfig calldata cfg, bytes32 tokenSalt, bytes32 hookSalt, bytes32 curveSalt)
         external
         returns (address token, address hook, address curve, PoolId poolId)

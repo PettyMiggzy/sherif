@@ -32,8 +32,8 @@ const PERMIT2 = process.env.PERMIT2 || "0x000000000022D473030F116dDEE9F6B43aC78B
 // (201600/100, 23000/100, 22800/100 are integers) — launches must pass tickSpacing=100.
 const DEFAULTS = {
   buyTaxBps: Number(process.env.BUY_TAX_BPS || 100), // 1% buy trade tax → 0.8% platform / 0.2% curve buffer
-  sellTaxBps: Number(process.env.SELL_TAX_BPS || 100), // 1% sell trade tax → creator (sellFloorShare=0)
-  sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 0), // sell tax goes fully to the creator
+  sellTaxBps: Number(process.env.SELL_TAX_BPS || 100), // 1% sell trade tax → 0.8% creator / 0.2% floor
+  sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 2000), // 20% of the sell tax (=0.2% of trade) → floor
   buyLpFloorShareBps: Number(process.env.BUY_LP_FLOOR_SHARE_BPS || 2000), // 20% of the buy LP fee → floor at grad
   buyBufferShareBps: Number(process.env.BUY_BUFFER_SHARE_BPS || 2000), // 20% of the buy tax (=0.2% of trade) → curve buffer
   referralShareBps: Number(process.env.REFERRAL_SHARE_BPS || 2500), // 25% of the platform buy cut (=0.2% of trade) → referrer

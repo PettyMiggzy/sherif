@@ -290,11 +290,13 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (tick > gradTick) revert NotReady(); // curve not fully sold yet
         graduated = true; // CEI: flip before any external interaction
 
-        // Pull any buy-tax buffer the hook has parked (buyBufferShareBps carve, in TOKEN) into the reserve BEFORE we
-        // read tokenReserve below, so the buffer folds into the permanent-LP token leg / staking surplus and hardens
-        // the InsufficientReserve margin. Token-only ⇒ never perturbs the ETH raise accounting. Guarded by a code
-        // check (a codeless hook — e.g. a hookless test pool — would revert the typed call UNCAUGHT by try/catch),
-        // then try/caught + outside the PoolManager lock ⇒ a reverting/unwired hook can never brick graduation.
+        // Pull any buy-tax buffer the hook has parked (buyBufferShareBps carve, in ETH — the money side) into this
+        // contract BEFORE the donatedBefore snapshot below, so it is EXCLUDED from the measured raise (it is a
+        // platform reward, not raise capital) and then swept to the PLATFORM book by the final step-9 balance sweep.
+        // The buffer sits in the curve as ETH through the whole curve phase, then returns to the platform at grad —
+        // it never perturbs the raise/LP accounting. Guarded by a code check (a codeless hook — e.g. a hookless test
+        // pool — would revert the typed call UNCAUGHT by try/catch), then try/caught + outside the PoolManager lock
+        // ⇒ a reverting/unwired hook can never brick graduation.
         if (address(hooks).code.length > 0) {
             try IRobinFeeHookBuffer(address(hooks)).claimBuffer(_poolId()) {} catch {}
         }
