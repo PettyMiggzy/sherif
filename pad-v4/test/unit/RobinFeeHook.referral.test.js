@@ -125,4 +125,33 @@ describe("RobinFeeHook — on-chain referral revenue-share (ETH-denominated buy 
     // 5 bytes of junk (< 32) → no referrer, buy still succeeds and books the full platform cut
     await expect(buy("0.1", "0x1234567890")).to.not.be.reverted;
   });
+
+  it("[audit] SELF-REFERRAL is a permissionless rebate that only lowers the PLATFORM's own cut — conservation holds, the floor is pinned", async () => {
+    // A buyer names THEMSELVES as the referrer. On-chain this cannot be prevented (a Sybil alt-wallet works too),
+    // so the referral is by-design an at-most-referralShareBps rebate on the platform's OWN buy cut. This sim PRICES
+    // the worst case: it must never touch the buffer, the trader's tokens, or any other book — only move platform→self.
+    const hookAddr = await hook.getAddress();
+    const claimBefore = await pm.balanceOf(hookAddr, 0n);
+    const platBefore = await hook.platformOwed(poolId, 0);
+    const buffBefore = await hook.bufferOwed(poolId);
+    const spend = ethers.parseEther("1");
+
+    await buy("1", abi.encode(["address"], [trader.address])); // buyer == referrer (self-referral)
+
+    const fee = (spend * BUY_BPS) / 10000n;                     // 1% of input
+    const bufferCut = (fee * BUFFER_SHARE_BPS) / 10000n;        // 0.2% → buffer (UNAFFECTED by referral)
+    const platformCut = fee - bufferCut;                        // 0.8% platform cut before the referral carve
+    const referralCut = (platformCut * REFERRAL_SHARE_BPS) / 10000n; // 0.2% clawed back to the self-referrer
+
+    // conservation: buffer + platform-net + referral == the whole 1% fee (nothing created or lost)
+    expect((await pm.balanceOf(hookAddr, 0n)) - claimBefore).to.equal(fee);
+    expect((await hook.bufferOwed(poolId)) - buffBefore).to.equal(bufferCut); // buffer untouched by self-referral
+    expect((await hook.platformOwed(poolId, 0)) - platBefore).to.equal(platformCut - referralCut); // 0.6% net
+    expect(await hook.referralOwed(trader.address, ZERO)).to.be.gte(referralCut); // self-referrer accrues the 0.2%
+
+    // PLATFORM-REVENUE FLOOR: even under adversarial self-referral the platform still earns its full cut MINUS only
+    // the referral slice — i.e. platform (0.6%) + buffer (0.2%, → platform at graduation) = 0.8% of buy volume, and
+    // the self-referrer's rebate is exactly the referral slice, never more. The 1% total is fully conserved.
+    expect(platformCut - referralCut + bufferCut + referralCut).to.equal(fee);
+  });
 });

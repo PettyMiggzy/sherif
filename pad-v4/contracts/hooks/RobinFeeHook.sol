@@ -224,6 +224,14 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
 
     /// @dev Book a buy tax (money-side currency0) → curve buffer + referrer + platform. Buffer first, then a referrer
     /// from hookData earns a slice of the PLATFORM cut, platform takes the rest. Subtraction conserves dust → platform.
+    /// @dev [audit] The referral carve is PERMISSIONLESS BY DESIGN: whoever the swap's hookData names — including the
+    /// buyer themselves, or a Sybil alt-wallet — earns `referralShareBps` of the platform cut. On-chain attribution
+    /// of a *genuine external* referrer is impossible (the hook sees the router as `sender`, not the buyer, and a
+    /// buyer can always route through a fresh address), so a `referrer != sender` guard would be theatre. The carve is
+    /// therefore an at-most-`referralShareBps` REBATE on the platform's own buy cut: it never touches the buffer,
+    /// the trader's proceeds, the raise, or any other pad's funds (conservation holds — see the self-referral sim),
+    /// and it only ever lowers the PLATFORM's own take. If strict external-only attribution is ever required it must
+    /// be enforced OFF-CHAIN (platform-signed referral codes verified here), which is a deliberate future change.
     function _bookBuy(PoolId id, PoolConfig storage c, Currency quote, uint256 fee, bytes calldata hookData) internal {
         uint256 bufferCut = (fee * c.buyBufferShareBps) / BPS;
         uint256 platformCut = fee - bufferCut;
