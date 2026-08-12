@@ -1,10 +1,10 @@
 const { ethers } = require("hardhat");
 
-const HOOK_FLAGS = 0xccn; // BEFORE_SWAP | AFTER_SWAP | AFTER_SWAP_RETURNS_DELTA
+const HOOK_FLAGS = 0xccn; // BEFORE_SWAP | AFTER_SWAP | BEFORE_SWAP_RETURNS_DELTA | AFTER_SWAP_RETURNS_DELTA
 const FLAG_MASK = 0x3fffn;
 
 /// Mine a CREATE2 salt so the hook deployed by `deployerAddr` lands on an address whose low 14
-/// bits equal 0x00C4 (the flags the PoolManager reads). Sub-second — ~2^14 expected tries.
+/// bits equal 0x00CC (the flags the PoolManager reads). Sub-second — ~2^14 expected tries.
 function mineHookSalt(deployerAddr, initCode, maxTries = 5_000_000) {
   const initCodeHash = ethers.keccak256(initCode);
   for (let i = 0n; i < BigInt(maxTries); i++) {

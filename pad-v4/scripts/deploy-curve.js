@@ -31,7 +31,7 @@ const PERMIT2 = process.env.PERMIT2 || "0x000000000022D473030F116dDEE9F6B43aC78B
 // reserve → start ~$3.4k, graduate ~$34k on ~4.2 ETH). Magnitudes are tick-spacing-aligned for ts=100
 // (201600/100, 23000/100, 22800/100 are integers) — launches must pass tickSpacing=100.
 const DEFAULTS = {
-  buyTaxBps: Number(process.env.BUY_TAX_BPS || 100), // 1% buy trade tax → 0.8% platform / 0.2% curve buffer
+  buyTaxBps: Number(process.env.BUY_TAX_BPS || 100), // 1% buy tax (ETH, fee-on-input) → 0.2% buffer / 0.2% referrer / rest platform
   sellTaxBps: Number(process.env.SELL_TAX_BPS || 100), // 1% sell trade tax → 0.8% creator / 0.2% floor
   sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 2000), // 20% of the sell tax (=0.2% of trade) → floor
   buyLpFloorShareBps: Number(process.env.BUY_LP_FLOOR_SHARE_BPS || 2000), // 20% of the buy LP fee → floor at grad

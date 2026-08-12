@@ -1,7 +1,7 @@
 /*
  * One-command pad launch + full wiring on Robinhood Chain (legacy type-0 txs).
  * Reads the bootstrap addresses from deploy.local.json (produced by scripts/deploy.js), then:
- *   1. mines the hook salt (address low-14-bits == 0x00C4)
+ *   1. mines the hook salt (address low-14-bits == 0x00CC)
  *   2. factory.launch(...)  → deploys token + hook + pool + seed LP (atomic), floorRecipient unset
  *   3. deploys RobinFloorVault for the new pool and wires it via hook.setFloorRecipient (one-shot)
  *   4. creates a DualStaking pool for the token via StakingFactory (5% fee, no lock)
