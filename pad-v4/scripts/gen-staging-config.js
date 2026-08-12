@@ -7,6 +7,13 @@ const path = require("path");
 const ARTROOT = path.resolve(__dirname, "..", "artifacts");
 const load = (p) => JSON.parse(fs.readFileSync(path.join(ARTROOT, p), "utf8"));
 
+// Pull live addresses from the last deploy (deploy.curve.json) so a regen after a fresh deploy never leaves stale
+// addresses behind. Falls back to the baked-in defaults if the manifest is absent. Swap router comes from the
+// testnet-bot's recorded pad, or SWAP_ROUTER in the env.
+let DEP = { contracts: {}, testnetPad: {} };
+try { DEP = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "deploy.curve.json"), "utf8")); } catch {}
+const A = (live, fallback) => live || fallback;
+
 const padToken = load("contracts/pads/PadToken.sol/PadToken.json");
 const feeHook = load("contracts/hooks/RobinFeeHook.sol/RobinFeeHook.json");
 const factory = load("contracts/core/CurvePadFactoryV4.sol/CurvePadFactoryV4.json");
@@ -29,14 +36,14 @@ const cfg = {
   ADDR: {
     poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
     permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
-    deployer: "0x521DCd4F3ed73107dc5C62Ff357C59d99efd6FFB",
-    stateView: "0xC715c9cda89a8C4095432604570337594A64D8B8",
-    feeRegistry: "0x1A211C5e6B4a8B2FB96E8e1Dd05D3B2A53937992",
-    lockVault: "0xCcCDE6E7eB732e484a4b9Fd9CCd29eCBCc083E34",
-    curveDeployer: "0x214EE2E1eFB64f7571C0B768b22e4c3273317642",
-    feeConfig: "0x6B1E7eC3D17B829E0dEE7224cA53F2fD59aA8eD9",
-    factory: "0xfE1CaAb7c8c024Dfb8D696262F206dE9964E3537",
-    swapRouter: "0x5465091F4f71EE34B35E3697e0805E9310f43119", // PoolSwapTest (testnet swap router)
+    deployer: A(DEP.contracts.deterministicDeployer, "0x74d75edAbDd743820EbA857553EBac7DDfdc4C43"),
+    stateView: A(DEP.contracts.stateView, "0xAc760AdBBEb571E6B0A92bb912c78CACa835D981"),
+    feeRegistry: A(DEP.contracts.feeWalletRegistry, "0xB0Ba3fEB737Eb256dbAb7a79C27E6f71532949ea"),
+    lockVault: A(DEP.contracts.lockVault, "0x3f4a69118D94C50A55Ee3d3aD024D21a8CEaB947"),
+    curveDeployer: A(DEP.contracts.curveDeployer, "0xD15C73FE461f63E5ECc7639f66B06581ab2aE5AA"),
+    feeConfig: A(DEP.contracts.feeConfig, "0x242902b040B1fDC92361121aC772289fb9fcE959"),
+    factory: A(DEP.contracts.curveFactory, "0x0311038b613148bD161cf5442E372f668F04bf9B"),
+    swapRouter: A((DEP.testnetPad || {}).swapRouter || process.env.SWAP_ROUTER, "0x2C95a18aa24C6d8b08070C04439D5A924D7430F5"), // PoolSwapTest (testnet swap router)
   },
   HOOK_FLAGS: "0xcc",
   FLAG_MASK: "0x3fff",
