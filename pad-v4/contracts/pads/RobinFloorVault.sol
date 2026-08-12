@@ -146,8 +146,12 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
             }),
             ""
         );
+        // currency0 is the floor's own working capital (ETH principal) → keep any positive delta in the vault.
         _resolve(currency0, delta.amount0(), address(this));
-        _resolve(currency1, delta.amount1(), address(this));
+        // [audit] currency1 (token) is NEVER floor principal on this single-sided currency0 wall, so a positive
+        // delta.amount1() here is realized token-side LP fees. Route them to feeRecipient (exactly like _collect) —
+        // taking them to the vault would strand them, since no function moves an idle currency1 balance out.
+        _resolve(currency1, delta.amount1(), feeRecipient);
         floorLiquidity += L;
         parkedQuote = 0;
         emit FloorAdded(amt, L, floorLiquidity);

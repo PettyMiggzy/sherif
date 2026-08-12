@@ -9,6 +9,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
@@ -38,6 +39,7 @@ import {IPermit2Minimal} from "../interfaces/IPermit2Minimal.sol";
 /// security audit — treat as unaudited until both are done, exactly as the ETH pad required.
 contract StockPadFactory {
     using SafeERC20 for IERC20;
+    using StateLibrary for IPoolManager;
 
     IPoolManager public immutable poolManager;
     IPositionManagerMinimal public immutable positionManager;
@@ -89,6 +91,7 @@ contract StockPadFactory {
     error HookFlagsMismatch();
     error TokenMisordered();
     error BadConfig();
+    error PoolAlreadyInit();
 
     constructor(
         address poolManager_,
@@ -149,7 +152,14 @@ contract StockPadFactory {
         });
         poolId = key.toId();
 
-        poolManager.initialize(key, cfg.sqrtPriceX96);
+        // [audit] idempotent init: a same-block front-run that pre-inits the deterministic PoolKey only survives if
+        // it landed at OUR exact price; any other price is hostile and we revert (else a griefer could brick the
+        // launch). Mirrors CurvePadFactoryV4's [MEDIUM-3].
+        try poolManager.initialize(key, cfg.sqrtPriceX96) returns (int24) {}
+        catch {
+            (uint160 sp,,,) = poolManager.getSlot0(poolId);
+            if (sp != cfg.sqrtPriceX96) revert PoolAlreadyInit();
+        }
         RobinFeeHook(payable(hook)).registerPool(
             poolId,
             IRobinFeeHookAdmin.PoolFeeConfig({

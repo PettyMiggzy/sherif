@@ -8,6 +8,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
@@ -30,6 +31,8 @@ import {IPermit2Minimal} from "../interfaces/IPermit2Minimal.sol";
 /// The factory has ZERO ongoing power over funds: no owner-movable knob lives here. The only
 /// system-wide mutable is FeeWalletRegistry.platformFeeWallet (timelocked, read at claim time).
 contract PadFactory {
+    using StateLibrary for IPoolManager;
+
     IPoolManager public immutable poolManager;
     IPositionManagerMinimal public immutable positionManager;
     IPermit2Minimal public immutable permit2;
@@ -83,6 +86,7 @@ contract PadFactory {
     error TokenMisordered();
     error BadConfig();
     error RefundFailed();
+    error PoolAlreadyInit();
 
     constructor(
         address poolManager_,
@@ -147,8 +151,15 @@ contract PadFactory {
         });
         poolId = key.toId();
 
-        // 3) initialize the pool (static fee) — factory calls directly, no PoolInitializer [G2]
-        poolManager.initialize(key, cfg.sqrtPriceX96);
+        // 3) initialize the pool (static fee) — factory calls directly, no PoolInitializer [G2].
+        //    [audit] idempotent: a same-block front-run that pre-inits the pool only survives if it landed at OUR
+        //    exact price (byte-identical init) — any other price is hostile and we revert; otherwise a griefer could
+        //    pre-initialize the deterministic PoolKey and brick the launch. Mirrors CurvePadFactoryV4's [MEDIUM-3].
+        try poolManager.initialize(key, cfg.sqrtPriceX96) returns (int24) {}
+        catch {
+            (uint160 sp,,,) = poolManager.getSlot0(poolId);
+            if (sp != cfg.sqrtPriceX96) revert PoolAlreadyInit();
+        }
 
         // 4) bind immutable fee config BEFORE any swap [G2]
         RobinFeeHook(payable(hook)).registerPool(
