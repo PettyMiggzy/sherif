@@ -120,5 +120,22 @@ describe("SIM — graduation value conservation (nothing stranded, every sink fu
     expect(posL).to.be.gt(0n); // the locked LP holds real liquidity
     expect(await tok.balanceOf(dsAddr)).to.be.gt(0n); // staking got the leftover token
     expect(await ethers.provider.getBalance(await ambush.getAddress())).to.be.gt(0n); // ambush vault armed with the 5% share
+
+    // ── [audit F1] POST-GRADUATION buffer → PLATFORM. On the live pad the hook keeps taxing buys after
+    //    graduation and forwards the ETH buffer carve here via claimBuffer; graduate() is one-shot, so without a
+    //    post-grad path that ETH would strand. sweepToPlatform() books any such ETH (here simulated by a direct
+    //    send, exactly as claimBuffer/donations arrive) into the platform book, and claimPlatform pays it out. ──
+    const platWallet = await reg.platformFeeWallet();
+    const platBefore = await ethers.provider.getBalance(platWallet);
+    const postGrad = ethers.parseEther("0.7");
+    await owner.sendTransaction({ to: curveAddr, value: postGrad }); // mimic post-grad buffer/donation arriving
+    expect(await curve.platformEthOwed()).to.equal(0n); // not booked until swept
+    await curve.sweepToPlatform();
+    expect(await curve.platformEthOwed()).to.equal(postGrad); // booked to the platform, not stranded
+    await curve.claimPlatform();
+    expect((await ethers.provider.getBalance(platWallet)) - platBefore).to.equal(postGrad); // platform actually received it
+    expect(await ethers.provider.getBalance(curveAddr)).to.equal(0n); // nothing stranded
+    await curve.sweepToPlatform(); // idempotent: a second sweep with nothing new is a no-op
+    expect(await curve.platformEthOwed()).to.equal(0n);
   });
 });
