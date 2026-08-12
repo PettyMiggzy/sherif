@@ -9,6 +9,7 @@ import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/Bala
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {BaseHook} from "./BaseHook.sol";
 import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin} from "../interfaces/IRobinInterfaces.sol";
@@ -29,13 +30,15 @@ import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin} from "../int
 /// never block trading.
 ///
 /// Red-team invariants preserved from the spine:
-///   [A1] The tax is always ADDITIONAL (the hook owns no position to carve from). Buy fee is taken from the
-///        input leg (the buyer's money the PoolManager is about to receive); sell fee from the output leg.
+///   [A1] The tax is always ADDITIONAL (the hook owns no position to carve from). Buy fee is minted as an
+///        ERC-6909 claim on the input leg (settled by the buyer's input); sell fee is taken from the output leg.
 ///   [A2] The pool uses a STATIC lp fee; beforeSwap never overrides it (only the stock curb lives there).
-///   [A4/B1] Tax is EXACT-INPUT ONLY; the buy fee-on-input is settled via a positive specified
-///           BeforeSwapDelta, the sell fee via the afterSwap return delta — neither fronts foreign reserves.
-///           Exact-output is rejected on registered pads so the tax can't be dodged.
-///   [D2] Every fee `take` is try/caught — a blocklisted/paused stock fee currency skips the skim, never bricks.
+///   [A4/B1] Tax is EXACT-INPUT ONLY; the buy fee-on-input is collected via `mint` (pure accounting — NEVER fronts
+///           the singleton's reserves, so it can't revert on a cold pool) + a positive specified BeforeSwapDelta;
+///           the sell fee via a `take` of the just-produced output (already held by the PoolManager) + the afterSwap
+///           return delta. Neither fronts foreign reserves. Exact-output is rejected on registered pads.
+///   [D2] The sell `take` and every claim-time `take` is try/caught / retriable — a blocklisted/paused stock fee
+///        currency skips or defers, never bricks trading; the buy `mint` likewise can't brick a buy.
 ///   [G1] REQUIRED_FLAGS == 0x00CC, self-asserted in the ctor and cross-checked by the factory.
 ///   [G2] No beforeInitialize; config is bound by `registerPool` in the same launch tx.
 contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
@@ -166,8 +169,13 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     /// @notice Three jobs: (1) take the BUY tax as a FEE-ON-INPUT — a slice of the money-side (currency0: ETH, or
     /// the stock on a stock pad) the buyer spends, so the buy fee is denominated in the MONEY SIDE, not the coin.
     /// The remaining input is what the pool actually swaps (returned as a positive specified BeforeSwapDelta).
-    /// (2) [audit H1] REJECT exact-output swaps on registered pads, so the tax can't be dodged. (3) the stock
-    /// corporate-action curb [D4]; the adapter read is try/caught so a broken adapter can't freeze trading.
+    /// The fee is collected as an ERC-6909 CLAIM via `poolManager.mint` (NOT `take`): the buyer's input is not yet
+    /// settled at beforeSwap time, so a physical `take` would front the singleton's aggregate reserves and could
+    /// revert on a cold pool — dropping the whole tax. `mint` is pure accounting (no transfer), so the buy tax is
+    /// always collected regardless of singleton depth; the claim is redeemed for real currency at claim time (when
+    /// the singleton is warm) by `_pullClaimsAndPay`. (2) [audit H1] REJECT exact-output swaps on registered pads,
+    /// so the tax can't be dodged. (3) the stock corporate-action curb [D4]; the adapter read is try/caught so a
+    /// broken adapter can't freeze trading.
     function beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
         external
         override
@@ -193,12 +201,18 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         if (!c.registered || sender == address(this) || !params.zeroForOne || c.buyTaxBps == 0) {
             return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
+        // fee on the REQUESTED exact-input. NOTE: if the buyer sets a restrictive sqrtPriceLimit and the swap only
+        // partially fills, the fee still tracks the requested amount (the executed amount is unknown until after the
+        // swap, and only beforeSwap can adjust the specified/input leg). This is settlement-safe and by design — a
+        // buyer should size their input, not rely on a partial-fill price limit to reduce the tax. [audit LOW]
         uint256 fee = (uint256(-params.amountSpecified) * c.buyTaxBps) / BPS;
         if (fee == 0) return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         if (fee > uint256(uint128(MAX_SKIM))) fee = uint256(uint128(MAX_SKIM));
 
-        // [D2] Guard the take — a blocklisted/paused quote must NOT brick the buy; skip the skim instead.
-        try poolManager.take(key.currency0, address(this), fee) {}
+        // Collect the fee as an ERC-6909 CLAIM (pure accounting: no physical transfer, so it never fronts the
+        // singleton's reserves and never reverts on a cold pool). [D2] still try/caught for defense-in-depth: if the
+        // mint ever reverts, skip the skim rather than brick the buy. Redeemed for real currency0 at claim time.
+        try poolManager.mint(address(this), key.currency0.toId(), fee) {}
         catch {
             emit SkimSkipped(id, 0, fee);
             return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
@@ -256,6 +270,10 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         PoolId id = key.toId();
         PoolConfig storage c = config[id];
         if (!c.registered) return (IHooks.afterSwap.selector, int128(0));
+        // [audit] Exempt the pad's OWN curve controller: its token→ETH swaps (graduation ceiling nudge,
+        // restoreCeiling anti-grief) are protocol plumbing, not trades — taxing them would siphon the raise and
+        // under-refund an honest ceiling restorer. The curve is the registered bufferRecipient (a known address).
+        if (sender == c.bufferRecipient && c.bufferRecipient != address(0)) return (IHooks.afterSwap.selector, int128(0));
         if (params.amountSpecified >= 0) return (IHooks.afterSwap.selector, int128(0)); // [A4/B1] exact-input only
         if (params.zeroForOne) return (IHooks.afterSwap.selector, int128(0)); // BUYS are taxed in beforeSwap
         if (c.sellTaxBps == 0) return (IHooks.afterSwap.selector, int128(0));
@@ -288,13 +306,14 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     // --------------------------------------------------------------------- //
 
     /// @notice Pull the platform's accrued cut for one currency to the timelocked platform wallet.
-    /// Permissionless — funds always go to the registry's current wallet, never to the caller.
+    /// Permissionless — funds always go to the registry's current wallet, never to the caller. The platform cut is
+    /// buy-tax (fee-on-input), held as an ERC-6909 claim, so it is redeemed to real currency via _pullClaimsAndPay.
     function claimPlatform(PoolId id, uint256 currencyIndex) external nonReentrant returns (uint256 amount) {
         amount = platformOwed[id][currencyIndex];
         if (amount == 0) revert NothingToClaim();
         platformOwed[id][currencyIndex] = 0;
         address to = feeRegistry.platformFeeWallet();
-        _payout(_currencyAt(id, currencyIndex), to, amount);
+        _pullClaimsAndPay(_currencyAt(id, currencyIndex), to, amount);
         emit PlatformClaimed(id, currencyIndex, to, amount);
     }
 
@@ -330,7 +349,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         amount = bufferOwed[id];
         if (amount == 0) revert NothingToClaim();
         bufferOwed[id] = 0;
-        _payout(c.currency0, to, amount); // money side (ETH/quote)
+        _pullClaimsAndPay(c.currency0, to, amount); // money side (ETH/quote); buy-tax claim → real currency
         emit BufferClaimed(id, to, amount);
     }
 
@@ -341,7 +360,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         amount = referralOwed[msg.sender][quote];
         if (amount == 0) revert NothingToClaim();
         referralOwed[msg.sender][quote] = 0;
-        _payout(Currency.wrap(quote), msg.sender, amount);
+        _pullClaimsAndPay(Currency.wrap(quote), msg.sender, amount); // buy-tax claim → real currency
         emit ReferralClaimed(msg.sender, quote, amount);
     }
 
@@ -410,6 +429,28 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         PoolConfig storage c = config[id];
         if (!c.registered) revert NotRegistered();
         return index == 0 ? c.currency0 : c.currency1;
+    }
+
+    /// @dev Redeem `amount` of an accrued ERC-6909 CLAIM (how buy-tax fees are held — minted fee-on-input) into
+    /// real `currency` and forward it to `to`. Buy fees are minted rather than taken so beforeSwap never fronts the
+    /// singleton's reserves; the physical `take` is deferred to here (claim time), when the singleton is warm. The
+    /// burn+take run inside our own unlock; a failed take (e.g. a paused stock or cold singleton at claim time)
+    /// reverts the whole claim → the owed slot (zeroed by the caller under nonReentrant) is restored → retriable,
+    /// never bricked. The recipient send happens AFTER the unlock closes (CEI); nonReentrant blocks re-entry.
+    function _pullClaimsAndPay(Currency currency, address to, uint256 amount) internal {
+        if (to == address(0)) revert ZeroAddress();
+        poolManager.unlock(abi.encode(currency, amount)); // burns the claim, takes real `currency` to this hook
+        _payout(currency, to, amount);
+    }
+
+    /// @dev PoolManager unlock callback: convert this hook's ERC-6909 claim for `currency` into real balance held by
+    /// the hook. Only the PoolManager can call it, and only re-enters from our own `_pullClaimsAndPay` unlock.
+    function unlockCallback(bytes calldata data) external returns (bytes memory) {
+        if (msg.sender != address(poolManager)) revert NotPoolManager();
+        (Currency currency, uint256 amount) = abi.decode(data, (Currency, uint256));
+        poolManager.burn(address(this), currency.toId(), amount); // +amount delta (credit the burned claim)
+        poolManager.take(currency, address(this), amount); // −amount delta, physical currency → this hook
+        return "";
     }
 
     /// @dev Native → low-level call; ERC20 → CurrencyLibrary.transfer (reverts on failure). Callers

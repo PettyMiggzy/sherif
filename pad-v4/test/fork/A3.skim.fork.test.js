@@ -71,14 +71,15 @@ describe("A3 fork — exact-input skim closes clean against live 0x8366", functi
     );
 
     const hookAddr = await hook.getAddress();
-    const hb = await ethers.provider.getBalance(hookAddr);
+    const hb = await pm.balanceOf(hookAddr, 0n); // ERC-6909 native-ETH claim (buy fee is minted, not taken)
     const spend = ethers.parseEther("1");
     await sw.connect(trader).swap(
       key, { zeroForOne: true, amountSpecified: -spend, sqrtPriceLimitX96: MIN_SQRT_LIMIT },
       { takeClaims: false, settleUsingBurn: false }, "0x", { value: spend }
     );
-    // buy tax is fee-on-input on the MONEY SIDE (ETH): the hook took exactly 1% of the ETH spent, closing clean.
-    const skim = (await ethers.provider.getBalance(hookAddr)) - hb;
+    // buy tax is fee-on-input on the MONEY SIDE (ETH), collected as an ERC-6909 claim: exactly 1% of the ETH
+    // spent, closing clean without fronting the singleton's reserves.
+    const skim = (await pm.balanceOf(hookAddr, 0n)) - hb;
     expect(skim).to.equal((spend * 100n) / 10000n);
     // the ETH skim splits 20% curve buffer / 80% platform (money side, index 0)
     const buffer = (skim * 2000n) / 10000n;

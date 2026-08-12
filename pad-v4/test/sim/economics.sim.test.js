@@ -66,17 +66,20 @@ describe("SIM — fee conservation over many buys & sells", () => {
       }
     }
 
-    // Both taxes are now ETH (money side): buys are taxed FEE-ON-INPUT (beforeSwap), sells on the ETH OUTPUT
-    // (afterSwap). So the hook accrues ONLY native ETH and never holds any of the pad coin.
-    // INVARIANT 1: buys → platform cut + curve buffer, both ETH.
+    // Both taxes are ETH (money side). BUYS are collected FEE-ON-INPUT as ERC-6909 CLAIMS (mint, no reserve
+    // fronting) → redeemed for real ETH at claim time. SELLS are taken as real ETH from the output leg. So the
+    // hook holds claims for the buy books and raw ETH for the sell books, and never any of the pad coin.
+    // INVARIANT 1: buys → platform cut + curve buffer, both held as an ETH claim (id 0).
     const platEth = await hook.platformOwed(poolId, 0);
     const buffEth = await hook.bufferOwed(poolId);
     expect(buffEth).to.be.gt(0n); // the 20% buffer carve accrued
-    // INVARIANT 2: sells → creator + floor, both ETH.
+    // INVARIANT 2: sells → creator + floor, both real ETH.
     const creaEth = await hook.creatorOwed(poolId, 0);
     const floorEth = await hook.floorOwed(poolId, 0);
-    // SOLVENCY IS EXACT: the hook's whole native balance == every wei booked across buys + sells; nothing leaks.
-    expect(await ethers.provider.getBalance(hookAddr)).to.equal(platEth + buffEth + creaEth + floorEth);
+    // SOLVENCY IS EXACT, per backing: the hook's ERC-6909 ETH claim == every wei booked from buys; its raw ETH
+    // balance == every wei booked from sells. Nothing leaks, nothing is over-promised.
+    expect(await pm.balanceOf(hookAddr, 0n)).to.equal(platEth + buffEth);
+    expect(await ethers.provider.getBalance(hookAddr)).to.equal(creaEth + floorEth);
     // no pad coin ever accrues to the hook (the buy tax is ETH, not the coin)
     expect(await tok.balanceOf(hookAddr)).to.equal(0n);
     expect(await hook.platformOwed(poolId, 1)).to.equal(0n);
@@ -90,12 +93,14 @@ describe("SIM — fee conservation over many buys & sells", () => {
     expect(floorEth).to.be.lte(exact20); // never more than 20%
     expect(exact20 - floorEth).to.be.lte(BigInt(seq.length)); // dust ≤ one wei per swap, to creator
 
-    // INVARIANT 4: every claim succeeds (solvency proven) and drains the hook's ETH to exactly zero.
+    // INVARIANT 4: every claim succeeds (solvency proven), redeeming claims → real ETH, and drains BOTH the hook's
+    // ETH claim and its raw ETH balance to exactly zero.
     await hook.claimPlatform(poolId, 0);
-    await hook.claimBuffer(poolId); // forward the curve-buffer carve to its recipient (ETH)
+    await hook.claimBuffer(poolId); // forward the curve-buffer carve to its recipient (redeems the claim → ETH)
     await hook.claimCreator(poolId, 0);
     await hook.claimFloor(poolId, 0);
     expect(await tok.balanceOf(hookAddr)).to.equal(0n);
+    expect(await pm.balanceOf(hookAddr, 0n)).to.equal(0n);
     expect(await ethers.provider.getBalance(hookAddr)).to.equal(0n);
   });
 });

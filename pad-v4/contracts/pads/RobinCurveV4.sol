@@ -120,6 +120,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint256 public creatorEthOwed; // the creator-side graduation reward (claimCreator)
     uint256 public ambushEthOwed; // the ambushGradBps share of the raise, swept to the ambush vault at graduation
     mapping(address => uint256) public gasBountyOwed; // graduation keeper bounty booked here iff its inline send failed
+    uint256 public totalGasBountyOwed; // running sum of gasBountyOwed, so sweepToPlatform never mis-books a pending bounty
 
     event Seeded(uint128 liquidity, uint256 tokens);
     event CurveFeesAccrued(uint256 eth, uint256 tokenFees);
@@ -141,6 +142,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     event AmbushFunded(uint256 amount);
     event GradBountyPaid(address indexed keeper, uint256 amount, bool booked);
     event GradBountyClaimed(address indexed to, uint256 amount);
+    event PlatformSwept(uint256 eth);
     event CeilingRestored(address indexed by, uint256 tokenSpent, uint256 ethOut);
 
     error NotPoolManager();
@@ -263,12 +265,29 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         uint256 a = gasBountyOwed[to];
         if (a == 0) return;
         gasBountyOwed[to] = 0;
+        totalGasBountyOwed -= a;
         (bool ok,) = payable(to).call{value: a}("");
         if (!ok) {
             gasBountyOwed[to] = a; // restore → retriable
+            totalGasBountyOwed += a;
             revert EthSendFailed();
         }
         emit GradBountyClaimed(to, a);
+    }
+
+    /// @notice [audit] Book any ETH that arrived AFTER graduation — chiefly the curve-buffer carve the hook keeps
+    /// taking on post-graduation buys (forwarded here by `hook.claimBuffer`), plus any stray donation — into the
+    /// PLATFORM book so it reaches the platform wallet via `claimPlatform`. Without this, post-graduation buffer ETH
+    /// would strand on the curve forever (graduate() is one-shot and only that path booked raw balance). Permissionless,
+    /// graduated-only, and it never touches the still-outstanding creator/floor/ambush/gas-bounty books.
+    function sweepToPlatform() external nonReentrant {
+        if (!graduated) revert NotReady();
+        uint256 booked = platformEthOwed + creatorEthOwed + floorEthOwed + ambushEthOwed + totalGasBountyOwed;
+        uint256 bal = address(this).balance;
+        if (bal <= booked) return; // nothing new arrived
+        uint256 fresh = bal - booked;
+        platformEthOwed += fresh;
+        emit PlatformSwept(fresh);
     }
 
     // ── graduation ────────────────────────────────────────────────────────────────
@@ -363,7 +382,10 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         emit Graduated(lpTokenId, raisedEth, leftoverToken, platReward, creatReward, ambushReward);
         if (bounty > 0) {
             (bool ok,) = payable(msg.sender).call{value: bounty}("");
-            if (!ok) gasBountyOwed[msg.sender] += bounty;
+            if (!ok) {
+                gasBountyOwed[msg.sender] += bounty;
+                totalGasBountyOwed += bounty;
+            }
             emit GradBountyPaid(msg.sender, bounty, !ok);
         }
     }

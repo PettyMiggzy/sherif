@@ -78,15 +78,21 @@ describe("SIM — production-geometry calibration (start ~$3.4k, graduate ~$34k,
     expect(startTick).to.equal(START);
     const startMc = mcUsd(startTick);
 
-    // ── buy the curve OUT, capping EXACTLY at the graduation price (gradSqrt) so spot lands on the ceiling and
-    //    the ETH consumed is precisely the raise (a huge amountSpecified is bounded by the price limit) ──
+    // ── buy the curve OUT, capping EXACTLY at the graduation price (gradSqrt) so spot lands on the ceiling ──
+    // Size the exact-input a modest margin ABOVE the ~4.1 ETH principal (not a huge 1000 ETH): the buy tax is a
+    // fee-on-INPUT computed on the REQUESTED amount, so a wildly oversized request would over-tax the whale on ETH
+    // that never swaps. E(6) fills the curve (principal ≈ 4.1 < 6 − fee) while keeping the fee realistic.
     const gradSqrt = await th.sqrt(GRAD);
     const wBefore = await ethers.provider.getBalance(whale.address);
     const rc = await (await sw.connect(whale).swap(
-      key, { zeroForOne: true, amountSpecified: -E(1000), sqrtPriceLimitX96: gradSqrt },
-      { takeClaims: false, settleUsingBurn: false }, "0x", { value: E(1000) }
+      key, { zeroForOne: true, amountSpecified: -E(6), sqrtPriceLimitX96: gradSqrt },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: E(6) }
     )).wait();
-    const raise = wBefore - await ethers.provider.getBalance(whale.address) - rc.gasUsed * rc.gasPrice;
+    const spent = wBefore - await ethers.provider.getBalance(whale.address) - rc.gasUsed * rc.gasPrice;
+    // the RAISE = the pool PRINCIPAL (what graduation distributes) = whale spend − the buy tax (which is money the
+    // platform collects, not raise). The buy tax is minted as an ERC-6909 claim; read it back and subtract.
+    const buyTax = await pm.balanceOf(hook, 0n); // ERC-6909 native-ETH claim (the whole buy tax)
+    const raise = spent - buyTax;
     const gradT = Number((await stateView.getSlot0(poolId))[1]);
     const tokBought = Number(await tokC.balanceOf(whale.address)) / 1e18;
     expect(await curve.ready()).to.equal(true);           // reached the ceiling
@@ -103,6 +109,6 @@ describe("SIM — production-geometry calibration (start ~$3.4k, graduate ~$34k,
     expect(startMc).to.be.within(2600, 4400);   // target ~$3.4k
     expect(gradMc).to.be.within(27000, 43000);  // target ~$34k
     expect(multiple).to.be.within(9, 11);       // ~10x chart (geometry-fixed, ethUsd-independent)
-    expect(raiseEth).to.be.within(3.2, 6.5);    // target ~4.2 ETH (a hair more counting the 1% LP fee)
+    expect(raiseEth).to.be.within(3.2, 6.5);    // target ~4.2 ETH pool principal
   });
 });

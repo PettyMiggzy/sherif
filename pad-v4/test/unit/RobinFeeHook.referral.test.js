@@ -77,13 +77,13 @@ describe("RobinFeeHook — on-chain referral revenue-share (ETH-denominated buy 
 
   it("a buy WITH a referrer in hookData carves the referral from the platform cut (not the buffer, not the trader)", async () => {
     const hookAddr = await hook.getAddress();
-    const hookEthBefore = await ethers.provider.getBalance(hookAddr);
+    const claimBefore = await pm.balanceOf(hookAddr, 0n); // ERC-6909 native-ETH claim (buy fee is minted, not taken)
     const spend = ethers.parseEther("1");
 
     const hookData = abi.encode(["address"], [referrer.address]);
     await buy("1", hookData);
 
-    const skim = (await ethers.provider.getBalance(hookAddr)) - hookEthBefore; // total buy tax (ETH, fee-on-input)
+    const skim = (await pm.balanceOf(hookAddr, 0n)) - claimBefore; // total buy tax (ETH claim, fee-on-input)
     expect(skim).to.equal((spend * BUY_BPS) / 10000n); // trader paid exactly 1% of the ETH they spent — no extra cost
 
     const bufferCut = (skim * BUFFER_SHARE_BPS) / 10000n;
@@ -100,11 +100,11 @@ describe("RobinFeeHook — on-chain referral revenue-share (ETH-denominated buy 
     const platBefore = await hook.platformOwed(poolId, 0);
     const refBefore = await hook.referralOwed(referrer.address, ZERO);
     const hookAddr = await hook.getAddress();
-    const hookEth0 = await ethers.provider.getBalance(hookAddr);
+    const claim0 = await pm.balanceOf(hookAddr, 0n);
 
     await buy("1", "0x"); // no referrer
 
-    const skim = (await ethers.provider.getBalance(hookAddr)) - hookEth0;
+    const skim = (await pm.balanceOf(hookAddr, 0n)) - claim0;
     const platformCut = skim - (skim * BUFFER_SHARE_BPS) / 10000n;
     expect((await hook.platformOwed(poolId, 0)) - platBefore).to.equal(platformCut); // full platform cut, no referral
     expect(await hook.referralOwed(referrer.address, ZERO)).to.equal(refBefore); // referrer unchanged

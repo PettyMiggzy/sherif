@@ -80,10 +80,11 @@ describe("RobinFeeHook — adversarial", () => {
     expect(await tok.balanceOf(await hook.getAddress())).to.equal(0n);
   });
 
-  it("D2: a blocklisted money-side fee currency SKIPS the buy skim, swap still completes", async () => {
-    // The buy tax is fee-on-input on the MONEY SIDE (currency0). On a STOCK pad currency0 is the stock ERC20,
-    // which can pause/blocklist — so this proves the guarded `take` on the buy path: a blocked money currency
-    // SKIPS the skim instead of bricking the buy. (On an ETH pad currency0 is native ETH and can never block.)
+  it("D2: a blocklisted money-side currency never bricks the buy; the tax is minted as a claim and the payout is retriable", async () => {
+    // The buy tax is fee-on-input on the MONEY SIDE (currency0), collected via poolManager.mint (an ERC-6909
+    // CLAIM — pure accounting, no transfer), so even a fully blocklisting stock cannot stop the tax being booked
+    // or brick the buy. The block only bites when the claim is REDEEMED (claimPlatform's take), and that reverts
+    // cleanly + retriably, restoring the book. (On an ETH pad currency0 is native ETH and can never block.)
     const blk = await (await ethers.getContractFactory("BlocklistERC20")).connect(owner).deploy(10n ** 30n); // money side
     // pad token (currency1) must sort ABOVE the money side (currency0): redeploy until tok > blk.
     let tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
@@ -105,21 +106,33 @@ describe("RobinFeeHook — adversarial", () => {
       key, { tickLower: -887220, tickUpper: 887220, liquidityDelta: 10n ** 20n, salt: ethers.ZeroHash }, "0x"
     );
     await hook.connect(factory).registerPool(poolId, CFG(blkAddr, tokAddr, creator.address, { quoteIsStock: true }));
-    await blk.connect(owner).setBlocked(await hook.getAddress(), true); // hook can't receive the money-side skim
+    const hookAddr = await hook.getAddress();
+    await blk.connect(owner).setBlocked(hookAddr, true); // hook can't RECEIVE the money-side stock (blocks the claim-time take)
 
-    // trader buys: spends BLK (currency0), receives TOK. beforeSwap's take(BLK) is blocked → SkimSkipped, buy fills.
+    // trader buys: spends BLK (currency0), receives TOK. beforeSwap MINTS the fee claim (no transfer) → buy fills,
+    // and the whole buy tax is booked (NOT skipped) even though the stock blocks the hook.
     await blk.connect(owner).transfer(trader.address, 10n ** 22n);
     await blk.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
     const tBefore = await tok.balanceOf(trader.address);
-    await expect(
-      sw.connect(trader).swap(
-        key, { zeroForOne: true, amountSpecified: -ethers.parseEther("1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
-        { takeClaims: false, settleUsingBurn: false }, "0x"
-      )
-    ).to.emit(hook, "SkimSkipped");
-    expect(await tok.balanceOf(trader.address)).to.be.gt(tBefore); // buy still filled
-    expect(await hook.platformOwed(poolId, 0)).to.equal(0n); // nothing booked (money-side skim skipped)
-    expect(await hook.bufferOwed(poolId)).to.equal(0n);
+    await sw.connect(trader).swap(
+      key, { zeroForOne: true, amountSpecified: -ethers.parseEther("1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x"
+    );
+    expect(await tok.balanceOf(trader.address)).to.be.gt(tBefore); // buy filled
+    expect(await hook.platformOwed(poolId, 0)).to.be.gt(0n); // tax BOOKED (mint can't be blocked)
+    expect(await pm.balanceOf(hookAddr, BigInt(blkAddr))).to.be.gt(0n); // held as an ERC-6909 claim on the stock
+
+    // the redemption (claimPlatform → burn+take real stock to the hook) reverts while the hook is blocked — the
+    // book is preserved (retriable), and trading is never bricked.
+    await expect(hook.claimPlatform(poolId, 0)).to.be.reverted;
+    expect(await hook.platformOwed(poolId, 0)).to.be.gt(0n); // book intact
+
+    // once the block is lifted the claim succeeds and pays the platform wallet in real stock.
+    await blk.connect(owner).setBlocked(hookAddr, false);
+    const owed = await hook.platformOwed(poolId, 0);
+    await hook.claimPlatform(poolId, 0);
+    expect(await blk.balanceOf(platform.address)).to.equal(owed);
+    expect(await hook.platformOwed(poolId, 0)).to.equal(0n);
   });
 
   it("buy routes to platform, sell routes to creator + floor", async () => {

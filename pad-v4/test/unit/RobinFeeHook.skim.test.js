@@ -77,9 +77,10 @@ describe("RobinFeeHook — directional tax (ETH-native) closes clean (local real
     );
   });
 
-  it("BUY: fee-on-input closes clean, buy tax of the MONEY-SIDE (ETH) input → platform + curve buffer", async () => {
+  it("BUY: fee-on-input closes clean; buy tax of the MONEY-SIDE (ETH) input held as an ERC-6909 claim → platform + buffer", async () => {
     const hookAddr = await hook.getAddress();
     const hookEthBefore = await ethers.provider.getBalance(hookAddr);
+    const claimBefore = await pm.balanceOf(hookAddr, 0n); // ERC-6909 native-ETH claim (id 0)
     const spend = ethers.parseEther("1");
 
     await sw.connect(trader).swap(
@@ -87,8 +88,10 @@ describe("RobinFeeHook — directional tax (ETH-native) closes clean (local real
       { takeClaims: false, settleUsingBurn: false }, "0x", { value: spend }
     );
 
-    // the hook took EXACTLY 1% of the ETH the buyer spent (fee-on-input), leaving 99% for the pool to swap.
-    const skim = (await ethers.provider.getBalance(hookAddr)) - hookEthBefore;
+    // the buy fee is minted as an ERC-6909 claim (NOT a physical take — no reserve fronting): the hook's raw ETH
+    // is unchanged; its claim balance grew by EXACTLY 1% of the ETH the buyer spent. 99% went to the pool to swap.
+    expect((await ethers.provider.getBalance(hookAddr)) - hookEthBefore).to.equal(0n);
+    const skim = (await pm.balanceOf(hookAddr, 0n)) - claimBefore;
     expect(skim).to.equal((spend * BUY_BPS) / 10000n); // 0.01 ETH, exact
     // buy tax (money side, index 0) splits: 20% → curve buffer, the rest → platform. creator/floor untouched.
     const bufferCut = (skim * BUFFER_SHARE_BPS) / 10000n;
@@ -115,7 +118,8 @@ describe("RobinFeeHook — directional tax (ETH-native) closes clean (local real
     expect(totalSell).to.be.gt(0n);
     // floor gets 20% of the sell tax, creator the remaining 80% (dust conserved into creator)
     expect(floorCut).to.equal((totalSell * FLOOR_SHARE_BPS) / 10000n);
-    // hook holds the native fees it took (buy-side fee from the prior test + this sell-side fee)
+    // the SELL fee is taken as real ETH (output leg, already held by the PM), so the hook's raw ETH grows by
+    // exactly the sell fee. (The BUY fee from the prior test is an ERC-6909 claim, not raw ETH — see above.)
     expect((await ethers.provider.getBalance(await hook.getAddress())) - hookEthBefore).to.equal(totalSell);
   });
 
