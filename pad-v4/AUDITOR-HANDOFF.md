@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
-| **MEDIUM** | 18 | 10 |
+| **MEDIUM** | 19 | 10 |
 | **LOW** | 18 | 9 |
 | **INFO** | 15 (11 bundled as I-1, plus I-2 … I-5) | 1 |
-| **total** | **56** | **25** |
+| **total** | **57** | **25** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -1140,6 +1140,43 @@ still leaves the package self-contradictory.
 
 ---
 
+### M-19 · MEDIUM · The invariant suite tests the case **adjacent** to each of this report's findings  `VERIFIED`
+
+**Where** `AUDIT-SCOPE.md` §4 ("Key invariants — what to try to break") against the 34 test files under `test/`.
+
+This is a process finding, not an exploit: nothing here loses money by itself. It is filed at MEDIUM because it
+is the single most useful input to the remediation plan — it says which regression test to write next to each
+fix, and it explains why these particular defects shipped in code this careful. Every invariant in §4 **does**
+have executing tests. In six cases the test covers the shape one step away from the defect.
+
+| §4 invariant | what the suite executes | what it does not reach |
+|---|---|---|
+| 1. Money conservation | `economics.sim`: *"platform+creator+floor owed == every wei skimmed; claims drain exactly"*; `curve.graduation.sim`: mixed tape + donation, curve ends empty | — covered |
+| 2. Split-backing solvency | `RobinFeeHook.skim`: buy claim → platform+buffer, sell take → creator+floor | — covered |
+| 3. Non-bricking | `adversarial`: blocklisted currency (D2), malformed `hookData`, hostile referrer, reverting floor sink, *"the stock curb … when adapter **reverts**"* (`MockGuardAdapter`) | an adapter/oracle that **returns nothing** — a revert is caught, a short return is not (**H-3**, **M-17**). The whole invariant rests on `try/catch`, and the one case `try/catch` cannot absorb is the one case not tested. |
+| 4. Permanent lock | `LockVault`: *"exposes NO liquidity-exit selector"*; floor and ambush: *"exposes NO remove/withdraw selector"* | — covered (structural selector-absence tests, the right shape) |
+| 5. Raise integrity | `curve.graduation.sim` (donation); `grief.test`: a griefer plants **one deep position**, `tickLower: GRAD-120, tickUpper: GRAD, liquidityDelta: 10000e18` → `CeilingNotRestored` → `restoreCeiling()` recovers | **depth** is tested, **breadth** is not: **C-2** plants ~100 wei across many *initialised ticks*, which does not stop the nudge — it makes the tick-bitmap walk exceed the block gas cap, so `restoreCeiling()` is bricked too. Also untested: swap-sourced ETH counted as raise (**L-8**). |
+| 6. Governance | `RobinV4FeeConfig`: caps, retune-within-caps, param sanity | nothing asserts a retune cannot reach an **open presale** (**M-12**), and `lpFee` has no policy bound to assert (**M-10**) |
+| 7. Access control | `setFloorRecipient` platform-only + one-shot; `registerLaunch` factory-only + one-shot; `setStakingRecipient` platform-only + one-shot; creator repoint 2-step | `LockVault.setFactory` is tested only for `NotInitializer` and `FactoryAlreadySet` — **nothing asserts it points at a curve factory**, which is exactly **M-2**. The one-shot is proven; its *target* is not. |
+
+The pattern is consistent enough to be worth naming: the suite proves each mechanism **works**, and proves it
+**cannot be called by the wrong party**, but rarely proves it was **pointed at the right thing** or that it
+survives the *malformed* rather than the *hostile* input. That is the same seam §2 identifies in the contracts,
+showing up in the tests.
+
+Two gaps are structural rather than adjacent, and are recorded elsewhere: the entire `StockPadFactory` launch
+path has no executing local coverage at all (**M-8**), and `test/fork/*` — the only place the real
+`PositionManager`, real Permit2 and real `nextTokenId` are exercised — needs a `FORK_RPC` that CI does not
+appear to provide (§5).
+
+**Fix direction.** Add one regression test per fix, aimed at the uncovered variant rather than re-covering the
+tested one: a `MockShortReturnAdapter` returning zero bytes (H-3, M-17); a dust-breadth planter that initialises
+N ticks and measures `graduate()` / `restoreCeiling()` gas against the 30M cap (C-2); an assertion in the launch
+path that `lockVault.factory() == address(curveFactory)` (M-2); a presale whose FeeConfig is retuned between
+`createPresale` and `finalize` (M-12). Each is a few lines against a harness that already exists.
+
+---
+
 ### L-1 · LOW · `RobinV4FeeConfig` accepts curve geometries whose raise floors to zero  `PROVEN (numerically)`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-103` (`_validate`), with
@@ -1604,10 +1641,17 @@ times — including as a literal instruction, *"MINE `hookSalt` so `CREATE2(...)
 one of them is off by the `0x08` bit (`AFTER_SWAP_RETURNS_DELTA`, which the hook genuinely needs: it returns an
 `int128` from `afterSwap` to take the sell tax).
 
+There is exactly one hook contract and one flag constant in the whole suite, and **both** factories bind it:
+`PadFactory.sol:44` (`HOOK_FLAGS = 0x00CC`, cross-checked twice at `:142-143`) and `CurvePadFactoryV4.sol:46`.
+So `0x00C4` is wrong for every stack — this is not I-4's PadFactory/curve confusion wearing a different hat.
+
 `ROBIN-V4-CURVE-ECON.md:37` has the correct value, so the docs disagree with each other as well as with the
-code. `scripts/mine.js` reads the flags from the compiled artifact rather than from the doc, so the shipped
-tooling is unaffected — this bites the operator who mines by hand, which `DEPLOY.md` and `deploy-curve.js:119-122`
-both contemplate. The failure is loud (`HookFlagsMismatch` at launch, before any state is written) and costs a
+code, and the wrong number has since propagated into places a reviewer would treat as corroboration:
+`DEPLOY.md:33` writes `hook@0x…C4`, and `test/fork/PadFactory.launch.fork.test.js:23` names its test *"hook
+flags 0xC4"* (the assertion itself is fine — only the title is wrong, which is worse, because a test name that
+agrees with the doc is exactly what a skim-reader checks). `scripts/mine.js` reads the flags from the compiled
+artifact rather than from the doc, so the shipped tooling is unaffected — this bites the operator who mines by
+hand, which `DEPLOY.md` and `deploy-curve.js:119-122` both contemplate. The failure is loud (`HookFlagsMismatch` at launch, before any state is written) and costs a
 wasted mining run rather than funds, which is why this is LOW rather than a wiring MEDIUM.
 
 **Fix direction.** Correct all three occurrences to `0x00CC`, and derive the number in the docs from
@@ -2159,11 +2203,13 @@ against `floorLiquidity()`.
 8. **M-3, M-5 and M-12** are product decisions as much as code ones: decide what `PadFactory` is, which owner
    powers you are willing to defend, and whether a presale's terms may move under its contributors. Then make
    the code and the docs agree.
-9. **M-7, M-9, L-2, L-3, L-6, L-7, L-17** — the wiring/runbook cluster. Fix them together, as one scripted
+9. **M-19** alongside every fix above, not after them — it names the specific regression test each finding
+    needs, and each one is a few lines against a harness that already exists.
+10. **M-7, M-9, L-2, L-3, L-6, L-7, L-17** — the wiring/runbook cluster. Fix them together, as one scripted
     post-launch wiring step that asserts every one-shot is set and consistent, and produce the curve-specific
     runbook **I-4** calls for in the same pass — I-4 is the common root, and without it the next operator
     reaches for the PadFactory runbook again.
-10. The rest as cleanup, with **L-4**, **L-5**, **L-8** and **L-15**'s doc corrections folded into whichever PR
+11. The rest as cleanup, with **L-4**, **L-5**, **L-8** and **L-15**'s doc corrections folded into whichever PR
     touches those files, **L-16**'s three guards brought onto one comparison while someone is already in
     `RobinCurveV4`, and **L-18**'s netted fee delta split in both vaults at once — it is the same three lines
     in each. Note that L-8 and M-10 each falsify a specific sentence an auditor is told to rely on
