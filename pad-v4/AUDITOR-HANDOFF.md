@@ -676,8 +676,20 @@ live FeeConfig at finalize, and `PresaleVault` re-reads the same values to rebui
 
 So contributors can fund a presale advertising one launch price and be filled at another. `finalize` takes no
 "expected geometry" argument, has no mismatch revert, and the `saltCommitment` covers only the three CREATE2
-salts — nothing pins the terms the raise was sold on. The vault's own `previewClaim` cannot warn them either,
-because before finalize there is no pool to price against.
+salts — nothing pins the terms the raise was sold on. `PresaleVaultFactory.sol:12` states the deferral as a
+design choice — *"Heavy geometry/reserve validation is deferred to CurvePadFactoryV4.launch() at finalize"* —
+without noting that it also defers the price. The vault's own `previewClaim` cannot warn them either, because
+before finalize there is no pool to price against.
+
+**Where the harm actually lands.** Measured across two otherwise-identical presales differing only by a
+retune between deposit and finalize, the immediate ETH mark-to-market of the contributors' bag is
+*unchanged* — 2.940321940830918453 ETH versus 2.940312114208555208 ETH. The retune is **homothetic**: it
+rescales the whole curve, so the same ETH buys the same slice of *curve progress* and can be sold straight
+back for the same ETH. What changes is the **entry valuation and the resulting share of supply** — in the
+measured case 0.00002678% of supply became 0.00001478%, a 1.81× reduction, with a 1.81× larger ETH raise now
+required to graduate. That is the real injury: a launchpad buyer's economic claim is their fraction of the
+token, and it can be diluted by a governance call after their ETH is already locked in the vault. Framing it
+as an instantaneous loss would overstate it; framing it as harmless understates it.
 
 `RobinV4FeeConfig`'s header defends the absence of a timelock on the grounds that changes are *"forward-only
 and can never touch an existing coin."* True of launched pads. An open presale holding contributor ETH is
