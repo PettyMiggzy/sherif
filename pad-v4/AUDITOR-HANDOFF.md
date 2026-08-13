@@ -2642,37 +2642,47 @@ against `floorLiquidity()`.
    stranding in I-1(5) at the same time.
 3. **H-1** — no minimum trade size, cheaper than paying the tax, and a router can hand it to every user. It
    defunds the creator's entire income and the floor. The buy side already shows the fix.
-3. **M-15** — the floor only deepens while the price is above it, so the pad's headline protection does not
+4. **M-20** — one word (`false` → `true` at `DualStaking.sol:404`) plus a `msg.value >= duration` check. It
+   is the cheapest fix on this list relative to what it closes: a measured 99.00% capture of a creator's
+   donation by a 121-second staker, on the channel creators are explicitly told to use. Do it in the same PR
+   as C-1 — they are the same `extend`/window mechanism in two contracts, and C-1's "reject sub-rate tranches"
+   is the same guard M-20 needs.
+5. **M-15** — the floor only deepens while the price is above it, so the pad's headline protection does not
    operate in the state it exists for. It falsifies an `AUDIT-SCOPE.md` §4.4 invariant rather than mis-tuning
    one, so it needs a design answer, not a parameter change.
-4. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
+6. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
    (an assertion at launch; an on-chain anchor read).
-5. **H-2 and H-3** — before any stock pad exists. It is a rug primitive, and M-8 means it is currently untestable
+7. **H-2 and H-3** — before any stock pad exists. It is a rug primitive, and M-8 means it is currently untestable
    locally, so fix the mock in the same pass.
-5. **M-11** — holder fees routed to the platform by the ordinary post-graduation flow, with no attacker
+8. **M-11** — holder fees routed to the platform by the ordinary post-graduation flow, with no attacker
    required. One line, and the right shape already exists in the same file (`claimFloor`'s
    `NoFloorRecipient`). Fold in **I-2**'s `seedAmbush()` poke while you are there — same pattern, same file.
-6. **M-1**, then **L-1** and **M-10** — real value loss and two permanent bricks, all gated on configuration
+9. **M-1**, then **L-1** and **M-10** — real value loss and two permanent bricks, all gated on configuration
    that is easy to get wrong and currently unbounded.
-7. **M-6 and M-18** before the package goes to the external auditor. Auditing from a stale architecture
+10. **M-6 and M-18** before the package goes to the external auditor. Auditing from a stale architecture
    document is the most expensive mistake on this list, because it wastes the engagement rather than the code
    — and M-18 is worse than stale: the "locked spec" describes the ambush with every sign reversed, so it
    points the review away from the risks the shipped vault actually has. Fix both together with **I-4**; the
    three documents disagree with the code in three different directions, so correcting any one alone still
    ships a self-contradictory package.
-8. **M-3, M-5 and M-12** are product decisions as much as code ones: decide what `PadFactory` is, which owner
+11. **M-3, M-5 and M-12** are product decisions as much as code ones: decide what `PadFactory` is, which owner
    powers you are willing to defend, and whether a presale's terms may move under its contributors. Then make
    the code and the docs agree.
-9. **M-19** alongside every fix above, not after them — it names the specific regression test each finding
+12. **M-19** alongside every fix above, not after them — it names the specific regression test each finding
     needs, and each one is a few lines against a harness that already exists.
-10. **M-7, M-9, L-2, L-3, L-6, L-7, L-17** — the wiring/runbook cluster. Fix them together, as one scripted
+13. **M-7, M-9, L-2, L-3, L-6, L-7, L-17** — the wiring/runbook cluster. Fix them together, as one scripted
     post-launch wiring step that asserts every one-shot is set and consistent, and produce the curve-specific
     runbook **I-4** calls for in the same pass — I-4 is the common root, and without it the next operator
     reaches for the PadFactory runbook again.
-11. The rest as cleanup, with **L-4**, **L-5**, **L-8** and **L-15**'s doc corrections folded into whichever PR
+14. The rest as cleanup, with **L-4**, **L-5**, **L-8** and **L-15**'s doc corrections folded into whichever PR
     touches those files, **L-16**'s three guards brought onto one comparison while someone is already in
     `RobinCurveV4`, and **L-18**'s netted fee delta split in both vaults at once — it is the same three lines
     in each. Note that L-8 and M-10 each falsify a specific sentence an auditor is told to rely on
     (`AUDIT-SCOPE.md` §4.5 and `RobinV4FeeConfig`'s no-timelock justification), and L-16 falsifies two
     load-bearing comments in the graduation path — those sentences should be corrected even if the underlying
     code is left as is.
+15. **L-19** last, but not never, and two of its four parts are worth pulling forward. Part (a) —
+    `Graduated.toStaking` asserting a transfer that did not happen — fires on the **default** deployment
+    ordering, so fix it in the same PR as M-11 and M-7, which are about that same unwired state. Part (c) —
+    `RobinLockStaking.stake`'s silent reservoir flush — is C-1's arming step, so anyone building detection for
+    C-1 before the fix ships needs the event first; none of C-1's own fix directions would add it.
