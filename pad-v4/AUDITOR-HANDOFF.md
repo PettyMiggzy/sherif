@@ -29,9 +29,9 @@ re-derive it.
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
 | **MEDIUM** | 18 | 10 |
-| **LOW** | 17 | 8 |
+| **LOW** | 18 | 9 |
 | **INFO** | 12 (9 bundled as I-1, plus I-2, I-3 and I-4) | 1 |
-| **total** | **52** | **24** |
+| **total** | **53** | **25** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -1722,6 +1722,67 @@ afterwards, with the accrued token forwarded on the first `flushFees()` after wi
 
 ---
 
+### L-18 · LOW · Whoever calls first decides where a band's ETH LP fees go — and the diverting call costs 1 wei  `PROVEN`
+
+**Where** `contracts/pads/RobinFloorVault.sol:150` (`_add`'s `_resolve(currency0, delta.amount0(), address(this))`)
+against `:161-172` (`_collect`, which takes to `feeRecipient`); the same shape in
+`contracts/pads/RobinAmbushVault.sol:210` (`_add`'s `_resolve(currency0, delta.amount0())`, which takes to
+`address(this)`) against `:141-148` (`collectFees`, which forwards to the floor).
+
+A positive `modifyLiquidity` in v4 returns `callerDelta = principalDelta + feesAccrued`, so **adding** liquidity
+realizes the position's accrued fees as a credit against the principal owed. Both vaults have two permissionless
+entry points that realize the same fees to **different destinations**:
+
+| | realized by `collect…()` | realized by `add…()` |
+|---|---|---|
+| `RobinFloorVault` | `take(currency0, feeRecipient, …)` → the platform (`:170`) | `_resolve(…, address(this))` → stays in the vault, folded into the wall by the next `addFloor()` (`:150`) |
+| `RobinAmbushVault` | `_forwardFloor(ethFee)` → the floor vault (`:145`) | `_resolve(…)` → `take` to `address(this)` (`:247`), where `seedAmbush`'s `balanceOfSelf() - pendingFloorEth` (`:128`) turns it into band principal |
+
+Neither vault has a remove path, so once the fees land in principal they are there permanently. And ETH sitting
+in the vault's plain balance is **not** recoverable by the fee path: `_forwardFloor` only ever forwards
+`fresh + pendingFloorEth`, and `flushFees()` passes `fresh = 0`, so a retained balance can only ever leave as
+principal on the next `add`.
+
+`receive()` is open on both vaults (`RobinFloorVault.sol:208`, `RobinAmbushVault.sol:265`), so anyone can create
+the `amt > 0` precondition for the `add` path with a dust transfer. Measured — identical tape, identical fees,
+only the call order differs:
+
+```
+keeper calls collectFloorFees() first:
+   ETH to platform         27,199,391,316,139,840        (0.0272 ETH)
+   floorLiquidity added    0
+anyone donates 1 wei and calls addFloor() first:
+   ETH to platform         0
+   floorLiquidity added    610,019,229,311,931,910
+```
+
+Two things follow. First, the documented revenue line is not a fact about the system: `DEPLOY.md:53` and the
+money model both state the wall's LP fees go to the platform, and `scripts/keeper.js` collects on a schedule on
+that assumption — but any third party can pre-empt every sweep for 1 wei plus gas, permanently. Second, the
+ambush instance **falsifies the contract's own header invariant** (`RobinAmbushVault.sol:42-44`: *"Only accrued
+LP fees ever leave (ETH → floor, token → staking)"*). ETH fees can instead be silently absorbed into the band
+they came from, so the floor — the protection the whole design is sold on — never receives them.
+
+This is LOW rather than a MEDIUM because **no value leaves the protocol and no attacker gains anything**: both
+destinations are permanent, non-withdrawable, protocol-owned positions, and the griefer's only reward is moving
+money between two of the platform's own pockets. It is reported because the accounting is genuinely
+non-deterministic — you cannot state what a pad earns from either band without knowing the call order — and
+because the contract asserts an invariant it does not hold.
+
+Note the contrast that shows this was thought about once and not carried through: `RobinFloorVault._add:152-154`
+handles exactly this case for the **token** leg, with a comment explaining that a positive `delta.amount1()` is
+realized fees and must go to `feeRecipient` *"(exactly like `_collect`)"* because taking it to the vault would
+strand it. The currency0 leg is the same situation with the opposite treatment, and the comment above it
+(*"currency0 is the floor's own working capital"*) is true of principal but not of the fees mixed into the same
+delta.
+
+**Fix direction.** Split the delta rather than netting it. Call `modifyLiquidity(0)` first to realize fees to the
+policy destination, then `modifyLiquidity(+L)` for the principal — two calls, one lock, and the destination stops
+depending on which function a stranger called. Failing that, pick one destination per vault and make both paths
+use it, and correct `RobinAmbushVault`'s header either way.
+
+---
+
 ### I-1 · INFO · Recorded so the next pass does not re-derive them
 
 1. **`PresaleVault`'s implementation is never initialised.** `PresaleVaultFactory.createPresale` clones and
@@ -1972,6 +2033,14 @@ skipped. The leak column is exact v4 integer arithmetic:
 `L = getLiquidityForAmount0(√grad, √maxUsable, lpEth)`, then compare
 `getAmount0Delta(√grad, √maxUsable, L, true)` against `getAmount0Delta(√(grad+1) − 1, √maxUsable, L, true)`.
 
+**L-18** — same curve `deployStack`, `curveSupply = reserveSupply = 1000e18` at START 6000 / GRAD 3000 / ts 60.
+Buy 200 ETH (tick falls to `t0`), deploy `RobinFloorVault(..., anchorTick = t0 + 300, bandWidthSpacings = 20)` so
+the band sits above spot, send it 5 ETH and `addFloor()`. Then run a dip-and-recovery so the band is crossed in
+both directions — sell the whole bag (tick up through the band), then buy 200 ETH again (tick back down through
+it, which is what accrues **currency0** fees). Now run the same tape twice and change only the last step:
+`collectFloorFees()` versus `{ send 1 wei; addFloor(); addFloor(); }`. Compare the platform's balance delta
+against `floorLiquidity()`.
+
 **L-1** — evaluate `getLiquidityForAmount1(√grad, √start, curveSupply)` then
 `getAmount0Delta(√grad, √start, L, false)` in exact integer arithmetic across `startTickMag`, holding
 `curveWidth = 23000`, `ts = 100`, `curveSupply = 730M`. The raise hits 0 wei at ~700000, inside what
@@ -2015,8 +2084,9 @@ skipped. The leak column is exact v4 integer arithmetic:
     runbook **I-4** calls for in the same pass — I-4 is the common root, and without it the next operator
     reaches for the PadFactory runbook again.
 10. The rest as cleanup, with **L-4**, **L-5**, **L-8** and **L-15**'s doc corrections folded into whichever PR
-    touches those files, and **L-16**'s three guards brought onto one comparison while someone is already in
-    `RobinCurveV4`. Note that L-8 and M-10 each falsify a specific sentence an auditor is told to rely on
+    touches those files, **L-16**'s three guards brought onto one comparison while someone is already in
+    `RobinCurveV4`, and **L-18**'s netted fee delta split in both vaults at once — it is the same three lines
+    in each. Note that L-8 and M-10 each falsify a specific sentence an auditor is told to rely on
     (`AUDIT-SCOPE.md` §4.5 and `RobinV4FeeConfig`'s no-timelock justification), and L-16 falsifies two
     load-bearing comments in the graduation path — those sentences should be corrected even if the underlying
     code is left as is.
