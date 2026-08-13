@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
 | **HIGH** | 2 | 2 |
-| **MEDIUM** | 13 | 5 |
-| **LOW** | 9 | 3 |
+| **MEDIUM** | 12 | 6 |
+| **LOW** | 10 | 5 |
 | **INFO** | 8 (bundled as I-1) | — |
-| **total** | **33** | **11** |
+| **total** | **33** | **14** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -660,32 +660,6 @@ the curve runbook and to `DEPLOY.md` — see M-7 for the identical omission on t
 
 ---
 
-### M-12 · MEDIUM · The ambush share is funded but never seeded, and a ~1% dump blocks seeding indefinitely
-
-**Where** `contracts/pads/RobinCurveV4.sol:685-696` (`_fundAmbush` sends the ETH and stops),
-`contracts/pads/RobinAmbushVault.sol:128-134` (`seedAmbush`'s park guard).
-
-`graduate()` transfers `ambushGradBps` of the raise (5% at production settings) to the vault but never pokes
-`seedAmbush()`. Seeding is a separate permissionless call, and it only works while spot is **below** the band:
-
-```solidity
-(, int24 tick,,) = stateView.getSlot0(_poolId());
-if (tick >= ambushTickLower) { parkedEth = amt; emit AmbushParked(tick, amt); return 0; }
-```
-
-With the default `gapSpacings = 0`, `ambushTickLower = _alignUp(gradTick + 1, ts)` — one tick spacing above
-`gradTick`, i.e. about **1%** below the graduation price at `ts = 100`. Graduation is permissionless and
-bounty-incentivised, so it lands in a predictable block; a back-run sell of ~1% is enough to push spot into
-the band before anyone seeds. From then on `seedAmbush` parks and returns 0 on every call.
-
-The vault is **add-only — there is no withdraw, remove or burn path** — so the ETH is not recoverable by any
-party. It becomes deployable again only if spot returns below the band, which for a pad that dumped after
-graduation may be never. 5% of the raise sits inert in a contract nobody can empty.
-
-**Fix direction.** Poke `seedAmbush()` from `graduate()` inside the same transaction, before any third party
-can trade (it is already try/catch-shaped elsewhere in the waterfall, so a failure need not brick graduation).
-The band is single-sided ETH at `spot == gradTick`, which is exactly the state graduation guarantees.
-
 ### M-13 · MEDIUM · A presale's launch geometry is read at finalize, so an in-cap retune can leave the coin permanently un-graduatable  `PROVEN`
 
 **Where** `contracts/presale/PresaleVault.sol:196-206` (`finalize` re-reads
@@ -971,6 +945,42 @@ repair. (2) The geometry snapshot in M-13 prevents the state from arising at all
 
 ---
 
+### L-10 · LOW · `graduate()` funds the ambush band but never pokes `seedAmbush()`, so it can be left unarmed  `PROVEN`
+
+**Where** `contracts/pads/RobinCurveV4.sol:685-696` (`_fundAmbush` sends the ETH and stops), against its own
+sibling `_fundFloor` at `:668-680`, which *does* poke (`try IFloorVault(f).addFloor() {} catch {}`).
+Seeding guard at `contracts/pads/RobinAmbushVault.sol:127-134`.
+
+Step 8b of the waterfall (`:375`) runs with `tick == gradTick`, the one moment the band is guaranteed to be a
+clean single-sided ETH add — and it does not take it. Seeding is left to a separate permissionless call, and
+`seedAmbush()` only works while spot is **below** the band:
+
+```solidity
+(, int24 tick,,) = stateView.getSlot0(_poolId());
+if (tick >= ambushTickLower) { parkedEth = amt; emit AmbushParked(tick, amt); return 0; }
+```
+
+With the default `gapSpacings = 0`, `ambushTickLower = _alignUp(gradTick + 1, ts)` — one tick spacing above
+`gradTick`. **PROVEN:** a 6-token back-run sell moves tick from 3000 to 3181, past `ambushTickLower == 3060`;
+`seedAmbush()` then parks **31.881124873009680078 ETH** with `ambushLiquidity == 0`, and keeps parking on
+every call while the token trades below the band.
+
+**The ETH is not stranded, and that is the important correction.** `seedAmbush()` is permissionless,
+balance-driven (it recomputes `amt` from `currency0.balanceOfSelf() - pendingFloorEth` every call and never
+reads `parkedEth`), and reads live `getSlot0`. Nothing on the path is time- or caller-gated. So any party —
+platform, creator, holder, or an MEV bot — arms the full band atomically in one transaction:
+buy-with-price-limit → `seedAmbush()` → sell back. Measured cost **0.014 ETH against a 31.88 ETH seed
+(0.044%)**, with the whole bundle revertible on `require(added > 0)` so a failed attempt costs only gas.
+
+So this is a robustness and operations gap, not a fund-stranding bug: 5% of the raise sits idle and provides
+no support until *somebody* notices and pays a small round-trip, and nothing in the runbook says who or when.
+
+**Fix direction.** Poke `seedAmbush()` from `graduate()` in the same transaction, in the same try/catch shape
+`_fundFloor` already uses for `addFloor()`. At that instant spot is exactly `gradTick`, so the add is clean by
+construction and no third party can get in front of it.
+
+---
+
 ### I-1 · INFO · Recorded so the next pass does not re-derive them
 
 1. **`PresaleVault`'s implementation is never initialised.** `PresaleVaultFactory.createPresale` clones and
@@ -1120,8 +1130,9 @@ advance 7 days, read `earned`, then `setPlatformClaimFee(1000)` and claim — th
    (an assertion at launch; an on-chain anchor read).
 4. **H-2** — before any stock pad exists. It is a rug primitive, and M-8 means it is currently untestable
    locally, so fix the mock in the same pass.
-5. **M-11 and M-12** — value routed to the wrong place or stranded, in the ordinary post-graduation flow,
-   with no attacker required. Both are a few lines.
+5. **M-11 and L-10** — value routed to the wrong place, or left unarmed, in the ordinary post-graduation
+   flow with no attacker required. Both are a few lines, and both already have the right shape elsewhere in
+   the same file (`claimFloor`'s `NoFloorRecipient`; `_fundFloor`'s `addFloor()` poke).
 6. **M-1**, then **L-1** and **M-10** — real value loss and two permanent bricks, all gated on configuration
    that is easy to get wrong and currently unbounded.
 7. **M-6** before the package goes to the external auditor. Auditing from a stale architecture document is the
