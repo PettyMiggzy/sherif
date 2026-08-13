@@ -3404,6 +3404,17 @@ verification.
     `MAX_ANTI_JIT = 7 days`, enforced in **both** the constructor (`:142`) and `setAntiJitDelay` (`:472`).
     `stock == token` is rejected outright (`[audit C1]`).
   - `PresaleVault.claimTo(to)` routes `msg.sender`'s own claim; it takes no victim argument.
+- **The test suite is not vacuous — checked, because M-19 raised the question and nobody had answered it.**
+  M-19 audits *coverage against stated invariants*; it never asks whether the tests that exist actually assert
+  anything. Enumerated all **136 `it()` blocks across 33 files** and counted assertions per block. Exactly
+  **one** has zero `expect()` calls — `calibrate-testnet.sim.test.js`'s *"prints the raise for several
+  curveSupply sizes"*, which is honestly named as a print/calibration run rather than a test. The two other
+  zero-assertion blocks are false positives: `curve.e2e.sim.test.js`'s scenarios A and B are five-line
+  delegations to a shared `scenario()` helper carrying 38 assertions. No block was long-but-unchecked (none
+  with <2 assertions over 25 lines). The eight assertions made against **mock** state are all
+  `posm.ownerOf(...) == lockVault` — the one property `MockPositionManagerV4` models faithfully, and one that
+  does not depend on the `amount0Max`/`amount1Max` handling M-8 flags as divergent. So the coverage gaps M-8,
+  M-19 and L-28 describe are gaps in *what is tested*, not in *whether the tests test it*.
 - **Rounding direction — swept, but the sweep was not exhaustive, and this bullet was wrong once.**
   > **Correction.** This bullet originally claimed "every division and bps computation in `contracts/`" had
   > been checked, and that `RobinLpVault`'s accumulator was "the only place where floor-and-forget would
