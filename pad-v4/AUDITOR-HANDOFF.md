@@ -29,8 +29,8 @@ re-derive it.
 | **CRITICAL** | 1 | 1 |
 | **HIGH** | 2 | 2 |
 | **MEDIUM** | 12 | 6 |
-| **LOW** | 10 | 5 |
-| **INFO** | 8 (bundled as I-1) | — |
+| **LOW** | 9 | 4 |
+| **INFO** | 9 (8 bundled as I-1, plus I-2) | 1 |
 | **total** | **33** | **14** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
@@ -117,6 +117,16 @@ The window survives as a zombie, with an expiry the attacker chose.
 Not a share of the reservoir — **all** of it, because the attacker is the only staker in the one second that
 the drip is live. This is permissionless, repeatable per pad, and requires no capital, no privilege and no
 victim transaction.
+
+**Precondition, stated plainly.** The 100% take requires the pool to stay **empty from arming until the
+attacker's final stake**. Any honest staker who stakes during the zombie window flushes `pendingRewards`
+themselves, at whatever `remaining` then is — which destroys the attacker's exclusive claim. That is a
+precondition, not a mitigation, for two reasons: a fresh per-pad staking pool is empty by construction until
+graduation, and arming costs ~3 wei plus gas, so it is rational to arm every pad and collect on whichever ones
+stay quiet. And when an honest staker *does* pre-empt it, the drip is still broken — the whole reservoir
+compresses into that residual window and is split among whoever happens to be staked at that second, rather
+than streaming over 30 days as designed. There is no ordering in which the reservoir drips correctly once a
+zombie window exists.
 
 **A second, independent path to the same compression** (no zombie window needed): wait for any legitimate
 window's end, stake large, and credit a tranche yourself. Every step is permissionless, and the attacker can
@@ -945,42 +955,6 @@ repair. (2) The geometry snapshot in M-13 prevents the state from arising at all
 
 ---
 
-### L-10 · LOW · `graduate()` funds the ambush band but never pokes `seedAmbush()`, so it can be left unarmed  `PROVEN`
-
-**Where** `contracts/pads/RobinCurveV4.sol:685-696` (`_fundAmbush` sends the ETH and stops), against its own
-sibling `_fundFloor` at `:668-680`, which *does* poke (`try IFloorVault(f).addFloor() {} catch {}`).
-Seeding guard at `contracts/pads/RobinAmbushVault.sol:127-134`.
-
-Step 8b of the waterfall (`:375`) runs with `tick == gradTick`, the one moment the band is guaranteed to be a
-clean single-sided ETH add — and it does not take it. Seeding is left to a separate permissionless call, and
-`seedAmbush()` only works while spot is **below** the band:
-
-```solidity
-(, int24 tick,,) = stateView.getSlot0(_poolId());
-if (tick >= ambushTickLower) { parkedEth = amt; emit AmbushParked(tick, amt); return 0; }
-```
-
-With the default `gapSpacings = 0`, `ambushTickLower = _alignUp(gradTick + 1, ts)` — one tick spacing above
-`gradTick`. **PROVEN:** a 6-token back-run sell moves tick from 3000 to 3181, past `ambushTickLower == 3060`;
-`seedAmbush()` then parks **31.881124873009680078 ETH** with `ambushLiquidity == 0`, and keeps parking on
-every call while the token trades below the band.
-
-**The ETH is not stranded, and that is the important correction.** `seedAmbush()` is permissionless,
-balance-driven (it recomputes `amt` from `currency0.balanceOfSelf() - pendingFloorEth` every call and never
-reads `parkedEth`), and reads live `getSlot0`. Nothing on the path is time- or caller-gated. So any party —
-platform, creator, holder, or an MEV bot — arms the full band atomically in one transaction:
-buy-with-price-limit → `seedAmbush()` → sell back. Measured cost **0.014 ETH against a 31.88 ETH seed
-(0.044%)**, with the whole bundle revertible on `require(added > 0)` so a failed attempt costs only gas.
-
-So this is a robustness and operations gap, not a fund-stranding bug: 5% of the raise sits idle and provides
-no support until *somebody* notices and pays a small round-trip, and nothing in the runbook says who or when.
-
-**Fix direction.** Poke `seedAmbush()` from `graduate()` in the same transaction, in the same try/catch shape
-`_fundFloor` already uses for `addFloor()`. At that instant spot is exactly `gradTick`, so the add is clean by
-construction and no third party can get in front of it.
-
----
-
 ### I-1 · INFO · Recorded so the next pass does not re-derive them
 
 1. **`PresaleVault`'s implementation is never initialised.** `PresaleVaultFactory.createPresale` clones and
@@ -1007,6 +981,40 @@ construction and no third party can get in front of it.
    init-code, `CurvePadFactoryV4.sol:151`), so a referrer must claim on every pad's hook separately.
 8. **`RobinFloorVault.parkedQuote`** is assigned (`=`, not `+=`) and is purely cosmetic — `addFloor` always
    re-reads the live balance. Harmless, but it reads like accounting and is not.
+
+---
+
+### I-2 · INFO · `graduate()` does not poke `seedAmbush()`, so a ~0.015 ETH back-run can defer the band's arming  `PROVEN`
+
+**Where** `contracts/pads/RobinCurveV4.sol:685-696` (`_fundAmbush` sends the ETH and stops), against its own
+sibling `_fundFloor` at `:668-680`, which *does* poke (`try IFloorVault(f).addFloor() {} catch {}`). Seeding
+guard at `contracts/pads/RobinAmbushVault.sol:127-134`.
+
+Step 8b of the waterfall (`:375`) runs with `tick == gradTick` — the one moment the band is guaranteed to be a
+clean single-sided ETH add — and does not take it. **PROVEN at production geometry** (startTick 201600 /
+gradTick 178600 / ts 100): `ambushTickLower = 178700`, exactly 100 ticks (**1.005%**) below the graduation
+price, and a 900,000-token dump (≈ **0.0146 ETH** of notional) moves tick to 178703, after which
+`seedAmbush()` emits `AmbushParked` and adds nothing.
+
+**Filed as INFO because every part of the harm claim fails on inspection:**
+
+- **Not trapped.** `seedAmbush()` is `external nonReentrant` with no auth, and sizes itself from
+  `currency0.balanceOfSelf() - pendingFloorEth` — not from the stale `parkedEth` bookkeeping variable
+  (`RobinAmbushVault.sol:128`). Any unprivileged caller re-seeds the entire balance atomically:
+  buy-with-price-limit → `seedAmbush()` → sell back, measured at a net **0.0000938 ETH + ~374k gas**, roughly
+  0.2% of the seed once the 1%/1% hook taxes are counted.
+- **Self-healing.** It arms with no rescue at all as soon as spot returns within 1.005% of the graduation
+  price.
+- **Small.** The exposed amount at production geometry is **0.2023 ETH** — 5% of a ~4.05 ETH raise.
+- **Seeding at graduation would not have preserved the ETH anyway.** The first dip would have converted it to
+  token inside the same add-only vault. The band doing its job and the band being unarmed are only
+  distinguishable for that one dip.
+
+So the entire residual harm is: one dip goes undefended, and 5% of the raise sits idle until somebody notices.
+Worth fixing as hardening — add the same try/catch poke `_fundFloor` already uses — but it is not a fund
+defect, and it is recorded here mainly so a future pass does not re-litigate it.
+
+---
 
 ---
 
@@ -1130,9 +1138,9 @@ advance 7 days, read `earned`, then `setPlatformClaimFee(1000)` and claim — th
    (an assertion at launch; an on-chain anchor read).
 4. **H-2** — before any stock pad exists. It is a rug primitive, and M-8 means it is currently untestable
    locally, so fix the mock in the same pass.
-5. **M-11 and L-10** — value routed to the wrong place, or left unarmed, in the ordinary post-graduation
-   flow with no attacker required. Both are a few lines, and both already have the right shape elsewhere in
-   the same file (`claimFloor`'s `NoFloorRecipient`; `_fundFloor`'s `addFloor()` poke).
+5. **M-11** — holder fees routed to the platform by the ordinary post-graduation flow, with no attacker
+   required. One line, and the right shape already exists in the same file (`claimFloor`'s
+   `NoFloorRecipient`). Fold in **I-2**'s `seedAmbush()` poke while you are there — same pattern, same file.
 6. **M-1**, then **L-1** and **M-10** — real value loss and two permanent bricks, all gated on configuration
    that is easy to get wrong and currently unbounded.
 7. **M-6** before the package goes to the external auditor. Auditing from a stale architecture document is the
