@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
-| **MEDIUM** | 26 | 14 |
-| **LOW** | 26 | 13 |
+| **MEDIUM** | 27 | 14 |
+| **LOW** | 29 | 14 |
 | **INFO** | 23 (19 bundled as I-1, plus I-2 … I-5) | 2 |
-| **total** | **79** | **34** |
+| **total** | **83** | **35** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -1835,6 +1835,112 @@ worse than a plain missing check, because the comment tells a reviewer the class
 tickSpacing_ == curve.tickSpacing() && hooks_ == curve.hooks())`, or drop the parameters entirely and derive
 the key from `curve_`. Then the `[H1]` comment becomes true as written. Apply the same reasoning to
 `RobinFloorVault` by giving it a curve reference (which also closes M-4).
+
+---
+
+### M-27 · MEDIUM · `PadFactory` has no one-pool-per-token guard, so anyone can relaunch a live pad — reusing the victim's own hook — and repoint the registry at their own pool  `VERIFIED`
+
+**Where** `contracts/core/PadFactory.sol:111` (`launch`, permissionless), `:137-140` (hook deploy), `:204`
+(`poolOf[token] = poolId`), with `contracts/core/DeterministicDeployer.sol:24` and
+`contracts/hooks/RobinFeeHook.sol:137`.
+
+Three individually-correct idempotency decisions compose into a re-registration primitive. All three verified:
+
+1. **`DeterministicDeployer` adopts** a byte-identical pre-deploy rather than reverting (`:24 return predicted`).
+   `PadToken`'s init-code is `(name, symbol, decimals, supply, factory)` — every field public. A second `launch`
+   with the same `tokenSalt` and the same four fields returns the **existing, live** token and mints nothing.
+2. **The hook's init-code is `(poolManager, address(this), feeRegistry, token)`** (`PadFactory:139`) — it depends
+   only on the token. So the **victim's own `hookSalt`, copied out of their public launch calldata, re-adopts
+   the victim's own hook.** No salt mining is required.
+3. **`registerPool` rejects re-registration only for the same `PoolId`** (`RobinFeeHook:137`). `fee` and
+   `tickSpacing` are in the `PoolKey` but in *neither* init-code, so changing one yields a different `PoolId`
+   that registers cleanly — against the same token and the same hook.
+
+The attacker then owns the new pool's `PoolFeeConfig`: their taxes, their `creator`, their `floorRecipient`,
+their `stakingRecipient`. And `:204` **overwrites** `poolOf[token]` — the factory's only on-chain token→pool
+index, which the repo's own tests resolve pads through (`test/fork/PadFactory.launch.fork.test.js:65`). A
+second `PadLaunched` fires for the same token naming the attacker as creator, so an event-sourced indexer sees
+a fresh launch.
+
+Cost is a second launch: roughly 1000 wei of seed plus gas.
+
+**Not L-9, and not M-3.** L-9 is a *pre-launch* race — copying a pending launch's calldata to burn the
+victim's transaction, where the pad holds 0 wei at steal time. This is *post-launch* re-registration of a pad
+that is already live and already holds value. M-3 is what a launcher may set **for their own pad**, and assumes
+one launch per token; nothing in it contemplates a second launch against a token that already has a pool.
+
+**Fix direction.** One line: `if (!PoolId.unwrap(poolOf[token]).isZero()) revert AlreadyLaunched();` before
+registration. Note the curve path is not obviously safe by inspection either — `CurvePadFactoryV4` should get
+the same guard, and the two fork tests that resolve pads through `poolOf` should assert it is write-once.
+
+---
+
+### L-27 · LOW · `PadFactory`'s `cfg.fee` is launcher-chosen up to Uniswap's structural 100%, and it is the one launch parameter M-3 does not enumerate  `VERIFIED`
+
+**Where** `contracts/core/PadFactory.sol:55` (`uint24 fee; // STATIC lp fee`), `:116` (the only check — the
+dynamic-fee flag), `:148` (straight into the `PoolKey`).
+
+`launch` validates that the dynamic-fee flag is clear and nothing else. Uniswap's `LPFeeLibrary.validate`
+permits any static fee up to `MAX_LP_FEE = 1_000_000` (100%), so the launcher stamps the pool's LP fee freely
+and immutably. `RobinFeeHook`'s `MAX_TAX_BPS` bounds only the two **hook** taxes; the LP fee is a third,
+unbounded levy on the same trades. On a `PadFactory` pad the seed LP is the `LockVault` position, whose token
+leg routes to the launcher-supplied `stakingRecipient` — so the fee and its destination are chosen by the same
+party in the same call, and `LockVault.setStakingRecipient` then refuses to repoint it.
+
+It is LOW because the fee is publicly readable in the `PoolKey` (observable, not stealthy) and it is
+launcher-configured rather than applied retroactively to anyone's existing position.
+
+**Not M-10.** M-10 is the same defect class on a different contract with different reachability: it is
+`RobinV4FeeConfig.MAX_LP_FEE` on the **governed, owner-only, curve** path. This is the **permissionless**
+factory, where no governance step stands between an arbitrary launcher and the number.
+
+---
+
+### L-28 · LOW · The `PadFactory` launch path has zero executed local coverage — and unlike M-8, nothing was blocking it  `PROVEN`
+
+**Where** `test/fork/PadFactory.launch.fork.test.js:21-23` (`if (!process.env.FORK_RPC) this.skip()`) is the
+only test that calls `PadFactory.launch`; `PadFactory` appears in no file under `test/unit` or `test/sim`.
+
+`PadFactory` is in scope per `AUDIT-SCOPE.md` §1 and is the only path that seeds an LP with real ETH, mints a
+permanently-locked position, and refunds a launcher. The default suite executes **none** of it.
+
+**M-8 gave a technical reason for the equivalent gap on `StockPadFactory`** — `MockPositionManagerV4:48-54`
+decodes `params[2]` unconditionally while `StockPadFactory` emits a two-action batch, so the mock panics
+`0x32`. **That reason does not apply here.** `PadFactory:227-228` emits the exact three-action batch
+(`MINT_POSITION, SETTLE_PAIR, SWEEP`) the mock was written for. Proven by construction: a from-scratch harness
+(real `PoolManager` + the existing mocks + the real `DeterministicDeployer`/`FeeWalletRegistry`/`LockVault`/
+`PadFactory`) ran the honest launch, the seed-LP mint, the `LockVault` registration, both refund paths, a
+100%-fee launch, and M-27's relaunch primitive — **in under five seconds, with no change to any contract, mock
+or config file.**
+
+So this is missing tests, not missing infrastructure. It matters because a reader of M-8 would reasonably
+conclude the ETH pad *is* covered locally, and M-19's coverage table inherits that impression.
+
+---
+
+### L-29 · LOW · The seed mint's `SWEEP` takes the shared `PositionManager`'s entire native balance, and the dust path forwards it to `cfg.creator`  `VERIFIED`
+
+**Where** `contracts/core/PadFactory.sol:228` (`Actions.SWEEP`), `:241`
+(`params[2] = abi.encode(currency0, address(this))`), then `:196-200` (`dust = address(this).balance` →
+`cfg.creator`). Same pattern at `RobinCurveV4:647` and in `StockPadFactory`.
+
+`SWEEP` is **not** scoped to the caller's own unspent value. Any native balance sitting in the canonical
+`PositionManager` at the moment a pad launches is transferred to the factory, joins `address(this).balance`,
+and is paid out as "ETH dust" to the launcher's chosen `cfg.creator`.
+
+Bounded, and honestly so: the `PositionManager` cannot be donated to directly — `NativeWrapper.sol:31-33`
+restricts `receive()` to WETH9 and the `PoolManager` — so a residue arises only when a third-party integrator
+forwards value to `modifyLiquidities` and omits a `SWEEP` of their own. That is a known v4-periphery footgun on
+a singleton every integrator on the chain shares. It is found money rather than protocol funds, which is why
+this is LOW.
+
+It is reported because it makes `dust` **unbounded and unrelated to the launcher's own `msg.value`**, and routes
+a stranger's stranded ETH to an arbitrary launcher-chosen address with no event distinguishing it from a genuine
+refund (see **L-19** on that class). **Not I-1(2)**, which is the factory's *own* balance — a different pocket,
+filled only by mis-sends to the factory itself. This is a second, upstream pocket.
+
+**Fix direction.** Scope the sweep, or snapshot `address(this).balance` before `modifyLiquidities` and refund
+only the delta.
 
 ---
 
