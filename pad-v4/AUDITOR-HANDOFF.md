@@ -663,41 +663,65 @@ graduation may be never. 5% of the raise sits inert in a contract nobody can emp
 can trade (it is already try/catch-shaped elsewhere in the waterfall, so a failure need not brick graduation).
 The band is single-sided ETH at `spot == gradTick`, which is exactly the state graduation guarantees.
 
-### M-13 · MEDIUM · A presale's launch geometry is not committed, so a retune reprices ETH already collected
+### M-13 · MEDIUM · A presale's launch geometry is read at finalize, so an in-cap retune can leave the coin permanently un-graduatable  `PROVEN`
 
-**Where** `contracts/presale/PresaleVault.sol:196` (`finalize` re-reads
-`RobinV4FeeConfig(curvePadFactory.feeConfig()).defaults()`), against `contracts/core/RobinV4FeeConfig.sol:76`
-(`setDefaults`, `onlyOwner`, no timelock).
+**Where** `contracts/presale/PresaleVault.sol:196-206` (`finalize` re-reads
+`RobinV4FeeConfig(curvePadFactory.feeConfig()).defaults()`), `contracts/core/CurvePadFactoryV4.sol:118-122`
+(`launch` derives `startTick`/`gradTick` from the same live struct), against
+`contracts/core/RobinV4FeeConfig.sol:76` (`setDefaults`, `onlyOwner`, no timelock).
 
-A presale commits its `LaunchConfig` — supply, curve/reserve split, tick spacing — at `createPresale`, and
-contributors deposit against the price that config implies. The **geometry** that actually sets the launch
-price (`startTickMag`, `curveWidth`, `lpFee`) is *not* committed: `CurvePadFactoryV4.launch` reads it from the
-live FeeConfig at finalize, and `PresaleVault` re-reads the same values to rebuild the `PoolKey`.
+**What is wrong.** A presale commits its `LaunchConfig` at `createPresale` — but that struct
+(`interfaces/ICurvePadFactoryV4.sol:8-17`) carries only name/symbol/decimals/supply/curveSupply/
+reserveSupply/tickSpacing/creator. **No geometry.** `startTickMag`, `curveWidth` and `lpFee` — the values that
+set the launch price — are read live at finalize, and `saltCommitment` covers only the three CREATE2 salts.
+`PresaleVaultFactory.sol:12` states the deferral as a design choice (*"Heavy geometry/reserve validation is
+deferred to `CurvePadFactoryV4.launch()` at finalize"*) without noting that it defers the price with it.
 
-So contributors can fund a presale advertising one launch price and be filled at another. `finalize` takes no
-"expected geometry" argument, has no mismatch revert, and the `saltCommitment` covers only the three CREATE2
-salts — nothing pins the terms the raise was sold on. `PresaleVaultFactory.sol:12` states the deferral as a
-design choice — *"Heavy geometry/reserve validation is deferred to CurvePadFactoryV4.launch() at finalize"* —
-without noting that it also defers the price. The vault's own `previewClaim` cannot warn them either, because
-before finalize there is no pool to price against.
+Nothing catches the change. `finalize`'s `KeyMismatch` guard (`:204`) **structurally cannot fire** — it
+rebuilds the key from the same live struct `launch` just used, in the same transaction. There is no
+min-tokens-out, no expected-geometry argument, and only `ZeroBought` (`:215`) as a sanity check. Contributors
+have no exit they control: no withdraw function, and once `totalRaised == target`, `fail()` reverts
+`TargetMet` (`:282`) until deadline + grace.
 
-**Where the harm actually lands.** Measured across two otherwise-identical presales differing only by a
-retune between deposit and finalize, the immediate ETH mark-to-market of the contributors' bag is
-*unchanged* — 2.940321940830918453 ETH versus 2.940312114208555208 ETH. The retune is **homothetic**: it
-rescales the whole curve, so the same ETH buys the same slice of *curve progress* and can be sold straight
-back for the same ETH. What changes is the **entry valuation and the resulting share of supply** — in the
-measured case 0.00002678% of supply became 0.00001478%, a 1.81× reduction, with a 1.81× larger ETH raise now
-required to graduate. That is the real injury: a launchpad buyer's economic claim is their fraction of the
-token, and it can be diluted by a governance call after their ETH is already locked in the vault. Framing it
-as an instantaneous loss would overstate it; framing it as harmless understates it.
+**The impact is not the pro-rata repricing — that part is nearly harmless.** The retune is *homothetic*: it
+rescales the whole curve, so contributors buy the same slice of curve progress in a different denomination.
+Measured realizable value destruction (claim, then instantly round-trip back into the same curve) is **3.44%
+at baseline versus 3.60% after a −6,600-tick retune — an incremental 0.16pp, ~0.006 ETH on a 4.05 ETH raise**.
+The 3–4% floor is the unavoidable fee stack, present either way. A "contributors lost N%" framing would be
+wrong, because the token count falls and the unit price rises together.
 
-`RobinV4FeeConfig`'s header defends the absence of a timelock on the grounds that changes are *"forward-only
-and can never touch an existing coin."* True of launched pads. An open presale holding contributor ETH is
-neither an existing coin nor insulated.
+**The real harm is that the reachable range is enormous, and one end of it kills the coin.** The only binding
+constraints are `_validate` (`startTickMag > 0`, `curveWidth > minGradWidth > 0`),
+`CurvePadFactoryV4.sol:120` (tick-spacing alignment), `:131` (tick bounds), and `:140`
+(`reserveSupply·ss·100 >= curveSupply·sg·105`) — **and that last check constrains `curveWidth` only, never
+`startTickMag`.** Measured at production geometry (201600 / 23000 / ts 100, 1B supply at 730M + 270M, 2 ETH
+deposited):
 
-**Fix direction.** Snapshot the geometry into the vault at `initialize` and pass it to `finalize` as an
-expected value, reverting on mismatch — or fold it into the `saltCommitment` so any change is detectable.
-Contributors should be able to see, before depositing, the exact ticks their ETH will buy at.
+| `startTickMag` at finalize | tokens the presale receives | outcome |
+|---|---|---|
+| 201600 (baseline) | 545,546,800 (74.73% of the curve) | normal |
+| 195000 | 374,333,692 (51.27%) | −31% token count, ~unchanged ETH value |
+| **100** (lowest that still passes every check) | **1.979899 tokens** (−99.9999996%) | graduation raise becomes ~5.6×10⁸ × 4.05 ETH — **the coin can never graduate** |
+| 400000 | 99.99% of the curve for 0.020 ETH | harm runs the *other* way: the pad graduates on a 0.02 ETH raise |
+
+Every case finalized cleanly — no revert, `KeyMismatch` never tripped, `state() == 1`, `claim()` paid at the
+new price. At the low end the pad is permanently dead: contributor ETH has been spent into a curve that can
+never sell out, so there is no locked LP, no staking stream and no graduation waterfall, ever. At the high end
+the curve is given away for almost nothing.
+
+**This is a centralization and operational footgun, not an attack.** The owner is negative-EV in the harmful
+direction — forfeiting a ~0.405 ETH graduation cut to collect ~0.032 ETH of buy tax — so the realistic trigger
+is an *honest, in-cap retune landing while presales are open*: precisely the operation
+`CurvePadFactoryV4.sol:29-32` advertises as safe. And `RobinV4FeeConfig.sol:13-14`'s justification for having
+no timelock — *"forward-only and can never touch an existing coin"* — is simply false about ETH already
+sitting in a presale vault. That sentence is the defect being documented.
+
+**Fix direction.** Snapshot `startTickMag` / `curveWidth` / `lpFee` into the vault at `initialize` and pass
+them to `finalize` as expected values, reverting on mismatch — or fold them into `saltCommitment` so any
+change is detectable. Correct `RobinV4FeeConfig.sol:13-14` regardless. Note that `DefaultsUpdated` *is*
+emitted, so the change is observable on-chain; what is missing is any contract that acts on it, and any way
+for a contributor to react before their ETH is spent (a preimage-holder can withhold `finalize` and let
+`fail()` reason 2 open refunds after deadline + grace, but contributors cannot force that).
 
 ---
 
@@ -728,6 +752,11 @@ From ~600000 up, `graduate()` reverts `EmptyRaise` (`RobinCurveV4.sol:339` or `:
 `flushStaking` is gated on `graduated`. Owner-only reachability (the config is `Ownable2Step`, no timelock,
 deliberately forward-only), but there is no floor and no warning, and every pad launched between the mistake
 and its discovery is unrecoverable.
+
+**Same root cause as M-13's worst case.** M-13 reaches an un-graduatable pad by moving `startTickMag` *down*
+(the token becomes so expensive the curve can never sell out); this finding reaches one by moving it *up* (the
+token becomes so cheap the curve sells out for 0 wei). Both are the same missing bound, and one check closes
+both ends.
 
 **Fix direction.** Bound `startTickMag` in `_validate`, or — better, because it is the property you actually
 care about — have `CurvePadFactoryV4.launch` compute the curve's ETH integral for the requested `curveSupply`
