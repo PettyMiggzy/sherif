@@ -27,11 +27,11 @@ re-derive it.
 | severity | count | of which measured |
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
-| **HIGH** | 2 | 2 |
-| **MEDIUM** | 12 | 6 |
+| **HIGH** | 3 | 2 |
+| **MEDIUM** | 13 | 6 |
 | **LOW** | 9 | 4 |
 | **INFO** | 9 (8 bundled as I-1, plus I-2) | 1 |
-| **total** | **33** | **14** |
+| **total** | **35** | **14** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -304,6 +304,47 @@ rug primitive in shipped, in-scope code, reachable by anyone.
 `mapping(address => bool) approvedAdapter`. The guard adapter should not be launcher-chosen at all — derive it
 from the approved adapter for that stock. Give `guardWindow` a hard ceiling: a corporate-action window is
 hours, not years.
+
+---
+
+### H-3 · HIGH · `cfg.creator` is outside both CREATE2 pre-images, so copied launch calldata steals a pad's creator revenue  `VERIFIED`
+
+**Where** `contracts/core/CurvePadFactoryV4.sol:143-151` (the token and hook init-codes), `:180-197`
+(`registerPool` stamps `cfg.creator`).
+
+The two addresses that make a launch unique are derived from init-code that **does not contain the creator**:
+
+```solidity
+type(PadToken).creationCode,  abi.encode(cfg.name, cfg.symbol, cfg.decimals, cfg.supply, address(this))
+type(RobinFeeHook).creationCode, abi.encode(poolManager, address(this), feeRegistry, token)
+```
+
+So for a given `(cfg, tokenSalt, hookSalt)` the token and hook land at the same addresses **whoever** calls
+`launch()` and **whatever** `creator` they name. `launch` is permissionless, and `cfg.creator` is stamped
+straight into the hook's immutable `PoolFeeConfig`.
+
+**The attack is copy-paste.** Take a pending `launch()` calldata, change one field — `creator: V → A` — and
+land first. The attacker's transaction deploys the token and hook at exactly the addresses the victim
+intended, registers the pool with **itself** as creator, and thereby takes the pad's entire creator economics:
+the 0.8% sell-tax stream (`RobinFeeHook.creatorOwed` → `claimCreator`) and the 10% creator share of the raise
+at graduation (`RobinCurveV4.creatorEthOwed`). The victim's transaction then reverts — `registerPool` throws
+`AlreadyRegistered`, and the factory no longer holds the supply — so the victim loses the launch as well as
+the revenue. Note the *curve* address does depend on `cfg.creator` (it is a constructor argument at `:213`),
+which is why the collision surfaces at `registerPool` rather than earlier; it does not help the victim.
+
+**Chain-dependent reachability, and the codebase already reasons about this class.**
+`PresaleVault.sol:180-192` explicitly handles the mirror case — *"on Robinhood Chain's single-sequencer FCFS
+ordering this is not reachable; it exists so a public-mempool / decentralized-sequencer deployment can never
+brick the vault"* — and fails **safe**, refunding contributors. Here there is no equivalent handling at all,
+and the failure is not safe: it transfers the creator's revenue to the attacker. A launchpad that has already
+written down "assume a public mempool might exist" for its presale add-on should not leave its primary launch
+path undefended against the same ordering assumption.
+
+**Fix direction.** Bind the creator to the deployment. Simplest: include `cfg.creator` in the token's
+constructor arguments (it is already an immutable-style stamp elsewhere) or in the hook's, so a different
+creator produces a different CREATE2 address and a copied calldata cannot collide. Alternatively require
+`cfg.creator == msg.sender` on the curve path, or commit-reveal the launch the way `PresaleVaultFactory`
+already does for presales.
 
 ---
 
@@ -749,6 +790,41 @@ for a contributor to react before their ETH is spent (a preimage-holder can with
 
 ---
 
+### M-13 · MEDIUM · Permissionless `flushStaking()` launders a dust poke through `DualStaking`'s rewarder gate and stalls the drip  `VERIFIED`
+
+**Where** `contracts/pads/RobinCurveV4.sol:395-403` (`flushStaking`, permissionless) →
+`contracts/pads/DualStaking.sol:428-440` (`fundTokenPushed`, rewarder-gated) → `:246-252` (`_applyReward`
+with `extend = true`).
+
+`DualStaking` gates `fundTokenPushed` on `isRewarder[msg.sender]` precisely so that funding cannot be spammed.
+But the pad's curve **is** registered as a rewarder in practice — `scripts/testnet-e2e-graduate.js:95` does
+`ds.setRewarder(curveAddr, true)`, as do `test/fork/CurveGraduation.fork.test.js:83`,
+`test/fork/MainnetSwarm.fork.test.js:147`, `test/unit/RobinCurveV4.graduation.test.js:65` and three more. And
+`RobinCurveV4.flushStaking()` is **permissionless**, forwarding straight into that gated call.
+
+The curve is therefore a confused deputy: anyone can call `flushStaking()` and have the rewarder gate treat it
+as an authorised funding. And `_applyReward` on the `extend = true` path resets the window —
+`r.periodFinish = uint64(block.timestamp + dur)` — so each poke pushes the finish line out by a full duration
+and re-divides the remaining reservoir over it. A griefer holding dust pokes it repeatedly and the holder
+reward stream is stretched indefinitely, arbitrarily slowing every staker's accrual.
+
+This is exactly the grief `RobinLockStaking._startDrip`'s `[audit]` comment was written to prevent — *"if a
+top-up reset the window a griefer could dust-fund (1 wei) repeatedly to re-stretch the undripped reservoir
+over a fresh full duration each time"* — and `DualStaking` is exposed to it through a relay the note did not
+consider.
+
+**Note the tension with L-2.** L-2 records that a curve *not* wired as a rewarder cannot credit its
+graduation stream at all and that `flushStaking()` reverts `NotRewarder` for everyone. The operational fix for
+L-2 — `setRewarder(curve, true)`, which the testnet script already does — is precisely what opens this. The
+two must be fixed together.
+
+**Fix direction.** Either gate `flushStaking()` (platform- or creator-only; it is a recovery path, not a hot
+path), or have it call a non-extending variant, or make `DualStaking._applyReward`'s pushed path behave like
+`RobinLockStaking._startDrip`'s mid-window branch and leave `periodFinish` fixed. The last is the most
+consistent with the rest of the suite.
+
+---
+
 ### L-1 · LOW · `RobinV4FeeConfig` accepts curve geometries whose raise floors to zero  `PROVEN (numerically)`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-103` (`_validate`), with
@@ -805,9 +881,14 @@ also fails: `flushStaking()` is **not** try/caught and reverts `NotRewarder` for
 *"flushStaking() completes later"* is false on this path. Recovery needs the platform to call
 `DualStaking.fundTokenPushed` from an authorised rewarder — a step that appears nowhere in `DEPLOY.md`.
 
-**Fix direction.** Make `DualStaking.fundTokenPushed` permissionless like its sibling (it is measured-delta
-accounting), or add `setRewarder(curve, true)` as an explicit documented step, or have `setStaking` probe the
-target.
+**Correction to the obvious fix.** `setRewarder(curve, true)` *is* the operational answer, and
+`scripts/testnet-e2e-graduate.js:95` already does it — but it appears nowhere in `DEPLOY.md`, and performing
+it opens **M-13** (the curve then becomes a permissionless relay through `DualStaking`'s rewarder gate). The
+two findings are a pair: the wiring that makes crediting work is the wiring that makes the drip griefable.
+
+**Fix direction.** Fix both at once. Make `DualStaking.fundTokenPushed` permissionless like its sibling (it is
+measured-delta accounting, so the gate buys little), *and* stop the pushed path from resetting `periodFinish`,
+per M-13. Document whichever wiring you settle on in `DEPLOY.md`; today it exists only in a testnet script.
 
 ---
 
