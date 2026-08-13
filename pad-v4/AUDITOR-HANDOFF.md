@@ -28,8 +28,8 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
 | **HIGH** | 2 | 2 |
-| **MEDIUM** | 18 | 8 |
-| **LOW** | 10 | 3 |
+| **MEDIUM** | 17 | 8 |
+| **LOW** | 11 | 3 |
 | **INFO** | 11 (9 bundled as I-1, plus I-2 and I-3) | 1 |
 | **total** | **42** | **15** |
 
@@ -887,33 +887,7 @@ wiring, and `platformFeeWallet` purely as a destination. If they must stay unifi
 
 ---
 
-### M-15 · MEDIUM · `RobinFloorVault` pins the platform wallet as an immutable, defeating the registry's rotation, and pays it inline under the pool lock  `VERIFIED`
-
-**Where** `contracts/pads/RobinFloorVault.sol:45` (`address public immutable feeRecipient`), `:169-170`
-(`_collect` takes straight to it).
-
-**It cannot be rotated.** `feeRegistry` / `platformFeeWallet` appear **zero times** in this contract — it is
-handed a raw address at deploy (`scripts/launch.js:85` passes `platform`) and stores it `immutable`. That
-defeats the mechanism `FeeWalletRegistry` exists to provide; its NatSpec is explicit: *"The hook reads
-`platformFeeWallet()` at accrual/claim time (forward-only), so a repoint only affects fees claimed after it
-commits."* Every other consumer in the suite reads it live. So if the platform multisig is compromised and the
-registry is rotated through its 2-day timelock, every floor vault ever deployed keeps paying its LP fees to
-the **old** address permanently — no setter, and no redeploy path, since the vault is add-only and holds a
-live position.
-
-**It pays inline under the pool lock.** `_collect` calls `poolManager.take(currency, feeRecipient, …)`
-directly, sending to an external address inside the `unlock` callback. The rest of the suite is deliberately
-accrue-and-pull for exactly this reason — `RobinFeeHook`'s header: *"nothing is pushed to an external wallet
-inside a swap, so a reverting recipient can never block trading."* Here a recipient that reverts on receive
-bricks `collectFloorFees()` for that pad, with no isolation and no fallback book.
-
-**Fix direction.** Read `feeRegistry.platformFeeWallet()` at collect time like every other contract in the
-suite, and book the fees to an owed ledger paid by a separate `claim` rather than taking to an external
-address under the lock.
-
----
-
-### M-16 · MEDIUM · `finalize()`'s blanket catch makes *any* failure — including an under-gassed call — a permanent, irreversible kill  `PROVEN`
+### M-15 · MEDIUM · `finalize()`'s blanket catch makes *any* failure — including an under-gassed call — a permanent, irreversible kill  `PROVEN`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-105` (`_validate` bounds only signs and ordering),
 `contracts/core/CurvePadFactoryV4.sol:120` / `:131` / `:140` (the launch-time geometry and reserve checks),
@@ -960,7 +934,7 @@ retune trigger specifically, but not the class.
 
 ---
 
-### M-17 · MEDIUM · The escape hatch is anchored to `deadline`, not to when the raise closed, locking contributors for up to 37 days  `VERIFIED`
+### M-16 · MEDIUM · The escape hatch is anchored to `deadline`, not to when the raise closed, locking contributors for up to 37 days  `VERIFIED`
 
 **Where** `contracts/presale/PresaleVault.sol:278-291` (`fail`), against `:104-113` (`initialize`'s bounds:
 `MAX_DURATION` 30 days, `GRACE_MAX` 7 days).
@@ -992,7 +966,7 @@ time between a full raise and an arbitrary deadline.
 
 ---
 
-### M-18 · MEDIUM · The floor can only deepen while the price is *above* it, so any drawdown idles the carve  `PROVEN`
+### M-17 · MEDIUM · The floor can only deepen while the price is *above* it, so any drawdown idles the carve  `PROVEN`
 
 **Where** `contracts/pads/RobinFloorVault.sol:110-116` (`addFloor`'s band guard), with the add-only design at
 `:24-30`.
@@ -1024,9 +998,11 @@ the instant spot returns below `floorTickLower`. Verified: after buying the pric
 **0.0 ETH — all 10 parked ETH recovered**. So `parkedQuote` being an overwrite rather than an accumulator
 (I-1(9)) is cosmetic: the real ledger is the balance.
 
-The accurate statement is therefore: **for any pad trading more than ~0.6% below its anchor — the launch tick
-for hook pads, `curve.gradTick()` for curve pads — 100% of incoming floor carve sits idle, with no admin
-rescue and no second band, until the price recovers.** Nothing is stolen and nothing is permanently lost, but
+The accurate statement is therefore: **the funding window is one `tickSpacing` wide, so once a pad trades
+below its anchor by that much — ~0.6% at `ts = 60` (hook pads, `scripts/launch.js`) or ~1.005% at `ts = 100`
+(curve pads) — 100% of incoming floor carve sits idle, with no admin rescue, no re-anchor and no second band,
+until the price recovers.** `RobinAmbushVault.seedAmbush` (`:127-137`) has the identical shape, which is why
+I-2 exists. Nothing is stolen and nothing is permanently lost, but
 the advertised mechanism does not operate in the state it was built for, and for a token that never recovers
 its anchor it never operates again.
 
@@ -1322,6 +1298,32 @@ hazard rather than record the assumption.
 
 ---
 
+### L-11 · LOW · `RobinFloorVault` pins the platform wallet as an immutable, so a timelocked rotation never reaches it  `VERIFIED`
+
+**Where** `contracts/pads/RobinFloorVault.sol:45` (`address public immutable feeRecipient`), set once at `:84`.
+
+The vault has **no `IFeeWalletRegistry` import at all** — while every other platform sink in the suite resolves
+the wallet live: `RobinFeeHook.sol:323`/`:384`, `LockVault.sol:136`/`:149`, and `RobinCurveV4.claimPlatform`.
+`scripts/launch.js:85` hands the vault the platform address directly.
+
+So the compensating control for a compromised platform key does not work here. `FeeWalletRegistry` exists to
+rotate that wallet through a 2-day timelock — its NatSpec: *"a repoint only affects fees claimed after it
+commits"* — but a rotation silently fails to reach any already-deployed floor vault. The permissionless
+`collectFloorFees()` keeps paying that pad's floor-band LP fees to the **retired** address forever, and lets
+whoever holds the retired key keep pulling them. There is no setter and no redeploy path: the vault is
+add-only and holds a live position.
+
+**One claim I made here is disproved.** I wrote that taking inline to `feeRecipient` under the pool lock lets
+a reverting recipient brick `collectFloorFees()`. In the shipped deployment the recipient is the platform
+wallet — an EOA or multisig that always accepts ETH — so that brick is unreachable. The inline take still
+departs from the suite's accrue-and-pull rule, but here it is a style inconsistency, not a live DoS.
+
+Bounded to one small fee stream per pad and reachable only after a platform-domain event, which is why LOW.
+
+**Fix direction.** Read `feeRegistry.platformFeeWallet()` at collect time, as every other consumer does.
+
+---
+
 ### I-1 · INFO · Recorded so the next pass does not re-derive them
 
 1. **`PresaleVault`'s implementation is never initialised.** `PresaleVaultFactory.createPresale` clones and
@@ -1413,7 +1415,7 @@ currently mis-report anything.
 
 The residual is purely diagnostic, and only bites a future geometry retune that pushes some parameter out of
 v4's accepted range — at which point a creator-misconfigured launch dies with a misleading `PoolAlreadyInit`
-(and, through a presale, an equally misleading `Failed(3)` — see M-16).
+(and, through a presale, an equally misleading `Failed(3)` — see M-15).
 
 **Fix direction.** Distinguish the revert rather than adding a `MAX_TICK_SPACING` check: only blame a
 front-run when `getSlot0` returns a **non-zero** price, and otherwise bubble the original error.
@@ -1538,7 +1540,7 @@ advance 7 days, read `earned`, then `setPlatformClaimFee(1000)` and claim — th
    stranding in I-1(5) at the same time.
 2. **H-1** — no minimum trade size, cheaper than paying the tax, and a router can hand it to every user. It
    defunds the creator's entire income and the floor. The buy side already shows the fix.
-3. **M-18** — the floor only deepens while the price is above it, so the pad's headline protection does not
+3. **M-17** — the floor only deepens while the price is above it, so the pad's headline protection does not
    operate in the state it exists for. It falsifies an `AUDIT-SCOPE.md` §4.4 invariant rather than mis-tuning
    one, so it needs a design answer, not a parameter change.
 4. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
