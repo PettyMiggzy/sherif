@@ -27,11 +27,11 @@ re-derive it.
 | severity | count | of which measured |
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
-| **HIGH** | 3 | 2 |
-| **MEDIUM** | 16 | 6 |
+| **HIGH** | 4 | 2 |
+| **MEDIUM** | 17 | 6 |
 | **LOW** | 9 | 4 |
 | **INFO** | 9 (8 bundled as I-1, plus I-2) | 1 |
-| **total** | **38** | **14** |
+| **total** | **40** | **14** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -345,6 +345,45 @@ constructor arguments (it is already an immutable-style stamp elsewhere) or in t
 creator produces a different CREATE2 address and a copied calldata cannot collide. Alternatively require
 `cfg.creator == msg.sender` on the curve path, or commit-reveal the launch the way `PresaleVaultFactory`
 already does for presales.
+
+---
+
+### H-4 · HIGH · The floor can only deepen while the price is *above* it, so a drawdown freezes the carve permanently  `VERIFIED`
+
+**Where** `contracts/pads/RobinFloorVault.sol:110-116` (`addFloor`'s band guard), with the add-only design at
+`:24-30`.
+
+```solidity
+(, int24 tick,,) = stateView.getSlot0(_poolId());
+if (tick >= floorTickLower) { parkedQuote = amt; emit FloorSkipped(tick, amt); return 0; }
+```
+
+A single-sided currency0 add requires spot to sit **below** the range, so the vault can only deploy carve
+while the token trades *above* the top of its own wall. The moment spot enters the band — the moment the price
+falls to where the floor is supposed to start working — every subsequent carve delivery parks instead of
+deploying, and keeps parking for as long as the token stays there.
+
+**With the shipped parameters that window is tiny.** `scripts/launch.js:24` sets `FLOOR_BAND_SPACINGS = 20`
+with `TS = 60` and `anchorTick` = the launch tick, giving a band of `[60, 1260]` — roughly 0.6% to 12% below
+the launch price. So the carve deploys only while the token is within ~0.6% of where it launched. A 2.95%
+drawdown puts spot at tick 299, **inside** the band with the wall barely touched, and from that point on every
+sell-tax floor carve the pad ever earns parks in the vault and does nothing.
+
+**This falsifies the guarantee, not just the tuning.** `AUDIT-SCOPE.md` §4.4 and the vault's own header state
+the floor is *"ADD-ONLY — there is deliberately NO remove/withdraw path, so the wall can only ever deepen.
+That absence IS the 'can't rug to zero' guarantee."* The wall can only ever deepen **while the price is above
+it**. In the regime the floor exists for — a token trading down — it is frozen at whatever depth it happened
+to reach before the first drawdown, while fee revenue earmarked for it accumulates unusable. Nothing is stolen
+and nothing is unrecoverable (a price recovery above the band un-parks it, and `addFloor` is permissionless
+and balance-driven), but the advertised mechanism does not operate in the state it was built for.
+
+**Fix direction.** The band must be able to follow the price down, which a single fixed range cannot do.
+Options: (a) let `addFloor` place *new* liquidity in a fresh band below current spot when the anchor band is
+unreachable — every band stays add-only, so the "can't rug" property is preserved, since no remove path is
+added, only more ranges; (b) accept the limitation and restate the guarantee honestly as "a fixed buy wall at
+the launch price, funded while the token trades above it"; (c) at minimum surface the parked amount so
+"wall is deep" and "carve is stuck" are distinguishable. Note (c) is cosmetic on its own — and per I-1(8)
+`parkedQuote` is assigned rather than accumulated, so it does not even report the parked total correctly.
 
 ---
 
@@ -919,6 +958,32 @@ not of a treasury receiving address.
 **Fix direction.** Separate the roles — an `admin` (or the existing `Ownable2Step` owner) for the one-shot
 wiring, and `platformFeeWallet` purely as a destination. If they must stay unified, say so plainly in
 `AUDIT-SCOPE.md` §6 and `DEPLOY.md`, and drop the "only this one address / no fund movement" framing.
+
+---
+
+### M-17 · MEDIUM · `RobinFloorVault` pins the platform wallet as an immutable, defeating the registry's rotation, and pays it inline under the pool lock  `VERIFIED`
+
+**Where** `contracts/pads/RobinFloorVault.sol:45` (`address public immutable feeRecipient`), `:169-170`
+(`_collect` takes straight to it).
+
+**It cannot be rotated.** `feeRegistry` / `platformFeeWallet` appear **zero times** in this contract — it is
+handed a raw address at deploy (`scripts/launch.js:85` passes `platform`) and stores it `immutable`. That
+defeats the mechanism `FeeWalletRegistry` exists to provide; its NatSpec is explicit: *"The hook reads
+`platformFeeWallet()` at accrual/claim time (forward-only), so a repoint only affects fees claimed after it
+commits."* Every other consumer in the suite reads it live. So if the platform multisig is compromised and the
+registry is rotated through its 2-day timelock, every floor vault ever deployed keeps paying its LP fees to
+the **old** address permanently — no setter, and no redeploy path, since the vault is add-only and holds a
+live position.
+
+**It pays inline under the pool lock.** `_collect` calls `poolManager.take(currency, feeRecipient, …)`
+directly, sending to an external address inside the `unlock` callback. The rest of the suite is deliberately
+accrue-and-pull for exactly this reason — `RobinFeeHook`'s header: *"nothing is pushed to an external wallet
+inside a swap, so a reverting recipient can never block trading."* Here a recipient that reverts on receive
+bricks `collectFloorFees()` for that pad, with no isolation and no fallback book.
+
+**Fix direction.** Read `feeRegistry.platformFeeWallet()` at collect time like every other contract in the
+suite, and book the fees to an owed ledger paid by a separate `claim` rather than taking to an external
+address under the lock.
 
 ---
 
