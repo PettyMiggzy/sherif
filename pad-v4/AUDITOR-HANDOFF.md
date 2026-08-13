@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 5 | 5 |
-| **MEDIUM** | 27 | 14 |
-| **LOW** | 34 | 16 |
-| **INFO** | 23 (19 bundled as I-1, plus I-2 … I-5) | 2 |
-| **total** | **90** | **39** |
+| **MEDIUM** | 26 | 13 |
+| **LOW** | 34 | 17 |
+| **INFO** | 24 (20 bundled as I-1, plus I-2 … I-5) | 3 |
+| **total** | **89** | **39** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -627,7 +627,10 @@ the stock read directly above them.
 
 ---
 
-### M-28 · MEDIUM · The buy-LP floor carve is credited *before* graduation and released *only* by graduation, so a pad that never graduates freezes it forever  `PROVEN`
+### L-35 · LOW · The buy-LP floor carve is credited *before* graduation and released *only* by graduation, so a pad that never graduates freezes it forever  `PROVEN`
+
+*(Filed as M-28; downgraded to LOW by an independent skeptic that reproduced it and argued the severity down —
+see the note at the end of this entry.)*
 
 **Where** `contracts/pads/RobinCurveV4.sol:603-617` (`_takeFeesToBook`), `:230-234` (`collectFees`,
 permissionless, pre-graduation), `:405-411` (`flushFloor`), `:283-291` (`sweepToPlatform`).
@@ -661,6 +664,18 @@ operator error; it is the default.
 > `setFloor` + `flushFloor` recovers it in full"* — and measures exactly that. That measurement was taken
 > **after graduation**, and it does not generalize: `flushFloor`'s `!graduated` check is unconditional and runs
 > before the wiring check. M-21's recovery is real only for pads that graduate. M-21 has been annotated.
+
+**Severity, argued down and accepted.** A skeptic reproduced this on a real local `PoolManager` — `ready()`
+false, `platformEthOwed = 1,900,800,000,000,000,000`, `floorEthOwed = 475,199,999,999,999,997` (exactly 80/20
+at the shipped `buyLpFloorShareBps = 2000`), `claimPlatform()` pays the 1.9008 out, the curve balance then
+equals `floorEthOwed` to the wei, and `flushFloor` / `sweepToPlatform` / `flushAmbush` / `flushStaking` /
+`graduate` all revert with the book unchanged — then argued MEDIUM down to LOW, and the argument is right.
+Everything at risk is the **platform's own** fee revenue, not user or creator funds; there is no counterparty;
+it is fully recovered the moment the pad graduates, so it only bites pads that die; and the amount scales with
+the fees a *failed* pad generated. The register already prices this exact shape — value stranded in a
+protocol-owned pocket behind an action nothing forces — at LOW in **L-3** and **L-17**. M-21 keeps its MEDIUM
+because there the funds are silently **burned** on a live pad by a plausible mis-wire; here they are merely
+unreachable on a pad nobody is using.
 
 **Fix direction.** Let `flushFloor` run pre-graduation once `floor` is wired — the vault's own park guard
 already handles a spot that is inside the band — or drop `floorEthOwed`'s graduation gate and let
@@ -1824,13 +1839,27 @@ verified scale-invariant at 1×/100×/1000×). Above it the attacker profits; be
 
 | regime | attacker | vault |
 |---|---|---|
-| parked **above** ~5% of pool ETH depth | **profits** — +0.32 to +28.8 ETH measured across runs, including a fully atomic flash-funded build at **+4.07 ETH** | loses |
+| parked **above** ~5% of pool ETH depth | **profits** — realized, token-flat: +0.32, +0.33, +0.86, and **+4.07 ETH** in a fully atomic build with a real 0.05% flash loan | loses |
 | parked **below** the threshold | **loses** (−0.21 ETH at 2% of pool depth, at every dump depth tested) | **still loses 39–77% of the parked carve** |
 | spot only *marginally* above the band | loses (−0.0247 ETH) | safe |
 
 So below the threshold this is not a profitable exploit — it is **pure griefing that still burns 39–77% of the
 floor**, available to anyone willing to eat the push cost. Above it, it is profitable extraction. Either way the
 carve is destroyed against a baseline where it would simply have parked and lost nothing.
+
+> **Two figures withdrawn, and the accounting rule they establish.** An earlier revision quoted **+28.84 ETH**
+> attacker profit and a **36.25 ETH** vault loss from one construction. A later skeptic reproduced that run **to
+> the wei** and showed neither means what it claimed. The +28.84 is a **mark on a short** — the attacker ends
+> 701.9e18 token short, valued at the pinned spot; forcing the same attacker token-flat on the identical setup
+> collapses it to **+0.33 ETH**, and forcing full liquidation instead raises it to +379 ETH. A number that moves
+> 87× down or 13× up with the convention is not a settled PnL. And the 36.25 ETH "vault loss" was **reproduced
+> identically with no attacker present** — it is the band filling as price moves, which is the band's job, not
+> attack damage. Both struck.
+>
+> Every figure above therefore obeys: **count only realized wei with the attacker ending token-flat, and measure
+> the vault against a no-attacker baseline on the same tape.** Marks on inventory are not profit; a loss that
+> happens anyway is not an attack cost. This is the same trap that earlier produced a phantom +0.924 ETH — it
+> caught a headline number the second time, and one this document had quoted.
 
 Two qualifiers stated because they bound the finding honestly. Reaching the threshold takes accumulation: the
 carve is 0.2% of sell output (1% sell tax × 20% floor share), so parking ~5% of pool ETH depth needs sell volume
@@ -2969,37 +2998,6 @@ every `_collect`.
 
 ---
 
-### L-34 · LOW · Two independent `positionManager` immutables, nothing cross-checks them, and the gate that would have caught a divergence is dead code  `VERIFIED`
-
-**Where** `contracts/core/LockVault.sol:26` and `:63-68` (its own `positionManager`, unrelated to the factory),
-`:107-117` (`collectFees` calls it), `:169-173` (`onERC721Received` gates on it);
-`contracts/core/CurvePadFactoryV4.sol:81-101` (takes `positionManager_` and `lockVault_` side by side and never
-compares them).
-
-`LockVault.positionManager` is used for exactly two things: the `collectFees` call target and the
-`onERC721Received` sender gate. Nothing asserts it equals the factory's — and `lockVault.positionManager()` is
-public and free to read.
-
-On a divergence, **`graduate()` still succeeds end to end**: the NFT mints to the vault on posm-A,
-`onGraduated` → `registerLaunch` records the id, and the raise is spent. Only later does `collectFees` call
-posm-B, where that id is not the vault's — so the locked LP's entire fee stream, both legs, is permanently
-uncollectable while the LP itself stays irrevocably locked.
-
-The one check that would have caught it at mint time **cannot fire**: v4-periphery mints with solmate's plain
-`_mint`, so `onERC721Received` never runs on the graduation mint (**L-24**). The two findings compose — L-24
-removes the guard, and this is what the guard would have caught.
-
-Not attacker-forceable, and not reachable through the checked-in scripts (`deploy-curve.js` and `deploy.js`
-both pass one `POSITION_MANAGER` to both constructors), so it is a latent misconfiguration in the L-7 family —
-hand-typed constructor arguments with no on-chain assertion. LOW for that reason, not because the outcome is
-mild: the outcome is the permanent loss of every pad's locked-LP revenue.
-
-**Fix direction.** One line in `CurvePadFactoryV4`'s constructor:
-`if (LockVault(lockVault_).positionManager() != positionManager_) revert Mismatch();`. It is free, and it is
-the same round-trip assertion M-2's fix direction proposes for the registrar.
-
----
-
 ### I-1 · INFO · Recorded so the next pass does not re-derive them
 
 1. **`PresaleVault`'s implementation is never initialised.** `PresaleVaultFactory.createPresale` clones and
@@ -3106,7 +3104,20 @@ the same round-trip assertion M-2's fix direction proposes for the registrar.
     `PayoutFailed`, not the `Reentrancy()` the fixture claims to prove. So `AUDIT-SCOPE.md` §4.3's "a reverting
     recipient can never brick a claim" has **zero** executed coverage on the hook's claim path — a gap M-19's
     table missed because it audits `test/`, not `contracts/test/` fixtures.
-19. **`FeeWalletRegistry` proposals never expire.** `pendingEta` is only cleared by a commit or an explicit
+19. **`LockVault` and `CurvePadFactoryV4` hold two independent, never-cross-checked `positionManager`
+    immutables** (`LockVault.sol:26`/`:63-65` against `CurvePadFactoryV4.sol:37`/`:93`). Grepping `contracts/`,
+    `scripts/` and `test/` for `.positionManager()` returns **zero** call sites, so nothing compares them, and
+    the gate that would have caught a mismatch at mint time is dead code (**L-24**). **Measured** with two
+    independent mock managers: `graduate()` **succeeds with no warning**, `posmA.ownerOf(1) == lockVault`,
+    `locks[1].registered == true`, `posmB.nextTokenId()` is still 1, and `collectFees(1)` reverts — permanently,
+    since `positionManager` is immutable, `registerLaunch` and `graduate()` are one-shots, and the vault exposes
+    no transfer selector. Filed here rather than as its own finding because the precondition is a typo in a
+    canonical per-chain constant that appears two lines apart in the same script, and because it is one instance
+    of a generic class rather than a distinct defect: `feeRegistry` (`LockVault.sol:27` vs
+    `CurvePadFactoryV4.sol:39`) is uncross-checked in exactly the same way. **L-7** already registers hand-typed
+    constructor arguments as the shared root cause. Both `lockVault.positionManager()` and
+    `IPositionManagerMinimal.ownerOf` are free, public and never called.
+20. **`FeeWalletRegistry` proposals never expire.** `pendingEta` is only cleared by a commit or an explicit
     `cancelProposal`, so a proposal made and abandoned stays committable forever. Given M-14 — this address is
     effectively the protocol's root admin — a stale proposal is a live capability sitting in storage.
 
