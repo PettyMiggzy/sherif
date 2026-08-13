@@ -58,7 +58,7 @@ assertion (L-7). That single root cause is cheaper to fix once — scripted depl
 
 ## 3. Findings
 
-### C-1 · CRITICAL · Three wei arms a trap that takes 100% of a pad's staking reservoir  `PROVEN`
+### C-1 · CRITICAL · Three wei arms a trap that takes 100% of a pad's staking reservoir — 9.7% of total supply  `PROVEN (×3)`
 
 **Where** `contracts/pads/RobinLockStaking.sol:222-231` (`_startDrip`), `:135-139` (the empty-pool pause guard
 in `withdraw`), `:114-118` (`stake`'s pending flush), `:205` (`_accrueReward`'s park branch).
@@ -103,30 +103,47 @@ The window survives as a zombie, with an expiry the attacker chose.
    **mid-window** branch because `block.timestamp < periodFinish` — with `remaining == 2`.
 6. One second later, claim.
 
-**Measured.**
+**Measured at real production geometry** — startTickMag 201600 / curveWidth 23000 / ts 100, 1B supply at
+730M curve + 270M reserve, buy/sell tax 100 bps, waterfall 10/10/5 — driven through the actual
+`CurvePadFactoryV4` + `RobinFeeHook` + `LockVault` stack, not a toy harness:
 
 | | |
 |---|---|
-| attacker's stake | **1 wei** |
-| `rewardRate` after step 5 | **500,000.0 tokens/sec** |
-| reservoir | 500,000 tokens |
-| **attacker's `earned`** | **500,000.0 — the entire reservoir** |
-| early-exit penalty paid | none (`getReward()` never touches principal) |
-| honest holders receive | **0** |
+| attacker's capital | **0.001 ETH** of dust-buy (557,164 tokens) **+ 3 wei** to arm |
+| reservoir at stake — the graduation leftover streamed to staking | **96,978,138 tokens = 9.70% of the entire 1B supply** |
+| after `fund(1)` | `rewardRate` 0, `periodFinish` = now + 2,592,000 |
+| after `withdraw(1)` | `totalStaked` 0, `rewardRate` 0, `periodFinish − now` = 2,591,999 — **pause skipped** |
+| attacker `stake(1)` in the tail | `rewardRate` **48,489,069 tokens/sec**, `remaining` 2 s |
+| **attacker claimed** | **96,978,138 tokens — 100.00% of the reservoir** |
+| honest staker (500 tokens, staked 10 days later) | **0.000000** |
+| `balanceOf == totalStaked + rewardsBalance` | holds throughout — the accounting invariant never trips |
 
-Not a share of the reservoir — **all** of it, because the attacker is the only staker in the one second that
-the drip is live. This is permissionless, repeatable per pad, and requires no capital, no privilege and no
-victim transaction.
+That reservoir is not incidental. The reserve is 270M and the permanent LP absorbs only ~173M of it, because
+the ETH leg binds by construction (see §4), so a large surplus is **structural and predictable on every pad**.
+The sell-side token LP-fee stream then keeps feeding the same reservoir and parking in the same
+`pendingRewards` while the pool is empty, so the take *grows* with time-to-first-staker.
 
-**Precondition, stated plainly.** The 100% take requires the pool to stay **empty from arming until the
-attacker's final stake**. Any honest staker who stakes during the zombie window flushes `pendingRewards`
-themselves, at whatever `remaining` then is — which destroys the attacker's exclusive claim. That is a
-precondition, not a mitigation, for two reasons: a fresh per-pad staking pool is empty by construction until
-graduation, and arming costs ~3 wei plus gas, so it is rational to arm every pad and collect on whichever ones
-stay quiet. And when an honest staker *does* pre-empt it, the drip is still broken — the whole reservoir
-compresses into that residual window and is split among whoever happens to be staked at that second, rather
-than streaming over 30 days as designed. There is no ordering in which the reservoir drips correctly once a
-zombie window exists.
+**The landing zone is wide, not a single block.** Any position in the tail pays out the full reservoir over
+`remaining` seconds — at `remaining = 600` the whole reservoir lands in ten minutes — so the attacker
+schedules it rather than sniping it. Overshooting is not even a failure mode: past `periodFinish` the fresh
+branch simply drips 100% of the parked reservoir to the same sole 1-wei staker over 30 days, still to the
+exclusion of everyone who stakes later.
+
+**Precondition, stated plainly.** The attacker must be the **first staker after arming** — the pool must stay
+unstaked from the arm (pre-graduation) through the tail of the zombie window. That is a real narrowing, and it
+does not reduce the severity, for two reasons. First, arming costs 3 wei plus gas and can be done on *every*
+pad the launchpad produces, so the attacker only needs the subset that sit unstaked — and a fresh per-pad pool
+is empty by construction until graduation. Second, **in the branch where an honest staker arrives first, the
+bug still fires**: whoever stakes first inside the zombie window captures a compressed drip of the entire
+reservoir, and every later staker earns exactly zero. The holder-staking product is broken regardless of who
+wins the race, and the contract's headline guarantee at `:14-15` — *"a whale can never drain the pool in one
+block and the reservoir lasts"* — is false in both branches.
+
+**Root cause, precisely.** Three lines, each individually defensible: `_startDrip`'s fresh branch (`:224-225`)
+sets a live `periodFinish` while `rewardRate` truncates to 0 for any tranche below `rewardsDuration` wei; the
+pause at `:135` conditions on `rewardRate > 0` rather than on `periodFinish > block.timestamp` alone, so that
+window survives an empty pool; and `stake`'s flush (`:113-117`) then routes the parked reservoir through
+`_startDrip`'s mid-window compression instead of a fresh full window.
 
 **A second, independent path to the same compression** (no zombie window needed): wait for any legitimate
 window's end, stake large, and credit a tranche yourself. Every step is permissionless, and the attacker can
