@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
-| **MEDIUM** | 21 | 12 |
-| **LOW** | 19 | 10 |
-| **INFO** | 17 (13 bundled as I-1, plus I-2 … I-5) | 1 |
-| **total** | **62** | **28** |
+| **MEDIUM** | 22 | 13 |
+| **LOW** | 22 | 12 |
+| **INFO** | 21 (17 bundled as I-1, plus I-2 … I-5) | 2 |
+| **total** | **70** | **32** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -1425,6 +1425,148 @@ than returning success. Silent failure is what makes this survivable long enough
 
 ---
 
+### M-22 · MEDIUM · One reverted `finalize()` burns the salt commitment forever, and the reveal survives even on a chain with no public mempool  `PROVEN`
+
+**Where** `contracts/presale/PresaleVault.sol:164-167` (guard order), `:123` (`saltCommitment` written once
+inside the one-shot `initialize`, with no setter anywhere), against the header's security claim at `:31-35`.
+
+`finalize` takes the three salts as plain calldata and validates them **last**:
+
+```solidity
+if (finalized || failed) revert NotOpen();        // :165
+if (totalRaised < target) revert TargetNotMet();  // :166
+if (keccak256(abi.encode(tokenSalt, hookSalt, curveSalt)) != saltCommitment) revert BadReveal();  // :167
+```
+
+Any call that trips `:165` or `:166` has **already carried the real preimage on-chain**. A reverted transaction
+is still mined, and its calldata is public forever — so the reveal does not depend on a mempool at all. That
+matters because the header defends the design precisely on mempool grounds: *"on Robinhood Chain's
+single-sequencer FCFS ordering (no public mempool) the finalize tx can't be sniped."* Block history is public on
+that chain too, so the defence is defeated on the chain it names as safe.
+
+There is no recovery: `saltCommitment` is assigned once at `:123` and no function writes it again. Once the
+preimage is public, `CurvePadFactoryV4.launch(cfg, salts)` is permissionless and fully determined by
+`cfg` + salts, so any stranger can land the committed launch whenever they like; the vault's own `finalize`
+then reverts inside the try and the catch marks the presale `Failed(3)`.
+
+**The trigger is benign, which is what makes it likely.** Calling `finalize` before the target is met — an
+operator or a bot jumping the gun — is enough. So is a retry after someone else's `fail()`. Neither is an
+attack; both are ordinary operational noise, and either one permanently spends the commitment.
+
+**Measured.** Salts recovered from the reverted transaction's calldata match `saltCommitment` exactly; a
+stranger's `launch` with those salts returns token `0x83BF85492891564659896b9f55098749F626E166`, equal to the
+predicted CREATE2 address; the presale then emits `Failed(3)` and `state() == 2`.
+
+This falsifies two claims in the package: the header at `:31-35`, and **L-9**'s bound in this document, which
+cited the presale as the place the pre-committed-address problem is already handled. L-9 has been corrected.
+
+**Fix direction.** Check `BadReveal` **first**, before `NotOpen` and `TargetNotMet` — a one-line reordering that
+means a premature or duplicate call reverts without ever having a correct preimage compared against it. That
+alone does not help the caller who reveals correctly into a `TargetNotMet` revert, so also either (a) allow the
+platform or creator to re-commit while `!finalized && !failed`, or (b) take the salts as a signature/preimage
+bound to `msg.sender` so a leaked preimage is not universally replayable. Fix the header comment regardless: a
+mined revert publishes calldata on any chain.
+
+---
+
+### L-20 · LOW · `finalize()` has no upper time bound, so the grace period is a race rather than an expiry  `PROVEN`
+
+**Where** `contracts/presale/PresaleVault.sol:164-167` (`finalize` reads **no** timestamp at all) against
+`:272-284` (`fail`, which is time-gated) and the NatSpec at `:35-36` / `:269-271` describing `finalizeGrace` as
+an escape hatch.
+
+`fail()` is gated on `deadline` and `deadline + finalizeGrace`; `finalize()` is gated on neither. So once the
+target is met, the preimage-holder's option to launch **never expires**. Past `deadline + finalizeGrace` both
+functions are live and permissionless simultaneously, and the outcome is decided by whoever transacts first —
+indefinitely.
+
+Contributors have no unilateral exit: `deposit` is irreversible, `refund()` requires `failed` (`:300`), and
+`fail()` reverts `TargetMet` inside the grace window (`:282`). Their only escape is to win a race they must pay
+gas for, and for a small contributor that gas can exceed their share.
+
+**Measured:** a presale that met target on day 0, with `deadline = now + 2 days` and `finalizeGrace = 7 days`
+(`GRACE_MAX`), was successfully finalized **365 days after the escape hatch opened** — `Finalized` emitted,
+`state() == 1`, the pad launched and the curve bought with the full raise.
+
+This is L-13 from the opposite end. L-13 is that the grace is anchored to `deadline` rather than to when the
+raise closed, so contributors are locked for up to 37 days. This is that after those 37 days the creator's
+option does not lapse *at all*. Combined with **M-12** — geometry is read live at `finalize` — the price the
+option is exercised at is not the one anyone contributed against, a year later.
+
+**Fix direction.** Gate `finalize` on `block.timestamp <= deadline + finalizeGrace`, which is what the NatSpec
+already describes. Then the grace is an expiry, `fail()` becomes the only reachable path afterwards, and L-13's
+lock acquires a ceiling.
+
+---
+
+### L-21 · LOW · `createPresale` accepts configs that `launch` rejects unconditionally, and `initialize` validates no `cfg` field at all  `PROVEN`
+
+**Where** `contracts/presale/PresaleVaultFactory.sol:34-51` (`createPresale` checks only
+`saltCommitment != 0`; `cfg` passes straight through), `contracts/presale/PresaleVault.sol:113-118`
+(`initialize`'s bounds cover `target`/`deadline`/`minContribution` — no `cfg` field), against
+`contracts/core/CurvePadFactoryV4.sol:112-115`.
+
+The five `BadConfig` conditions at `CurvePadFactoryV4:112-115` are **pure functions of `cfg`** — no geometry, no
+FeeConfig, no timing, nothing retunable. They can be evaluated at `createPresale` for the same gas they cost at
+`launch`, and are not. So a presale whose `supply` is one wei off `curveSupply + reserveSupply` is registered
+(`isPresale == true`), advertised, funded by the public to target, and discovered dead only at `finalize` —
+where the launch revert hits the blanket catch and is mislabelled `Failed(3)`, *"sniped"*, irreversibly. An
+operator then hunts a front-runner that never existed.
+
+The same gap covers the presale's own terms: `initialize` enforces `minContribution <= target` but never
+`minContribution <= perWalletCap`, so a vault in which **every possible deposit reverts** — below the floor →
+`BelowMin`, at or above it → `CapExceeded` — is creatable and sits in the registry looking live.
+
+**Measured.** (a) `launch.staticCall` → `BadConfig`, yet `createPresale` succeeds, `isPresale == true`, 3.0 ETH
+raised from two wallets, `finalize` → `Failed(3)`, `state() == 2`, retry → `NotOpen`. (b) deposits of 0.5 / 1 /
+3 ETH all revert on a `minContribution > perWalletCap` vault.
+
+Contributors recover 100% via `refund()`, so this is availability and dead capital — up to L-13's 37 days at the
+permitted maxima — not loss. Distinct from **M-12**: those fields are not geometry, are not governed, and are
+not retunable; the config is invalid at the instant of `createPresale`.
+
+**Fix direction.** Re-run the five `BadConfig` checks in `createPresale` (or expose them as a `view` on the
+factory and call it), and add `minContribution_ <= perWalletCap_` to `initialize`'s bounds.
+
+---
+
+### L-22 · LOW (gating the stock pad) · The corporate-action curb can only enforce the half of its window *before* the event
+
+**Where** `contracts/hooks/RobinFeeHook.sol:189-196` (the curb), `contracts/adapters/StockQuoteAdapter.sol:86-97`
+(`scheduledEffectiveAt`), `contracts/interfaces/IRobinInterfaces.sol:39` (`guardWindow` documented as seconds
+*around* a scheduled action).
+
+The curb computes `diff = |block.timestamp − ea|` and reverts while `diff <= guardWindow`, which reads as a
+symmetric halt over `[ea − w, ea + w]`. But the hook stores **no** per-action state — it re-derives `ea` on
+every swap from the adapter, and the adapter only returns one while the action is still *pending*:
+`scheduledEffectiveAt()` reads `newUIMultiplier()` and returns 0 when it is 0 (`:87-88`). `newUIMultiplier` is
+by name the not-yet-applied multiplier, so the moment the stock token applies the action and clears that slot,
+`scheduledEffectiveAt()` returns 0, the `if (ea != 0)` gate at `:191` fails, and the pool reopens — at `ea`,
+not at `ea + w`.
+
+Whether *any* of the post-event half is enforced is therefore decided by a third-party contract's cleanup
+timing, which this repository does not control and cannot observe. And it is the wrong half to lose: the window
+after `ea` is exactly when a price discontinuity has already landed and a stale pool price is arbitrageable
+against the new share basis. The passive counterparty is the pad's own locked graduation LP plus the floor and
+ambush bands.
+
+Argued from source rather than measured — the deciding behaviour lives in the third-party stock token, and
+neither `MockStock` nor `MockGuardAdapter` models the clear-on-apply step (which is itself a gap, given M-8).
+The code-side claims are exact: the curb's only inputs are `block.timestamp` and the live adapter read, and the
+hook holds no corporate-action state.
+
+Note this reaches the **opposite** conclusion to H-2's treatment of the same curb. H-2 is that `guardWindow` and
+`guardAdapter` are unbounded launcher-chosen inputs, i.e. a *freeze* primitive — too much curb. This is that on
+a genuine adapter the curb is *self-clearing* on the side that matters — too little. Both are true, of different
+inputs, and a fix for one should not be assumed to address the other.
+
+**Fix direction.** Latch the action in the hook: on first observing a non-zero `ea`, store it per pool, and
+enforce the window from stored state until `block.timestamp > ea + guardWindow` — so clearing the source cannot
+reopen the pool early. Failing that, document the curb as pre-event only and stop describing `guardWindow` as
+"around".
+
+---
+
 ### L-1 · LOW · `RobinV4FeeConfig` accepts curve geometries whose raise floors to zero  `PROVEN (numerically)`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-103` (`_validate`), with
@@ -1662,11 +1804,15 @@ their own `hookSalt`, and pre-empt a launch that has been *announced but not yet
 required. That materially raises the likelihood while leaving the payoff unchanged, which is why it stays LOW
 rather than rising: the pad is still empty at the moment it is taken.
 
-**Where it would matter, the suite already defends.** The case where a launch address is *pre-committed* — so
-an audience is pointed at it before it exists — is the presale, and `PresaleVault` handles exactly this: the
-salts are commit-revealed, and a front-run launch makes `finalize` fail the presale into immediate 100%
-refunds (`:180-192`). The residual here is confined to direct launches, where the address is not announced in
-advance.
+**Where it would matter, the suite defends — but only once.** The case where a launch address is
+*pre-committed* — so an audience is pointed at it before it exists — is the presale, and `PresaleVault` aims at
+exactly this: the salts are commit-revealed, and a front-run launch makes `finalize` fail the presale into
+immediate 100% refunds (`:180-192`).
+
+> **Correction.** This paragraph originally treated that as a complete defence. It is not: the commit-reveal is
+> single-use and destroyed by any reverted `finalize`, because `BadReveal` is checked *last* and the salts are
+> already in mined calldata by then. See **M-22**. The residual below still holds for direct launches; for
+> presales, read M-22 first.
 
 **Fix direction.** Bind the creator into the deployment so a replayed calldata lands at a *different* address
 instead of colliding: add `cfg.creator` to the token's constructor arguments, or require
@@ -2218,7 +2364,41 @@ from `_add`'s currency1 branch, exactly as `_collect` does.
     it is dust, but it contradicts the "only place" claim §4 used to make, and unlike `RobinLpVault` there is
     no `feeCarry` to catch it. `RobinLockStaking` has the same shape; I-1(5) records its zero-rate case, which
     C-1 then weaponises.
-13. **`FeeWalletRegistry` proposals never expire.** `pendingEta` is only cleared by a commit or an explicit
+13. **`RobinLockStaking.rewardPerToken()` omits the underflow guard its sibling has — and C-1's fix touches
+    exactly those lines.** `:84` computes `_lastTimeRewardApplicable() − lastUpdateTime` unguarded under checked
+    arithmetic, where `DualStaking:173-175` returns early on `tApp <= r.lastUpdateTime`. `_updateReward` is on
+    the entry path of `stake`, `withdraw`, `getReward`, `fund` and `fundTokenPushed`, so one underflow would
+    revert **every** state-changing function permanently, principal included. It is not reachable today: the
+    invariant `lastUpdateTime <= periodFinish` holds across all four writers (`:94`, `:138`, `:225`, `:231`),
+    and `withdraw:138` — the one place `periodFinish` moves *backwards* — is safe only because `:126` ran
+    `_updateReward` first. Recorded as a **remediation hazard**: C-1's fix directions edit this exact block, and
+    an edit that moves `periodFinish` backwards without updating `lastUpdateTime` first converts C-1 from a
+    theft into a permanent freeze.
+14. **The instant `block.timestamp == deadline` belongs to neither presale phase.** `PresaleVault:139` reverts
+    `AfterDeadline` on `>=` while `:274` reverts `BeforeDeadline` on `<=`, both against the same variable, so
+    for one second an under-target presale can neither be topped up nor closed out (`finalize` is unreachable
+    too, since `totalRaised < target`). Proven on a real stack: at a block mined with `block.timestamp ==
+    deadline`, `deposit()` → `AfterDeadline()` and `fail()` → `BeforeDeadline()`; at `deadline + 1`, `fail()`
+    succeeds. The grace boundary has the mirror slip — `:278` is strict, so the hatch opens at
+    `deadline + finalizeGrace + 1` and the effective grace is one second longer than `GRACE_MIN`/`GRACE_MAX`
+    name. Nothing is extractable; recorded because `>=`/`<=` on one variable is usually a real bug, and here it
+    happens not to be.
+15. **Every `PositionManager` call passes `block.timestamp` as its own deadline**, so v4-periphery's
+    `checkDeadline` is structurally disabled at all four sites that touch it (`PadFactory:244`,
+    `LockVault:117`, `StockPadFactory:226`, `RobinCurveV4:647`) — `t > t` is never true. Nil impact today, and
+    checked rather than assumed: all four are atomic within a transaction whose price is already pinned, and
+    the two that could drift are independently defended (`PadFactory:158-161` reverts `PoolAlreadyInit` on any
+    other init price; `_mintPermanentLp` runs after the nudge has forced spot to `gradTick`). Worth fixing as
+    hygiene, since the guard is free and its absence is invisible.
+16. **`isPresale` / `PresaleCreated` authenticate the factory, not the creator.** `createPresale` is
+    permissionless and writes a caller-supplied `cfg.creator` into both on-chain identity signals, with no check
+    that `msg.sender` is related to it. Combined with I-1(8) — `cfg` has no getter — there is no on-chain field
+    distinguishing a genuine presale for project X from one an arbitrary address opened while naming X as
+    creator. **This corrects I-1(1)**, which offers "it will not appear in `isPresale`, so a front end that
+    checks the registry is safe" as the mitigation for the uninitialised template: registry membership does not
+    carry that much. No principal is at risk — vault ETH only ever moves to the pooled buy or back to its
+    depositor.
+17. **`FeeWalletRegistry` proposals never expire.** `pendingEta` is only cleared by a commit or an explicit
     `cancelProposal`, so a proposal made and abandoned stays committable forever. Given M-14 — this address is
     effectively the protocol's root admin — a stale proposal is a live capability sitting in storage.
 
