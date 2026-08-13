@@ -27,8 +27,8 @@ re-derive it.
 | severity | count | of which measured |
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
-| **HIGH** | 3 | 2 |
-| **MEDIUM** | 17 | 7 |
+| **HIGH** | 2 | 2 |
+| **MEDIUM** | 18 | 8 |
 | **LOW** | 10 | 3 |
 | **INFO** | 11 (9 bundled as I-1, plus I-2 and I-3) | 1 |
 | **total** | **42** | **15** |
@@ -333,45 +333,6 @@ rug primitive in shipped, in-scope code, reachable by anyone.
 `mapping(address => bool) approvedAdapter`. The guard adapter should not be launcher-chosen at all — derive it
 from the approved adapter for that stock. Give `guardWindow` a hard ceiling: a corporate-action window is
 hours, not years.
-
----
-
-### H-3 · HIGH · The floor can only deepen while the price is *above* it, so a drawdown freezes the carve permanently  `VERIFIED`
-
-**Where** `contracts/pads/RobinFloorVault.sol:110-116` (`addFloor`'s band guard), with the add-only design at
-`:24-30`.
-
-```solidity
-(, int24 tick,,) = stateView.getSlot0(_poolId());
-if (tick >= floorTickLower) { parkedQuote = amt; emit FloorSkipped(tick, amt); return 0; }
-```
-
-A single-sided currency0 add requires spot to sit **below** the range, so the vault can only deploy carve
-while the token trades *above* the top of its own wall. The moment spot enters the band — the moment the price
-falls to where the floor is supposed to start working — every subsequent carve delivery parks instead of
-deploying, and keeps parking for as long as the token stays there.
-
-**With the shipped parameters that window is tiny.** `scripts/launch.js:24` sets `FLOOR_BAND_SPACINGS = 20`
-with `TS = 60` and `anchorTick` = the launch tick, giving a band of `[60, 1260]` — roughly 0.6% to 12% below
-the launch price. So the carve deploys only while the token is within ~0.6% of where it launched. A 2.95%
-drawdown puts spot at tick 299, **inside** the band with the wall barely touched, and from that point on every
-sell-tax floor carve the pad ever earns parks in the vault and does nothing.
-
-**This falsifies the guarantee, not just the tuning.** `AUDIT-SCOPE.md` §4.4 and the vault's own header state
-the floor is *"ADD-ONLY — there is deliberately NO remove/withdraw path, so the wall can only ever deepen.
-That absence IS the 'can't rug to zero' guarantee."* The wall can only ever deepen **while the price is above
-it**. In the regime the floor exists for — a token trading down — it is frozen at whatever depth it happened
-to reach before the first drawdown, while fee revenue earmarked for it accumulates unusable. Nothing is stolen
-and nothing is unrecoverable (a price recovery above the band un-parks it, and `addFloor` is permissionless
-and balance-driven), but the advertised mechanism does not operate in the state it was built for.
-
-**Fix direction.** The band must be able to follow the price down, which a single fixed range cannot do.
-Options: (a) let `addFloor` place *new* liquidity in a fresh band below current spot when the anchor band is
-unreachable — every band stays add-only, so the "can't rug" property is preserved, since no remove path is
-added, only more ranges; (b) accept the limitation and restate the guarantee honestly as "a fixed buy wall at
-the launch price, funded while the token trades above it"; (c) at minimum surface the parked amount so
-"wall is deep" and "carve is stuck" are distinguishable. Note (c) is cosmetic on its own — and per I-1(8)
-`parkedQuote` is assigned rather than accumulated, so it does not even report the parked total correctly.
 
 ---
 
@@ -1031,6 +992,56 @@ time between a full raise and an arbitrary deadline.
 
 ---
 
+### M-18 · MEDIUM · The floor can only deepen while the price is *above* it, so any drawdown idles the carve  `PROVEN`
+
+**Where** `contracts/pads/RobinFloorVault.sol:110-116` (`addFloor`'s band guard), with the add-only design at
+`:24-30`.
+
+```solidity
+(, int24 tick,,) = stateView.getSlot0(_poolId());
+if (tick >= floorTickLower) { parkedQuote = amt; emit FloorSkipped(tick, amt); return 0; }
+```
+
+A single-sided currency0 add requires spot to sit **below** the range, so the vault can only deploy carve
+while the token trades *above* the top of its own wall. The moment spot enters the band — the moment the price
+falls to where the floor is supposed to start working — every subsequent carve delivery parks instead of
+deploying, and keeps parking for as long as the token stays there.
+
+**With the shipped parameters that window is tiny.** `scripts/launch.js:24` sets `FLOOR_BAND_SPACINGS = 20`
+with `TS = 60` and `anchorTick` = the launch tick, giving a band of `[60, 1260]` — roughly 0.6% to 12% below
+the launch price. So the carve deploys only while the token is within ~0.6% of where it launched. A 2.95%
+drawdown puts spot at tick 299, **inside** the band with the wall barely touched, and from that point on every
+sell-tax floor carve the pad ever earns parks in the vault and does nothing.
+
+**This falsifies the guarantee, not just the tuning.** `AUDIT-SCOPE.md` §4.4 and the vault's own header state
+the floor is *"ADD-ONLY — there is deliberately NO remove/withdraw path, so the wall can only ever deepen.
+That absence IS the 'can't rug to zero' guarantee."* The wall can only ever deepen **while the price is above
+it**. In the regime the floor exists for — a token trading down — it is frozen at whatever depth it happened
+to reach before the first drawdown, while fee revenue earmarked for it accumulates unusable. **It is a conditional lock, not a burn — proven in both directions.** `addFloor()` reads
+`currency0.balanceOfSelf()` fresh on every call, so the whole accumulated balance deploys in a *single* call
+the instant spot returns below `floorTickLower`. Verified: after buying the price back to tick −33555, one
+`addFloor()` emitted `FloorAdded`, minted 172,240,917,046,477,496,316 of liquidity and left the vault holding
+**0.0 ETH — all 10 parked ETH recovered**. So `parkedQuote` being an overwrite rather than an accumulator
+(I-1(9)) is cosmetic: the real ledger is the balance.
+
+The accurate statement is therefore: **for any pad trading more than ~0.6% below its anchor — the launch tick
+for hook pads, `curve.gradTick()` for curve pads — 100% of incoming floor carve sits idle, with no admin
+rescue and no second band, until the price recovers.** Nothing is stolen and nothing is permanently lost, but
+the advertised mechanism does not operate in the state it was built for, and for a token that never recovers
+its anchor it never operates again.
+
+**Fix direction.** The band must be able to follow the price down, which a single fixed range cannot do.
+Options: (a) let `addFloor` place *new* liquidity in a fresh band below current spot when the anchor band is
+unreachable — every band stays add-only, so the "can't rug" property is preserved, since no remove path is
+added, only more ranges; (b) accept the limitation and restate the guarantee honestly as "a fixed buy wall at
+the launch price, funded while the token trades above it"; (c) at minimum surface the parked amount so
+"wall is deep" and "carve is stuck" are distinguishable. Note (c) is cosmetic on its own — and per I-1(8)
+`parkedQuote` is assigned rather than accumulated, so it does not even report the parked total correctly.
+
+---
+
+---
+
 ### L-1 · LOW · `RobinV4FeeConfig` accepts curve geometries whose raise floors to zero  `PROVEN (numerically)`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-103` (`_validate`), with
@@ -1527,7 +1538,7 @@ advance 7 days, read `earned`, then `setPlatformClaimFee(1000)` and claim — th
    stranding in I-1(5) at the same time.
 2. **H-1** — no minimum trade size, cheaper than paying the tax, and a router can hand it to every user. It
    defunds the creator's entire income and the floor. The buy side already shows the fix.
-3. **H-3** — the floor only deepens while the price is above it, so the pad's headline protection does not
+3. **M-18** — the floor only deepens while the price is above it, so the pad's headline protection does not
    operate in the state it exists for. It falsifies an `AUDIT-SCOPE.md` §4.4 invariant rather than mis-tuning
    one, so it needs a design answer, not a parameter change.
 4. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
