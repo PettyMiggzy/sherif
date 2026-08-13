@@ -27,9 +27,9 @@ re-derive it.
 | severity | count | of which measured |
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
-| **HIGH** | 4 | 2 |
+| **HIGH** | 3 | 2 |
 | **MEDIUM** | 19 | 7 |
-| **LOW** | 8 | 3 |
+| **LOW** | 9 | 3 |
 | **INFO** | 10 (9 bundled as I-1, plus I-2) | 1 |
 | **total** | **42** | **15** |
 
@@ -336,48 +336,7 @@ hours, not years.
 
 ---
 
-### H-3 · HIGH · `cfg.creator` is outside both CREATE2 pre-images, so copied launch calldata steals a pad's creator revenue  `VERIFIED`
-
-**Where** `contracts/core/CurvePadFactoryV4.sol:143-151` (the token and hook init-codes), `:180-197`
-(`registerPool` stamps `cfg.creator`).
-
-The two addresses that make a launch unique are derived from init-code that **does not contain the creator**:
-
-```solidity
-type(PadToken).creationCode,  abi.encode(cfg.name, cfg.symbol, cfg.decimals, cfg.supply, address(this))
-type(RobinFeeHook).creationCode, abi.encode(poolManager, address(this), feeRegistry, token)
-```
-
-So for a given `(cfg, tokenSalt, hookSalt)` the token and hook land at the same addresses **whoever** calls
-`launch()` and **whatever** `creator` they name. `launch` is permissionless, and `cfg.creator` is stamped
-straight into the hook's immutable `PoolFeeConfig`.
-
-**The attack is copy-paste.** Take a pending `launch()` calldata, change one field — `creator: V → A` — and
-land first. The attacker's transaction deploys the token and hook at exactly the addresses the victim
-intended, registers the pool with **itself** as creator, and thereby takes the pad's entire creator economics:
-the 0.8% sell-tax stream (`RobinFeeHook.creatorOwed` → `claimCreator`) and the 10% creator share of the raise
-at graduation (`RobinCurveV4.creatorEthOwed`). The victim's transaction then reverts — `registerPool` throws
-`AlreadyRegistered`, and the factory no longer holds the supply — so the victim loses the launch as well as
-the revenue. Note the *curve* address does depend on `cfg.creator` (it is a constructor argument at `:213`),
-which is why the collision surfaces at `registerPool` rather than earlier; it does not help the victim.
-
-**Chain-dependent reachability, and the codebase already reasons about this class.**
-`PresaleVault.sol:180-192` explicitly handles the mirror case — *"on Robinhood Chain's single-sequencer FCFS
-ordering this is not reachable; it exists so a public-mempool / decentralized-sequencer deployment can never
-brick the vault"* — and fails **safe**, refunding contributors. Here there is no equivalent handling at all,
-and the failure is not safe: it transfers the creator's revenue to the attacker. A launchpad that has already
-written down "assume a public mempool might exist" for its presale add-on should not leave its primary launch
-path undefended against the same ordering assumption.
-
-**Fix direction.** Bind the creator to the deployment. Simplest: include `cfg.creator` in the token's
-constructor arguments (it is already an immutable-style stamp elsewhere) or in the hook's, so a different
-creator produces a different CREATE2 address and a copied calldata cannot collide. Alternatively require
-`cfg.creator == msg.sender` on the curve path, or commit-reveal the launch the way `PresaleVaultFactory`
-already does for presales.
-
----
-
-### H-4 · HIGH · The floor can only deepen while the price is *above* it, so a drawdown freezes the carve permanently  `VERIFIED`
+### H-3 · HIGH · The floor can only deepen while the price is *above* it, so a drawdown freezes the carve permanently  `VERIFIED`
 
 **Where** `contracts/pads/RobinFloorVault.sol:110-116` (`addFloor`'s band guard), with the add-only design at
 `:24-30`.
@@ -1331,6 +1290,41 @@ ETH".
 
 ---
 
+### L-9 · LOW · `cfg.creator` is in neither CREATE2 pre-image, so a copied launch can burn a victim's launch tx  `VERIFIED — impact refuted`
+
+**Where** `contracts/core/CurvePadFactoryV4.sol:105` (`launch` is permissionless), `:148` (token init-code is
+`(name, symbol, decimals, supply, factory)`), `:158` (hook init-code is
+`(poolManager, factory, feeRegistry, token)`) — `cfg.creator` appears in neither.
+
+**The mechanism is real.** For a given `(cfg, tokenSalt, hookSalt)` the token and hook land at the same
+addresses whoever calls `launch()` and whatever `creator` they name. Copy a pending `launch()` calldata,
+change `creator`, land first: the attacker's transaction deploys token and hook at exactly the addresses the
+victim intended and registers the pool with itself as creator, after which the victim's transaction reverts
+(`registerPool` throws `AlreadyRegistered`, and the factory no longer holds the supply).
+
+**The impact claim does not survive.** This was originally filed HIGH as creator-revenue theft. It is not:
+the steal lands at the one instant the pad is worth exactly zero. Reproduced at production geometry against
+the real factory stack, the hijacked pad holds **0 wei, `creatorEthOwed` 0, `hook.creatorOwed` 0** — the 10%
+graduation share and the 80 bps sell stream only ever exist for whichever pad actually attracts a raise, and
+nothing about the attacker's empty shell attracts one. The victim's remedy is a relaunch under a fresh
+`tokenSalt` and a re-mined `hookSalt`, which costs off-chain mining and gas but no principal.
+
+The economics run against the attacker: they pay a **full ~6.5M-gas launch per attempt** to burn the victim's
+**83k-gas** transaction, gain nothing transferable, and cannot repeat without fresh calldata. That is
+negative-EV griefing, not theft.
+
+**Where it would matter, the suite already defends.** The case where a launch address is *pre-committed* — so
+an audience is pointed at it before it exists — is the presale, and `PresaleVault` handles exactly this: the
+salts are commit-revealed, and a front-run launch makes `finalize` fail the presale into immediate 100%
+refunds (`:180-192`). The residual here is confined to direct launches, where the address is not announced in
+advance.
+
+**Fix direction.** Bind the creator into the deployment so a replayed calldata lands at a *different* address
+instead of colliding: add `cfg.creator` to the token's constructor arguments, or require
+`msg.sender == cfg.creator`. Either removes the griefing window entirely for a line of code.
+
+---
+
 ### I-1 · INFO · Recorded so the next pass does not re-derive them
 
 1. **`PresaleVault`'s implementation is never initialised.** `PresaleVaultFactory.createPresale` clones and
@@ -1517,7 +1511,10 @@ advance 7 days, read `earned`, then `setPlatformClaimFee(1000)` and claim — th
    stranding in I-1(5) at the same time.
 2. **H-1** — no minimum trade size, cheaper than paying the tax, and a router can hand it to every user. It
    defunds the creator's entire income and the floor. The buy side already shows the fix.
-3. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
+3. **H-3** — the floor only deepens while the price is above it, so the pad's headline protection does not
+   operate in the state it exists for. It falsifies an `AUDIT-SCOPE.md` §4.4 invariant rather than mis-tuning
+   one, so it needs a design answer, not a parameter change.
+4. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
    (an assertion at launch; an on-chain anchor read).
 4. **H-2** — before any stock pad exists. It is a rug primitive, and M-8 means it is currently untestable
    locally, so fix the mock in the same pass.
