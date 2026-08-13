@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
-| **MEDIUM** | 17 | 10 |
-| **LOW** | 14 | 7 |
-| **INFO** | 11 (9 bundled as I-1, plus I-2 and I-3) | 1 |
-| **total** | **47** | **23** |
+| **MEDIUM** | 18 | 10 |
+| **LOW** | 17 | 8 |
+| **INFO** | 12 (9 bundled as I-1, plus I-2, I-3 and I-4) | 1 |
+| **total** | **52** | **24** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -47,8 +47,8 @@ both directions (§4). The exposure is not in the arithmetic. It is in the seams
 > **Almost every high-impact item here is a wiring or parameter defect that is silent at launch and only
 > becomes visible after a pad has taken real money.** `LockVault.setFactory`, `RobinFloorVault`'s `anchorTick`,
 > `RobinCurveV4.setStaking`, `RobinFeeHook.setFloorRecipient`, `StockPadFactory`'s `adapter` and `guardWindow`,
-> and `RobinV4FeeConfig`'s geometry bounds are all one-shot or immutable, all accept values no contract
-> validates, and all fail *late*.
+> `RobinAmbushVault`'s `stakingRecipient`, and `RobinV4FeeConfig`'s geometry bounds are all one-shot or
+> immutable, all accept values no contract validates, and all fail *late*.
 
 Every one of those parameters is hand-typed in an out-of-band deploy step with no script and no on-chain
 assertion (L-7). That single root cause is cheaper to fix once — scripted deployment plus a handful of
@@ -1095,6 +1095,51 @@ oracle has code at set time — it does not make the contract safe, but it remov
 
 ---
 
+### M-18 · MEDIUM · The "LOCKED SPEC" describes the ambush as the exact **mirror image** of the ambush that shipped  `VERIFIED`
+
+**Where** `ROBIN-V4-CURVE-SPEC.md:31-39` ("Ambush (held reserve, active from launch)"), against
+`contracts/pads/RobinAmbushVault.sol:30-44` (the contract's own header) and
+`contracts/pads/RobinCurveV4.sol:685-696` (`_fundAmbush`).
+
+`AUDIT-SCOPE.md:6` lists `ROBIN-V4-CURVE-SPEC.md` as one of four companion documents for the external review,
+and the spec's own first lines call it *"the locked reference — build to it."* It is not a stale draft; it is
+handed to the auditor as ground truth. On the ambush it is wrong in every structural dimension, and each error
+inverts the mechanism rather than blurring it:
+
+| | `ROBIN-V4-CURVE-SPEC.md:31-39` | `RobinAmbushVault` as shipped |
+|---|---|---|
+| what the band holds | **token** ("single-sided TOKEN sell-wall") | **ETH** ("at/above the graduation price the band holds only ETH") |
+| where it sits | ticks ***below*** the graduation tick | `ambushTickLower = _alignUp(gradTick + 1, ts)` — strictly ***above*** `gradTick` (`:108-111`) |
+| what it does to price | "**capping pumps**" | "it can **NEVER cap the chart**" (`:35`); it *buys dips* |
+| where it is funded from | tokens "**held back** (not sold on the curve)" | `ambushGradBps` (5%) of the **ETH raise**, wired at graduation (`RobinCurveV4.sol:685-696`) |
+| when it is live | "**active from launch**" | funded at graduation, then a separate permissionless `seedAmbush()` (see I-2) |
+| at graduation | "the remaining ambush tokens **pair the permanent locked LP**" | contributes nothing to the LP; the band is add-only and permanent |
+
+The spec even names the shape it is not: *"implemented in `RobinAmbushVault` as the exact mirror of the audited
+`RobinFloorVault`."* The shipped vault is not the floor's mirror — it is a **second buy-wall on the same side**,
+one band above it. The spec's money model inherits the error: it lists the floor as fed by "the ambush's pump
+sales", a revenue line that cannot exist for a band that never sells into pumps.
+
+This is not a documentation nit, and it is not M-6 again. M-6 is a *stale* architecture document — it describes
+an older system that once existed. This is a **currently-authoritative** document describing the sign-flipped
+version of a live contract, in the one subsystem where getting the sign wrong changes what the auditor looks
+for. An auditor reading §"Ambush" will go hunting for token-side inventory risk, sell-wall exhaustion, and
+pump-capping complaints from holders. None of those exist. Meanwhile the real risks of an ETH buy-wall — the
+seeding race in I-2, the add-only ETH that cannot be withdrawn, and L-17's stranded token fees — are in a part
+of the design space the spec tells them is not there.
+
+It also means the *product* question was never settled on paper. "Held-back tokens that cap pumps and then pair
+the LP" and "5% of the raise parked as a permanent dip-buyer" are different products with different token
+economics, and the launched supply split (`curveSupply`/`reserveSupply`) reflects only the second.
+
+**Fix direction.** Rewrite §"Ambush" and the ambush line of the money model to describe the shipped vault, or —
+if the spec is the intent and the contract is the deviation — say so explicitly and treat the divergence as a
+design decision to be re-approved. Either way it must not go to an external auditor in its current state. Do
+this together with M-6; the two documents disagree with the code in different directions, so fixing one alone
+still leaves the package self-contradictory.
+
+---
+
 ### L-1 · LOW · `RobinV4FeeConfig` accepts curve geometries whose raise floors to zero  `PROVEN (numerically)`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-103` (`_validate`), with
@@ -1548,6 +1593,135 @@ worse than none.
 
 ---
 
+### L-15 · LOW · The architecture doc tells the operator to mine the hook salt to the **wrong flag word**  `VERIFIED`
+
+**Where** `ROBIN-V4-ARCHITECTURE.md:102`, `:245`, `:271` say `0x00C4`; `contracts/hooks/BaseHook.sol:30` and
+`contracts/core/CurvePadFactoryV4.sol:46` both say `0x00CC`.
+
+The launch path requires the mined hook address to satisfy `uint160(hook) & 0x3FFF == REQUIRED_FLAGS`, and
+`CurvePadFactoryV4` reverts `HookFlagsMismatch` otherwise. The architecture document states that constant three
+times — including as a literal instruction, *"MINE `hookSalt` so `CREATE2(...) & 0x3FFF == 0x00C4`"* — and every
+one of them is off by the `0x08` bit (`AFTER_SWAP_RETURNS_DELTA`, which the hook genuinely needs: it returns an
+`int128` from `afterSwap` to take the sell tax).
+
+`ROBIN-V4-CURVE-ECON.md:37` has the correct value, so the docs disagree with each other as well as with the
+code. `scripts/mine.js` reads the flags from the compiled artifact rather than from the doc, so the shipped
+tooling is unaffected — this bites the operator who mines by hand, which `DEPLOY.md` and `deploy-curve.js:119-122`
+both contemplate. The failure is loud (`HookFlagsMismatch` at launch, before any state is written) and costs a
+wasted mining run rather than funds, which is why this is LOW rather than a wiring MEDIUM.
+
+**Fix direction.** Correct all three occurrences to `0x00CC`, and derive the number in the docs from
+`BaseHook.REQUIRED_FLAGS` rather than restating it — this is the third place in this report where a hand-copied
+constant drifted from the code it describes (see also L-5, L-6).
+
+---
+
+### L-16 · LOW · `graduate()` gates on the **tick**, the anti-grief nudge gates on the **sqrt price**, so the LP can seed above the ceiling  `PROVEN`
+
+**Where** `contracts/pads/RobinCurveV4.sol:297-298` (`ready()`), `:309` (`graduate()`'s gate), against `:531-533`
+(the nudge's gate) and `:556` (`CeilingNotRestored`), consumed at `:623-628` (`_mintPermanentLp`).
+
+Three guards, two different notions of "at the ceiling":
+
+```solidity
+:298  return tick <= gradTick;                      // ready()
+:309  if (tick > gradTick) revert NotReady();       // graduate()
+:533  if (curSqrt < gradSqrt) { … nudge … }         // _graduatePull()
+:556      if (nowSqrt != gradSqrt) revert CeilingNotRestored();
+```
+
+A tick index is a *range* of sqrt prices. The state `tick == gradTick && curSqrt > gradSqrt` — spot strictly
+inside tick index `gradTick`, above its lower boundary — satisfies both tick gates and fails the sqrt gate, so
+graduation proceeds and **the nudge and its `CeilingNotRestored` check never execute**. That is precisely the
+sliver of the curve range that is still unsold, so the pad graduates with the curve *not* fully sold.
+
+It is reached by an ordinary buy that stops a hair short of the ceiling. Measured on a real local v4
+`PoolManager` at the top of the window (`sqrtPriceLimitX96 = sqrtAt(gradTick+1) - 1`, geometry START 6000 /
+GRAD 3000 / ts 60):
+
+```
+gradTick            3000
+sqrt(gradTick)      92049301871182272007977902845
+sqrt(gradTick+1)    92053904221219956504424993032
+spot sqrt AFTER     92053904221219956504424993031   tick 3000
+spot > gradSqrt?    true       tick <= gradTick? true
+ready() == true  →  graduate() succeeds, nudge SKIPPED
+```
+
+Two comments in the file are therefore false as written. `:298`: *"curve fully sold (spot at the ceiling, or
+below it if a buy overshot)"*. And `:623`, load-bearing for the LP sizing: *"Spot is guaranteed == gradTick here
+(the nudge + `CeilingNotRestored` check), so price at the canonical ceiling."*
+
+**What it costs.** `_mintPermanentLp` sizes `L` from `spGrad` (`:627`) but `PositionManager` binds the position at
+the pool's actual price, which is higher, so the mint pulls **less** ETH than `lpEth` and the `SWEEP` action
+returns the difference to the curve — where step 9 books it to `platformEthOwed`. That is the leak `[HIGH-2]`
+exists to prevent (*"so the WHOLE `lpEth` binds into the locked position — never let the token leg bind and leak
+unbound ETH to the platform book"*). Exact v4 integer arithmetic at the worst point in the window:
+
+| `lpEth` | ETH actually bound | unbound → platform book |
+|---|---|---|
+| 1 ETH | 999950003749687533 | 49,996,250,312,467 wei (0.005000%) |
+| 3 ETH | 2999850011249062599 | 149,988,750,937,401 wei (0.005000%) |
+| 100 ETH | 99995000374968753283 | 4,999,625,031,246,717 wei (0.005000%) |
+
+Capped at one tick, so ~5 bps of the LP leg — real but small, which is why this is LOW and not a MEDIUM
+alongside M-11. The second-order effect deserves a line even so: the `InsufficientReserve` guard at `:630` is
+also evaluated at `spGrad`, while the mint's true `amount1` requirement is computed at the higher spot — for
+`lpEth = 3 ETH`, 171,101,814,838,709,507,352,469,880 actually required against 171,093,260,389,545,913,825,336,142
+checked. The 11.5M-token margin measured in §4 absorbs it comfortably at production geometry, but the check does
+not prove what it is written to prove.
+
+**Fix direction.** Make all three guards agree on sqrt price. `ready()` and `graduate()` should compare
+`getSlot0`'s `sqrtPriceX96` against `TickMath.getSqrtPriceAtTick(gradTick)`, not the tick — that closes the window
+in one line and makes `:623`'s guarantee true. If the tick comparison is kept deliberately (it is cheaper and one
+tick of slack is intentional), then `_mintPermanentLp` must size `L` from the **live** `sqrtPriceX96` rather than
+`spGrad`, and `:298`/`:623` must stop claiming an equality the code does not enforce.
+
+---
+
+### L-17 · LOW · `RobinAmbushVault.stakingRecipient` is a nullable **immutable** in an add-only vault, so unset means permanently stranded  `VERIFIED`
+
+**Where** `contracts/pads/RobinAmbushVault.sol:57` (`address public immutable stakingRecipient; // may be 0`),
+`:94-96` (the constructor's zero-address check, which covers `floorRecipient` but deliberately not this one),
+`:176-186` (`_forwardStaking`).
+
+```solidity
+:94   if (poolManager_ == address(0) || stateView_ == address(0) || floorRecipient_ == address(0) || curve_ == address(0))
+:95       revert ZeroAddress();
+…
+:177  address s = stakingRecipient;
+:178  if (s == address(0)) return 0;
+```
+
+The band accrues LP fees on both sides. The ETH side goes to `floorRecipient`, which the constructor requires be
+non-zero. The token side goes to `stakingRecipient`, which the constructor explicitly permits to be zero, and the
+comment records the intended consequence: *"then token fees stay idle-in-vault"*. `_forwardStaking` duly returns
+early, and the token accumulates in the vault.
+
+The problem is that "idle-in-vault" is terminal here, not deferred. `RobinAmbushVault` has **no owner, no
+`withdraw`, no `sweep`, no `rescue`, and no setter** — the header states the add-only property as a security
+feature (*"there is deliberately NO remove/withdraw/burn path"*), and it applies to the token balance as much as
+to the ETH principal. So a vault deployed with `stakingRecipient_ == 0` sends holders' token-side band fees to a
+contract from which no party — platform, creator, holders, or a future governance — can ever retrieve them.
+`flushFees()` is permissionless, so any caller can move fees from the pool position into that terminal state.
+
+Every other staking sink in the suite is a settable one-shot precisely so this cannot happen:
+`RobinCurveV4.setStaking` (`:457`), `LockVault.setStakingRecipient`. The ambush vault is the only one that fixes
+it at construction *and* allows it to be null. It is also the only in-scope contract with **no deploy script at
+all** — `scripts/deploy-curve.js:120` mentions it solely inside a `console.log` runbook line — so the argument is
+hand-typed, by the operator, once, unverifiably (the same L-7 hazard, with a worse failure mode).
+
+Severity is LOW because it is fees rather than principal, it is entirely under the deployer's control at deploy
+time, and getting it right costs nothing. It is reported because it is *silent*: nothing reverts, nothing emits,
+and the loss is only visible as a token balance that grows and never moves.
+
+**Fix direction.** Cheapest: add `stakingRecipient_` to the `ZeroAddress` check and delete the "may be 0" comment.
+Better: make it a one-shot setter like `LockVault.setStakingRecipient`, so the vault can be deployed before the
+staking pool exists — which is the actual sequencing constraint that motivated allowing zero — and wired
+afterwards, with the accrued token forwarded on the first `flushFees()` after wiring.
+
+---
+
 ### I-1 · INFO · Recorded so the next pass does not re-derive them
 
 1. **`PresaleVault`'s implementation is never initialised.** `PresaleVaultFactory.createPresale` clones and
@@ -1643,6 +1817,45 @@ v4's accepted range — at which point a creator-misconfigured launch dies with 
 
 **Fix direction.** Distinguish the revert rather than adding a `MAX_TICK_SPACING` check: only blame a
 front-run when `getSlot0` returns a **non-zero** price, and otherwise bubble the original error.
+
+---
+
+### I-4 · INFO · The only runbook in the audit package deploys a **different stack** — and following it produces M-2  `VERIFIED`
+
+**Where** `DEPLOY.md` in full, listed by `AUDIT-SCOPE.md:6` as one of four companion documents.
+
+`DEPLOY.md` is the sole operational document in the package, and it is a complete, competent runbook for the
+**PadFactory** stack. The curve suite that `AUDIT-SCOPE.md:1` puts in scope has no runbook at all. Neither
+`CurvePadFactoryV4`, `RobinV4FeeConfig`, `CurveV4Deployer`, `RobinCurveV4`, nor `RobinAmbushVault` is named
+anywhere in the file, and `scripts/deploy-curve.js` — the curve path's actual deploy script — is never mentioned.
+
+Line by line against the suite under audit:
+
+- **§1** deploys `… → LockVault → PadFactory → (lockVault.setFactory) → StakingFactory`. Pointing
+  `lockVault.setFactory` at `PadFactory` is exactly **M-2**: `LockVault` has one registrar slot, so the curve
+  factory's `registerLaunch` then reverts `NotFactory` at `graduate()` step 5, permanently, for every caller.
+  The runbook does not merely fail to prevent M-2 — as written it *instructs* it.
+- **§2** runs `scripts/launch.js`, wires `hook.setFloorRecipient` and a `DualStaking` pool. On the curve path
+  the launcher is `deploy-curve.js`, and the required wiring is a different and longer list —
+  `curve.setStaking`, `curve.setCreator`, `LockVault.setStakingRecipient`, plus the hand-deployed floor and
+  ambush vaults. That omission is the wiring cluster in **M-7**, **M-11**, **L-7** and **L-17**.
+- **§2** also writes `hook@0x…C4` — a fourth occurrence of **L-15**'s wrong flag word.
+- **Money model** is the PadFactory's flat 1% tax with LP fees split platform/staking. The curve's model is the
+  directional buy/sell tax plus the graduation waterfall, and the table matches neither.
+- **"The only mutable knob system-wide is `FeeWalletRegistry.platformFeeWallet`"** (`:60`, repeated at `:24`) is
+  false for both stacks — see **L-6** and **M-10**.
+
+Filed as INFO because the impact is already counted under the findings it produces rather than being additional
+loss on top of them. It is recorded separately because those findings share one root cause, and it is not in the
+contracts: the curve suite was never given a runbook, so its operator guidance is being read off another
+system's. Any fix to M-2, M-7 or M-11 that does not also produce a curve-specific runbook leaves the next
+operator following this document again.
+
+**Fix direction.** Write `DEPLOY-CURVE.md` for the stack in scope, generated from `scripts/deploy-curve.js` so
+the two cannot drift, with an explicit post-graduation wiring checklist that asserts every one-shot
+(`lockVault.setFactory` → `CurvePadFactoryV4`, `hook.setFloorRecipient`, `curve.setStaking`, `curve.setCreator`,
+`LockVault.setStakingRecipient`, both vaults' constructor arguments). Retitle `DEPLOY.md` to say which stack it
+covers, and remove it from `AUDIT-SCOPE.md:6`'s reading list or mark it out of scope.
 
 ---
 
@@ -1750,6 +1963,15 @@ every caller, permanently.
 `setAntiJitDelay(7 days)` → her existing position reverts `Locked`. Separately: stake, `fundETH(10)` at 0% fee,
 advance 7 days, read `earned`, then `setPlatformClaimFee(1000)` and claim — the payout is 10% short.
 
+**L-16** — build the curve `deployStack` from `test/sim/curve.e2e.sim.test.js` with
+`curveSupply = reserveSupply = 1000e18` at START 6000 / GRAD 3000 / ts 60. Buy once through `PoolSwapTest`
+with `sqrtPriceLimitX96 = TickMath.getSqrtPriceAtTick(gradTick + 1) - 1` (any oversized `amountSpecified`; the
+limit binds). Read `getSlot0`: `tick == gradTick` while `sqrtPriceX96 > getSqrtPriceAtTick(gradTick)`. Assert
+`curve.ready() == true`, then `curve.graduate()` — it succeeds with the nudge and `CeilingNotRestored` both
+skipped. The leak column is exact v4 integer arithmetic:
+`L = getLiquidityForAmount0(√grad, √maxUsable, lpEth)`, then compare
+`getAmount0Delta(√grad, √maxUsable, L, true)` against `getAmount0Delta(√(grad+1) − 1, √maxUsable, L, true)`.
+
 **L-1** — evaluate `getLiquidityForAmount1(√grad, √start, curveSupply)` then
 `getAmount0Delta(√grad, √start, L, false)` in exact integer arithmetic across `startTickMag`, holding
 `curveWidth = 23000`, `ts = 100`, `curveSupply = 730M`. The raise hits 0 wei at ~700000, inside what
@@ -1779,14 +2001,22 @@ advance 7 days, read `earned`, then `setPlatformClaimFee(1000)` and claim — th
    `NoFloorRecipient`). Fold in **I-2**'s `seedAmbush()` poke while you are there — same pattern, same file.
 6. **M-1**, then **L-1** and **M-10** — real value loss and two permanent bricks, all gated on configuration
    that is easy to get wrong and currently unbounded.
-7. **M-6** before the package goes to the external auditor. Auditing from a stale architecture document is the
-   most expensive mistake on this list, because it wastes the engagement rather than the code.
+7. **M-6 and M-18** before the package goes to the external auditor. Auditing from a stale architecture
+   document is the most expensive mistake on this list, because it wastes the engagement rather than the code
+   — and M-18 is worse than stale: the "locked spec" describes the ambush with every sign reversed, so it
+   points the review away from the risks the shipped vault actually has. Fix both together with **I-4**; the
+   three documents disagree with the code in three different directions, so correcting any one alone still
+   ships a self-contradictory package.
 8. **M-3, M-5 and M-12** are product decisions as much as code ones: decide what `PadFactory` is, which owner
    powers you are willing to defend, and whether a presale's terms may move under its contributors. Then make
    the code and the docs agree.
-9. **M-7, M-9, L-2, L-3, L-6, L-7** — the wiring/runbook cluster. Fix them together, as one scripted
-   post-launch wiring step that asserts every one-shot is set and consistent.
-10. The rest as cleanup, with **L-4**, **L-5** and **L-8**'s doc corrections folded into whichever PR touches
-    those files. Note that L-8 and M-10 each falsify a specific sentence an auditor is told to rely on
-    (`AUDIT-SCOPE.md` §4.5 and `RobinV4FeeConfig`'s no-timelock justification) — those sentences should be
-    corrected even if the underlying code is left as is.
+9. **M-7, M-9, L-2, L-3, L-6, L-7, L-17** — the wiring/runbook cluster. Fix them together, as one scripted
+    post-launch wiring step that asserts every one-shot is set and consistent, and produce the curve-specific
+    runbook **I-4** calls for in the same pass — I-4 is the common root, and without it the next operator
+    reaches for the PadFactory runbook again.
+10. The rest as cleanup, with **L-4**, **L-5**, **L-8** and **L-15**'s doc corrections folded into whichever PR
+    touches those files, and **L-16**'s three guards brought onto one comparison while someone is already in
+    `RobinCurveV4`. Note that L-8 and M-10 each falsify a specific sentence an auditor is told to rely on
+    (`AUDIT-SCOPE.md` §4.5 and `RobinV4FeeConfig`'s no-timelock justification), and L-16 falsifies two
+    load-bearing comments in the graduation path — those sentences should be corrected even if the underlying
+    code is left as is.
