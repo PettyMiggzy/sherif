@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
-| **MEDIUM** | 20 | 11 |
+| **MEDIUM** | 21 | 12 |
 | **LOW** | 19 | 10 |
 | **INFO** | 17 (13 bundled as I-1, plus I-2 … I-5) | 1 |
-| **total** | **61** | **27** |
+| **total** | **62** | **28** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -1366,6 +1366,65 @@ anti-JIT claim at `:31-33` must be qualified to exclude donations.
 
 ---
 
+### M-21 · MEDIUM · The floor/ambush ETH books have exactly one exit, it is a one-shot, and spending it on a non-receiving contract burns the funds silently  `PROVEN`
+
+**Where** `contracts/pads/RobinCurveV4.sol:457-473` (`setFloor` / `setAmbush`, platform-only, one-shot),
+`:665-680` (`_fundFloor`) and `:682-696` (`_fundAmbush`), against `:381` (step 9) and `:283-291`
+(`sweepToPlatform`).
+
+Both ETH books are excluded from every sweep by design — `:381` computes
+`platformEthOwed = balance − floorEthOwed − creatorEthOwed − ambushEthOwed − bounty`, and `sweepToPlatform`'s
+subtotal (`:285`) subtracts them again — so the *only* way either book leaves the curve is a successful
+`call{value:}` to the address its one-shot setter holds.
+
+**The obvious reading is wrong, and worth stating so nobody re-files it.** Never wiring the sinks does **not**
+burn the money. `_fundFloor`/`_fundAmbush` return early leaving the book intact (`:669`, `:686`), and a *late*
+`setFloor` + `flushFloor` recovers it in full. Measured: graduating fully unwired leaves
+`floorEthOwed = 0.383736708601921926` and `ambushEthOwed = 31.881124873009680078` booked;
+`sweepToPlatform()` moves neither; `flushFloor()`/`flushAmbush()` both revert `ZeroAddress` — and then a late
+`setFloor(realVault)` + `flushFloor()` drives `floorEthOwed` to **0.0**. The retry design works.
+
+**What actually burns the funds is spending the one-shot on a contract that cannot receive ETH.** The setter
+validates only `a != address(0) && a.code.length != 0` (`:470`) — it never checks that the target can accept a
+value transfer, or that it is a vault at all. `_fundAmbush` then re-parks on the failed send (`:692`) and
+returns **without reverting**, and `setAmbush` can never be called again. Measured, continuing the same run:
+
+```
+setAmbush(<a TestERC20 — has code, no payable receive>)
+flushAmbush()                    → succeeds, emits nothing, parks
+ambushEthOwed                    → 31.881124873009680078 ETH, unchanged
+setAmbush(anything else)         → reverts AlreadySet — the setter is permanently spent
+```
+
+Three properties compound into the severity. The failure is **silent**: `flushAmbush()` returns success, so an
+operator running it sees no error and no event, and only a balance check reveals that nothing moved. It is
+**terminal**: one-shot, no re-point, no clear, no timelock, no admin escape, and `sweepToPlatform` is
+specifically written to leave the book alone. And the plausible mis-wires all have code — pointing at the pad
+token, the hook, or another pad's vault passes `code.length != 0`; `PadToken` in particular is a plain OZ
+ERC20 with no `receive()`, so it produces exactly this state.
+
+The comments describe the park as *"retriable"* (`:675`, `:692`) and the design as *"non-bricking"*. Both are
+true of a *transient* failure — a vault that is temporarily reverting — and false of the case the setter's own
+weak validation admits, where retrying the same dead address forever is the only option the contract has.
+
+**Not the wiring cluster, and not M-4.** M-7/M-11/L-3/L-17 are all "a sink was never wired, so value sits
+waiting" — recoverable by wiring it, as measured above. M-4 is the floor *band anchor* being an unverifiable
+deploy parameter. This is the narrower and worse case: the wiring *happened*, it was accepted, and it consumed
+the only chance to get it right.
+
+**Fix direction.** Two independent fixes, either sufficient:
+- **Probe the sink at set time.** In `setFloor`/`setAmbush`, send 1 wei (or `call{value: 0}`) and require it
+  succeeds, so a non-receiving target is rejected before the one-shot is spent. Cheap, and it turns a silent
+  permanent loss into a revert at the moment the operator can still fix it.
+- **Make the re-point possible while the book is non-zero.** Allow `setFloor`/`setAmbush` to be re-pointed by
+  the platform for as long as the corresponding `*EthOwed > 0` and the current sink has never successfully
+  received — which preserves the "immutable once it works" property the one-shot is protecting.
+
+Independently, `flushFloor`/`flushAmbush` should **revert** (or at minimum emit) when the send fails, rather
+than returning success. Silent failure is what makes this survivable long enough to become permanent.
+
+---
+
 ### L-1 · LOW · `RobinV4FeeConfig` accepts curve geometries whose raise floors to zero  `PROVEN (numerically)`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-103` (`_validate`), with
@@ -2611,6 +2670,14 @@ inside a default Hardhat account's 10,000 ETH. Launch (succeeds, silently), buy 
 `PoolSwapTest`, assert `curve.ready() == true`, then assert `curve.graduate()` reverts `NotFactory` — for
 every caller, permanently.
 
+**M-21** — reuse `test/unit/RobinCurveV4.graduation.test.js`'s harness verbatim but **wire nothing** — no
+`setStaking`, `setFloor` or `setAmbush`. Buy the curve out, `graduate()`, and read the books: `floorEthOwed`
+and `ambushEthOwed` are both non-zero, `sweepToPlatform()` moves neither, and `flushFloor()`/`flushAmbush()`
+revert `ZeroAddress`. Now show the recovery works — `setFloor(realVault)` then `flushFloor()` drives
+`floorEthOwed` to 0. Then show the terminal case: `setAmbush(<any contract with code and no payable receive —
+a `TestERC20` will do>)`, call `flushAmbush()` (it **succeeds** and moves nothing), assert `ambushEthOwed` is
+unchanged, and assert `setAmbush(anythingElse)` reverts `AlreadySet`.
+
 **M-12** — build the presale `deployStack` at production geometry (`startTickMag` 201600, `curveWidth` 23000,
 `ts` 100, 1B supply at 730M + 270M). Open a presale, deposit 2 ETH, and then — **between `createPresale` and
 `finalize`** — call `feeConfig.setDefaults(...)` as the owner with a different `startTickMag`. Finalize and
@@ -2703,46 +2770,51 @@ against `floorLiquidity()`.
    stranding in I-1(5) at the same time.
 3. **H-1** — no minimum trade size, cheaper than paying the tax, and a router can hand it to every user. It
    defunds the creator's entire income and the floor. The buy side already shows the fix.
-4. **M-20** — one word (`false` → `true` at `DualStaking.sol:404`) plus a `msg.value >= duration` check. It
+4. **M-21** — add a value-transfer probe to `setFloor`/`setAmbush` before the one-shot is spent, and make
+   `flushFloor`/`flushAmbush` revert on a failed send instead of returning success. Both are a few lines, and
+   together they convert a silent permanent loss of the ambush share into a revert at the one moment the
+   operator can still act. Fold into the same PR as M-2 and M-4 — all three are one-shots that accept a value
+   nothing validates.
+5. **M-20** — one word (`false` → `true` at `DualStaking.sol:404`) plus a `msg.value >= duration` check. It
    is the cheapest fix on this list relative to what it closes: a measured 99.00% capture of a creator's
    donation by a 121-second staker, on the channel creators are explicitly told to use. Do it in the same PR
    as C-1 — they are the same `extend`/window mechanism in two contracts, and C-1's "reject sub-rate tranches"
    is the same guard M-20 needs.
-5. **M-15** — the floor only deepens while the price is above it, so the pad's headline protection does not
+6. **M-15** — the floor only deepens while the price is above it, so the pad's headline protection does not
    operate in the state it exists for. It falsifies an `AUDIT-SCOPE.md` §4.4 invariant rather than mis-tuning
    one, so it needs a design answer, not a parameter change.
-6. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
+7. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
    (an assertion at launch; an on-chain anchor read).
-7. **H-2 and H-3** — before any stock pad exists. It is a rug primitive, and M-8 means it is currently untestable
+8. **H-2 and H-3** — before any stock pad exists. It is a rug primitive, and M-8 means it is currently untestable
    locally, so fix the mock in the same pass.
-8. **M-11** — holder fees routed to the platform by the ordinary post-graduation flow, with no attacker
+9. **M-11** — holder fees routed to the platform by the ordinary post-graduation flow, with no attacker
    required. One line, and the right shape already exists in the same file (`claimFloor`'s
    `NoFloorRecipient`). Fold in **I-2**'s `seedAmbush()` poke while you are there — same pattern, same file.
-9. **M-1**, then **L-1** and **M-10** — real value loss and two permanent bricks, all gated on configuration
+10. **M-1**, then **L-1** and **M-10** — real value loss and two permanent bricks, all gated on configuration
    that is easy to get wrong and currently unbounded.
-10. **M-6 and M-18** before the package goes to the external auditor. Auditing from a stale architecture
+11. **M-6 and M-18** before the package goes to the external auditor. Auditing from a stale architecture
    document is the most expensive mistake on this list, because it wastes the engagement rather than the code
    — and M-18 is worse than stale: the "locked spec" describes the ambush with every sign reversed, so it
    points the review away from the risks the shipped vault actually has. Fix both together with **I-4**; the
    three documents disagree with the code in three different directions, so correcting any one alone still
    ships a self-contradictory package.
-11. **M-3, M-5 and M-12** are product decisions as much as code ones: decide what `PadFactory` is, which owner
+12. **M-3, M-5 and M-12** are product decisions as much as code ones: decide what `PadFactory` is, which owner
    powers you are willing to defend, and whether a presale's terms may move under its contributors. Then make
    the code and the docs agree.
-12. **M-19** alongside every fix above, not after them — it names the specific regression test each finding
+13. **M-19** alongside every fix above, not after them — it names the specific regression test each finding
     needs, and each one is a few lines against a harness that already exists.
-13. **M-7, M-9, L-2, L-3, L-6, L-7, L-17** — the wiring/runbook cluster. Fix them together, as one scripted
+14. **M-7, M-9, L-2, L-3, L-6, L-7, L-17** — the wiring/runbook cluster. Fix them together, as one scripted
     post-launch wiring step that asserts every one-shot is set and consistent, and produce the curve-specific
     runbook **I-4** calls for in the same pass — I-4 is the common root, and without it the next operator
     reaches for the PadFactory runbook again.
-14. The rest as cleanup, with **L-4**, **L-5**, **L-8** and **L-15**'s doc corrections folded into whichever PR
+15. The rest as cleanup, with **L-4**, **L-5**, **L-8** and **L-15**'s doc corrections folded into whichever PR
     touches those files, **L-16**'s three guards brought onto one comparison while someone is already in
     `RobinCurveV4`, and **L-18**'s netted fee delta split in both vaults at once — it is the same three lines
     in each. Note that L-8 and M-10 each falsify a specific sentence an auditor is told to rely on
     (`AUDIT-SCOPE.md` §4.5 and `RobinV4FeeConfig`'s no-timelock justification), and L-16 falsifies two
     load-bearing comments in the graduation path — those sentences should be corrected even if the underlying
     code is left as is.
-15. **L-19** last, but not never, and two of its four parts are worth pulling forward. Part (a) —
+16. **L-19** last, but not never, and two of its four parts are worth pulling forward. Part (a) —
     `Graduated.toStaking` asserting a transfer that did not happen — fires on the **default** deployment
     ordering, so fix it in the same PR as M-11 and M-7, which are about that same unwired state. Part (c) —
     `RobinLockStaking.stake`'s silent reservoir flush — is C-1's arming step, so anyone building detection for
