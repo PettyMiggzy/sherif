@@ -29,9 +29,9 @@ re-derive it.
 | **CRITICAL** | 1 | 1 |
 | **HIGH** | 2 | 2 |
 | **MEDIUM** | 13 | 5 |
-| **LOW** | 8 | 2 |
+| **LOW** | 9 | 3 |
 | **INFO** | 8 (bundled as I-1) | — |
-| **total** | **32** | **10** |
+| **total** | **33** | **11** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -663,36 +663,29 @@ graduation may be never. 5% of the raise sits inert in a contract nobody can emp
 can trade (it is already try/catch-shaped elsewhere in the waterfall, so a failure need not brick graduation).
 The band is single-sided ETH at `spot == gradTick`, which is exactly the state graduation guarantees.
 
-### M-13 · MEDIUM · A FeeConfig retune silently reprices — or kills — an already-funded presale
+### M-13 · MEDIUM · A presale's launch geometry is not committed, so a retune reprices ETH already collected
 
 **Where** `contracts/presale/PresaleVault.sol:196` (`finalize` re-reads
-`RobinV4FeeConfig(...).defaults()` at finalize time), against `contracts/core/RobinV4FeeConfig.sol:76`
+`RobinV4FeeConfig(curvePadFactory.feeConfig()).defaults()`), against `contracts/core/RobinV4FeeConfig.sol:76`
 (`setDefaults`, `onlyOwner`, no timelock).
 
 A presale commits its `LaunchConfig` — supply, curve/reserve split, tick spacing — at `createPresale`, and
-contributors deposit against the price that config implies. But the **geometry** (`startTickMag`,
-`curveWidth`, `lpFee`) is not committed: `CurvePadFactoryV4.launch` reads it from the live FeeConfig at
-finalize, and `PresaleVault` re-reads the same values to rebuild the `PoolKey`.
+contributors deposit against the price that config implies. The **geometry** that actually sets the launch
+price (`startTickMag`, `curveWidth`, `lpFee`) is *not* committed: `CurvePadFactoryV4.launch` reads it from the
+live FeeConfig at finalize, and `PresaleVault` re-reads the same values to rebuild the `PoolKey`.
 
-Two consequences, both reachable by an ordinary retune between `createPresale` and `finalize`:
-
-1. **Silent repricing.** Contributors funded a presale advertising one launch price and get filled at another.
-   Nothing in the vault pins or checks the geometry it was sold on; `finalize` has no "expected start tick"
-   parameter and no revert path for "the terms changed".
-2. **Forced failure.** If the retune makes the geometry invalid for the committed `cfg` — e.g.
-   `d.startTickMag % ts != 0` → `BadGeometry` (`CurvePadFactoryV4.sol:120`), or the launch-time reserve check
-   `reserveSupply·ss·100 >= curveSupply·sg·105` (`:140`) no longer holds at the new ticks — `launch` reverts,
-   `finalize`'s try/catch treats it as a snipe and marks `Failed(3)`. Contributors are fully refunded, so no
-   funds are lost, but the presale is dead and the creator's launch window is gone, at the owner's discretion.
+So contributors can fund a presale advertising one launch price and be filled at another. `finalize` takes no
+"expected geometry" argument, has no mismatch revert, and the `saltCommitment` covers only the three CREATE2
+salts — nothing pins the terms the raise was sold on. The vault's own `previewClaim` cannot warn them either,
+because before finalize there is no pool to price against.
 
 `RobinV4FeeConfig`'s header defends the absence of a timelock on the grounds that changes are *"forward-only
-and can never touch an existing coin."* True of launched pads; an open presale is neither an existing coin nor
-insulated.
+and can never touch an existing coin."* True of launched pads. An open presale holding contributor ETH is
+neither an existing coin nor insulated.
 
 **Fix direction.** Snapshot the geometry into the vault at `initialize` and pass it to `finalize` as an
-expected value, reverting on mismatch — or commit it in the `saltCommitment` so a change is detectable. At
-minimum, expose the live geometry in `previewClaim`-style views so a contributor can see what they are
-actually buying before depositing.
+expected value, reverting on mismatch — or fold it into the `saltCommitment` so any change is detectable.
+Contributors should be able to see, before depositing, the exact ticks their ETH will buy at.
 
 ---
 
@@ -880,6 +873,37 @@ the already-accepted `CeilingNotRestored` variant achieves for ~0.06 ETH. Strict
 to move price, not to raise capital), or re-snapshot `donatedBefore` after the nudge. Independently, give the
 revert a distinct error so the recovery path is obvious, and correct §4.5 to say "a donation or swap-sourced
 ETH".
+
+---
+
+### L-9 · LOW · A FeeConfig retune can permanently Fail an already-funded presale, and repairing the config does not undo it  `PROVEN`
+
+**Where** `contracts/core/RobinV4FeeConfig.sol:102-105` (`_validate` bounds only signs and ordering),
+`contracts/core/CurvePadFactoryV4.sol:120` / `:131` / `:140` (the launch-time geometry and reserve checks),
+`contracts/presale/PresaleVault.sol:180-192` (`finalize`'s blanket `catch`).
+
+If an owner retune leaves the *committed* `LaunchConfig` unlaunchable under the *new* geometry — a
+`startTickMag`/`curveWidth` that no longer divides the presale's `cfg.tickSpacing`, or an aligned-but-narrower
+`curveWidth` that trips the `reserveSupply·ss·100 >= curveSupply·sg·105` check — then
+`CurvePadFactoryV4.launch` reverts. `PresaleVault.finalize` wraps that call in a catch-all written for a
+different scenario (a sniped launch), so it treats the revert as a front-run and marks the presale
+`Failed(3)`.
+
+**PROVEN:** `setDefaults({...D0, startTickMag: 6030})` is accepted by `_validate`; `launch` then reverts
+`BadGeometry` at `CurvePadFactoryV4.sol:120` for a presale committed with `tickSpacing = 60`; `finalize`
+swallows it, sets `finalized = false` / `failed = true`, emits `Failed(3)`, and `state()` becomes 2.
+**The transition is irreversible:** a retry reverts `NotOpen` even after the owner repairs the config in the
+very next block. There is no un-fail path.
+
+**Bounded, and funds are safe.** Contributors recover 100% via `refund()` / `refundTo()`, so this is an
+availability failure, not a loss. The blast radius is narrower than it first appears: `cfg.tickSpacing` is
+caller-chosen, so any spacing that still divides both new values launches fine — a retune is not a
+launchpad-wide halt. Only presales whose committed spacing no longer divides the geometry are killed.
+
+**Fix direction.** Two independent improvements. (1) Do not let a catch-all written for snipes absorb every
+possible revert — distinguish "launch reverted because the committed config is now invalid" from "launch
+reverted because someone beat us to it", and for the former leave the presale open so it can finalize after a
+repair. (2) The geometry snapshot in M-13 prevents the state from arising at all.
 
 ---
 
