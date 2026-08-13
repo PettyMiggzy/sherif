@@ -30,8 +30,8 @@ re-derive it.
 | **HIGH** | 3 | 3 |
 | **MEDIUM** | 19 | 10 |
 | **LOW** | 18 | 9 |
-| **INFO** | 15 (11 bundled as I-1, plus I-2 … I-5) | 1 |
-| **total** | **57** | **25** |
+| **INFO** | 16 (12 bundled as I-1, plus I-2 … I-5) | 1 |
+| **total** | **58** | **25** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -412,18 +412,33 @@ already locked in `LockVault` and no path to change the adapter, unwind the posi
 Reaching it needs only a contract that has code and a working `stock()` — which is all
 `StockPadFactory.launch:123` checks (see H-2).
 
-**The suite gets this right almost everywhere else, which is worth stating.** Enumerating every `try` in
-`contracts/` (excluding tests), only sites with a `returns (...)` clause decode, and of those only two have an
-untrusted callee: this one and `DualStaking.boostOf` (M-17). The `poolManager.initialize` sites and
-`PresaleVault`'s `launch` call trust canonical contracts; and every defensive `try` on a hot path —
-`poolManager.mint`/`take`, `claimBuffer`, `fundTokenPushed` (both call sites), `addFloor`, `onWeightChange` —
-omits the `returns` clause and so never decodes. Those are genuinely safe. The gap is precisely the two sites
-that read a value back from an address someone else chose.
+**Swept exhaustively, because one instance of this is never one instance.** Every `try` in `contracts/`
+(excluding tests) was enumerated and classified. Only sites carrying a `returns (...)` clause decode at all:
+every defensive `try` on a hot path — `poolManager.mint` / `take`, `claimBuffer`, `fundTokenPushed` (both call
+sites), `addFloor`, `onWeightChange` — omits the clause and therefore never decodes, so those are genuinely
+safe. Of the sites that do decode:
+
+- **Two put user funds at risk**, and both read a value back from an address someone else chose: this one
+  (`RobinFeeHook:256`, `guardAdapter` from `registerPool`) and `DualStaking:188` (`boostOracle`, **M-17**).
+- **Six more sit inside `StockQuoteAdapter` itself** (`:87`, `:89`, `:103`, `:112`, `:123`, `:128`, `:133`),
+  every one reading the caller-chosen `stock` or its `registry`. These are reachable — H-2's premise is a
+  hostile `stock` that satisfies the constructor's `ACCESS_CONTROLLED_REGISTRY()` check — and each one
+  falsifies a "Never reverts" / "NEVER-reverting" NatSpec claim. **Their blast radius is advisory, not
+  financial**, and that was checked rather than assumed: `tradeable()`, `displayScalar()` and
+  `marketDataStale()` have **no on-chain callers anywhere in the suite** — they exist for the router and UI, as
+  documented. The one that *is* read on chain, `scheduledEffectiveAt()`, would **revert** rather than
+  short-return, and `RobinFeeHook:255-261` catches a revert. So a hostile *stock* breaks integrators; only a
+  hostile *adapter* — this finding — bricks the pad.
+- **Four trust canonical contracts**: the three `poolManager.initialize` sites and `PresaleVault:178`'s
+  `launch`. Worth one line even so: a codeless `poolManager` would make `initialize`'s empty-body
+  `returns (int24) {}` decode-revert *outside* its own catch, which is the same mechanism wearing a
+  configuration hat rather than an adversarial one (see **I-3**).
 
 **Fix direction.** Use a low-level `staticcall` and check `returndata.length == 32` before decoding, e.g.
 `(bool ok, bytes memory d) = adapter.staticcall(...); if (!ok || d.length != 32) return 0;`. Apply the same at
-`DualStaking.boostOf`. Independently, `guardAdapter` should be repointable by the platform, since today a
-single bad address at launch is unrecoverable.
+`DualStaking.boostOf` and — since it is the identical three lines and makes the "never reverts" NatSpec true —
+at all six `StockQuoteAdapter` sites. Independently, `guardAdapter` should be repointable by the platform,
+since today a single bad address at launch is unrecoverable.
 
 ---
 
@@ -494,9 +509,31 @@ is reachable *solely* from `graduate()` — and the reserve tokens sit on the cu
 shipped happy path is correct today. This is a one-wrong-address failure with an unbounded blast radius and no
 on-chain guard.
 
+**This is the weakest link in a set of nine, and the sweep is worth having.** Every one-shot setter in the
+suite, with what each actually checks:
+
+| setter | one-shot | non-zero | callee has code | **target identity** |
+|---|---|---|---|---|
+| `RobinCurveV4.setStaking` `:447` | ✓ | ✓ | **✓ `code.length`** | ✗ |
+| `RobinCurveV4.setFloor` `:457` | ✓ | ✓ | **✓ `code.length`** | ✗ |
+| `RobinCurveV4.setAmbush` `:467` | ✓ | ✓ | **✓ `code.length`** | ✗ |
+| `RobinFeeHook.setFloorRecipient` `:387` | ✓ | ✓ | ✗ | ✗ |
+| `RobinFeeHook.setBufferRecipient` `:400` | ✓ | ✓ | ✗ | ✗ |
+| `RobinFeeHook.registerPool` `:137` | ✓ | creator only | ✗ | ✗ — `guardAdapter` unchecked (**H-3**) |
+| `LockVault.registerLaunch` `:85` | ✓ | — | — | — |
+| `LockVault.setStakingRecipient` `:98` | ✓ | ✓ | ✗ | ✗ (**M-11**, **L-17**) |
+| **`LockVault.setFactory` `:73`** | ✓ | ✓ | **✗** | **✗** |
+
+`RobinCurveV4` learned the `code.length` lesson (its comment cites `[LOW-3]`); `LockVault` and `RobinFeeHook`
+never did. And `setFactory` is the one slot where the target's *identity*, not merely its shape, is what
+matters — a code check would not have caught M-2, because a `PadFactory` has code. No setter anywhere in the
+suite validates identity, which is why the same root shows up three more times as M-11, L-17 and H-3.
+
 **Fix direction.** Any one closes it; the first is two lines:
 - `if (lockVault.factory() != address(this)) revert NotRegistrar();` at the top of `CurvePadFactoryV4.launch`
-  (and the other two).
+  (and the other two). Equivalently, and better because it fixes the wiring at the moment it is created:
+  make `setFactory` assert the round-trip — `if (ICurvePadFactoryV4(factory_).lockVault() != address(this))
+  revert NotRegistrar();` — so a factory that does not point back at this vault can never be installed.
 - Make `LockVault` multi-registrar: `mapping(address => bool) isFactory`, managed by `initializer`.
 - Wrap `onGraduated` in try/catch **plus** a permissionless deferred-registration path — the try/catch alone
   is not enough, or the locked LP's fee stream is stranded instead of the raise.
@@ -1858,15 +1895,20 @@ use it, and correct `RobinAmbushVault`'s header either way.
    `curveSupply`, `reserveSupply`, `tickSpacing`, `name` or `symbol` — the values that decide how many tokens
    their wei buys. Combined with M-12 (the geometry is not committed either), a contributor can verify almost
    nothing on chain about what they are funding.
-9. **`RobinFloorVault.parkedQuote`** is assigned (`=`, not `+=`) and is purely cosmetic — `addFloor` always
+9. **`StockQuoteAdapter`'s constructor comment is wrong about its own failure mode.** `:59` says the
+   `ACCESS_CONTROLLED_REGISTRY()` probe *"reverts (or returns 0) for a non-stock"*. There is no returns-0 path:
+   against a contract with a permissive fallback the call succeeds with empty returndata and the **decode**
+   reverts. It fails closed either way, so this is a comment fix, not a defect — but it is the same
+   misunderstanding of return-data decoding that produced H-3 and M-17, written down three files away.
+10. **`RobinFloorVault.parkedQuote`** is assigned (`=`, not `+=`) and is purely cosmetic — `addFloor` always
    re-reads the live balance. Harmless, but it reads like accounting and is not.
-10. **`RobinLpVault.deposit` refunds the vault's *entire* non-reserve balance to the depositor**
+11. **`RobinLpVault.deposit` refunds the vault's *entire* non-reserve balance to the depositor**
     (`:151` `address(this).balance - feeReserve0`, `:153` `balanceOf(this) - feeReserve1`). `receive()` is open
     (`:316`), the vault has no owner and no rescue path, and nothing in the suite routes value to it, so any ETH
     or token that reaches it outside a deposit is swept by whoever deposits next. The fee reserve and the
     `feeCarry` remainder are correctly excluded, so this can only ever capture a mis-send — but a mis-send here
     has no recovery other than being someone else's refund.
-11. **`FeeWalletRegistry` proposals never expire.** `pendingEta` is only cleared by a commit or an explicit
+12. **`FeeWalletRegistry` proposals never expire.** `pendingEta` is only cleared by a commit or an explicit
     `cancelProposal`, so a proposal made and abandoned stays committable forever. Given M-14 — this address is
     effectively the protocol's root admin — a stale proposal is a live capability sitting in storage.
 
@@ -2065,6 +2107,13 @@ verification.
   `PriceLimitAlreadyExceeded`, and fails closed with `CeilingNotRestored` rather than bleeding the reserve.
   The nudge itself is right; **L-16** is that the two gates *upstream* of it compare the tick instead, so it
   can be skipped in a state it should have handled.
+- **C-2 has no siblings inside this codebase.** Every loop in `contracts/` was enumerated: four, all hard
+  bounded — three in `DualStaking` (`:203`, `:227`, `:316`) iterate `_rewardTokens[side]`, capped at
+  `MAX_REWARD_TOKENS = 8` and enforced in `_listReward:447`, and one in `StockQuoteAdapter:131` walks a
+  caller-supplied `parties` array in a view with no on-chain callers. C-2's gas blow-up is not a loop in this
+  repository at all — it is v4's own tick-bitmap traversal inside the `PoolManager`, driven by how many ticks
+  an attacker has initialised. No amount of reading this codebase's loops would have found it, which is why it
+  is worth writing down that they were read.
 - **`BaseHook`'s flag word and both of its guards.** `REQUIRED_FLAGS = 0x00CC` decodes correctly against
   v4-core's `Hooks` constants (`BEFORE_SWAP 0x80 | AFTER_SWAP 0x40 | BEFORE_SWAP_RETURNS_DELTA 0x08 |
   AFTER_SWAP_RETURNS_DELTA 0x04`), the constructor self-assert and the factory's check read that same constant,
