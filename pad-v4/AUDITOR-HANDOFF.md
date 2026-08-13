@@ -335,6 +335,26 @@ That turns an expert-only evasion into a protocol-wide defunding of the creator'
 no sophistication required from the traders themselves. The expected loss is the whole sell-tax revenue line,
 curve phase and post-graduation alike — not a fraction of it.
 
+**A second, narrower exempt route exists, and it is worth writing down only to bound it.**
+`RobinFeeHook:284` exempts the pad's own curve controller from the sell tax
+(`sender == c.bufferRecipient`, wired by `CurvePadFactoryV4:227`), so that graduation's nudge and
+`restoreCeiling`'s anti-grief swap are not taxed — deliberate, and correct on its face. But `restoreCeiling`
+(`RobinCurveV4:428`) is **permissionless** and swaps the *caller's* tokens, refunding them the ETH. That is a
+public token→ETH route whose swap the hook does not tax.
+
+It is not a second finding, because three guards confine it and the last one is decisive:
+`:430` reverts `AlreadyGraduated` (pre-graduation only), `:433` reverts `NotReady` unless spot is strictly
+**below** `gradTick`, and the swap's `sqrtPriceLimitX96` is `gradTick` itself, so it stops at the ceiling. In
+the honest case the zone below `gradTick` holds no liquidity at all, so a seller routing through it receives
+~0 ETH — there is nothing to sell into. It carries real volume only when a third party has *planted* liquidity
+down there, which is the exact situation `restoreCeiling` exists to unwind, and the ETH extracted is the
+planter's. Planting your own liquidity to sell into it tax-free is trading against yourself.
+
+So the exemption's blast radius is bounded, and everything it could achieve is already available, unbounded and
+cheaper, through the flash-take above. Recorded so a later pass does not re-file it as its own MEDIUM — but
+note that if H-1's `catch` is fixed, this route stays open, and a `sender` exemption keyed to an address that
+also exposes a permissionless swap entry point is a shape worth not repeating.
+
 **Severity note.** This is fee evasion, not theft: the singleton is left solvent (its ETH balance is identical
 after honest and attack runs, and the unlock closes clean), nothing is drained from the pool, from user
 principal, or from other pads. That is why it is HIGH rather than CRITICAL. Three independent reproductions
