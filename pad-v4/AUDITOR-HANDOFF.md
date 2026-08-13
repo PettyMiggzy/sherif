@@ -28,8 +28,8 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
 | **HIGH** | 3 | 2 |
-| **MEDIUM** | 18 | 7 |
-| **LOW** | 9 | 3 |
+| **MEDIUM** | 17 | 7 |
+| **LOW** | 10 | 3 |
 | **INFO** | 11 (9 bundled as I-1, plus I-2 and I-3) | 1 |
 | **total** | **42** | **15** |
 
@@ -891,36 +891,7 @@ consistent with the rest of the suite.
 
 ---
 
-### M-14 · MEDIUM · `DeterministicDeployer` silently confiscates `msg.value` on the adopt path  `VERIFIED`
-
-**Where** `contracts/core/DeterministicDeployer.sol:31-33`.
-
-```solidity
-function deploy(bytes32 salt, bytes calldata initCode) external payable returns (address addr) {
-    address predicted = addressOf(salt, keccak256(initCode));
-    if (predicted.code.length != 0) return predicted;   // msg.value is kept, not refunded
-```
-
-The function is `payable` and the adopt path returns without refunding. The contract has **no `withdraw`, no
-`receive`, no owner and no sweep**, so anything sent on that path is permanently destroyed. The NatSpec is
-aware of the gap and stops short of closing it: *"(No value is forwarded on adoption; our callers deploy
-value-free.)"*
-
-That parenthetical is true of Robin's own callers, which is why no protocol funds are at risk. But the same
-NatSpec designates this contract as ecosystem infrastructure — *"its address is then pinned as a constant
-everywhere hook-address mining happens"* — and `deploy` is permissionless, so third-party integrators are an
-expected user. An integrator deploying a payable contract that funds itself in its constructor
-(`deployer.deploy{value: 1 ether}(salt, initCode)`) can be front-run by anyone who calls `deploy` with the
-same `initCode` first: the victim's call then takes the adopt branch and the 1 ether is gone, with the
-attacker spending only gas.
-
-**Fix direction.** Refund on the adopt path (`if (msg.value > 0) msg.sender.call{value: msg.value}("")`), or
-simply make `deploy` non-payable and add a separate `deployWithValue` for callers that need it. Either way the
-NatSpec should state the hazard rather than note the assumption.
-
----
-
-### M-15 · MEDIUM · `platformFeeWallet` is the protocol's root admin key, not merely a payout address
+### M-14 · MEDIUM · `platformFeeWallet` is the protocol's root admin key, not merely a payout address
 
 **Where** `contracts/core/FeeWalletRegistry.sol` (the wallet), used as the **authorization** check in
 `contracts/pads/RobinCurveV4.sol:447` / `:457` / `:467` (`setStaking` / `setFloor` / `setAmbush`),
@@ -936,7 +907,12 @@ goes, and where the locked LP's token-leg fees go.
 
 At launch all five are `address(0)` — the runbook wires them afterwards (`scripts/deploy-curve.js:119-122`) —
 so whoever controls `platformFeeWallet` in that window permanently determines each one, with no undo and no
-timelock on the *use* of the capability. (The 2-day timelock in `FeeWalletRegistry` governs *changing* the
+timelock on the *use* of the capability.
+
+**Sized at production geometry, largest first:** the **staking sink is the big one — 96.98M tokens, about
+1.0718 ETH realizable per pad**, roughly **5.3×** the ambush share (0.2023 ETH, per I-2). The floor carves and
+the locked LP's token leg follow. It is worth stating in that order, because the ambush number is the one that
+looks quotable and it is the smallest of them. (The 2-day timelock in `FeeWalletRegistry` governs *changing* the
 wallet, not what the wallet can do.) Combined with M-4 — `setFloorRecipient` does not even require the target
 to be a contract — a single transaction from that key can permanently point a pad's floor at an EOA.
 
@@ -950,7 +926,7 @@ wiring, and `platformFeeWallet` purely as a destination. If they must stay unifi
 
 ---
 
-### M-16 · MEDIUM · `RobinFloorVault` pins the platform wallet as an immutable, defeating the registry's rotation, and pays it inline under the pool lock  `VERIFIED`
+### M-15 · MEDIUM · `RobinFloorVault` pins the platform wallet as an immutable, defeating the registry's rotation, and pays it inline under the pool lock  `VERIFIED`
 
 **Where** `contracts/pads/RobinFloorVault.sol:45` (`address public immutable feeRecipient`), `:169-170`
 (`_collect` takes straight to it).
@@ -976,7 +952,7 @@ address under the lock.
 
 ---
 
-### M-17 · MEDIUM · `finalize()`'s blanket catch makes *any* failure — including an under-gassed call — a permanent, irreversible kill  `PROVEN`
+### M-16 · MEDIUM · `finalize()`'s blanket catch makes *any* failure — including an under-gassed call — a permanent, irreversible kill  `PROVEN`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-105` (`_validate` bounds only signs and ordering),
 `contracts/core/CurvePadFactoryV4.sol:120` / `:131` / `:140` (the launch-time geometry and reserve checks),
@@ -1023,7 +999,7 @@ retune trigger specifically, but not the class.
 
 ---
 
-### M-18 · MEDIUM · The escape hatch is anchored to `deadline`, not to when the raise closed, locking contributors for up to 37 days  `VERIFIED`
+### M-17 · MEDIUM · The escape hatch is anchored to `deadline`, not to when the raise closed, locking contributors for up to 37 days  `VERIFIED`
 
 **Where** `contracts/presale/PresaleVault.sol:278-291` (`fail`), against `:104-113` (`initialize`'s bounds:
 `MAX_DURATION` 30 days, `GRACE_MAX` 7 days).
@@ -1302,6 +1278,39 @@ instead of colliding: add `cfg.creator` to the token's constructor arguments, or
 
 ---
 
+### L-10 · LOW · `DeterministicDeployer.deploy` is payable but the adopt branch neither forwards nor refunds  `VERIFIED`
+
+**Where** `contracts/core/DeterministicDeployer.sol:22-32`.
+
+```solidity
+function deploy(bytes32 salt, bytes calldata initCode) external payable returns (address addr) {
+    address predicted = addressOf(salt, keccak256(initCode));
+    if (predicted.code.length != 0) return predicted;   // msg.value neither forwarded nor refunded
+```
+
+The contract's **entire external surface is `addressOf` and `deploy`** — verified at runtime: two ABI
+fragments, no `receive`, no `fallback`, no owner, no withdraw, no `selfdestruct`, and a plain 1 wei transfer
+to it reverts. So anything sent on the adopt branch is permanently locked.
+
+**No protocol funds are exposed, and the original MEDIUM framing was wrong.** All seven in-repo call sites are
+value-free — `PadFactory.sol:121,137`, `CurvePadFactoryV4.sol:144,156`, `StockPadFactory.sol:126,139`, and
+`CurveV4Deployer.sol:22` (which is itself non-payable). And a value-bearing *fresh* deploy cannot strand
+anything either: every in-repo init-code has a non-payable constructor, so `create2` with value reverts and
+the whole call reverts with `DeployFailed`. The no-adversary variants originally claimed — racing operators,
+a re-broadcast — cannot strand value for the same reason.
+
+What remains is a hardening gap for third parties. The NatSpec designates this contract as pinned ecosystem
+infrastructure (*"its address is then pinned as a constant everywhere hook-address mining happens"*) and
+`deploy` is permissionless, so an outside integrator deploying a payable, self-funding contract can be
+front-run into the adopt branch by anyone submitting the same `initCode` first — and their value is gone.
+
+**Fix direction.** One line: `if (msg.value != 0) revert();` on the adopt branch — or drop `payable`
+altogether, since every in-repo init-code has a non-payable constructor and value-bearing deploys already
+revert. The NatSpec's *"(No value is forwarded on adoption; our callers deploy value-free.)"* should state the
+hazard rather than record the assumption.
+
+---
+
 ### I-1 · INFO · Recorded so the next pass does not re-derive them
 
 1. **`PresaleVault`'s implementation is never initialised.** `PresaleVaultFactory.createPresale` clones and
@@ -1393,7 +1402,7 @@ currently mis-report anything.
 
 The residual is purely diagnostic, and only bites a future geometry retune that pushes some parameter out of
 v4's accepted range — at which point a creator-misconfigured launch dies with a misleading `PoolAlreadyInit`
-(and, through a presale, an equally misleading `Failed(3)` — see M-17).
+(and, through a presale, an equally misleading `Failed(3)` — see M-16).
 
 **Fix direction.** Distinguish the revert rather than adding a `MAX_TICK_SPACING` check: only blame a
 front-run when `getSlot0` returns a **non-zero** price, and otherwise bubble the original error.
