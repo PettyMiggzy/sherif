@@ -230,9 +230,16 @@ initializing one is nearly free when spot is far below it:
 | trapped | **63.7 ETH of raise** in the v4 position + 100e18 reserve tokens on the curve |
 | **attacker's total cost** | **0.000486 ETH** at the repo's own 30,180,000 wei gas hint, plus 100 wei |
 
-The asymmetry is the whole attack: the attacker pays ~80,585 gas per initialized tick **spread over as many
-transactions as they like**, and imposes ~162,748 gas per tick on **one** victim transaction that must
-complete atomically.
+The asymmetry is the whole attack, and it is worth stating in the units that were actually measured — per
+**planted position**, since how many *ticks* each position initializes depends on whether the bands are
+contiguous (a shared boundary is initialized once) or spaced (two each):
+
+- attacker: `16,116,942 / 100` = **161,169 gas per position**, spread over as many transactions as they like,
+  none of which has a deadline;
+- victim: `(33,767,571 − 1,217,937) / 100` = **325,496 gas per position**, all of it inside **one** transaction
+  that must complete atomically.
+
+Roughly 2× leverage, against a hard 30M ceiling, with the attacker under no time or gas pressure at all.
 
 **This is not the grief the suite already handles.** `test/unit/RobinCurveV4.grief.test.js` covers planting
 *deep* liquidity so the nudge's 1%-of-reserve token budget runs out — that path fails closed with
