@@ -252,11 +252,19 @@ waiver.
 
 ---
 
-### H-2 · HIGH · A `StockPadFactory` launcher ships a pad it can freeze at will, and the securities gate is self-certified  `PROVEN`
+### H-2 · HIGH (gating the stock pad; no live surface today) · A `StockPadFactory` launcher ships a pad it can freeze at will, and the securities gate is self-certified  `PROVEN`
 
 **Where** `contracts/core/StockPadFactory.sol:69` (`adapter`, caller-supplied), `:68` (`guardWindow`,
 caller-supplied, unbounded `uint32`), `:172`/`:176` (both stamped immutably into the hook), enforced at
 `contracts/hooks/RobinFeeHook.sol:190-197`.
+
+**Scope first, because it decides how to read this.** Nothing deployed today is exposed. The curb only runs
+when `quoteIsStock` is true, and only `StockPadFactory` ever sets it — `CurvePadFactoryV4.sol:188/194/195` and
+`PadFactory.sol:172/178/179` hardcode `guardAdapter: address(0)`, `guardWindow: 0`, `quoteIsStock: false`, so
+the ETH curve pad and the plain ETH pad are **structurally immune**. `StockPadFactory` is deferred as
+informational by `AUDIT-SCOPE.md` §2, appears nowhere in `DEPLOY.md`, and per M-8 cannot even be executed
+locally. So this is not a live incident — it is a **blocker on shipping the stock pad**, and it is filed HIGH
+because that is its severity the day the stock pad launches, not because anything is at risk now.
 
 **What is wrong.** The corporate-action curb sits at the very top of `beforeSwap` — above the direction check
 and above the `sender == address(this)` exemption:
@@ -292,6 +300,13 @@ Be precise about the duration, because it differs by adapter:
 The freeze semantics are already established by the repo's own test,
 `test/unit/RobinFeeHook.adversarial.test.js:163-186`, using `MockGuardAdapter` — a 22-line contract that is
 exactly what an attacker would deploy.
+
+**The hook's own safety claim is false here.** `RobinFeeHook.sol:177-178` states *"the adapter read is
+try/caught so a broken adapter can't freeze trading."* `_scheduledEffectiveAt` (`:255-261`) does try/catch —
+but only a **reverting** adapter, which it reads as "no scheduled action". An adapter that simply *lies*,
+returning a plausible non-zero `effectiveAt` forever, passes the try/catch cleanly and freezes trading
+exactly as intended. The guard defends against a broken adapter, not a dishonest one, and the NatSpec claims
+the latter.
 
 **The gate this is supposed to rest on does not hold.** `StockPadFactory.sol:32-35` states: *"SECURITIES /
 LEGAL GATE: the StockQuoteAdapter's ctor already requires the stock's registry to match the platform's known
