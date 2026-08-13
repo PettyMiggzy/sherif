@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
 | **HIGH** | 2 | 2 |
-| **MEDIUM** | 15 | 8 |
-| **LOW** | 13 | 6 |
+| **MEDIUM** | 16 | 9 |
+| **LOW** | 14 | 7 |
 | **INFO** | 11 (9 bundled as I-1, plus I-2 and I-3) | 1 |
-| **total** | **42** | **18** |
+| **total** | **44** | **20** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -805,7 +805,9 @@ But the pad's curve **is** registered as a rewarder in practice — `scripts/tes
 `RobinCurveV4.flushStaking()` is **permissionless**, forwarding straight into that gated call.
 
 The curve is therefore a confused deputy: anyone can call `flushStaking()` and have the rewarder gate treat it
-as an authorised funding. And `_applyReward` on the `extend = true` path resets the window —
+as an authorised funding. **And it is not the only relay** — `RobinAmbushVault.flushFees()` (`:151`) is
+likewise permissionless and reaches `fundTokenPushed` through `_forwardStaking()` (`:176`), so a pad that
+wires its ambush vault as a rewarder exposes a second identical path. And `_applyReward` on the `extend = true` path resets the window —
 `r.periodFinish = uint64(block.timestamp + dur)` — so each poke pushes the finish line out by a full duration
 and re-divides the remaining reservoir over it. Note the asymmetry with the sibling path: the identical call
 in `_fundStaking` (`:654-663`) **is** try/caught and gated behind a balance check; `flushStaking`'s only gates
@@ -936,6 +938,38 @@ the launch price, funded while the token trades above it"; (c) at minimum surfac
 `parkedQuote` is assigned rather than accumulated, so it does not even report the parked total correctly.
 
 ---
+
+---
+
+### M-16 · MEDIUM · `donateETH` promises donations reach holders untouched by the platform cut; `claim` takes it anyway  `PROVEN`
+
+**Where** `contracts/pads/DualStaking.sol:396-401` (the `donateETH` NatSpec) against `:337-352` (`claim`).
+
+The docstring is explicit, and it is aimed at creators:
+
+> *"Permissionless ETH top-up of a side's reward stream — anyone (typically the CREATOR) can deposit ETH
+> straight to holders WITHOUT being a rewarder and **WITHOUT touching the platform cut**."*
+
+That is true of the deposit path — `donateETH` charges nothing and needs no rewarder role. It is false of the
+money. `claim` applies `platformClaimFeeBps` to the **entire** accrued balance with no provenance tracking:
+
+```solidity
+uint256 amount = rewardsAccrued[side][asset][msg.sender];
+uint256 fee = (amount * platformClaimFeeBps) / BPS;
+```
+
+Donated ETH is indistinguishable from rewarder-funded ETH by the time it is claimed, so the platform takes its
+cut of it — up to `MAX_CLAIM_FEE_BPS` = 10%. A creator who donates 50 ETH to their holders on the strength of
+that sentence hands up to 5 ETH to the platform instead.
+
+**Measured:** with `platformClaimFeeBps = 0`, a creator donates 50 ETH; the sole staker accrues
+`earned = 49.9999999999995936 ETH` over the 7-day window; the owner then calls `setPlatformClaimFee(1000)`
+and the claim credits `platformFeesOwed[ETH]` with 10% of it. Note this compounds M-5: the fee is applied at
+claim time, so it reaches ETH donated long before the fee existed.
+
+**Fix direction.** Either honour the docstring — track donated principal separately and exempt it from the
+claim fee — or correct the sentence to say the exemption applies only to the deposit, not to the payout. The
+second is a one-line change and is what the code actually does.
 
 ---
 
@@ -1352,6 +1386,41 @@ time between a full raise and an arbitrary deadline.
 ---
 
 ---
+
+---
+
+### L-14 · LOW · Forfeit-to-stayers is opt-out: `claim()` is not gated by `antiJitDelay`, so only uninformed stakers pay  `PROVEN`
+
+**Where** `contracts/pads/DualStaking.sol:307` — the *only* use of `antiJitDelay`, inside `unstake` — against
+`:337` (`claim`, ungated) and `:313-326` (`unstake`'s forfeit loop).
+
+`unstake` confiscates **all** of the caller's unclaimed rewards on that side and re-streams them to whoever
+stays:
+
+```solidity
+uint256 f = rewardsAccrued[side][asset][msg.sender];
+if (f > 0) { rewardsAccrued[side][asset][msg.sender] = 0; _applyReward(side, asset, f, false); }
+```
+
+But `claim` carries no hold at all. So the forfeit is trivially avoidable: call `claim` first, *then*
+`unstake`, and nothing is forfeited. The mechanism therefore does not deter early exit — it only penalises
+users who do not know the order.
+
+**Measured** with the maximum `antiJitDelay = 7 days`, ETH listed on the TOKEN side and fee 0: Alice and Bob
+each stake 1,000 tokens, the owner funds 10 ETH, and after 7 days each has accrued
+**4.9999999999998384 ETH**. Bob calls `unstake` directly — his ETH balance changes by **−0.000163 ETH (gas
+only)** and his `earned` drops to **0**; the full ~5 ETH is confiscated and re-streamed. Alice calls `claim`
+first, keeps her ~5 ETH, and then unstakes freely.
+
+The contract's header presents this as one of two anti-JIT defences — *"rewards STREAM over a window (a
+flash-staker accrues ≈0), and an `antiJitDelay` hold gates unstake"* — and as `forfeit-to-stayers`. As
+implemented it is neither a deterrent nor a redistribution from JIT actors; it is a transfer from
+less-sophisticated stakers to more-sophisticated ones.
+
+**Fix direction.** Gate `claim` on the same `stakedAt + antiJitDelay` hold as `unstake`, so the forfeit
+applies to anyone exiting early rather than only to those who exit in the wrong order. If the intent is that
+rewards should always be claimable, then drop the forfeit — a mechanism that only catches the uninformed is
+worse than none.
 
 ---
 
