@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
-| **MEDIUM** | 24 | 14 |
+| **MEDIUM** | 26 | 14 |
 | **LOW** | 26 | 13 |
 | **INFO** | 23 (19 bundled as I-1, plus I-2 … I-5) | 2 |
-| **total** | **77** | **34** |
+| **total** | **79** | **34** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -1751,6 +1751,90 @@ Distinct from **M-1**, which is scoped to `PresaleVault.finalize` where the limi
 **Fix direction.** Charge the tax on the **executed** input rather than the requested one — `afterSwap` knows
 it — or revert a buy whose fill is zero. At minimum, document the zero-fill case in §5 rather than letting the
 partial-fill wording cover it.
+
+---
+
+### M-25 · MEDIUM · `RobinLockStaking.fundTokenPushed` ignores the `asset` it is handed and returns 0, so a mis-wired `setStaking` swallows the whole graduation reservoir silently  `VERIFIED`
+
+**Where** `contracts/pads/RobinLockStaking.sol:190-198`, called from
+`contracts/pads/RobinCurveV4.sol:654-663` (`_fundStaking`), against `contracts/pads/DualStaking.sol:428-435`
+which honours the same signature.
+
+```solidity
+function fundTokenPushed(uint8, address) external nonReentrant returns (uint256 pushed) {
+    uint256 bal = token.balanceOf(address(this));      // its OWN token, not the one it was handed
+    uint256 accounted = totalStaked + rewardsBalance;
+    if (bal <= accounted) return 0;                    // returns, does not revert
+```
+
+Both parameters are **unnamed and never read**, and the NatSpec says so deliberately — *"`side`/`asset` are
+ignored (single-token pool) — kept for curve interface parity."* The sibling implementation of the same
+interface does the opposite: `DualStaking` reverts `BadAsset` on ETH, `NotListed` on an unlisted asset, and
+`Zero` when nothing arrived.
+
+The caller pays for that difference. `_fundStaking` transfers **first**, then pokes:
+
+```solidity
+IERC20(token).safeTransfer(s, amount);
+try IStakingFund(s).fundTokenPushed(uint8(0), token) { emit StakingFunded(amount); } catch {}
+```
+
+If `setStaking` was pointed at a `RobinLockStaking` belonging to a **different pad**, every step reports
+success: the ERC-20 transfer is valid, the callee measures *its own* `token` balance — unmoved by receiving a
+foreign ERC-20 — takes the `bal <= accounted` branch, returns 0 without reverting, and `StakingFunded(amount)`
+is emitted. The graduation leftover (C-1 measures this reservoir at **9.70% of total supply**) now sits in
+another pad's staking contract, which has no rescue path for a foreign token. Nothing reverts, nothing warns,
+and the log asserts the funding happened.
+
+`setStaking` validates only `s != address(0) && s.code.length != 0` (`:450`), and it is a one-shot, so the
+mis-wire cannot be corrected afterwards.
+
+Distinct from **L-19(a)**, which is that `StakingFunded` sits inside the `try` and so is silent when the poke
+*fails*. Here the poke **succeeds** and the event fires — the failure is that the callee cannot tell it was
+handed the wrong asset, because it threw the parameter away.
+
+**Fix direction.** Honour the parameter: `if (asset != address(token)) revert BadAsset();`. Two lines, and it
+converts a silent total loss into a revert inside `_fundStaking`'s `try` — which re-parks the tokens on the
+curve for a later `flushStaking()`, exactly the non-bricking behaviour the design already intends. Also
+consider reverting rather than returning 0 when nothing arrived, as `DualStaking` does.
+
+---
+
+### M-26 · MEDIUM · `RobinAmbushVault` verifies its tick against the curve and takes the entire pool key on trust  `VERIFIED`
+
+**Where** `contracts/pads/RobinAmbushVault.sol:86-121` (constructor), `:257-259` (`_poolKey`), against
+`contracts/pads/RobinCurveV4.sol:91-96`.
+
+The constructor's `[H1]` comment presents the design as safe on exactly this ground:
+
+> *"Anchor to the curve's IMMUTABLE `gradTick()` read on-chain — never a passed hint, never a live `getSlot0`,
+> so no front-run or bad param can mis-place the wall."*
+
+It reads `gradTick()` from `curve_` (`:111`) — one field, correctly. But `currency0_`, `currency1_`, `fee_`,
+`tickSpacing_` and `hooks_` arrive as constructor parameters and are stored verbatim (`:100-106`) with **no
+comparison to `curve_`**. The only rejections are `bandWidthSpacings == 0` and the band-geometry test.
+`_poolKey()` is then built purely from those five unvalidated fields, and it feeds both `seedAmbush`'s spot
+guard and `_add`'s `modifyLiquidity`.
+
+**The fix is sitting right there, unused.** `RobinCurveV4` publishes all of them as public immutables —
+`currency0` (`:91`), `currency1` (`:92`), `token` (`:93`), `fee` (`:94`), `tickSpacing` (`:95`), `hooks`
+(`:96`). The vault already holds `curve_` and already calls into it. It reads one getter of six.
+
+So a hand-deployed vault can anchor its band to pad A's `gradTick` while pointing its pool key at pad B's pool.
+`_fundAmbush` then delivers pad A's ambush share — `ambushGradBps`, 5% of the raise at production settings —
+and `seedAmbush` adds it as permanent liquidity in **pad B's** pool. The vault is add-only with no withdraw, so
+that is unrecoverable, and per **L-7** these vaults have no deploy script at all: the arguments are hand-typed
+once, by the operator, unverifiably.
+
+Distinct from **M-4**, which is `RobinFloorVault`'s `anchorTick` being an unverifiable deploy parameter. The
+floor vault takes no curve reference, so it *cannot* self-validate; the ambush vault can and does not. And it is
+worse than a plain missing check, because the comment tells a reviewer the class of bug has been handled.
+
+**Fix direction.** Read all six from the curve rather than accepting them:
+`require(currency0_ == curve.currency0() && currency1_ == curve.currency1() && fee_ == curve.fee() &&
+tickSpacing_ == curve.tickSpacing() && hooks_ == curve.hooks())`, or drop the parameters entirely and derive
+the key from `curve_`. Then the `[H1]` comment becomes true as written. Apply the same reasoning to
+`RobinFloorVault` by giving it a curve reference (which also closes M-4).
 
 ---
 
