@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
 | **HIGH** | 3 | 2 |
-| **MEDIUM** | 13 | 6 |
+| **MEDIUM** | 16 | 6 |
 | **LOW** | 9 | 4 |
 | **INFO** | 9 (8 bundled as I-1, plus I-2) | 1 |
-| **total** | **35** | **14** |
+| **total** | **38** | **14** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -822,6 +822,103 @@ two must be fixed together.
 path), or have it call a non-extending variant, or make `DualStaking._applyReward`'s pushed path behave like
 `RobinLockStaking._startDrip`'s mid-window branch and leave `periodFinish` fixed. The last is the most
 consistent with the rest of the suite.
+
+---
+
+### M-14 · MEDIUM · The idempotent-init try/catch reports every `initialize` failure as `PoolAlreadyInit`, and `tickSpacing` is unbounded  `VERIFIED`
+
+**Where** `contracts/core/CurvePadFactoryV4.sol:120` (the only `tickSpacing` check) and `:170-175` (the
+idempotent-init try/catch); same shape in `core/PadFactory.sol` and `core/StockPadFactory.sol`.
+
+Two defects that compound.
+
+**The bound is missing.** v4 requires `1 <= tickSpacing <= 32767`
+(`v4-core/src/PoolManager.sol:119-120`, `MAX_TICK_SPACING = type(int16).max`). The factory checks only
+`ts <= 0`:
+
+```solidity
+if (ts <= 0 || d.startTickMag % ts != 0 || d.curveWidth % ts != 0) revert BadGeometry();
+```
+
+So a `tickSpacing` of, say, 40000 passes every factory check — positive, and it divides both governed geometry
+values — and then reverts inside `poolManager.initialize` with `TickSpacingTooLarge`.
+
+**The diagnosis is then destroyed.** That revert lands in the `[MEDIUM-3]` idempotent-init catch, which
+re-reads `getSlot0` and reverts `PoolAlreadyInit` unless the price matches. For a pool that was never
+initialised `sqrtPriceX96` is 0, which never matches, so the launch fails with **`PoolAlreadyInit` — an error
+saying someone front-ran you, when in fact your own config is invalid.** The catch is not selective: *any*
+`initialize` failure (bad tick spacing, bad fee, hook-validation failure) surfaces under the same wrong error.
+An operator has no way to tell a genuine front-run from a malformed launch.
+
+**It reaches contributor funds through the presale.** `PresaleVaultFactory` explicitly defers *"heavy
+geometry/reserve validation … to `CurvePadFactoryV4.launch()` at finalize"* (`:12`), and `cfg.tickSpacing` is
+caller-chosen at `createPresale` with no validation. A presale opened with an out-of-range spacing takes
+deposits normally and can never finalize: `launch` reverts, `finalize`'s snipe catch-all marks it `Failed(3)`,
+and per L-9 that is irreversible. Contributors are refunded, but the launch is dead and the stated cause is
+wrong twice over.
+
+**Fix direction.** Bound `tickSpacing` to `[1, 32767]` at `:120` — it is a one-line check against a constant
+v4 already exports. Separately, make the catch selective: only treat the failure as a pre-init if
+`getSlot0` shows a *non-zero* price, and otherwise bubble the original revert so the real cause survives.
+
+---
+
+### M-15 · MEDIUM · `DeterministicDeployer` silently confiscates `msg.value` on the adopt path  `VERIFIED`
+
+**Where** `contracts/core/DeterministicDeployer.sol:31-33`.
+
+```solidity
+function deploy(bytes32 salt, bytes calldata initCode) external payable returns (address addr) {
+    address predicted = addressOf(salt, keccak256(initCode));
+    if (predicted.code.length != 0) return predicted;   // msg.value is kept, not refunded
+```
+
+The function is `payable` and the adopt path returns without refunding. The contract has **no `withdraw`, no
+`receive`, no owner and no sweep**, so anything sent on that path is permanently destroyed. The NatSpec is
+aware of the gap and stops short of closing it: *"(No value is forwarded on adoption; our callers deploy
+value-free.)"*
+
+That parenthetical is true of Robin's own callers, which is why no protocol funds are at risk. But the same
+NatSpec designates this contract as ecosystem infrastructure — *"its address is then pinned as a constant
+everywhere hook-address mining happens"* — and `deploy` is permissionless, so third-party integrators are an
+expected user. An integrator deploying a payable contract that funds itself in its constructor
+(`deployer.deploy{value: 1 ether}(salt, initCode)`) can be front-run by anyone who calls `deploy` with the
+same `initCode` first: the victim's call then takes the adopt branch and the 1 ether is gone, with the
+attacker spending only gas.
+
+**Fix direction.** Refund on the adopt path (`if (msg.value > 0) msg.sender.call{value: msg.value}("")`), or
+simply make `deploy` non-payable and add a separate `deployWithValue` for callers that need it. Either way the
+NatSpec should state the hazard rather than note the assumption.
+
+---
+
+### M-16 · MEDIUM · `platformFeeWallet` is the protocol's root admin key, not merely a payout address
+
+**Where** `contracts/core/FeeWalletRegistry.sol` (the wallet), used as the **authorization** check in
+`contracts/pads/RobinCurveV4.sol:447` / `:457` / `:467` (`setStaking` / `setFloor` / `setAmbush`),
+`contracts/hooks/RobinFeeHook.sol:383` (`setFloorRecipient`) and `contracts/core/LockVault.sol:92`
+(`setStakingRecipient`).
+
+Every document describes this address as a destination. `FeeWalletRegistry`'s own header calls it *"THE ONLY
+mutable knob in the entire Robin V4 system … only this one address"* and stresses *"no fee-rate change, no
+pause, no fund movement, no LP path here."* `DEPLOY.md:60` repeats it. But the same address is also the
+**capability** that binds, one-shot and irreversibly, every one of a pad's value sinks: where the sell-tax
+floor carve goes, where the buy-LP floor carve goes, where the ambush share goes, where the staking stream
+goes, and where the locked LP's token-leg fees go.
+
+At launch all five are `address(0)` — the runbook wires them afterwards (`scripts/deploy-curve.js:119-122`) —
+so whoever controls `platformFeeWallet` in that window permanently determines each one, with no undo and no
+timelock on the *use* of the capability. (The 2-day timelock in `FeeWalletRegistry` governs *changing* the
+wallet, not what the wallet can do.) Combined with M-4 — `setFloorRecipient` does not even require the target
+to be a contract — a single transaction from that key can permanently point a pad's floor at an EOA.
+
+This is the unifying statement behind M-4, M-7 and M-11, and it matters because it changes what an auditor
+must assume about key management: the platform fee wallet needs the operational security of a root admin key,
+not of a treasury receiving address.
+
+**Fix direction.** Separate the roles — an `admin` (or the existing `Ownable2Step` owner) for the one-shot
+wiring, and `platformFeeWallet` purely as a destination. If they must stay unified, say so plainly in
+`AUDIT-SCOPE.md` §6 and `DEPLOY.md`, and drop the "only this one address / no fund movement" framing.
 
 ---
 
