@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 4 | 4 |
-| **MEDIUM** | 27 | 14 |
-| **LOW** | 31 | 16 |
+| **MEDIUM** | 28 | 15 |
+| **LOW** | 33 | 16 |
 | **INFO** | 23 (19 bundled as I-1, plus I-2 … I-5) | 2 |
-| **total** | **86** | **38** |
+| **total** | **89** | **39** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -611,6 +611,103 @@ the stock read directly above them.
 
 ---
 
+### M-28 · MEDIUM · The buy-LP floor carve is credited *before* graduation and released *only* by graduation, so a pad that never graduates freezes it forever  `PROVEN`
+
+**Where** `contracts/pads/RobinCurveV4.sol:603-617` (`_takeFeesToBook`), `:230-234` (`collectFees`,
+permissionless, pre-graduation), `:405-411` (`flushFloor`), `:283-291` (`sweepToPlatform`).
+
+`_takeFeesToBook` runs during the **curve phase** and splits one realized LP fee into two books in one place:
+
+```solidity
+platformEthOwed += e - toFloor;      // 80% at the shipped buyLpFloorShareBps
+floorEthOwed    += toFloor;          // 20%
+```
+
+Same wei, same `take`, two books — and their exits are **not symmetric**. `claimPlatform()` (`:239`) has no
+lifecycle gate at all. `floorEthOwed` has exactly two consumers, `graduate()` step 8 and `flushFloor()`, and:
+
+```solidity
+function flushFloor() external nonReentrant {
+    if (!graduated) revert NotReady();      // ← checked FIRST, before wiring
+    if (floor == address(0)) revert ZeroAddress();
+```
+
+So `setFloor(realVault)` does **not** unlock it. `sweepToPlatform()` is graduated-gated too, and explicitly
+subtracts `floorEthOwed` from what it will sweep. On a pad that stalls short of the ceiling — which for a
+launchpad is the ordinary outcome, not the edge case — **20% of every ETH LP fee the curve ever realized is
+permanently unreachable**, while the sibling 80% from the identical `take` pays out normally. No attacker, no
+operator error; it is the default.
+
+`floorEthOwed` is also unique in shape: `creatorEthOwed`, `ambushEthOwed` and `gasBountyOwed` are credited only
+*at* graduation, so for them a graduation gate is coherent. This one is credited from the first buy.
+
+> **Correction to M-21.** M-21 states that never wiring the sinks does not burn the money, because *"a late
+> `setFloor` + `flushFloor` recovers it in full"* — and measures exactly that. That measurement was taken
+> **after graduation**, and it does not generalize: `flushFloor`'s `!graduated` check is unconditional and runs
+> before the wiring check. M-21's recovery is real only for pads that graduate. M-21 has been annotated.
+
+**Fix direction.** Let `flushFloor` run pre-graduation once `floor` is wired — the vault's own park guard
+already handles a spot that is inside the band — or drop `floorEthOwed`'s graduation gate and let
+`sweepToPlatform` release it on a pad declared dead. Simplest of all: do not credit the carve to a separate
+book until graduation, so the pre-graduation split matches the post-graduation exits.
+
+---
+
+### L-32 · LOW · `curve.setStaking` and `LockVault.setStakingRecipient` are two one-shots for one concept, and they are **mutually exclusive**  `VERIFIED`
+
+**Where** `contracts/pads/RobinCurveV4.sol:360` (`onGraduated(..., staking)`), `:447-453` (`setStaking`),
+`contracts/core/LockVault.sol:84-88` (`registerLaunch` writes the slot), `:94-101` (`setStakingRecipient`
+reverts once it is non-zero).
+
+`graduate()` copies whatever `curve.staking` holds **at that instant** into `registerLaunch`'s
+`stakingRecipient`, and `LockVault.setStakingRecipient` refuses to run once that slot is non-zero. So on the
+curve path `setStakingRecipient` is reachable **if and only if the pad graduated while `curve.staking` was
+still unset.**
+
+The diligent ordering is the losing one. `setStaking` must be called *before* `graduate()` for step 7's reserve
+stream to fire at all, and `deploy-curve.js:119-122` tells the operator to do exactly that. When they comply,
+the `LockVault` slot is permanently bound to the **staking pool contract** — an address chosen to satisfy
+`IStakingFund.fundTokenPushed`, a completely different interface from "where the locked LP's token-side fees
+should go" — and the platform's one chance to route that stream is gone. `graduate()` being permissionless and
+bounty-paid means the race is not even under the operator's control.
+
+> **Correction to M-11.** M-11 asserts that registering with `stakingRecipient == address(0)` is the normal
+> outcome, and its fix direction leans on `setStakingRecipient` remaining available as the correction. That
+> holds only on the branch where nobody wired `setStaking` first. M-11 has been annotated.
+
+**Fix direction.** Decide which contract owns the concept and delete the other setter. If `LockVault` owns it,
+have `registerLaunch` take `address(0)` always and require the platform to set it explicitly; if the curve owns
+it, drop `setStakingRecipient`. Two one-shots for one idea is the M-7 pattern, and here they actively cancel.
+
+---
+
+### L-33 · LOW · M-7's own prescribed fix makes the add-only floor wall buildable **mid-curve**, widening M-4  `VERIFIED`
+
+**Where** `contracts/hooks/RobinFeeHook.sol:383-391` (`setFloorRecipient`, callable from the launch transaction
+onward), `:340-348` (`claimFloor`, permissionless), `contracts/pads/RobinFloorVault.sol:109-119` (`addFloor`).
+
+The register treats the floor as a post-graduation instrument — but it is one *only because*
+`hook.setFloorRecipient` is never called, which is M-7. Apply M-7's fix as written ("add it to the runbook")
+and the picture changes: `claimFloor` becomes claimable from the first sell, `scripts/keeper.js` starts
+delivering the sell-tax carve into the vault immediately, and `addFloor()`'s single guard is then the only
+thing deciding whether that carve is irreversibly committed to liquidity **while the pad is still mid-curve**.
+
+Which way it decides is a pure function of the unverifiable `anchorTick` an operator typed (M-4). Anchored at
+the launch tick, the guard never fires during the curve phase — spot only ever walks *down* from `startTick` —
+so every keeper pass permanently commits carve while the pad is far below its eventual graduation price.
+Anchored at `gradTick`, it parks until spot reaches the final tick spacing.
+
+No funds are lost — both destinations are protocol-owned and permanent — but the price a pad's permanent floor
+defends ends up set by an off-chain parameter interacting with a permissionless keeper, rather than by any
+on-chain rule. And **M-7's fix, applied as written, widens M-4's blast radius from graduation-onward to the
+whole pad lifetime.**
+
+**Fix direction.** Fix M-7 and M-4 together, not separately: when wiring `setFloorRecipient` early, either gate
+`addFloor()` on `graduated` (the curve knows), or require the vault's anchor to be derived from the curve's
+`gradTick()` on-chain — which is M-26's fix for the ambush vault, and closes M-4 at the same time.
+
+---
+
 ### M-1 · MEDIUM · A presale pays buy tax on the whole target even when the curve fills a fraction of it  `PROVEN`
 
 **Where** `contracts/presale/PresaleVault.sol:211` and `:225` (`finalize` → `unlockCallback`), against
@@ -1026,6 +1123,12 @@ missing runbook step fail loudly instead of expensively. Independently, add `Loc
 the curve runbook and to `DEPLOY.md` — see M-7 for the identical omission on the floor side.
 
 ---
+
+> **Later correction.** "Registered with `stakingRecipient == address(0)`" is the normal outcome **only if
+> nobody called `curve.setStaking` before `graduate()`**. `graduate()` copies that value into
+> `registerLaunch`, and `LockVault.setStakingRecipient` refuses to run once the slot is non-zero — so on the
+> ordering `deploy-curve.js` actually prescribes, the correction this entry's fix direction relies on is not
+> available. See **L-32**.
 
 ### M-12 · MEDIUM · A presale's launch geometry is read at finalize, so an in-cap retune can leave the coin permanently un-graduatable  `PROVEN`
 
@@ -1471,8 +1574,8 @@ Both ETH books are excluded from every sweep by design — `:381` computes
 subtotal (`:285`) subtracts them again — so the *only* way either book leaves the curve is a successful
 `call{value:}` to the address its one-shot setter holds.
 
-**The obvious reading is wrong, and worth stating so nobody re-files it.** Never wiring the sinks does **not**
-burn the money. `_fundFloor`/`_fundAmbush` return early leaving the book intact (`:669`, `:686`), and a *late*
+**The obvious reading is wrong, and worth stating so nobody re-files it** — *with one exception added later,
+see the note below.* Never wiring the sinks does **not** burn the money. `_fundFloor`/`_fundAmbush` return early leaving the book intact (`:669`, `:686`), and a *late*
 `setFloor` + `flushFloor` recovers it in full. Measured: graduating fully unwired leaves
 `floorEthOwed = 0.383736708601921926` and `ambushEthOwed = 31.881124873009680078` booked;
 `sweepToPlatform()` moves neither; `flushFloor()`/`flushAmbush()` both revert `ZeroAddress` — and then a late
@@ -1500,6 +1603,10 @@ ERC20 with no `receive()`, so it produces exactly this state.
 The comments describe the park as *"retriable"* (`:675`, `:692`) and the design as *"non-bricking"*. Both are
 true of a *transient* failure — a vault that is temporarily reverting — and false of the case the setter's own
 weak validation admits, where retrying the same dead address forever is the only option the contract has.
+
+> **Later correction.** The recovery measured above was run **after graduation**. `flushFloor`'s `!graduated`
+> check is unconditional and runs *before* the wiring check, so on a pad that never graduates the floor book is
+> unreachable however it is wired. See **M-28**.
 
 **Not the wiring cluster, and not M-4.** M-7/M-11/L-3/L-17 are all "a sink was never wired, so value sits
 waiting" — recoverable by wiring it, as measured above. M-4 is the floor *band anchor* being an unverifiable
