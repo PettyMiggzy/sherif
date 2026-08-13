@@ -608,34 +608,57 @@ note for three reasons:
 Uniswap's structural maximum. If a high `lpFee` is ever intended, state the *combined* effective take in
 `AUDIT-SCOPE.md` §3 rather than the hook taxes alone.
 
-### M-11 · MEDIUM · Before the staking recipient is wired, anyone can permanently divert holders' LP fees to the platform
+### M-11 · MEDIUM · The locked LP's holder fees default to the platform, and on the curve path nothing ever wires them away  `PROVEN`
 
-**Where** `contracts/core/LockVault.sol:107` (`collectFees`, permissionless), `:143-153` (`claimStaking`,
-permissionless), specifically `:149`:
+**Where** `contracts/core/LockVault.sol:81-89` (`registerLaunch` stores `stakingRecipient` verbatim, no zero
+check), `:107` (`collectFees`, permissionless), `:143-153` (`claimStaking`, permissionless), specifically
+`:149`:
 
 ```solidity
 address to = lk.stakingRecipient == address(0) ? feeRegistry.platformFeeWallet() : lk.stakingRecipient;
 ```
 
-`RobinCurveV4.graduate()` registers the lock with whatever `curve.staking` holds at that moment
-(`pads/RobinCurveV4.sol:360`), and `staking` is a platform-only one-shot that the runbook performs *after*
-graduation (`scripts/deploy-curve.js:121`). So on the shipped sequence the launch is registered with
-`stakingRecipient == address(0)`, and `LockVault.setStakingRecipient` is a *second*, separate one-shot that
-has to be remembered.
+**Reachability is the shipped default, not an edge case.** `RobinCurveV4.graduate()` registers the lock with
+whatever `curve.staking` holds at that instant (`pads/RobinCurveV4.sol:360`), and `deploy-curve.js:121` tells
+the operator to call `curve.setStaking(...)` *"at/near graduation"* — so registering with
+`stakingRecipient == address(0)` is the normal outcome. Wiring it afterwards requires
+`LockVault.setStakingRecipient`, a **second, separate** platform one-shot which appears **zero times in
+`scripts/deploy-curve.js` and zero times in `DEPLOY.md`**. On the curve path — the flagship product — nothing
+ever tells anyone to make that call. The default is therefore permanent, and every `claimStaking(tokenId, 1)`
+routes the locked LP's token-side (sell) fees, an advertised holder reward stream, to the platform treasury
+forever.
 
-During that window — which the runbook makes the default, not the exception — anyone can call
-`collectFees(tokenId)` then `claimStaking(tokenId, 1)` and permanently route the locked LP's token-side (sell)
-fees to the platform wallet. Each claim is irreversible; the holders those fees were minted for never see
-them. It is not theft *by* the platform — the caller can be anyone, and the funds always land at the
-registered destination — but the destination is wrong, and the griefer pays only gas.
+The `PadFactory` path is better documented but still has a window: `scripts/launch.js:52` passes
+`stakingRecipient: ZeroAddress` into `launch()`, and `setStakingRecipient` only happens at `:102`, three
+transactions later.
 
-This is the sharpest instance of the two-wirings-per-concept problem in M-7: `RobinCurveV4.setStaking` and
-`LockVault.setStakingRecipient` are separate one-shots for one idea, and the fallback for "not yet wired" is
-"pay the platform" rather than "hold".
+**The likely trigger is the project's own keeper, not a griefer.** `scripts/keeper.js:53` calls
+`lockVault.claimStaking(L.lpTokenId, 1)` unconditionally in its sweep loop, and every step is wrapped in
+`tryStep` (`:24-32`), which catches, prints a tick, and moves on. So an unwired pad is swept silently, the
+operator sees `✓ staking LP (token) -> keeper`, and the fees are irreversibly at the treasury instead.
+
+**Two corrections to the obvious framing.**
+
+1. **It is misrouting, not theft, and the caller gains nothing.** Funds always land at
+   `feeRegistry.platformFeeWallet()` — the 2-day-timelocked treasury. A griefer would pay gas to enrich the
+   platform, and the platform gains nothing it did not already have, since it holds the one-shot
+   `setStakingRecipient` and could simply point it at itself. The harm is that an outsider (or an honest bot)
+   can pre-empt the platform's intent to route those fees to stakers, irreversibly.
+2. **`collectFees` alone is safe.** It only credits `stakingOwed[tokenId][1]`; nothing leaves the vault. If
+   nobody calls `claimStaking` during the unwired window, the whole accrual survives `setStakingRecipient`
+   and pays the real recipient in full. The exposure is exactly the balance owed at the moment someone calls
+   `claimStaking` — which is why the keeper matters more than the griefer.
+
+Note the intended design: `stakingRecipient` is a *reward-keeper EOA*, not the pool. `launch.js:102` points it
+at `rewardKeeper`, and `keeper.js:56-59` has that keeper forward the tokens on via `pool.fundToken(...)`.
 
 **Fix direction.** Make the unwired case *park* rather than pay: revert `claimStaking` (or accrue) while
 `stakingRecipient == address(0)`, exactly as `RobinFeeHook.claimFloor` already does with `NoFloorRecipient`
-(`hooks/RobinFeeHook.sol:342`). That single change also removes the "remember the second one-shot" hazard.
+(`hooks/RobinFeeHook.sol:342`). That one change removes the silent-misroute hazard entirely and makes the
+missing runbook step fail loudly instead of expensively. Independently, add `LockVault.setStakingRecipient` to
+the curve runbook and to `DEPLOY.md` — see M-7 for the identical omission on the floor side.
+
+---
 
 ### M-12 · MEDIUM · The ambush share is funded but never seeded, and a ~1% dump blocks seeding indefinitely
 
