@@ -1567,7 +1567,7 @@ reopen the pool early. Failing that, document the curb as pre-event only and sto
 
 ---
 
-### M-23 · MEDIUM (severity provisional — attribution under active verification) · `addFloor()`'s spot guard is bypassable atomically, and forcing the fill turns a losing round trip into a profitable one  `PARTIALLY MEASURED`
+### M-23 · MEDIUM (severity under final review — likely HIGH) · `addFloor()`'s spot guard is bypassable atomically, and forcing the fill drains the parked floor carve at a profit  `PROVEN`
 
 **Where** `contracts/pads/RobinFloorVault.sol:109-119` (`addFloor`, permissionless), `:137-157` (`_add`, which
 commits the **whole** on-hand balance to the fixed band), against the round-trip argument in `AUDIT-SCOPE.md`
@@ -1602,19 +1602,34 @@ operation that is structurally loss-making becomes profitable, with the profit s
 push must be *tuned*: too small and the guard holds (a 30 ETH push left the tick at 355 against
 `floorTickLower = 60`), too large and the round-trip spread swamps the gain (−0.948 ETH at a 250 ETH push).
 
-**What is NOT yet established, stated plainly.** In the +0.8671 ETH run the price ended at tick **81**, not back
-at the pre-attack 1287 — the band absorbed the sell instead of the price round-tripping. A `[60, 660]` band with
-spot at 81 has converted only its `[60, 81]` sliver to token, so **the vault's own loss is small and the
-attacker's profit is largely funded by the graduated full-range LP, not the floor band.** That distinction
-decides the severity, and it has not been split yet. The originating claim of a *"~86% vault loss"* is
-**unverified** and should not be relied on.
+**The attribution question is now answered.** The runs above were hook-less and did not split who funded the
+attacker. An independent construction at **production geometry with the hook wired** — `lpFee` 1%, `tickSpacing`
+100, buy tax 100 bps, sell tax 100 bps, `sellFloorShare` 2000 bps, band anchored at `gradTick` — reproduced the
+M-15 dumped state and measured **both sides**:
 
-So what is certainly true is narrower than the headline: **the permissionless `addFloor()` lets a third party
-choose the moment the holders' floor capital is committed, and that choice is worth money to them.** Whether
-the counterparty is principally the floor band or the locked LP is the open question. Both are protocol-owned
-and neither can withdraw, so this is value extraction from the pad either way.
+| | measured |
+|---|---|
+| attacker net PnL (gas and both hook taxes already deducted) | **+308,673,441,098,281,613 wei (+0.3087 ETH)** |
+| **vault loss** | **281,224,678,165,799,068 wei (0.2812 ETH)** |
+| parked carve at risk in that run | 1 ETH — so ≈ **28%** of the carve, in one transaction |
+| attacker's fronted capital | 2 ETH, returned within the same sequence |
 
-**Fix direction** does not depend on the attribution. Do not let a single live `slot0` read gate the
+So the vault **is** the principal counterparty, and the earlier concern that the profit came mostly from the
+locked LP is resolved: the attacker's +0.3087 slightly exceeds the vault's −0.2812, with the small remainder
+drawn from the full-range LP. Costs are inside those figures — buy tax 0.0200 ETH, sell tax 0.0233 ETH (of
+which the 0.00467 floor carve returns to the vault and is *not* credited back, so the stated vault loss is
+conservative), two legs of 1% LP fee, the attacker's own price impact, and gas.
+
+The originating claim of a *"~86% vault loss"* does **not** reproduce; the measured figure is ~28% of the parked
+carve per pass. It is repeatable rather than one-shot — the carve accrues continuously from sell tax, so the
+position can be farmed each time enough accumulates.
+
+**One scope limit, stated because it nearly caused a false disproof.** In the *undumped* state — spot already
+below the band, where `addFloor()` would succeed unaided — the same manipulation is **negative value**:
+measured **−0.098 ETH** against an honest-`addFloor` baseline. The attack is specific to M-15's parked state.
+A pass that tested only the undumped case would have concluded, wrongly, that there is nothing here.
+
+**Fix direction.** Do not let a single live `slot0` read gate the
 irreversible commitment of the whole balance: (1) require the tick to have been below `floorTickLower` for a
 minimum number of blocks, or compare against a short TWAP rather than spot; (2) rate-limit — cap each
 `addFloor()` at a fraction of `parkedQuote` per block, so no single transaction can commit the whole carve;
