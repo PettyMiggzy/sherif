@@ -29,9 +29,9 @@ re-derive it.
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 5 | 5 |
 | **MEDIUM** | 27 | 14 |
-| **LOW** | 33 | 16 |
+| **LOW** | 34 | 16 |
 | **INFO** | 23 (19 bundled as I-1, plus I-2 … I-5) | 2 |
-| **total** | **89** | **39** |
+| **total** | **90** | **39** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -2964,6 +2964,37 @@ every `_collect`.
 
 ---
 
+### L-34 · LOW · Two independent `positionManager` immutables, nothing cross-checks them, and the gate that would have caught a divergence is dead code  `VERIFIED`
+
+**Where** `contracts/core/LockVault.sol:26` and `:63-68` (its own `positionManager`, unrelated to the factory),
+`:107-117` (`collectFees` calls it), `:169-173` (`onERC721Received` gates on it);
+`contracts/core/CurvePadFactoryV4.sol:81-101` (takes `positionManager_` and `lockVault_` side by side and never
+compares them).
+
+`LockVault.positionManager` is used for exactly two things: the `collectFees` call target and the
+`onERC721Received` sender gate. Nothing asserts it equals the factory's — and `lockVault.positionManager()` is
+public and free to read.
+
+On a divergence, **`graduate()` still succeeds end to end**: the NFT mints to the vault on posm-A,
+`onGraduated` → `registerLaunch` records the id, and the raise is spent. Only later does `collectFees` call
+posm-B, where that id is not the vault's — so the locked LP's entire fee stream, both legs, is permanently
+uncollectable while the LP itself stays irrevocably locked.
+
+The one check that would have caught it at mint time **cannot fire**: v4-periphery mints with solmate's plain
+`_mint`, so `onERC721Received` never runs on the graduation mint (**L-24**). The two findings compose — L-24
+removes the guard, and this is what the guard would have caught.
+
+Not attacker-forceable, and not reachable through the checked-in scripts (`deploy-curve.js` and `deploy.js`
+both pass one `POSITION_MANAGER` to both constructors), so it is a latent misconfiguration in the L-7 family —
+hand-typed constructor arguments with no on-chain assertion. LOW for that reason, not because the outcome is
+mild: the outcome is the permanent loss of every pad's locked-LP revenue.
+
+**Fix direction.** One line in `CurvePadFactoryV4`'s constructor:
+`if (LockVault(lockVault_).positionManager() != positionManager_) revert Mismatch();`. It is free, and it is
+the same round-trip assertion M-2's fix direction proposes for the registrar.
+
+---
+
 ### I-1 · INFO · Recorded so the next pass does not re-derive them
 
 1. **`PresaleVault`'s implementation is never initialised.** `PresaleVaultFactory.createPresale` clones and
@@ -3367,6 +3398,28 @@ verification.
   it bounds claims by `⌊tl·acc/ACC⌋` without ever checking *that* against `feeReserve`, which is precisely
   where the carry double-credit in **L-23** lives. `DualStaking._applyReward` is a second site that floors
   without a carry; it strands dust rather than breaking solvency, and is recorded as I-1(12).
+- **`nextTokenId()`-before-mint is safe against the real `PositionManager`** — checked against the pinned
+  periphery rather than the mock. `PositionManager.sol:359-364` assigns `tokenId = nextTokenId++` inside
+  `_mint`, which is the **first** action in the curve's `MINT_POSITION, SETTLE_PAIR, SWEEP` batch. There is one
+  mint per batch; nothing external runs between the `nextTokenId()` read and `modifyLiquidities` (both approvals
+  precede the read); the hook's `0x00CC` flags fire no `modifyLiquidity` callback that could re-enter and mint;
+  and `SETTLE_PAIR` runs after the id is assigned, settling native ETH and `PadToken`, neither of which has a
+  transfer hook. Two curves graduating in one transaction each re-read immediately before their own mint and get
+  N and N+1 correctly. The id is right — **L-34** is that nothing asserts it.
+- **The permanent lock has no bypass — searched exhaustively, not assumed.** `LockVault` exposes no `approve`,
+  `transfer`, `decreaseLiquidity` or `burn` selector. v4-periphery's ERC-721 `permit` cannot help either:
+  Permit2's `SignatureVerification` falls through to ERC-1271 for a contract owner, and `LockVault` has no
+  `fallback()` — only `receive()` — so `isValidSignature` reverts. `PositionManager.subscribe` is
+  `onlyIfApproved` and the vault cannot call it. This is the strongest evidence in the document for
+  `AUDIT-SCOPE.md` §4.4's headline "permanent lock" invariant, which was previously supported only by the
+  selector-absence unit test.
+- **`LockVault`'s books cannot be cross-contaminated between pads or currencies.** `collectFees` writes only
+  `platformOwed[id][0]` and `stakingOwed[id][1]`, and nothing else in the contract writes either mapping. Since
+  `platformOwed[id][1]` is never credited, a caller-supplied `currencyIndex` of 1 always reverts
+  `NothingToClaim`; the mirror holds for `claimStaking`. So no index can pay currency1 out of the currency0 book
+  or vice versa, and no pad's book is reachable from another's — checked including the strongest cross-pad
+  construction available, a `StockPadFactory` pad whose caller-supplied adapter names a victim pad's token as
+  its `stock` (reachable given H-2).
 - **C-2 has no siblings inside this codebase.** Every loop in `contracts/` was enumerated: four, all hard
   bounded — three in `DualStaking` (`:203`, `:227`, `:316`) iterate `_rewardTokens[side]`, capped at
   `MAX_REWARD_TOKENS = 8` and enforced in `_listReward:447`, and one in `StockQuoteAdapter:131` walks a
