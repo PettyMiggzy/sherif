@@ -556,9 +556,16 @@ uint256 stockRemainder = IERC20(stock).balanceOf(address(this));   // :189
 if (stockRemainder > 0) IERC20(stock).safeTransfer(cfg.creator, stockRemainder);   // :190
 ```
 
-Two defects in one statement. The destination is `cfg.creator`, **not the payer**, while the comment directly
-above it describes returning the unused seed to whoever supplied it. And the amount is the factory's whole
-balance of that asset, not this launch's remainder (see I-1(17) for what that composes with).
+Two defects in one statement. The destination is `cfg.creator`, **not the payer**. And the amount is the
+factory's whole balance of that asset, not this launch's remainder (see I-1(17) for what that composes with).
+
+*Precision, since this entry was filed on another auditor's measurement and I checked it afterwards:* the
+comment at `:185` reads *"register the lock, send the token remainder to the creator, return any unused
+stock"*. It names `cfg.creator` explicitly for the **token** remainder and says only "return" for the stock —
+so the contrast implies return-to-payer rather than stating it. That is weaker than "the comment says to refund
+the payer", which an earlier revision of this entry claimed. The **code** defect is unaffected: both refunds go
+to `cfg.creator`, and only the token one is correct, since the token is minted to the factory while the stock
+came from `msg.sender`.
 
 **Measured** against a real local `PoolManager` with an action-aware `PositionManager` mock, payer ≠ creator,
 `lpTokenAmount = 1e20`, `stockSeed = 1e23`, 1:1 price, `ts` 60:
@@ -568,6 +575,10 @@ balance of that asset, not this launch's remainder (see I-1(17) for what that co
 | payer's stock balance | 100,000e18 → **0** |
 | reached the pool | **100e18** |
 | sent to `cfg.creator` | **99,900e18 — 99.9% of the payer's balance** |
+
+Independently re-derived: `cfg.stockSeed` is bounded only by `!= 0` (`:120`), so over-supplying is permitted;
+`_mintSeedLp` binds on the smaller leg, so at 1:1 price with `lpTokenAmount = 1e20` only 1e20 of stock is
+consumed; and `1e23 − 1e20 = 99,900e18` is exactly the reported refund. The arithmetic holds.
 
 Silent, irreversible, and it lands on the *modelled* flow: a platform funding a launch on a creator's behalf,
 or any arrangement where the approver and the named creator differ. HIGH by impact, labelled as stock-pad
