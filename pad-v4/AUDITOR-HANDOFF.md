@@ -30,8 +30,8 @@ re-derive it.
 | **HIGH** | 3 | 3 |
 | **MEDIUM** | 18 | 10 |
 | **LOW** | 18 | 9 |
-| **INFO** | 12 (9 bundled as I-1, plus I-2, I-3 and I-4) | 1 |
-| **total** | **53** | **25** |
+| **INFO** | 14 (11 bundled as I-1, plus I-2, I-3 and I-4) | 1 |
+| **total** | **55** | **25** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -1816,6 +1816,15 @@ use it, and correct `RobinAmbushVault`'s header either way.
    nothing on chain about what they are funding.
 9. **`RobinFloorVault.parkedQuote`** is assigned (`=`, not `+=`) and is purely cosmetic — `addFloor` always
    re-reads the live balance. Harmless, but it reads like accounting and is not.
+10. **`RobinLpVault.deposit` refunds the vault's *entire* non-reserve balance to the depositor**
+    (`:151` `address(this).balance - feeReserve0`, `:153` `balanceOf(this) - feeReserve1`). `receive()` is open
+    (`:316`), the vault has no owner and no rescue path, and nothing in the suite routes value to it, so any ETH
+    or token that reaches it outside a deposit is swept by whoever deposits next. The fee reserve and the
+    `feeCarry` remainder are correctly excluded, so this can only ever capture a mis-send — but a mis-send here
+    has no recovery other than being someone else's refund.
+11. **`FeeWalletRegistry` proposals never expire.** `pendingEta` is only cleared by a commit or an explicit
+    `cancelProposal`, so a proposal made and abandoned stays committable forever. Given M-14 — this address is
+    effectively the protocol's root admin — a stale proposal is a live capability sitting in storage.
 
 ---
 
@@ -1965,6 +1974,32 @@ verification.
 - **The anti-grief nudge in `_graduatePull`.** Budgeted to ≤1% of the reserve, floors to 1 wei rather than 0,
   compares sqrt price (not tick) so a buy capped exactly at the ceiling is not re-nudged into
   `PriceLimitAlreadyExceeded`, and fails closed with `CeilingNotRestored` rather than bleeding the reserve.
+  The nudge itself is right; **L-16** is that the two gates *upstream* of it compare the tick instead, so it
+  can be skipped in a state it should have handled.
+- **`BaseHook`'s flag word and both of its guards.** `REQUIRED_FLAGS = 0x00CC` decodes correctly against
+  v4-core's `Hooks` constants (`BEFORE_SWAP 0x80 | AFTER_SWAP 0x40 | BEFORE_SWAP_RETURNS_DELTA 0x08 |
+  AFTER_SWAP_RETURNS_DELTA 0x04`), the constructor self-assert and the factory's check read that same constant,
+  and every unflagged `IHooks` entry point reverts rather than returning a selector. The transient-storage
+  `nonReentrant` is sound: EIP-1153 rolls `tstore` back on revert, so a *caught* revert cannot leave the flag
+  latched, and the slot is per-address so instances cannot collide. One design consequence is worth knowing
+  rather than fixing — the same flag guards `beforeSwap`/`afterSwap` *and* the five user-facing `claim*`
+  functions, so no claim can execute inside a swap. That is deliberate, and it is designed around at the one
+  place it matters: `RobinCurveV4.graduate()` calls `claimBuffer` before its own `unlock`, not inside it.
+- **The hook's claim-redemption path.** `unlockCallback` is gated on `msg.sender == poolManager`, and v4 only
+  ever calls back the address that called `unlock`, so no third party can supply its `data`. Burn-then-take is
+  ordered correctly, and `_payout` runs after the unlock closes, so a hostile recipient re-entering finds the
+  owed slot already zeroed and the lock already released.
+- **`FeeWalletRegistry`.** Propose / commit / cancel are internally consistent, `pendingEta == 0` is an
+  unambiguous "no proposal" sentinel, and `renounceOwnership` is disabled so the system's only mutable knob
+  cannot be frozen at zero. The one nit is not a finding: a proposal never expires, so one made and forgotten
+  stays committable indefinitely by whoever holds ownership later. An expiry would be cheap.
+- **`RobinLpVault`'s fee accounting.** The MasterChef accumulator, the `feeCarry` remainder, and the
+  debt/pending resets are correct across every liquidity change, and `feeReserve0/1` is incremented exactly
+  when the contract physically receives a fee and decremented exactly when it pays a claim. Most relevant to
+  **L-18**: this vault gets the netting question right. It harvests fees in a *separate* `unlock` before it
+  ever adds or removes principal, so `modifyLiquidity`'s `principalDelta + feesAccrued` can never mix the two —
+  which is exactly the discipline `RobinFloorVault` and `RobinAmbushVault` lack. `_settleOwed`'s positive branch
+  is unreachable for a full-range add once fees are already harvested.
 
 ---
 
