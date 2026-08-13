@@ -29,9 +29,9 @@ re-derive it.
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
 | **MEDIUM** | 20 | 11 |
-| **LOW** | 18 | 9 |
+| **LOW** | 19 | 10 |
 | **INFO** | 17 (13 bundled as I-1, plus I-2 … I-5) | 1 |
-| **total** | **60** | **26** |
+| **total** | **61** | **27** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -51,7 +51,7 @@ and wording edits do not count either way.
 | 8 | rounding direction across every division in the suite | claimed clean — **later refuted, see pass 11** |
 | 9 | all 128 permissionless entry points, each asked what a stranger's worst-timed call does | claimed clean — **later refuted, see pass 11** |
 | 10 | every balance-derived quantity, checked for an omitted liability — the seam L-18 and I-1(11) sit in | clean; not yet independently challenged |
-| 11 | agents pointed at passes 8–10 and told to **refute** them, rather than at the code | not clean — **M-20**, I-1(12), and two corrections to this document |
+| 11 | agents pointed at passes 8–10 and told to **refute** them, rather than at the code; plus fresh lenses on events, timestamps and the presale | not clean — **M-20**, **L-19**, I-1(12), and two corrections to this document |
 
 Clean passes are counted in §4 as they land; each one's negative result is written down there so a later pass
 does not re-derive it.
@@ -67,6 +67,8 @@ conclusions* instead of at the code, with instructions to refute them, and **two
 
 Both surviving items are corrections to assertions made in this document, which is the outcome worth taking
 seriously: the clean passes were not wrong about the code so much as overconfident about their own coverage.
+The same pass also ran an event/observability lens that had never been applied — it returned **L-19**, four
+measured cases where the logs misreport a money movement, in four different contracts.
 Pass 10 has not yet been independently challenged. The gauntlet that produced passes 1–3 is also still
 executing its rounds 4 and 5. This document is the register, not a snapshot — anything that survives lands here
 and the count restarts from zero.
@@ -2008,6 +2010,73 @@ v4 — which also means the remediation needs no new idea.
 policy destination, then `modifyLiquidity(+L)` for the principal. `RobinCurveV4._graduatePull` already does
 exactly this inside one lock (`:560` then `:568`), and `RobinLpVault` does it across two — copy either. Failing
 that, pick one destination per vault and make both paths use it. Correct `RobinAmbushVault`'s header either way.
+
+---
+
+### L-19 · LOW · Four money movements the logs get wrong — one asserts a transfer that did not happen, three are silent  `PROVEN`
+
+**Where** `contracts/pads/RobinCurveV4.sol:369`/`:382`/`:654-663`; `contracts/pads/RobinLpVault.sol:140-141`,
+`:151-154`, `:217`; `contracts/pads/RobinLockStaking.sol:112-117`; `contracts/pads/RobinFloorVault.sol:151-157`.
+
+Filed as one finding because all four share a root and a fix: **value moves without a log, or a log asserts a
+movement that did not occur.** Nothing here risks funds — the transfers themselves are correct. What breaks is
+anyone reconstructing the system from its own events: an indexer, a TVL dashboard, a keeper, a monitoring
+alert, or an auditor totalling "how much reached holders". All four were measured against a real local
+`PoolManager`; none of these event names appears anywhere else in this report.
+
+**(a) `Graduated.toStaking` reports a transfer that did not happen — on the default deployment ordering.**
+Step 7 calls `_fundStaking(leftoverToken)` (`:369`), which returns early and silently when `staking ==
+address(0)` (`:656`). Step 9 then emits `Graduated(lpTokenId, raisedEth, leftoverToken, …)` (`:382`), whose
+third field is declared `toStaking` (`:132-139`). Because `setStaking` is a one-shot the runbook performs
+*after* graduation (M-7, M-11, I-4), "graduated before staking was wired" is the ordinary path. Measured with
+staking unwired: `Graduated.toStaking = 354,484,424,081,845,287,800`, tokens actually moved = **0**, tokens
+still sitting on the curve = the same 354.48e18, `StakingFunded` never emitted.
+
+Worse, `emit StakingFunded(amount)` sits **inside** the `try` (`:660-661`), and the contract's own comment
+(`:658-659`) says that poke is *expected* to revert when the token is not yet listed. So on the branch where
+the tokens have physically moved into the staking pool but the credit poke failed, nothing is emitted at all.
+`StakingFunded` is therefore unusable in both directions — silent when the reservoir moves, and later emitted
+as `StakingFunded(0)`-shaped noise when `flushStaking()` credits it.
+
+**(b) `RobinLpVault.Deposited` logs the amounts *offered*, not the amounts used — and the refund has no log.**
+`deposit` stashes `_ethIn = msg.value` and `_tokIn = tokenMax` (`:140-141`) before the unlock, and `_add`
+emits `Deposited(_who, L, _ethIn, _tokIn)` (`:217`) under field names `ethUsed` / `tokenUsed`. But
+`getLiquidityForAmounts` (`:206-208`) binds on one side only, so the other is over-supplied by design and
+refunded at `:151-154` — with **no event**. The token refund is at least visible as a raw ERC-20 `Transfer`;
+the ETH refund is a bare `call{value:}` that emits nothing, and `msg.value` never appears in a log, so the ETH
+a depositor actually contributed is **not reconstructible from the receipt at all**. Measured: offering
+1 ETH + 50,000 token logs `tokenUsed = 50,000e18` against 1e18 actually consumed (**50,000×**); offering
+100 ETH + 1 token logs `ethUsed = 100e18` against 1e18 (**100×**). Since `tokenMax` is meant to be generous —
+the vault refunds the rest as a feature — the overstatement is the normal case, not a corner.
+
+**(c) `RobinLockStaking.stake`'s reservoir flush is silent, and it is C-1's arming step.** Every other route
+into the drip announces itself through `_accrueReward`, which emits `RewardAdded` on both its park and drip
+branches (`:206`, `:211`). `stake` does not use it — it inlines the flush (`:112-117`) and calls `_startDrip(p)`
+directly, which writes `rewardRate` and `periodFinish` and moves the whole parked reservoir into an active
+stream. The transaction's only log is `Staked`. Measured: `fund(1000e18)` on an empty pool emits
+`RewardAdded(…, 1000e18, false)`; the next transaction, `stake(1e18)`, emits **only**
+`Staked(…, 1e18, 1789234579)` while `pendingRewards` goes 1000e18 → 0 and `rewardRate` goes 0 →
+385,802,469,135,802 wei/s. The sibling `DualStaking._kickstartPending` (`:230-235`) does emit on the identical
+path, so this is a local slip. Its significance is detection: **C-1's exploit arms with exactly this call**, so
+a monitoring system watching this contract sees an ordinary 1-wei `Staked` and no rate change at all.
+
+**(d) `RobinFloorVault.addFloor()` pays token-side LP fees to the platform with no log.** On this single-sided
+currency0 wall a positive `delta.amount1()` in `_add` is entirely realized token fees — the code says so at
+`:151-153` — and `_resolve` `take`s it straight to `feeRecipient` (`:154`). The only event is
+`FloorAdded(amt, L, floorLiquidity)` (`:157`), which has no token field. The sibling path `_collect` emits
+`FloorFeesCollected(amount0, amount1, to)` for the same money. Measured: a 1 ETH carve + `addFloor()` moved
+**15,596,599,508,071,243 wei of token (0.0156)** to the platform wallet, and the only event in the transaction
+was `FloorAdded(1e18, 33939159639764788040, 203634957838588728241)`. So the platform's floor-vault token
+revenue cannot be totalled from the vault's logs, and **which path a given accrual takes is decided by call
+order** — the same non-determinism L-18 describes for the ETH leg. Note the pairing: L-18 is the currency0 leg
+going to the wrong *destination*; this is the currency1 leg going to the right destination with no *record*.
+
+**Fix direction.** (a) emit `Graduated` with the amount `_fundStaking` actually delivered (have it return that),
+and move `emit StakingFunded` outside the `try` — or emit a distinct `StakingParked` on the early return and a
+`StakingPushedUncredited` on the catch. (b) emit `Deposited` from after the refunds, with
+`-delta.amount0()` / `-delta.amount1()`, and add a `Refunded` event. (c) route `stake`'s flush through
+`_accrueReward` like every other path, or emit `RewardAdded` from `_startDrip`. (d) emit `FloorFeesCollected`
+from `_add`'s currency1 branch, exactly as `_collect` does.
 
 ---
 
