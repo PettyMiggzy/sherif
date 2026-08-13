@@ -544,7 +544,21 @@ right.
 `RobinCurveV4.setStaking` / `setFloor` / `setAmbush` (`:447` / `:457` / `:467`) — does **not** require the
 recipient to have code. The sell-tax floor carve can be permanently pointed at an EOA or a wrong-pool vault in
 one transaction, with no undo. `ROBIN-V4-CURVE-ECON.md:62` tells the reader these setters' *"targets must be
-contracts"*. Not true of `setFloorRecipient`.
+contracts"*. Not true of `setFloorRecipient` — and it is the only one of the four that omits the check.
+
+Two points of precision, both from verification:
+
+- **It can strand the carve entirely, not merely misroute it.** If the recipient cannot receive the money side
+  — a contract with no `receive`, or one that reverts — `claimFloor` reverts on every call, and the hook has
+  **no rescue path**: its complete external surface is `registerPool`, `beforeSwap`, `afterSwap`,
+  `claimPlatform` / `claimCreator` / `claimFloor` / `claimBuffer` / `claimReferral`, `setFloorRecipient`,
+  `setBufferRecipient` and the creator repoint. No sweep, no withdraw, no re-point. The accrued
+  `floorOwed` is then permanently unreachable.
+- **Size it at production parameters, not the caps.** The ceiling
+  (`MAX_TAX_BPS` 200 × `MAX_FLOOR_SHARE_BPS` 5000) would make this 1% of sell volume, but the shipped values
+  are `sellTaxBps 100` / `sellFloorShareBps 2000` (`scripts/deploy-curve.js:35-36`, `scripts/launch.js:48-49`,
+  `ROBIN-V4-CURVE-ECON.md:29`) — **0.2% of the ETH sell leg**. On 1,000 ETH of lifetime sell volume that is
+  2 ETH at risk, not 10. This is an operator-error and documentation defect, not an attacker path.
 
 **Fix direction.** Give `RobinFloorVault` the ambush treatment — take the curve (or another on-chain source of
 the pad's launch tick) and read the anchor on-chain — and assert the pool is initialised via
