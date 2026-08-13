@@ -104,7 +104,18 @@ FORK_RPC=https://rpc.mainnet.chain.robinhood.com FORK_CHAINID=4663 \
 
 ## 8. Internal full-scope audit status
 
-_Filled in on completion of the pre-external-audit gauntlet (7 subsystems × adversarial refutation, looped to 2
-consecutive clean rounds)._
+Pre-external-audit adversarial gauntlet: **7 subsystems** (hook, curve, factory/config, lock/LP, vaults, staking,
+presale), parallel finders → independent skeptic refutation, looped to consecutive clean rounds. **Result: 2
+consecutive clean rounds, 0 confirmed findings** on the current code.
 
-<!-- STATUS -->
+Issues found and fixed during this gauntlet (all with tests; suite stays 129 green):
+
+| # | Severity | Area | Fix |
+|---|---|---|---|
+| 1 | LOW | `PadFactory` / `StockPadFactory` | Added the idempotent pool-init guard (adopt byte-identical pre-init, revert on any other price) the curve factory already had — closes a launch-griefing DoS. |
+| 2 | LOW | `RobinFloorVault` | `_add` now routes realized token-side (currency1) LP fees to `feeRecipient` instead of stranding them in the vault. |
+| 3 | HIGH | `PresaleVault` | `finalize()` try/catches the launch; on a snipe/front-run it fails the presale (reason 3 → immediate 100% refunds) instead of reverting/bricking/locking. Fund is never stolen or trapped. The "un-front-runnable" claim was corrected to state the real guarantee (relies on the single-sequencer FCFS ordering; fail-safe on a public-mempool chain). |
+| 4 | MEDIUM | `RobinLockStaking` | A mid-window reward top-up now drips over the remaining window and leaves `periodFinish` fixed, so permissionless dust-funding can no longer perpetually stretch the drip. |
+
+This is internal assurance, not a substitute for the external review — it is meant to hand the auditors clean code
+and a clear map of the invariants (§4) and the accepted design decisions (§5).
