@@ -49,9 +49,10 @@ and wording edits do not count either way.
 | 6 | generalize each finding to hunt its siblings: short returns, one-shot targets, unbounded loops | not clean — six more short-return sites, the one-shot table, 1 INFO |
 | 7 | netted fee deltas, owner-power retroactivity, park guards | not clean — 1 INFO extended; two lenses returned clean negatives |
 | 8 | rounding direction across every division in the suite | **clean** — recorded in §4 |
+| 9 | all 128 permissionless entry points, each asked what a stranger's worst-timed call does | **clean** — recorded in §4 |
 
 Clean passes are counted in §4 as they land; each one's negative result is written down there so a later pass
-does not re-derive it.
+does not re-derive it. **2 of 3 consecutive clean passes** as of this revision.
 
 ---
 
@@ -2148,6 +2149,24 @@ verification.
   `PriceLimitAlreadyExceeded`, and fails closed with `CeilingNotRestored` rather than bleeding the reserve.
   The nudge itself is right; **L-16** is that the two gates *upstream* of it compare the tick instead, so it
   can be skipped in a state it should have handled.
+- **Permissionless entry points, enumerated and asked the worst-timing question.** All 128 non-view
+  `external`/`public` functions in `contracts/` were listed and the internally-gated ones separated out. The
+  genuinely permissionless, state-changing ones are already this report's findings (`graduate`,
+  `restoreCeiling`, `flushStaking`, `addFloor`, `collectFloorFees`, `seedAmbush`, `collectFees`, `flushFees`,
+  `LockVault.claimStaking`, `finalize`, `fail`, the three `launch`es). The remainder were checked and hold:
+  - `claimGasBounty(to)` is callable by anyone but pays only `gasBountyOwed[to]`, booked to `msg.sender` at
+    graduation, and re-parks on a failed send. `totalGasBountyOwed` is tracked precisely so `sweepToPlatform`
+    cannot mis-book a pending bounty — and `sweepToPlatform`'s `booked` subtotal covers every standing
+    liability (`platform`, `creator`, `floor`, `ambush`, `gasBounty`); `restoreCeiling` refunds inline and
+    leaves none.
+  - `flushFloor` / `flushAmbush` are graduated-only, require the vault wired, and re-park on failure.
+  - **`StakingFactory.createPool` is permissionless and cannot be used to squat.** `poolsOf[token]` is an
+    append list, not a single slot, so no existing pool can be displaced; a squatted pool gets the factory's
+    own `platformTreasury` and hands ownership to `platformOwner`, so its fees are not the squatter's; and the
+    obvious follow-up — create a pool for someone else's token with a punitive hold — is closed by
+    `MAX_ANTI_JIT = 7 days`, enforced in **both** the constructor (`:142`) and `setAntiJitDelay` (`:472`).
+    `stock == token` is rejected outright (`[audit C1]`).
+  - `PresaleVault.claimTo(to)` routes `msg.sender`'s own claim; it takes no victim argument.
 - **Rounding direction, swept exhaustively.** Every division and bps computation in `contracts/` was checked for
   which side the residue falls on. All of them floor, and all of them floor *safely*: the hook's buy and sell
   fees (`:208`, `:236`, `:243`, `:293`, `:303`) round in the trader's favour; the graduation waterfall
