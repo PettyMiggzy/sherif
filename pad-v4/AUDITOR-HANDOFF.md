@@ -26,12 +26,12 @@ re-derive it.
 
 | severity | count | of which measured |
 |---|---|---|
-| **CRITICAL** | 1 | 1 |
-| **HIGH** | 2 | 2 |
-| **MEDIUM** | 16 | 9 |
+| **CRITICAL** | 2 | 2 |
+| **HIGH** | 3 | 3 |
+| **MEDIUM** | 17 | 10 |
 | **LOW** | 14 | 7 |
 | **INFO** | 11 (9 bundled as I-1, plus I-2 and I-3) | 1 |
-| **total** | **44** | **20** |
+| **total** | **47** | **23** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -180,6 +180,56 @@ live. That one difference is the whole exploit.
   fixes the dust-stranding in I-1(5).
 - **Close the easiest setup:** have `LockVault.claimStaking` poke `fundTokenPushed` at transfer time, exactly
   as the curve and ambush vault already do.
+
+---
+
+### C-2 · CRITICAL · 100 wei of dust liquidity pushes `graduate()` *and* `restoreCeiling()` past the block gas cap, trapping the whole raise  `PROVEN`
+
+**Where** `contracts/pads/RobinCurveV4.sol:540-556` (`_graduatePull`'s ceiling nudge) and `:582-590`
+(`_restore`). Neither takes a caller-supplied intermediate price limit, so neither can be split across
+transactions.
+
+**The setup is the ordinary sellout, not an attack.** A trader buying the curve out with the router-default
+`sqrtPriceLimitX96 = MIN_SQRT_PRICE + 1` slides spot all the way to the floor, because below `gradTick` there
+is no liquidity and v4's swap loop walks the price for zero input. **Verified independently:** after a normal
+sellout the tick is **−887272**, `ready()` is `true`, and the nudge must therefore walk back **890,272 ticks**
+to reach `gradTick`. Baseline `graduate()` costs **1,217,937** gas — the empty walk is cheap because v4 skips
+uninitialized ticks a bitmap word at a time.
+
+**The attack is to make that walk expensive.** Every *initialized* tick the swap crosses costs real gas, and
+initializing one is nearly free when spot is far below it:
+
+| | measured |
+|---|---|
+| attacker plants 100 positions of `liquidityDelta = 1`, one per 60-tick band below `gradTick` | **1 wei each — 100 wei total** (currency0-only, spot is far below) |
+| attacker's gas, spread over 100 unbounded transactions | 16,116,942 total, ~161k each |
+| **`graduate()` afterwards** | **33,767,571 gas** — over the 30,000,000 block cap, **reverts forever** |
+| **`restoreCeiling(bag)`, the documented recovery** | **31,776,972 gas** — also over the cap |
+| trapped | **63.7 ETH of raise** in the v4 position + 100e18 reserve tokens on the curve |
+| **attacker's total cost** | **0.000486 ETH** at the repo's own 30,180,000 wei gas hint, plus 100 wei |
+
+The asymmetry is the whole attack: the attacker pays ~80,585 gas per initialized tick **spread over as many
+transactions as they like**, and imposes ~162,748 gas per tick on **one** victim transaction that must
+complete atomically.
+
+**This is not the grief the suite already handles.** `test/unit/RobinCurveV4.grief.test.js` covers planting
+*deep* liquidity so the nudge's 1%-of-reserve token budget runs out — that path fails closed with
+`CeilingNotRestored` and `restoreCeiling` recovers it (and is why L-8 is only LOW). Here the positions are
+`L = 1`, so essentially no token is consumed and the budget never binds. The swap runs out of **gas**, and
+`restoreCeiling` is bricked by the identical mechanism. **The documented recovery is defeated by the thing it
+exists to recover from.**
+
+There is no other exit. `poolManager.modifyLiquidity(..., liquidityDelta: -int256(uint256(curveL)) ...)` at
+`:568` is the only negative-liquidity call in the file, and `graduate()` is its only caller.
+
+**Fix direction.** Make the walk-back segmentable and bound the gap.
+1. Give `restoreCeiling` a caller-supplied `sqrtPriceLimitX96`, requiring
+   `current < limit <= getSqrtPriceAtTick(gradTick)`, so anyone can push spot toward the ceiling across as
+   many transactions as it takes. This alone converts an unrecoverable brick into a recoverable one.
+2. Split `graduate()` so ceiling restoration is a separate, retryable, partial-progress step rather than an
+   all-or-nothing swap inside `_graduatePull`.
+3. Consider preventing the deep overshoot in the first place — the sellout only reaches the floor because
+   nothing stops a buy below `gradTick`.
 
 ---
 
@@ -333,6 +383,47 @@ rug primitive in shipped, in-scope code, reachable by anyone.
 `mapping(address => bool) approvedAdapter`. The guard adapter should not be launcher-chosen at all — derive it
 from the approved adapter for that stock. Give `guardWindow` a hard ceiling: a corporate-action window is
 hours, not years.
+
+---
+
+### H-3 · HIGH (gating the stock pad) · `try/catch` does not absorb a short return, and `guardAdapter` has no setter  `PROVEN`
+
+**Where** `contracts/hooks/RobinFeeHook.sol:255-261` (`_scheduledEffectiveAt`), reached from the curb at
+`:190-197` on **every swap** of a stock pad.
+
+```solidity
+try IStockGuardAdapter(adapter).scheduledEffectiveAt() returns (uint256 ea) { return ea; }
+catch { return 0; }
+```
+
+Solidity's `try/catch` catches reverts. It does **not** catch a failure to decode the return data: that
+happens in the *caller's* frame after the call has already succeeded, outside the protected region. A callee
+that returns **zero bytes** therefore reverts the whole transaction, uncatchably.
+
+**PROVEN** against the sibling site: a 5-byte contract whose runtime is `PUSH1 0, PUSH1 0, RETURN` — succeeds,
+returns nothing, for any selector — was installed as `DualStaking`'s boost oracle. `boostOf` reverted despite
+its try/catch and its *"Never reverts"* NatSpec, and `stake`, `unstake` and `claim` all reverted with it. The
+same shape applies here.
+
+**On a stock pad the consequence is permanent.** `guardAdapter` is written once in `registerPool` (`:160`) and
+there is **no setter anywhere in the contract** — grep returns only the field (`:75`), that write, and the
+read. So a stock pad launched with a short-returning adapter has every swap revert forever, with the seed LP
+already locked in `LockVault` and no path to change the adapter, unwind the position, or recover the seed.
+Reaching it needs only a contract that has code and a working `stock()` — which is all
+`StockPadFactory.launch:123` checks (see H-2).
+
+**The suite gets this right almost everywhere else, which is worth stating.** Enumerating every `try` in
+`contracts/` (excluding tests), only sites with a `returns (...)` clause decode, and of those only two have an
+untrusted callee: this one and `DualStaking.boostOf` (M-17). The `poolManager.initialize` sites and
+`PresaleVault`'s `launch` call trust canonical contracts; and every defensive `try` on a hot path —
+`poolManager.mint`/`take`, `claimBuffer`, `fundTokenPushed` (both call sites), `addFloor`, `onWeightChange` —
+omits the `returns` clause and so never decodes. Those are genuinely safe. The gap is precisely the two sites
+that read a value back from an address someone else chose.
+
+**Fix direction.** Use a low-level `staticcall` and check `returndata.length == 32` before decoding, e.g.
+`(bool ok, bytes memory d) = adapter.staticcall(...); if (!ok || d.length != 32) return 0;`. Apply the same at
+`DualStaking.boostOf`. Independently, `guardAdapter` should be repointable by the platform, since today a
+single bad address at launch is unrecoverable.
 
 ---
 
@@ -973,6 +1064,37 @@ second is a one-line change and is what the code actually does.
 
 ---
 
+### M-17 · MEDIUM · The same short-return gap freezes `DualStaking` principal  `PROVEN`
+
+**Where** `contracts/pads/DualStaking.sol:186-196` (`boostOf`), reached from `_reweigh` on every `stake`,
+`unstake` and `sync`.
+
+Same root cause as H-3. `boostOf`'s NatSpec promises *"Never reverts"* and it is wrapped in `try/catch`, but a
+boost oracle that returns fewer than 32 bytes makes the decode revert in `boostOf`'s own frame.
+
+**PROVEN.** Deploy a 5-byte contract whose runtime is `60006000F3` (returns empty for any selector), then
+`setBoostOracle(thatAddress)`:
+
+| | before | after |
+|---|---|---|
+| `boostOf` | 10000 | **reverts** |
+| `stake` | works | **reverts** |
+| `unstake` | works | **reverts — principal frozen** |
+
+`setBoostOracle` (`:466-469`) validates nothing — not zero, not `code.length`, not the interface — and the
+reachable bad values are ordinary operational mistakes: an EOA, a CREATE2 address for an oracle not yet
+deployed, or a proxy whose implementation slot is momentarily zero.
+
+**It is recoverable, which is why MEDIUM not HIGH.** `setBoostOracle` is a plain assignment with no one-shot
+guard, so the owner can point it back at `address(0)` (which short-circuits to `BPS` before any call) or at a
+working oracle, and everything resumes. But until they do, every staker's principal is frozen, and the freeze
+is invisible until someone tries to unstake.
+
+**Fix direction.** As H-3: low-level `staticcall` with a `returndata.length == 32` check. Also validate the
+oracle has code at set time — it does not make the contract safe, but it removes the commonest way in.
+
+---
+
 ### L-1 · LOW · `RobinV4FeeConfig` accepts curve geometries whose raise floors to zero  `PROVEN (numerically)`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-103` (`_validate`), with
@@ -1147,7 +1269,9 @@ budget is **not** the binding constraint: measured at production geometry (start
 ts 100, 730M curve / 270M reserve, waterfall 1000/1000/500), parking **~2.2–2.3 ETH against a 4.053 ETH honest
 raise** inflates `lpEth` until `_mintPermanentLp`'s check fails and `graduate()` reverts `InsufficientReserve`.
 
-**Impact is a temporary, self-healing DoS, not a brick.** It is the same class as the planted-liquidity grief
+**Impact is a temporary, self-healing DoS, not a brick — but see C-2.** The recovery this rests on,
+`restoreCeiling`, is itself brickable by gas (C-2), so "self-healing" holds only while nobody has planted dust
+ticks. Fixing C-2 restores the assumption this finding depends on. It is the same class as the planted-liquidity grief
 `restoreCeiling` was built for and `test/unit/RobinCurveV4.grief.test.js` already covers, with the same
 permissionless recovery — and the recovery is enormously over-incentivised, because `restoreCeiling` pays the
 caller the griefer's entire parked ETH (one skeptic measured 1.2 token buying back 401 ETH). The attacker must
@@ -1635,17 +1759,20 @@ advance 7 days, read `earned`, then `setPlatformClaimFee(1000)` and claim — th
 
 ## 7. Suggested remediation order
 
-1. **C-1** — the only finding that takes 100% of a user-facing pot, for 3 wei, permissionlessly. Fix the
+1. **C-2** — 100 wei traps the entire raise, and the documented recovery is bricked by the same mechanism.
+   Fix (1) alone — a caller-supplied price limit on `restoreCeiling` — converts it from unrecoverable to
+   recoverable, which is the single highest-value line in this document.
+2. **C-1** — the only finding that takes 100% of a user-facing pot, for 3 wei, permissionlessly. Fix the
    drip-rate floor *and* the pause guard; the sub-rate-tranche check closes the arming step and the dust
    stranding in I-1(5) at the same time.
-2. **H-1** — no minimum trade size, cheaper than paying the tax, and a router can hand it to every user. It
+3. **H-1** — no minimum trade size, cheaper than paying the tax, and a router can hand it to every user. It
    defunds the creator's entire income and the floor. The buy side already shows the fix.
 3. **M-15** — the floor only deepens while the price is above it, so the pad's headline protection does not
    operate in the state it exists for. It falsifies an `AUDIT-SCOPE.md` §4.4 invariant rather than mis-tuning
    one, so it needs a design answer, not a parameter change.
 4. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
    (an assertion at launch; an on-chain anchor read).
-4. **H-2** — before any stock pad exists. It is a rug primitive, and M-8 means it is currently untestable
+5. **H-2 and H-3** — before any stock pad exists. It is a rug primitive, and M-8 means it is currently untestable
    locally, so fix the mock in the same pass.
 5. **M-11** — holder fees routed to the platform by the ordinary post-graduation flow, with no attacker
    required. One line, and the right shape already exists in the same file (`claimFloor`'s
