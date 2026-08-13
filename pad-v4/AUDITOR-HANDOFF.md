@@ -27,11 +27,11 @@ re-derive it.
 | severity | count | of which measured |
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
-| **HIGH** | 3 | 3 |
+| **HIGH** | 4 | 4 |
 | **MEDIUM** | 27 | 14 |
-| **LOW** | 29 | 14 |
+| **LOW** | 31 | 16 |
 | **INFO** | 23 (19 bundled as I-1, plus I-2 … I-5) | 2 |
-| **total** | **83** | **35** |
+| **total** | **86** | **38** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -514,6 +514,100 @@ safe. Of the sites that do decode:
 `DualStaking.boostOf` and — since it is the identical three lines and makes the "never reverts" NatSpec true —
 at all six `StockQuoteAdapter` sites. Independently, `guardAdapter` should be repointable by the platform,
 since today a single bad address at launch is unrecoverable.
+
+---
+
+### H-4 · HIGH (gating the stock pad) · `StockPadFactory.launch` pulls the seed from `msg.sender` and refunds it to `cfg.creator` — 99.9% of a payer's balance, measured  `PROVEN`
+
+**Where** `contracts/core/StockPadFactory.sol:182` (`safeTransferFrom(msg.sender, …)`) against `:185` (the
+comment) and `:189-190` (the refund), with sizing at `:204-210`.
+
+The stock path is the **only** launch path where the funder and the creator are two explicitly-modelled,
+distinct roles: `launch` is not `payable`, and the NatSpec at `:112-113` states *"The caller must have approved
+this factory to pull `stockSeed`."* `:182` duly pulls from `msg.sender`.
+
+`_mintSeedLp` then sizes the position with
+`LiquidityAmounts.getLiquidityForAmounts(sqrtPriceX96, minTick, maxTick, stockSeed, lpTokenAmount)`, which
+binds on **one** side only — so the other side is over-supplied by construction, and `SETTLE_PAIR` pulls only
+what the mint actually owes. Whatever stock the mint did not consume stays in the factory. Then:
+
+```solidity
+uint256 stockRemainder = IERC20(stock).balanceOf(address(this));   // :189
+if (stockRemainder > 0) IERC20(stock).safeTransfer(cfg.creator, stockRemainder);   // :190
+```
+
+Two defects in one statement. The destination is `cfg.creator`, **not the payer**, while the comment directly
+above it describes returning the unused seed to whoever supplied it. And the amount is the factory's whole
+balance of that asset, not this launch's remainder (see I-1(17) for what that composes with).
+
+**Measured** against a real local `PoolManager` with an action-aware `PositionManager` mock, payer ≠ creator,
+`lpTokenAmount = 1e20`, `stockSeed = 1e23`, 1:1 price, `ts` 60:
+
+| | |
+|---|---|
+| payer's stock balance | 100,000e18 → **0** |
+| reached the pool | **100e18** |
+| sent to `cfg.creator` | **99,900e18 — 99.9% of the payer's balance** |
+
+Silent, irreversible, and it lands on the *modelled* flow: a platform funding a launch on a creator's behalf,
+or any arrangement where the approver and the named creator differ. HIGH by impact, labelled as stock-pad
+gating for the same reason as H-2 and H-3 — no stock pad exists today.
+
+**Fix direction.** Refund to `msg.sender`, and refund **this launch's** remainder rather than
+`balanceOf(address(this))` — snapshot the balance before the pull and return the delta. Fix the comment either
+way; right now it documents behaviour the code does not have.
+
+---
+
+### L-30 · LOW (gating the stock pad) · `guardWindow == 0` silently disables the only stock-specific control, on a pad that still advertises `quoteIsStock`  `PROVEN`
+
+**Where** `contracts/core/StockPadFactory.sol:68`, `:118-121` (the complete validation), `:176-177`;
+enforced at `contracts/hooks/RobinFeeHook.sol:190`.
+
+`StockPadFactory` hardcodes `quoteIsStock: true` (`:177`) and `guardAdapter: cfg.adapter` (`:170`), but passes
+`guardWindow` straight through from calldata. The curb is
+`if (c.guardWindow > 0 && c.quoteIsStock && c.guardAdapter != address(0))` — so **`guardWindow == 0` makes the
+entire clause dead**. `registerPool` validates every other economic field (both taxes against `MAX_TAX_BPS`,
+all three shares against `BPS`, a non-zero creator) and validates `guardWindow` not at all; `launch` does not
+either. Grepping outside tests returns exactly four non-test sites — the struct field, one `registerPool`
+write, and two reads — so **there is no setter anywhere** and the value is frozen for the pad's life.
+
+**Measured:** a pad launched with `guardWindow: 0` reports `quoteIsStock == true` and a genuine
+`StockQuoteAdapter` as its `guardAdapter` — on-chain indistinguishable from a curbed stock pad — while
+`adapter.scheduledEffectiveAt()` returned a live value and a buy executed normally through `beforeSwap`.
+
+Not H-2, which is `guardWindow` unbounded **above** (a launcher-held freeze primitive) and whose fix direction
+is *"give `guardWindow` a hard ceiling"* — a ceiling does nothing about zero. Not L-22, which is about the
+window's post-event half being unenforceable.
+
+**Fix direction.** Require `guardWindow > 0` in `StockPadFactory.launch` (and a floor, not just H-2's ceiling),
+or have `registerPool` reject `quoteIsStock == true` with `guardWindow == 0` so the two cannot disagree.
+
+---
+
+### L-31 · LOW (gating the stock pad) · `tradeable()`'s registry reads fail **open** while its stock read fails closed, so the only on-chain compliance surface passes a blocked account  `PROVEN`
+
+**Where** `contracts/adapters/StockQuoteAdapter.sol:123-126` (stock pause — fail-closed) against `:128-130`
+(registry pause) and `:131-136` (the `isBlocked` loop) — both bare `catch {}`.
+
+The three reads are guarded in two contradictory directions. The stock's own `paused()` failing returns
+`false`, with an explicit comment — *"unreadable pause state → treat as not tradeable"* — which is correct,
+fail-closed. The registry's `paused()` and the per-account `isBlocked()` use empty catches, so a failed read
+falls through to `return true`. Those two are precisely the compliance-critical reads: the venue-wide halt and
+the sanctions/blocklist check.
+
+**Measured:** with a registry whose `paused()` and `isBlocked()` both revert, `tradeable([a, b])` returns
+**`true`**; with the stock's own `paused()` reverting, the same call correctly returns `false`.
+
+It is also unfixable per pad — `registry` is `immutable`, snapshotted once from what the adapter's own NatSpec
+calls a beacon proxy — and `tradeable()` is the **only** on-chain compliance gate the stock pad has, since the
+hook never consults it. The `[D1]` disclosure leans on exactly this function.
+
+Not H-3, which enumerates the same lines for the opposite mechanism — a *short return* failing to decode in the
+caller's frame and reverting uncatchably. This is the ordinary revert path, caught and then ignored.
+
+**Fix direction.** Make all three reads fail closed: `catch { return false; }` on both registry reads, matching
+the stock read directly above them.
 
 ---
 
