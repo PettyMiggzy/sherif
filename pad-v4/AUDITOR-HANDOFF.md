@@ -2255,7 +2255,24 @@ verification.
 - **Securities/legal review of the stock pad** remains out of scope per `AUDIT-SCOPE.md` §2. The disclosed
   `[D1]` (a paused or blocklisted stock hard-freezes that pad) and `[D3]` (`adminBurn` can burn the pool's
   reserve) remain accurate and unfixable on-chain. H-2 is a separate, on-chain-fixable defect.
-- **Off-chain infra** (indexer, launch bot, front end) was not reviewed.
+- **Off-chain infra** (indexer, launch bot, front end) was not reviewed. The `scripts/` directory *was* read,
+  but only as evidence about the on-chain system — what the runbook wires and in what order (L-6, L-7, I-4),
+  and what the keeper pokes (M-11, M-13, L-18). The scripts were not audited as software: no key handling, no
+  RPC failure behaviour, no idempotency-under-retry, no review of `deploy.local.json` as a trust anchor.
+- **No formal verification and no fuzzing.** The measured findings come from hand-built adversarial cases, so
+  the coverage argument is "these specific attacks work", never "no other attack exists". The two places that
+  would most repay a fuzzer are the graduation waterfall's balance arithmetic and `DualStaking`'s
+  weight/`accountedReserve` bookkeeping under interleaved stake/unstake/fund sequences — both are integer
+  state machines with many reachable orderings, and both are where §4's negative results rest on
+  case-enumeration rather than proof.
+- **Cross-pad and cross-version interaction.** Every pad launches its own hook, curve and vaults, but they
+  share `FeeWalletRegistry`, `LockVault`, `StakingFactory` and `RobinV4FeeConfig`. Findings were reasoned
+  per-pad; the question of what a hostile *pad* (rather than a hostile trader) can do to the shared
+  singletons — `LockVault`'s single registrar slot is one instance, M-2 — was not swept exhaustively.
+- **The `PadFactory` and `StockPadFactory` stacks** were audited only where they touch the curve suite or
+  share code with it. `AUDIT-SCOPE.md` §1 puts `PadFactory` in scope and §2 marks the stock pad
+  informational; M-3, H-2, H-3, M-8 and I-1(2) are what surfaced from that partial attention, not the result
+  of a dedicated pass.
 
 ---
 
