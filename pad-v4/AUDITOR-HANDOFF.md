@@ -36,6 +36,23 @@ re-derive it.
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
 
+**How this was run, and where the loop stands.** The brief was to keep auditing until three consecutive passes
+turn up nothing, so each pass is a distinct lens over the whole suite rather than a re-read. A pass counts as
+**clean** only if it adds no finding *and* changes no existing finding's severity or substance; consolidation
+and wording edits do not count either way.
+
+| pass | lens | result |
+|---|---|---|
+| 1–3 | subsystem × attack-surface finders, each finding put to independent skeptics instructed to refute | not clean — C-1, C-2, H-1…H-3 and most of the MEDIUMs |
+| 4 | the four contracts the register had barely touched: `BaseHook`, `FeeWalletRegistry`, `RobinLpVault`, the hook's claim-redemption path | not clean — 2 INFO |
+| 5 | toolchain (`solc` advisories) and test-coverage-vs-stated-invariants | not clean — **I-5**, **M-19** |
+| 6 | generalize each finding to hunt its siblings: short returns, one-shot targets, unbounded loops | not clean — six more short-return sites, the one-shot table, 1 INFO |
+| 7 | netted fee deltas, owner-power retroactivity, park guards | not clean — 1 INFO extended; two lenses returned clean negatives |
+| 8 | rounding direction across every division in the suite | **clean** — recorded in §4 |
+
+Clean passes are counted in §4 as they land; each one's negative result is written down there so a later pass
+does not re-derive it.
+
 ---
 
 ## 2. The pattern worth reading first
@@ -2131,6 +2148,17 @@ verification.
   `PriceLimitAlreadyExceeded`, and fails closed with `CeilingNotRestored` rather than bleeding the reserve.
   The nudge itself is right; **L-16** is that the two gates *upstream* of it compare the tick instead, so it
   can be skipped in a state it should have handled.
+- **Rounding direction, swept exhaustively.** Every division and bps computation in `contracts/` was checked for
+  which side the residue falls on. All of them floor, and all of them floor *safely*: the hook's buy and sell
+  fees (`:208`, `:236`, `:243`, `:293`, `:303`) round in the trader's favour; the graduation waterfall
+  (`:346-351`) and the buy-LP floor carve (`:609`) leave their remainder in the balance that step 9 sweeps to
+  the platform book; `DualStaking`'s claim fee (`:343`) and boosted weight (`:262`) both round toward the
+  staker and the pool respectively; `RobinLockStaking`'s early-exit penalty (`:143`) rounds toward the
+  withdrawer; `PresaleVault`'s pro-rata `mulDiv`s (`:257-258`, `:315-316`) floor, so the vault can never owe
+  more than it holds. `RobinLpVault`'s accumulator is the only place where floor-and-forget would actually
+  strand value, and it is the one place with an explicit remainder carry (`:250-253`, `[audit L6]`) — checked
+  algebraically: `inc·tl/ACC ≤ amt` so the carry never underflows, and `Σ⌊liq_u·acc⌋ ≤ ⌊Σliq_u·acc⌋`, so
+  claims can never exceed `feeReserve`. No rounding finding survived.
 - **C-2 has no siblings inside this codebase.** Every loop in `contracts/` was enumerated: four, all hard
   bounded — three in `DualStaking` (`:203`, `:227`, `:316`) iterate `_rewardTokens[side]`, capped at
   `MAX_REWARD_TOKENS = 8` and enforced in `_listReward:447`, and one in `StockQuoteAdapter:131` walks a
