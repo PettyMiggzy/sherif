@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
 | **HIGH** | 2 | 2 |
-| **MEDIUM** | 15 | 6 |
-| **LOW** | 13 | 5 |
+| **MEDIUM** | 15 | 8 |
+| **LOW** | 13 | 6 |
 | **INFO** | 11 (9 bundled as I-1, plus I-2 and I-3) | 1 |
-| **total** | **42** | **15** |
+| **total** | **42** | **18** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -1571,7 +1571,7 @@ advance 7 days, read `earned`, then `setPlatformClaimFee(1000)` and claim — th
    stranding in I-1(5) at the same time.
 2. **H-1** — no minimum trade size, cheaper than paying the tax, and a router can hand it to every user. It
    defunds the creator's entire income and the floor. The buy side already shows the fix.
-3. **M-17** — the floor only deepens while the price is above it, so the pad's headline protection does not
+3. **M-15** — the floor only deepens while the price is above it, so the pad's headline protection does not
    operate in the state it exists for. It falsifies an `AUDIT-SCOPE.md` §4.4 invariant rather than mis-tuning
    one, so it needs a design answer, not a parameter change.
 4. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
