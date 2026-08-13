@@ -1325,7 +1325,7 @@ But a presale stops accepting deposits the moment `totalRaised == target` — `d
 (`:150`). So the raise can close in its first minute while the escape hatch stays shut for the full term.
 
 At the permitted maximums — `deadline = now + 30 days`, `finalizeGrace = 7 days` — a presale that fills 60
-seconds after creation leaves contributors with **no exit for ~37 days**: they cannot deposit, cannot refund
+seconds after creation leaves contributors with **no exit for a measured 36.9999 days**: they cannot deposit, cannot refund
 (`refund` requires `failed`), cannot claim (`claim` requires `finalized`), and cannot force the issue
 (`fail` reverts `BeforeDeadline`, then `TargetMet` until deadline + grace). Meanwhile the creator holds a free
 37-day option: finalize whenever the market suits, or let it lapse into reason 2.
@@ -1336,8 +1336,12 @@ flip the vault themselves and pull 100%. Proven: a contributor-initiated `fail()
 subsequent `finalize()` reverts `NotOpen`, and `refund()` returns the full 1 ETH. The exposure is the dead
 window, not a permanent trap — which is why LOW.
 
-Nothing is stolen and the refund path is intact. But "trustless, refundable" is doing less work than it
-appears: the refund is guaranteed *eventually*, on a clock the contributor does not control and which
+**Nothing is extractable.** Refunds pay exactly 100%, no party profits from the dead window, and the creator
+gains only optionality, not value. One reviewer scored this INFO on that basis and the other LOW; it is
+recorded at LOW because it is a fixable design defect touching user funds' availability, not because anything
+is at risk.
+
+But "trustless, refundable" is doing less work than it appears: the refund is guaranteed *eventually*, on a clock the contributor does not control and which
 is not anchored to anything they can observe.
 
 **Fix direction.** Anchor the hatch to the raise closing, not the calendar: record `filledAt` when
