@@ -28,8 +28,8 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
 | **HIGH** | 2 | 2 |
-| **MEDIUM** | 17 | 8 |
-| **LOW** | 11 | 3 |
+| **MEDIUM** | 15 | 6 |
+| **LOW** | 13 | 5 |
 | **INFO** | 11 (9 bundled as I-1, plus I-2 and I-3) | 1 |
 | **total** | **42** | **15** |
 
@@ -887,92 +887,7 @@ wiring, and `platformFeeWallet` purely as a destination. If they must stay unifi
 
 ---
 
-### M-15 · MEDIUM · `finalize()`'s blanket catch makes *any* failure — including an under-gassed call — a permanent, irreversible kill  `PROVEN`
-
-**Where** `contracts/core/RobinV4FeeConfig.sol:102-105` (`_validate` bounds only signs and ordering),
-`contracts/core/CurvePadFactoryV4.sol:120` / `:131` / `:140` (the launch-time geometry and reserve checks),
-`contracts/presale/PresaleVault.sol:180-192` (`finalize`'s blanket `catch`).
-
-If an owner retune leaves the *committed* `LaunchConfig` unlaunchable under the *new* geometry — a
-`startTickMag`/`curveWidth` that no longer divides the presale's `cfg.tickSpacing`, or an aligned-but-narrower
-`curveWidth` that trips the `reserveSupply·ss·100 >= curveSupply·sg·105` check — then
-`CurvePadFactoryV4.launch` reverts. `PresaleVault.finalize` wraps that call in a catch-all written for a
-different scenario (a sniped launch), so it treats the revert as a front-run and marks the presale
-`Failed(3)`.
-
-**PROVEN:** `setDefaults({...D0, startTickMag: 6030})` is accepted by `_validate`; `launch` then reverts
-`BadGeometry` at `CurvePadFactoryV4.sol:120` for a presale committed with `tickSpacing = 60`; `finalize`
-swallows it, sets `finalized = false` / `failed = true`, emits `Failed(3)`, and `state()` becomes 2.
-**The transition is irreversible:** a retry reverts `NotOpen` even after the owner repairs the config in the
-very next block. There is no un-fail path.
-
-**Bounded, and funds are safe.** Contributors recover 100% via `refund()` / `refundTo()`, so this is an
-availability failure, not a loss. The blast radius is narrower than it first appears: `cfg.tickSpacing` is
-caller-chosen, so any spacing that still divides both new values launches fine — a retune is not a
-launchpad-wide halt. Only presales whose committed spacing no longer divides the geometry are killed.
-
-**The trigger set is far broader than a retune.** The handler is a bare `catch { }` (`:180-192`) with no
-error-selector matching, so it absorbs *every* revert reason while its comment reasons only about a snipe. In
-particular, under EIP-150's 63/64 rule an under-gassed `finalize` lets the inner `launch` run out of gas while
-the outer frame survives — so an **honest caller who merely under-estimates gas permanently kills a fully
-funded presale**. There is no retry: `state()` is 2 and every path reverts `NotOpen`. The same applies to any
-future revert in `launch` that nobody anticipated.
-
-**This is an accident, not an attack — the malicious reading does not hold.** Calling `finalize` requires the
-salt preimages, so only a preimage-holder can trigger it, and that actor already has a strictly better way to
-kill the raise: simply never call `finalize`. `fail()` (`:278`) then fires `Failed(2)` past deadline + grace
-and everyone refunds 100% — the terminal state is identical. The gas trick is in fact *friendlier* to
-depositors, because it opens refunds immediately instead of making them wait out the grace window.
-
-What is left is the case that matters: a wallet's gas estimate, or a launch that grew gas-heavier than the
-estimator expected, silently converting a recoverable condition into an irreversible one. No malice is
-required and none should be assumed.
-
-**Fix direction.** Three independent improvements. (1) Match the error — treat only the specific
-already-launched signatures (`AlreadyRegistered`, and the drained-factory transfer failure) as a snipe, and
-let everything else bubble so the caller can retry. (2) Require a gas floor before the sub-call
-(`require(gasleft() > N)`), the standard defence against a 63/64 griefing catch. (3) Make the transition
-recoverable: `Failed(3)` should be re-openable while the deadline has not passed, since unlike reasons 1 and 2
-it asserts a fact about the outside world that may simply be false. The geometry snapshot in M-12 removes the
-retune trigger specifically, but not the class.
-
----
-
----
-
-### M-16 · MEDIUM · The escape hatch is anchored to `deadline`, not to when the raise closed, locking contributors for up to 37 days  `VERIFIED`
-
-**Where** `contracts/presale/PresaleVault.sol:278-291` (`fail`), against `:104-113` (`initialize`'s bounds:
-`MAX_DURATION` 30 days, `GRACE_MAX` 7 days).
-
-```solidity
-if (block.timestamp <= deadline) revert BeforeDeadline();
-```
-
-`fail()` cannot fire before `deadline` under any circumstances, and `finalize()` has **no upper time bound**.
-But a presale stops accepting deposits the moment `totalRaised == target` — `deposit` reverts `TargetMet`
-(`:150`). So the raise can close in its first minute while the escape hatch stays shut for the full term.
-
-At the permitted maximums — `deadline = now + 30 days`, `finalizeGrace = 7 days` — a presale that fills 60
-seconds after creation leaves contributors with **no exit for ~37 days**: they cannot deposit, cannot refund
-(`refund` requires `failed`), cannot claim (`claim` requires `finalized`), and cannot force the issue
-(`fail` reverts `BeforeDeadline`, then `TargetMet` until deadline + grace). Meanwhile the creator holds a free
-37-day option: finalize whenever the market suits, or let it lapse into reason 2.
-
-Nothing is stolen and the refund path is intact at the end. But "trustless, refundable" is doing less work
-than it appears: the refund is guaranteed *eventually*, on a clock the contributor does not control and which
-is not anchored to anything they can observe.
-
-**Fix direction.** Anchor the hatch to the raise closing, not the calendar: record `filledAt` when
-`totalRaised` first reaches `target`, and let `fail()` fire at `min(deadline, filledAt) + finalizeGrace`. That
-preserves the grace window's purpose — giving a preimage-holder time to finalize — while removing the dead
-time between a full raise and an arbitrary deadline.
-
----
-
----
-
-### M-17 · MEDIUM · The floor can only deepen while the price is *above* it, so any drawdown idles the carve  `PROVEN`
+### M-15 · MEDIUM · The floor can only deepen while the price is *above* it, so any drawdown idles the carve  `PROVEN`
 
 **Where** `contracts/pads/RobinFloorVault.sol:110-116` (`addFloor`'s band guard), with the add-only design at
 `:24-30`.
@@ -1333,6 +1248,106 @@ not a live DoS.
 Bounded to one small fee stream per pad and reachable only after a platform-domain event, which is why LOW.
 
 **Fix direction.** Read `feeRegistry.platformFeeWallet()` at collect time, as every other consumer does.
+
+---
+
+### L-12 · LOW · `finalize()`'s bare catch turns an under-gassed call into an irreversible `Failed(3)` — and the tx reports success  `PROVEN`
+
+**Where** `contracts/core/RobinV4FeeConfig.sol:102-105` (`_validate` bounds only signs and ordering),
+`contracts/core/CurvePadFactoryV4.sol:120` / `:131` / `:140` (the launch-time geometry and reserve checks),
+`contracts/presale/PresaleVault.sol:180-192` (`finalize`'s blanket `catch`).
+
+If an owner retune leaves the *committed* `LaunchConfig` unlaunchable under the *new* geometry — a
+`startTickMag`/`curveWidth` that no longer divides the presale's `cfg.tickSpacing`, or an aligned-but-narrower
+`curveWidth` that trips the `reserveSupply·ss·100 >= curveSupply·sg·105` check — then
+`CurvePadFactoryV4.launch` reverts. `PresaleVault.finalize` wraps that call in a catch-all written for a
+different scenario (a sniped launch), so it treats the revert as a front-run and marks the presale
+`Failed(3)`.
+
+**PROVEN:** `setDefaults({...D0, startTickMag: 6030})` is accepted by `_validate`; `launch` then reverts
+`BadGeometry` at `CurvePadFactoryV4.sol:120` for a presale committed with `tickSpacing = 60`; `finalize`
+swallows it, sets `finalized = false` / `failed = true`, emits `Failed(3)`, and `state()` becomes 2.
+**The transition is irreversible:** a retry reverts `NotOpen` even after the owner repairs the config in the
+very next block. There is no un-fail path.
+
+**Bounded, and funds are safe.** Contributors recover 100% via `refund()` / `refundTo()`, so this is an
+availability failure, not a loss. The blast radius is narrower than it first appears: `cfg.tickSpacing` is
+caller-chosen, so any spacing that still divides both new values launches fine — a retune is not a
+launchpad-wide halt. Only presales whose committed spacing no longer divides the geometry are killed.
+
+**The trigger set is far broader than a retune.** The handler is a bare `catch { }` (`:180-192`) with no
+error-selector matching, so it absorbs *every* revert reason while its comment reasons only about a snipe. In
+particular, under EIP-150's 63/64 rule an under-gassed `finalize` lets the inner `launch` run out of gas while
+the outer frame survives — so an **honest caller who merely under-estimates gas permanently kills a fully
+funded presale**. There is no retry: `state()` is 2 and every path reverts `NotOpen`. The same applies to any
+future revert in `launch` that nobody anticipated.
+
+**This is an accident, not an attack — the malicious reading does not hold.** Calling `finalize` requires the
+salt preimages, so only a preimage-holder can trigger it, and that actor already has a strictly better way to
+kill the raise: simply never call `finalize`. `fail()` (`:278`) then fires `Failed(2)` past deadline + grace
+and everyone refunds 100% — the terminal state is identical. The gas trick is in fact *friendlier* to
+depositors, because it opens refunds immediately instead of making them wait out the grace window.
+
+What is left is the case that matters: a wallet's gas estimate, or a launch that grew gas-heavier than the
+estimator expected, silently converting a recoverable condition into an irreversible one. No malice is
+required and none should be assumed.
+
+**And the caller is told it worked.** The transaction returns **status 1** and emits `Failed(3)` —
+*"committed launch sniped"* — so the operator sees a successful call and a reason code that is factually wrong
+about what happened. This is an availability and observability bug, not a fund-loss or profitable-attack
+vector, which is why LOW.
+
+**Fix direction.** Three independent improvements. (1) Match the error — treat only the specific
+already-launched signatures (`AlreadyRegistered`, and the drained-factory transfer failure) as a snipe, and
+let everything else bubble so the caller can retry. (2) Require a gas floor before the sub-call
+(`require(gasleft() > N)`), the standard defence against a 63/64 griefing catch. (3) Make the transition
+recoverable: `Failed(3)` should be re-openable while the deadline has not passed, since unlike reasons 1 and 2
+it asserts a fact about the outside world that may simply be false. The geometry snapshot in M-12 removes the
+retune trigger specifically, but not the class.
+
+---
+
+---
+
+---
+
+### L-13 · LOW · The escape hatch is anchored to `deadline`, not to when the raise closed, locking contributors for up to 37 days  `PROVEN`
+
+**Where** `contracts/presale/PresaleVault.sol:278-291` (`fail`), against `:104-113` (`initialize`'s bounds:
+`MAX_DURATION` 30 days, `GRACE_MAX` 7 days).
+
+```solidity
+if (block.timestamp <= deadline) revert BeforeDeadline();
+```
+
+`fail()` cannot fire before `deadline` under any circumstances, and `finalize()` has **no upper time bound**.
+But a presale stops accepting deposits the moment `totalRaised == target` — `deposit` reverts `TargetMet`
+(`:150`). So the raise can close in its first minute while the escape hatch stays shut for the full term.
+
+At the permitted maximums — `deadline = now + 30 days`, `finalizeGrace = 7 days` — a presale that fills 60
+seconds after creation leaves contributors with **no exit for ~37 days**: they cannot deposit, cannot refund
+(`refund` requires `failed`), cannot claim (`claim` requires `finalized`), and cannot force the issue
+(`fail` reverts `BeforeDeadline`, then `TargetMet` until deadline + grace). Meanwhile the creator holds a free
+37-day option: finalize whenever the market suits, or let it lapse into reason 2.
+
+**The lockup is bounded and self-service at the end.** `fail()` is fully permissionless — no modifier, no
+`msg.sender` check (`:272`) — so the instant `block.timestamp > deadline + finalizeGrace` any contributor can
+flip the vault themselves and pull 100%. Proven: a contributor-initiated `fail()` emits `Failed(2)`, the
+subsequent `finalize()` reverts `NotOpen`, and `refund()` returns the full 1 ETH. The exposure is the dead
+window, not a permanent trap — which is why LOW.
+
+Nothing is stolen and the refund path is intact. But "trustless, refundable" is doing less work than it
+appears: the refund is guaranteed *eventually*, on a clock the contributor does not control and which
+is not anchored to anything they can observe.
+
+**Fix direction.** Anchor the hatch to the raise closing, not the calendar: record `filledAt` when
+`totalRaised` first reaches `target`, and let `fail()` fire at `min(deadline, filledAt) + finalizeGrace`. That
+preserves the grace window's purpose — giving a preimage-holder time to finalize — while removing the dead
+time between a full raise and an arbitrary deadline.
+
+---
+
+---
 
 ---
 
