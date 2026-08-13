@@ -28,9 +28,9 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 1 | 1 |
 | **HIGH** | 3 | 2 |
-| **MEDIUM** | 19 | 7 |
+| **MEDIUM** | 18 | 7 |
 | **LOW** | 9 | 3 |
-| **INFO** | 10 (9 bundled as I-1, plus I-2) | 1 |
+| **INFO** | 11 (9 bundled as I-1, plus I-2 and I-3) | 1 |
 | **total** | **42** | **15** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
@@ -891,45 +891,7 @@ consistent with the rest of the suite.
 
 ---
 
-### M-14 · MEDIUM · The idempotent-init try/catch reports every `initialize` failure as `PoolAlreadyInit`, and `tickSpacing` is unbounded  `VERIFIED`
-
-**Where** `contracts/core/CurvePadFactoryV4.sol:120` (the only `tickSpacing` check) and `:170-175` (the
-idempotent-init try/catch); same shape in `core/PadFactory.sol` and `core/StockPadFactory.sol`.
-
-Two defects that compound.
-
-**The bound is missing.** v4 requires `1 <= tickSpacing <= 32767`
-(`v4-core/src/PoolManager.sol:119-120`, `MAX_TICK_SPACING = type(int16).max`). The factory checks only
-`ts <= 0`:
-
-```solidity
-if (ts <= 0 || d.startTickMag % ts != 0 || d.curveWidth % ts != 0) revert BadGeometry();
-```
-
-So a `tickSpacing` of, say, 40000 passes every factory check — positive, and it divides both governed geometry
-values — and then reverts inside `poolManager.initialize` with `TickSpacingTooLarge`.
-
-**The diagnosis is then destroyed.** That revert lands in the `[MEDIUM-3]` idempotent-init catch, which
-re-reads `getSlot0` and reverts `PoolAlreadyInit` unless the price matches. For a pool that was never
-initialised `sqrtPriceX96` is 0, which never matches, so the launch fails with **`PoolAlreadyInit` — an error
-saying someone front-ran you, when in fact your own config is invalid.** The catch is not selective: *any*
-`initialize` failure (bad tick spacing, bad fee, hook-validation failure) surfaces under the same wrong error.
-An operator has no way to tell a genuine front-run from a malformed launch.
-
-**It reaches contributor funds through the presale.** `PresaleVaultFactory` explicitly defers *"heavy
-geometry/reserve validation … to `CurvePadFactoryV4.launch()` at finalize"* (`:12`), and `cfg.tickSpacing` is
-caller-chosen at `createPresale` with no validation. A presale opened with an out-of-range spacing takes
-deposits normally and can never finalize: `launch` reverts, `finalize`'s snipe catch-all marks it `Failed(3)`,
-and per L-9 that is irreversible. Contributors are refunded, but the launch is dead and the stated cause is
-wrong twice over.
-
-**Fix direction.** Bound `tickSpacing` to `[1, 32767]` at `:120` — it is a one-line check against a constant
-v4 already exports. Separately, make the catch selective: only treat the failure as a pre-init if
-`getSlot0` shows a *non-zero* price, and otherwise bubble the original revert so the real cause survives.
-
----
-
-### M-15 · MEDIUM · `DeterministicDeployer` silently confiscates `msg.value` on the adopt path  `VERIFIED`
+### M-14 · MEDIUM · `DeterministicDeployer` silently confiscates `msg.value` on the adopt path  `VERIFIED`
 
 **Where** `contracts/core/DeterministicDeployer.sol:31-33`.
 
@@ -958,7 +920,7 @@ NatSpec should state the hazard rather than note the assumption.
 
 ---
 
-### M-16 · MEDIUM · `platformFeeWallet` is the protocol's root admin key, not merely a payout address
+### M-15 · MEDIUM · `platformFeeWallet` is the protocol's root admin key, not merely a payout address
 
 **Where** `contracts/core/FeeWalletRegistry.sol` (the wallet), used as the **authorization** check in
 `contracts/pads/RobinCurveV4.sol:447` / `:457` / `:467` (`setStaking` / `setFloor` / `setAmbush`),
@@ -988,7 +950,7 @@ wiring, and `platformFeeWallet` purely as a destination. If they must stay unifi
 
 ---
 
-### M-17 · MEDIUM · `RobinFloorVault` pins the platform wallet as an immutable, defeating the registry's rotation, and pays it inline under the pool lock  `VERIFIED`
+### M-16 · MEDIUM · `RobinFloorVault` pins the platform wallet as an immutable, defeating the registry's rotation, and pays it inline under the pool lock  `VERIFIED`
 
 **Where** `contracts/pads/RobinFloorVault.sol:45` (`address public immutable feeRecipient`), `:169-170`
 (`_collect` takes straight to it).
@@ -1014,7 +976,7 @@ address under the lock.
 
 ---
 
-### M-18 · MEDIUM · `finalize()`'s blanket catch makes *any* failure — including an under-gassed call — a permanent, irreversible kill  `PROVEN`
+### M-17 · MEDIUM · `finalize()`'s blanket catch makes *any* failure — including an under-gassed call — a permanent, irreversible kill  `PROVEN`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-105` (`_validate` bounds only signs and ordering),
 `contracts/core/CurvePadFactoryV4.sol:120` / `:131` / `:140` (the launch-time geometry and reserve checks),
@@ -1061,7 +1023,7 @@ retune trigger specifically, but not the class.
 
 ---
 
-### M-19 · MEDIUM · The escape hatch is anchored to `deadline`, not to when the raise closed, locking contributors for up to 37 days  `VERIFIED`
+### M-18 · MEDIUM · The escape hatch is anchored to `deadline`, not to when the raise closed, locking contributors for up to 37 days  `VERIFIED`
 
 **Where** `contracts/presale/PresaleVault.sol:278-291` (`fail`), against `:104-113` (`initialize`'s bounds:
 `MAX_DURATION` 30 days, `GRACE_MAX` 7 days).
@@ -1313,6 +1275,21 @@ The economics run against the attacker: they pay a **full ~6.5M-gas launch per a
 **83k-gas** transaction, gain nothing transferable, and cannot repeat without fresh calldata. That is
 negative-EV griefing, not theft.
 
+**Reachability is broader than a mempool race.** The precondition is only *"the attacker learns
+`(cfg, tokenSalt, hookSalt)` before inclusion"*, and transaction ordering is one leak among several. Any
+launch UI that mines the hook salt server-side and returns the salts to the client leaks everything needed
+with no ordering advantage at all. And the repo's own launcher derives the token salt **deterministically from
+public data** — `scripts/launch.js:62`:
+
+```js
+const tokenSalt = ethers.id(`${cfg.symbol}-${cfg.name}-${d.padFactory}-${process.env.SALT_NONCE || "0"}`);
+```
+
+Under that convention an attacker who knows only the announced name and symbol can compute `tokenSalt`, mine
+their own `hookSalt`, and pre-empt a launch that has been *announced but not yet sent* — no mempool access
+required. That materially raises the likelihood while leaving the payoff unchanged, which is why it stays LOW
+rather than rising: the pad is still empty at the moment it is taken.
+
 **Where it would matter, the suite already defends.** The case where a launch address is *pre-committed* — so
 an audience is pointed at it before it exists — is the presale, and `PresaleVault` handles exactly this: the
 salts are commit-revealed, and a front-run launch makes `finalize` fail the presale into immediate 100%
@@ -1390,6 +1367,36 @@ price, and a 900,000-token dump (≈ **0.0146 ETH** of notional) moves tick to 1
 So the entire residual harm is: one dip goes undefended, and 5% of the raise sits idle until somebody notices.
 Worth fixing as hardening — add the same try/catch poke `_fundFloor` already uses — but it is not a fund
 defect, and it is recorded here mainly so a future pass does not re-litigate it.
+
+---
+
+---
+
+### I-3 · INFO · The idempotent-init `catch` blames a front-run for every `initialize` failure  `mechanism refuted, diagnostics only`
+
+**Where** `contracts/core/CurvePadFactoryV4.sol:170-175`; same shape in `core/PadFactory.sol` and
+`core/StockPadFactory.sol`.
+
+The `[MEDIUM-3]` idempotent-init handler catches **every** `initialize` revert, re-reads `getSlot0`, and
+reverts `PoolAlreadyInit` unless the price matches. For a pool that was never initialised `sqrtPriceX96` is 0,
+which never matches — so any future `initialize` failure surfaces as *"someone front-ran you"* regardless of
+the real cause. Fail-closed and non-exploitable; no funds or state are at risk.
+
+**The `tickSpacing` route into it is refuted.** This was originally filed MEDIUM on the premise that
+`tickSpacing` is unbounded because `:120` checks only `ts <= 0`. It is bounded — as a divisibility constraint
+rather than a comparison. `:120` also requires `d.curveWidth % ts == 0`, and `RobinV4FeeConfig._validate`
+requires `curveWidth > 0`; a positive divisor of a positive `int24` cannot exceed it, so **`ts <= curveWidth`
+is structurally enforced**. At the shipped geometry that is `ts <= 23000 < 32767`, and the alignment
+constraint is tighter still: `ts` must divide `gcd(startTickMag, curveWidth)` = `gcd(201600, 23000)` = **200**.
+The test geometry gives 600. `TickSpacingTooLarge` is arithmetically unreachable, so the catch does not
+currently mis-report anything.
+
+The residual is purely diagnostic, and only bites a future geometry retune that pushes some parameter out of
+v4's accepted range — at which point a creator-misconfigured launch dies with a misleading `PoolAlreadyInit`
+(and, through a presale, an equally misleading `Failed(3)` — see M-17).
+
+**Fix direction.** Distinguish the revert rather than adding a `MAX_TICK_SPACING` check: only blame a
+front-run when `getSlot0` returns a **non-zero** price, and otherwise bubble the original error.
 
 ---
 
