@@ -274,8 +274,22 @@ if (c.guardWindow > 0 && c.quoteIsStock && c.guardAdapter != address(0)) {
 So it freezes **buys and sells alike**, and both of its inputs are chosen by whoever calls `launch()`. A
 launcher therefore ships a pad it can freeze and unfreeze at will: trade normally, dump the `tokenRemainder`
 that `launch` sends to `cfg.creator` (`:187-188`), then schedule an "effective at" on its own adapter and no
-holder can ever exit. `guardWindow` is a `uint32` with no ceiling — one call freezes the pad for up to ~136
-years. The freeze semantics are already established by the repo's own test,
+holder can ever exit. `RobinFeeHook.registerPool` (`:135-163`) validates only the tax and share fields — it
+never bounds `guardWindow` — and neither does `StockPadFactory`.
+
+Be precise about the duration, because it differs by adapter:
+
+- **With an attacker-supplied adapter** (the case above) the freeze is *unconditional and indefinite*: the
+  launcher simply keeps `scheduledEffectiveAt()` returning a value near `block.timestamp`, so the curb holds
+  for as long as they choose, and a `uint32` `guardWindow` lets one call cover ~136 years without further
+  action.
+- **With a genuine `StockQuoteAdapter`** the curb is self-limiting: `scheduledEffectiveAt()` returns non-zero
+  only while the stock has a pending `newUIMultiplier` (`adapters/StockQuoteAdapter.sol:86-97`), so an
+  oversized window freezes trading for as long as that corporate action stays pending, not unconditionally.
+  That is still an unbounded misconfiguration — a legitimate pad can be frozen far past any real
+  corporate-action window — but it is not attacker-held.
+
+The freeze semantics are already established by the repo's own test,
 `test/unit/RobinFeeHook.adversarial.test.js:163-186`, using `MockGuardAdapter` — a 22-line contract that is
 exactly what an attacker would deploy.
 
