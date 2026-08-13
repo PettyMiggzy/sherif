@@ -27,8 +27,8 @@ re-derive it.
 | severity | count | of which measured |
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
-| **HIGH** | 4 | 4 |
-| **MEDIUM** | 28 | 15 |
+| **HIGH** | 5 | 5 |
+| **MEDIUM** | 27 | 14 |
 | **LOW** | 33 | 16 |
 | **INFO** | 23 (19 bundled as I-1, plus I-2 … I-5) | 2 |
 | **total** | **89** | **39** |
@@ -1768,11 +1768,12 @@ reopen the pool early. Failing that, document the curb as pre-event only and sto
 
 ---
 
-### M-23 · MEDIUM (severity under final review — likely HIGH) · `addFloor()`'s spot guard is bypassable atomically, and forcing the fill drains the parked floor carve at a profit  `PROVEN`
+### H-5 · HIGH · `addFloor()`'s slot0-only guard flips the parked carve from "mint nothing" to "mint everything at a stale band" — 88.43% forced-fill loss, measured  `PROVEN`
 
-**Where** `contracts/pads/RobinFloorVault.sol:109-119` (`addFloor`, permissionless), `:137-157` (`_add`, which
-commits the **whole** on-hand balance to the fixed band), against the round-trip argument in `AUDIT-SCOPE.md`
-§4.4 that §4 of this document currently endorses.
+*(Filed initially as M-23. Promoted, and its mechanism corrected — see "the diagnosis was wrong" below.)*
+
+**Where** `contracts/pads/RobinFloorVault.sol:109-119` (`addFloor`, permissionless), `:137` (`_add`'s sizing),
+against the round-trip argument in `AUDIT-SCOPE.md` §4.4 that §4 of this document endorses.
 
 `addFloor()`'s entire protection is one live `slot0` read:
 
@@ -1780,93 +1781,54 @@ commits the **whole** on-hand balance to the fixed band), against the round-trip
 if (tick >= floorTickLower) { parkedQuote = amt; emit FloorSkipped(tick, amt); return 0; }
 ```
 
-No TWAP, no rate limit, no cap on `amt`, no caller gating. So the decision of **when** the parked carve is
-deployed belongs to whoever last moved the tick — and the tick is manipulable inside a transaction. The state
-that matters is **M-15**'s: the pad has dumped, spot sits at or above the band, and the carve has been parking.
-An attacker buys to force the tick below `floorTickLower`, calls `addFloor()`, then sells back through the
-band they just created.
+No TWAP, no block delay, no rate limit, no cap on `amt`, no caller gating. In **M-15**'s state — the pad has
+dumped, spot sits at or above the band, the carve has been parking — an attacker buys to force the tick below
+`floorTickLower`, calls `addFloor()`, and sells back.
 
-**Measured** on a real local `PoolManager` (full-range LP of 300e18 liquidity, band `[60, 660]`, hook not
-wired so these are pure AMM mechanics — the hook's buy and sell taxes are additional attacker cost):
-
-| scenario | attacker PnL (gas-exclusive) |
-|---|---|
-| **control** — identical round trip, fill **not** forced | **−0.5175 ETH** |
-| push mis-sized (60–250 ETH pushes on a 1 ETH park) | −0.1375 → −0.9483 ETH |
-| dump 6 / parked 50 / push 11 | **+0.0054 ETH** |
-| dump 10 / parked 200 / push 20 | **+0.1330 ETH** |
-| **dump 20 / parked 500 / push 40** | **+0.8671 ETH** |
-
-Two things are established. The guard **is** bypassable — `floorLiquidity` goes from 0 to
-16,969,579,819,882,394,020,192 in the attacker's own transaction. And with the push correctly sized, an
-operation that is structurally loss-making becomes profitable, with the profit scaling in the dump depth. The
-push must be *tuned*: too small and the guard holds (a 30 ETH push left the tick at 355 against
-`floorTickLower = 60`), too large and the round-trip spread swamps the gain (−0.948 ETH at a 250 ETH push).
-
-**The attribution question is now answered.** The runs above were hook-less and did not split who funded the
-attacker. An independent construction at **production geometry with the hook wired** — `lpFee` 1%, `tickSpacing`
-100, buy tax 100 bps, sell tax 100 bps, `sellFloorShare` 2000 bps, band anchored at `gradTick` — reproduced the
-M-15 dumped state and measured **both sides**:
+**Measured** at the **shipped production hook config** (`buyTaxBps = sellTaxBps = 100`, per
+`scripts/launch.js:47-48` and `deploy-curve.js:34-35`), base LP `[-60000, 60000]` at `L = 1e20`, carve 5 ETH on
+hand, band `[60, 660]`, whale dump taking spot to tick 21933 — well above `floorTickUpper`, so the honest
+baseline is that `addFloor()` **parks** and the vault loses nothing:
 
 | | measured |
 |---|---|
-| attacker net PnL (gas and both hook taxes already deducted) | **+308,673,441,098,281,613 wei (+0.3087 ETH)** |
-| **vault loss** | **281,224,678,165,799,068 wei (0.2812 ETH)** |
-| parked carve at risk in that run | 1 ETH — so ≈ **28%** of the carve, in one transaction |
-| attacker's fronted capital | 2 ETH, returned within the same sequence |
+| attacker net PnL, ending **flat with no inventory**, gas and both hook taxes deducted | **+856,900,689,751,865,766 wei (+0.8569 ETH)** |
+| **vault loss** | **4,396,412,525,492,377,555 wei (4.3964 ETH)** |
+| **forced-fill loss on the carve** | **88.43%** |
+| baseline (attacker does nothing) | vault loss **0** — the carve simply parks |
 
-So the vault **is** the principal counterparty, and the earlier concern that the profit came mostly from the
-locked LP is resolved: the attacker's +0.3087 slightly exceeds the vault's −0.2812, with the small remainder
-drawn from the full-range LP. Costs are inside those figures — buy tax 0.0200 ETH, sell tax 0.0233 ETH (of
-which the 0.00467 floor carve returns to the vault and is *not* credited back, so the stated vault loss is
-conservative), two legs of 1% LP fee, the attacker's own price impact, and gas.
+**The diagnosis in the original filing was wrong, and this matters for the fix.** It said an attacker
+"chooses the moment the floor capital is committed, and that choice is worth money." It is not: `_add` sizes
+the position as `getLiquidityForAmount0(sLower, sUpper, amt)` from the **immutable band ticks** and the on-hand
+amount — **the live tick is not an input** (`:137`). Proven by a control that ran the same trades twice moving
+only the position of `addFloor()` in the sequence: the vault's resulting position is **bit-identical**, and the
+timing degree of freedom is worth **exactly 0 wei**, across 9 configurations (carve 50 ETH; band 1 and 100
+spacings; pushes of 0.5 / 20 / 300 ETH; attacker selling 20% / 50% / 100%) — 0 in every cell but one, which
+showed 4×10^8 wei of rounding dust.
 
-**A third construction corrected the measurement method, and the loss is larger than either earlier run showed.**
-Both figures above value the vault at whatever tick the attacker *left* the pool at — but that is a price the
-attacker chose, and it flatters the vault's mark. Closing the window by pinning the pool back to the **exact
-pre-attack `sqrtPrice`** and valuing the band's composition there gives the honest number. Measured with a
-genuinely CREATE2-mined `RobinFeeHook` (flags `0x00CC`) registered through `registerPool`, band 7.25%
-underwater, 500 ETH parked, taxes 1%/1%:
+The real defect is a **state flip, not a price choice**: the slot0-only guard converts *"mint nothing"* into
+*"mint everything, at a fixed band that is now far from the market."* The loss is then simply how far
+underwater the band is, times the carve — 88.43% at a deep dump here, ~7.25% at a shallow one in another run.
 
-```
-+ value handed over by the FLOOR BAND ............ +34,856,334,441,205,260,334
-- paid to the base full-range LP (0.30% both legs
-  + the attacker's own price impact) .............     -81,340,775,193,460,832
-- RobinFeeHook buy tax + sell tax (real contract)   -5,934,539,711,476,715,650
-= net PnL ex-gas ................................ +28,840,453,954,535,083,852
-- gas (3 txs, measured) .........................        -666,950,299,687,135
-= ATTACKER NET .................................. +28,839,787,004,235,396,717   (+28.84 ETH)
+**Two negative results worth keeping, because each nearly produced a false verdict.**
 
-VAULT LOSS ...................................... 36,251,765,437,881,644,553   (36.25 ETH)
-matched control, fill NOT forced ................. -1,016,247,7xx,xxx,xxx,xxx   (-1.02 ETH)
-```
+- **In the undumped state the attack is worthless.** Where spot is already below the band and `addFloor()`
+  would succeed unaided, the same manipulation measures **−0.098 ETH** against an honest-`addFloor` baseline,
+  and the vault ends up marginally *better* off (−3,433,758,351,879,744 wei of loss avoided). Reproduced
+  independently to within gas noise. A pass testing only that case concludes, wrongly, that there is nothing
+  here.
+- **A "profit" that is really unsold inventory is not profit.** One arm where the attacker retained 20% of
+  their bag showed +0.924 ETH — an artifact of marking their own unsold tokens at a price they had just
+  pushed. Forcing liquidation of the remainder turned it to **−0.111 ETH**. Every figure quoted above has the
+  attacker ending at exactly zero tokens.
 
-The three funding lines sum **exactly** to the ex-gas figure — a closed conservation identity, not an estimate.
-
-The loss model is simple and it scales: **the vault loses roughly (how far the band is underwater) × (the
-parked amount)** — 7.25% × 500 ETH ≈ 36 ETH here — and the attacker captures most of it, the rest going to the
-LP and the hook taxes. The originating claim of a *"~86% vault loss"* does **not** reproduce at any
-parameterisation tried. It is repeatable rather than one-shot: the carve accrues continuously from sell tax, so
-the position can be farmed each time enough accumulates.
-
-**On the evidence now in hand this is a HIGH** — a permissionless, atomic, repeatable extraction from the
-capital that exists to protect holders, at 36 ETH in a single transaction in the measured run. The label is
-left at MEDIUM only until the adjudicator closes, because that is the process this entry was filed under.
-
-**One scope limit, stated because it nearly caused a false disproof.** In the *undumped* state — spot already
-below the band, where `addFloor()` would succeed unaided — the same manipulation is **negative value**:
-measured **−0.098 ETH** against an honest-`addFloor` baseline. The attack is specific to M-15's parked state.
-A pass that tested only the undumped case would have concluded, wrongly, that there is nothing here.
-
-**Fix direction.** Do not let a single live `slot0` read gate the
-irreversible commitment of the whole balance: (1) require the tick to have been below `floorTickLower` for a
-minimum number of blocks, or compare against a short TWAP rather than spot; (2) rate-limit — cap each
-`addFloor()` at a fraction of `parkedQuote` per block, so no single transaction can commit the whole carve;
-(3) failing both, have `graduate()`/the keeper be the only caller, since the permissionless property buys
-nothing here that a keeper poke does not. **M-15** and this finding are the same guard read two ways — a fix
-for one should be checked against the other.
-
----
+**Fix direction.** Do not let a single live `slot0` read gate the irreversible commitment of the whole balance:
+(1) require the tick to have been below `floorTickLower` for a minimum number of blocks, or compare against a
+short TWAP rather than spot; (2) rate-limit — cap each `addFloor()` at a fraction of `parkedQuote` per block,
+so no single transaction can commit the whole carve; (3) failing both, make the keeper the only caller, since
+permissionlessness buys nothing here. Note the fix must target the **park→commit flip**, not the timing: a
+guard that merely randomises or delays *when* the call may run changes nothing, because what gets minted does
+not depend on the tick. **M-15**, **L-33** and this finding are the same guard read three ways.
 
 ### M-24 · MEDIUM · The hook's floor pointer accepts the hook itself, and then `claimFloor` reports success while moving nothing — permanently  `VERIFIED`
 
@@ -3652,51 +3614,56 @@ against `floorLiquidity()`.
    stranding in I-1(5) at the same time.
 3. **H-1** — no minimum trade size, cheaper than paying the tax, and a router can hand it to every user. It
    defunds the creator's entire income and the floor. The buy side already shows the fix.
-4. **M-21** — add a value-transfer probe to `setFloor`/`setAmbush` before the one-shot is spent, and make
+4. **H-5** — the floor's `addFloor()` guard. A permissionless, atomic, repeatable **88.43%** loss on the
+   parked carve, measured at the shipped tax config, against a baseline where the carve simply parks and loses
+   nothing. Fix the **park→commit flip** (TWAP or block-delay the guard, or rate-limit the commit), not the
+   timing — the control proves timing is worth exactly 0 wei. Do it with **M-15** and **L-33**, which are the
+   same guard read two other ways.
+5. **M-21** — add a value-transfer probe to `setFloor`/`setAmbush` before the one-shot is spent, and make
    `flushFloor`/`flushAmbush` revert on a failed send instead of returning success. Both are a few lines, and
    together they convert a silent permanent loss of the ambush share into a revert at the one moment the
    operator can still act. Fold into the same PR as M-2 and M-4 — all three are one-shots that accept a value
    nothing validates.
-5. **M-20** — one word (`false` → `true` at `DualStaking.sol:404`) plus a `msg.value >= duration` check. It
+6. **M-20** — one word (`false` → `true` at `DualStaking.sol:404`) plus a `msg.value >= duration` check. It
    is the cheapest fix on this list relative to what it closes: a measured 99.00% capture of a creator's
    donation by a 121-second staker, on the channel creators are explicitly told to use. Do it in the same PR
    as C-1 — they are the same `extend`/window mechanism in two contracts, and C-1's "reject sub-rate tranches"
    is the same guard M-20 needs.
-6. **M-15** — the floor only deepens while the price is above it, so the pad's headline protection does not
+7. **M-15** — the floor only deepens while the price is above it, so the pad's headline protection does not
    operate in the state it exists for. It falsifies an `AUDIT-SCOPE.md` §4.4 invariant rather than mis-tuning
    one, so it needs a design answer, not a parameter change.
-7. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
+8. **M-2 and M-4** — one-shot wiring defects with permanent, unrecoverable failure modes, both cheap to close
    (an assertion at launch; an on-chain anchor read).
-8. **H-2 and H-3** — before any stock pad exists. It is a rug primitive, and M-8 means it is currently untestable
+9. **H-2, H-3 and H-4** — before any stock pad exists. It is a rug primitive, and M-8 means it is currently untestable
    locally, so fix the mock in the same pass.
-9. **M-11** — holder fees routed to the platform by the ordinary post-graduation flow, with no attacker
+10. **M-11** — holder fees routed to the platform by the ordinary post-graduation flow, with no attacker
    required. One line, and the right shape already exists in the same file (`claimFloor`'s
    `NoFloorRecipient`). Fold in **I-2**'s `seedAmbush()` poke while you are there — same pattern, same file.
-10. **M-1**, then **L-1** and **M-10** — real value loss and two permanent bricks, all gated on configuration
+11. **M-1**, then **L-1** and **M-10** — real value loss and two permanent bricks, all gated on configuration
    that is easy to get wrong and currently unbounded.
-11. **M-6 and M-18** before the package goes to the external auditor. Auditing from a stale architecture
+12. **M-6 and M-18** before the package goes to the external auditor. Auditing from a stale architecture
    document is the most expensive mistake on this list, because it wastes the engagement rather than the code
    — and M-18 is worse than stale: the "locked spec" describes the ambush with every sign reversed, so it
    points the review away from the risks the shipped vault actually has. Fix both together with **I-4**; the
    three documents disagree with the code in three different directions, so correcting any one alone still
    ships a self-contradictory package.
-12. **M-3, M-5 and M-12** are product decisions as much as code ones: decide what `PadFactory` is, which owner
+13. **M-3, M-5 and M-12** are product decisions as much as code ones: decide what `PadFactory` is, which owner
    powers you are willing to defend, and whether a presale's terms may move under its contributors. Then make
    the code and the docs agree.
-13. **M-19** alongside every fix above, not after them — it names the specific regression test each finding
+14. **M-19** alongside every fix above, not after them — it names the specific regression test each finding
     needs, and each one is a few lines against a harness that already exists.
-14. **M-7, M-9, L-2, L-3, L-6, L-7, L-17** — the wiring/runbook cluster. Fix them together, as one scripted
+15. **M-7, M-9, L-2, L-3, L-6, L-7, L-17, L-32, L-33** — the wiring/runbook cluster. Fix them together, as one scripted
     post-launch wiring step that asserts every one-shot is set and consistent, and produce the curve-specific
     runbook **I-4** calls for in the same pass — I-4 is the common root, and without it the next operator
     reaches for the PadFactory runbook again.
-15. The rest as cleanup, with **L-4**, **L-5**, **L-8** and **L-15**'s doc corrections folded into whichever PR
+16. The rest as cleanup, with **L-4**, **L-5**, **L-8** and **L-15**'s doc corrections folded into whichever PR
     touches those files, **L-16**'s three guards brought onto one comparison while someone is already in
     `RobinCurveV4`, and **L-18**'s netted fee delta split in both vaults at once — it is the same three lines
     in each. Note that L-8 and M-10 each falsify a specific sentence an auditor is told to rely on
     (`AUDIT-SCOPE.md` §4.5 and `RobinV4FeeConfig`'s no-timelock justification), and L-16 falsifies two
     load-bearing comments in the graduation path — those sentences should be corrected even if the underlying
     code is left as is.
-16. **L-19** last, but not never, and two of its four parts are worth pulling forward. Part (a) —
+17. **L-19** last, but not never, and two of its four parts are worth pulling forward. Part (a) —
     `Graduated.toStaking` asserting a transfer that did not happen — fires on the **default** deployment
     ordering, so fix it in the same PR as M-11 and M-7, which are about that same unwired state. Part (c) —
     `RobinLockStaking.stake`'s silent reservoir flush — is C-1's arming step, so anyone building detection for
