@@ -1857,10 +1857,30 @@ strand it. The currency0 leg is the same situation with the opposite treatment, 
 (*"currency0 is the floor's own working capital"*) is true of principal but not of the fees mixed into the same
 delta.
 
-**Fix direction.** Split the delta rather than netting it. Call `modifyLiquidity(0)` first to realize fees to the
-policy destination, then `modifyLiquidity(+L)` for the principal — two calls, one lock, and the destination stops
-depending on which function a stranger called. Failing that, pick one destination per vault and make both paths
-use it, and correct `RobinAmbushVault`'s header either way.
+**Two of ten, and the fix is already written twice in this repository.** Every `poolManager.modifyLiquidity`
+call site in `contracts/`:
+
+| site | delta | fees mixed into the delta? |
+|---|---|---|
+| `RobinCurveV4:500` (`seed`) | `+L` | no — the position is new, nothing has accrued |
+| `RobinCurveV4:512` | `0` | pure realization ✓ |
+| `RobinCurveV4:560` (`_graduatePull` a) | `0` | pure realization ✓ — **and it runs immediately before the removal** |
+| `RobinCurveV4:568` (`_graduatePull` b) | `−curveL` | no — `:560` already drained them in the same unlock |
+| `RobinLpVault:210` (`_add`) | `+L` | no — `_harvest()` realizes in a *separate* `unlock` first |
+| `RobinLpVault:221` (`_remove`) | `−L` | no — same `_harvest()` discipline |
+| `RobinLpVault:235` (`_collect`) | `0` | pure realization ✓ |
+| `RobinFloorVault:162` (`_collect`) | `0` | pure realization ✓ |
+| `RobinAmbushVault:218` (`_collect`) | `0` | pure realization ✓ |
+| **`RobinFloorVault:139`** (`_add`) | `+L` | **yes — this finding** |
+| **`RobinAmbushVault:200`** (`_add`) | `+L` | **yes — this finding** |
+
+Three contracts handle it correctly and two do not, so this is a local slip rather than a misunderstanding of
+v4 — which also means the remediation needs no new idea.
+
+**Fix direction.** Split the delta rather than netting it: `modifyLiquidity(0)` first, routing the fees to the
+policy destination, then `modifyLiquidity(+L)` for the principal. `RobinCurveV4._graduatePull` already does
+exactly this inside one lock (`:560` then `:568`), and `RobinLpVault` does it across two — copy either. Failing
+that, pick one destination per vault and make both paths use it. Correct `RobinAmbushVault`'s header either way.
 
 ---
 
@@ -1900,8 +1920,12 @@ use it, and correct `RobinAmbushVault`'s header either way.
    against a contract with a permissive fallback the call succeeds with empty returndata and the **decode**
    reverts. It fails closed either way, so this is a comment fix, not a defect — but it is the same
    misunderstanding of return-data decoding that produced H-3 and M-17, written down three files away.
-10. **`RobinFloorVault.parkedQuote`** is assigned (`=`, not `+=`) and is purely cosmetic — `addFloor` always
-   re-reads the live balance. Harmless, but it reads like accounting and is not.
+10. **`parkedQuote` and `parkedEth` are write-only.** `RobinFloorVault:58/114/156` and
+    `RobinAmbushVault:69/132/213` declare, assign and clear them, and **nothing — no contract, no script —
+    ever reads either**; `addFloor` and `seedAmbush` both re-derive the amount from the live balance. Both are
+    `public`, so an indexer or front end will read them as accounting, and both can lie: they are assigned
+    `=` rather than `+=`, and `parkedEth` is computed as `balanceOfSelf() - pendingFloorEth` at park time, so a
+    later failed floor send silently makes it an overstatement. Harmless on chain; misleading off it.
 11. **`RobinLpVault.deposit` refunds the vault's *entire* non-reserve balance to the depositor**
     (`:151` `address(this).balance - feeReserve0`, `:153` `balanceOf(this) - feeReserve1`). `receive()` is open
     (`:316`), the vault has no owner and no rescue path, and nothing in the suite routes value to it, so any ETH
