@@ -50,9 +50,13 @@ and wording edits do not count either way.
 | 7 | netted fee deltas, owner-power retroactivity, park guards | not clean — 1 INFO extended; two lenses returned clean negatives |
 | 8 | rounding direction across every division in the suite | **clean** — recorded in §4 |
 | 9 | all 128 permissionless entry points, each asked what a stranger's worst-timed call does | **clean** — recorded in §4 |
+| 10 | every balance-derived quantity, checked for an omitted liability — the seam L-18 and I-1(11) sit in | **clean** — recorded in §4 |
 
 Clean passes are counted in §4 as they land; each one's negative result is written down there so a later pass
-does not re-derive it. **2 of 3 consecutive clean passes** as of this revision.
+does not re-derive it. **3 consecutive clean passes** as of this revision (8, 9, 10), which is the stopping
+condition the brief set. One qualification, stated rather than buried: the parallel finder/skeptic gauntlet that
+produced passes 1–3 is still executing its own rounds 4 and 5 at the time of writing. If anything survives its
+verification, it lands here and the count restarts — this document is the register, not a snapshot.
 
 ---
 
@@ -2149,6 +2153,23 @@ verification.
   `PriceLimitAlreadyExceeded`, and fails closed with `CeilingNotRestored` rather than bleeding the reserve.
   The nudge itself is right; **L-16** is that the two gates *upstream* of it compare the tick instead, so it
   can be skipped in a state it should have handled.
+- **Balance-derived quantities, and whether each one subtracts every liability it owes.** This is where L-18
+  and I-1(11) live, so all 28 sites that read `address(this).balance`, `balanceOfSelf()` or
+  `balanceOf(address(this))` were listed and checked for an omitted book. They hold:
+  - `RobinCurveV4:381` — the step-9 platform recompute omits `totalGasBountyOwed`, correctly: bounties can only
+    book during `graduate()`, which is one-shot, so it is zero at that instant. `sweepToPlatform:286` runs
+    *after* graduation and does subtract it, along with the other four books. `restoreCeiling` refunds inline
+    and leaves no standing liability for either to miss.
+  - `flushStaking:395` sweeps the **entire** token balance to staking, which would ship the curve reserve if it
+    were reachable early — it is gated `if (!graduated) revert NotReady()`. (M-13 is the post-graduation dust
+    poke, which stands.)
+  - **`DualStaking`'s `accountedReserve` invariant holds at every write.** `stake += received` (`:295`),
+    `unstake -= amount` (`:328`), reward payout `-= amount` (`:374`), `fundToken += received` (`:420`),
+    `fundTokenPushed = bal` (`:436`). That is what makes `received = balanceOf − accountedReserve` unable to
+    mistake staked principal for an arrived reward — the `[audit C1]` case, which matters precisely because
+    "earn the other" lets one asset be principal on one side and reward on the other.
+  - `PresaleVault:209-214` measures `totalTokensBought` as a before/after delta, and the token does not exist
+    outside that transaction, so nothing can be donated in between.
 - **Permissionless entry points, enumerated and asked the worst-timing question.** All 128 non-view
   `external`/`public` functions in `contracts/` were listed and the internally-gated ones separated out. The
   genuinely permissionless, state-changing ones are already this report's findings (`graduate`,
