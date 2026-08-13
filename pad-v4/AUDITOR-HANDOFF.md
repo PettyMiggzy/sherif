@@ -1620,9 +1620,37 @@ drawn from the full-range LP. Costs are inside those figures — buy tax 0.0200 
 which the 0.00467 floor carve returns to the vault and is *not* credited back, so the stated vault loss is
 conservative), two legs of 1% LP fee, the attacker's own price impact, and gas.
 
-The originating claim of a *"~86% vault loss"* does **not** reproduce; the measured figure is ~28% of the parked
-carve per pass. It is repeatable rather than one-shot — the carve accrues continuously from sell tax, so the
-position can be farmed each time enough accumulates.
+**A third construction corrected the measurement method, and the loss is larger than either earlier run showed.**
+Both figures above value the vault at whatever tick the attacker *left* the pool at — but that is a price the
+attacker chose, and it flatters the vault's mark. Closing the window by pinning the pool back to the **exact
+pre-attack `sqrtPrice`** and valuing the band's composition there gives the honest number. Measured with a
+genuinely CREATE2-mined `RobinFeeHook` (flags `0x00CC`) registered through `registerPool`, band 7.25%
+underwater, 500 ETH parked, taxes 1%/1%:
+
+```
++ value handed over by the FLOOR BAND ............ +34,856,334,441,205,260,334
+- paid to the base full-range LP (0.30% both legs
+  + the attacker's own price impact) .............     -81,340,775,193,460,832
+- RobinFeeHook buy tax + sell tax (real contract)   -5,934,539,711,476,715,650
+= net PnL ex-gas ................................ +28,840,453,954,535,083,852
+- gas (3 txs, measured) .........................        -666,950,299,687,135
+= ATTACKER NET .................................. +28,839,787,004,235,396,717   (+28.84 ETH)
+
+VAULT LOSS ...................................... 36,251,765,437,881,644,553   (36.25 ETH)
+matched control, fill NOT forced ................. -1,016,247,7xx,xxx,xxx,xxx   (-1.02 ETH)
+```
+
+The three funding lines sum **exactly** to the ex-gas figure — a closed conservation identity, not an estimate.
+
+The loss model is simple and it scales: **the vault loses roughly (how far the band is underwater) × (the
+parked amount)** — 7.25% × 500 ETH ≈ 36 ETH here — and the attacker captures most of it, the rest going to the
+LP and the hook taxes. The originating claim of a *"~86% vault loss"* does **not** reproduce at any
+parameterisation tried. It is repeatable rather than one-shot: the carve accrues continuously from sell tax, so
+the position can be farmed each time enough accumulates.
+
+**On the evidence now in hand this is a HIGH** — a permissionless, atomic, repeatable extraction from the
+capital that exists to protect holders, at 36 ETH in a single transaction in the measured run. The label is
+left at MEDIUM only until the adjudicator closes, because that is the process this entry was filed under.
 
 **One scope limit, stated because it nearly caused a false disproof.** In the *undumped* state — spot already
 below the band, where `addFloor()` would succeed unaided — the same manipulation is **negative value**:
