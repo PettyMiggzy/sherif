@@ -1813,52 +1813,35 @@ of them:**
 - the pad loses either way: both candidate counterparties, the floor band and the graduated locked LP, are
   protocol-owned and un-withdrawable.
 
-**Regime-dependent, and currently in conflict between runs:**
+**The apparent conflict between runs resolves into a threshold, and two independent constructions agree on
+where it is.** The attacker pays a **fixed** cost to shove the tick from above the band down past
+`floorTickLower` — measured at ~1.5 ETH of price impact plus 2–4% in LP fee and buy tax on the push. That cost
+scales with the **pool's depth**; the extractable margin scales with the **parked balance**. So there is a
+ratio threshold, independently measured at **~4–5%** and **~5–7%** of the pool's ETH-side depth (the latter
+verified scale-invariant at 1×/100×/1000×). Above it the attacker profits; below it they do not.
 
-| run | attacker | vault loss | share of carve |
-|---|---|---|---|
-| deep band, 500 ETH parked, flash-funded, marked at **final spot** | **+4.0684 ETH** | 0.1289 ETH | **0.026%** |
-| band 7.25% underwater, 500 ETH parked, **priced back to pre-attack spot** | +28.84 ETH | 36.25 ETH | 7.25% |
-| deep dump, 5 ETH carve | +0.8569 ETH | 4.3964 ETH | **88.43%** |
+**But the vault loses in both modes, which is the part no single run showed:**
 
-The spread is not noise; two things drive it. **Valuation convention** — marking the vault at the *final* spot,
-which the attacker chose, versus pinning the pool back to the pre-attack price. The second is the defensible
-one, and the first is the error one run already flagged in another. **Regime** — the flash-funded run finds
-attacker profit requires the parked carve to exceed roughly **5–7% of the pool's ETH-side liquidity** (a
-scale-invariant ratio, verified at 1×/100×/1000×), while the *large percentage* vault losses occur at *small*
-parks, where that same run measures the attacker as **not** profiting.
+| regime | attacker | vault |
+|---|---|---|
+| parked **above** ~5% of pool ETH depth | **profits** — +0.32 to +28.8 ETH measured across runs, including a fully atomic flash-funded build at **+4.07 ETH** | loses |
+| parked **below** the threshold | **loses** (−0.21 ETH at 2% of pool depth, at every dump depth tested) | **still loses 39–77% of the parked carve** |
+| spot only *marginally* above the band | loses (−0.0247 ETH) | safe |
 
-If that separation holds, the sharpest reading is that **the attacker's profit and the vault's worst-case
-percentage loss may live in different regimes** — making "~86% vault loss with the attacker profiting" two true
-observations wrongly stapled together. Not settled: three further constructions and an adjudicator are still
-running. **Severity is HIGH on the robust facts alone** — a permissionless, atomic, profitable, repeatable
-extraction from protocol-owned capital against a baseline of zero loss — and does not turn on which pocket it
-comes from.
+So below the threshold this is not a profitable exploit — it is **pure griefing that still burns 39–77% of the
+floor**, available to anyone willing to eat the push cost. Above it, it is profitable extraction. Either way the
+carve is destroyed against a baseline where it would simply have parked and lost nothing.
 
-**The diagnosis in the original filing was wrong, and this matters for the fix.** It said an attacker
-"chooses the moment the floor capital is committed, and that choice is worth money." It is not: `_add` sizes
-the position as `getLiquidityForAmount0(sLower, sUpper, amt)` from the **immutable band ticks** and the on-hand
-amount — **the live tick is not an input** (`:137`). Proven by a control that ran the same trades twice moving
-only the position of `addFloor()` in the sequence: the vault's resulting position is **bit-identical**, and the
-timing degree of freedom is worth **exactly 0 wei**, across 9 configurations (carve 50 ETH; band 1 and 100
-spacings; pushes of 0.5 / 20 / 300 ETH; attacker selling 20% / 50% / 100%) — 0 in every cell but one, which
-showed 4×10^8 wei of rounding dust.
+Two qualifiers stated because they bound the finding honestly. Reaching the threshold takes accumulation: the
+carve is 0.2% of sell output (1% sell tax × 20% floor share), so parking ~5% of pool ETH depth needs sell volume
+on the order of **25× the pool's ETH depth**, accumulated *while the token sits dumped above the band* — very
+plausible for a graduated memecoin, but a real precondition rather than a given. And a **mild** dump is safe:
+profit requires spot materially above the band, which is exactly M-15's state.
 
-The real defect is a **state flip, not a price choice**: the slot0-only guard converts *"mint nothing"* into
-*"mint everything, at a fixed band that is now far from the market."* That is the part every run agrees on, and
-it is what the fix must target.
-
-**Two negative results worth keeping, because each nearly produced a false verdict.**
-
-- **In the undumped state the attack is worthless.** Where spot is already below the band and `addFloor()`
-  would succeed unaided, the same manipulation measures **−0.098 ETH** against an honest-`addFloor` baseline,
-  and the vault ends up marginally *better* off (−3,433,758,351,879,744 wei of loss avoided). Reproduced
-  independently to within gas noise. A pass testing only that case concludes, wrongly, that there is nothing
-  here.
-- **A "profit" that is really unsold inventory is not profit.** One arm where the attacker retained 20% of
-  their bag showed +0.924 ETH — an artifact of marking their own unsold tokens at a price they had just
-  pushed. Forcing liquidation of the remainder turned it to **−0.111 ETH**. Every figure quoted above has the
-  attacker ending at exactly zero tokens.
+The remaining disagreement is narrow and about **attribution**, not existence: whether the value comes
+principally from the floor band or the graduated locked LP varies with regime and with whether the vault is
+marked at the attacker's chosen final spot or at the pinned pre-attack price. Both are protocol-owned and
+un-withdrawable, so the pad loses either way, and the fix is the same.
 
 **Fix direction.** Do not let a single live `slot0` read gate the irreversible commitment of the whole balance:
 (1) require the tick to have been below `floorTickLower` for a minimum number of blocks, or compare against a
