@@ -887,8 +887,22 @@ But the pad's curve **is** registered as a rewarder in practice — `scripts/tes
 The curve is therefore a confused deputy: anyone can call `flushStaking()` and have the rewarder gate treat it
 as an authorised funding. And `_applyReward` on the `extend = true` path resets the window —
 `r.periodFinish = uint64(block.timestamp + dur)` — so each poke pushes the finish line out by a full duration
-and re-divides the remaining reservoir over it. A griefer holding dust pokes it repeatedly and the holder
-reward stream is stretched indefinitely, arbitrarily slowing every staker's accrual.
+and re-divides the remaining reservoir over it. Note the asymmetry with the sibling path: the identical call
+in `_fundStaking` (`:654-663`) **is** try/caught and gated behind a balance check; `flushStaking`'s only gates
+are `!graduated` and `s == address(0)`, and its `fundTokenPushed` poke runs unconditionally — the `bal > 0`
+check guards only the transfer on the line above.
+
+**Sized correctly, this is a delay, not a loss.** Rewards are re-stretched, never burned: the delivered
+fraction converges to `1 − e^(−t/duration)` regardless of how often the griefer pokes, so poking harder does
+not deepen the harm past that curve. Measured with poking sustained throughout: **63.88% delivered at 7 days,
+98.30% at 28 days** on a 7-day window. The accurate statement is that the 7-day drip is stretched into a
+months-long asymptotic tail for as long as someone keeps paying gas — not that it never pays out. The only
+permanently lost value is the `(amount + leftover) / dur` truncation, ≤ 604,799 wei-units of an 18-decimal
+token per poke, which is dust.
+
+**And it is mitigable — at the cost of re-opening L-2.** The `DualStaking` owner can stop it immediately with
+`setRewarder(curve, false)`, after which the curve can no longer credit its own graduation stream at all.
+That is precisely L-2. The pair has no configuration that satisfies both; only a code change does.
 
 This is exactly the grief `RobinLockStaking._startDrip`'s `[audit]` comment was written to prevent — *"if a
 top-up reset the window a griefer could dust-fund (1 wei) repeatedly to re-stretch the undripped reservoir
