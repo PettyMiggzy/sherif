@@ -458,6 +458,12 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
         if (floor != address(0)) revert AlreadySet();
         if (f == address(0) || f.code.length == 0) revert ZeroAddress(); // must be a contract (the vault)
+        // [M-21] floorEthOwed's ONLY exit is a plain value transfer to this address, and this setter is a
+        // one-shot with no re-point. Prove the target can accept one BEFORE spending it: a contract with
+        // neither receive() nor a payable fallback reverts here, instead of silently re-parking the carve
+        // forever while flushFloor() keeps returning success.
+        (bool ok,) = f.call{value: 0}("");
+        if (!ok) revert EthSendFailed();
         floor = f;
         emit FloorSet(f);
     }
@@ -468,6 +474,10 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
         if (ambush != address(0)) revert AlreadySet();
         if (a == address(0) || a.code.length == 0) revert ZeroAddress(); // must be a contract (the vault)
+        // [M-21] same as setFloor: ambushEthOwed can only ever leave by a value transfer to this address, and
+        // the setter cannot be re-pointed. Reject a target that cannot take a plain send.
+        (bool ok,) = a.call{value: 0}("");
+        if (!ok) revert EthSendFailed();
         ambush = a;
         emit AmbushSet(a);
     }

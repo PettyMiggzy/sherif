@@ -18,6 +18,12 @@ import {IStateView} from "@uniswap/v4-periphery/src/interfaces/IStateView.sol";
 
 interface IRobinCurveGrad {
     function gradTick() external view returns (int24);
+    // [M-26] the curve publishes its whole PoolKey as public immutables; read them instead of trusting params.
+    function currency0() external view returns (Currency);
+    function currency1() external view returns (Currency);
+    function fee() external view returns (uint24);
+    function tickSpacing() external view returns (int24);
+    function hooks() external view returns (IHooks);
 }
 
 interface IStakingFund {
@@ -76,6 +82,7 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
     error NotPoolManager();
     error ZeroAddress();
     error BadBand();
+    error PoolKeyMismatch();
 
     constructor(
         address poolManager_,
@@ -104,6 +111,18 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         fee = fee_;
         tickSpacing = tickSpacing_;
         hooks = hooks_;
+
+        // [M-26] The [H1] note below was true of the TICK and false of the POOL: currency0/currency1/fee/
+        // tickSpacing/hooks arrived as parameters and were stored unchecked, so a vault could anchor its band to
+        // THIS curve's gradTick while pointing its PoolKey at a DIFFERENT pad's pool — and then deliver this
+        // pad's ambush share as permanent, add-only, unrecoverable liquidity over there. The curve publishes all
+        // five; read them rather than trust the caller. Now the [H1] claim holds for the whole key.
+        if (
+            Currency.unwrap(currency0_) != Currency.unwrap(IRobinCurveGrad(curve_).currency0())
+                || Currency.unwrap(currency1_) != Currency.unwrap(IRobinCurveGrad(curve_).currency1())
+                || fee_ != IRobinCurveGrad(curve_).fee() || tickSpacing_ != IRobinCurveGrad(curve_).tickSpacing()
+                || address(hooks_) != address(IRobinCurveGrad(curve_).hooks())
+        ) revert PoolKeyMismatch();
 
         // [H1] Anchor to the curve's IMMUTABLE gradTick() read on-chain — never a passed hint, never a live spot.
         // The band is the first spacing boundary strictly ABOVE gradTick, plus an optional gap: it sits just below

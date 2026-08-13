@@ -386,6 +386,12 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         if (!c.registered) revert NotRegistered();
         if (c.floorRecipient != address(0)) revert FloorRecipientAlreadySet();
         if (recipient == address(0)) revert ZeroAddress();
+        // [M-24] Reject this hook itself. _payout's native branch is a bare call, and this contract has an open
+        // receive(), so a self-send would SUCCEED: claimFloor zeroes floorOwed first, the call returns ok, and
+        // FloorClaimed is emitted asserting a transfer that moved nothing. The setter is one-shot, so that state
+        // is permanent and the hook exposes no rescue. Deliberately NOT a value-transfer probe: on a stock pad
+        // the claimed currency can be an ERC-20, and a recipient that cannot take ETH may still be valid.
+        if (recipient == address(this)) revert ZeroAddress();
         c.floorRecipient = recipient;
         emit FloorRecipientSet(id, recipient);
     }
@@ -466,6 +472,9 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     /// restores the slot — funds are never lost, and the failure is isolated to that one caller/currency.
     function _payout(Currency currency, address to, uint256 amount) internal {
         if (to == address(0)) revert ZeroAddress();
+        // [M-24] defence in depth: no book may ever be settled to this hook. A self-send reports success while
+        // moving nothing, and the caller has already zeroed the book by the time we get here.
+        if (to == address(this)) revert PayoutFailed();
         if (currency.isAddressZero()) {
             (bool ok,) = payable(to).call{value: amount}("");
             if (!ok) revert PayoutFailed();

@@ -44,7 +44,9 @@ describe("RobinAmbushVault — two-sided ETH-seeded ambush band", () => {
   });
 
   async function deployVault(gradTick, floorRecipient, stakingRecipient) {
-    const curve = await (await ethers.getContractFactory("MockCurveGrad")).deploy(gradTick);
+    // [M-26] the vault now cross-checks its PoolKey against the curve, so the double must carry the same key
+    const curve = await (await ethers.getContractFactory("MockCurveGrad"))
+      .deploy(gradTick, ZERO, await tok.getAddress(), FEE, TS, ZERO);
     return (await ethers.getContractFactory("RobinAmbushVault")).deploy(
       await pm.getAddress(), await stateView.getAddress(), floorRecipient, stakingRecipient ?? ZERO,
       await curve.getAddress(), ZERO, await tok.getAddress(), FEE, TS, ZERO, 0 /* gap */, 10 /* width spacings */
@@ -149,7 +151,8 @@ describe("RobinAmbushVault — two-sided ETH-seeded ambush band", () => {
 
   it("rejects an inverted / out-of-range band at deploy", async () => {
     const F = await ethers.getContractFactory("RobinAmbushVault");
-    const curve = await (await ethers.getContractFactory("MockCurveGrad")).deploy(0);
+    const curve = await (await ethers.getContractFactory("MockCurveGrad"))
+      .deploy(0, ZERO, await tok.getAddress(), FEE, TS, ZERO);
     await expect(
       F.deploy(await pm.getAddress(), await stateView.getAddress(), floorSink.address, ZERO,
         await curve.getAddress(), ZERO, await tok.getAddress(), FEE, TS, ZERO, 0, 0) // width 0

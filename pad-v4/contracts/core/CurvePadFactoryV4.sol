@@ -73,6 +73,8 @@ contract CurvePadFactoryV4 {
     );
 
     error HookFlagsMismatch();
+    error LockVaultMismatch();
+    error NotRegistrar();
     error BadConfig();
     error BadGeometry();
     error NotCurve();
@@ -98,6 +100,12 @@ contract CurvePadFactoryV4 {
         feeConfig = RobinV4FeeConfig(feeConfig_);
         feeRegistry = feeRegistry_;
         lockVault = LockVault(payable(lockVault_));
+        // [I-1(19)] The vault holds its OWN positionManager immutable and uses it for collectFees and for the
+        // onERC721Received gate. Nothing else cross-checks the two, and the gate is dead code on the mint path
+        // (v4-periphery mints with solmate's plain _mint), so a divergence would let graduate() succeed, lock
+        // the LP, and only then leave every pad's fee stream permanently uncollectable. The getter is public
+        // and free — assert it here, where a mismatch costs a failed deploy instead of a dead pad.
+        if (address(lockVault.positionManager()) != positionManager_) revert LockVaultMismatch();
     }
 
     /// @notice Launch a free single-sided curve pad. `tokenSalt` is any CREATE2 salt (token only needs to sort
@@ -106,6 +114,11 @@ contract CurvePadFactoryV4 {
         external
         returns (address token, address hook, address curve, PoolId poolId)
     {
+        // [M-2] LockVault has ONE registrar slot and three factories can be pointed at it. If this factory is not
+        // the registered one, every launch here still succeeds and only graduate() step 5 fails — permanently,
+        // for every caller, with the raise already collected. Fail here instead, before a single wei is at risk.
+        if (lockVault.factory() != address(this)) revert NotRegistrar();
+
         // NO DEV MINT: the whole supply must be exactly the sellable curve + the held reserve — nothing is left
         // over to hand the creator. The creator (dev) gets tokens ONLY by BUYING from the curve like everyone else,
         // so there is no premine to red-flag on a scanner and no pre-bought bag that front-runs the public.
