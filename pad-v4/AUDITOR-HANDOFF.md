@@ -51,12 +51,16 @@ and wording edits do not count either way.
 | 8 | rounding direction across every division in the suite | claimed clean — **later refuted, see pass 11** |
 | 9 | all 128 permissionless entry points, each asked what a stranger's worst-timed call does | claimed clean — **later refuted, see pass 11** |
 | 10 | every balance-derived quantity, checked for an omitted liability — the seam L-18 and I-1(11) sit in | **clean — and the only one that survived pass 11's refutation attempt**, which returned UPHELD with no findings and strengthened it |
-| 11 | agents pointed at passes 8–10 and told to **refute** them, rather than at the code; plus fresh lenses on events, timestamps and the presale | not clean — **M-20**, **L-19**, I-1(12), and two corrections to this document |
+| 11 | agents pointed at passes 8–10 and told to **refute** them, rather than at the code; plus fresh lenses on events, timestamps and the presale | not clean — **M-20**, **M-22**, **L-19**–**L-22**, I-1(12)–(16), and corrections to **C-1**, **L-9**, **I-1(1)** and §4 |
+| 12 | the two gaps §5 admits were never swept — cross-pad singletons and the PadFactory stack — plus the fee hook audited as a whole | not clean — **M-24**, **M-27**, **L-24**–**L-29**, I-1(17)–(18); §4's book-conservation claim attacked and **upheld** |
+| 13 | the stock-pad path, made executable by building an action-dispatching PositionManager mock **outside** the repo (M-8's blocker) | not clean — **H-4** (99.9% of a payer's seed), **L-30**, **L-31** |
+| 14 | the partial-wiring **matrix** — which setters are set at each lifecycle stage, and which *combinations* are harmful | not clean — **M-28**, **L-32**, **L-33**; corrections to **M-21** and **M-11** |
+| 15 | four independent constructions of the floor-vault attack, each followed by a skeptic, to settle **H-5** | not clean — **H-5** promoted from MEDIUM, and its **mechanism corrected** |
 
 Clean passes are counted in §4 as they land; each one's negative result is written down there so a later pass
 does not re-derive it.
 
-**The count currently stands at zero, and that is the most useful thing on this page.** Passes 8, 9 and 10 were
+**The count stands at zero, and that is the most useful thing on this page.** Passes 8, 9 and 10 were
 recorded as three consecutive clean passes — the stopping condition. Pass 11 then pointed agents at *those
 conclusions* instead of at the code, with instructions to refute them, and **two of the three fell**:
 
@@ -67,8 +71,20 @@ conclusions* instead of at the code, with instructions to refute them, and **two
 
 Both surviving items are corrections to assertions made in this document, which is the outcome worth taking
 seriously: the clean passes were not wrong about the code so much as overconfident about their own coverage.
-The same pass also ran an event/observability lens that had never been applied — it returned **L-19**, four
-measured cases where the logs misreport a money movement, in four different contracts.
+
+**Passes 12–15 then made the point again, harder.** Every one of them found something, and four produced
+corrections to entries already filed here — **C-1**, **M-11**, **M-21**, **L-9**, plus **H-5**'s mechanism and
+two §4 assertions. The pattern is consistent enough to be the main methodological finding of this audit:
+
+> **Passes aimed at the code found bugs. Passes aimed at *this document's conclusions* found errors in the
+> conclusions.** Six of the eight self-corrections came from a pass whose brief was to attack a claim rather
+> than a contract — and in the sharpest case (**H-5**) the original claim was right about the magnitude,
+> right that a bug existed, and **wrong about the cause**, which is exactly the combination that produces a
+> fix that does not work.
+
+An auditor picking this up should assume the same is true of what remains: the findings have been attacked
+harder than the negative results in §4, and §4's bullets are labelled individually by whether they have
+survived a refutation attempt or merely been asserted.
 Pass 10 was challenged the same way and **held** — the refuter re-derived it from source, returned UPHELD with
 no findings, and closed a regime gap the original had missed (the band-geometry mint slack, 252,000 samples).
 That is the difference between a pass that was verified and two that were merely asserted. The gauntlet that
