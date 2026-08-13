@@ -895,10 +895,21 @@ check guards only the transfer on the line above.
 **Sized correctly, this is a delay, not a loss.** Rewards are re-stretched, never burned: the delivered
 fraction converges to `1 − e^(−t/duration)` regardless of how often the griefer pokes, so poking harder does
 not deepen the harm past that curve. Measured with poking sustained throughout: **63.88% delivered at 7 days,
-98.30% at 28 days** on a 7-day window. The accurate statement is that the 7-day drip is stretched into a
-months-long asymptotic tail for as long as someone keeps paying gas — not that it never pays out. The only
-permanently lost value is the `(amount + leftover) / dur` truncation, ≤ 604,799 wei-units of an 18-decimal
-token per poke, which is dust.
+98.30% at 28 days** on a 7-day window; 99% takes 4.6× the duration (32 days instead of 7) and 99.99% takes
+9.2× (64 days). The accurate statement is that the 7-day drip is stretched into a months-long asymptotic tail
+for as long as someone keeps paying gas — not that it never pays out. The only permanently lost value is the
+`(amount + leftover) / dur` truncation, ≤ 604,799 wei-units of an 18-decimal token per poke, which is dust.
+
+**The codebase already named this exact band — for the other contract.**
+`RobinLockStaking.sol:219-221` explains its fixed-`periodFinish` choice by describing precisely this grief:
+*"a griefer could dust-fund (1 wei) repeatedly to re-stretch the undripped reservoir over a fresh full
+duration each time and push `periodFinish` out forever, slowing honest stakers' rewards ~2.3-4.6x."* That is
+the same 2.3–4.6× band measured here. The defence was reasoned through, written down, and applied to
+`RobinLockStaking` — and `DualStaking` was left exposed to it through a relay the note did not anticipate.
+
+**Scale it at production geometry.** The reservoir at risk is the graduation leftover streamed to staking —
+**96,978,138 tokens, 9.70% of the 1B supply**, the same pot as C-1, roughly **$3.3k at the ~$34k graduation
+market cap**. The relative damage (63.88% at 7 days) is geometry-independent.
 
 **And it is mitigable — at the cost of re-opening L-2.** The `DualStaking` owner can stop it immediately with
 `setRewarder(curve, false)`, after which the curve can no longer credit its own graduation stream at all.
