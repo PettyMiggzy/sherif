@@ -36,6 +36,10 @@ re-derive it.
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
 
+**Two IDs are deliberately vacant.** `M-23` was promoted to **H-5** and `M-28` demoted to **L-35** when later
+evidence changed their severity; `L-34` was demoted into the **I-1(19)** bundle. The IDs are not reused, so a
+reference to a vacated number in an older copy of this document still resolves unambiguously.
+
 **How this was run, and where the loop stands.** The brief was to keep auditing until three consecutive passes
 turn up nothing, so each pass is a distinct lens over the whole suite rather than a re-read. A pass counts as
 **clean** only if it adds no finding *and* changes no existing finding's severity or substance; consolidation
@@ -54,7 +58,7 @@ and wording edits do not count either way.
 | 11 | agents pointed at passes 8–10 and told to **refute** them, rather than at the code; plus fresh lenses on events, timestamps and the presale | not clean — **M-20**, **M-22**, **L-19**–**L-22**, I-1(12)–(16), and corrections to **C-1**, **L-9**, **I-1(1)** and §4 |
 | 12 | the two gaps §5 admits were never swept — cross-pad singletons and the PadFactory stack — plus the fee hook audited as a whole | not clean — **M-24**, **M-27**, **L-24**–**L-29**, I-1(17)–(18); §4's book-conservation claim attacked and **upheld** |
 | 13 | the stock-pad path, made executable by building an action-dispatching PositionManager mock **outside** the repo (M-8's blocker) | not clean — **H-4** (99.9% of a payer's seed), **L-30**, **L-31** |
-| 14 | the partial-wiring **matrix** — which setters are set at each lifecycle stage, and which *combinations* are harmful | not clean — **M-28**, **L-32**, **L-33**; corrections to **M-21** and **M-11** |
+| 14 | the partial-wiring **matrix** — which setters are set at each lifecycle stage, and which *combinations* are harmful | not clean — **L-35** (filed M-28), **L-32**, **L-33**; corrections to **M-21** and **M-11** |
 | 15 | four independent constructions of the floor-vault attack, each followed by a skeptic, to settle **H-5** | not clean — **H-5** promoted from MEDIUM, and its **mechanism corrected** |
 
 Clean passes are counted in §4 as they land; each one's negative result is written down there so a later pass
@@ -1637,7 +1641,7 @@ weak validation admits, where retrying the same dead address forever is the only
 
 > **Later correction.** The recovery measured above was run **after graduation**. `flushFloor`'s `!graduated`
 > check is unconditional and runs *before* the wiring check, so on a pad that never graduates the floor book is
-> unreachable however it is wired. See **M-28**.
+> unreachable however it is wired. See **L-35**.
 
 **Not the wiring cluster, and not M-4.** M-7/M-11/L-3/L-17 are all "a sink was never wired, so value sits
 waiting" — recoverable by wiring it, as measured above. M-4 is the floor *band anchor* being an unverifiable
@@ -3421,7 +3425,7 @@ verification.
   precede the read); the hook's `0x00CC` flags fire no `modifyLiquidity` callback that could re-enter and mint;
   and `SETTLE_PAIR` runs after the id is assigned, settling native ETH and `PadToken`, neither of which has a
   transfer hook. Two curves graduating in one transaction each re-read immediately before their own mint and get
-  N and N+1 correctly. The id is right — **L-34** is that nothing asserts it.
+  N and N+1 correctly. The id is right — **I-1(19)** is that nothing asserts it.
 - **The permanent lock has no bypass — searched exhaustively, not assumed.** `LockVault` exposes no `approve`,
   `transfer`, `decreaseLiquidity` or `burn` selector. v4-periphery's ERC-721 `permit` cannot help either:
   Permit2's `SignatureVerification` falls through to ERC-1271 for a contract owner, and `LockVault` has no
@@ -3691,7 +3695,7 @@ against `floorLiquidity()`.
 
 ## 7. Compositions — where fixing one finding touches another
 
-Read this before the ordered list. Findings that interact change the *order*, and two of them change what the
+Read this before §8. Findings that interact change the *order*, and two of them change what the
 correct fix actually is.
 
 **1. The staking-wiring dilemma has no clean branch, and the register previously implied the wrong one.**
@@ -3742,7 +3746,7 @@ the same `addFloor` guard read three ways — a fix aimed at one must be checked
 
 ---
 
-## 7. Suggested remediation order
+## 8. Suggested remediation order
 
 1. **C-2** — 100 wei traps the entire raise, and the documented recovery is bricked by the same mechanism.
    Fix (1) alone — a caller-supplied price limit on `restoreCeiling` — converts it from unrecoverable to
