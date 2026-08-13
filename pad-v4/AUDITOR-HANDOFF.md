@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
-| **MEDIUM** | 19 | 10 |
+| **MEDIUM** | 20 | 11 |
 | **LOW** | 18 | 9 |
-| **INFO** | 16 (12 bundled as I-1, plus I-2 … I-5) | 1 |
-| **total** | **58** | **25** |
+| **INFO** | 17 (13 bundled as I-1, plus I-2 … I-5) | 1 |
+| **total** | **60** | **26** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -48,15 +48,28 @@ and wording edits do not count either way.
 | 5 | toolchain (`solc` advisories) and test-coverage-vs-stated-invariants | not clean — **I-5**, **M-19** |
 | 6 | generalize each finding to hunt its siblings: short returns, one-shot targets, unbounded loops | not clean — six more short-return sites, the one-shot table, 1 INFO |
 | 7 | netted fee deltas, owner-power retroactivity, park guards | not clean — 1 INFO extended; two lenses returned clean negatives |
-| 8 | rounding direction across every division in the suite | **clean** — recorded in §4 |
-| 9 | all 128 permissionless entry points, each asked what a stranger's worst-timed call does | **clean** — recorded in §4 |
-| 10 | every balance-derived quantity, checked for an omitted liability — the seam L-18 and I-1(11) sit in | **clean** — recorded in §4 |
+| 8 | rounding direction across every division in the suite | claimed clean — **later refuted, see pass 11** |
+| 9 | all 128 permissionless entry points, each asked what a stranger's worst-timed call does | claimed clean — **later refuted, see pass 11** |
+| 10 | every balance-derived quantity, checked for an omitted liability — the seam L-18 and I-1(11) sit in | clean; not yet independently challenged |
+| 11 | agents pointed at passes 8–10 and told to **refute** them, rather than at the code | not clean — **M-20**, I-1(12), and two corrections to this document |
 
 Clean passes are counted in §4 as they land; each one's negative result is written down there so a later pass
-does not re-derive it. **3 consecutive clean passes** as of this revision (8, 9, 10), which is the stopping
-condition the brief set. One qualification, stated rather than buried: the parallel finder/skeptic gauntlet that
-produced passes 1–3 is still executing its own rounds 4 and 5 at the time of writing. If anything survives its
-verification, it lands here and the count restarts — this document is the register, not a snapshot.
+does not re-derive it.
+
+**The count currently stands at zero, and that is the most useful thing on this page.** Passes 8, 9 and 10 were
+recorded as three consecutive clean passes — the stopping condition. Pass 11 then pointed agents at *those
+conclusions* instead of at the code, with instructions to refute them, and **two of the three fell**:
+
+- pass 9's "every permissionless entry point is either already a finding or safe" missed `donateETH`, the one
+  funding path that is both un-gated and passes `extend = false` → **M-20**, which also **corrects C-1**;
+- pass 8's "every division was checked" covered 20 of 32 sites, and its "only place where floor-and-forget
+  strands value" was wrong → I-1(12). The *conclusion* survived re-checking; the claim of exhaustiveness did not.
+
+Both surviving items are corrections to assertions made in this document, which is the outcome worth taking
+seriously: the clean passes were not wrong about the code so much as overconfident about their own coverage.
+Pass 10 has not yet been independently challenged. The gauntlet that produced passes 1–3 is also still
+executing its rounds 4 and 5. This document is the register, not a snapshot — anything that survives lands here
+and the count restarts from zero.
 
 ---
 
@@ -182,13 +195,21 @@ Both contradict the contract's own guarantee (`:14-15`: *"rewards stream out of 
 bounded `rewardRate` (Synthetix drip), so a whale can never drain the pool in one block"*) and
 `AUDIT-SCOPE.md` §3.
 
-**The sibling contract already gets the important half right.** `DualStaking` has the same zero-rate hole in
-its pause guard (`pads/DualStaking.sol:206` — `if (r.rewardRate > 0 && r.periodFinish > r.lastUpdateTime)`),
-but its *stake* path is safe: `stake` → `_kickstartPending` → `_applyReward(side, asset, amt, true)`
-(`:233`), and `extend == true` takes the fresh-window branch, so parked rewards always get a full
-`duration` no matter what state the old window was in. `RobinLockStaking.stake` (`:112-117`) instead calls
-`_startDrip(p)` directly, which falls into the mid-window branch whenever a stale `periodFinish` is still
-live. That one difference is the whole exploit.
+**The sibling contract gets the important half right — on the path that matters here.** `DualStaking` has the
+same zero-rate hole in its pause guard (`pads/DualStaking.sol:206` — `if (r.rewardRate > 0 && r.periodFinish >
+r.lastUpdateTime)`), but its *stake* path is safe: `stake` → `_kickstartPending` →
+`_applyReward(side, asset, amt, true)` (`:233`), and `extend == true` takes the fresh-window branch, so parked
+rewards always get a full `duration` no matter what state the old window was in. `RobinLockStaking.stake`
+(`:112-117`) instead calls `_startDrip(p)` directly, which falls into the mid-window branch whenever a stale
+`periodFinish` is still live. That difference is what makes the *stake-flush* step of this exploit specific to
+`RobinLockStaking`.
+
+> **Correction.** An earlier revision of this paragraph read "that one difference is the whole exploit" and
+> treated `DualStaking` as clear of the class. That was too strong, and a later pass broke it. Enumerating all
+> six `_applyReward` call sites, **two pass `extend = false`** — the forfeit recycle (`:321`) and `donateETH`
+> (`:404`) — and `donateETH` is also the only funding entry point with no `isRewarder` gate. `DualStaking` is
+> therefore exposed to both halves of C-1's mechanism through that one function: window compression, and 1-wei
+> arming of a zero-rate window. See **M-20**, which measures both.
 
 **Fix direction.** All four are worth doing; the first two are the actual fix.
 - **Floor the drip window.** Never let a tranche pay out faster than a minimum duration: cap
@@ -1243,6 +1264,83 @@ path that `lockVault.factory() == address(curveFactory)` (M-2); a presale whose 
 
 ---
 
+### M-20 · MEDIUM · `donateETH` is the one permissionless funding path that passes `extend=false`, so a creator's gift streams over the *residue* of the live window  `PROVEN`
+
+**Where** `contracts/pads/DualStaking.sol:399-406` (`donateETH`), `:245-253` (`_applyReward`'s two branches),
+against the `[AUDIT]` NatSpec at `:393-398` that justifies the design.
+
+**This finding also corrects C-1.** C-1 clears `DualStaking` on the ground that its route into `_applyReward`
+passes `extend == true`. That is true of the *stake* path (`_kickstartPending:233`) and of every **gated**
+funding path — `fundETH:389`, `fundToken:421`, `fundTokenPushed:438`, `receive():509`. It is not true of the
+contract. Enumerating all six call sites, **two pass `extend = false`**: the forfeit recycle at `:321`, and
+`donateETH` at `:404` — which is also the only one of the six with **no `isRewarder` gate**. Permissionless
+*and* `extend = false` is the combination that matters, and exactly one function has it.
+
+**Mechanism.** `_applyReward` compresses when `extend == false` **and** a window is still live:
+
+```solidity
+if (extend || block.timestamp >= r.periodFinish) {   // fresh: full duration
+    ...
+    r.rewardRate = (amount + leftover) / dur;
+    r.periodFinish = uint64(block.timestamp + dur);
+} else {                                             // compress into what is left
+    uint256 remaining = r.periodFinish - block.timestamp;
+    r.rewardRate = ((remaining * r.rewardRate) + amount) / remaining;
+}
+```
+
+So a donation does not get its own window — it is divided by however many seconds happen to remain. The
+comment at `:397-398` describes this as the safe choice (*"a donation TOPS UP the live stream (raising the
+rate) but can NEVER push `periodFinish` out — otherwise a 1-wei spammer could perpetually reset the window"*).
+It stops the dilution it names and creates a sharper problem: **who receives the donation is decided by who is
+staked during those residue seconds, not by who supported the pad.** `periodFinish` is a public getter, so the
+residue is not a race — it is a schedule.
+
+**Measured**, against the real `DualStaking` on a local chain. Honest setup: alice stakes and a 1 ETH stream
+runs for 7 days. At `periodFinish − 121`, a whale stakes and the creator donates 10 ETH "to holders":
+
+| | |
+|---|---|
+| `periodFinish` after the donation | **unchanged** — the comment's stated invariant does hold here |
+| `rewardRate` after the donation | **0.08403526688453159 ETH/sec** — 10 ETH over 121 seconds |
+| alice — staked the **entire 7 days** | **1.0998 ETH** |
+| whale — staked **121 seconds** | **9.9002 ETH = 99.00% of the creator's gift** |
+
+With an equal-sized JIT stake instead of a whale one, the split is 5.0001 / 5.9999 — the compression is the
+defect, and the attacker simply sizes their stake to choose their share of it. This voids the contract's own
+headline claim at `:31-33` (*"rewards STREAM over a window (a flash-staker accrues ~0)"*) for the whole
+donation channel — the channel `:393-395` explicitly aims at creators.
+
+**The second half: 1 wei installs a window whose expiry the attacker chooses.** `extend = false` only selects
+the compressing branch while a window is live; once `block.timestamp >= r.periodFinish`, the **fresh** branch
+runs regardless of `extend` and writes `periodFinish = block.timestamp + dur`. So the invariant in the comment
+— *"can NEVER push `periodFinish` out"* — is false precisely when the previous window has lapsed. Measured on
+a never-funded pool with one staker, called by an account that is **not** a rewarder:
+
+```
+donateETH{value: 1}  →  rewardRate == 0,  periodFinish − now == 604800
+after 8 days         →  earned() == 0, and the 1 wei is stranded in the contract
+```
+
+That is C-1's arming primitive in a second contract: for 1 wei an attacker installs a live 7-day window on a
+pool nobody has funded, at a moment of their choosing, and every donation arriving inside it is compressed
+into whatever residue remains. It converts the compression from an accident that bites late donors into
+something that can be scheduled.
+
+**Severity.** MEDIUM, not HIGH: the attacker must actually post the stake and be exposed for the residue
+(minutes, not seconds of risk-free time), and nothing is taken from principal or from the pool's solvency —
+this redirects *donated* value between stakers. It is not LOW because the redirection is near-total at
+attacker-chosen size, the channel is the one creators are told to use, and both halves are permissionless.
+
+**Fix direction.** Give a donation its own window rather than the residue: pass `extend = true` from
+`donateETH` as every other funding path does. The dilution the comment fears is then handled where it
+belongs — by requiring `msg.value >= duration` (which also stops the `rewardRate` truncation to zero and the
+1-wei arming), or by rate-limiting donations, not by compressing them. Correct `:397-398` either way: the
+invariant it asserts does not hold across a lapsed window. If the residue behaviour is deliberate, the
+anti-JIT claim at `:31-33` must be qualified to exclude donations.
+
+---
+
 ### L-1 · LOW · `RobinV4FeeConfig` accepts curve geometries whose raise floors to zero  `PROVEN (numerically)`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-103` (`_validate`), with
@@ -1961,7 +2059,15 @@ that, pick one destination per vault and make both paths use it. Correct `RobinA
     or token that reaches it outside a deposit is swept by whoever deposits next. The fee reserve and the
     `feeCarry` remainder are correctly excluded, so this can only ever capture a mis-send — but a mis-send here
     has no recovery other than being someone else's refund.
-12. **`FeeWalletRegistry` proposals never expire.** `pendingEta` is only cleared by a commit or an explicit
+12. **`DualStaking._applyReward` floors `rewardRate` with no carry and no sweep** (`:248`
+    `(amount + leftover) / dur`, `:252` `((remaining * rate) + amount) / remaining`). Total streamed is
+    `rate × dur`, so `(amount + leftover) mod dur` wei of reward capital already received is dropped from every
+    future accrual on that call, unrecoverable by anyone including the owner. Bounded by `duration − 1` wei per
+    funding call — ≤604,799 wei on the constructor-listed 7-day ETH stream, ≤31,535,999 on a 365-day one — so
+    it is dust, but it contradicts the "only place" claim §4 used to make, and unlike `RobinLpVault` there is
+    no `feeCarry` to catch it. `RobinLockStaking` has the same shape; I-1(5) records its zero-rate case, which
+    C-1 then weaponises.
+13. **`FeeWalletRegistry` proposals never expire.** `pendingEta` is only cleared by a commit or an explicit
     `cancelProposal`, so a proposal made and abandoned stays committable forever. Given M-14 — this address is
     effectively the protocol's root admin — a stale proposal is a live capability sitting in storage.
 
@@ -2195,17 +2301,30 @@ verification.
     `MAX_ANTI_JIT = 7 days`, enforced in **both** the constructor (`:142`) and `setAntiJitDelay` (`:472`).
     `stock == token` is rejected outright (`[audit C1]`).
   - `PresaleVault.claimTo(to)` routes `msg.sender`'s own claim; it takes no victim argument.
-- **Rounding direction, swept exhaustively.** Every division and bps computation in `contracts/` was checked for
-  which side the residue falls on. All of them floor, and all of them floor *safely*: the hook's buy and sell
+- **Rounding direction — swept, but the sweep was not exhaustive, and this bullet was wrong once.**
+  > **Correction.** This bullet originally claimed "every division and bps computation in `contracts/`" had
+  > been checked, and that `RobinLpVault`'s accumulator was "the only place where floor-and-forget would
+  > actually strand value". A later refutation pass established both are false. The cited set covers **20 of
+  > the 32** division sites in `contracts/`; the twelve omitted are the Synthetix accumulators in *both*
+  > staking contracts (including that `DualStaking` scales by `ACC = 1e30` while `RobinLockStaking` uses
+  > `1e18` — a 1e12 difference in per-update precision this bullet never mentioned), the rate-scheduling
+  > divisions in `_applyReward`, and the per-user `pending`/`debt` divisions. Each of the twelve was then
+  > checked individually and **none lets a caller extract more than they are owed or leaves a contract owing
+  > more than it holds** — so the conclusion survives, but it was asserted before it was earned, and
+  > `_applyReward` is a second floor-and-forget site (see I-1(13)). The claim below is now scoped to what was
+  > actually verified.
+
+  Of the divisions and bps computations verified, all floor, and all floor safely: All of them floor, and all of them floor *safely*: the hook's buy and sell
   fees (`:208`, `:236`, `:243`, `:293`, `:303`) round in the trader's favour; the graduation waterfall
   (`:346-351`) and the buy-LP floor carve (`:609`) leave their remainder in the balance that step 9 sweeps to
   the platform book; `DualStaking`'s claim fee (`:343`) and boosted weight (`:262`) both round toward the
   staker and the pool respectively; `RobinLockStaking`'s early-exit penalty (`:143`) rounds toward the
   withdrawer; `PresaleVault`'s pro-rata `mulDiv`s (`:257-258`, `:315-316`) floor, so the vault can never owe
-  more than it holds. `RobinLpVault`'s accumulator is the only place where floor-and-forget would actually
-  strand value, and it is the one place with an explicit remainder carry (`:250-253`, `[audit L6]`) — checked
-  algebraically: `inc·tl/ACC ≤ amt` so the carry never underflows, and `Σ⌊liq_u·acc⌋ ≤ ⌊Σliq_u·acc⌋`, so
-  claims can never exceed `feeReserve`. No rounding finding survived.
+  more than it holds. `RobinLpVault`'s accumulator is the one place with an explicit remainder carry
+  (`:250-253`, `[audit L6]`) — checked algebraically: `inc·tl/ACC ≤ amt` so the carry never underflows, and
+  `Σ⌊liq_u·acc⌋ ≤ ⌊Σliq_u·acc⌋`, so claims can never exceed `feeReserve`. `DualStaking._applyReward` is a
+  second site that floors without a carry; it strands dust rather than breaking solvency, and is recorded as
+  I-1(12). No rounding finding above INFO survived.
 - **C-2 has no siblings inside this codebase.** Every loop in `contracts/` was enumerated: four, all hard
   bounded — three in `DualStaking` (`:203`, `:227`, `:316`) iterate `_rewardTokens[side]`, capped at
   `MAX_REWARD_TOKENS = 8` and enforced in `_listReward:447`, and one in `StockQuoteAdapter:131` walks a
