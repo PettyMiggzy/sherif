@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
-| **MEDIUM** | 23 | 14 |
-| **LOW** | 23 | 13 |
-| **INFO** | 21 (17 bundled as I-1, plus I-2 … I-5) | 2 |
-| **total** | **72** | **34** |
+| **MEDIUM** | 24 | 14 |
+| **LOW** | 26 | 13 |
+| **INFO** | 23 (19 bundled as I-1, plus I-2 … I-5) | 2 |
+| **total** | **77** | **34** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -1624,6 +1624,136 @@ for one should be checked against the other.
 
 ---
 
+### M-24 · MEDIUM · The hook's floor pointer accepts the hook itself, and then `claimFloor` reports success while moving nothing — permanently  `VERIFIED`
+
+**Where** `contracts/hooks/RobinFeeHook.sol:383-391` (`setFloorRecipient`), `:340-348` (`claimFloor`),
+`:467-475` (`_payout`), `:478` (`receive`).
+
+`setFloorRecipient` is platform-only and permanently one-shot, and its **only** content check is
+`if (recipient == address(0)) revert ZeroAddress()` (`:388`). No code check, no value-transfer probe. `_payout`
+for native ETH is a bare `payable(to).call{value: amount}("")`, and the hook has an open
+`receive() external payable {}`.
+
+So setting the floor recipient to **the hook's own address** makes `claimFloor` a self-send:
+
+```
+floorOwed[id][0] = 0;                  // book zeroed FIRST
+_payout(...)  → hook.call{value: amt}  → ok == true (its own receive())
+emit FloorClaimed(id, 0, to, amount);  // a transfer is asserted in the log
+```
+
+The balance is byte-identical before and after. The ETH sits in the hook's raw balance backing **no book**, and
+the hook exposes **no** rescue, sweep, recover or withdraw selector — verified, zero matches. The one-shot is
+spent, so every later `setFloorRecipient` reverts `FloorRecipientAlreadySet`.
+
+**This is strictly worse than M-21, which is the same shape one contract away.** M-21's failure mode *re-parks*
+the book, so the ETH stays owed and a fix can still deliver it. Here the book is **zeroed before** the send and
+the send succeeds, so the ETH is not even owed any more — and the event says it was paid. It also validates
+*less* than the curve's setter: `RobinCurveV4.setFloor` at least requires `code.length != 0`.
+
+It breaks `AUDIT-SCOPE.md` §4.1 — *"every fee booked is claimable exactly once"* — in a direction H-1 does not:
+H-1 is fees never booked; this is fees booked, reported claimed, and claimable **zero** times. The victim is the
+pad's entire sell-tax floor carve, which is the protection M-15 and M-21 both lean on.
+
+**Fix direction.** Same as M-21 and worth doing in one pass across all four setters: probe the target with a
+value transfer before spending the one-shot, and reject `address(this)` explicitly. Independently, `_payout`
+should not treat a self-send as success — compare balances across the call, or require `to != address(this)`.
+
+---
+
+### L-24 · LOW · `LockVault`'s "acceptance IS the lock" is dead code on every path it claims to secure  `VERIFIED`
+
+**Where** `contracts/core/LockVault.sol:13-17` (NatSpec) and `:169-173` (`onERC721Received`),
+`ROBIN-V4-ARCHITECTURE.md:217`, against `node_modules/@uniswap/v4-periphery/src/PositionManager.sol:364` and
+`node_modules/solmate/src/tokens/ERC721.sol:157`.
+
+The contract's own NatSpec and the architecture doc both state the lock is structural because the vault accepts
+NFTs *only* from the canonical `PositionManager` — *"that acceptance IS the lock"*. Verified against the
+deployed periphery, both halves are wrong:
+
+- **It never fires on the paths in use.** `PositionManager._mint` (`:364`) calls solmate's plain
+  `_mint(owner, tokenId)` (`ERC721.sol:157`), **not** `_safeMint` — solmate invokes `onERC721Received` only in
+  `_safeMint` (`:198`, `:213`) and `safeTransferFrom` (`:120`, `:136`). Every path the suite uses to place an
+  NFT in the vault — `PadFactory._mintSeedLp:244`, `StockPadFactory._mintSeedLp:226`,
+  `RobinCurveV4._mintPermanentLp:647`, all passing `lockVault` as the `MINT_POSITION` owner — is a plain mint.
+  The guard is unexecuted code. This is invisible locally because `MockPositionManagerV4` takes a different
+  route, which is M-8's blind spot showing up again.
+- **What it does gate, it gates the wrong way.** The one path that *does* reach it is a third party calling
+  `safeTransferFrom` — and the check accepts any position from the canonical manager, into a contract with no
+  exit selector. Anyone who sends a v4 position NFT to the shared `LockVault` by mistake, or because they read
+  the NatSpec and believed the vault validates provenance, loses the principal and all future fees permanently,
+  with no recovery for any party including the platform.
+
+**The lock itself still holds** — `LockVault` genuinely exposes no liquidity-exit selector, and
+`test/unit/LockVault.test.js` asserts exactly that. The defect is that the *stated mechanism* is not the one
+doing the work, so a reader (or an auditor) reasoning from the documented invariant is reasoning from a check
+that never runs.
+
+**Fix direction.** Delete the claim from the NatSpec and the architecture doc, or make it true by having the
+factories `safeTransferFrom` into the vault rather than minting directly to it. Either way, add an explicit
+`revert` in `onERC721Received` for tokens not registered by the factory, so a mis-sent position bounces instead
+of vanishing.
+
+---
+
+### L-25 · LOW · A sibling pool carrying the pad's own hook is unregistered, so it is untaxed on both sides — and anyone can create it  `VERIFIED`
+
+**Where** `contracts/hooks/RobinFeeHook.sol:189` (exact-output rejection, gated on `c.registered`), `:201-203`
+(unregistered early return), `:280` (`afterSwap` early return); `contracts/hooks/BaseHook.sol:30`
+(`REQUIRED_FLAGS` has no `BEFORE_INITIALIZE` bit).
+
+A v4 `PoolId` is `keccak(currency0, currency1, fee, tickSpacing, hooks)`, and `registerPool` binds exactly one.
+Because the hook's flag word omits `BEFORE_INITIALIZE`, `BaseHook`'s reverting `beforeInitialize` stub is never
+invoked, so **any EOA** can call `poolManager.initialize` with the same currency pair and the same hook address
+but a different `fee` or `tickSpacing`. On that id `config[id].registered` is false, so `beforeSwap` falls
+through at `:201` with a zero delta and `afterSwap` returns 0 at `:280` — no mint, no take, no book.
+
+The result is a permanently untaxed venue for the pad coin **that carries the pad's own hook address**, so any
+indexer, front end or router identifying "a Robin pad pool" by its hook treats it as genuine. Volume migrating
+there pays none of the buy tax (platform + buffer + referral) and none of the sell tax (creator + floor). It
+also restores exact-output swaps, since the `:189` guard rejecting them is itself conditioned on
+`c.registered` — so the shape that guard exists to forbid is available one pool id away.
+
+Distinct from **H-1**, which evades the *sell* tax on the *registered* pool via a flash-take starve. This
+evades **both** taxes on a *different* pool id, and needs no cleverness at all.
+
+**Fix direction.** Add `BEFORE_INITIALIZE` to the hook's flags and revert in `beforeInitialize` for any key the
+factory did not register — which requires re-mining hook addresses, so it is a launch-time change, not a
+patch. Cheaper mitigation if that is unacceptable: have the front end and indexer key on the registered
+`PoolId`, never on the hook address, and say so in the integration docs.
+
+---
+
+### L-26 · LOW · A buy that fills zero still pays the full buy tax, and on a stuck pad that is every buy  `VERIFIED`
+
+**Where** `contracts/hooks/RobinFeeHook.sol:205-213` (fee computed on the requested exact input), `:222` (the
+`beforeSwap` specified delta), `:236-252` (`_bookBuy`).
+
+The buy fee is computed from `-params.amountSpecified` **before** the swap executes, minted, booked, and charged
+through the `beforeSwap` specified delta — which v4 applies regardless of how much actually executed. The
+over-tax is bounded in absolute terms at `buyTaxBps × requested input`, but the *effective rate on value
+received* is unbounded, and at a zero fill it is infinite.
+
+The boundary case is the one that matters: on a **sold-out but not-yet-graduated** curve there is no liquidity
+below `gradTick`, so a plain buy with no price limit fills **zero** — and the swap succeeds rather than
+reverting, having paid full buy tax for no tokens. Normally that is a one-block window, since `graduate()` is
+permissionless and bountied. **C-2 makes it permanent**: a pad whose `graduate()` exceeds the block gas cap
+sits in exactly this state forever, so every buy on it burns `buyTaxBps` for nothing.
+
+The proceeds route as ordinary buy tax — buffer 20% + platform 60% + referral 20% — and per **L-5** the buffer
+is swept into `platformEthOwed` at graduation, so the platform keeps 80% with a referrer named and 100%
+without.
+
+Distinct from **M-1**, which is scoped to `PresaleVault.finalize` where the limit is the protocol's own
+`gradTick` and the loss is socialised across contributors. `AUDIT-SCOPE.md` §5 accepts this arithmetic only for
+"a partial-fill on a tight price limit"; a zero fill with no limit set is not that case.
+
+**Fix direction.** Charge the tax on the **executed** input rather than the requested one — `afterSwap` knows
+it — or revert a buy whose fill is zero. At minimum, document the zero-fill case in §5 rather than letting the
+partial-fill wording cover it.
+
+---
+
 ### L-1 · LOW · `RobinV4FeeConfig` accepts curve geometries whose raise floors to zero  `PROVEN (numerically)`
 
 **Where** `contracts/core/RobinV4FeeConfig.sol:102-103` (`_validate`), with
@@ -2512,7 +2642,23 @@ every `_collect`.
     checks the registry is safe" as the mitigation for the uninitialised template: registry membership does not
     carry that much. No principal is at risk — vault ETH only ever moves to the pooled buy or back to its
     depositor.
-17. **`FeeWalletRegistry` proposals never expire.** `pendingEta` is only cleared by a commit or an explicit
+17. **`StockPadFactory`'s `stockRemainder` sweep is an arbitrary-ERC20 sweep of the shared factory.** `launch`
+    derives the quote by calling `.stock()` on a **caller-supplied** adapter with no allow-list (H-2), then at
+    `:189-190` sweeps `IERC20(stock).balanceOf(address(this))` in full to a caller-supplied `cfg.creator`. So
+    `stock` is whatever the caller's adapter names — including another pad's `PadToken` — and the sweep takes
+    the *shared factory's entire balance* of it. No protocol flow parks value there, so this is a mis-send
+    recovery race rather than a loss of protocol funds. Recorded because it is what H-2 and I-1(2) compose
+    into, which neither entry states on its own.
+18. **The hook's only reentrancy fixture targets a function that does not exist.**
+    `contracts/test/ReentrantClaimer.sol:7/:29/:35` re-enters `hook.claimHolder(id, idx)`; `RobinFeeHook` has
+    no `claimHolder` — the surface is `claimPlatform`/`claimCreator`/`claimFloor`/`claimBuffer`/`claimReferral`.
+    Grepping `test/`, `contracts/` and `scripts/` for `ReentrantClaimer` and `claimHolder` returns hits in that
+    one file and nowhere else, so it is never instantiated either. Had it been wired, it would not have tested
+    the guard: a call to a missing selector makes `_payout`'s raw call return false and the claim dies with
+    `PayoutFailed`, not the `Reentrancy()` the fixture claims to prove. So `AUDIT-SCOPE.md` §4.3's "a reverting
+    recipient can never brick a claim" has **zero** executed coverage on the hook's claim path — a gap M-19's
+    table missed because it audits `test/`, not `contracts/test/` fixtures.
+19. **`FeeWalletRegistry` proposals never expire.** `pendingEta` is only cleared by a commit or an explicit
     `cancelProposal`, so a proposal made and abandoned stays committable forever. Given M-14 — this address is
     effectively the protocol's root admin — a stale proposal is a live capability sitting in storage.
 
@@ -2825,6 +2971,13 @@ verification.
   rather than fixing — the same flag guards `beforeSwap`/`afterSwap` *and* the five user-facing `claim*`
   functions, so no claim can execute inside a swap. That is deliberate, and it is designed around at the one
   place it matters: `RobinCurveV4.graduate()` calls `claimBuffer` before its own `unlock`, not inside it.
+- **The hook's per-swap book conservation — independently attacked and held.** §4 originally *asserted* that
+  buy books sum exactly to each minted ERC-6909 claim and sell books to each `take`. A later pass handed that
+  assertion to an agent told to break it, which worked the algebra per swap — `bufferCut = ⌊fee·bufBps/BPS⌋`,
+  `referralCut = ⌊platformCut·refBps/BPS⌋`, `platformOwed += platformCut − referralCut` — and confirmed the
+  three sum to `fee` **identically by construction**, because every split is a subtraction rather than a second
+  multiplication, with `registerPool`'s `<= BPS` checks bounding the inputs. It could not produce a
+  counterexample. Unlike the rounding and permissionless-surface bullets, this one survived challenge.
 - **The hook's claim-redemption path.** `unlockCallback` is gated on `msg.sender == poolManager`, and v4 only
   ever calls back the address that called `unlock`, so no third party can supply its `data`. Burn-then-take is
   ordered correctly, and `_payout` runs after the unlock closes, so a hostile recipient re-entering finds the
