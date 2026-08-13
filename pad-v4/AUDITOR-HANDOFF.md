@@ -28,10 +28,10 @@ re-derive it.
 |---|---|---|
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
-| **MEDIUM** | 22 | 13 |
+| **MEDIUM** | 23 | 14 |
 | **LOW** | 23 | 13 |
 | **INFO** | 21 (17 bundled as I-1, plus I-2 … I-5) | 2 |
-| **total** | **71** | **33** |
+| **total** | **72** | **34** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -1564,6 +1564,63 @@ inputs, and a fix for one should not be assumed to address the other.
 enforce the window from stored state until `block.timestamp > ea + guardWindow` — so clearing the source cannot
 reopen the pool early. Failing that, document the curb as pre-event only and stop describing `guardWindow` as
 "around".
+
+---
+
+### M-23 · MEDIUM (severity provisional — attribution under active verification) · `addFloor()`'s spot guard is bypassable atomically, and forcing the fill turns a losing round trip into a profitable one  `PARTIALLY MEASURED`
+
+**Where** `contracts/pads/RobinFloorVault.sol:109-119` (`addFloor`, permissionless), `:137-157` (`_add`, which
+commits the **whole** on-hand balance to the fixed band), against the round-trip argument in `AUDIT-SCOPE.md`
+§4.4 that §4 of this document currently endorses.
+
+`addFloor()`'s entire protection is one live `slot0` read:
+
+```solidity
+if (tick >= floorTickLower) { parkedQuote = amt; emit FloorSkipped(tick, amt); return 0; }
+```
+
+No TWAP, no rate limit, no cap on `amt`, no caller gating. So the decision of **when** the parked carve is
+deployed belongs to whoever last moved the tick — and the tick is manipulable inside a transaction. The state
+that matters is **M-15**'s: the pad has dumped, spot sits at or above the band, and the carve has been parking.
+An attacker buys to force the tick below `floorTickLower`, calls `addFloor()`, then sells back through the
+band they just created.
+
+**Measured** on a real local `PoolManager` (full-range LP of 300e18 liquidity, band `[60, 660]`, hook not
+wired so these are pure AMM mechanics — the hook's buy and sell taxes are additional attacker cost):
+
+| scenario | attacker PnL (gas-exclusive) |
+|---|---|
+| **control** — identical round trip, fill **not** forced | **−0.5175 ETH** |
+| push mis-sized (60–250 ETH pushes on a 1 ETH park) | −0.1375 → −0.9483 ETH |
+| dump 6 / parked 50 / push 11 | **+0.0054 ETH** |
+| dump 10 / parked 200 / push 20 | **+0.1330 ETH** |
+| **dump 20 / parked 500 / push 40** | **+0.8671 ETH** |
+
+Two things are established. The guard **is** bypassable — `floorLiquidity` goes from 0 to
+16,969,579,819,882,394,020,192 in the attacker's own transaction. And with the push correctly sized, an
+operation that is structurally loss-making becomes profitable, with the profit scaling in the dump depth. The
+push must be *tuned*: too small and the guard holds (a 30 ETH push left the tick at 355 against
+`floorTickLower = 60`), too large and the round-trip spread swamps the gain (−0.948 ETH at a 250 ETH push).
+
+**What is NOT yet established, stated plainly.** In the +0.8671 ETH run the price ended at tick **81**, not back
+at the pre-attack 1287 — the band absorbed the sell instead of the price round-tripping. A `[60, 660]` band with
+spot at 81 has converted only its `[60, 81]` sliver to token, so **the vault's own loss is small and the
+attacker's profit is largely funded by the graduated full-range LP, not the floor band.** That distinction
+decides the severity, and it has not been split yet. The originating claim of a *"~86% vault loss"* is
+**unverified** and should not be relied on.
+
+So what is certainly true is narrower than the headline: **the permissionless `addFloor()` lets a third party
+choose the moment the holders' floor capital is committed, and that choice is worth money to them.** Whether
+the counterparty is principally the floor band or the locked LP is the open question. Both are protocol-owned
+and neither can withdraw, so this is value extraction from the pad either way.
+
+**Fix direction** does not depend on the attribution. Do not let a single live `slot0` read gate the
+irreversible commitment of the whole balance: (1) require the tick to have been below `floorTickLower` for a
+minimum number of blocks, or compare against a short TWAP rather than spot; (2) rate-limit — cap each
+`addFloor()` at a fraction of `parkedQuote` per block, so no single transaction can commit the whole carve;
+(3) failing both, have `graduate()`/the keeper be the only caller, since the permissionless property buys
+nothing here that a keeper poke does not. **M-15** and this finding are the same guard read two ways — a fix
+for one should be checked against the other.
 
 ---
 
