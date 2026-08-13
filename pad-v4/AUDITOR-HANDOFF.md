@@ -918,9 +918,15 @@ the outer frame survives — so an **honest caller who merely under-estimates ga
 funded presale**. There is no retry: `state()` is 2 and every path reverts `NotOpen`. The same applies to any
 future revert in `launch` that nobody anticipated.
 
-Calling `finalize` requires the salt preimages, so this is not open to the public — but it is open to every
-preimage-holder, and the realistic case is not malice. It is a wallet's gas estimate, or a launch that grew
-gas-heavier than the estimator expected, converting a recoverable condition into an irreversible one.
+**This is an accident, not an attack — the malicious reading does not hold.** Calling `finalize` requires the
+salt preimages, so only a preimage-holder can trigger it, and that actor already has a strictly better way to
+kill the raise: simply never call `finalize`. `fail()` (`:278`) then fires `Failed(2)` past deadline + grace
+and everyone refunds 100% — the terminal state is identical. The gas trick is in fact *friendlier* to
+depositors, because it opens refunds immediately instead of making them wait out the grace window.
+
+What is left is the case that matters: a wallet's gas estimate, or a launch that grew gas-heavier than the
+estimator expected, silently converting a recoverable condition into an irreversible one. No malice is
+required and none should be assumed.
 
 **Fix direction.** Three independent improvements. (1) Match the error — treat only the specific
 already-launched signatures (`AlreadyRegistered`, and the drained-factory transfer failure) as a snipe, and
@@ -1313,10 +1319,16 @@ commits"* — but a rotation silently fails to reach any already-deployed floor 
 whoever holds the retired key keep pulling them. There is no setter and no redeploy path: the vault is
 add-only and holds a live position.
 
-**One claim I made here is disproved.** I wrote that taking inline to `feeRecipient` under the pool lock lets
-a reverting recipient brick `collectFloorFees()`. In the shipped deployment the recipient is the platform
-wallet — an EOA or multisig that always accepts ETH — so that brick is unreachable. The inline take still
-departs from the suite's accrue-and-pull rule, but here it is a style inconsistency, not a live DoS.
+**One claim I made here is disproved, and the reason is worth knowing.** I wrote that taking inline to
+`feeRecipient` under the pool lock lets a reverting recipient brick `collectFloorFees()`. It does not, and not
+merely because the recipient is an EOA: **`addFloor()` is a second, permissionless fee-realization path.**
+`_add` (`:139-157`) calls `modifyLiquidity` with a positive delta, and v4-core returns
+`callerDelta = principalDelta + feesAccrued` — so an *add* realizes exactly the same accrued fees a
+zero-delta poke does. The currency0 leg is taken to self at `:150` and compounds into the wall; the currency1
+leg leaves by ERC20 `take`, which has no callback. So an ETH-rejecting recipient cannot strand anything.
+
+The inline take still departs from the suite's accrue-and-pull rule, but here that is a style inconsistency,
+not a live DoS.
 
 Bounded to one small fee stream per pad and reachable only after a platform-domain event, which is why LOW.
 
