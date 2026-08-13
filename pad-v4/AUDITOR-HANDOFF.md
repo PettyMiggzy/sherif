@@ -2285,6 +2285,33 @@ deleted before commit — this repository is unmodified apart from this document
 cd pad-v4 && npm ci && npx hardhat compile
 ```
 
+Every finding tagged `PROVEN` has a recipe below, in ID order. Two harnesses are reused throughout and are
+worth building once: the curve `deployStack` from `test/sim/curve.e2e.sim.test.js` (real `PoolManager`, mock
+`PositionManager`/`Permit2`) and the presale `deployStack` from `test/sim/presale.sim.test.js`.
+
+**C-1** — the standalone version needs no curve at all. Deploy `TestERC20` + `RobinLockStaking(token,
+rewardsDuration = 30 days, lockDuration = 30 days)`. Then, as the attacker:
+`fund(2)` (pool empty ⇒ parks in `pendingRewards`) → `stake(1)` (flushes it through `_startDrip(2)`:
+`rewardRate = 2 / 2_592_000 = 0`, `periodFinish = now + 30 days`) → `withdraw(1)`. **Assert the arm took:**
+`rewardRate() == 0`, `totalStaked() == 0`, and `periodFinish() - block.timestamp == 2_591_999` — the pause
+guard was skipped. Now fund the reservoir (`fund(96_978_138e18)` stands in for the graduation leftover); with
+the pool empty it parks. `time.increaseTo(periodFinish - 2)`, attacker `stake(1)`, advance 1 s, `getReward()`
+→ the attacker takes **100.00%**. Add an honest staker 10 days into the window and assert `earned()` is
+**0**. Check `token.balanceOf(pool) == totalStaked() + rewardsBalance()` at every step — it holds, which is
+why no invariant catches this. For the full-stack figure (9.70% of a 1B supply), drive the same sequence
+through `CurvePadFactoryV4` at production geometry (`startTickMag` 201600, `curveWidth` 23000, `ts` 100,
+730M curve + 270M reserve, taxes 100/100 bps, waterfall 10/10/5) and arm with a 0.001 ETH dust buy.
+
+**C-2** — **raise Hardhat's `blockGasLimit` well above 30M for this test** (e.g. 100_000_000): the finding is
+the *measured* gas against the real 30M cap, and at the default limit the transaction merely fails without
+giving you a number. Build the curve `deployStack`, launch two identical pads, and sell both curves out using
+the router default `sqrtPriceLimitX96 = MIN_SQRT_PRICE + 1`. Assert `getSlot0().tick == -887272` and
+`ready() == true` on each. Pad A: `graduate()` → **1,217,937** gas (baseline). Pad B: before graduating, have
+an attacker call `PoolModifyLiquidityTest.modifyLiquidity` **100 times**, once per distinct 60-tick band below
+`gradTick`, each with `liquidityDelta: 1` — each costs **1 wei** of currency0 because spot is far below the
+band. Then `graduate()` → **33,767,571** and `restoreCeiling(bag)` → **31,776,972**. Both exceed 30,000,000,
+so on-chain both revert permanently.
+
 **H-1** — deploy `TestERC20` + `RobinLockStaking(token, 30d, 30d)`. Alice stakes 1,000; `fund(1,000)`; record
 `periodFinish`. `time.increaseTo(periodFinish - 3)`; whale stakes 1,000,000; credit a 500,000 tranche (either
 `fund(500_000)`, or — the realistic path — transfer tokens in and call the permissionless
@@ -2296,6 +2323,32 @@ cd pad-v4 && npm ci && npx hardhat compile
 is the attacker's. Pass it as `cfg.adapter` with any `guardWindow > 0`. The freeze half is already covered by
 `test/unit/RobinFeeHook.adversarial.test.js:163-186`. Note that an end-to-end local `StockPadFactory.launch`
 is currently impossible — see M-8.
+
+**H-3** — deploy a two-line short-returner and hand it to a pad as the guard adapter:
+
+```solidity
+contract ShortReturnAdapter { fallback() external { assembly { return(0, 0) } } }
+```
+
+It answers every selector with **empty** returndata, so the call *succeeds* and the decode fails. Register a
+pool with `cfg.guardAdapter = address(thatAdapter)`, `cfg.guardWindow > 0` **and `cfg.quoteIsStock = true`** —
+all three are required to reach the curb (`RobinFeeHook.sol:190`). Then attempt any swap: `beforeSwap:191`
+calls `_scheduledEffectiveAt`, whose `try … returns (uint256 ea)` decodes empty returndata and reverts
+**outside** its own `catch`. Every swap on that pad reverts, in both directions, permanently — `guardAdapter`
+has no setter. Contrast the case the suite *does* cover: point `guardAdapter` at `MockGuardAdapter` with
+`setRevert(true)` and the swap succeeds, because a revert *is* caught.
+
+**M-8** — no test needed; it reproduces on the existing suite. Write any local test that calls
+`StockPadFactory.launch(...)` and it dies at `MockPositionManagerV4.sol:54` with `panic 0x32`, because the mock
+decodes `params[2]` unconditionally while `StockPadFactory._mintSeedLp` emits a **two**-action batch. Confirm
+the coverage claim with `npx hardhat test` and note that no stock-pad launch appears in the run, and that
+`test/fork/StockPadFactory.launch.fork.test.js` calls `this.skip()` without `FORK_RPC`.
+
+**M-11** — build the curve `deployStack`, launch and graduate a pad **without** calling
+`LockVault.setStakingRecipient` — which is the shipped order, since `scripts/deploy-curve.js` performs it after
+graduation. Then, from any unrelated account, `lockVault.collectFees(tokenId)` followed by
+`lockVault.claimStaking(tokenId, 1)`. Assert the token-side fees arrive at `feeRegistry.platformFeeWallet()`
+rather than at any holder sink, and that the claim cannot be undone.
 
 **M-1** — build the `deployStack` from `test/sim/presale.sim.test.js` verbatim, but with
 `curveSupply = reserveSupply = 2e17` instead of the deep-curve default. Open a presale with `target = 3 ETH`,
@@ -2309,9 +2362,63 @@ inside a default Hardhat account's 10,000 ETH. Launch (succeeds, silently), buy 
 `PoolSwapTest`, assert `curve.ready() == true`, then assert `curve.graduate()` reverts `NotFactory` — for
 every caller, permanently.
 
+**M-12** — build the presale `deployStack` at production geometry (`startTickMag` 201600, `curveWidth` 23000,
+`ts` 100, 1B supply at 730M + 270M). Open a presale, deposit 2 ETH, and then — **between `createPresale` and
+`finalize`** — call `feeConfig.setDefaults(...)` as the owner with a different `startTickMag`. Finalize and
+read the tokens the vault received. The four measured points: **201600 → 545,546,800** (74.73% of the curve),
+**195000 → 374,333,692** (51.27%), **400000 →** ~99.99% of the curve for 0.020 ETH, and **100 → 1.979899
+tokens**, at which the graduation raise is scaled so far out of reach that the coin can never sell out.
+Assert in every case that `finalize` does **not** revert, `KeyMismatch` never fires, `state() == 1`, and
+`claim()` pays at the new price.
+
+**M-15** — build the curve `deployStack`, graduate, and let the floor carve accumulate. Push spot **down**
+into/below the band and call `addFloor()` → it parks (`FloorSkipped`) and the carve idles, which is the
+finding. Then prove the lock is conditional rather than permanent: buy the price back up to tick **−33555**
+and call `addFloor()` once — it mints **172,240,917,046,477,496,316** liquidity and leaves the vault at
+**0.0 ETH**, recovering all 10 parked ETH. Both halves matter: the first is the defect, the second is why it
+is MEDIUM and not HIGH.
+
+**M-16** — deploy `DualStaking` with a non-zero `platformClaimFeeBps`. Have a staker stake, then call
+`donateETH{value: X}()` from the creator — the function whose NatSpec promises the donation reaches holders
+*"WITHOUT touching the platform cut"* (`:396-401`). Advance past the window, `claim()`, and assert the payout
+is short by `platformClaimFeeBps` of the whole balance: `claim` (`:337-352`) applies the fee to everything,
+donated and funded alike, so the promise does not hold.
+
+**M-17** — deploy `DualStaking`, then `setBoostOracle(address(new ShortReturnAdapter()))` using the same
+two-line contract as H-3. `boostOf` (`:186-196`) now decodes empty returndata outside its `catch`, so
+`stake`, `unstake` and `claim` all revert and every staker's principal is frozen. Unlike H-3 this one is
+recoverable: `setBoostOracle` is not one-shot, so the owner can point it at a working oracle — which is the
+whole severity difference.
+
 **M-5** — deploy `DualStaking(tok, stk, owner, antiJitDelay = 0, …)`. Alice stakes, unstakes freely, then
 `setAntiJitDelay(7 days)` → her existing position reverts `Locked`. Separately: stake, `fundETH(10)` at 0% fee,
 advance 7 days, read `earned`, then `setPlatformClaimFee(1000)` and claim — the payout is 10% short.
+
+**L-12** — build the presale `deployStack`, fill a presale to target, then call `finalize(...)` **with an
+explicit gas limit** chosen so the inner `curvePadFactory.launch` runs out of gas while the outer frame
+survives — EIP-150 forwards only 63/64 of the remaining gas, so a limit a little above `finalize`'s own
+overhead does it. Binary-search the limit if needed. Assert the transaction **succeeds** (`status == 1`),
+that `state()` is `Failed` with reason **3**, and that the receipt gives a caller no way to distinguish this
+from a genuine snipe. The presale is then dead and the outcome is irreversible.
+
+**L-13** — create a presale with a long `deadline`, fill it to `target` on day 1, and never finalize. Assert
+`fail()` reverts `TargetMet` (`:282`) and that no contributor has any withdraw path, then advance time and
+show refunds only open at `deadline + grace` — up to 37 days at the bounds `initialize` accepts, measured from
+a raise that closed on day 1.
+
+**L-14** — deploy `DualStaking` with `antiJitDelay = 7 days`. Two stakers with equal stakes, both funded from
+the same tranche. Staker A calls `claim()` first and *then* `unstake(...)`; staker B calls `unstake(...)`
+directly. Assert A keeps their accrued rewards while B forfeits theirs to the remaining stakers — `unstake`
+(`:302-307`) is gated by the hold, `claim` (`:336`) is not, so the forfeit only ever lands on whoever did not
+know to claim first.
+
+**I-2** — build the curve `deployStack`, launch, sell the curve out and graduate, with an ambush vault wired
+so `_fundAmbush` delivers the 5% carve. In the **same block** as `graduate()`, back-run a sell of about
+**0.015 ETH** — enough to push the tick up into the band, which sits one tick spacing above `gradTick` at the
+default `gapSpacings = 0`. Now `seedAmbush()` parks instead of seeding (`AmbushParked`) and keeps parking on
+every later call while spot stays in the band. Then measure the recovery: buying the price back below the
+band costs about **0.0000938 ETH**, after which one `seedAmbush()` succeeds — which is why this is INFO
+rather than the "stranded forever" it first looks like.
 
 **L-16** — build the curve `deployStack` from `test/sim/curve.e2e.sim.test.js` with
 `curveSupply = reserveSupply = 1000e18` at START 6000 / GRAD 3000 / ts 60. Buy once through `PoolSwapTest`
