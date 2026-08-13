@@ -29,9 +29,9 @@ re-derive it.
 | **CRITICAL** | 2 | 2 |
 | **HIGH** | 3 | 3 |
 | **MEDIUM** | 22 | 13 |
-| **LOW** | 22 | 12 |
+| **LOW** | 23 | 13 |
 | **INFO** | 21 (17 bundled as I-1, plus I-2 … I-5) | 2 |
-| **total** | **70** | **32** |
+| **total** | **71** | **33** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -2308,6 +2308,63 @@ from `_add`'s currency1 branch, exactly as `_collect` does.
 
 ---
 
+### L-23 · LOW · `RobinLpVault`'s fee carry is credited to the accumulator *and* retained, so booked fees drift above the reserve that backs them  `PROVEN (numerically)`
+
+**Where** `contracts/pads/RobinLpVault.sol:246-263` (`_collect`), against `:119-120` / `:277-278` / `:284-285`
+(what a user is actually paid) and `:188-189` (`claim`'s `feeReserve -= …`).
+
+```solidity
+feeReserve0 += f;                              // the reserve grows by f ONLY
+uint256 amt = f + feeCarry0;                   // …but the carry re-enters the distributable base
+uint256 inc = (amt * ACC_PRECISION) / tl;
+accFee0PerLiq += inc;                          // acc credits the FULL amt, carry included
+feeCarry0 = amt - (inc * tl) / ACC_PRECISION;  // …and the carry is retained again
+```
+
+The round believes it attributed `d = (inc·tl)/ACC` and carries the rest. But a user is paid
+`⌊liq·acc/ACC⌋` — the floor of the **cumulative** product — which recovers the fractional part as soon as `acc`
+crosses the next integer. So the carry is credited through `acc` *and* held in `feeCarry`, and re-enters `amt`
+next round. Per round the gap is at most a wei; across rounds it accumulates, because `acc` only grows.
+
+**This falsifies a claim in §4 of this document.** That section asserted the accumulator was checked
+algebraically — *"`Σ⌊liq_u·acc⌋ ≤ ⌊Σliq_u·acc⌋`, so claims can never exceed `feeReserve`"*. The first
+inequality is true and the conclusion does not follow from it: it bounds total claims by `⌊tl·acc/ACC⌋`, and
+**`⌊tl·acc/ACC⌋` itself was never checked against `feeReserve`**. That is exactly where the drift lives.
+
+**Measured** by replicating `_collect`'s integer arithmetic exactly (the same harness used for L-1), a single LP
+holding all of `tl`:
+
+| `tl` | fee per harvest | rounds | `feeReserve` | claimable | over by |
+|---|---|---|---|---|---|
+| 2^64 = 18,446,744,073,709,551,616 | 1000 wei | **14** | 14,000 | 14,001 | **1 wei** |
+| 2^64 | 5 wei | 29 | 145 | 147 | 2 wei |
+| 13,019,129,659,372,280,635,197 (≈1.3×10^22) | 518,638,994,705 wei | 5,000 | 2,593,194,973,525,000 | 2,593,194,973,528,825 | **3,825 wei** |
+
+Both `tl` values are ordinary full-range positions, so this is not a toy regime — though it is
+divisibility-sensitive: `tl` = 1e18+1, 3e18 and 1e20+7 showed no drift within 5,000 rounds. `_harvest()` runs
+on **every** `deposit`, `withdraw` and `claim`, so "many small collect rounds" is this vault's normal operating
+mode, not a contrived one.
+
+**Impact, stated at its real size.** `claim` (`:188-189`) does `feeReserve -= …` under checked arithmetic, so
+once the last claimant's `pending` exceeds what is left, their `claim()` **reverts entirely** — not partially —
+and their whole accrued fee balance is stuck, not just the dust. Two things bound it. Principal is never at
+risk: `withdraw` books pending but does not pay it and does not touch `feeReserve`, so liquidity always exits.
+And the condition is **self-healing on a live pool** — each later harvest adds `f` to the reserve while adding
+at most ~1 wei of drift, so the reserve outruns it and the claim succeeds on a retry. It is only permanent when
+the pool stops earning, which for a launchpad is the ordinary end state of most pads.
+
+That is why this is LOW rather than the MEDIUM it first looks like: the arithmetic defect is real and the
+solvency invariant genuinely does not hold, but the failure is a transient revert on a live pool and a
+dust-scale stranding on a dead one.
+
+**Fix direction.** Do not re-enter the carry into the distributable base. Either drop `feeCarry` entirely —
+paying users `⌊liq·acc/ACC⌋` already recovers the remainder once `acc` advances, which is what makes the carry
+redundant — or keep it and subtract the carry from what `acc` credits, so the two mechanisms are not both
+claiming the same wei. Then assert the real invariant in a test: `⌊tl·accFee0PerLiq/ACC⌋ ≤ feeReserve0` after
+every `_collect`.
+
+---
+
 ### I-1 · INFO · Recorded so the next pass does not re-derive them
 
 1. **`PresaleVault`'s implementation is never initialised.** `PresaleVaultFactory.createPresale` clones and
@@ -2691,9 +2748,10 @@ verification.
   withdrawer; `PresaleVault`'s pro-rata `mulDiv`s (`:257-258`, `:315-316`) floor, so the vault can never owe
   more than it holds. `RobinLpVault`'s accumulator is the one place with an explicit remainder carry
   (`:250-253`, `[audit L6]`) — checked algebraically: `inc·tl/ACC ≤ amt` so the carry never underflows, and
-  `Σ⌊liq_u·acc⌋ ≤ ⌊Σliq_u·acc⌋`, so claims can never exceed `feeReserve`. `DualStaking._applyReward` is a
-  second site that floors without a carry; it strands dust rather than breaking solvency, and is recorded as
-  I-1(12). No rounding finding above INFO survived.
+  `Σ⌊liq_u·acc⌋ ≤ ⌊Σliq_u·acc⌋` — **but that is where the original check stopped, and it was not enough**:
+  it bounds claims by `⌊tl·acc/ACC⌋` without ever checking *that* against `feeReserve`, which is precisely
+  where the carry double-credit in **L-23** lives. `DualStaking._applyReward` is a second site that floors
+  without a carry; it strands dust rather than breaking solvency, and is recorded as I-1(12).
 - **C-2 has no siblings inside this codebase.** Every loop in `contracts/` was enumerated: four, all hard
   bounded — three in `DualStaking` (`:203`, `:227`, `:316`) iterate `_rewardTokens[side]`, capped at
   `MAX_REWARD_TOKENS = 8` and enforced in `_listReward:447`, and one in `StockQuoteAdapter:131` walks a
