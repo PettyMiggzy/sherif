@@ -30,8 +30,8 @@ re-derive it.
 | **HIGH** | 3 | 3 |
 | **MEDIUM** | 18 | 10 |
 | **LOW** | 18 | 9 |
-| **INFO** | 14 (11 bundled as I-1, plus I-2, I-3 and I-4) | 1 |
-| **total** | **55** | **25** |
+| **INFO** | 15 (11 bundled as I-1, plus I-2 … I-5) | 1 |
+| **total** | **56** | **25** |
 
 §3 records a further set of plausible defects that were chased and did **not** survive verification, with the
 disproof for each, so the next pass does not re-spend budget on them.
@@ -1926,6 +1926,51 @@ the two cannot drift, with an explicit post-graduation wiring checklist that ass
 (`lockVault.setFactory` → `CurvePadFactoryV4`, `hook.setFloorRecipient`, `curve.setStaking`, `curve.setCreator`,
 `LockVault.setStakingRecipient`, both vaults' constructor arguments). Retitle `DEPLOY.md` to say which stack it
 covers, and remove it from `AUDIT-SCOPE.md:6`'s reading list or mark it out of scope.
+
+---
+
+### I-5 · INFO · The pinned compiler carries an open `viaIR` advisory — the build does not trip it, but the package never says so  `VERIFIED`
+
+**Where** `hardhat.config.js:11-15` (`version: "0.8.26"`, `viaIR: true`, `optimizer.runs: 1`, `evmVersion:
+"cancun"`), restated as fact in `AUDIT-SCOPE.md` §1's toolchain line.
+
+Checked against Solidity's official `docs/bugs.json`. Two documented bugs are **still unfixed** at 0.8.26:
+
+| bug | severity | condition | fixed in |
+|---|---|---|---|
+| `UnsoundSpillInMutualRecursion` | medium | **`viaIR: true`** | 0.8.36 |
+| `LostStorageArrayWriteOnSlotOverflow` | low | none | 0.8.32 |
+
+The first matters because this project builds with `viaIR`. Its summary: *"Local variables of a function involved
+in mutual recursion may spuriously be moved to fixed memory offsets and overwritten across recursive calls."*
+Silent wrong values in a fee or liquidity computation is the worst class of defect in a contract like this one,
+because nothing reverts.
+
+**It does not fire here, and that was checked rather than assumed.** A contract-scoped call-graph scan over every
+compiled unit — the 28 in-scope contracts plus the v4-core / v4-periphery libraries and the OpenZeppelin
+`utils`/`token`/`access` trees they link against, **164 units, 1,339 function bodies** — found **zero
+mutually-recursive cycles**. Calls were resolved only within their own contract or library, since a call through
+an address or interface cannot participate in the compiler's local-variable spill. The 18 apparent
+self-recursive hits are all either same-name **overload chains** (`Math.mulDiv(x,y,d)` → `mulDiv(x,y,d,rounding)`;
+`SqrtPriceMath.getAmount0Delta(a,b,int128)` → `getAmount0Delta(a,b,uint128,bool)`) or genuinely recursive
+OpenZeppelin utilities that **no Robin contract imports** (`Arrays._quickSort`, `Heap._siftDown`,
+`ERC7739Utils`, `SignatureChecker`, `NoncesKeyed`). Confirmed by grep: none of those modules appear anywhere
+under `contracts/`.
+
+The second bug needs a storage array whose slot arithmetic straddles the end of the 2^256 storage space. No
+contract in scope computes a storage slot by hand — and the one hand-picked slot that exists,
+`BaseHook.REENTRANCY_SLOT`, is **transient** (`tstore`/`tload`), which the advisory does not cover.
+
+Filed as INFO because it is a build-policy item, not a defect: today the code is outside both bugs'
+preconditions. It is recorded because "no mutual recursion anywhere in the dependency tree" is currently an
+**unwritten invariant** that an ordinary refactor or a dependency bump could break silently, and because an
+external auditor will run this same check — the answer should already be in the package rather than costing
+them a round trip.
+
+**Fix direction.** Add one line to `AUDIT-SCOPE.md`'s toolchain note stating that 0.8.26 carries these two open
+advisories, that neither precondition is met, and why 0.8.26 is pinned (matching the deployed
+`PoolManager`'s build, per `DEPLOY.md`'s ground-truth section). Move to ≥ 0.8.36 when the dependency set allows,
+which retires the unwritten invariant entirely.
 
 ---
 
