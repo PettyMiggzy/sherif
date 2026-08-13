@@ -3689,6 +3689,59 @@ against `floorLiquidity()`.
 
 ---
 
+## 7. Compositions — where fixing one finding touches another
+
+Read this before the ordered list. Findings that interact change the *order*, and two of them change what the
+correct fix actually is.
+
+**1. The staking-wiring dilemma has no clean branch, and the register previously implied the wrong one.**
+`M-11`, `L-32` and `C-1`'s second path compose into a forced choice at graduation:
+
+- **Wire `curve.setStaking` before `graduate()`** — what `deploy-curve.js:119-122` prescribes, and what step 7's
+  reserve stream requires. Then `graduate()` copies that address into `LockVault.registerLaunch`, and
+  `setStakingRecipient` is permanently spent (**L-32**). `claimStaking` (`LockVault.sol:143-152`) then pays the
+  locked LP's token leg to the staking pool with a plain `_payout` and **no `fundTokenPushed` poke** — an
+  uncredited pile. Recoverable, but only by a party who can credit it: permissionless on `RobinLockStaking`,
+  `isRewarder`-gated on `DualStaking` (`:430`).
+- **Don't wire it first.** Then `LockVault.stakingRecipient` is zero and `claimStaking` falls back to
+  `platformFeeWallet` — **permanently, on the first claim**, because the book is zeroed in the same call
+  (**M-11**).
+
+So the late branch is *strictly worse*: permanent misrouting versus a recoverable uncredited pile. **M-11's fix
+direction leans on `setStakingRecipient` still being available, which L-32 shows it is not.** Until the two
+one-shots are unified, the operational guidance is **wire early and then credit the pile**, which is the
+opposite of what M-11 alone suggests.
+
+**2. The tax set makes the taxed venue the irrational one.** **H-1** waives the sell tax on the registered pool
+for anyone who asks; **L-25** gives a sibling pool, carrying the pad's own hook address, that charges **neither**
+tax and re-opens exact-output; **L-26** charges the full buy tax on a fill of **zero**. Taken together the
+economics point one way: an informed trader uses the untaxed sibling, and the honest pool's worst case is paying
+for nothing. Fixing H-1 alone leaves the sibling; fixing L-25 requires re-mining hook addresses, so it is a
+launch-time change rather than a patch — which is why the three should be costed together rather than
+sequentially.
+
+**3. A burned presale commitment plus an unbounded finalize is a perpetual option.** **M-22** publishes the
+salts on any reverted `finalize`; **L-20** means `finalize` never expires; **M-12** means the geometry — and so
+the price — is read live at `finalize`. A preimage-holder therefore holds an option on **both the timing and
+the price**, indefinitely, over contributors who have no unilateral exit. Each finding is LOW-to-MEDIUM alone;
+together they are the presale's most serious property, and **L-20's one-line fix (gate `finalize` on
+`deadline + finalizeGrace`) collapses the composition** even if M-22 and M-12 are deferred.
+
+**4. Four one-shot setters accept a value nothing validates, and they fail differently.** **M-2** (`setFactory`,
+wrong registrar), **M-21** (`setFloor`/`setAmbush`, non-receiving target), **M-24** (`setFloorRecipient`, the
+hook itself), **M-26** (the ambush pool key), plus **I-1(19)** (`positionManager`). They share a root — L-7's
+hand-typed constructor arguments with no on-chain assertion — but their failure modes differ enough that
+fixing one teaches nothing about the others: M-2 fails loudly, M-21 re-parks, M-24 **zeroes the book and emits
+success**, M-26 mis-places permanent liquidity, and I-1(19) succeeds at graduation and only breaks later. A
+single "validate the target" pass across all five is one PR and closes the class.
+
+**5. Already recorded, listed so they are not re-derived:** **C-2** makes **L-26** permanent (a gas-bricked pad
+sits forever in the zero-fill state, so every buy burns tax for nothing); **M-7**'s fix widens **M-4** (that is
+**L-33**); **L-24**'s dead guard is what would have caught **I-1(19)**; and **M-15**, **H-5** and **L-33** are
+the same `addFloor` guard read three ways — a fix aimed at one must be checked against the other two.
+
+---
+
 ## 7. Suggested remediation order
 
 1. **C-2** — 100 wei traps the entire raise, and the documented recovery is bricked by the same mechanism.
