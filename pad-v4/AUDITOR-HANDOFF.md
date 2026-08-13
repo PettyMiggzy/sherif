@@ -670,7 +670,7 @@ the curve runbook and to `DEPLOY.md` — see M-7 for the identical omission on t
 
 ---
 
-### M-13 · MEDIUM · A presale's launch geometry is read at finalize, so an in-cap retune can leave the coin permanently un-graduatable  `PROVEN`
+### M-12 · MEDIUM · A presale's launch geometry is read at finalize, so an in-cap retune can leave the coin permanently un-graduatable  `PROVEN`
 
 **Where** `contracts/presale/PresaleVault.sol:196-206` (`finalize` re-reads
 `RobinV4FeeConfig(curvePadFactory.feeConfig()).defaults()`), `contracts/core/CurvePadFactoryV4.sol:118-122`
@@ -760,7 +760,7 @@ From ~600000 up, `graduate()` reverts `EmptyRaise` (`RobinCurveV4.sol:339` or `:
 deliberately forward-only), but there is no floor and no warning, and every pad launched between the mistake
 and its discovery is unrecoverable.
 
-**Same root cause as M-13's worst case.** M-13 reaches an un-graduatable pad by moving `startTickMag` *down*
+**Same root cause as M-12's worst case.** M-12 reaches an un-graduatable pad by moving `startTickMag` *down*
 (the token becomes so expensive the curve can never sell out); this finding reaches one by moving it *up* (the
 token becomes so cheap the curve sells out for 0 wei). Both are the same missing bound, and one check closes
 both ends.
@@ -951,7 +951,7 @@ launchpad-wide halt. Only presales whose committed spacing no longer divides the
 **Fix direction.** Two independent improvements. (1) Do not let a catch-all written for snipes absorb every
 possible revert — distinguish "launch reverted because the committed config is now invalid" from "launch
 reverted because someone beat us to it", and for the former leave the presale open so it can finalize after a
-repair. (2) The geometry snapshot in M-13 prevents the state from arising at all.
+repair. (2) The geometry snapshot in M-12 prevents the state from arising at all.
 
 ---
 
@@ -1145,7 +1145,7 @@ advance 7 days, read `earned`, then `setPlatformClaimFee(1000)` and claim — th
    that is easy to get wrong and currently unbounded.
 7. **M-6** before the package goes to the external auditor. Auditing from a stale architecture document is the
    most expensive mistake on this list, because it wastes the engagement rather than the code.
-8. **M-3, M-5 and M-13** are product decisions as much as code ones: decide what `PadFactory` is, which owner
+8. **M-3, M-5 and M-12** are product decisions as much as code ones: decide what `PadFactory` is, which owner
    powers you are willing to defend, and whether a presale's terms may move under its contributors. Then make
    the code and the docs agree.
 9. **M-7, M-9, L-2, L-3, L-6, L-7** — the wiring/runbook cluster. Fix them together, as one scripted
