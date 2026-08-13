@@ -50,7 +50,7 @@ and wording edits do not count either way.
 | 7 | netted fee deltas, owner-power retroactivity, park guards | not clean — 1 INFO extended; two lenses returned clean negatives |
 | 8 | rounding direction across every division in the suite | claimed clean — **later refuted, see pass 11** |
 | 9 | all 128 permissionless entry points, each asked what a stranger's worst-timed call does | claimed clean — **later refuted, see pass 11** |
-| 10 | every balance-derived quantity, checked for an omitted liability — the seam L-18 and I-1(11) sit in | clean; not yet independently challenged |
+| 10 | every balance-derived quantity, checked for an omitted liability — the seam L-18 and I-1(11) sit in | **clean — and the only one that survived pass 11's refutation attempt**, which returned UPHELD with no findings and strengthened it |
 | 11 | agents pointed at passes 8–10 and told to **refute** them, rather than at the code; plus fresh lenses on events, timestamps and the presale | not clean — **M-20**, **L-19**, I-1(12), and two corrections to this document |
 
 Clean passes are counted in §4 as they land; each one's negative result is written down there so a later pass
@@ -69,7 +69,10 @@ Both surviving items are corrections to assertions made in this document, which 
 seriously: the clean passes were not wrong about the code so much as overconfident about their own coverage.
 The same pass also ran an event/observability lens that had never been applied — it returned **L-19**, four
 measured cases where the logs misreport a money movement, in four different contracts.
-Pass 10 has not yet been independently challenged. The gauntlet that produced passes 1–3 is also still
+Pass 10 was challenged the same way and **held** — the refuter re-derived it from source, returned UPHELD with
+no findings, and closed a regime gap the original had missed (the band-geometry mint slack, 252,000 samples).
+That is the difference between a pass that was verified and two that were merely asserted. The gauntlet that
+produced passes 1–3 is also still
 executing its rounds 4 and 5. This document is the register, not a snapshot — anything that survives lands here
 and the count restarts from zero.
 
@@ -2335,8 +2338,15 @@ verification.
   `PriceLimitAlreadyExceeded`, and fails closed with `CeilingNotRestored` rather than bleeding the reserve.
   The nudge itself is right; **L-16** is that the two gates *upstream* of it compare the tick instead, so it
   can be skipped in a state it should have handled.
-- **Balance-derived quantities, and whether each one subtracts every liability it owes.** This is where L-18
-  and I-1(11) live, so all 28 sites that read `address(this).balance`, `balanceOfSelf()` or
+- **Balance-derived quantities, and whether each one subtracts every liability it owes.**
+  > **Independently upheld.** Unlike the rounding and permissionless-surface bullets above, this one was later
+  > handed verbatim to an agent instructed to refute it, which re-derived it from source rather than re-reading
+  > it and returned **UPHELD with no findings**. It also went further than the original sweep in three ways,
+  > folded in below: it audited `RobinLockStaking.fundTokenPushed` (a site this bullet never named), it re-ran
+  > the mint-slack check in the *band* geometry rather than the full-range one, and it swept forced-ETH
+  > donation paths across every contract.
+
+  This is where L-18 and I-1(11) live, so all 28 sites that read `address(this).balance`, `balanceOfSelf()` or
   `balanceOf(address(this))` were listed and checked for an omitted book. They hold:
   - `RobinCurveV4:381` — the step-9 platform recompute omits `totalGasBountyOwed`, correctly: bounties can only
     book during `graduate()`, which is one-shot, so it is zero at that instant. `sweepToPlatform:286` runs
@@ -2351,7 +2361,38 @@ verification.
     mistake staked principal for an arrived reward — the `[audit C1]` case, which matters precisely because
     "earn the other" lets one asset be principal on one side and reward on the other.
   - `PresaleVault:209-214` measures `totalTokensBought` as a before/after delta, and the token does not exist
-    outside that transaction, so nothing can be donated in between.
+    outside that transaction, so nothing can be donated in between. Sharper on re-derivation: `balBefore` is
+    read *after* `launch` (`:178`), so a pre-existing balance would be **excluded** rather than counted, and
+    `CurvePadFactoryV4:114` enforces `curveSupply + reserveSupply == supply` so no path puts the pad token in
+    the vault beforehand.
+  - `RobinLockStaking.fundTokenPushed:190-198` derives `pushed = bal − (totalStaked + rewardsBalance)`. Its
+    five book writes — `stake:108`, `withdraw:128`/`:149`, `getReward:163`, `fund:182` — each pair an
+    accounted delta with an exactly equal physical one (`withdraw` moves `−amount+penalty` on the books
+    against `−(amount−penalty)` on the balance). The `stake` credit is the caller's argument rather than a
+    measured delta, which would drift against a fee-on-transfer token — but this pool is hand-deployed per pad
+    against `PadToken`, a plain OZ ERC20 with no hooks, so there is no drift path. H-1 attacks *when* a tranche
+    is credited here, not the arithmetic.
+  - **The narrow-band mint has the same slack property as the full-range one — checked separately, because it
+    is a different regime.** `RobinAmbushVault.seedAmbush:128` computes `balanceOfSelf() − pendingFloorEth`; if
+    `_add`'s settle ever needed more than `amt` it would eat into `pendingFloorEth` and that subtraction would
+    underflow **permanently**, on an add-only vault with no rescue. The 20,009-sample check elsewhere in this
+    section covers the curve's *full-range* mint, which does not transfer. Re-run for band geometry —
+    **252,000 samples** over anchors {−60000, 0, 60000, 200000, 220000, 230000, 240000} × spacings {10, 60,
+    200} × widths {1, 2, 5, 20} spacings × random `amt` ∈ [1, 3e18], comparing
+    `getAmount0Delta(sA, sB, getLiquidityForAmount0(sA, sB, amt), roundUp: true)` against `amt`: **zero samples
+    over budget, worst-case delta 0.** Closed form: exceeding `amt` needs the flooring slack below `1/√sA`
+    (~1e-34), i.e. `frac(sA·sB / Q96) < ~1e-12`, which is fixed by the band ticks and not attacker-choosable.
+  - **Forced ETH** (`selfdestruct`, coinbase payment) was swept against every derived quantity. Everything it
+    can move is already registered: the curve excludes it from the raise (`:327`) and sweeps it to the platform
+    after graduation, `RobinLpVault:151/153` is I-1(11), `LockVault:155-156` is I-1(4), and either band turns
+    it into permanent band principal, which is L-18. `RobinFeeHook`, `DualStaking`, `RobinLockStaking` and
+    `PresaleVault` derive nothing from an ETH balance at all — `PresaleVault` has no `receive`/`fallback` and
+    its pro-rata uses the `totalRaised`/`pooledEthSpent` books only.
+  - **Dismissed with the number, so a later pass does not re-derive it:** `_mintPermanentLp:642` passes
+    `uint128(tokAvail)` as `amount1Max`, and `CurvePadFactoryV4` bounds `cfg.supply` only by
+    `curveSupply + reserveSupply == supply` (`:114`) — never absolutely. The cast truncates at 2^128 ≈
+    3.4×10^38 base units, **11 orders of magnitude above** the 1e27 of production geometry, and the only party
+    who can reach it is the launcher, against their own pad. Not a finding.
 - **Permissionless entry points, enumerated and asked the worst-timing question.** All 128 non-view
   `external`/`public` functions in `contracts/` were listed and the internally-gated ones separated out. The
   genuinely permissionless, state-changing ones are already this report's findings (`graduate`,
