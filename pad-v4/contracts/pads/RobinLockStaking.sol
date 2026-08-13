@@ -30,6 +30,9 @@ contract RobinLockStaking is ReentrancyGuard, IStakingFund {
 
     uint256 public constant BPS = 10_000;
     uint256 public constant EARLY_EXIT_PENALTY_BPS = 1000; // 10% of the withdrawn principal → back into the reservoir
+    /// [C-1] Floor on the window any tranche may be scheduled over. Without it, a top-up arriving with N seconds
+    /// left drips over N seconds, so at N=1 a single 1-wei staker present for that second takes the reservoir.
+    uint256 public constant MIN_DRIP_WINDOW = 1 days;
     uint256 public constant MIN_LOCK = 7 days;
     uint256 public constant MAX_LOCK = 90 days;
 
@@ -113,7 +116,11 @@ contract RobinLockStaking is ReentrancyGuard, IStakingFund {
         if (pendingRewards > 0) {
             uint256 p = pendingRewards;
             pendingRewards = 0;
-            _startDrip(p);
+            pendingRewards = _startDrip(p); // [C-1] carry anything too small to schedule
+            // [L-19c] this flush moves the whole parked reservoir into a live drip and changes rewardRate and
+            // periodFinish; the sibling DualStaking emits on the identical path and this one used to be silent,
+            // so an indexer could not see the single most consequential state change in the contract.
+            emit RewardAdded(msg.sender, p - pendingRewards, true);
         }
         emit Staked(msg.sender, amount, lockedUntil[msg.sender]);
     }
@@ -132,7 +139,14 @@ contract RobinLockStaking is ReentrancyGuard, IStakingFund {
         // but lastUpdateTime keeps advancing, so the rewards scheduled for the empty window would be stranded forever
         // (the classic Synthetix empty-pool leak). Banking + pausing means the NEXT stake restarts the drip from
         // pendingRewards with nothing lost — upholding the "rewards are never wasted" reservoir invariant.
-        if (totalStaked == 0 && rewardRate > 0 && periodFinish > block.timestamp) {
+        // [C-1] The `rewardRate > 0` clause used to be here and was the arming step of a total-capture exploit:
+        // a tranche below `rewardsDuration` wei truncates the rate to 0, so `fund(2)` + `stake(1)` + `withdraw(1)`
+        // left a LIVE 30-day periodFinish with rate 0 that this guard then refused to clear. The whole reservoir
+        // parked behind it, and one 1-wei stake in the window's tail compressed all of it into `remaining`
+        // seconds for that staker. Pause on the window alone; a zero rate banks zero, which is correct.
+        // NOTE (I-1(13)): this block moves periodFinish BACKWARDS, which is only safe because _updateReward ran
+        // above and pinned lastUpdateTime to min(now, periodFinish) == now. Keep that ordering.
+        if (totalStaked == 0 && periodFinish > block.timestamp) {
             pendingRewards += (periodFinish - block.timestamp) * rewardRate;
             rewardRate = 0;
             periodFinish = block.timestamp;
@@ -206,9 +220,8 @@ contract RobinLockStaking is ReentrancyGuard, IStakingFund {
             emit RewardAdded(msg.sender, amount, false);
             return;
         }
-        _startDrip(amount + pendingRewards);
-        pendingRewards = 0;
-        emit RewardAdded(msg.sender, amount, true);
+        pendingRewards = _startDrip(amount + pendingRewards); // [C-1] keep whatever could not be scheduled
+        emit RewardAdded(msg.sender, amount, pendingRewards == 0);
     }
 
     /// @dev Route a new reward tranche into the drip. A FRESH window (periodFinish elapsed) streams `amount` over a
@@ -219,14 +232,31 @@ contract RobinLockStaking is ReentrancyGuard, IStakingFund {
     /// undripped reservoir over a fresh full duration each time and push periodFinish out forever, slowing honest
     /// stakers' rewards ~2.3-4.6x. Keeping periodFinish fixed makes the window un-extendable by dust and restores the
     /// bounded, predictable drip. Assumes _updateReward(0) already ran.
-    function _startDrip(uint256 amount) internal {
+    /// [C-1] Returns the part of `amount` it could NOT schedule; the caller must park that in `pendingRewards`.
+    /// Two changes from the original, both required by C-1:
+    ///   • a tranche too small to produce a non-zero rate is CARRIED rather than scheduled. Previously it set
+    ///     `rewardRate = 0` while opening a full live window — the zombie window the exploit armed with — and
+    ///     silently stranded the dust (I-1(5)).
+    ///   • the mid-window branch no longer divides by a `remaining` that can approach zero. As `remaining` -> 1
+    ///     the rate -> the entire tranche per second, so whoever is staked for those seconds took everything.
+    ///     The scheduling window is floored at MIN_DRIP_WINDOW. Dust cannot abuse that floor to stretch the
+    ///     window forever, because a sub-rate tranche is parked by the branch above and never reaches here.
+    function _startDrip(uint256 amount) internal returns (uint256 carried) {
         if (block.timestamp >= periodFinish) {
-            rewardRate = amount / rewardsDuration;
+            uint256 rate = amount / rewardsDuration;
+            if (rate == 0) return amount; // too small to drip at all — hold it for the next tranche
+            rewardRate = rate;
             periodFinish = block.timestamp + rewardsDuration;
+            carried = amount - rate * rewardsDuration; // integer-division remainder, kept rather than stranded
         } else {
             uint256 remaining = periodFinish - block.timestamp;
             uint256 leftover = remaining * rewardRate;
-            rewardRate = (amount + leftover) / remaining; // drip over the remaining window; periodFinish unchanged
+            uint256 window = remaining < MIN_DRIP_WINDOW ? MIN_DRIP_WINDOW : remaining;
+            uint256 rate = (amount + leftover) / window;
+            if (rate == 0) return amount; // nothing schedulable; leave the live window alone and carry it
+            rewardRate = rate;
+            periodFinish = block.timestamp + window; // == the old periodFinish unless the floor bound
+            carried = (amount + leftover) - rate * window;
         }
         lastUpdateTime = block.timestamp;
     }

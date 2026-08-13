@@ -81,7 +81,11 @@ describe("RobinLockStaking", () => {
 
     await st.connect(alice).stake(E(100)); // first staker flushes the parked reward into a fresh drip
     [, , rate, , parked] = await st.poolInfo();
-    expect(parked).to.equal(0n);
+    // [C-1] the flush now CARRIES the integer-division remainder instead of stranding it (I-1(5)). That residue
+    // is `amount mod rewardsDuration`, so it is strictly below rewardsDuration wei — dust against a 600e18
+    // tranche, and it is credited to the next tranche rather than lost. This assertion used to be `equal(0)`,
+    // which encoded the stranding as intended behaviour.
+    expect(parked).to.be.lt(DUR);
     expect(rate).to.be.gt(0n);
     await time.increase(DUR + 10);
     expect(await st.earned(alice.address)).to.be.closeTo(E(600), E(2));
