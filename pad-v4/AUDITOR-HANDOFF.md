@@ -1801,17 +1801,39 @@ No TWAP, no block delay, no rate limit, no cap on `amt`, no caller gating. In **
 dumped, spot sits at or above the band, the carve has been parking — an attacker buys to force the tick below
 `floorTickLower`, calls `addFloor()`, and sells back.
 
-**Measured** at the **shipped production hook config** (`buyTaxBps = sellTaxBps = 100`, per
-`scripts/launch.js:47-48` and `deploy-curve.js:34-35`), base LP `[-60000, 60000]` at `L = 1e20`, carve 5 ETH on
-hand, band `[60, 660]`, whale dump taking spot to tick 21933 — well above `floorTickUpper`, so the honest
-baseline is that `addFloor()` **parks** and the vault loses nothing:
+**Measured — and the magnitude is regime-dependent, with the attribution still contested.** Five independent
+constructions were run, four at the shipped hook config (`buyTaxBps = sellTaxBps = 100`). **Robust across all
+of them:**
 
-| | measured |
-|---|---|
-| attacker net PnL, ending **flat with no inventory**, gas and both hook taxes deducted | **+856,900,689,751,865,766 wei (+0.8569 ETH)** |
-| **vault loss** | **4,396,412,525,492,377,555 wei (4.3964 ETH)** |
-| **forced-fill loss on the carve** | **88.43%** |
-| baseline (attacker does nothing) | vault loss **0** — the carve simply parks |
+- the guard bypass is real and reproducible — `floorLiquidity` goes 0 → non-zero inside the attacker's own
+  transaction, in every run;
+- the attack is **profitable**, including in a fully atomic construction using a real attacker contract and a
+  real 0.05% flash loan (**+4.0684 ETH**, with every fee and the flash premium inside the figure);
+- the honest baseline is that the carve **parks** and nobody loses anything — all of it is attacker-created;
+- the pad loses either way: both candidate counterparties, the floor band and the graduated locked LP, are
+  protocol-owned and un-withdrawable.
+
+**Regime-dependent, and currently in conflict between runs:**
+
+| run | attacker | vault loss | share of carve |
+|---|---|---|---|
+| deep band, 500 ETH parked, flash-funded, marked at **final spot** | **+4.0684 ETH** | 0.1289 ETH | **0.026%** |
+| band 7.25% underwater, 500 ETH parked, **priced back to pre-attack spot** | +28.84 ETH | 36.25 ETH | 7.25% |
+| deep dump, 5 ETH carve | +0.8569 ETH | 4.3964 ETH | **88.43%** |
+
+The spread is not noise; two things drive it. **Valuation convention** — marking the vault at the *final* spot,
+which the attacker chose, versus pinning the pool back to the pre-attack price. The second is the defensible
+one, and the first is the error one run already flagged in another. **Regime** — the flash-funded run finds
+attacker profit requires the parked carve to exceed roughly **5–7% of the pool's ETH-side liquidity** (a
+scale-invariant ratio, verified at 1×/100×/1000×), while the *large percentage* vault losses occur at *small*
+parks, where that same run measures the attacker as **not** profiting.
+
+If that separation holds, the sharpest reading is that **the attacker's profit and the vault's worst-case
+percentage loss may live in different regimes** — making "~86% vault loss with the attacker profiting" two true
+observations wrongly stapled together. Not settled: three further constructions and an adjudicator are still
+running. **Severity is HIGH on the robust facts alone** — a permissionless, atomic, profitable, repeatable
+extraction from protocol-owned capital against a baseline of zero loss — and does not turn on which pocket it
+comes from.
 
 **The diagnosis in the original filing was wrong, and this matters for the fix.** It said an attacker
 "chooses the moment the floor capital is committed, and that choice is worth money." It is not: `_add` sizes
@@ -1823,8 +1845,8 @@ spacings; pushes of 0.5 / 20 / 300 ETH; attacker selling 20% / 50% / 100%) — 0
 showed 4×10^8 wei of rounding dust.
 
 The real defect is a **state flip, not a price choice**: the slot0-only guard converts *"mint nothing"* into
-*"mint everything, at a fixed band that is now far from the market."* The loss is then simply how far
-underwater the band is, times the carve — 88.43% at a deep dump here, ~7.25% at a shallow one in another run.
+*"mint everything, at a fixed band that is now far from the market."* That is the part every run agrees on, and
+it is what the fix must target.
 
 **Two negative results worth keeping, because each nearly produced a false verdict.**
 
