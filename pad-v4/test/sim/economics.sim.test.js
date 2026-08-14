@@ -66,20 +66,23 @@ describe("SIM — fee conservation over many buys & sells", () => {
       }
     }
 
-    // Both taxes are ETH (money side). BUYS are collected FEE-ON-INPUT as ERC-6909 CLAIMS (mint, no reserve
-    // fronting) → redeemed for real ETH at claim time. SELLS are taken as real ETH from the output leg. So the
-    // hook holds claims for the buy books and raw ETH for the sell books, and never any of the pad coin.
-    // INVARIANT 1: buys → platform cut + curve buffer, both held as an ETH claim (id 0).
+    // Both taxes are ETH (money side), and since [H-1] BOTH are collected as ERC-6909 CLAIMS (mint, no reserve
+    // fronting) → redeemed for real ETH at claim time. Buys are fee-on-input in beforeSwap, sells are a slice of
+    // the output leg in afterSwap. The hook holds claims for all four books, no raw ETH, and never any pad coin.
+    // INVARIANT 1: buys → platform cut + curve buffer.
     const platEth = await hook.platformOwed(poolId, 0);
     const buffEth = await hook.bufferOwed(poolId);
     expect(buffEth).to.be.gt(0n); // the 20% buffer carve accrued
-    // INVARIANT 2: sells → creator + floor, both real ETH.
+    // INVARIANT 2: sells → creator + floor.
     const creaEth = await hook.creatorOwed(poolId, 0);
     const floorEth = await hook.floorOwed(poolId, 0);
-    // SOLVENCY IS EXACT, per backing: the hook's ERC-6909 ETH claim == every wei booked from buys; its raw ETH
-    // balance == every wei booked from sells. Nothing leaks, nothing is over-promised.
-    expect(await pm.balanceOf(hookAddr, 0n)).to.equal(platEth + buffEth);
-    expect(await ethers.provider.getBalance(hookAddr)).to.equal(creaEth + floorEth);
+    expect(creaEth + floorEth).to.be.gt(0n);
+    // SOLVENCY IS EXACT, per backing: the hook's ERC-6909 ETH claim == every wei booked across all four books,
+    // and it holds no raw ETH between claims. Nothing leaks, nothing is over-promised.
+    // [H-1] This is the invariant the fix buys: the sell tax no longer depends on the singleton physically
+    // holding ETH at swap time, so it can't be waived by starving reserves inside the seller's own unlock.
+    expect(await pm.balanceOf(hookAddr, 0n)).to.equal(platEth + buffEth + creaEth + floorEth);
+    expect(await ethers.provider.getBalance(hookAddr)).to.equal(0n);
     // no pad coin ever accrues to the hook (the buy tax is ETH, not the coin)
     expect(await tok.balanceOf(hookAddr)).to.equal(0n);
     expect(await hook.platformOwed(poolId, 1)).to.equal(0n);

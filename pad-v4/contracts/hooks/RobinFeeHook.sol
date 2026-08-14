@@ -265,8 +265,16 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     // --------------------------------------------------------------------- //
 
     /// @notice SELL tax = a slice of the money-side OUTPUT (currency0: ETH/stock the seller receives) → creator +
-    /// floor. Buys are taxed in beforeSwap (fee-on-input), so afterSwap is SELLS ONLY. Exact-input only; the take is
-    /// guarded so a blocklisted quote can't brick the sell.
+    /// floor. Buys are taxed in beforeSwap (fee-on-input), so afterSwap is SELLS ONLY. Exact-input only; the
+    /// collection is guarded so a blocklisted quote can't brick the sell.
+    /// [H-1] The fee used to be collected with a physical `take`, which needs the singleton to actually HOLD the
+    /// currency. v4's flash accounting lets anyone borrow native ETH with no collateral inside their own unlock, so
+    /// a seller could starve the singleton below `fee`, make the take revert, hit the catch — which booked nothing
+    /// and returned a zero delta — and keep the whole output. That is a permanent waiver, not a deferral, and it
+    /// measured 6,946 gas CHEAPER than paying the tax, so a router could wrap it around every user's sell. The fee
+    /// is now minted as an ERC-6909 claim exactly as the buy side already does: pure accounting inside the
+    /// singleton, so it cannot be made to fail by draining reserves, and the physical transfer is deferred to
+    /// claim time (where a failure reverts the claim and leaves the book intact — retriable, never waived).
     function afterSwap(address sender, PoolKey calldata key, SwapParams calldata params, BalanceDelta delta, bytes calldata)
         external
         override
@@ -286,7 +294,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         if (params.zeroForOne) return (IHooks.afterSwap.selector, int128(0)); // BUYS are taxed in beforeSwap
         if (c.sellTaxBps == 0) return (IHooks.afterSwap.selector, int128(0));
 
-        // sell output = the money side (currency0); take sellTax% of it → creator + floor
+        // sell output = the money side (currency0); claim sellTax% of it → creator + floor
         int128 outAmt = delta.amount0();
         uint256 mag = outAmt > 0 ? uint256(uint128(outAmt)) : 0;
         if (mag == 0) return (IHooks.afterSwap.selector, int128(0));
@@ -294,8 +302,12 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         if (fee == 0) return (IHooks.afterSwap.selector, int128(0));
         if (fee > uint256(uint128(MAX_SKIM))) fee = uint256(uint128(MAX_SKIM));
 
-        // [D2] Guard the take. A blocklisted/paused fee currency must NOT brick the swap.
-        try poolManager.take(key.currency0, address(this), fee) {}
+        // [D2/H-1] Collect as an ERC-6909 CLAIM, not a physical take. `mint` only moves the singleton's internal
+        // ledger, so it depends on nothing a third party controls — no reserve balance to starve, no token contract
+        // to blocklist or pause. Still try/caught for defence in depth (a reverting hook bricks the pool), but the
+        // catch is now unreachable by any means an attacker has: the balance and token-callback routes that made it
+        // reachable are both gone. Redeemed for real currency0 by claimCreator / claimFloor.
+        try poolManager.mint(address(this), key.currency0.toId(), fee) {}
         catch {
             emit SkimSkipped(id, 0, fee);
             return (IHooks.afterSwap.selector, int128(0));
@@ -305,7 +317,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         creatorOwed[id][0] += creatorCut;
         floorOwed[id][0] += floorCut;
         emit SellTaxed(id, creatorCut, floorCut);
-        // Return the +fee delta LAST (CEI). Nets the −fee from `take` → unlock closes clean. [A3]
+        // Return the +fee delta LAST (CEI). Nets the −fee from `mint` → unlock closes clean. [A3]
         return (IHooks.afterSwap.selector, int128(uint128(fee)));
     }
 
@@ -326,12 +338,16 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     }
 
     /// @notice Pull the creator's accrued cut for one currency to the creator's slot.
+    /// [H-1] Sell-tax fees are now held as ERC-6909 claims (the buy side always was), so this redeems rather than
+    /// paying out of the hook's own balance. The failure mode moves off the swap path: a paused or blocklisted
+    /// currency now reverts THIS call and leaves `creatorOwed` intact (the zeroing above is rolled back with it),
+    /// instead of silently waiving the fee for everyone at sell time.
     function claimCreator(PoolId id, uint256 currencyIndex) external nonReentrant returns (uint256 amount) {
         amount = creatorOwed[id][currencyIndex];
         if (amount == 0) revert NothingToClaim();
         creatorOwed[id][currencyIndex] = 0;
         address to = config[id].creator;
-        _payout(_currencyAt(id, currencyIndex), to, amount);
+        _pullClaimsAndPay(_currencyAt(id, currencyIndex), to, amount);
         emit CreatorClaimed(id, currencyIndex, to, amount);
     }
 
@@ -343,7 +359,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         amount = floorOwed[id][currencyIndex];
         if (amount == 0) revert NothingToClaim();
         floorOwed[id][currencyIndex] = 0;
-        _payout(_currencyAt(id, currencyIndex), to, amount);
+        _pullClaimsAndPay(_currencyAt(id, currencyIndex), to, amount); // [H-1] sell-tax claim → real currency
         emit FloorClaimed(id, currencyIndex, to, amount);
     }
 

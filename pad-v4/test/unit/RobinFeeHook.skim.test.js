@@ -106,6 +106,7 @@ describe("RobinFeeHook — directional tax (ETH-native) closes clean (local real
     await tok.connect(owner).transfer(trader.address, 10n ** 22n);
     await tok.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
     const hookEthBefore = await ethers.provider.getBalance(await hook.getAddress());
+    const hookClaimBefore = await pm.balanceOf(await hook.getAddress(), 0n); // ERC-6909 ETH claim
 
     await sw.connect(trader).swap(
       key, { zeroForOne: false, amountSpecified: -(10n ** 21n), sqrtPriceLimitX96: MAX_SQRT_LIMIT },
@@ -118,9 +119,11 @@ describe("RobinFeeHook — directional tax (ETH-native) closes clean (local real
     expect(totalSell).to.be.gt(0n);
     // floor gets 20% of the sell tax, creator the remaining 80% (dust conserved into creator)
     expect(floorCut).to.equal((totalSell * FLOOR_SHARE_BPS) / 10000n);
-    // the SELL fee is taken as real ETH (output leg, already held by the PM), so the hook's raw ETH grows by
-    // exactly the sell fee. (The BUY fee from the prior test is an ERC-6909 claim, not raw ETH — see above.)
-    expect((await ethers.provider.getBalance(await hook.getAddress())) - hookEthBefore).to.equal(totalSell);
+    // [H-1] the SELL fee is minted as an ERC-6909 claim, exactly like the BUY fee — never taken as real ETH at
+    // swap time. So the hook's CLAIM grows by exactly the sell fee and its raw ETH balance does not move. Taking
+    // real ETH here is what let a seller starve the singleton inside their own unlock and waive the tax outright.
+    expect((await pm.balanceOf(await hook.getAddress(), 0n)) - hookClaimBefore).to.equal(totalSell);
+    expect(await ethers.provider.getBalance(await hook.getAddress())).to.equal(hookEthBefore);
   });
 
   it("[audit H1] exact-output swaps are REJECTED so the tax can't be bypassed", async () => {
