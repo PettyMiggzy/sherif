@@ -160,6 +160,7 @@ describe("H-3 — a short-returning guardAdapter no longer bricks every swap of 
     // a real adapter reporting a corporate action inside the guard window must still halt trading
     const stockReg = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
     const stock = await (await ethers.getContractFactory("MockStock")).deploy(await stockReg.getAddress(), 10n ** 27n);
+    await stockReg.setRegistered(await stock.getAddress(), true); // [H-2] the registry attests the stock
     const adapter = await (await ethers.getContractFactory("StockQuoteAdapter")).deploy(
       await stock.getAddress(), await stockReg.getAddress()
     );
@@ -195,10 +196,11 @@ describe("H-3 — StockQuoteAdapter's never-reverting reads hold against a short
 
   before(async () => {
     [, alice] = await ethers.getSigners();
-    // a registry that short-returns too, so BOTH read targets are hostile
-    const badReg = await shortReturner();
+    // [H-2] the registry must ATTEST the stock at ctor time (a short-returning registry is now correctly rejected —
+    // see the H-2 gate test); the STOCK is the hostile short-returning target whose RUNTIME reads must not brick.
+    const badReg = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
     const badStock = await (await ethers.getContractFactory("ShortReturningStock")).deploy(await badReg.getAddress());
-    // the constructor gate passes on nothing more than a working ACCESS_CONTROLLED_REGISTRY (H-2's premise)
+    await badReg.setRegistered(await badStock.getAddress(), true);
     adapter = await (await ethers.getContractFactory("StockQuoteAdapter")).deploy(
       await badStock.getAddress(), await badReg.getAddress()
     );

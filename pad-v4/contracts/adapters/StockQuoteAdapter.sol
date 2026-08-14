@@ -20,6 +20,10 @@ interface IStockToken {
 interface IStockRegistry {
     function paused() external view returns (bool);
     function isBlocked(address account) external view returns (bool);
+    // [H-2] Membership query: does THIS registry actually govern `stock`? The ctor's `reg == expectedRegistry`
+    // check alone is self-certified (a fake stock returns the pinned registry address), so the pinned registry must
+    // ATTEST the stock. This requires the real Robinhood stock registry to expose such a method — see FLOOR/H-2 note.
+    function isRegistered(address stock) external view returns (bool);
 }
 
 /// @title StockQuoteAdapter — the RobinBlue (tokenized-stock pad) seam
@@ -52,6 +56,7 @@ contract StockQuoteAdapter is IQuoteAdapter, IStockGuardAdapter {
     error ZeroAddress();
     error NotAStock();
     error RegistryMismatch();
+    error NotRegistered(); // [H-2] the pinned registry does not attest this stock
 
     /// @param stock_ the stock token to use as the pad quote
     /// @param expectedRegistry the platform's known STOCK_REGISTRY — the allow-list authority
@@ -61,6 +66,13 @@ contract StockQuoteAdapter is IQuoteAdapter, IStockGuardAdapter {
         address reg = IStockToken(stock_).ACCESS_CONTROLLED_REGISTRY();
         if (reg == address(0)) revert NotAStock();
         if (reg != expectedRegistry) revert RegistryMismatch();
+        // [H-2] The stock's self-declared registry pointer above is NOT enough — a fake stock trivially returns the
+        // (public) pinned registry address. Require the PINNED registry to ATTEST the stock. Fail CLOSED: a registry
+        // that does not implement isRegistered (or returns false) rejects the launch. NOTE: this depends on the real
+        // Robinhood stock registry exposing isRegistered(stock); until it does, the stock pad stays disabled.
+        if (!_readFlag(expectedRegistry, abi.encodeCall(IStockRegistry.isRegistered, (stock_)), false)) {
+            revert NotRegistered();
+        }
         stock = stock_;
         registry = reg;
     }

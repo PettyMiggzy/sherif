@@ -36,6 +36,7 @@ describe("H-4 — the stock seed's remainder goes back to whoever paid it", () =
 
     stockReg = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
     stock = await (await ethers.getContractFactory("MockStock")).deploy(await stockReg.getAddress(), 10n ** 27n);
+    await stockReg.setRegistered(await stock.getAddress(), true); // [H-2] the registry attests the stock
 
     // [H-2] the registry is pinned on the factory, and the curb adapter is derived from (stock, registry)
     factory = await (await ethers.getContractFactory("StockPadFactory")).deploy(

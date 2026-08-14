@@ -37,6 +37,7 @@ describe("H-2 — a stock pad can no longer be launched against a self-certified
     // the PLATFORM's registry and a stock it actually governs
     realReg = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
     realStock = await (await ethers.getContractFactory("MockStock")).deploy(await realReg.getAddress(), 10n ** 27n);
+    await realReg.setRegistered(await realStock.getAddress(), true); // [H-2] the registry ATTESTS the real stock
 
     factory = await (await ethers.getContractFactory("StockPadFactory")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(),
@@ -82,6 +83,7 @@ describe("H-2 — a stock pad can no longer be launched against a self-certified
     // exactly the construction the finding proved: attacker deploys the whole chain from their own account
     const fakeReg = await (await ethers.getContractFactory("MockStockRegistry")).connect(attacker).deploy();
     const fakeStock = await (await ethers.getContractFactory("MockStock")).connect(attacker).deploy(await fakeReg.getAddress(), 10n ** 27n);
+    await fakeReg.connect(attacker).setRegistered(await fakeStock.getAddress(), true); // attacker makes their OWN registry attest
     // the adapter still deploys standalone — it only ever proved stock and registry agree with EACH OTHER
     const selfCertified = await (await ethers.getContractFactory("StockQuoteAdapter")).connect(attacker)
       .deploy(await fakeStock.getAddress(), await fakeReg.getAddress());
@@ -93,6 +95,21 @@ describe("H-2 — a stock pad can no longer be launched against a self-certified
     await fakeStock.connect(attacker).approve(await factory.getAddress(), ethers.MaxUint256);
     await expect(factory.connect(attacker).launch(cfg, tokenSalt, hookSalt)).to.be.reverted;
     expect(await factory.launchCount()).to.equal(0n);
+  });
+
+  it("[H-2 residual] a fake stock pointing at the REAL registry is rejected unless the registry ATTESTS it", async () => {
+    // the variant the original test missed: the attacker's fake stock returns the PLATFORM's real registry from
+    // ACCESS_CONTROLLED_REGISTRY(), so `reg == expectedRegistry` passes — but the real registry has not registered it.
+    const fakeStock = await (await ethers.getContractFactory("MockStock")).connect(attacker)
+      .deploy(await realReg.getAddress(), 10n ** 27n); // points at the REAL registry
+    // the adapter ctor now requires the real registry to attest the stock — a fake, unattested one is rejected.
+    const AdapterF = await ethers.getContractFactory("StockQuoteAdapter");
+    await expect(AdapterF.connect(attacker).deploy(await fakeStock.getAddress(), await realReg.getAddress()))
+      .to.be.revertedWithCustomError(AdapterF, "NotRegistered");
+    // once the real registry actually governs it (an off-chain/legal decision the attacker cannot make), it passes.
+    await realReg.setRegistered(await fakeStock.getAddress(), true);
+    const ok = await AdapterF.connect(attacker).deploy(await fakeStock.getAddress(), await realReg.getAddress());
+    expect(await ok.registry()).to.equal(await realReg.getAddress());
   });
 
   it("the curb adapter is DERIVED from the stock, so no launcher contract sits on the swap path", async () => {

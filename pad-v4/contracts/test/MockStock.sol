@@ -7,6 +7,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 contract MockStockRegistry {
     bool public paused;
     mapping(address => bool) public isBlocked;
+    mapping(address => bool) public isRegistered; // [H-2] which stocks THIS registry actually governs
 
     function setPaused(bool v) external {
         paused = v;
@@ -14,6 +15,10 @@ contract MockStockRegistry {
 
     function setBlocked(address a, bool v) external {
         isBlocked[a] = v;
+    }
+
+    function setRegistered(address stock, bool v) external {
+        isRegistered[stock] = v;
     }
 }
 

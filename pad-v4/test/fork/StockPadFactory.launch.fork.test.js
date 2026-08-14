@@ -34,6 +34,7 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
     // DERIVED from (stock, that registry) — a launcher no longer supplies one.
     const stockReg = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
     const stock = await (await ethers.getContractFactory("MockStock")).connect(deployer).deploy(await stockReg.getAddress(), 10n ** 27n);
+    await stockReg.setRegistered(await stock.getAddress(), true); // [H-2] the registry attests the stock
     const stockAddr = (await stock.getAddress()).toLowerCase();
 
     const factory = await (await ethers.getContractFactory("StockPadFactory")).deploy(

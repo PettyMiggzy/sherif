@@ -12,6 +12,7 @@ describe("StockQuoteAdapter — RobinBlue stock-pad seam", () => {
     registry = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
     otherRegistry = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
     stock = await (await ethers.getContractFactory("MockStock")).deploy(await registry.getAddress(), 10n ** 27n);
+    await registry.setRegistered(await stock.getAddress(), true); // [H-2] the pinned registry attests the stock
     adapter = await (await ethers.getContractFactory("StockQuoteAdapter")).deploy(
       await stock.getAddress(), await registry.getAddress()
     );

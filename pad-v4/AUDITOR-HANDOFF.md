@@ -190,19 +190,34 @@ Two fixes were judged **INCOMPLETE** — real residuals, surfaced as design deci
 - **M-15** `RobinFloorVault` header/`AUDIT-SCOPE.md §4.4`: the floor is a FIXED band deepened while the token
   trades ABOVE it — it does not "only ever deepen"; in a drawdown the carve parks.
 
-### Open — design / product decisions (NOT invented here; for the operator + external auditor)
+### Design / product decisions — DRIVEN this round (operator can still override)
 
-- **M-3 / L-27** — What `PadFactory` IS: a governed launchpad (read taxes from FeeConfig) or a permissionless
-  primitive (document caller-set taxes up to 3%/side + caller-chosen floor/staking). If `PadFactory` is not a
-  live product surface, the doc route closes it.
-- **M-10 (cap value)** — pick a Robin `MAX_LP_FEE` (one-line change; auditor suggests 1% = `10_000`).
-- **M-5 / M-12 / M-14** — which owner powers to defend (snapshot antiJit / snapshot claim-fee / timelock;
-  snapshot presale geometry; split the root-admin wiring role off the payout wallet).
-- **M-15 / H-5 / L-33** — the floor's design (place new bands below spot? a duration-enforced dwell?), designed
-  as one unit.
-- **H-2** — extend `IStockRegistry` to attest the stock, or keep the stock pad out of scope until it can.
-- **L-3** (leftover reserve if staking never wired), **L-14** (anti-JIT forfeit is claim-before-unstake
-  dodgeable), **L-25** (untaxed sibling pool), **L-32** (two staking one-shots for one concept).
+The operator asked to drive all of these; resolved with governed defaults + adversarial self-verification:
+
+- **M-3 / L-27 — RESOLVED (governed).** `PadFactory.launch` now enforces the curve path's ceilings: buy/sell tax
+  ≤ 2%/side, floor share ≤ 50%, static fee ≤ 1% (`M3.padfactory-caps.test.js`). Recipients stay launcher-chosen
+  (inherent to "the creator earns the sell tax"), documented not gated.
+- **M-10 — RESOLVED.** `RobinV4FeeConfig.MAX_LP_FEE` = 1% (`10_000`); production lpFee passes at the boundary.
+- **M-5 — RESOLVED (partial, as designed).** antiJitDelay is snapshotted at stake — a raise can no longer
+  retroactively lock principal. The `platformClaimFeeBps` skim of already-accrued rewards remains (bounded by
+  `MAX_CLAIM_FEE_BPS`); snapshotting fee-at-accrual is more invasive and left as a further operator option.
+- **M-12 — RESOLVED.** PresaleVault snapshots geometry at initialize; `finalize` reverts `GeometryChanged` on a
+  mid-presale retune (fails safe → 100% refunds).
+- **H-2 — RESOLVED (conditional).** `IStockRegistry.isRegistered(stock)` added and gated fail-closed in the adapter
+  ctor, so a fake stock pointing at the real registry is rejected unless the registry ATTESTS it
+  (`H2.stock-gate.test.js` residual test). **Depends on the real Robinhood stock registry exposing `isRegistered`;
+  until it does, the stock pad stays disabled** (fail-closed — no live stock path today).
+- **M-14 — LEFT to the operator.** `platformFeeWallet` remains both payout + root-admin (honesty-doc corrected).
+  Splitting the wiring role onto a separate hot `padAdmin` needs the operator to decide WHO holds that key — an
+  operational call, not something to invent. No code change.
+- **M-15 / H-5 / L-33 — INTERIM HARDENING SHIPPED; full redesign REFUTED → TWAP.** See `FLOOR-REDESIGN.md`. The
+  natural "place add-only bands below spot" redesign was drafted and put through an adversarial gauntlet, which
+  **broke it** (a fully-atomic sandwich: flash-push the tick down, poke to place the ETH band just below true price,
+  sell back through it to sweep its ETH at above-market prices — worse than the shipped interim hardening). That is
+  the FOURTH refuted attempt on this surface. The doc pivots to the only survivor — a TWAP-gated commit (likely just
+  gating today's fixed-band commit on a TWAP tick) — and recommends the external auditor review it before build.
+- **Still open for the operator/auditor:** **L-3** (leftover reserve if staking never wired), **L-14** (anti-JIT
+  forfeit is claim-before-unstake dodgeable), **L-25** (untaxed sibling pool), **L-32** (two staking one-shots).
 
 ### Deferred mechanical (with rationale — revisit post-audit if the operator wants)
 
