@@ -51,6 +51,18 @@ contract StockPadFactory {
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
     uint160 internal constant HOOK_FLAGS = 0x00CC;
     uint48 internal constant MAX_UINT48 = type(uint48).max;
+    /// [H-2] A corporate-action window is hours, not years. `guardWindow` was an unbounded uint32 stamped
+    /// immutably into the hook, so a single call could cover ~136 years of frozen trading.
+    uint32 public constant MAX_GUARD_WINDOW = 7 days;
+
+    /// [H-2] The platform's known STOCK_REGISTRY, pinned HERE rather than named per-launch. The contract's own
+    /// securities-gate claim used to rest on StockQuoteAdapter's constructor check — but that constructor takes
+    /// `expectedRegistry` as an ARGUMENT, so it proves only that the stock and the registry agree with each
+    /// other, not that the registry is the platform's. With no registry immutable and no adapter allow-list on
+    /// this factory, deploying MockStockRegistry → MockStock(thatRegistry) → StockQuoteAdapter(both) from any
+    /// account produced a pad carrying quoteIsStock == true that was on-chain indistinguishable from a genuine
+    /// one. Pinning the registry closes that: a stock not governed by THIS registry cannot be launched.
+    address public immutable stockRegistry;
 
     struct LaunchConfig {
         string name;
@@ -65,8 +77,13 @@ contract StockPadFactory {
         uint16 buyTaxBps;
         uint16 sellTaxBps;
         uint16 sellFloorShareBps;
-        uint32 guardWindow; // corporate-action curb window (seconds)
-        address adapter; // a pre-gated StockQuoteAdapter (its ctor already matched the registry)
+        uint32 guardWindow; // corporate-action curb window (seconds), <= MAX_GUARD_WINDOW
+        address stock; // [H-2] the tokenized stock to quote against. The ADAPTER is derived from it and this
+            // factory's pinned registry, never supplied: a launcher-chosen adapter is a freeze primitive. The
+            // curb reads scheduledEffectiveAt() on every swap, above the direction check and above the
+            // sender == address(this) exemption, so it halts buys and sells alike — and try/catch defends only
+            // against an adapter that REVERTS. One that simply lies, returning a plausible non-zero effectiveAt
+            // forever, passes cleanly and freezes the pad exactly as its author intended.
         address creator;
         address floorRecipient;
         address stakingRecipient;
@@ -99,8 +116,11 @@ contract StockPadFactory {
         address permit2_,
         address deployer_,
         address feeRegistry_,
-        address lockVault_
+        address lockVault_,
+        address stockRegistry_
     ) {
+        if (stockRegistry_ == address(0)) revert BadConfig();
+        stockRegistry = stockRegistry_;
         poolManager = IPoolManager(poolManager_);
         positionManager = IPositionManagerMinimal(positionManager_);
         permit2 = IPermit2Minimal(permit2_);
@@ -119,11 +139,21 @@ contract StockPadFactory {
         returns (address token, address hook, PoolId poolId, uint256 lpTokenId)
     {
         if (cfg.fee & DYNAMIC_FEE_FLAG != 0) revert DynamicFeeNotAllowed();
-        if (cfg.creator == address(0) || cfg.adapter == address(0)) revert BadConfig();
+        if (cfg.creator == address(0) || cfg.stock == address(0)) revert BadConfig();
         if (cfg.supply == 0 || cfg.lpTokenAmount == 0 || cfg.stockSeed == 0) revert BadConfig();
         if (cfg.lpTokenAmount > cfg.supply) revert BadConfig();
+        if (cfg.guardWindow > MAX_GUARD_WINDOW) revert BadConfig(); // [H-2] hours, not years
 
-        address stock = StockQuoteAdapter(cfg.adapter).stock(); // quote
+        address stock = cfg.stock; // quote
+        // [H-2] DERIVE the curb adapter from (stock, pinned registry) instead of accepting one. The adapter's
+        // constructor requires stock.ACCESS_CONTROLLED_REGISTRY() == the registry it is handed, and the registry
+        // handed here is THIS factory's — so a stock the platform's registry does not govern cannot be launched
+        // at all, and no launcher-authored contract ever sits on the curb path. The deployer adopts a
+        // byte-identical existing deployment, so relaunching against the same stock reuses the same adapter.
+        address adapter = deployer.deploy(
+            keccak256(abi.encode(stock, stockRegistry)),
+            abi.encodePacked(type(StockQuoteAdapter).creationCode, abi.encode(stock, stockRegistry))
+        );
 
         // 1) deploy the token (supply to this factory), require it sorts ABOVE the stock ⇒ pad = currency1
         token = deployer.deploy(
@@ -170,7 +200,7 @@ contract StockPadFactory {
                 currency1: currency1,
                 creator: cfg.creator,
                 floorRecipient: cfg.floorRecipient,
-                guardAdapter: cfg.adapter, // the stock curb source
+                guardAdapter: adapter, // the stock curb source — derived, never launcher-supplied [H-2]
                 buyTaxBps: cfg.buyTaxBps,
                 sellTaxBps: cfg.sellTaxBps,
                 sellFloorShareBps: cfg.sellFloorShareBps,

@@ -29,23 +29,25 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
     const dep = await (await ethers.getContractFactory("DeterministicDeployer")).deploy();
     const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, deployer.address);
     const lockVault = await (await ethers.getContractFactory("LockVault")).deploy(POSITION_MANAGER, await reg.getAddress());
-    const factory = await (await ethers.getContractFactory("StockPadFactory")).deploy(
-      POOL_MANAGER, POSITION_MANAGER, PERMIT2, await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress()
-    );
-    await lockVault.setFactory(await factory.getAddress());
 
-    // MockStock as the quote + a gated adapter over it
+    // MockStock as the quote. [H-2] the platform's registry is pinned on the factory and the curb adapter is
+    // DERIVED from (stock, that registry) — a launcher no longer supplies one.
     const stockReg = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
     const stock = await (await ethers.getContractFactory("MockStock")).connect(deployer).deploy(await stockReg.getAddress(), 10n ** 27n);
-    const adapter = await (await ethers.getContractFactory("StockQuoteAdapter")).deploy(await stock.getAddress(), await stockReg.getAddress());
     const stockAddr = (await stock.getAddress()).toLowerCase();
+
+    const factory = await (await ethers.getContractFactory("StockPadFactory")).deploy(
+      POOL_MANAGER, POSITION_MANAGER, PERMIT2, await dep.getAddress(), await reg.getAddress(),
+      await lockVault.getAddress(), await stockReg.getAddress()
+    );
+    await lockVault.setFactory(await factory.getAddress());
 
     const cfg = {
       name: "Robin NVDA", symbol: "rNVDA", decimals: 18,
       supply: 10n ** 24n, lpTokenAmount: 5n * 10n ** 23n, stockSeed: 10n ** 21n,
       sqrtPriceX96: SQRT_1_1, tickSpacing: 60, fee: 3000,
       buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, guardWindow: 3600,
-      adapter: await adapter.getAddress(), creator: creator.address,
+      stock: await stock.getAddress(), creator: creator.address,
       floorRecipient: ethers.ZeroAddress, stakingRecipient: ethers.ZeroAddress,
     };
 

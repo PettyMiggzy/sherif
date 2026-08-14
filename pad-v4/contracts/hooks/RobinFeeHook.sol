@@ -30,15 +30,16 @@ import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin} from "../int
 /// never block trading.
 ///
 /// Red-team invariants preserved from the spine:
-///   [A1] The tax is always ADDITIONAL (the hook owns no position to carve from). Buy fee is minted as an
-///        ERC-6909 claim on the input leg (settled by the buyer's input); sell fee is taken from the output leg.
+///   [A1] The tax is always ADDITIONAL (the hook owns no position to carve from). Both fees are minted as
+///        ERC-6909 claims — the buy on the input leg (settled by the buyer's input), the sell on the output leg.
 ///   [A2] The pool uses a STATIC lp fee; beforeSwap never overrides it (only the stock curb lives there).
 ///   [A4/B1] Tax is EXACT-INPUT ONLY; the buy fee-on-input is collected via `mint` (pure accounting — NEVER fronts
 ///           the singleton's reserves, so it can't revert on a cold pool) + a positive specified BeforeSwapDelta;
-///           the sell fee via a `take` of the just-produced output (already held by the PoolManager) + the afterSwap
-///           return delta. Neither fronts foreign reserves. Exact-output is rejected on registered pads.
-///   [D2] The sell `take` and every claim-time `take` is try/caught / retriable — a blocklisted/paused stock fee
-///        currency skips or defers, never bricks trading; the buy `mint` likewise can't brick a buy.
+///           the sell fee likewise via `mint` + the afterSwap return delta [H-1]. Neither fronts foreign
+///           reserves. Exact-output is rejected on registered pads.
+///   [D2] Both fees are minted as ERC-6909 claims, so neither collection can be made to fail by draining the
+///        singleton or by a blocklisted/paused currency; every claim-time `take` is retriable, so a paused stock
+///        defers that one claim rather than bricking trading or waiving the fee [H-1].
 ///   [G1] REQUIRED_FLAGS == 0x00CC, self-asserted in the ctor and cross-checked by the factory.
 ///   [G2] No beforeInitialize; config is bound by `registerPool` in the same launch tx.
 contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
@@ -49,6 +50,8 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     uint16 public constant MAX_TAX_BPS = 300; // 3% per-direction ceiling, immutable
     /// @dev afterSwap returns an int128, so a skim leg must never exceed int128 max.
     int128 internal constant MAX_SKIM = type(int128).max;
+    /// @dev [H-2] Ceiling on the corporate-action curb window. See registerPool.
+    uint32 public constant MAX_GUARD_WINDOW = 7 days;
 
     address public immutable factory;
     IFeeWalletRegistry public immutable feeRegistry;
@@ -113,6 +116,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     error NoFloorRecipient();
     error NoBufferRecipient();
     error NothingToClaim();
+    error BadGuardWindow();
     error PayoutFailed();
     error CorporateActionCurb();
     error ExactOutputNotSupported();
@@ -141,6 +145,11 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         if (cfg.sellFloorShareBps > BPS) revert BadShares();
         if (cfg.buyBufferShareBps > BPS) revert BadShares();
         if (cfg.referralShareBps > BPS) revert BadShares(); // ≤100% of the platform buy cut (FeeConfig caps tighter)
+        // [H-2] The curb freezes buys AND sells and sits above both the direction check and the
+        // sender == address(this) exemption, and guardWindow is stamped immutably right here with no setter —
+        // an unbounded uint32 let one call cover ~136 years. A corporate-action window is hours, not years.
+        // Bounded here as well as in StockPadFactory because THIS is the write that becomes permanent.
+        if (cfg.guardWindow > MAX_GUARD_WINDOW) revert BadGuardWindow();
 
         config[id] = PoolConfig({
             registered: true,

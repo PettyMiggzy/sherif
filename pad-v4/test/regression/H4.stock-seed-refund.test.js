@@ -23,7 +23,7 @@ describe("H-4 — the stock seed's remainder goes back to whoever paid it", () =
   const LP_TOKEN = E(100); // 1e20 — the binding leg at a 1:1 price
   const STOCK_SEED = E(100000); // 1e23 — over-supplied by construction
   let owner, platform, payer, creator, floorSink, stakingSink;
-  let pm, permit2, posm, lockVault, dep, reg, stock, adapter, factory;
+  let pm, permit2, posm, lockVault, dep, reg, stock, stockReg, factory;
 
   before(async () => {
     [owner, platform, payer, creator, floorSink, stakingSink] = await ethers.getSigners();
@@ -34,15 +34,13 @@ describe("H-4 — the stock seed's remainder goes back to whoever paid it", () =
     lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await posm.getAddress(), await reg.getAddress());
     dep = await (await ethers.getContractFactory("DeterministicDeployer")).deploy();
 
-    const stockReg = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
+    stockReg = await (await ethers.getContractFactory("MockStockRegistry")).deploy();
     stock = await (await ethers.getContractFactory("MockStock")).deploy(await stockReg.getAddress(), 10n ** 27n);
-    adapter = await (await ethers.getContractFactory("StockQuoteAdapter")).deploy(
-      await stock.getAddress(), await stockReg.getAddress()
-    );
 
+    // [H-2] the registry is pinned on the factory, and the curb adapter is derived from (stock, registry)
     factory = await (await ethers.getContractFactory("StockPadFactory")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(),
-      await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress()
+      await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress(), await stockReg.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
 
@@ -55,7 +53,7 @@ describe("H-4 — the stock seed's remainder goes back to whoever paid it", () =
     name: "Pad", symbol: "PAD", decimals: 18, supply: E(1000000),
     lpTokenAmount: LP_TOKEN, stockSeed: STOCK_SEED, sqrtPriceX96: SQRT_1_1, tickSpacing: TS, fee: FEE,
     buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, guardWindow: 3600,
-    adapter: adapter.target, creator: creator.address,
+    stock: stock.target, creator: creator.address,
     floorRecipient: floorSink.address, stakingRecipient: stakingSink.address,
   });
 
