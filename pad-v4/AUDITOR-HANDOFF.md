@@ -15,9 +15,9 @@ a condensed restatement of `AUDIT-SCOPE.md`; it is preserved in git history.)
 | **Scope** | `pad-v4/contracts/**` — all subsystems, including the stock pad that `AUDIT-SCOPE.md` §2 marks informational |
 | **Branch** | `claude/ultra-audit-handoff-g6lxrw` |
 | **Build** | solc 0.8.26, `viaIR`, optimizer runs 1, EVM cancun — compiles clean |
-| **Baseline** | audit pass: `npx hardhat test` → **130 passing**, before and after. After remediation: **174 passing / 6 pending** |
+| **Baseline** | audit pass: `npx hardhat test` → **130 passing**, before and after. After remediation: **185 passing / 6 pending** |
 | **Changed by the audit pass** | this file only |
-| **Changed by the remediation phase** | 9 contracts, 3 test mocks, 8 new regression suites — see §0 |
+| **Changed by the remediation phase** | 13 contracts, 3 test mocks, 12 new regression suites, 3 companion docs, the runbook + a new wiring-check script — see §0 |
 | **Method** | manual review of all 5,335 lines of `contracts/`, plus an adversarial finder/skeptic gauntlet looped to consecutive clean rounds |
 
 `PROVEN` on a finding means a runnable test or an exact numerical evaluation in this pass produced the stated
@@ -32,7 +32,15 @@ Everything in this section post-dates the audit. The findings themselves are unc
 status. Each fix carries a regression test that replays the original exploit against the patched contract and
 asserts the measured number moved — the tests are named for the finding so the mapping is mechanical.
 
-**Both CRITICALs and all five HIGHs are fixed.** The suite is green at 174 passing / 6 pending.
+**Both CRITICALs, all five HIGHs and 15 MEDIUMs are fixed.** The suite is green at 185 passing / 6 pending.
+
+The MEDIUM batch was run differently from the HIGH batch, and the difference is worth knowing when reading it:
+each finding was specced against the live code by one agent, then handed to a second agent told to **refute the
+proposed fix** — not the finding. Three specs survived untouched. Six came back with blocker or important
+problems, and every one of those objections was real: two fixes would have re-opened a finding this document
+already contains, one was defeated for 83k gas, one created a deployment DoS, and one asserted away a
+behaviour change that turned out to be a genuine trade. Where the corrected fix was still mechanical it was
+applied; where the correction turned it into a policy choice it was left, with the reason recorded below.
 
 ### Fixed
 
@@ -53,6 +61,14 @@ asserts the measured number moved — the tests are named for the finding so the
 | **M-25** | MEDIUM | `RobinLockStaking.fundTokenPushed` honours `side`/`asset`; `setStaking` probes the sink's stake asset (both `token()` and `tokenAsset()`) and refuses a foreign one. | `d85dfeb` | `test/regression/M25.staking-sink-mismatch.test.js` |
 | **M-26** | MEDIUM | `RobinAmbushVault`'s constructor cross-checks its whole `PoolKey` against the curve, not just `gradTick`. | `032191e` | `test/unit/RobinAmbushVault.test.js` |
 | **I-1(19)** | INFO | `CurvePadFactoryV4.launch` asserts it is the lock vault's registrar. | `032191e` | covered by the factory suite |
+| **M-1** | MEDIUM | `PresaleVault.finalize` sizes the pooled buy to what the freshly-seeded curve can absorb, instead of handing it the whole raise for the hook to tax in full. Measured on a shallow curve with a 3 ETH target: buy tax **0.03 → 0.001301178445995701 ETH**, exactly 1% of what actually swapped. | `ce119fc` | `test/regression/M1.presale-overtax.test.js` |
+| **M-9** | MEDIUM | `RobinCurveV4.claimCreator` pays `currentCreator()`, which follows the hook's repointable slot, so a pad's single 2-step repoint governs both creator books. Length-checked staticcall with a masked mload — this sits on a claim path. | `ce119fc` | `test/regression/M9-M27.creator-and-relaunch.test.js` |
+| **M-13** | MEDIUM | `DualStaking.fundTokenPushed` and `receive()` pass `extend=FALSE`, so a stranger poking a permissionless relay can no longer re-arm the window and stall the stream. Conservation improves from up to 604,799 units lost per poke to 1. | `608599c` | `test/regression/M13.relay-poke.test.js` |
+| **M-16** | MEDIUM | `donateETH`'s "WITHOUT touching the platform cut" corrected at all four sites: the exemption is the deposit only. The accumulator has no per-tranche provenance, so the payout-side promise could not be honoured in code. | `608599c` | covered by the DualStaking suite |
+| **M-27** | MEDIUM | All three factories claim the token in `poolOf` at the earliest point `poolId` exists and reject a second launch with `AlreadyLaunched`, so the same salts with a different fee or tickSpacing can no longer open a second pool over a live pad. | `ce119fc` | `test/regression/M9-M27.creator-and-relaunch.test.js` |
+| **M-6** | MEDIUM | `ROBIN-V4-ARCHITECTURE.md` carries a divergence table and inline SUPERSEDED / NEVER BUILT markers; the two stale code comments it named (`RobinStateView`'s `totalAssets`, `DualStaking`'s "3-way holder cut") are corrected at source. | `4fe6d2b`, `608599c` | n/a (documentation) |
+| **M-7** | MEDIUM | Added `scripts/check-wiring.js` (read-only, non-zero exit if any of the five one-shots is unset), a `DEPLOY.md` §2b for the curve path, and the missing `hook.setFloorRecipient` step in `deploy-curve.js`. | `4fe6d2b` | n/a (runbook) |
+| **M-18** | MEDIUM | `ROBIN-V4-CURVE-SPEC.md`'s ambush section rewritten — it described the exact mirror image of what shipped — and the money model's "ambush's pump sales" revenue line corrected. | `4fe6d2b` | n/a (documentation) |
 
 ### Deliberately not fixed — product decisions, flagged not taken
 
@@ -67,10 +83,24 @@ They are left for the operator with the finding as written.
 | **M-12** | Whether presale terms may move after commitments. A product promise, not a code invariant. |
 | **L-25** | Requires re-mined hook addresses — a launch-flow change, not a patch. |
 | **H-2 (residual)** | A curated `approvedAdapter` allow-list was **not** added. Pinning the registry achieves the security result without inventing an ops process; the KYC/geo and issuer allow-list gates the contract documents remain off-chain launch gates, as it already says they are. |
+| **M-4** | The proposed fix cross-checked the floor vault's anchor against live spot at deploy. Its skeptic showed that converts a benign, self-healing runtime state into a hard revert on a one-shot irreversible wiring path — a cheap, repeatable DoS on floor-vault deployment. Making the anchor verifiable without that needs a decision about what the anchor should be bound TO (the pad's launch tick? the curve's gradTick? a factory-stamped value?), which is a design choice, not a patch. |
+| **M-14** | Moving the five one-shot wiring setters off `platformFeeWallet` and onto the registry's `owner()` is mechanically safe — the skeptic verified the substitution and could not break it. It is left because it relocates a **per-pad, time-critical** capability onto the root cold key. That either slows every launch to multisig cadence, or requires inventing a `padAdmin` hot role — a change to the trust model, and the operator's to make. The finding's core observation stands as written: `platformFeeWallet` is today the protocol's root admin key, not merely a payout address, and should be documented and held as such. |
+| **M-15** | The proposed fix let `addFloor` choose its band from a live `getSlot0` read. That is exactly what `[audit L1]` forbids and what **H-5** was just fixed to stop, so shipping it would have re-opened a HIGH. Letting the floor deepen during a drawdown needs a second band or a moving anchor — a change to what the floor IS, and it must be designed against M-15, H-5 and L-33 together, since all three are the same guard read three ways. |
+| **M-22** | The proposed `recommit` is sealed shut by the exact terminal state M-22 measures (`Failed(3)`), and an adversary holding the burned preimage can force that state for ~83k gas, winning a race the creator can only enter afterwards. The skeptic's workable alternative — gate `finalize` on `cfg.creator` — narrows the deliberate "permissionless among preimage-holders" property and must land together with **L-20**'s finalize deadline, or the perpetual option becomes *renewable and exclusive*. Both are presale-terms decisions. |
 
 ### Not yet addressed
 
-Everything else in §3 — the remaining MEDIUMs, LOWs and the I-1 bundle — stands as filed and has not been
+**M-8** is largely closed as a side effect: fixing `MockPositionManagerV4`'s action-batch assumption made the
+`StockPadFactory` launch path executable, and the H-2 and H-4 regression suites now execute it. What remains of
+it is breadth of coverage, not reachability.
+
+**M-19** is a process finding whose remediation is the regression suites themselves. Of the six adjacency gaps
+it tabulates, four are now closed by name: the short-return case `try/catch` cannot absorb (H-3/M-17), C-2's
+tick *breadth* as distinct from depth, `LockVault.setFactory`'s target as distinct from its one-shot (M-2), and
+the floor guard's park→commit flip (H-5). The two that remain are the ones it ties to **M-10** and **M-12**,
+both of which are on the product-decision list.
+
+Everything else in §3 — 4 remaining MEDIUMs, the LOWs and the I-1 bundle — stands as filed and has not been
 touched. Nothing in that set is a CRITICAL or HIGH.
 
 ### Notes for the next reader
@@ -835,6 +865,8 @@ whole pad lifetime.**
 
 ### M-1 · MEDIUM · A presale pays buy tax on the whole target even when the curve fills a fraction of it  `PROVEN`
 
+> **STATUS: FIXED** in `ce119fc` · regression test `test/regression/M1.presale-overtax.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
+
 **Where** `contracts/presale/PresaleVault.sol:211` and `:225` (`finalize` → `unlockCallback`), against
 `contracts/hooks/RobinFeeHook.sol:205-213`.
 
@@ -962,6 +994,10 @@ both are in scope in the same repo behind the same brand. `RobinV4FeeConfig`'s c
 
 ### M-4 · MEDIUM · `RobinFloorVault`'s band anchor is an unverifiable deploy parameter, and the band is permanent
 
+> **STATUS: NOT FIXED — flagged for a decision.** A fix was specced against the live code and put to a
+> skeptic, which found a blocking problem: the proposed fix created a deployment DoS on a one-shot path; binding the anchor correctly is a design choice. See §0 for the full reason. The finding below is
+> unchanged from how it was filed.
+
 **Where** `contracts/pads/RobinFloorVault.sol:77` (ctor `anchorTick`), `:95`
 (`_alignUp(anchorTick + 1, tickSpacing_)`).
 
@@ -1043,6 +1079,8 @@ correct `AUDIT-SCOPE.md` §6 to describe these powers.
 
 ### M-6 · MEDIUM · The architecture doc handed to the external auditor describes a materially different system
 
+> **STATUS: FIXED** in `4fe6d2b` · covered by the existing suite. The finding below is unchanged from how it was filed — see §0 for what the fix does.
+
 **Where** `ROBIN-V4-ARCHITECTURE.md` (30 KB), listed as required reading by `AUDIT-SCOPE.md:6`.
 
 | Doc claims | Shipped code |
@@ -1074,6 +1112,8 @@ worse than none.
 ---
 
 ### M-7 · MEDIUM · The curve-pad runbook never wires the hook's floor recipient, so the sell-tax floor carve accrues to nobody
+
+> **STATUS: FIXED** in `4fe6d2b` · covered by the existing suite. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `contracts/core/CurvePadFactoryV4.sol:187` (registers `floorRecipient: address(0)`, by design — the
 vault does not exist yet), `contracts/hooks/RobinFeeHook.sol:383` (`setFloorRecipient`, the only way to point
@@ -1128,6 +1168,8 @@ suite. §4 has the numerical check that closes that specific risk.
 ---
 
 ### M-9 · MEDIUM · The creator repoint covers the hook's book but not the curve's
+
+> **STATUS: FIXED** in `ce119fc` · regression test `test/regression/M9-M27.creator-and-relaunch.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `contracts/hooks/RobinFeeHook.sol:406-420` (2-step repoint) vs
 `contracts/pads/RobinCurveV4.sol:106` (`address public immutable creator`) and `:250-260` (`claimCreator`).
@@ -1321,6 +1363,8 @@ for a contributor to react before their ETH is spent (a preimage-holder can with
 
 ### M-13 · MEDIUM · Permissionless `flushStaking()` launders a dust poke through `DualStaking`'s rewarder gate and stalls the drip  `VERIFIED`
 
+> **STATUS: FIXED** in `608599c` · regression test `test/regression/M13.relay-poke.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
+
 **Where** `contracts/pads/RobinCurveV4.sol:395-403` (`flushStaking`, permissionless) →
 `contracts/pads/DualStaking.sol:428-440` (`fundTokenPushed`, rewarder-gated) → `:246-252` (`_applyReward`
 with `extend = true`).
@@ -1383,6 +1427,10 @@ consistent with the rest of the suite.
 
 ### M-14 · MEDIUM · `platformFeeWallet` is the protocol's root admin key, not merely a payout address
 
+> **STATUS: NOT FIXED — flagged for a decision.** A fix was specced against the live code and put to a
+> skeptic, which found a blocking problem: mechanically safe, but it relocates a time-critical per-pad capability onto the root cold key — a trust-model change. See §0 for the full reason. The finding below is
+> unchanged from how it was filed.
+
 **Where** `contracts/core/FeeWalletRegistry.sol` (the wallet), used as the **authorization** check in
 `contracts/pads/RobinCurveV4.sol:447` / `:457` / `:467` (`setStaking` / `setFloor` / `setAmbush`),
 `contracts/hooks/RobinFeeHook.sol:383` (`setFloorRecipient`) and `contracts/core/LockVault.sol:92`
@@ -1417,6 +1465,10 @@ wiring, and `platformFeeWallet` purely as a destination. If they must stay unifi
 ---
 
 ### M-15 · MEDIUM · The floor can only deepen while the price is *above* it, so any drawdown idles the carve  `PROVEN`
+
+> **STATUS: NOT FIXED — flagged for a decision.** A fix was specced against the live code and put to a
+> skeptic, which found a blocking problem: the proposed fix would have re-opened H-5 by re-introducing a live slot0 read; needs designing with H-5 and L-33 together. See §0 for the full reason. The finding below is
+> unchanged from how it was filed.
 
 **Where** `contracts/pads/RobinFloorVault.sol:110-116` (`addFloor`'s band guard), with the add-only design at
 `:24-30`.
@@ -1469,6 +1521,8 @@ the launch price, funded while the token trades above it"; (c) at minimum surfac
 ---
 
 ### M-16 · MEDIUM · `donateETH` promises donations reach holders untouched by the platform cut; `claim` takes it anyway  `PROVEN`
+
+> **STATUS: FIXED** in `608599c` · covered by the existing suite. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `contracts/pads/DualStaking.sol:396-401` (the `donateETH` NatSpec) against `:337-352` (`claim`).
 
@@ -1534,6 +1588,8 @@ oracle has code at set time — it does not make the contract safe, but it remov
 ---
 
 ### M-18 · MEDIUM · The "LOCKED SPEC" describes the ambush as the exact **mirror image** of the ambush that shipped  `VERIFIED`
+
+> **STATUS: FIXED** in `4fe6d2b` · covered by the existing suite. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `ROBIN-V4-CURVE-SPEC.md:31-39` ("Ambush (held reserve, active from launch)"), against
 `contracts/pads/RobinAmbushVault.sol:30-44` (the contract's own header) and
@@ -1760,6 +1816,10 @@ than returning success. Silent failure is what makes this survivable long enough
 ---
 
 ### M-22 · MEDIUM · One reverted `finalize()` burns the salt commitment forever, and the reveal survives even on a chain with no public mempool  `PROVEN`
+
+> **STATUS: NOT FIXED — flagged for a decision.** A fix was specced against the live code and put to a
+> skeptic, which found a blocking problem: the proposed recommit is sealed by the very state M-22 measures; the workable alternative is a presale-terms decision that must land with L-20. See §0 for the full reason. The finding below is
+> unchanged from how it was filed.
 
 **Where** `contracts/presale/PresaleVault.sol:164-167` (guard order), `:123` (`saltCommitment` written once
 inside the one-shot `initialize`, with no setter anywhere), against the header's security claim at `:31-35`.
@@ -2205,6 +2265,8 @@ the key from `curve_`. Then the `[H1]` comment becomes true as written. Apply th
 ---
 
 ### M-27 · MEDIUM · `PadFactory` has no one-pool-per-token guard, so anyone can relaunch a live pad — reusing the victim's own hook — and repoint the registry at their own pool  `VERIFIED`
+
+> **STATUS: FIXED** in `ce119fc` · regression test `test/regression/M9-M27.creator-and-relaunch.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `contracts/core/PadFactory.sol:111` (`launch`, permissionless), `:137-140` (hook deploy), `:204`
 (`poolOf[token] = poolId`), with `contracts/core/DeterministicDeployer.sol:24` and
