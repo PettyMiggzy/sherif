@@ -23,7 +23,7 @@ Every trade pays **1% LP fee** (pool) + **1% directional trade tax** (hook). (v2
 | Staking reward claim | **5% → platform** |
 
 - **Platform:** buy tax + 80% of buy LP fee (ongoing) + 0.5 ETH at graduation. (The 20% buy-LP slice is deferred into the floor.)
-- **Creator:** 0.8% of sells + 0.5 ETH at graduation. Can also **deposit ETH into staking directly** (no platform cut touched).
+- **Creator:** 0.8% of sells + 0.5 ETH at graduation. Can also **deposit ETH into staking directly** (permissionless — no rewarder gate and no fee on the deposit; [M-16] the platform's claim fee, if the operator has set one, still applies when a staker later claims).
 - **Floor:** permanent, add-only ETH buy-wall (rug-proof), fed by the **0.2% sell carve + the 20% buy-LP slice (@grad) + the ambush band's ETH-side LP fees** ([M-18]: not "pump sales" — the ambush never sells into pumps, see below). Never pullable.
 - **Stakers:** the **sell-side (token) LP fees**, streamed via the Synthetix accumulator — funded by trading, no token injection.
 
@@ -78,7 +78,7 @@ New for this suite:
 3. **Curve/graduation logic** (`RobinCurveV4`) — single-sided position management + the v2 `graduate()` waterfall
    (per-side rewards + gas-from-curve → locked 2-sided LP → leftover → staking → held buy-LP carve → floor).
 4. **`RobinAmbushVault`** — passive single-sided TOKEN sell-wall (floor-vault mirror); pump sales' LP fees → floor.
-5. **`DualStaking.donateETH`** — permissionless ETH top-up so the creator can feed holders (no platform cut).
+5. **`DualStaking.donateETH`** — permissionless ETH top-up so the creator can feed holders (no rewarder gate, no fee on the deposit; [M-16] the claim-time platform fee still applies, since the accumulator carries no per-tranche provenance).
 6. **`scripts/auto-verify.cjs`** — watches `CurvePadFactoryV4.CurvePadLaunched`, auto-verifies token/hook/curve on Blockscout.
 
 ## Reward asset

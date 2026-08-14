@@ -48,7 +48,8 @@ describe("DualStaking — two-book earn-the-other staking", () => {
     // alice is NOT a rewarder → the gated fundETH must reject her
     await expect(ds.connect(alice).fundETH(TOKEN, { value: ethers.parseEther("1") }))
       .to.be.revertedWithCustomError(ds, "NotRewarder");
-    // but donateETH is permissionless — the creator can feed holders directly, no platform cut involved
+    // but donateETH is permissionless — the creator can feed holders directly with no rewarder gate and no
+    // fee on the deposit ([M-16]: the claim-time platform fee still applies to whatever a staker withdraws)
     await expect(ds.connect(alice).donateETH(TOKEN, { value: ethers.parseEther("3") }))
       .to.emit(ds, "RewardAdded");
     await expect(ds.connect(alice).donateETH(TOKEN, { value: 0 })).to.be.revertedWithCustomError(ds, "Zero");

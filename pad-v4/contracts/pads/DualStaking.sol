@@ -33,9 +33,13 @@ interface IHookWeightSink {
 /// reward leg never blocks unstake. (Side.STOCK principal is the stock itself, so a stock pause does
 /// freeze that principal — inherent and disclosed.)
 ///
-/// When wired to a RobinFeeHook (`hook`/`poolId` set, one side chosen via `weightedSide`), this
-/// contract reports that side's boosted weight to the hook so the hook's 3-way holder cut streams to
-/// those stakers. The other reward flows are funded directly here.
+/// [M-6] INERT IN THE SHIPPED SUITE. `hook`/`poolId`/`weightedSide` and the `IHookWeightSink` callback in
+/// `_reweigh` were built for a 3-way fee hook with an O(1) HOLDER BUCKET that was designed but never shipped:
+/// `RobinFeeHook` has no `onWeightChange` selector and no holder book, and `StakingFactory.createPool` always
+/// passes `hook_ = address(0)`. The wiring is harmless (the notify is try/caught so it can never block
+/// principal — see the [audit M2] note in `_reweigh`) but it advertises a reward stream this suite does not
+/// deliver. Nothing streams to stakers through the hook; every reward flow is funded directly here. Kept only
+/// so an external sink implementing that interface could be wired later — do not read it as a live feature.
 contract DualStaking is ReentrancyGuard, Ownable2Step {
     using SafeERC20 for IERC20;
 
@@ -55,6 +59,17 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     /// [M-20] Floor on the window any tranche may be scheduled over. Without it the mid-window branch divides by
     /// `remaining`, so a donation arriving in a window's tail streams over seconds and whoever is staked for those
     /// seconds takes it — measured at 99.00% of a creator's 10 ETH gift by a whale staked 121 seconds.
+    ///
+    /// [M-13] This constant is also the CONCENTRATION FLOOR, and that is a deliberate trade rather than a free
+    /// win. Since M-13 the relay funding paths pass extend=FALSE, so a tranche pushed mid-window is scheduled
+    /// over `max(remaining, MIN_DRIP_WINDOW)` instead of a fresh full `duration`. That is what stops a stranger
+    /// stalling the stream forever — but it also means the shortest horizon any relay push can be spread over is
+    /// one day, where before it was the reward's full duration. A whale that stakes when a relay poke lands
+    /// therefore needs ONE DAY of exposure to take the bulk of that tranche, not `duration`. Measured by
+    /// test/regression/M13.relay-poke.test.js. The defence against that is `antiJitDelay`, which gates unstake
+    /// and which StakingFactory currently defaults to 0 — an operator wiring a pool to a permissionless relay
+    /// should set it to at least MIN_DRIP_WINDOW. That default is a product decision and is deliberately not
+    /// changed here.
     uint256 public constant MIN_DRIP_WINDOW = 1 days;
     uint16 public constant MAX_CLAIM_FEE_BPS = 1_000; // platform's cut of a claim, capped at 10%
 
@@ -368,6 +383,8 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         if (amount == 0) revert Zero();
         rewardsAccrued[side][asset][msg.sender] = 0;
         // Platform cut of the reward (NO lock, principal untouched). Accrue-and-pull to the treasury.
+        // [M-16] This applies to EVERY reward a staker claims, whatever funded it. There is no per-tranche
+        // provenance in the accumulator, so a donation cannot be exempted here — see donateETH's note.
         uint256 fee = (amount * platformClaimFeeBps) / BPS;
         net = amount - fee;
         if (fee > 0) {
@@ -419,7 +436,16 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     }
 
     /// @notice Permissionless ETH top-up of a side's reward stream — anyone (typically the CREATOR) can deposit
-    /// ETH straight to holders WITHOUT being a rewarder and WITHOUT touching the platform cut. Accounting-only.
+    /// ETH straight to holders WITHOUT being a rewarder. Accounting-only.
+    /// [M-16] This used to add "and WITHOUT touching the platform cut". That was false on the payout side, and
+    /// the accumulator cannot be made to honour it. The exemption is real but applies to the DEPOSIT ONLY: no
+    /// rewarder gate, no fee taken here. Once deposited, the ETH is indistinguishable from every other tranche —
+    /// `fundETH`, `fundToken`, `fundTokenPushed`, `receive()`, this function, and the forfeit recycle in
+    /// `unstake` all credit ONE per-(side,asset) accumulator with no per-tranche provenance — and `claim` takes
+    /// `platformClaimFeeBps` of whatever a staker withdraws from it. So donated ETH is subject to the claim fee
+    /// exactly like any other reward, and a donor cannot be promised otherwise without per-tranche accounting
+    /// this contract deliberately does not have. `platformClaimFeeBps` is owner-settable up to
+    /// MAX_CLAIM_FEE_BPS and defaults to 0, so the shortfall is whatever the operator has set at claim time.
     /// [AUDIT] Two guards make un-gated donations safe: (1) require the side's ETH stream is LISTED — a donation
     /// to a disabled side (e.g. STOCK on a single-book pool) can never be staked or kickstarted and would strand
     /// forever; (2) pass extend=FALSE so a donation TOPS UP the live stream rather than resetting the window,
@@ -468,7 +494,16 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         if (received == 0) revert Zero();
         accountedReserve[asset] = bal;
         _updateReward(side, address(0));
-        _applyReward(side, asset, received, true);
+        // [M-13] extend=FALSE. This path is rewarder-gated, but the rewarders that use it are RELAYS whose push
+        // is triggered by anyone: RobinCurveV4.flushStaking() is permissionless with no once-only guard, and
+        // RobinAmbushVault.collectFees()/flushFees() realize LP fees and forward them on any caller's poke. With
+        // extend=TRUE each such poke re-armed periodFinish to now + duration and re-divided the WHOLE undripped
+        // reservoir over a fresh full window, so a stranger could stall the stream indefinitely for dust — and
+        // the re-division truncated up to `duration - 1` base units of the reservoir every time. Topping up the
+        // live window instead cannot stall it, and conserves value: the else branch's `remaining * rewardRate`
+        // is exactly divisible by `remaining`, so the only loss is `amount mod window` — a 1-wei poke can lose
+        // at most its own wei. See the concentration note on `MIN_DRIP_WINDOW` for what this trades against.
+        _applyReward(side, asset, received, false);
         emit RewardAdded(side, asset, received, totalWeight[side] > 0);
     }
 
@@ -543,7 +578,11 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         if (!isRewarder[msg.sender]) revert NotRewarder();
         if (msg.value == 0) return;
         _updateReward(uint8(Side.TOKEN), address(0));
-        _applyReward(uint8(Side.TOKEN), ETH, msg.value, true);
+        // [M-13] extend=FALSE for the same reason as fundTokenPushed: a rewarder here may be a relay whose send
+        // is triggered by an arbitrary caller. No contract in this suite currently sends ETH to a DualStaking,
+        // so this is defensive — but RobinAmbushVault's floorRecipient is an unvalidated immutable reached from
+        // a permissionless flush, so the shape is one wiring away from being live.
+        _applyReward(uint8(Side.TOKEN), ETH, msg.value, false);
         emit RewardAdded(uint8(Side.TOKEN), ETH, msg.value, totalWeight[uint8(Side.TOKEN)] > 0);
     }
 }
