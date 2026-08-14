@@ -51,7 +51,12 @@ contract MockPositionManagerV4 is IUnlockCallback {
         (, bytes[] memory params) = abi.decode(unlockData, (bytes, bytes[])); // actions byte-string unused (fixed batch)
         (PoolKey memory key, int24 tl, int24 tu, uint256 L,,, address owner,) =
             abi.decode(params[0], (PoolKey, int24, int24, uint256, uint128, uint128, address, bytes));
-        (, address sweepTo) = abi.decode(params[2], (Currency, address)); // (currency0, recipient)
+        // The ETH curve sends (MINT_POSITION, SETTLE_PAIR, SWEEP) because currency0 is native and it forwards
+        // more value than the mint owes. StockPadFactory sends only (MINT_POSITION, SETTLE_PAIR): both legs are
+        // ERC20s pulled through Permit2, so there is nothing to sweep. Modelling only the 3-action shape meant
+        // the stock launch path reverted on `params[2]` here and could never be exercised at all.
+        address sweepTo = msg.sender;
+        if (params.length > 2) (, sweepTo) = abi.decode(params[2], (Currency, address)); // (currency0, recipient)
 
         _ctx = Ctx({key: key, tickLower: tl, tickUpper: tu, liquidity: L, payer: msg.sender, sweepTo: sweepTo});
         poolManager.unlock("");

@@ -111,6 +111,9 @@ contract StockPadFactory {
 
     /// @notice Launch a stock-quoted pad. The caller must have approved this factory to pull `stockSeed`
     /// of the stock. `tokenSalt` must be mined so the token address sorts ABOVE the stock (quote=currency0).
+    /// [H-4] Only part of `stockSeed` normally reaches the pool — the seed position binds on one leg, so the
+    /// other is over-supplied by construction. The unused stock is returned to the CALLER (who paid it); the
+    /// unused pad token goes to `cfg.creator` (the factory minted it). Payer and creator may differ.
     function launch(LaunchConfig calldata cfg, bytes32 tokenSalt, bytes32 hookSalt)
         external
         returns (address token, address hook, PoolId poolId, uint256 lpTokenId)
@@ -178,16 +181,27 @@ contract StockPadFactory {
             })
         );
 
-        // 3) pull the stock seed from the caller, then mint the seed LP (both ERC20s) to the LockVault
+        // 3) pull the stock seed from the caller, then mint the seed LP (both ERC20s) to the LockVault.
+        // [H-4] Snapshot first. The refund below must return what THIS launch left over, not the factory's whole
+        // balance of the asset — otherwise stock parked here by any other means leaves with the next launcher.
+        uint256 stockBefore = IERC20(stock).balanceOf(address(this));
         IERC20(stock).safeTransferFrom(msg.sender, address(this), cfg.stockSeed);
         lpTokenId = _mintSeedLp(key, cfg, stock, token);
 
-        // 4) register the lock, send the token remainder to the creator, return any unused stock
+        // 4) register the lock, send the token remainder to the creator, return any unused stock TO THE PAYER
         lockVault.registerLaunch(lpTokenId, currency0, currency1, cfg.stakingRecipient);
+        // the token was minted to this factory, so its remainder is the creator's by construction
         uint256 tokenRemainder = IERC20(token).balanceOf(address(this));
         if (tokenRemainder > 0) IERC20(token).safeTransfer(cfg.creator, tokenRemainder);
-        uint256 stockRemainder = IERC20(stock).balanceOf(address(this));
-        if (stockRemainder > 0) IERC20(stock).safeTransfer(cfg.creator, stockRemainder);
+        // [H-4] The stock came from msg.sender — `launch` is not payable and the caller must have approved this
+        // factory to pull `stockSeed`, so payer and creator are two explicitly-modelled, distinct roles here.
+        // Refunding the stock to cfg.creator sent the payer's money to someone else. It is not a corner case:
+        // _mintSeedLp sizes the position with getLiquidityForAmounts, which binds on ONE leg only, so the other
+        // leg is over-supplied BY CONSTRUCTION and there is almost always a remainder. Measured with
+        // lpTokenAmount 1e20 and stockSeed 1e23 at 1:1, only 100e18 reached the pool and 99,900e18 — 99.9% of
+        // the payer's balance — went to the creator, silently and irreversibly.
+        uint256 stockRemainder = IERC20(stock).balanceOf(address(this)) - stockBefore;
+        if (stockRemainder > 0) IERC20(stock).safeTransfer(msg.sender, stockRemainder);
 
         uint256 index = launchCount++;
         launches[index] = Launch({token: token, hook: hook, poolId: poolId, lpTokenId: lpTokenId});
