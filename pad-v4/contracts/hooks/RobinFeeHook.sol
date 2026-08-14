@@ -457,6 +457,15 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         emit CreatorRepointed(id, msg.sender);
     }
 
+    /// @notice The pool's CURRENT creator — the address the sell-tax book pays after any repoint.
+    /// [M-9] Exposed so a pad's curve controller can follow this one slot instead of keeping its own
+    /// launch-time immutable, which had no repoint and no alternate exit. One 2-step repoint now governs both
+    /// books. Deliberately NOT added to IRobinFeeHookAdmin: that interface is the factory's registration
+    /// surface, and widening it would force an override here and a stub on every mock that implements it.
+    function creatorOf(PoolId id) external view returns (address) {
+        return config[id].creator;
+    }
+
     // --------------------------------------------------------------------- //
     //                               helpers                                 //
     // --------------------------------------------------------------------- //

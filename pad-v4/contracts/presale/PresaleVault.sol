@@ -14,6 +14,8 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
+import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 
 import {ICurvePadFactoryV4, LaunchConfig} from "../interfaces/ICurvePadFactoryV4.sol";
 import {RobinV4FeeConfig} from "../core/RobinV4FeeConfig.sol";
@@ -44,6 +46,8 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     uint256 public constant MAX_DURATION = 30 days;
     uint64 public constant GRACE_MIN = 1 hours;
     uint64 public constant GRACE_MAX = 7 days;
+    uint256 internal constant BPS = 10_000; // the hook's buy-tax denominator
+    uint256 internal constant PIPS = 1_000_000; // the pool's lpFee denominator
 
     // ── immutable-after-initialize config ──
     ICurvePadFactoryV4 public curvePadFactory;
@@ -202,13 +206,25 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
             hooks: IHooks(hook)
         });
         if (PoolId.unwrap(key.toId()) != PoolId.unwrap(poolId)) revert KeyMismatch();
-        int24 gradTick = int24(d.startTickMag) - d.curveWidth;
+        int24 startTick = int24(d.startTickMag);
+        int24 gradTick = startTick - d.curveWidth;
         uint160 gradSqrt = TickMath.getSqrtPriceAtTick(gradTick);
+
+        // [M-1] The pooled buy is ONE exact-input swap price-limited at the protocol's own graduation ceiling,
+        // and the hook charges buyTaxBps on the REQUESTED input regardless of how much actually executes. A
+        // target larger than the curve's capacity therefore taxed the WHOLE raise to fill a sliver of it, and
+        // socialised that over-charge pro-rata across every contributor. Size the request to what this curve
+        // can absorb; the surplus never enters the swap and leaves through the pro-rata ETH-back path that
+        // `pooledEthSpent` already drives.
+        uint256 amtIn =
+            _absorbableIn(TickMath.getSqrtPriceAtTick(startTick), gradSqrt, c.curveSupply, d.lpFee, d.buyTaxBps);
+        if (amtIn > totalRaised) amtIn = totalRaised;
+        if (amtIn == 0) revert ZeroBought();
 
         // pooled buy, atomic with the launch
         uint256 balBefore = IERC20(tok).balanceOf(address(this));
         _expectingUnlock = true;
-        poolManager.unlock(abi.encode(totalRaised, key, gradSqrt));
+        poolManager.unlock(abi.encode(amtIn, key, gradSqrt));
         _expectingUnlock = false;
 
         totalTokensBought = IERC20(tok).balanceOf(address(this)) - balBefore; // measured, hook-net
@@ -231,6 +247,32 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         poolManager.take(key.currency1, address(this), tokenOut);
         pooledEthSpent = ethOwed; // the rest of totalRaised stays in the vault for the pro-rata ETH-back
         return "";
+    }
+
+    /// @dev [M-1] The largest exact-input BUY this freshly-launched curve can absorb before spot reaches the
+    /// graduation ceiling, grossed up for the two cuts taken off the input before any of it reaches the reserve:
+    /// the hook's buyTaxBps (fee-on-REQUESTED-input, skimmed in beforeSwap) and then the pool's lpFee.
+    /// Deterministic inside this transaction: the factory has just initialized the pool AT startTick and seeded
+    /// exactly `curveSupply` as one token-only range [gradTick, startTick], so L — and the amount0 needed to walk
+    /// startTick down to gradTick — are exact, not estimated. Third-party liquidity planted anywhere in the band
+    /// only ADDS capacity, so a griefer cannot make this over-shoot.
+    /// Every step floors, so the result is a lower bound on true capacity up to a couple of wei at the knife
+    /// edge where the exact amount0 divides evenly. That residue is harmless: the over-charge it could leave is
+    /// floor(2 * buyTaxBps / 10000) == 0 wei at every permitted tax rate.
+    function _absorbableIn(uint160 startSqrt, uint160 gradSqrt, uint256 curveSupply, uint24 lpFee, uint16 buyTaxBps)
+        internal
+        pure
+        returns (uint256 amtIn)
+    {
+        uint128 L = LiquidityAmounts.getLiquidityForAmount1(gradSqrt, startSqrt, curveSupply);
+        // defence only: L == 0 would already have failed the launch, buyTaxBps is capped at MAX_TAX_BPS, and
+        // lpFee == PIPS is a permitted config boundary that would panic on a bare subtraction.
+        if (L == 0 || lpFee >= PIPS || buyTaxBps >= BPS) return 0;
+        amtIn = SqrtPriceMath.getAmount0Delta(gradSqrt, startSqrt, L, false); // ETH into the reserve, round DOWN
+        // Order matters: the hook skims FIRST and hands the pool `request - fee`, which the pool then charges
+        // lpFee on. Gross up in that same order, innermost cut first.
+        amtIn = Math.mulDiv(amtIn, PIPS, PIPS - lpFee);
+        amtIn = Math.mulDiv(amtIn, BPS, BPS - buyTaxBps);
     }
 
     // ── claim (after success) ─────────────────────────────────────────────────────────

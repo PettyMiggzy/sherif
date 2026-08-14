@@ -46,6 +46,13 @@ interface IRobinFeeHookBuffer {
     function claimBuffer(PoolId id) external returns (uint256);
 }
 
+/// @dev [M-9] The pad hook's current creator slot. The hook's creator is repointable via a 2-step flow; this
+/// contract's was a launch-time immutable with no repoint and no alternate exit, so one pad had two creator
+/// addresses that could permanently diverge. `currentCreator()` follows this one.
+interface IRobinFeeHookCreator {
+    function creatorOf(PoolId id) external view returns (address);
+}
+
 /// @title RobinCurveV4 — a free, single-sided bonding curve on Uniswap V4, per pad
 /// @notice The token seeds its OWN liquidity as one token-only (currency1) range `[gradTick, startTick]` with
 /// the pool initialized at `startTick` (the range's upper bound ⇒ 100% token, so NO ETH is ever required).
@@ -112,7 +119,9 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint16 public immutable platformGradBps; // platform share of the raise
     uint16 public immutable creatorGradBps; // creator share of the raise
     uint16 public immutable ambushGradBps; // ambush-vault share of the raise (active two-sided floor support)
-    address public immutable creator; // gets the creator-side graduation reward (claimCreator)
+    /// [M-9] LAUNCH-TIME creator: provenance, and the fallback when no hook governs this pool. It is NOT
+    /// necessarily the payee — `claimCreator` pays `currentCreator()`, which follows the hook's repointable slot.
+    address public immutable creator;
 
     bool public seeded;
     bool public graduated;
@@ -256,18 +265,42 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         emit PlatformClaimed(e, plat);
     }
 
-    /// @notice Forward the accrued creator-side graduation reward to the creator. Permissionless; retriable
-    /// (restores the book on a failed send so a reverting creator can never trap the ETH permanently).
+    /// @notice The address `claimCreator` pays.
+    /// [M-9] Reads the pad hook's CURRENT creator slot, so the pad's single 2-step repoint
+    /// (hook.startCreatorRepoint / acceptCreatorRepoint) governs BOTH the hook's sell-tax book and this
+    /// contract's graduation reward. Before this, the curve's creator was an immutable with no repoint and no
+    /// `claimCreatorTo`, so a creator who moved keys — or was told to, after a compromise — kept the sell-tax
+    /// stream and permanently lost the graduation reward to the old address.
+    /// Falls back to the launch-time immutable when no hook governs this pool: a directly-deployed curve
+    /// (`hooks == address(0)`), a pool the hook never registered, or a hook that cannot be read.
+    function currentCreator() public view returns (address) {
+        // [H-3] length-checked staticcall, NOT try/catch: try/catch does not absorb a decode failure, so a
+        // short-returning hook would make this revert uncatchably — and it sits on the claim path.
+        (bool ok, bytes memory data) =
+            address(hooks).staticcall(abi.encodeCall(IRobinFeeHookCreator.creatorOf, (_poolId())));
+        if (!ok || data.length < 32) return creator;
+        address c;
+        // masked mload rather than abi.decode: the ABI decoder still reverts on an address word with dirty
+        // high bytes, which would re-open the same uncatchable-revert hole this guard exists to close.
+        assembly ("memory-safe") {
+            c := and(mload(add(data, 32)), 0xffffffffffffffffffffffffffffffffffffffff)
+        }
+        return c == address(0) ? creator : c;
+    }
+
+    /// @notice Forward the accrued creator-side graduation reward to `currentCreator()`. Permissionless;
+    /// retriable (restores the book on a failed send so a reverting creator can never trap the ETH permanently).
     function claimCreator() external nonReentrant {
         uint256 c = creatorEthOwed;
         if (c == 0) return;
+        address to = currentCreator(); // resolve BEFORE the state write — never between the zeroing and the send
         creatorEthOwed = 0;
-        (bool ok,) = payable(creator).call{value: c}("");
+        (bool ok,) = payable(to).call{value: c}("");
         if (!ok) {
             creatorEthOwed = c; // restore → retriable
             revert EthSendFailed();
         }
-        emit CreatorClaimed(c, creator);
+        emit CreatorClaimed(c, to);
     }
 
     /// @notice Claim a graduation keeper bounty that was booked because its inline send failed at graduation.

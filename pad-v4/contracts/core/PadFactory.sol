@@ -85,6 +85,7 @@ contract PadFactory {
     error HookFlagsMismatch();
     error TokenMisordered();
     error BadConfig();
+    error AlreadyLaunched();
     error RefundFailed();
     error PoolAlreadyInit();
 
@@ -130,6 +131,12 @@ contract PadFactory {
         Currency currency0 = Currency.wrap(address(0));
         Currency currency1 = Currency.wrap(token);
         if (token <= address(0)) revert TokenMisordered(); // defensive; any address > 0
+        // [M-27] launch() is permissionless and NOTHING upstream is keyed on the whole PoolKey: the deterministic
+        // deployer ADOPTS a byte-identical pre-deploy rather than reverting, the token init-code carries only
+        // (name, symbol, decimals, supply, factory), the hook init-code only (poolManager, factory, registry,
+        // token), and registerPool rejects only a repeat of the SAME PoolId. So the same salts with a different
+        // fee or tickSpacing produced a SECOND live pool over an already-launched pad token.
+        if (PoolId.unwrap(poolOf[token]) != bytes32(0)) revert AlreadyLaunched();
 
         // 2) deploy the hook at its mined, flag-correct address
         // token is part of the hook's init-code so each pad's hook address is unique (no second-launch
@@ -150,6 +157,10 @@ contract PadFactory {
             hooks: IHooks(hook)
         });
         poolId = key.toId();
+        // [M-27] Claim the token HERE, at the earliest point poolId exists — not at the end of launch(). The
+        // guard above only closes the door if the write happens before any external call this function makes,
+        // otherwise a re-entrant creator callback could slip a second launch past it inside the same tx.
+        poolOf[token] = poolId;
 
         // 3) initialize the pool (static fee) — factory calls directly, no PoolInitializer [G2].
         //    [audit] idempotent: a same-block front-run that pre-inits the pool only survives if it landed at OUR
@@ -201,7 +212,6 @@ contract PadFactory {
 
         uint256 index = launchCount++;
         launches[index] = Launch({token: token, hook: hook, poolId: poolId, lpTokenId: lpTokenId});
-        poolOf[token] = poolId;
         emit PadLaunched(index, token, cfg.creator, hook, poolId, lpTokenId);
     }
 

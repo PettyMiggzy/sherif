@@ -76,6 +76,7 @@ contract CurvePadFactoryV4 {
     error LockVaultMismatch();
     error NotRegistrar();
     error BadConfig();
+    error AlreadyLaunched();
     error BadGeometry();
     error NotCurve();
     error PoolAlreadyInit();
@@ -162,6 +163,13 @@ contract CurvePadFactoryV4 {
             )
         );
 
+        // [M-27] launch() is permissionless and NOTHING upstream is keyed on the whole PoolKey: the deterministic
+        // deployer ADOPTS a byte-identical pre-deploy rather than reverting, the token init-code carries only
+        // (name, symbol, decimals, supply, factory), the hook init-code only (poolManager, factory, registry,
+        // token), and registerPool rejects only a repeat of the SAME PoolId. So the same salts with a different
+        // fee or tickSpacing produced a SECOND live pool over an already-launched pad token.
+        if (PoolId.unwrap(poolOf[token]) != bytes32(0)) revert AlreadyLaunched();
+
         Currency currency0 = Currency.wrap(address(0)); // ETH
         Currency currency1 = Currency.wrap(token);
 
@@ -181,6 +189,10 @@ contract CurvePadFactoryV4 {
             hooks: IHooks(hook)
         });
         poolId = key.toId();
+        // [M-27] Claim the token HERE, at the earliest point poolId exists — not at the end of launch(). The
+        // guard above only closes the door if the write happens before any external call this function makes,
+        // otherwise a re-entrant creator callback could slip a second launch past it inside the same tx.
+        poolOf[token] = poolId;
 
         // 4) initialize at the curve top, then bind the IMMUTABLE fee config BEFORE any liquidity/swap.
         //    [MEDIUM-3] idempotent: a same-block front-run that pre-inits the pool only survives if it landed at
@@ -247,7 +259,6 @@ contract CurvePadFactoryV4 {
 
         uint256 index = launchCount++;
         launches[index] = Launch({token: token, hook: hook, curve: curve, poolId: poolId});
-        poolOf[token] = poolId;
         emit CurvePadLaunched(index, token, cfg.creator, hook, curve, poolId);
     }
 

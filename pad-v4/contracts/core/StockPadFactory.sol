@@ -108,6 +108,7 @@ contract StockPadFactory {
     error HookFlagsMismatch();
     error TokenMisordered();
     error BadConfig();
+    error AlreadyLaunched();
     error PoolAlreadyInit();
 
     constructor(
@@ -164,6 +165,12 @@ contract StockPadFactory {
             )
         );
         if (token <= stock) revert TokenMisordered(); // currency0 = stock < currency1 = token
+        // [M-27] launch() is permissionless and NOTHING upstream is keyed on the whole PoolKey: the deterministic
+        // deployer ADOPTS a byte-identical pre-deploy rather than reverting, the token init-code carries only
+        // (name, symbol, decimals, supply, factory), the hook init-code only (poolManager, factory, registry,
+        // token), and registerPool rejects only a repeat of the SAME PoolId. So the same salts with a different
+        // fee or tickSpacing produced a SECOND live pool over an already-launched pad token.
+        if (PoolId.unwrap(poolOf[token]) != bytes32(0)) revert AlreadyLaunched();
 
         Currency currency0 = Currency.wrap(stock);
         Currency currency1 = Currency.wrap(token);
@@ -184,6 +191,10 @@ contract StockPadFactory {
             hooks: IHooks(hook)
         });
         poolId = key.toId();
+        // [M-27] Claim the token HERE, at the earliest point poolId exists — not at the end of launch(). The
+        // guard above only closes the door if the write happens before any external call this function makes,
+        // otherwise a re-entrant creator callback could slip a second launch past it inside the same tx.
+        poolOf[token] = poolId;
 
         // [audit] idempotent init: a same-block front-run that pre-inits the deterministic PoolKey only survives if
         // it landed at OUR exact price; any other price is hostile and we revert (else a griefer could brick the
@@ -235,7 +246,6 @@ contract StockPadFactory {
 
         uint256 index = launchCount++;
         launches[index] = Launch({token: token, hook: hook, poolId: poolId, lpTokenId: lpTokenId});
-        poolOf[token] = poolId;
         emit StockPadLaunched(index, token, stock, hook, poolId, lpTokenId);
     }
 
