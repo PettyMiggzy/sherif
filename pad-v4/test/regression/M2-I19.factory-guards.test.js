@@ -91,4 +91,26 @@ describe("[M-2 / I-1(19)] CurvePadFactoryV4 wiring guards — failing branches",
     await expect(factory.launch(cfg, ethers.id("t"), ethers.id("h"), ethers.id("c")))
       .to.be.revertedWithCustomError(factory, "NotRegistrar");
   });
+
+  it("[L-1] launch() reverts BadGeometry when the geometry's raise floors below MIN_RAISE_WEI", async () => {
+    // Production tick geometry (START 201600, WIDTH 23000, ts 100). At this HIGH launch tick a tiny curveSupply makes
+    // the [gradTick,startTick] integral truncate below the 1e12 safety floor — the exact "raise → ~0 → EmptyRaise
+    // brick" L-1 targets. (~100 tokens ⇒ ~5.5e11 wei < 1e12.) The reserve-margin check passes here (reserve==curve at
+    // this width), so the revert is genuinely the L-1 raise floor, reached before any deployment.
+    const PROD = { ...DEFAULTS, lpFee: FEE, startTickMag: 201600, curveWidth: 23000, minGradWidth: 22800 };
+    const feeCfgProd = await (await ethers.getContractFactory("RobinV4FeeConfig")).deploy(deployer.address, PROD);
+    const lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await B.posm.getAddress(), await B.reg.getAddress());
+    const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
+      await B.pm.getAddress(), await B.posm.getAddress(), await B.permit2.getAddress(), await B.stateView.getAddress(),
+      await B.dep.getAddress(), await B.curveDep.getAddress(), await feeCfgProd.getAddress(), await B.reg.getAddress(), await lockVault.getAddress()
+    );
+    await lockVault.setFactory(await factory.getAddress());
+    const tiny = {
+      name: "Robin Dust", symbol: "DUST", decimals: 18,
+      supply: 200n * 10n ** 18n, curveSupply: 100n * 10n ** 18n, reserveSupply: 100n * 10n ** 18n,
+      tickSpacing: 100, creator: creator.address,
+    };
+    await expect(factory.launch(tiny, ethers.id("t"), ethers.id("h"), ethers.id("c")))
+      .to.be.revertedWithCustomError(factory, "BadGeometry");
+  });
 });

@@ -46,9 +46,12 @@ contract CurvePadFactoryV4 {
     LockVault public immutable lockVault;
 
     uint160 internal constant HOOK_FLAGS = 0x00CC;
-    // [L-1] Minimum ETH the curve integral must yield for cfg.curveSupply over [gradTick, startTick]. A too-high
-    // startTickMag lets the raise truncate toward 0 wei, so graduate() would revert EmptyRaise permanently. 0.001 ETH.
-    uint256 internal constant MIN_RAISE_WEI = 1e15;
+    // [L-1] SAFETY FLOOR (not a product minimum): the minimum ETH the curve integral must yield for cfg.curveSupply
+    // over [gradTick, startTick]. A too-high startTickMag lets the raise truncate toward 0 wei, so graduate() would
+    // revert EmptyRaise permanently. Set to 1e12 (0.000001 ETH) so it catches only a genuinely degenerate/dust curve
+    // — the testnet-e2e geometry (curveSupply 100k → ~5.5e14 wei raise) and all production geometries pass with wide
+    // margin. If the operator wants a higher PRODUCT minimum raise, that is a policy knob to raise deliberately.
+    uint256 internal constant MIN_RAISE_WEI = 1e12;
 
     struct LaunchConfig {
         string name;
