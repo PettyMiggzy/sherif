@@ -9,3 +9,7 @@ coverage.json
 !.env.example
 deploy.local.json
 deploy.curve.json
+
+# transient Workflow tool scripts
+scratch-*.mjs
+pad-v4/scratch-*.mjs
