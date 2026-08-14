@@ -29,7 +29,8 @@ describe("M-9 — one repoint governs both creator books", () => {
   let owner, factorySigner, platform, A, B;
   let pm, hook, curve, poolId;
 
-  before(async () => {
+  before(async function () {
+    this.timeout(120000); // heavy: full-stack deploy + hook-salt mining; ~26-29s alone, can exceed 40s under full-suite load
     [owner, factorySigner, platform, A, B] = await ethers.getSigners();
     pm = await (await ethers.getContractFactory("PoolManager")).deploy(owner.address);
     const stateView = await (await ethers.getContractFactory("RobinStateView")).deploy(await pm.getAddress());
@@ -129,7 +130,8 @@ describe("M-27 — a pad token can only be launched once per factory", () => {
   const TS = 60;
   let owner, platform, creator, pm, dep, reg, permit2, posm, lockVault, factory;
 
-  before(async () => {
+  before(async function () {
+    this.timeout(120000); // heavy: full curve-factory stack deploy + hook-salt mining
     [owner, platform, creator] = await ethers.getSigners();
     pm = await (await ethers.getContractFactory("PoolManager")).deploy(owner.address);
     dep = await (await ethers.getContractFactory("DeterministicDeployer")).deploy();
