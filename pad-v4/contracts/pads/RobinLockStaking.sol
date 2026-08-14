@@ -66,6 +66,8 @@ contract RobinLockStaking is ReentrancyGuard, IStakingFund {
     error InsufficientStake();
     error ZeroToken();
     error BadDuration();
+    error BadSide();
+    error BadAsset();
 
     constructor(address token_, uint256 lockDuration_, uint256 rewardsDuration_) {
         if (token_ == address(0)) revert ZeroToken();
@@ -200,8 +202,14 @@ contract RobinLockStaking is ReentrancyGuard, IStakingFund {
     /// @notice Credit reward tokens that were PUSHED to this contract (transferred in, then poked) — the curve uses
     /// this at graduation and for the sell-side LP-fee stream. Any token balance above the accounted total
     /// (totalStaked + rewardsBalance) is treated as a new reward tranche. Permissionless and idempotent: a push of
-    /// nothing simply returns 0. `side`/`asset` are ignored (single-token pool) — kept for curve interface parity.
-    function fundTokenPushed(uint8, address) external nonReentrant returns (uint256 pushed) {
+    /// nothing simply returns 0.
+    /// [M-25] `side`/`asset` used to be unnamed and ignored ("single-token pool — kept for curve interface
+    /// parity"). They are now enforced. Ignoring them made this function answer 0 — success — for a push of a
+    /// FOREIGN token, which is exactly what a caller wiring the wrong pad's staking sees. The sibling
+    /// implementation (DualStaking) reverts on both, so honouring them also makes the shared interface honest.
+    function fundTokenPushed(uint8 side, address asset) external nonReentrant returns (uint256 pushed) {
+        if (side != 0) revert BadSide(); // single book: Side.TOKEN only
+        if (asset != address(token)) revert BadAsset();
         uint256 bal = token.balanceOf(address(this));
         uint256 accounted = totalStaked + rewardsBalance;
         if (bal <= accounted) return 0;

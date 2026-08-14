@@ -29,6 +29,15 @@ interface IStakingFund {
     function fundTokenPushed(uint8 side, address asset) external returns (uint256);
 }
 
+/// @dev [M-25] The two staking sinks name their TOKEN-side stake asset differently — RobinLockStaking calls it
+/// `token()`, DualStaking calls it `tokenAsset()`. `setStaking` probes both so a sink built for another pad can
+/// never be wired: `fundTokenPushed` measures the sink's OWN balance, so a foreign sink accepts the graduation
+/// reservoir, credits nothing, and returns 0 without reverting.
+interface IStakeAssetProbe {
+    function token() external view returns (address);
+    function tokenAsset() external view returns (address);
+}
+
 interface IFloorVault {
     function addFloor() external returns (uint128);
 }
@@ -160,6 +169,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     error CeilingNotRestored();
     error InsufficientReserve();
     error EthSendFailed();
+    error StakingAssetMismatch();
 
     constructor(
         address poolManager_,
@@ -444,12 +454,30 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     }
 
     /// @notice Wire the pad's staking pool exactly once, by the platform (deployed after launch).
+    /// [M-25] The whole graduation leftover (measured at ~9.7% of supply) is pushed to this address and this
+    /// setter is a ONE-SHOT with no rescue path, so the sink's stake asset is checked here — the push-then-poke
+    /// funding path cannot detect a foreign sink on its own (it transfers first, and `fundTokenPushed` measures
+    /// the sink's own balance, so a foreign sink pockets the tokens and returns 0 without reverting).
     function setStaking(address s) external {
         if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
         if (staking != address(0)) revert AlreadySet();
         if (s == address(0) || s.code.length == 0) revert ZeroAddress(); // [LOW-3] must be a contract (the pool)
+        if (_probeStakeAsset(s) != token) revert StakingAssetMismatch();
         staking = s;
         emit StakingSet(s);
+    }
+
+    /// @dev Read a staking sink's TOKEN-side stake asset, trying both names in use. Returns address(0) when the
+    /// target answers neither — which fails the caller's equality check, since `token` is never address(0).
+    /// [H-3] Both probes check `data.length == 32`: a target whose fallback returns short or empty data would
+    /// otherwise make `abi.decode` revert (try/catch does NOT catch a decode failure) or decode garbage.
+    function _probeStakeAsset(address s) internal view returns (address) {
+        (bool ok, bytes memory data) = s.staticcall(abi.encodeCall(IStakeAssetProbe.token, ()));
+        if (!ok || data.length != 32) {
+            (ok, data) = s.staticcall(abi.encodeCall(IStakeAssetProbe.tokenAsset, ()));
+            if (!ok || data.length != 32) return address(0);
+        }
+        return abi.decode(data, (address));
     }
 
     /// @notice Wire the pad's permanent floor vault exactly once, by the platform (deployed after launch). The

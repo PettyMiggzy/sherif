@@ -52,6 +52,10 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     uint32 public constant MIN_DURATION = 1 hours;
     uint32 public constant MAX_DURATION = 365 days;
     uint32 public constant MAX_ANTI_JIT = 7 days;
+    /// [M-20] Floor on the window any tranche may be scheduled over. Without it the mid-window branch divides by
+    /// `remaining`, so a donation arriving in a window's tail streams over seconds and whoever is staked for those
+    /// seconds takes it — measured at 99.00% of a creator's 10 ETH gift by a whale staked 121 seconds.
+    uint256 public constant MIN_DRIP_WINDOW = 1 days;
     uint16 public constant MAX_CLAIM_FEE_BPS = 1_000; // platform's cut of a claim, capped at 10%
 
     IERC20 public immutable tokenAsset; // Side.TOKEN stake asset (the launched token)
@@ -245,11 +249,30 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         if (extend || block.timestamp >= r.periodFinish) {
             uint256 dur = r.duration;
             uint256 leftover = block.timestamp < r.periodFinish ? (r.periodFinish - block.timestamp) * r.rewardRate : 0;
-            r.rewardRate = (amount + leftover) / dur;
+            uint256 rate = (amount + leftover) / dur;
+            // [M-20] A tranche too small to produce a non-zero rate must NOT open a live window at rate 0: that
+            // is a zombie window an attacker can install for 1 wei and whose expiry they choose (the same shape
+            // as C-1 one contract over). Park it instead — it is credited on the next tranche.
+            if (rate == 0) {
+                r.pending += amount;
+                return;
+            }
+            r.rewardRate = rate;
             r.periodFinish = uint64(block.timestamp + dur);
         } else {
             uint256 remaining = r.periodFinish - block.timestamp;
-            r.rewardRate = ((remaining * r.rewardRate) + amount) / remaining;
+            // [M-20] Floor the scheduling window. Dividing by `remaining` is what let a donation land in the tail
+            // and pay out over seconds. periodFinish still cannot be stretched beyond now + MIN_DRIP_WINDOW, so
+            // the anti-dust property the original comment protected survives — and a sub-rate amount is parked
+            // by the branch above, so dust never reaches here at all.
+            uint256 window = remaining < MIN_DRIP_WINDOW ? MIN_DRIP_WINDOW : remaining;
+            uint256 rate = ((remaining * r.rewardRate) + amount) / window;
+            if (rate == 0) {
+                r.pending += amount;
+                return;
+            }
+            r.rewardRate = rate;
+            r.periodFinish = uint64(block.timestamp + window);
         }
         r.lastUpdateTime = uint64(block.timestamp);
     }
@@ -394,8 +417,13 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     /// ETH straight to holders WITHOUT being a rewarder and WITHOUT touching the platform cut. Accounting-only.
     /// [AUDIT] Two guards make un-gated donations safe: (1) require the side's ETH stream is LISTED — a donation
     /// to a disabled side (e.g. STOCK on a single-book pool) can never be staked or kickstarted and would strand
-    /// forever; (2) pass extend=FALSE so a donation TOPS UP the live stream (raising the rate) but can NEVER push
-    /// periodFinish out — otherwise a 1-wei spammer could perpetually reset the window and dilute holder rewards.
+    /// forever; (2) pass extend=FALSE so a donation TOPS UP the live stream rather than resetting the window,
+    /// which stops a spammer perpetually re-stretching it.
+    /// [M-20] The original note claimed extend=FALSE means periodFinish "can NEVER be pushed out". That was false
+    /// twice over: across a LAPSED window the first branch runs regardless of `extend` and sets a fresh
+    /// periodFinish, and within a live window the residue divisor let a tail donation stream over seconds. Both
+    /// are fixed in _applyReward (sub-rate amounts park; the window is floored at MIN_DRIP_WINDOW), so the
+    /// anti-spam intent now holds without handing a JIT staker the gift.
     function donateETH(uint8 side) external payable nonReentrant {
         _requireSide(side);
         if (!rewardInfo[side][ETH].listed) revert NotListed(); // side must be able to actually stream ETH
