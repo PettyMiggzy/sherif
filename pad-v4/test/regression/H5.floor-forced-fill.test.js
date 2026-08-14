@@ -143,6 +143,52 @@ describe("H-5 — a forced tick can no longer flip the whole parked carve into t
     expect(await vault.floorLiquidity()).to.equal(0n); // still nothing committed
   });
 
+  it("[re-audit/H-5] a STALE belowSince from a prior healthy period can no longer be replayed for an atomic fill", async () => {
+    // The sweep's realistic lifecycle the earlier tests miss (they always start from belowSince==0): a healthy
+    // below-band period sets belowSince, THEN the token dumps (spot above band) with NOBODY poking, THEN an attacker
+    // force-fills atomically off the days-old belowSince. The [re-audit/H-5] MAX_OBSERVED_GAP reset closes this.
+    const v3 = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
+      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
+      ZERO, await tok.getAddress(), FEE, TS, ZERO, 0, 10
+    );
+    const lower = Number(await v3.floorTickLower());
+
+    // 1) HEALTHY: spot below the band; a keeper poke sets belowSince = T0
+    await sw.connect(attacker).swap(
+      key, { zeroForOne: true, amountSpecified: -E(80), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: E(80) }
+    );
+    expect(await tick()).to.be.lt(lower);
+    await owner.sendTransaction({ to: await v3.getAddress(), value: CARVE });
+    await v3.addFloor(); // belowSince = T0
+    const t0 = await v3.belowSince();
+    expect(t0).to.be.gt(0n);
+    await time.increase(Number(await v3.MIN_DWELL()) + 1); // belowSince is now "old" enough to pass a naive dwell
+
+    // 2) DUMP: spot pushed ABOVE the band — and NOBODY pokes v3 during the dump (no incentive to poke a parking vault)
+    await sw.connect(attacker).swap(
+      key, { zeroForOne: false, amountSpecified: -E(200), sqrtPriceLimitX96: MAX_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x"
+    );
+    expect(await tick()).to.be.gte(lower);
+
+    // 3) a long un-poked gap (days). belowSince stays stale at T0.
+    await time.increase(Number(await v3.MAX_OBSERVED_GAP()) + 60);
+
+    // 4) ATTACKER, one tx: push spot back below the band and poke — the old exploit's atomic force-fill
+    await sw.connect(attacker).swap(
+      key, { zeroForOne: true, amountSpecified: -E(220), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: E(220) }
+    );
+    expect(await tick()).to.be.lt(lower);
+    await v3.addFloor();
+
+    // Without the anti-stale reset this commits atomically off T0; WITH it the gap > MAX_OBSERVED_GAP restarts the
+    // clock, so belowSince jumps to ~now and the dwell is NOT satisfied → nothing commits atomically.
+    expect(await v3.floorLiquidity()).to.equal(0n);
+    expect(await v3.belowSince()).to.be.gt(t0); // clock restarted, not replayed from the stale T0
+  });
+
   it("the HONEST path is unaffected: a tick that has always been below the band commits every poke", async () => {
     // fresh pad, spot below the band from the start — the normal case the vault was built for
     const v2 = await (await ethers.getContractFactory("RobinFloorVault")).deploy(

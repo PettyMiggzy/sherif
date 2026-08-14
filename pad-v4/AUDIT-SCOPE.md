@@ -83,6 +83,13 @@ Money side = **currency0** (native ETH on curve pads; the stock ERC20 on stock p
   Strict external-only attribution would need off-chain platform-signed codes (a deliberate future change).
 - **Buy fee on requested input** — computed on the requested exact-input, so a partial-fill on a tight price limit
   over-taxes the buyer (settlement-safe, buyer-controlled, by design).
+- **[OPEN — H-5, NOT fully closed] Floor forced-fill.** The floor's park→commit dwell is poke-observed, not
+  duration-enforced. Interim hardening (`MAX_OBSERVED_GAP` restart of a stale `belowSince`) closes the ATOMIC
+  flash-loan force-fill after an un-poked dump, but because `COMMIT_COOLDOWN == MIN_DWELL` a determined attacker can
+  still force a bounded fill with two below-band pushes spaced apart (exposed to arbitrage). A poke-based dwell
+  cannot prove continuous below-band price without a TWAP. **Full closure requires the floor redesign (M-15/H-5/L-33
+  — add-only bands placed below spot, or a TWAP-gated commit), a product decision, ideally reviewed by the external
+  auditor before it ships.** This is the top open item; do not treat the floor as forced-fill-safe until it lands.
 
 ## 6. Validation performed (internal)
 

@@ -213,6 +213,28 @@ Two fixes were judged **INCOMPLETE** — real residuals, surfaced as design deci
   graduation/swap regression risk on LOW findings. **L-29**, **L-30/L-31** (stock, not live), **L-19** (event
   logs) — low value / design-gated.
 
+### Round-2 SELF re-audit (adversarial gauntlet over the round-2 changes)
+
+The round-2 changes above were then put through a 13-agent adversarial gauntlet (one skeptic per substantive fix
+told to find a bypass/regression/underflow/reachability break, plus three holistic sweeps). Outcome: **9 SOLID,
+1 NIT, 3 PROBLEMs — all 3 addressed**:
+
+- **L-2 (medium, a REGRESSION the round-2 fix introduced) — FIXED.** Making `DualStaking.fundTokenPushed` fully
+  permissionless let a stranger name the `side` for an asset listed on BOTH sides ("earn the other"),
+  misattributing that asset's parked LP-fee delta to the wrong book (theft of reward attribution between stakers;
+  `accountedReserve` is per-asset, `side` is caller-asserted). Fix: require the rewarder gate ONLY when the asset
+  is dual-listed; single-listed stays permissionless (the `flushStaking()` recovery path is unaffected).
+  Test: `DualStaking.adversarial.test.js` `[re-audit/L-2]`.
+- **L-21 (low) — FIXED.** The hoisted pure-cfg checks missed launch's 6th unconditional reject, `tickSpacing <= 0`.
+  Added to `createPresale`. Test: `presale.sim.test.js` bounds test.
+- **H-5 (HIGH, re-confirmed by the floor sweep) — INTERIM HARDENING + OPEN.** The shipped `MIN_DWELL` guard is
+  bypassable: `belowSince` is poke-observed, so a value left over from a prior healthy period is STALE, and after
+  an un-poked dump an attacker atomically force-fills the carve — the dwell contributes nothing. Interim fix
+  (`MAX_OBSERVED_GAP` restarts a stale clock) closes the ATOMIC force-fill (test `[re-audit/H-5]`), and the code's
+  false "cannot be atomic" claim was corrected. It does NOT fully close H-5 (the two-push residual remains, since
+  `COMMIT_COOLDOWN == MIN_DWELL`). **Full closure is the floor redesign (M-15/H-5/L-33), the top open design
+  decision — see §0b "Open — design / product decisions" and AUDIT-SCOPE §5.**
+
 
 ---
 

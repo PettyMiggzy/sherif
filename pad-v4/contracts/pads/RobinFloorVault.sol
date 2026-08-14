@@ -74,24 +74,32 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     /// atomic build with a real 0.05% flash loan) once the parked balance passes ~5% of the pool's ETH depth,
     /// and below that threshold still pure griefing that burned 39-77% of the carve.
     ///
-    /// The two constants below target the park→commit FLIP, which is what the finding requires — delaying or
-    /// randomising *when* the call may run changes nothing, because what gets minted does not depend on the
-    /// tick. MIN_DWELL forbids committing on a tick that only just arrived below the band, so the attack
-    /// cannot be atomic: the pusher must hold the price down across a real time gap, exposed to arbitrage.
-    /// MAX_COMMIT_BPS caps how much of the carve any single commit can flip, so the attacker's fixed push
-    /// cost (~1.5 ETH of price impact plus 2-4% in LP fee and buy tax) buys a bounded slice instead of the
-    /// whole balance — moving the profitability threshold out by 1/MAX_COMMIT_BPS.
+    /// The constants below target the park→commit FLIP. MIN_DWELL requires the tick to have been OBSERVED below the
+    /// band for a real time gap before a commit, and MAX_OBSERVED_GAP restarts that clock after any long un-poked gap
+    /// so a stale `belowSince` from a prior healthy period cannot be replayed — together these close the ATOMIC
+    /// force-fill (a flash-loan push→commit→sell-back after an un-poked dump). MAX_COMMIT_BPS caps each commit to a
+    /// bounded slice of the carve.
     ///
-    /// The honest path is barely touched: the band sits ABOVE spot by construction, so in normal operation
-    /// the tick has been below it continuously and `belowSince` is already old — every poke commits its slice
-    /// immediately. Only a tick that has *just* been shoved below the band has to wait.
+    /// [re-audit/H-5] HONEST RESIDUAL — this is NOT a full fix. Because COMMIT_COOLDOWN == MIN_DWELL, a determined
+    /// attacker can still force a fill with two below-band pushes MIN_DWELL..MAX_OBSERVED_GAP apart (bounded per
+    /// commit, exposed to arbitrage between them), draining the carve over several rounds. A poke-observed dwell
+    /// fundamentally cannot prove continuous below-band price without a TWAP. The real closure is the floor redesign
+    /// (M-15/H-5/L-33: add-only bands placed BELOW current spot, or a TWAP-gated commit) — a product decision.
+    ///
+    /// The honest path is barely touched: during normal operation a keeper pokes within MAX_OBSERVED_GAP, so the
+    /// clock stays valid and every poke commits its slice once MIN_DWELL has elapsed.
     uint32 public constant MIN_DWELL = 10 minutes;
     uint16 public constant MAX_COMMIT_BPS = 2000; // ≤20% of the on-hand carve per commit
     uint32 public constant COMMIT_COOLDOWN = 10 minutes;
+    // [re-audit/H-5] If nobody has poked for longer than this, the dwell clock is UNTRUSTED and restarts (see addFloor).
+    // Must exceed the honest keeper cadence (~COMMIT_COOLDOWN) so routine operation never resets, but bounds how stale
+    // `belowSince` can get during an un-poked dump.
+    uint32 public constant MAX_OBSERVED_GAP = 1 hours;
     uint16 internal constant BPS = 10_000;
 
     uint64 public belowSince; // when the tick was first OBSERVED below the band (0 = last observation was not)
     uint64 public lastCommitAt; // when the last slice was committed
+    uint64 public lastObserved; // block.timestamp of the last addFloor observation (any tick) — [re-audit/H-5] anti-stale
 
     event FloorAdded(uint256 quoteUsed, uint128 liquidityAdded, uint128 totalLiquidity);
     event FloorSkipped(int24 currentTick, uint256 parked);
@@ -149,13 +157,25 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         uint256 amt = currency0.balanceOfSelf();
         if (amt == 0) return 0;
         (, int24 tick,,) = stateView.getSlot0(_poolId());
+        uint64 nowTs = uint64(block.timestamp);
+        uint64 prevObserved = lastObserved;
+        lastObserved = nowTs; // record THIS observation (used to detect an untrusted gap on the next one)
         if (tick >= floorTickLower) {
             belowSince = 0; // observation: NOT below → the dwell clock restarts from the next one
             parkedQuote = amt;
             emit FloorSkipped(tick, amt);
             return 0;
         }
-        if (belowSince == 0) belowSince = uint64(block.timestamp); // first observation below — start the clock
+        // [re-audit/H-5] `belowSince` is only ADVANCED by pokes, and pokes are not incentivized during a dump — so a
+        // value left over from a prior healthy period would be STALE and let an attacker atomically force-fill the
+        // carve after an un-poked dump (the sweep's HIGH). Restart the clock whenever we can't trust that the price
+        // stayed below since the last observation: it was never below (belowSince==0), OR the gap since the last poke
+        // is too long to vouch for continuity. This closes the ATOMIC/stale-belowSince force-fill.
+        // RESIDUAL (not closed here — needs the floor redesign, M-15/H-5/L-33): because COMMIT_COOLDOWN == MIN_DWELL, a
+        // determined attacker can still force a fill with TWO below-band pushes MIN_DWELL..MAX_OBSERVED_GAP apart
+        // (bounded to MAX_COMMIT_BPS per commit and exposed to arbitrage between them). A duration-enforced/TWAP gate
+        // or add-only bands placed below spot are the real closure; this is interim hardening, not a full fix.
+        if (belowSince == 0 || nowTs > prevObserved + MAX_OBSERVED_GAP) belowSince = nowTs;
         // not settled below the band long enough, or too soon after the last slice → record and park
         if (block.timestamp < uint256(belowSince) + MIN_DWELL || block.timestamp < uint256(lastCommitAt) + COMMIT_COOLDOWN) {
             parkedQuote = amt;
