@@ -36,7 +36,7 @@ async function deployStack(deployer, platform) {
     await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress()
   );
   await lockVault.setFactory(await factory.getAddress());
-  return { pm, stateView, dep, reg, permit2, posm, lockVault, factory };
+  return { pm, stateView, dep, reg, permit2, posm, lockVault, factory, feeCfg };
 }
 
 describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled buy, claim, refund)", () => {
@@ -185,6 +185,31 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
     await expect(
       presaleFactory.createPresale(badTs, salts.commitment, E(3), okDeadline, E(2), E("0.1"), 86400n)
     ).to.be.revertedWithCustomError(presaleFactory, "BadParams");
+  });
+
+  // 2c) [M-12] a governed geometry retune while a presale is OPEN must not silently reprice it — finalize reverts.
+  it("[M-12] finalize reverts GeometryChanged if the governed geometry moved after the presale opened", async () => {
+    const met = await openPresale({ target: E(2), perWalletCap: E(2), minContribution: E("0.1") });
+    await met.vault.connect(signers[3]).deposit({ value: E(2) }); // fill the target
+    expect(await met.vault.totalRaised()).to.equal(E(2));
+
+    // snapshot the live defaults, then retune the START tick (still valid + within caps) — as a governed setDefaults
+    const d = await S.feeCfg.defaults();
+    const retuned = {
+      buyTaxBps: d.buyTaxBps, sellTaxBps: d.sellTaxBps, sellFloorShareBps: d.sellFloorShareBps,
+      buyLpFloorShareBps: d.buyLpFloorShareBps, buyBufferShareBps: d.buyBufferShareBps, referralShareBps: d.referralShareBps,
+      platformGradBps: d.platformGradBps, creatorGradBps: d.creatorGradBps, ambushGradBps: d.ambushGradBps,
+      lpFee: d.lpFee, startTickMag: START + TS, curveWidth: d.curveWidth, minGradWidth: d.minGradWidth,
+    };
+    await S.feeCfg.connect(deployer).setDefaults(retuned);
+    try {
+      // the presale was initialized under startTickMag=START; the live default is now START+TS → refuse to launch
+      await expect(met.vault.finalize(met.salts.tokenSalt, met.salts.hookSalt, met.salts.curveSalt))
+        .to.be.revertedWithCustomError(met.vault, "GeometryChanged");
+    } finally {
+      // restore the shared defaults so later tests are unaffected (deployStack runs once in `before`)
+      await S.feeCfg.connect(deployer).setDefaults({ ...retuned, startTickMag: START });
+    }
   });
 
   // 3) deposit mechanics

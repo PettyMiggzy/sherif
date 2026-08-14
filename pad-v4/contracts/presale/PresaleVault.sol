@@ -65,6 +65,13 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     uint64 public finalizeGrace;
     uint256 public perWalletCap;
     uint256 public minContribution;
+    // [M-12] governed launch geometry snapshotted at initialize. The committed cfg carries NO geometry and
+    // saltCommitment covers only the salts, so without this an in-cap `setDefaults` retune while the presale is OPEN
+    // would silently reprice — or (at an unreachable graduation) brick — a fully-funded raise. finalize() refuses to
+    // launch if the live defaults have moved from these.
+    int24 public snapStartTickMag;
+    int24 public snapCurveWidth;
+    uint24 public snapLpFee;
 
     // ── mutable state ──
     bool public initialized;
@@ -110,6 +117,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     error BadParams();
     error InsufficientGas();
     error LaunchReverted();
+    error GeometryChanged();
 
     /// @notice One-shot initializer, called by the factory in the creation tx (clones have no constructor args).
     function initialize(
@@ -134,6 +142,11 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         curvePadFactory = ICurvePadFactoryV4(curvePadFactory_);
         poolManager = IPoolManager(curvePadFactory.poolManager());
         cfg = cfg_;
+        // [M-12] snapshot the governed geometry the contributors are committing to
+        RobinV4FeeConfig.Defaults memory d0 = RobinV4FeeConfig(curvePadFactory.feeConfig()).defaults();
+        snapStartTickMag = d0.startTickMag;
+        snapCurveWidth = d0.curveWidth;
+        snapLpFee = uint24(d0.lpFee);
         saltCommitment = saltCommitment_;
         target = target_;
         deadline = deadline_;
@@ -195,6 +208,13 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         // [L-12] Guarantee enough gas for launch + the pooled buy BEFORE flipping state, so an under-gassed call can
         // never let the EIP-150 63/64 rule brick the atomic launch and silently convert a funded presale to Failed(3).
         if (gasleft() < MIN_FINALIZE_GAS) revert InsufficientGas();
+        // [M-12] refuse to finalize if the governed geometry moved since the presale opened — contributors committed
+        // to the snapshot, and an in-cap setDefaults retune must not silently reprice or brick their funded raise.
+        // (Reverting keeps the presale OPEN; if the operator won't restore the geometry, fail() reason 2 refunds 100%.)
+        RobinV4FeeConfig.Defaults memory d0 = RobinV4FeeConfig(curvePadFactory.feeConfig()).defaults();
+        if (d0.startTickMag != snapStartTickMag || d0.curveWidth != snapCurveWidth || uint24(d0.lpFee) != snapLpFee) {
+            revert GeometryChanged();
+        }
         finalized = true;
 
         // launch: deploys token+hook+curve, inits the pool at startTick, seeds the single-sided curve. Takes NO ETH

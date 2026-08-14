@@ -15,8 +15,9 @@ import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step
 ///     protocol-owned positions), now bounded by the Robin `MAX_LP_FEE` = 1% policy cap. `setDefaults` remains a
 ///     real un-timelocked economic knob within that cap — hold this owner key with the same care as the fee wallet.
 ///   • [M-12] "forward-only, can never touch an existing coin" holds for a LAUNCHED pad (its fee is stamped
-///     immutably at launch) but NOT for ETH already sitting in an OPEN PRESALE: PresaleVault reads geometry/lpFee
-///     live at finalize, so an in-cap retune that lands while a presale is open silently reprices — or bricks — it.
+///     immutably at launch). An OPEN PRESALE no longer silently reprices on a retune: PresaleVault snapshots the
+///     geometry at initialize and finalize() REVERTS `GeometryChanged` if the live defaults have moved — the raise
+///     fails safely (100% refunds) instead of launching at a geometry its contributors never agreed to.
 /// Govern this owner as a live capability (multisig, ideally a timelock), not a set-and-forget default source.
 contract RobinV4FeeConfig is Ownable2Step {
     uint16 public constant BPS = 10000;
