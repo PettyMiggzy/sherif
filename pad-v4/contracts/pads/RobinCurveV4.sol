@@ -170,6 +170,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     error InsufficientReserve();
     error EthSendFailed();
     error StakingAssetMismatch();
+    error BadPriceLimit();
 
     constructor(
         address poolManager_,
@@ -435,15 +436,39 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     /// and BOTH the ETH proceeds and any unspent token are refunded to the caller — a fair swap that merely
     /// undoes the manipulation (the caller reclaims the griefer's planted ETH as they restore the price). After
     /// this, graduate() finds spot at the ceiling and proceeds normally.
-    function restoreCeiling(uint256 tokenIn) external nonReentrant returns (uint256 ethOut, uint256 tokenRefunded) {
+    ///
+    /// [C-2] `sqrtPriceLimitX96` makes the walk SEGMENTABLE, which is what turns an unrecoverable brick into a
+    /// recoverable one. An ordinary sellout leaves spot at the far floor (measured: tick −887272), so the walk
+    /// back to gradTick crosses ~890k ticks. Empty ticks are skipped a bitmap word at a time and cost almost
+    /// nothing, but every INITIALIZED tick costs real gas — and initializing one is nearly free when spot is far
+    /// below it. Measured: 100 positions of `liquidityDelta = 1` cost the attacker 100 wei plus ~161k gas each,
+    /// spread over as many deadline-free transactions as they like, and pushed both graduate() (33.8M) and this
+    /// function (31.8M) past the 30M block cap — permanently trapping 63.7 ETH of raise. The recovery was
+    /// defeated by the exact thing it existed to recover from, because a single unbounded swap cannot be split.
+    /// With a caller-supplied intermediate limit anyone can walk spot up in as many transactions as it takes,
+    /// each one bounded by its own gas, until the final segment lands exactly at the ceiling.
+    /// @param sqrtPriceLimitX96 intermediate price to stop at; must be ABOVE spot and at/below the ceiling.
+    ///        Pass 0 for "walk all the way to the ceiling" (the honest, empty-zone case — one transaction).
+    function restoreCeiling(uint256 tokenIn, uint160 sqrtPriceLimitX96)
+        external
+        nonReentrant
+        returns (uint256 ethOut, uint256 tokenRefunded)
+    {
         if (!seeded) revert NotSeeded();
         if (graduated) revert AlreadyGraduated();
         if (tokenIn == 0) revert BadLiquidity();
+        uint160 gradSqrt = TickMath.getSqrtPriceAtTick(gradTick);
         (uint160 curSqrt,,,) = stateView.getSlot0(_poolId());
-        if (curSqrt >= TickMath.getSqrtPriceAtTick(gradTick)) revert NotReady(); // already at/above the ceiling
+        if (curSqrt >= gradSqrt) revert NotReady(); // already at/above the ceiling
+        // A segment may only move spot UP and may never overshoot the ceiling, so no sequence of segments can
+        // reach a state a single full-walk call could not. `> curSqrt` also rejects the degenerate limit-equals-
+        // current case, which v4 rejects with PriceLimitAlreadyExceeded.
+        if (sqrtPriceLimitX96 == 0) sqrtPriceLimitX96 = gradSqrt;
+        if (sqrtPriceLimitX96 <= curSqrt || sqrtPriceLimitX96 > gradSqrt) revert BadPriceLimit();
         IERC20(token).safeTransferFrom(msg.sender, address(this), tokenIn);
         uint256 consumed;
-        (ethOut, consumed) = abi.decode(poolManager.unlock(abi.encode(Op.RESTORE, tokenIn)), (uint256, uint256));
+        (ethOut, consumed) =
+            abi.decode(poolManager.unlock(abi.encode(Op.RESTORE, tokenIn, sqrtPriceLimitX96)), (uint256, uint256));
         tokenRefunded = tokenIn - consumed;
         if (tokenRefunded > 0) IERC20(token).safeTransfer(msg.sender, tokenRefunded);
         if (ethOut > 0) {
@@ -521,8 +546,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         } else if (op == Op.COLLECT) {
             _collect();
         } else if (op == Op.RESTORE) {
-            (, uint256 tokenIn) = abi.decode(data, (Op, uint256));
-            return _restore(tokenIn);
+            (, uint256 tokenIn, uint160 limit) = abi.decode(data, (Op, uint256, uint160));
+            return _restore(tokenIn, limit);
         } else {
             _graduatePull();
         }
@@ -612,17 +637,19 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (d.amount1() > 0) poolManager.take(currency1, address(this), uint256(uint128(d.amount1())));
     }
 
-    /// @dev Swap exactly the caller-supplied token → ETH, price UP toward the ceiling limit (gradTick). Returns
-    /// the ETH taken out (refunded to the caller) and the token actually consumed. Never touches the curve
-    /// reserve: the token leg is settled from the caller's just-transferred tokenIn (surplus refunded by the
-    /// external wrapper), and only the swap's own ETH output is taken here.
-    function _restore(uint256 tokenIn) internal returns (bytes memory) {
+    /// @dev Swap exactly the caller-supplied token → ETH, price UP toward `limit` (validated by the wrapper to sit
+    /// above spot and at/below the ceiling). Returns the ETH taken out (refunded to the caller) and the token
+    /// actually consumed. Never touches the curve reserve: the token leg is settled from the caller's
+    /// just-transferred tokenIn (surplus refunded by the external wrapper), and only the swap's own ETH output is
+    /// taken here. [C-2] `limit` is a parameter rather than always gradSqrt so the walk can be split across
+    /// transactions when planted ticks make a single full walk exceed the block gas cap.
+    function _restore(uint256 tokenIn, uint160 limit) internal returns (bytes memory) {
         BalanceDelta sd = poolManager.swap(
             _poolKey(),
             SwapParams({
                 zeroForOne: false, // token-in → price UP toward the ceiling
                 amountSpecified: -int256(tokenIn),
-                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(gradTick)
+                sqrtPriceLimitX96: limit
             }),
             ""
         );

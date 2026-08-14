@@ -5,6 +5,7 @@
 // live zero-rate window. These tests replay the exploit and pin the two properties the fix must not break.
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
+const { takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 const ETH = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
@@ -13,7 +14,14 @@ const DAY = 86400;
 const E = (x) => ethers.parseEther(String(x));
 const pct = (part, whole) => Number((part * 1000000n) / whole) / 10000;
 
+// Hardhat keeps chain state across test FILES, so a suite that moves large balances would otherwise leave
+// later files short of ETH. Each describe below snapshots before it deploys and restores when it is done.
 describe("M-20 exploit, replayed against the patched contract", () => {
+  // Snapshot the whole file's worth of state, not each test's, so balances this file spends are handed back.
+  let __snap;
+  before(async () => { __snap = await takeSnapshot(); });
+  after(async () => { await __snap.restore(); });
+
   async function book({ antiJit = 0 } = {}) {
     const [owner, honest, whale, creator] = await ethers.getSigners();
     const tok = await (await ethers.getContractFactory("TestERC20")).deploy(10n ** 30n);

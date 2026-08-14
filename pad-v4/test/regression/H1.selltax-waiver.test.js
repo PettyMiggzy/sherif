@@ -26,7 +26,14 @@ const poolIdOf = (k) => ethers.keccak256(
   abi.encode(["tuple(address,address,uint24,int24,address)"], [[k.currency0, k.currency1, k.fee, k.tickSpacing, k.hooks]])
 );
 
+// Hardhat keeps chain state across test FILES, so a suite that moves large balances would otherwise leave
+// later files short of ETH. Each describe below snapshots before it deploys and restores when it is done.
 describe("H-1 exploit, replayed against the patched hook", () => {
+  // Snapshot the whole file's worth of state, not each test's, so balances this file spends are handed back.
+  let __snap;
+  before(async () => { __snap = await takeSnapshot(); });
+  after(async () => { await __snap.restore(); });
+
   const FEE = 3000, TS = 60, SELL_BPS = 100n, FLOOR_SHARE = 2000n;
   let owner, factory, platform, lp, trader, creator, floor;
   let pm, tok, hook, sw, mod, key, poolId, hookAddr;

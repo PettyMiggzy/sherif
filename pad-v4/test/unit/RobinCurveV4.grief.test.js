@@ -89,7 +89,8 @@ describe("RobinCurveV4 — graduation grief recovery (restoreCeiling)", () => {
     const tBefore = await tok.balanceOf(trader.address);
     const eBefore = await ethers.provider.getBalance(trader.address);
 
-    const tx = await curve.connect(trader).restoreCeiling(ethers.parseEther("2000"));
+    // [C-2] limit 0 == "walk all the way to the ceiling" — the one-transaction case this test has always covered
+    const tx = await curve.connect(trader).restoreCeiling(ethers.parseEther("2000"), 0);
     await tx.wait();
 
     // spot is back exactly at the ceiling, and the caller was refunded (spent some token, got ETH back)

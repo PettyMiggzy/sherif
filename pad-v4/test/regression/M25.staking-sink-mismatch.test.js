@@ -5,6 +5,7 @@
 // parameters, and the setter refuses a sink whose stake asset isn't this pad's token.
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
+const { takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
 
 const ZERO = ethers.ZeroAddress;
 const abi = ethers.AbiCoder.defaultAbiCoder();
@@ -12,7 +13,14 @@ const poolIdOf = (k) => ethers.keccak256(
   abi.encode(["tuple(address,address,uint24,int24,address)"], [[k.currency0, k.currency1, k.fee, k.tickSpacing, k.hooks]])
 );
 
+// Hardhat keeps chain state across test FILES, so a suite that moves large balances would otherwise leave
+// later files short of ETH. Each describe below snapshots before it deploys and restores when it is done.
 describe("M-25 mis-wired staking sink, replayed against the patched contracts", () => {
+  // Snapshot the whole file's worth of state, not each test's, so balances this file spends are handed back.
+  let __snap;
+  before(async () => { __snap = await takeSnapshot(); });
+  after(async () => { await __snap.restore(); });
+
   const START = 6000, GRAD = 3000, SPACING = 60, FEE = 3000;
   let owner, platform, creator;
   let pm, stateView, th, reg, permit2, posm, lockVault, mockFactory, tok, other, curve, tokAddr;
