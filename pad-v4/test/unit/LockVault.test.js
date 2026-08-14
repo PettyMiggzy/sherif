@@ -65,4 +65,15 @@ describe("LockVault — collect-only, locked forever, quote→platform / token�
     await expect(vault.claimPlatform(1, 0)).to.be.revertedWithCustomError(vault, "NothingToClaim"); // quote/buy leg
     await expect(vault.claimStaking(1, 1)).to.be.revertedWithCustomError(vault, "NothingToClaim"); // token/sell leg
   });
+
+  it("[M-11] claimStaking PARKS while the recipient is unwired — never silently pays the platform", async () => {
+    // shipped-default on the curve path: graduate() registers with stakingRecipient == 0 until the platform wires it.
+    await vault.connect(factory).registerLaunch(3, ZERO, c1.address, ZERO);
+    // any claim of the locked LP's token (sell) fee reverts NoStakingRecipient — it does NOT route to platformFeeWallet.
+    await expect(vault.claimStaking(3, 1)).to.be.revertedWithCustomError(vault, "NoStakingRecipient");
+    // once the platform wires the real recipient, the same claim reverts NothingToClaim (nothing owed yet) — i.e. it
+    // now targets the recipient and the accrual survives the unwired window (collectFees credits stakingOwed either way).
+    await vault.connect(other).setStakingRecipient(3, staking.address);
+    await expect(vault.claimStaking(3, 1)).to.be.revertedWithCustomError(vault, "NothingToClaim");
+  });
 });

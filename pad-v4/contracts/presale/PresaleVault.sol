@@ -29,14 +29,17 @@ import {RobinV4FeeConfig} from "../core/RobinV4FeeConfig.sol";
 /// or (b) a refund/claim to the very depositor who put it in.
 ///
 /// Trust model: no owner, no admin, no operator. Salts are COMMIT-REVEAL — only a preimage-holder (the creator, or
-/// anyone they share it with) can finalize, so the freshly-launched pool is un-addressable until the finalize tx.
-/// NOTE the reveal itself is only as un-front-runnable as the chain's tx ordering: on Robinhood Chain's single-
-/// sequencer FCFS ordering (no public mempool) the finalize tx can't be sniped, but on a public-mempool /
-/// decentralized-sequencer chain a bot could read the revealed salts and front-run curvePadFactory.launch(cfg,salts)
-/// directly (it is permissionless). finalize() defends against that: if the launch was sniped it FAILS the presale
-/// (Failed reason 3) so 100% refunds open immediately — never a brick or a lock. Separately, a FINALIZE_GRACE escape
-/// hatch converts to Failed if finalize is never called. ETH can never be permanently trapped or stolen. Nothing in
-/// the audited curve/hook/factory is modified.
+/// anyone they share it with) can finalize, so the freshly-launched pool is un-addressable until the reveal.
+/// [M-22] The commitment is SINGLE-USE: the salts become PUBLIC the moment ANY `finalize` tx is mined — including a
+/// REVERTED one, whose calldata is in block history forever, on any chain (a single-sequencer FCFS L2 with no public
+/// mempool does NOT change this). So `finalize` checks the reveal FIRST (a wrong-salt poke can't leak a real
+/// preimage), and once the real salts are on-chain `curvePadFactory.launch(cfg,salts)` is permissionless and anyone
+/// can land the committed launch. finalize() is fail-safe against that: a sniped launch marks the presale Failed(3)
+/// so 100% refunds open immediately — never a brick, a lock, or a theft. A caller who reveals the correct salts into
+/// a premature `TargetNotMet` still burns the commitment (replay-resistance is a presale-terms decision, see M-22/
+/// L-20) — so do NOT call `finalize` before the target is met. A FINALIZE_GRACE escape hatch converts to Failed if
+/// finalize is never called. ETH can never be permanently trapped or stolen. Nothing in the audited
+/// curve/hook/factory is modified.
 contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using BalanceDeltaLibrary for BalanceDelta;
@@ -166,9 +169,15 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     /// @notice Launch the curve and do the pooled first buy atomically, if the target is met. Permissionless among
     /// preimage-holders (the salts commit-reveal). CEI: flips `finalized` before any external call.
     function finalize(bytes32 tokenSalt, bytes32 hookSalt, bytes32 curveSalt) external nonReentrant {
+        // [M-22] Check the reveal FIRST. A reverted tx is still mined and its calldata is public forever, so any
+        // call that trips a later guard would ALREADY have published the salt preimage on-chain — defeating the
+        // commit-reveal on any chain, mempool or not. Ordering BadReveal first means a call bearing WRONG salts
+        // (garbage/poke) reverts without a correct preimage ever having been compared, so it cannot leak one.
+        // (This does not save a caller who reveals the CORRECT salts into a premature TargetNotMet — that residual
+        // needs replay-resistance, a presale-terms decision left for the operator; see M-22 / L-20 in the ledger.)
+        if (keccak256(abi.encode(tokenSalt, hookSalt, curveSalt)) != saltCommitment) revert BadReveal();
         if (finalized || failed) revert NotOpen();
         if (totalRaised < target) revert TargetNotMet();
-        if (keccak256(abi.encode(tokenSalt, hookSalt, curveSalt)) != saltCommitment) revert BadReveal();
         finalized = true;
 
         // launch: deploys token+hook+curve, inits the pool at startTick, seeds the single-sided curve. Takes NO ETH

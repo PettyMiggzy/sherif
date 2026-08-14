@@ -417,7 +417,13 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         PoolConfig storage c = config[id];
         if (!c.registered) revert NotRegistered();
         if (c.floorRecipient != address(0)) revert FloorRecipientAlreadySet();
-        if (recipient == address(0)) revert ZeroAddress();
+        // [M-4] The recipient must be a CONTRACT — the only correct target is a floor vault. An EOA (or a
+        // wrong-pool address) is a one-shot, irreversible misroute that permanently strands the sell-tax floor
+        // carve (the hook has no rescue path). This matches the code-check the other four sinks already carry
+        // (RobinCurveV4.setStaking/setFloor/setAmbush) and the ROBIN-V4-CURVE-ECON.md "targets must be contracts"
+        // claim. Kept distinct from a value-transfer probe (see [M-24] below): requiring code, not requiring the
+        // recipient to accept ETH, so a stock-pad ERC-20 recipient stays valid.
+        if (recipient == address(0) || recipient.code.length == 0) revert ZeroAddress();
         // [M-24] Reject this hook itself. _payout's native branch is a bare call, and this contract has an open
         // receive(), so a self-send would SUCCEED: claimFloor zeroes floorOwed first, the call returns ok, and
         // FloorClaimed is emitted asserting a transfer that moved nothing. The setter is one-shot, so that state

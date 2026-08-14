@@ -222,8 +222,11 @@ describe("RobinFeeHook — adversarial", () => {
     await hook.connect(factory).registerPool(id, CFG(ZERO, await tok.getAddress(), creator.address)); // floorRecipient = 0
     // platform wallet is `platform` (registry initial wallet)
     await expect(hook.connect(mallory).setFloorRecipient(id, mallory.address)).to.be.revertedWithCustomError(hook, "NotPlatform");
-    await hook.connect(platform).setFloorRecipient(id, mallory.address);
-    expect((await hook.config(id)).floorRecipient).to.equal(mallory.address);
+    // [M-4] an EOA recipient is rejected — a floor carve routed to an EOA would be permanently stranded (one-shot).
+    await expect(hook.connect(platform).setFloorRecipient(id, mallory.address)).to.be.revertedWithCustomError(hook, "ZeroAddress");
+    const floorRecip = await reg.getAddress(); // any contract satisfies the code-length check
+    await hook.connect(platform).setFloorRecipient(id, floorRecip);
+    expect((await hook.config(id)).floorRecipient).to.equal(floorRecip);
     await expect(hook.connect(platform).setFloorRecipient(id, creator.address)).to.be.revertedWithCustomError(hook, "FloorRecipientAlreadySet");
   });
 
