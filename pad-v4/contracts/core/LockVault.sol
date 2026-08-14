@@ -19,7 +19,10 @@ import {IPositionManagerMinimal as IPositionManager} from "../interfaces/IPositi
 /// Collected LP fees route by currency (the v2 model):
 ///   • currency0 (the QUOTE/ETH, accrued from BUYS)  → platform (timelocked treasury)
 ///   • currency1 (the TOKEN, accrued from SELLS)      → the pad's staking recipient (holders earn the token)
-/// Both are accrue-and-pull. If a launch has no staking recipient, its token leg falls back to platform.
+/// Both are accrue-and-pull. [M-11] If a launch's staking recipient is not yet wired, the token leg PARKS in
+/// `stakingOwed` and `claimStaking` reverts `NoStakingRecipient` — it does NOT fall back to the platform. The
+/// platform takes ETH only and never holds pad tokens; once `setStakingRecipient` wires the pool the whole
+/// parked accrual pays it in full.
 contract LockVault is IERC721Receiver, ReentrancyGuard {
     using CurrencyLibrary for Currency;
 

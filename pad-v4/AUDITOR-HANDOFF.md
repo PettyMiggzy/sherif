@@ -256,6 +256,20 @@ told to find a bypass/regression/underflow/reachability break, plus three holist
 
 ---
 
+## 0c. Fee-model round — the platform takes ETH only, never holds pad tokens
+
+Operator directive: *"Platform wants no tokens at all — if there's something in the code that gives it token supply, change it."* A full-system sweep for platform-token inflows (every `poolManager.take(currency1, …platform…)` / token transfer to `platformFeeWallet()`, across the hook, curve, both support vaults, and `LockVault`) found the model already ETH-only **except one live leak**, now closed:
+
+- **`RobinFloorVault` (LEAK — FIXED).** Once spot trades into the floor band the single-sided ETH wall holds token, so its LP position accrues **token-side (currency1) fees**, and `_collect()` routed them to `platformFeeWallet()` (plus a defensive stray-token route in `_add`). Both now route the token leg to `address(this)` (**park in-vault**); a one-shot, platform-wired `tokenSink` + permissionless `sweepTokenFees()` forwards the parked token to the pad's staking / buyback pool (mirrors `hook.setFloorRecipient` / `LockVault.setStakingRecipient`; wired in `scripts/launch.js` step 5b). The **ETH leg still goes to the platform** — platform stays ETH-only. Test: `RobinFloorVault.test.js` `[fee-model]` asserts the treasury's token balance is *exactly* unchanged across a collection, and that the parked token only ever forwards to the wired sink.
+- **`LockVault` (already correct; doc was stale — FIXED).** Token-leg (sell-side) LP fees already route to the staking recipient, and [M-11] already made an unwired recipient **park + revert** rather than fall back to the platform. The header comment still claimed the old "falls back to platform" behavior — corrected. `claimPlatform(_,1)` is unreachable (only `platformOwed[_][0]` is ever funded).
+- **Hook / curve / ambush (verified clean).** Both trade taxes are money-side (currency0); the curve holds token fees → `fundTokenPushed` at graduation; the ambush vault forwards token → staking. No platform-token path.
+
+**Invariant added:** *the platform wallet's pad-token balance is always exactly zero* — every token-denominated fee stream terminates at staking / buyback, never the treasury. Recorded in `ROBIN-V4-CURVE-ECON.md §5`.
+
+**Still open (operator/design — deferred to the "when I'm home" conversation, NOT built):** the ETH-side LP split (curve phase is 80% platform / 20% floor today; "100% platform" is a config flip `buyLpFloorShareBps=0` that needs the floor re-funded elsewhere first), the token-leg staking-vs-buyback **split %**, and the creator-triggered **burn pool** contract (creator decides when to burn, pays gas). These are economics decisions, not leaks.
+
+---
+
 ## 1. Summary
 
 | severity | count | of which measured |

@@ -6,6 +6,7 @@
  *   3. deploys RobinFloorVault for the new pool and wires it via hook.setFloorRecipient (one-shot)
  *   4. creates a DualStaking pool for the token via StakingFactory (5% fee, no lock)
  *   5. points the LockVault token-leg LP fee at the staking reward keeper (setStakingRecipient, one-shot)
+ *  5b. points the floor vault's token-leg LP fee at the same keeper (setTokenSink, one-shot) — platform stays ETH-only
  * Appends the launch record to deploy.local.json.
  *
  * Usage (env): PRIVATE_KEY (=platform/deployer), ROBINHOOD_RPC,
@@ -102,6 +103,12 @@ async function main() {
   const lockVault = await ethers.getContractAt("LockVault", d.lockVault);
   await legacy(lockVault, "setStakingRecipient", [lpTokenId, rewardKeeper]); // platform-gated
   console.log(`  lockVault stakingRecipient -> ${rewardKeeper}`);
+
+  // 5b) [fee-model] point the floor vault's TOKEN-side LP fee at the same reward keeper. The platform takes ETH
+  //     only and never holds pad tokens — the floor's token leg parks in-vault until this one-shot sink is wired,
+  //     then sweepTokenFees() forwards it to staking. Mirrors the LockVault token leg above.
+  await legacy(floor, "setTokenSink", [rewardKeeper]); // platform-gated, one-shot
+  console.log(`  floorVault tokenSink -> ${rewardKeeper}`);
 
   d.launches = d.launches || [];
   d.launches.push({ token, hook, poolId: poolId.toString?.() ?? poolId, lpTokenId: lpTokenId.toString(), floorVault: floorAddr, stakingPool, tokenSalt, symbol: cfg.symbol });

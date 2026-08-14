@@ -89,7 +89,7 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
     expect(await ethers.provider.getBalance(await vault.getAddress())).to.be.lt(ethers.parseEther("0.5"));
   });
 
-  it("absorbs a sell that pushes price into the wall, and accrues fees the platform can collect", async () => {
+  it("[fee-model] absorbs a sell into the wall; TOKEN fees PARK in-vault, platform gets ZERO token", async () => {
     // a big SELL (oneForZero: token → quote) pushes tick UP into the floor band [60,660]
     await tok.connect(owner).transfer(trader.address, 10n ** 24n);
     await tok.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
@@ -97,11 +97,38 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
       key, { zeroForOne: false, amountSpecified: -(10n ** 21n), sqrtPriceLimitX96: MAX_SQRT_LIMIT },
       { takeClaims: false, settleUsingBurn: false }, "0x"
     );
-    // price is now in/above the band → the floor bought token (converted). Collect its LP fees.
-    const beforeTok = await tok.balanceOf(platform.address);
+    // price is now in/above the band → the floor bought token (converted) and earned token-side LP fees.
+    const platTokBefore = await tok.balanceOf(platform.address);
+    const platEthBefore = await ethers.provider.getBalance(platform.address);
+    const vaultTokBefore = await tok.balanceOf(await vault.getAddress());
     await vault.collectFloorFees();
-    // the wall earned token-side fees from the sell that passed through it
-    expect(await tok.balanceOf(platform.address)).to.be.gte(beforeTok);
+    // INVARIANT: the platform never receives pad tokens — its token balance is UNCHANGED (not >=, EXACTLY equal).
+    expect(await tok.balanceOf(platform.address)).to.equal(platTokBefore);
+    // the token-side LP fee instead PARKS in the floor vault, waiting for the sink.
+    expect(await tok.balanceOf(await vault.getAddress())).to.be.gt(vaultTokBefore);
+    // the ETH (money) leg still flows to the platform — platform stays ETH-only, and does get the ETH side.
+    expect(await ethers.provider.getBalance(platform.address)).to.be.gte(platEthBefore);
+  });
+
+  it("[fee-model] sweepTokenFees reverts until the platform wires the sink, then forwards to it — never platform", async () => {
+    const sink = lp; // stand-in for the pad's staking / buyback pool
+    // parked token is real, but there is no sink yet
+    expect(await tok.balanceOf(await vault.getAddress())).to.be.gt(0n);
+    await expect(vault.sweepTokenFees()).to.be.revertedWithCustomError(vault, "NoTokenSink");
+
+    // only the platform may wire it, and only once
+    await expect(vault.connect(trader).setTokenSink(sink.address)).to.be.revertedWithCustomError(vault, "NotPlatform");
+    await vault.connect(platform).setTokenSink(sink.address);
+    await expect(vault.connect(platform).setTokenSink(trader.address)).to.be.revertedWithCustomError(vault, "TokenSinkAlreadySet");
+
+    const parked = await tok.balanceOf(await vault.getAddress());
+    const sinkBefore = await tok.balanceOf(sink.address);
+    const platTokBefore = await tok.balanceOf(platform.address);
+    await vault.sweepTokenFees(); // permissionless — anyone can push it to the wired sink
+    expect(await tok.balanceOf(sink.address)).to.equal(sinkBefore + parked);
+    expect(await tok.balanceOf(await vault.getAddress())).to.equal(0n);
+    // the platform STILL never touched the token
+    expect(await tok.balanceOf(platform.address)).to.equal(platTokBefore);
   });
 
   it("parks the carve when spot is inside the band instead of reverting", async () => {

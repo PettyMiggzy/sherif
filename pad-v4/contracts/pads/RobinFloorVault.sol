@@ -37,6 +37,13 @@ import {IFeeWalletRegistry} from "../interfaces/IRobinInterfaces.sol";
 /// Placement: the floor band sits in the pure-currency0 region ABOVE the current tick (in V4 a range
 /// above spot holds 100% currency0). As the token price falls (tick rises into the band) the quote in
 /// the wall automatically buys the token — that is the floor doing its job.
+///
+/// [fee-model: PLATFORM TAKES ETH ONLY, NEVER HOLDS PAD TOKENS] Once spot trades into the band the wall
+/// holds token and its LP position accrues fees in BOTH currencies. The currency0 (ETH) leg is the money
+/// side → platform. The currency1 (TOKEN) leg is NEVER routed to the platform: it PARKS in-vault and is
+/// forwarded by `sweepTokenFees()` to the pad's `tokenSink` (its staking / buyback pool), wired once by the
+/// platform after the pool exists (mirrors `hook.setFloorRecipient` / `LockVault.setStakingRecipient`).
+/// This keeps the platform ETH-only — no pad-token supply ever lands on the treasury key.
 contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
@@ -65,6 +72,11 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
 
     uint128 public floorLiquidity; // total liquidity permanently locked in the wall (only grows)
     uint256 public parkedQuote; // carve received while spot is inside/below the band (added on recovery)
+
+    // [fee-model] Where the TOKEN-side (currency1) LP fees go. The platform takes ETH only and never holds pad
+    // tokens, so the token leg PARKS in-vault and is swept here. Set once by the platform after the pad's staking /
+    // buyback pool exists (this vault is deployed pre-launch, before that pool). 0 => token fees park until wired.
+    address public tokenSink;
 
     /// [H-5] The single live `slot0` read that used to be this function's ENTIRE protection gated an
     /// irreversible, unbounded commitment of the whole on-hand carve. In M-15's state — the pad has dumped,
@@ -104,11 +116,16 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
 
     event FloorAdded(uint256 quoteUsed, uint128 liquidityAdded, uint128 totalLiquidity);
     event FloorSkipped(int24 currentTick, uint256 parked);
-    event FloorFeesCollected(uint256 amount0, uint256 amount1, address to);
+    event FloorFeesCollected(uint256 amount0, uint256 amount1, address ethTo); // ethTo = platform; token (amount1) parks
+    event TokenSinkSet(address indexed sink);
+    event TokenFeesSwept(address indexed to, uint256 amount);
 
     error NotPoolManager();
+    error NotPlatform();
     error ZeroAddress();
     error BadBand();
+    error TokenSinkAlreadySet();
+    error NoTokenSink();
 
     constructor(
         address poolManager_,
@@ -193,9 +210,34 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         parkedQuote = currency0.balanceOfSelf(); // whatever this commit did not take stays parked, exactly
     }
 
-    /// @notice Collect the wall's accrued LP fees to the platform recipient. Never removes principal.
+    /// @notice Collect the wall's accrued LP fees: the ETH (currency0) leg to the platform, the TOKEN (currency1)
+    /// leg PARKED in-vault (never the platform). Never removes principal. Sweep the parked token via sweepTokenFees.
     function collectFloorFees() external nonReentrant {
         poolManager.unlock(abi.encode(Op.COLLECT, uint256(0)));
+    }
+
+    /// @notice Wire the token sink (the pad's staking / buyback pool) exactly ONCE, by the platform. This vault is
+    /// deployed pre-launch — before that pool exists — so the token-side LP fee parks in-vault until this points at
+    /// the real recipient, then is permanently frozen. Mirrors LockVault.setStakingRecipient / hook.setFloorRecipient.
+    function setTokenSink(address sink) external {
+        if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
+        if (tokenSink != address(0)) revert TokenSinkAlreadySet();
+        if (sink == address(0)) revert ZeroAddress();
+        tokenSink = sink;
+        emit TokenSinkSet(sink);
+    }
+
+    /// @notice Forward the floor position's parked TOKEN-side (currency1) LP fees to the wired token sink. Anyone
+    /// may call; funds only ever go to the registered sink, NEVER the caller and NEVER the platform. Reverts until
+    /// the platform has wired the sink (the token parks in-vault until then, losing nothing).
+    function sweepTokenFees() external nonReentrant returns (uint256 amount) {
+        address to = tokenSink;
+        if (to == address(0)) revert NoTokenSink();
+        amount = currency1.balanceOfSelf();
+        if (amount == 0) return 0;
+        // currency1 is always the pad ERC20 token on these pads (currency0 is the money side), never native.
+        IERC20(Currency.unwrap(currency1)).safeTransfer(to, amount);
+        emit TokenFeesSwept(to, amount);
     }
 
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {
@@ -232,10 +274,10 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         );
         // currency0 is the floor's own working capital (ETH principal) → keep any positive delta in the vault.
         _resolve(currency0, delta.amount0(), address(this));
-        // [audit] currency1 (token) is NEVER floor principal on this single-sided currency0 wall; fees were already
-        // realized to the platform by the _collect() above, so this is ~0. Route defensively to the platform anyway —
-        // taking a stray to the vault would strand it, since no function moves an idle currency1 balance out.
-        _resolve(currency1, delta.amount1(), feeRegistry.platformFeeWallet());
+        // [fee-model] currency1 (token) is NEVER floor principal on this single-sided currency0 wall; fees were
+        // already realized by the _collect() above, so this is ~0. PARK any stray in-vault (NEVER the platform — the
+        // platform holds no pad tokens); sweepTokenFees() forwards it to the token sink. No longer stranded.
+        _resolve(currency1, delta.amount1(), address(this));
         floorLiquidity += L;
         // [H-5] parkedQuote is reconciled by the caller from the real balance after the unlock closes — this
         // call now commits a SLICE, so zeroing it here would under-report the carve still waiting.
@@ -251,10 +293,13 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         );
         int128 a0 = delta.amount0();
         int128 a1 = delta.amount1();
-        address to = feeRegistry.platformFeeWallet(); // [L-11] resolved live from the timelocked registry
-        if (a0 > 0) poolManager.take(currency0, to, uint256(uint128(a0)));
-        if (a1 > 0) poolManager.take(currency1, to, uint256(uint128(a1)));
-        emit FloorFeesCollected(a0 > 0 ? uint256(uint128(a0)) : 0, a1 > 0 ? uint256(uint128(a1)) : 0, to);
+        address plat = feeRegistry.platformFeeWallet(); // [L-11] resolved live from the timelocked registry
+        // currency0 (ETH/money) leg → platform: the platform takes the money side.
+        if (a0 > 0) poolManager.take(currency0, plat, uint256(uint128(a0)));
+        // [fee-model] currency1 (TOKEN) leg → PARK in-vault (NEVER the platform, which holds no pad tokens). Swept to
+        // the token sink (staking / buyback pool) by sweepTokenFees(). This is the platform-token leak, now closed.
+        if (a1 > 0) poolManager.take(currency1, address(this), uint256(uint128(a1)));
+        emit FloorFeesCollected(a0 > 0 ? uint256(uint128(a0)) : 0, a1 > 0 ? uint256(uint128(a1)) : 0, plat);
     }
 
     /// @dev Settle what the vault owes / take what it is owed for one currency.

@@ -49,6 +49,7 @@ callback, BalanceDelta). currency0 = native ETH (address 0); currency1 = the pad
 ## 5. Key invariants
 
 - **No-mint:** factory holds 0 token post-launch; creator premine = 0.
+- **Platform is ETH-only — never holds pad tokens:** every platform inflow is money-side (currency0/ETH). Buy tax, buffer, referral, and the graduation waterfall are all ETH. Token-side (currency1) LP fees route to STAKING, never the treasury: the curve holds them → `fundTokenPushed` at graduation; `LockVault`'s token leg parks in `stakingOwed` and reverts rather than falling back to platform ([M-11]); the `RobinFloorVault` position (which holds token once spot trades into its band) parks its token-side fees in-vault and forwards them via `sweepTokenFees()` to a platform-wired `tokenSink` — the ETH leg still goes to the platform. Invariant test: `RobinFloorVault.test.js` asserts the treasury's token balance is *exactly* unchanged across a fee collection.
 - **LP never starved:** waterfall shares < 100% ⇒ `lpEth > 0`; the permanent LP NFT → `LockVault`, no remove path.
 - **Reserve suffices:** launch-time check `reserveSupply·√start·100 ≥ curveSupply·√grad·105` ⇒ the ETH leg binds at graduation (no `InsufficientReserve` brick, no ETH leak to the platform book).
 - **Graduation is CEI + unbrickable:** `graduated=true` before any external interaction; every fund-out is retriable/parked; a hostile ETH donation is snapshotted out of the raise.
