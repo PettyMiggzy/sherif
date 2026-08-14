@@ -53,7 +53,9 @@ describe("RobinV4FeeConfig", () => {
     await expect(cfg.setDefaults({ ...GOOD, ambushGradBps: 2501 })).to.be.revertedWithCustomError(cfg, "BadParam"); // > MAX_GRAD_SHARE_BPS
     await expect(cfg.setDefaults({ ...GOOD, creatorGradBps: 2501 })).to.be.revertedWithCustomError(cfg, "BadParam"); // > MAX_GRAD_SHARE_BPS
     await expect(cfg.setDefaults({ ...GOOD, buyTaxBps: 0, sellTaxBps: 0 })).to.be.revertedWithCustomError(cfg, "BadParam"); // 0/0 tax bricks the hook
-    await expect(cfg.setDefaults({ ...GOOD, lpFee: 1_000_001 })).to.be.revertedWithCustomError(cfg, "BadParam"); // > MAX_LP_FEE
+    await expect(cfg.setDefaults({ ...GOOD, lpFee: 10001 })).to.be.revertedWithCustomError(cfg, "BadParam"); // [M-10] > MAX_LP_FEE (1%)
+    await expect(cfg.setDefaults({ ...GOOD, lpFee: 1_000_001 })).to.be.revertedWithCustomError(cfg, "BadParam"); // and still > Uniswap max
+    await expect(cfg.setDefaults({ ...GOOD, lpFee: 10000 })).to.not.be.reverted; // [M-10] exactly 1% is allowed (production geometry)
     await expect(cfg.setDefaults({ ...GOOD, lpFee: DYNAMIC_FEE_FLAG | 3000 })).to.be.revertedWithCustomError(cfg, "BadParam");
     await expect(cfg.setDefaults({ ...GOOD, startTickMag: 0 })).to.be.revertedWithCustomError(cfg, "BadParam");
     await expect(cfg.setDefaults({ ...GOOD, minGradWidth: 25800 })).to.be.revertedWithCustomError(cfg, "BadParam"); // >= curveWidth

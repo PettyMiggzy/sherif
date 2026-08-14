@@ -42,6 +42,13 @@ contract PadFactory {
 
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
     uint160 internal constant HOOK_FLAGS = 0x00CC;
+    // [M-3] Governed ceilings — the same policy the curve path (RobinV4FeeConfig) enforces, so a PadFactory launcher
+    // cannot carry a heavier tax than a governed pad. The hook's own MAX_TAX_BPS is looser (3%/side) and does NOT cap
+    // the floor share; these bind here. floor/staking RECIPIENTS stay launcher-chosen (a creator's own pools) — that
+    // is inherent to "the creator earns the sell tax", and is documented rather than gated.
+    uint16 internal constant MAX_TAX_BPS = 200; // ≤2% per side
+    uint16 internal constant MAX_FLOOR_SHARE_BPS = 5000; // ≤50% of the sell tax to the floor (rest → creator)
+    uint24 internal constant MAX_LP_FEE = 10_000; // ≤1% static LP fee (matches RobinV4FeeConfig.MAX_LP_FEE)
     uint48 internal constant MAX_UINT48 = type(uint48).max;
 
     struct LaunchConfig {
@@ -117,6 +124,10 @@ contract PadFactory {
         if (cfg.fee & DYNAMIC_FEE_FLAG != 0) revert DynamicFeeNotAllowed(); // [A2] static fee only
         if (cfg.creator == address(0) || cfg.supply == 0 || cfg.lpTokenAmount == 0) revert BadConfig();
         if (cfg.lpTokenAmount > cfg.supply) revert BadConfig();
+        // [M-3] governed ceilings — a PadFactory launcher cannot exceed the curve path's tax policy
+        if (cfg.buyTaxBps > MAX_TAX_BPS || cfg.sellTaxBps > MAX_TAX_BPS) revert BadConfig();
+        if (cfg.sellFloorShareBps > MAX_FLOOR_SHARE_BPS) revert BadConfig();
+        if (cfg.fee > MAX_LP_FEE) revert BadConfig();
 
         // 1) deploy the token (supply minted to this factory)
         token = deployer.deploy(

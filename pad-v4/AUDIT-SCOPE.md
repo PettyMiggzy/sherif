@@ -66,11 +66,11 @@ Money side = **currency0** (native ETH on curve pads; the stock ERC20 on stock p
 6. **Governance** — a LAUNCHED pad's hook tax is immutable once stamped. Caveats the operator must hold (not "only
    its own cut"): (a) [M-14] `platformFeeWallet` is the ROOT ADMIN key — it authorizes every per-pad wiring setter,
    so it determines where each pad's staking/floor/ambush/locked-LP sinks route; (b) [M-5] the `DualStaking` owner
-   (also the platform side) can retroactively raise `antiJitDelay` to lock already-staked principal (≤ MAX_ANTI_JIT)
-   and raise `platformClaimFeeBps` to skim rewards that accrued under a lower rate — so a compromised platform key
-   CAN reach user principal/rewards on the staking path; (c) [M-10] `RobinV4FeeConfig.setDefaults` is a second,
-   un-timelocked knob governing fee + geometry for future launches and can reprice an OPEN presale ([M-12]). The
-   locked LP and the add-only floor/ambush principal remain unreachable by any key.
+   (also the platform side) can raise `platformClaimFeeBps` to skim rewards that accrued under a lower rate (bounded
+   by `MAX_CLAIM_FEE_BPS`) — the retroactive `antiJitDelay` lock is now CLOSED (each stake snapshots the delay, so a
+   raise binds only later stakes); (c) [M-10] `RobinV4FeeConfig.setDefaults` is a second, un-timelocked knob (now
+   bounded — `MAX_LP_FEE` 1%) governing fee + geometry for future launches and can reprice an OPEN presale ([M-12]).
+   The locked LP and the add-only floor/ambush principal remain unreachable by any key.
 7. **Access control** — `registerPool` / `setBufferRecipient` are factory-only & one-shot; `setFloorRecipient` is
    platform-only & one-shot; creator repoint is 2-step; claims are permissionless but pay only registered destinations.
 

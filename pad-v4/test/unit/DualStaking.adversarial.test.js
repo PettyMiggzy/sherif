@@ -177,6 +177,22 @@ describe("DualStaking — adversarial", () => {
     expect(await stk.balanceOf(alice.address)).to.equal(10n ** 24n); // exactly her original balance
   });
 
+  it("[M-5] a later setAntiJitDelay cannot retroactively lock already-staked principal", async () => {
+    // pool antiJitDelay = DAY (from the ctor). alice stakes now → her hold is snapshotted at DAY.
+    await ds.connect(alice).stake(TOKEN, 1000n * 10n ** 18n);
+    expect(await ds.antiJitAtStake(TOKEN, alice.address)).to.equal(BigInt(DAY));
+    // the owner raises the global delay to the max AFTER alice staked
+    await ds.connect(owner).setAntiJitDelay(7 * DAY);
+    // past alice's ORIGINAL 1-day hold (but well within the new 7-day one): she can still exit in full
+    await time.increase(DAY + 1);
+    await expect(ds.connect(alice).unstake(TOKEN, 1000n * 10n ** 18n)).to.not.be.reverted;
+    // a NEW stake, however, binds to the raised delay
+    await ds.connect(bob).stake(TOKEN, 1000n * 10n ** 18n);
+    expect(await ds.antiJitAtStake(TOKEN, bob.address)).to.equal(BigInt(7 * DAY));
+    await time.increase(DAY + 1);
+    await expect(ds.connect(bob).unstake(TOKEN, 1000n * 10n ** 18n)).to.be.revertedWithCustomError(ds, "Locked");
+  });
+
   it("[re-audit/L-2] fundTokenPushed: permissionless when SINGLE-listed, rewarder-gated when DUAL-listed", async () => {
     // SINGLE-listed reward → attribution is unambiguous → permissionless (this is the flushStaking() recovery path).
     const rw = await erc20(owner);

@@ -106,6 +106,9 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     mapping(uint8 => mapping(address => uint256)) public staked;
     mapping(uint8 => mapping(address => uint256)) public weight;
     mapping(uint8 => mapping(address => uint64)) public stakedAt;
+    // [M-5] antiJitDelay SNAPSHOTTED at (re)stake time. unstake() checks THIS, not the live global, so a later
+    // setAntiJitDelay can never retroactively extend the lock on principal already staked — it binds only later stakes.
+    mapping(uint8 => mapping(address => uint32)) public antiJitAtStake;
 
     mapping(uint8 => address[]) internal _rewardTokens;
     mapping(uint8 => mapping(address => RewardInfo)) public rewardInfo;
@@ -337,6 +340,7 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         // critical when a stake asset is also a listed reward on the other side ("earn the other").
         accountedReserve[address(asset)] += received;
         stakedAt[side][msg.sender] = uint64(block.timestamp);
+        antiJitAtStake[side][msg.sender] = antiJitDelay; // [M-5] freeze the hold for THIS stake at the current policy
         _reweigh(side, msg.sender);
         _kickstartPending(side);
         emit Staked(side, msg.sender, received, weight[side][msg.sender]);
@@ -347,7 +351,7 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         uint256 bal = staked[side][msg.sender];
         if (amount == 0) revert Zero();
         if (bal < amount) revert Insufficient();
-        if (block.timestamp < stakedAt[side][msg.sender] + antiJitDelay) revert Locked();
+        if (block.timestamp < stakedAt[side][msg.sender] + antiJitAtStake[side][msg.sender]) revert Locked(); // [M-5] snapshot, not live
 
         _updateReward(side, msg.sender);
         staked[side][msg.sender] = bal - amount;
@@ -551,6 +555,8 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         emit BoostOracleSet(oracle);
     }
 
+    /// @notice [M-5] Sets the hold for FUTURE (re)stakes only — each stake snapshots the delay in force at its time
+    /// (`antiJitAtStake`), so this can never retroactively lock principal already staked.
     function setAntiJitDelay(uint32 delay) external onlyOwner {
         if (delay > MAX_ANTI_JIT) revert BadParam();
         antiJitDelay = delay;

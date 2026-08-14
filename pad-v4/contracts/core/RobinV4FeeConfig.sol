@@ -11,10 +11,9 @@ import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step
 ///
 /// Hard caps below bound the HOOK taxes any future launch can carry, so even a compromised/fat-fingered owner
 /// cannot push a new pad's buy/sell tax past the ceiling. TWO caveats the operator must hold (see M-10, M-12):
-///   • [M-10] `lpFee` is NOT bounded by the ≤2% story — it is capped only at Uniswap's structural MAX_LP_FEE (100%),
-///     and on a Robin pad routes mostly to protocol-owned positions, so it is a SECOND, effectively-uncapped take.
-///     `setDefaults` is therefore a real un-timelocked economic knob, not merely a forward-only default — pick a
-///     Robin lpFee cap as policy and hold this owner key with the same care as the fee wallet.
+///   • [M-10] `lpFee` is a SECOND take on top of the buy/sell taxes (on a Robin pad it routes mostly to
+///     protocol-owned positions), now bounded by the Robin `MAX_LP_FEE` = 1% policy cap. `setDefaults` remains a
+///     real un-timelocked economic knob within that cap — hold this owner key with the same care as the fee wallet.
 ///   • [M-12] "forward-only, can never touch an existing coin" holds for a LAUNCHED pad (its fee is stamped
 ///     immutably at launch) but NOT for ETH already sitting in an OPEN PRESALE: PresaleVault reads geometry/lpFee
 ///     live at finalize, so an in-cap retune that lands while a presale is open silently reprices — or bricks — it.
@@ -26,7 +25,10 @@ contract RobinV4FeeConfig is Ownable2Step {
     uint16 public constant MAX_BUFFER_SHARE_BPS = 5000; // ≤50% of the buy tax may be diverted to the curve buffer
     uint16 public constant MAX_REFERRAL_SHARE_BPS = 5000; // ≤50% of the PLATFORM buy cut may be paid to a referrer
     uint16 public constant MAX_GRAD_SHARE_BPS = 2500; // ≤25% of the raise to any single non-LP grad bucket
-    uint24 public constant MAX_LP_FEE = 1_000_000; // Uniswap's LPFeeLibrary max (100%); a static fee above it bricks initialize
+    // [M-10] Robin policy cap on the static LP fee: 1% (10_000 pips). Below Uniswap's structural 100% (1_000_000),
+    // so it also subsumes the "static fee above the Uniswap max bricks initialize" concern. Production lpFee is
+    // exactly 10_000, so it passes at the boundary (`>` not `>=`); a launch can never carry an lpFee above 1%.
+    uint24 public constant MAX_LP_FEE = 10_000;
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
 
     /// @dev v3-economics model: graduation rewards are a PERCENTAGE of the raise (so they scale with any MC),
@@ -104,8 +106,8 @@ contract RobinV4FeeConfig is Ownable2Step {
             revert BadParam();
         }
         if (uint256(d.platformGradBps) + d.creatorGradBps + d.ambushGradBps >= BPS) revert BadParam();
-        // [AUDIT] static fee only AND ≤ Uniswap's MAX_LP_FEE — an over-max static fee reverts poolManager.initialize
-        // (surfacing as a misleading PoolAlreadyInit) and bricks the launch.
+        // [AUDIT/M-10] static fee only AND ≤ the Robin MAX_LP_FEE (1%). An over-max static fee would both exceed
+        // policy and (above Uniswap's 100%) revert poolManager.initialize; the 1% cap forecloses both.
         if (d.lpFee & DYNAMIC_FEE_FLAG != 0 || d.lpFee > MAX_LP_FEE) revert BadParam();
         if (d.startTickMag <= 0 || d.curveWidth <= 0) revert BadParam();
         if (d.minGradWidth <= 0 || d.minGradWidth >= d.curveWidth) revert BadParam();
