@@ -128,8 +128,11 @@ describe("SIM — the floor only ever grows and absorbs dumps", () => {
     const vaultAddr = await vault.getAddress();
 
     let last = 0n;
-    for (let i = 0; i < 4; i++) {
+    // [H-5] a commit needs the tick settled below the band for MIN_DWELL and is rate-limited per
+    // COMMIT_COOLDOWN, so advance time between pokes. Monotonicity is the property under test either way.
+    for (let i = 0; i < 8; i++) {
       await owner.sendTransaction({ to: vaultAddr, value: ethers.parseEther("2") });
+      await time.increase(Number(await vault.COMMIT_COOLDOWN()) + 1);
       await vault.addFloor();
       const L = await vault.floorLiquidity();
       expect(L).to.be.gte(last, "floor liquidity must never decrease"); // monotonic

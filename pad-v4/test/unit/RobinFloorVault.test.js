@@ -1,5 +1,6 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
+const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 // Feature 3 — RobinFloorVault. A fee-funded, permanent, single-sided QUOTE buy-wall. Verified against
 // a real PoolManager: the carve deploys as pure currency0 liquidity in a band just below the token
@@ -66,7 +67,14 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
   it("deploys the carve as single-sided quote liquidity", async () => {
     // fund the vault with the native carve
     await owner.sendTransaction({ to: await vault.getAddress(), value: ethers.parseEther("5") });
+    // [H-5] the first poke only records that the tick is below the band; a commit needs MIN_DWELL of settled
+    // time and moves at most MAX_COMMIT_BPS per COMMIT_COOLDOWN, so drain it over several pokes
     await vault.addFloor();
+    expect(await vault.floorLiquidity()).to.equal(0n); // nothing commits on a just-observed tick
+    for (let i = 0; i < 12; i++) {
+      await time.increase(Number(await vault.COMMIT_COOLDOWN()) + 1);
+      await vault.addFloor();
+    }
 
     const L = await vault.floorLiquidity();
     expect(L).to.be.gt(0n);
@@ -76,7 +84,7 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
     // single-sided: the vault used quote (its ETH), not token — it holds ~no token
     expect(await tok.balanceOf(await vault.getAddress())).to.equal(0n);
     // most of the ETH went into the wall
-    expect(await ethers.provider.getBalance(await vault.getAddress())).to.be.lt(ethers.parseEther("0.01"));
+    expect(await ethers.provider.getBalance(await vault.getAddress())).to.be.lt(ethers.parseEther("0.5"));
   });
 
   it("absorbs a sell that pushes price into the wall, and accrues fees the platform can collect", async () => {

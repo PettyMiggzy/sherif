@@ -57,6 +57,33 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     uint128 public floorLiquidity; // total liquidity permanently locked in the wall (only grows)
     uint256 public parkedQuote; // carve received while spot is inside/below the band (added on recovery)
 
+    /// [H-5] The single live `slot0` read that used to be this function's ENTIRE protection gated an
+    /// irreversible, unbounded commitment of the whole on-hand carve. In M-15's state — the pad has dumped,
+    /// spot sits at or above the band and the carve has been parking — anyone could buy to force the tick
+    /// below `floorTickLower`, call addFloor(), and sell back, flipping the carve from "mint nothing" to
+    /// "mint everything at a stale band" inside one transaction. Measured profitable (+4.07 ETH in a fully
+    /// atomic build with a real 0.05% flash loan) once the parked balance passes ~5% of the pool's ETH depth,
+    /// and below that threshold still pure griefing that burned 39-77% of the carve.
+    ///
+    /// The two constants below target the park→commit FLIP, which is what the finding requires — delaying or
+    /// randomising *when* the call may run changes nothing, because what gets minted does not depend on the
+    /// tick. MIN_DWELL forbids committing on a tick that only just arrived below the band, so the attack
+    /// cannot be atomic: the pusher must hold the price down across a real time gap, exposed to arbitrage.
+    /// MAX_COMMIT_BPS caps how much of the carve any single commit can flip, so the attacker's fixed push
+    /// cost (~1.5 ETH of price impact plus 2-4% in LP fee and buy tax) buys a bounded slice instead of the
+    /// whole balance — moving the profitability threshold out by 1/MAX_COMMIT_BPS.
+    ///
+    /// The honest path is barely touched: the band sits ABOVE spot by construction, so in normal operation
+    /// the tick has been below it continuously and `belowSince` is already old — every poke commits its slice
+    /// immediately. Only a tick that has *just* been shoved below the band has to wait.
+    uint32 public constant MIN_DWELL = 10 minutes;
+    uint16 public constant MAX_COMMIT_BPS = 2000; // ≤20% of the on-hand carve per commit
+    uint32 public constant COMMIT_COOLDOWN = 10 minutes;
+    uint16 internal constant BPS = 10_000;
+
+    uint64 public belowSince; // when the tick was first OBSERVED below the band (0 = last observation was not)
+    uint64 public lastCommitAt; // when the last slice was committed
+
     event FloorAdded(uint256 quoteUsed, uint128 liquidityAdded, uint128 totalLiquidity);
     event FloorSkipped(int24 currentTick, uint256 parked);
     event FloorFeesCollected(uint256 amount0, uint256 amount1, address to);
@@ -103,19 +130,34 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         floorTickUpper = upper;
     }
 
-    /// @notice Deploy all on-hand quote (the carve) into the permanent wall. Permissionless. If spot
-    /// has fallen into/below the band (so a single-sided currency0 add is not clean), the quote parks
-    /// and is added on the next call once spot is back above the band.
+    /// @notice Deploy on-hand quote (the carve) into the permanent wall. Permissionless. If spot has fallen
+    /// into/below the band (so a single-sided currency0 add is not clean), the quote parks and is added on a
+    /// later call once spot is back above the band.
+    /// [H-5] A commit additionally requires the tick to have been observed below the band at least MIN_DWELL
+    /// ago, and moves at most MAX_COMMIT_BPS of the balance per COMMIT_COOLDOWN. Anyone may poke to record an
+    /// observation; a poke that cannot commit yet simply parks, exactly as an out-of-band poke always did.
     function addFloor() external nonReentrant returns (uint128 added) {
         uint256 amt = currency0.balanceOfSelf();
         if (amt == 0) return 0;
         (, int24 tick,,) = stateView.getSlot0(_poolId());
         if (tick >= floorTickLower) {
+            belowSince = 0; // observation: NOT below → the dwell clock restarts from the next one
             parkedQuote = amt;
             emit FloorSkipped(tick, amt);
             return 0;
         }
-        added = abi.decode(poolManager.unlock(abi.encode(Op.ADD, amt)), (uint128));
+        if (belowSince == 0) belowSince = uint64(block.timestamp); // first observation below — start the clock
+        // not settled below the band long enough, or too soon after the last slice → record and park
+        if (block.timestamp < uint256(belowSince) + MIN_DWELL || block.timestamp < uint256(lastCommitAt) + COMMIT_COOLDOWN) {
+            parkedQuote = amt;
+            emit FloorSkipped(tick, amt);
+            return 0;
+        }
+        uint256 slice = (amt * MAX_COMMIT_BPS) / BPS;
+        if (slice == 0) slice = amt; // a balance too small to slice goes in whole rather than sticking forever
+        lastCommitAt = uint64(block.timestamp);
+        added = abi.decode(poolManager.unlock(abi.encode(Op.ADD, slice)), (uint128));
+        parkedQuote = currency0.balanceOfSelf(); // whatever this commit did not take stays parked, exactly
     }
 
     /// @notice Collect the wall's accrued LP fees to the platform recipient. Never removes principal.
@@ -153,7 +195,8 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         // taking them to the vault would strand them, since no function moves an idle currency1 balance out.
         _resolve(currency1, delta.amount1(), feeRecipient);
         floorLiquidity += L;
-        parkedQuote = 0;
+        // [H-5] parkedQuote is reconciled by the caller from the real balance after the unlock closes — this
+        // call now commits a SLICE, so zeroing it here would under-report the carve still waiting.
         emit FloorAdded(amt, L, floorLiquidity);
     }
 
