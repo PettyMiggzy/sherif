@@ -4,6 +4,34 @@
 
 ---
 
+
+> ## ⚠ STATUS: DESIGN-TIME DOCUMENT — THE CODE IS GROUND TRUTH
+>
+> **[M-6]** This is the architecture written *before and during* the build. Several of its designs were
+> changed or dropped, and it was never updated. It is listed as required reading by `AUDIT-SCOPE.md`, so an
+> auditor reading it as a description of the shipped system will hunt for bugs in code that does not exist and
+> will not look hard at the code that actually holds the money. **Where this document and `contracts/`
+> disagree, `contracts/` is correct.** `ROBIN-V4-CURVE-ECON.md` is accurate and is the better starting point.
+>
+> The specific divergences, each marked inline below where it occurs:
+>
+> | this document says | what shipped |
+> |---|---|
+> | `REQUIRED_FLAGS = 0x00C4` (§3.1) | **`0x00CC`** — `BaseHook.sol:30`. `BEFORE_SWAP_RETURNS_DELTA` was added when the buy tax became fee-on-input. |
+> | A **3-way** platform/creator/holder fee split, skimmed in `afterSwap` (§3.2) | A **directional** tax. BUY is taxed fee-on-**input** in `beforeSwap`; SELL is taxed from the money-side **output** in `afterSwap`. Books are platform / curve-buffer / referral / creator / floor. |
+> | An **O(1) holder accumulator** with `rewardPerTokenStored`, `unallocated`, `claimHolder` (§3.3) | **Does not exist.** There is no holder bucket in `RobinFeeHook`. Holder rewards are a separate product: `RobinLockStaking` / `DualStaking`. |
+> | `RobinFloorVault` is an **ERC-4626 USDG vault** with `totalAssets`, `convertToShares`, a seeded first-deposit defence (FEATURE 3) | **Not a vault-with-shares.** Nobody deposits, nobody redeems, no USDG anywhere. It is a single-sided currency0 band above spot, add-only, fed by the fee carve. `convertToShares` / `availableRewardsOf` appear **0 times** in `contracts/`. |
+> | A `UsdgYieldAdapter` contract (FEATURE 3) | **Does not exist.** `contracts/adapters/` holds `EthQuoteAdapter` and `StockQuoteAdapter` only. |
+> | Both taxes collected by `POOL_MANAGER.take` (§3.2) | Both are minted as **ERC-6909 claims** and redeemed at claim time — see H-1 in `AUDITOR-HANDOFF.md`. |
+>
+> Also stale, and corrected at the source rather than here: `RobinStateView.sol`'s `totalAssets` comment, and
+> `DualStaking`'s `IHookWeightSink` NatSpec, which advertised a reward stream to the removed holder bucket.
+>
+> **This banner is a stop-gap, not the fix.** The document should be rewritten or retired before the package
+> goes to an external reviewer; that is a judgement call about what the architecture narrative should now say,
+> which is the operator's to make. Until then, read it as history.
+
+
 ## 1. GROUND TRUTH
 
 ### 1.1 The exact V4 stack to build on (pin these; verified on-chain)
@@ -99,6 +127,10 @@ Runtime data flow:
 ### FEATURE 1 — 3-way fee hook (`RobinFeeHook`) — THE HEART
 
 #### 3.1 Flags, fee model, and the decisions that kill A1/A2/G1/G2
+
+> **[M-6] SUPERSEDED IN PART.** `REQUIRED_FLAGS` shipped as **`0x00CC`**, not `0x00C4`. The static-fee,
+> no-`beforeInitialize` and always-additional decisions below are accurate and did ship.
+
 - **One hook bytecode, one salt family. `REQUIRED_FLAGS = 0x00C4`** = `BEFORE_SWAP (0x80) | AFTER_SWAP (0x40) | AFTER_SWAP_RETURNS_DELTA (0x04)`. `[RESOLVES G1]` — this exact word is the miner target, the ctor self-assert, and a public `REQUIRED_FLAGS` constant the factory cross-checks. No 0x44 vs 0x2044 disagreement remains.
 - **No `beforeInitialize`.** `[RESOLVES G2]` — config is bound by `factory.registerPool(poolId, cfg)` in the same launch tx; an unregistered pool has `feeBps==0` and the hook is inert for it. Dropping `beforeInitialize` also removes the "which `sender` calls initialize" ambiguity entirely. Factory calls `POOL_MANAGER.initialize` **directly** (no separate PoolInitializer contract).
 - **The skim is ALWAYS ADDITIONAL, never "carved."** `[RESOLVES A1]` The hook holds no LP position (seed LP is in LockVault, floor is in RobinFloorVault), so there is nothing to carve from. The trader pays `LP fee + skim`. Delete every "carved / no extra cost" claim.
@@ -106,6 +138,11 @@ Runtime data flow:
 - **`beforeSwap` is a cheap no-op for ETH/USDG pads** (checks `cfg.guardWindow == 0` → returns immediately), so one bytecode serves all three pad types.
 
 #### 3.2 The skim (afterSwap) — exact rules that kill A4/B1/D2
+
+> **[M-6] SUPERSEDED.** The shipped hook does not skim a single 3-way fee in `afterSwap`. It taxes
+> **directionally**: BUY fee-on-input in `beforeSwap`, SELL from the money-side output in `afterSwap`, both
+> minted as ERC-6909 claims (not `take`n — see H-1). Read `contracts/hooks/RobinFeeHook.sol` instead.
+
 ```
 afterSwap(sender, key, params, delta, _):
   require msg.sender == POOL_MANAGER
@@ -136,6 +173,10 @@ afterSwap(sender, key, params, delta, _):
 - `receive() external payable {}` required so native `take` lands.
 
 #### 3.3 O(1) holder accumulator — kills F1/F2
+
+> **[M-6] NEVER BUILT.** There is no holder bucket, no `rewardPerTokenStored`, no `unallocated` and no
+> `claimHolder` in `RobinFeeHook`. Holder rewards ship as a separate staking product. Do not audit this.
+
 ```
 _accrueHolders(id, c, amt):
   ts = totalWeight[id]
@@ -181,6 +222,12 @@ Port the **already-audited** streaming engine from `launchpad/contracts/RobinSta
 ---
 
 ### FEATURE 3 — RobinVault (USDG floor) — `RobinFloorVault` + `UsdgYieldAdapter`
+
+> **[M-6] NEVER BUILT AS DESCRIBED.** `RobinFloorVault` is not ERC-4626 and has no shares, no USDG and no
+> yield adapter; `UsdgYieldAdapter` does not exist. What shipped is a single-sided currency0 band placed above
+> spot, add-only with no remove path, fed by the sell-tax carve. The share-accounting, first-deposit-inflation
+> and `wipeFrozenAddress` analysis below applies to no shipped code. Read `contracts/pads/RobinFloorVault.sol`.
+
 
 - **ERC-4626, `asset` = USDG (6-dec).** Shares 18-dec internally; `SCALE = 1e12` at deposit/redeem boundaries only.
 - **The floor** is a single-tick-range, single-sided **quote** position `[tickFloor, tickFloor+tickSpacing]` just below spot (a standing bid), held as **raw liquidity inside the vault** (not an NFT), managed via direct `POOL_MANAGER.modifyLiquidity` in the vault's own `unlockCallback`. **Opcodes: `OP_ADD_FLOOR`, `OP_COLLECT_FLOOR` — there is deliberately no `OP_REMOVE`.** That absence *is* the "floor locked forever" guarantee. Ticks spacing-aligned (`floor(rawTick/tickSpacing)*tickSpacing`); never hardcode ±887272.

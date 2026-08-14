@@ -39,6 +39,41 @@ Follow-ups (platform multisig):
   keeper can stream the token-leg LP fee to stakers.
 - Verify token + hook + floor vault on Blockscout.
 
+## 2b. Launch a CURVE pad + wire it (per coin)
+
+The curve path (`CurvePadFactoryV4` → `RobinCurveV4` → graduation) is the flagship product and had **no
+runbook section here at all**. Its wiring is five separate platform-held **one-shot** calls across three
+contracts. None of them requires the others, and every one fails **silently** when missed — the money accrues
+somewhere else, or to nobody, and nothing on chain complains.
+
+| call | routes | if missed |
+|---|---|---|
+| `curve.setStaking(pool)` | graduation reservoir + sell-side LP fee | reservoir parks on the curve (`flushStaking()` retries) |
+| `curve.setFloor(vault)` | **buy**-side LP carve | carve stays booked on the curve (`flushFloor()` retries) |
+| `curve.setAmbush(vault)` | `ambushGradBps` slice of the raise | slice stays booked on the curve |
+| `hook.setFloorRecipient(poolId, vault)` | **sell-tax** carve | **[M-7]** every sell's floor carve accrues to nobody; `claimFloor` reverts `NoFloorRecipient` |
+| `lockVault.setStakingRecipient(lpTokenId, …)` | locked LP's token-leg fee | only needed if `setStaking` was missed before `graduate()` — see ordering below |
+
+Two of these deserve their own line because they are the ones that used to be missing:
+
+- **There are TWO independent floor wirings.** `curve.setFloor` routes the buy-side LP carve;
+  `hook.setFloorRecipient` routes the sell-tax carve. Both are called "the floor", both are one-shot, and
+  nothing on chain requires them to name the same address.
+- **Order `setStaking` before `graduate()`.** `graduate()` copies `curve.staking` into
+  `LockVault.registerLaunch` as the locked LP's token-leg fee recipient. Set it first and that wiring is
+  correct and permanent. Set it after and the lock registers with `address(0)`; since **[M-11]**
+  `claimStaking` reverts `NoStakingRecipient` in that state rather than silently paying the platform
+  treasury, so the miss is loud — but repairing it needs the separate `setStakingRecipient` one-shot.
+
+Verify all five before you consider a pad live:
+
+```bash
+CURVE=0x… HOOK=0x… POOL_ID=0x… LOCK_VAULT=0x… LP_TOKEN_ID=… \
+  npx hardhat run scripts/check-wiring.js --network robinhood
+```
+
+It is read-only and exits non-zero if anything is unset, so it can gate a deploy.
+
 ## 3. Run the revenue keeper (continuous)
 ```bash
 # on the droplet, via pm2/cron, as the reward-keeper key:

@@ -120,6 +120,16 @@ async function main() {
   console.log("     graduation deploy RobinFloorVault + the two-sided RobinAmbushVault(…, curve, …), then platform calls");
   console.log("     curve.setStaking(staking) / curve.setFloor(floor) / curve.setAmbush(ambush) (one-shot each). The");
   console.log("     ambush reads its band anchor from curve.gradTick() on-chain; seedAmbush()/graduate() arm it.");
+  console.log("     [M-7] ALSO REQUIRED, and previously missing from this list: hook.setFloorRecipient(poolId, floor).");
+  console.log("     That is a SECOND, independent floor wiring — curve.setFloor routes the buy-side LP carve, while");
+  console.log("     hook.setFloorRecipient routes the sell-TAX carve. Nothing on chain requires them to name the same");
+  console.log("     address and both are one-shot; miss this one and every sell's floor carve accrues to nobody, with");
+  console.log("     claimFloor reverting NoFloorRecipient until it is set.");
+  console.log("     [M-11] ORDERING MATTERS: call curve.setStaking(staking) BEFORE graduate(). graduate() copies");
+  console.log("     curve.staking into LockVault.registerLaunch as the locked LP's token-leg fee recipient. Set it");
+  console.log("     first and that wiring is correct and permanent. Set it after and the lock registers with");
+  console.log("     address(0), which needs a separate one-shot LockVault.setStakingRecipient(lpTokenId, …) to");
+  console.log("     repair — so run `node scripts/check-wiring.js` after graduation to confirm all five are set.");
   console.log("  4. presales (optional, per coin): presaleFactory.createPresale(cfg, keccak(tokenSalt,hookSalt,curveSalt),");
   console.log("     target, deadline, perWalletCap, minContribution, finalizeGrace) — reveal the salts in finalize().");
 }

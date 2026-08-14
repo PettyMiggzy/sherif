@@ -24,19 +24,32 @@ Every trade pays **1% LP fee** (pool) + **1% directional trade tax** (hook). (v2
 
 - **Platform:** buy tax + 80% of buy LP fee (ongoing) + 0.5 ETH at graduation. (The 20% buy-LP slice is deferred into the floor.)
 - **Creator:** 0.8% of sells + 0.5 ETH at graduation. Can also **deposit ETH into staking directly** (no platform cut touched).
-- **Floor:** permanent, add-only ETH buy-wall (rug-proof), fed by the **0.2% sell carve + the 20% buy-LP slice (@grad) + the ambush's pump sales**. Never pullable.
+- **Floor:** permanent, add-only ETH buy-wall (rug-proof), fed by the **0.2% sell carve + the 20% buy-LP slice (@grad) + the ambush band's ETH-side LP fees** ([M-18]: not "pump sales" — the ambush never sells into pumps, see below). Never pullable.
 - **Stakers:** the **sell-side (token) LP fees**, streamed via the Synthetix accumulator — funded by trading, no token injection.
 
-## Ambush (held reserve, active from launch)
-At launch some tokens are **held back** (not sold on the curve) as the ambush reserve. It is placed as a **passive
-single-sided TOKEN sell-wall above the price in value terms** — a fixed band of liquidity at ticks *below* the
-graduation tick (in V4, a higher token value = a lower tick), implemented in `RobinAmbushVault` as the exact
-mirror of the audited `RobinFloorVault` (add-only, no remove path). When the coin pumps into it, AMM mechanics
-sell those tokens for ETH and the wall's ETH-side LP fees are routed to the **floor** — capping pumps and growing
-the rug-proof floor. Combined with the floor's
-ETH buy-wall (which catches dumps), this is a **passive two-sided support band** — "buy and sell to support the
-floor" WITHOUT a gameable active market-maker. At graduation, the remaining ambush tokens **pair the permanent
-locked LP**; the ETH it earned has already deepened the floor.
+## Ambush (ETH band above the graduation tick, funded AT graduation)
+
+> **[M-18] CORRECTED.** This section previously described the ambush as the exact **mirror image** of what
+> shipped — a token sell-wall below `gradTick`, held back at launch, capping pumps, and pairing the permanent
+> LP at graduation. Every one of those is inverted relative to `contracts/pads/RobinAmbushVault.sol`. This doc
+> calls itself "the locked reference — build to it" and is handed to external reviewers as ground truth, so the
+> error is corrected here rather than annotated. The old text is in git history.
+
+The ambush is a **passive single-sided ETH band** placed at ticks strictly **above** `gradTick`
+(`ambushTickLower = _alignUp(gradTick + 1, tickSpacing)`) — i.e. **below** the graduation *price*, since in V4 a
+higher tick means a cheaper token. It is funded at graduation from `ambushGradBps` (5%) of the **ETH raise**, not
+from tokens held back at launch, and it is armed by a separate permissionless `seedAmbush()`.
+
+It is **not** the floor's mirror — it is a **second buy-wall on the same side**, one band above the floor. It can
+never cap the chart. A dip (a sell pushing the tick up into the band) converts its ETH to token, buying the dip;
+a recovery (a buy pushing the tick back down) sells that token for ETH. The band's ETH-side LP fees are routed to
+the **floor**. It is add-only with no remove path, and its band anchor is read from `curve.gradTick()` on chain
+rather than passed in.
+
+Together with the floor's own ETH buy-wall sitting just below it, that is the two-sided support the pad
+advertises: two passive, un-pullable bands that catch dumps at different depths, with no gameable active
+market-maker. At graduation the ambush contributes **nothing** to the permanent locked LP — the band is
+permanent in its own right.
 
 ## Graduation (v2)
 At the ceiling (geometry set so the raise ≈ 4.2 ETH):
