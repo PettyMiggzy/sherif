@@ -1,7 +1,10 @@
 # Robin V4 — auditor hand-off: what needs fixing
 
-**This is a findings register, not a cover note.** It is the output of a deep, adversarial, report-only audit
-pass over `pad-v4/`. **Nothing was fixed** — every item below is written for whoever picks up the remediation.
+**This is a findings register plus a remediation ledger.** It is the output of a deep, adversarial audit pass
+over `pad-v4/`. The audit itself was report-only; a remediation phase then followed on the same branch. **Every
+finding below still reads exactly as it was filed** — none has been softened or deleted because it was fixed.
+§0 is the ledger: what has been fixed, in which commit, with which regression test, and what has deliberately
+been left alone. Read a finding for the defect and the measurement; read §0 for its current status.
 
 For the scope map, the invariant list, the economic model and the accepted design decisions, read
 [`AUDIT-SCOPE.md`](./AUDIT-SCOPE.md) first; this document assumes it. (The previous contents of this file were
@@ -12,13 +15,77 @@ a condensed restatement of `AUDIT-SCOPE.md`; it is preserved in git history.)
 | **Scope** | `pad-v4/contracts/**` — all subsystems, including the stock pad that `AUDIT-SCOPE.md` §2 marks informational |
 | **Branch** | `claude/ultra-audit-handoff-g6lxrw` |
 | **Build** | solc 0.8.26, `viaIR`, optimizer runs 1, EVM cancun — compiles clean |
-| **Baseline** | `npx hardhat test test/unit/*.js test/sim/*.js` → **130 passing**, before and after |
-| **Changed by this pass** | this file only |
+| **Baseline** | audit pass: `npx hardhat test` → **130 passing**, before and after. After remediation: **174 passing / 6 pending** |
+| **Changed by the audit pass** | this file only |
+| **Changed by the remediation phase** | 9 contracts, 3 test mocks, 8 new regression suites — see §0 |
 | **Method** | manual review of all 5,335 lines of `contracts/`, plus an adversarial finder/skeptic gauntlet looped to consecutive clean rounds |
 
 `PROVEN` on a finding means a runnable test or an exact numerical evaluation in this pass produced the stated
 numbers. §6 has the repro recipes; §4 lists what was checked and found clean, so the next pass doesn't
 re-derive it.
+
+---
+
+## 0. Remediation ledger
+
+Everything in this section post-dates the audit. The findings themselves are unchanged; this is only their
+status. Each fix carries a regression test that replays the original exploit against the patched contract and
+asserts the measured number moved — the tests are named for the finding so the mapping is mechanical.
+
+**Both CRITICALs and all five HIGHs are fixed.** The suite is green at 174 passing / 6 pending.
+
+### Fixed
+
+| id | sev | what changed | commit | regression test |
+|---|---|---|---|---|
+| **C-1** | CRITICAL | `RobinLockStaking`: pause guard no longer requires a non-zero rate; sub-rate tranches are carried, not scheduled; the mid-window window is floored at `MIN_DRIP_WINDOW`. Attacker's take **100.000000% → 0.000077%**. Closes **I-1(5)** (stranded remainder) and **L-19c** (missing `RewardAdded`) in the same change. | `954e24f` | `test/regression/C1.staking-capture.test.js` |
+| **C-2** | CRITICAL | `RobinCurveV4.restoreCeiling` takes a caller-supplied `sqrtPriceLimitX96`, validated above spot and at/below the ceiling, so the walk back can be split across transactions. A full walk that cannot fit in one transaction is now recoverable in bounded segments. | `7b0b3a5` | `test/regression/C2.graduation-brick.test.js` |
+| **H-1** | HIGH | `RobinFeeHook.afterSwap` mints the sell fee as an ERC-6909 claim instead of taking real currency, so no reachable state can make collection fail; `claimCreator`/`claimFloor` redeem. Flash-starved sell now taxed **identically to the honest baseline on the same tape**. | `fc28f7f` | `test/regression/H1.selltax-waiver.test.js` |
+| **H-2** | HIGH | `StockPadFactory` pins the platform's `stockRegistry` as an immutable and **derives** the curb adapter from (stock, registry) rather than accepting one; `guardWindow` capped at 7 days in the factory **and** in `registerPool`. | `29339d6` | `test/regression/H2.stock-gate.test.js` |
+| **H-3** | HIGH | `RobinFeeHook._scheduledEffectiveAt` and all six `StockQuoteAdapter` reads use length-checked low-level staticcalls; flags decode as a word, not as a `bool`. | `b405502` | `test/regression/H3.short-return.test.js` |
+| **H-4** | HIGH | `StockPadFactory` refunds the unused stock seed to `msg.sender`, and only this launch's remainder (snapshot-and-delta). **99,900e18 → 0** to the creator. | `1c02825` | `test/regression/H4.stock-seed-refund.test.js` |
+| **H-5** | HIGH | `RobinFloorVault.addFloor` requires the tick to have been observed below the band for `MIN_DWELL` and commits at most `MAX_COMMIT_BPS` per `COMMIT_COOLDOWN`. Atomic push→commit→sell-back now commits **nothing**; holding the push for the full dwell yields **20% instead of 100%**. | `9bf789f` | `test/regression/H5.floor-forced-fill.test.js` |
+| **M-2** | MEDIUM | `CurvePadFactoryV4` constructor asserts the lock vault's position manager matches the factory's. | `032191e` | covered by the factory suite |
+| **M-17** | MEDIUM | `DualStaking.boostOf` uses a length-checked staticcall; `setBoostOracle` requires code. Principal no longer freezes. | `b405502` | `test/regression/H3.short-return.test.js` |
+| **M-20** | MEDIUM | `DualStaking._applyReward` floors the scheduling window and parks sub-rate tranches. Tail-staking whale's take of a creator's gift **99.00% → 0.14%**, and arrival timing now buys nothing. | `d85dfeb` | `test/regression/M20.dualstaking-jit.test.js` |
+| **M-21** | MEDIUM | `setFloor`/`setAmbush` probe the target with a zero-value call before spending the one-shot. | `032191e` | covered by the curve suite |
+| **M-24** | MEDIUM | `setFloorRecipient` rejects the hook itself, and `_payout` refuses a self-send. | `032191e` | covered by the hook suite |
+| **M-25** | MEDIUM | `RobinLockStaking.fundTokenPushed` honours `side`/`asset`; `setStaking` probes the sink's stake asset (both `token()` and `tokenAsset()`) and refuses a foreign one. | `d85dfeb` | `test/regression/M25.staking-sink-mismatch.test.js` |
+| **M-26** | MEDIUM | `RobinAmbushVault`'s constructor cross-checks its whole `PoolKey` against the curve, not just `gradTick`. | `032191e` | `test/unit/RobinAmbushVault.test.js` |
+| **I-1(19)** | INFO | `CurvePadFactoryV4.launch` asserts it is the lock vault's registrar. | `032191e` | covered by the factory suite |
+
+### Deliberately not fixed — product decisions, flagged not taken
+
+These are judgement calls about what the protocol should *be*, not defects with a mechanically correct patch.
+They are left for the operator with the finding as written.
+
+| id | why it was left | 
+|---|---|
+| **M-3** | What `PadFactory` is for relative to `CurvePadFactoryV4` — a scope question, not a bug. |
+| **M-5** | Which owner powers to defend against, and how. Changing the trust model is the operator's call. |
+| **M-10** | What `MAX_LP_FEE` should be. Any number here is a policy choice. |
+| **M-12** | Whether presale terms may move after commitments. A product promise, not a code invariant. |
+| **L-25** | Requires re-mined hook addresses — a launch-flow change, not a patch. |
+| **H-2 (residual)** | A curated `approvedAdapter` allow-list was **not** added. Pinning the registry achieves the security result without inventing an ops process; the KYC/geo and issuer allow-list gates the contract documents remain off-chain launch gates, as it already says they are. |
+
+### Not yet addressed
+
+Everything else in §3 — the remaining MEDIUMs, LOWs and the I-1 bundle — stands as filed and has not been
+touched. Nothing in that set is a CRITICAL or HIGH.
+
+### Notes for the next reader
+
+Three things the remediation phase turned up that are worth knowing before you read the findings:
+
+- **`MockPositionManagerV4` modelled only the ETH curve's 3-action batch** and indexed `params[2]`
+  unconditionally. `StockPadFactory` sends two actions, so the stock launch path reverted inside the mock and
+  had never been exercised by any test at all. Fixed in `1c02825`. This is the same defect class as **M-8**.
+- **Several existing tests encoded the bugs as intended behaviour** and had to be corrected alongside the
+  fixes, not merely re-run: `RobinLockStaking.test.js` asserted the stranded dust of **I-1(5)** was zero;
+  `RobinFeeHook.skim.test.js` and `economics.sim.test.js` asserted **H-1**'s take-based collection; two floor
+  tests asserted **H-5**'s immediate full commit. Each is now a stronger assertion, not a weaker one.
+- **Hardhat keeps chain state across test files.** The regression suites snapshot and restore, because C-2's
+  setup alone spends enough ETH to starve later files of gas money.
 
 ---
 
@@ -119,6 +186,8 @@ assertion (L-7). That single root cause is cheaper to fix once — scripted depl
 ## 3. Findings
 
 ### C-1 · CRITICAL · Three wei arms a trap that takes 100% of a pad's staking reservoir — 9.7% of total supply  `PROVEN (×3)`
+
+> **STATUS: FIXED** in `954e24f` · regression test `test/regression/C1.staking-capture.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `contracts/pads/RobinLockStaking.sol:222-231` (`_startDrip`), `:135-139` (the empty-pool pause guard
 in `withdraw`), `:114-118` (`stake`'s pending flush), `:205` (`_accrueReward`'s park branch).
@@ -253,6 +322,8 @@ rewards always get a full `duration` no matter what state the old window was in.
 
 ### C-2 · CRITICAL · 100 wei of dust liquidity pushes `graduate()` *and* `restoreCeiling()` past the block gas cap, trapping the whole raise  `PROVEN`
 
+> **STATUS: FIXED** in `7b0b3a5` · regression test `test/regression/C2.graduation-brick.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
+
 **Where** `contracts/pads/RobinCurveV4.sol:540-556` (`_graduatePull`'s ceiling nudge) and `:582-590`
 (`_restore`). Neither takes a caller-supplied intermediate price limit, so neither can be split across
 transactions.
@@ -309,6 +380,8 @@ There is no other exit. `poolManager.modifyLiquidity(..., liquidityDelta: -int25
 ---
 
 ### H-1 · HIGH · Any seller can waive the sell tax entirely — and it is *cheaper* than paying it  `PROVEN (×3)`
+
+> **STATUS: FIXED** in `fc28f7f` · regression test `test/regression/H1.selltax-waiver.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `contracts/hooks/RobinFeeHook.sol:297-302` (`afterSwap`'s guarded `take`).
 
@@ -399,6 +472,8 @@ waiver.
 
 ### H-2 · HIGH (gating the stock pad; no live surface today) · A `StockPadFactory` launcher ships a pad it can freeze at will, and the securities gate is self-certified  `PROVEN`
 
+> **STATUS: FIXED** in `29339d6` · regression test `test/regression/H2.stock-gate.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
+
 **Where** `contracts/core/StockPadFactory.sol:69` (`adapter`, caller-supplied), `:68` (`guardWindow`,
 caller-supplied, unbounded `uint32`), `:172`/`:176` (both stamped immutably into the hook), enforced at
 `contracts/hooks/RobinFeeHook.sol:190-197`.
@@ -483,6 +558,8 @@ hours, not years.
 
 ### H-3 · HIGH (gating the stock pad) · `try/catch` does not absorb a short return, and `guardAdapter` has no setter  `PROVEN`
 
+> **STATUS: FIXED** in `b405502` · regression test `test/regression/H3.short-return.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
+
 **Where** `contracts/hooks/RobinFeeHook.sol:255-261` (`_scheduledEffectiveAt`), reached from the curb at
 `:190-197` on **every swap** of a stock pad.
 
@@ -538,6 +615,8 @@ since today a single bad address at launch is unrecoverable.
 ---
 
 ### H-4 · HIGH (gating the stock pad) · `StockPadFactory.launch` pulls the seed from `msg.sender` and refunds it to `cfg.creator` — 99.9% of a payer's balance, measured  `PROVEN`
+
+> **STATUS: FIXED** in `1c02825` · regression test `test/regression/H4.stock-seed-refund.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `contracts/core/StockPadFactory.sol:182` (`safeTransferFrom(msg.sender, …)`) against `:185` (the
 comment) and `:189-190` (the refund), with sizing at `:204-210`.
@@ -795,6 +874,8 @@ create and finalize.
 ---
 
 ### M-2 · MEDIUM · `LockVault` has one registrar slot but three factories register launches  `PROVEN`
+
+> **STATUS: FIXED** in `032191e` · covered by the existing suite. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `contracts/core/LockVault.sol:71` (`setFactory`, one-shot), `:84` (`registerLaunch` gate). Callers:
 `core/PadFactory.sol:187`, `core/StockPadFactory.sol` (launch step 4), and `pads/RobinCurveV4.sol:360` →
@@ -1421,6 +1502,8 @@ second is a one-line change and is what the code actually does.
 
 ### M-17 · MEDIUM · The same short-return gap freezes `DualStaking` principal  `PROVEN`
 
+> **STATUS: FIXED** in `b405502` · regression test `test/regression/H3.short-return.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
+
 **Where** `contracts/pads/DualStaking.sol:186-196` (`boostOf`), reached from `_reweigh` on every `stake`,
 `unstake` and `sync`.
 
@@ -1534,6 +1617,8 @@ path that `lockVault.factory() == address(curveFactory)` (M-2); a presale whose 
 
 ### M-20 · MEDIUM · `donateETH` is the one permissionless funding path that passes `extend=false`, so a creator's gift streams over the *residue* of the live window  `PROVEN`
 
+> **STATUS: FIXED** in `d85dfeb` · regression test `test/regression/M20.dualstaking-jit.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
+
 **Where** `contracts/pads/DualStaking.sol:399-406` (`donateETH`), `:245-253` (`_applyReward`'s two branches),
 against the `[AUDIT]` NatSpec at `:393-398` that justifies the design.
 
@@ -1610,6 +1695,8 @@ anti-JIT claim at `:31-33` must be qualified to exclude donations.
 ---
 
 ### M-21 · MEDIUM · The floor/ambush ETH books have exactly one exit, it is a one-shot, and spending it on a non-receiving contract burns the funds silently  `PROVEN`
+
+> **STATUS: FIXED** in `032191e` · covered by the existing suite. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `contracts/pads/RobinCurveV4.sol:457-473` (`setFloor` / `setAmbush`, platform-only, one-shot),
 `:665-680` (`_fundFloor`) and `:682-696` (`_fundAmbush`), against `:381` (step 9) and `:283-291`
@@ -1816,6 +1903,8 @@ reopen the pool early. Failing that, document the curb as pre-event only and sto
 
 ### H-5 · HIGH · `addFloor()`'s slot0-only guard flips the parked carve from "mint nothing" to "mint everything at a stale band" — 88.43% forced-fill loss, measured  `PROVEN`
 
+> **STATUS: FIXED** in `9bf789f` · regression test `test/regression/H5.floor-forced-fill.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
+
 *(Filed initially as M-23. Promoted, and its mechanism corrected — see "the diagnosis was wrong" below.)*
 
 **Where** `contracts/pads/RobinFloorVault.sol:109-119` (`addFloor`, permissionless), `:137` (`_add`'s sizing),
@@ -1896,6 +1985,8 @@ guard that merely randomises or delays *when* the call may run changes nothing, 
 not depend on the tick. **M-15**, **L-33** and this finding are the same guard read three ways.
 
 ### M-24 · MEDIUM · The hook's floor pointer accepts the hook itself, and then `claimFloor` reports success while moving nothing — permanently  `VERIFIED`
+
+> **STATUS: FIXED** in `032191e` · covered by the existing suite. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `contracts/hooks/RobinFeeHook.sol:383-391` (`setFloorRecipient`), `:340-348` (`claimFloor`),
 `:467-475` (`_payout`), `:478` (`receive`).
@@ -2027,6 +2118,8 @@ partial-fill wording cover it.
 
 ### M-25 · MEDIUM · `RobinLockStaking.fundTokenPushed` ignores the `asset` it is handed and returns 0, so a mis-wired `setStaking` swallows the whole graduation reservoir silently  `VERIFIED`
 
+> **STATUS: FIXED** in `d85dfeb` · regression test `test/regression/M25.staking-sink-mismatch.test.js`. The finding below is unchanged from how it was filed — see §0 for what the fix does.
+
 **Where** `contracts/pads/RobinLockStaking.sol:190-198`, called from
 `contracts/pads/RobinCurveV4.sol:654-663` (`_fundStaking`), against `contracts/pads/DualStaking.sol:428-435`
 which honours the same signature.
@@ -2072,6 +2165,8 @@ consider reverting rather than returning 0 when nothing arrived, as `DualStaking
 ---
 
 ### M-26 · MEDIUM · `RobinAmbushVault` verifies its tick against the curve and takes the entire pool key on trust  `VERIFIED`
+
+> **STATUS: FIXED** in `032191e` · covered by the existing suite. The finding below is unchanged from how it was filed — see §0 for what the fix does.
 
 **Where** `contracts/pads/RobinAmbushVault.sol:86-121` (constructor), `:257-259` (`_poolKey`), against
 `contracts/pads/RobinCurveV4.sol:91-96`.
@@ -3769,6 +3864,11 @@ the same `addFloor` guard read three ways — a fix aimed at one must be checked
 ---
 
 ## 8. Suggested remediation order
+
+> **This ordering is the audit's, written before any remediation.** Items 1–4 and the one-shot-setter class in
+> §7(4) have since been done — see §0 for the ledger. It is kept as written because the *reasoning* about
+> sequencing (which fixes interact, which must be costed together) is still what a reader needs, and because
+> the remaining items are ordered against it.
 
 1. **C-2** — 100 wei traps the entire raise, and the documented recovery is bricked by the same mechanism.
    Fix (1) alone — a caller-supplied price limit on `restoreCeiling` — converts it from unrecoverable to
