@@ -75,16 +75,17 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     /// and below that threshold still pure griefing that burned 39-77% of the carve.
     ///
     /// The constants below target the park→commit FLIP. MIN_DWELL requires the tick to have been OBSERVED below the
-    /// band for a real time gap before a commit, and MAX_OBSERVED_GAP restarts that clock after any long un-poked gap
-    /// so a stale `belowSince` from a prior healthy period cannot be replayed — together these close the ATOMIC
-    /// force-fill (a flash-loan push→commit→sell-back after an un-poked dump). MAX_COMMIT_BPS caps each commit to a
-    /// bounded slice of the carve.
+    /// band for a real time gap before a commit; MAX_COMMIT_BPS caps each commit to a bounded slice; MAX_OBSERVED_GAP
+    /// restarts the dwell clock after any long un-poked gap so a stale `belowSince` cannot be replayed. Together these
+    /// close the atomic WHOLE-CARVE force-fill and any replay off a belowSince stale by more than MAX_OBSERVED_GAP.
     ///
-    /// [re-audit/H-5] HONEST RESIDUAL — this is NOT a full fix. Because COMMIT_COOLDOWN == MIN_DWELL, a determined
-    /// attacker can still force a fill with two below-band pushes MIN_DWELL..MAX_OBSERVED_GAP apart (bounded per
-    /// commit, exposed to arbitrage between them), draining the carve over several rounds. A poke-observed dwell
-    /// fundamentally cannot prove continuous below-band price without a TWAP. The real closure is the floor redesign
-    /// (M-15/H-5/L-33: add-only bands placed BELOW current spot, or a TWAP-gated commit) — a product decision.
+    /// [re-audit/H-5] HONEST RESIDUAL — this is NOT a full fix. Because COMMIT_COOLDOWN == MIN_DWELL, a BOUNDED slice
+    /// (≤MAX_COMMIT_BPS) can still be force-committed off a belowSince stale by ≤MAX_OBSERVED_GAP — in a SINGLE cheap
+    /// tx (belowSince may have been set by anyone's earlier commit-region poke; the attacker holds no position between
+    /// commits, so the cost is ~2× the pool fee per commit, NOT arbitrage), draining the carve over ~1/MAX_COMMIT_BPS
+    /// commits one per COMMIT_COOLDOWN. A poke-observed dwell fundamentally cannot prove continuous below-band price
+    /// without a TWAP. The real closure is the floor redesign (M-15/H-5/L-33: add-only bands placed BELOW current
+    /// spot, or a TWAP-gated commit) — a product decision.
     ///
     /// The honest path is barely touched: during normal operation a keeper pokes within MAX_OBSERVED_GAP, so the
     /// clock stays valid and every poke commits its slice once MIN_DWELL has elapsed.
@@ -167,14 +168,17 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
             return 0;
         }
         // [re-audit/H-5] `belowSince` is only ADVANCED by pokes, and pokes are not incentivized during a dump — so a
-        // value left over from a prior healthy period would be STALE and let an attacker atomically force-fill the
-        // carve after an un-poked dump (the sweep's HIGH). Restart the clock whenever we can't trust that the price
-        // stayed below since the last observation: it was never below (belowSince==0), OR the gap since the last poke
-        // is too long to vouch for continuity. This closes the ATOMIC/stale-belowSince force-fill.
-        // RESIDUAL (not closed here — needs the floor redesign, M-15/H-5/L-33): because COMMIT_COOLDOWN == MIN_DWELL, a
-        // determined attacker can still force a fill with TWO below-band pushes MIN_DWELL..MAX_OBSERVED_GAP apart
-        // (bounded to MAX_COMMIT_BPS per commit and exposed to arbitrage between them). A duration-enforced/TWAP gate
-        // or add-only bands placed below spot are the real closure; this is interim hardening, not a full fix.
+        // value left over from a prior healthy period would be STALE and let an attacker force-fill the carve off it
+        // after an un-poked dump. Restart the clock whenever we can't trust the price stayed below since the last
+        // observation: never below (belowSince==0), OR the gap since the last poke is too long to vouch for continuity.
+        // CLOSES: the atomic WHOLE-CARVE fill (MAX_COMMIT_BPS caps each commit, COMMIT_COOLDOWN one per block) and any
+        // replay off a belowSince stale by MORE than MAX_OBSERVED_GAP.
+        // RESIDUAL (needs the floor redesign, M-15/H-5/L-33 — NOT closed here): because COMMIT_COOLDOWN == MIN_DWELL, a
+        // BOUNDED slice (≤MAX_COMMIT_BPS) can still be force-committed off a belowSince stale by ≤MAX_OBSERVED_GAP — in
+        // a SINGLE cheap tx (belowSince may have been set by anyone's earlier commit-region poke; the attacker holds no
+        // position between commits, so the cost is ~2× the pool fee per commit, NOT arbitrage/price risk), draining the
+        // carve over ~1/MAX_COMMIT_BPS commits, one per COMMIT_COOLDOWN. A TWAP-gated commit or add-only bands below
+        // spot are the real closure; this is interim hardening, not a full fix.
         if (belowSince == 0 || nowTs > prevObserved + MAX_OBSERVED_GAP) belowSince = nowTs;
         // not settled below the band long enough, or too soon after the last slice → record and park
         if (block.timestamp < uint256(belowSince) + MIN_DWELL || block.timestamp < uint256(lastCommitAt) + COMMIT_COOLDOWN) {

@@ -84,12 +84,16 @@ Money side = **currency0** (native ETH on curve pads; the stock ERC20 on stock p
 - **Buy fee on requested input** — computed on the requested exact-input, so a partial-fill on a tight price limit
   over-taxes the buyer (settlement-safe, buyer-controlled, by design).
 - **[OPEN — H-5, NOT fully closed] Floor forced-fill.** The floor's park→commit dwell is poke-observed, not
-  duration-enforced. Interim hardening (`MAX_OBSERVED_GAP` restart of a stale `belowSince`) closes the ATOMIC
-  flash-loan force-fill after an un-poked dump, but because `COMMIT_COOLDOWN == MIN_DWELL` a determined attacker can
-  still force a bounded fill with two below-band pushes spaced apart (exposed to arbitrage). A poke-based dwell
-  cannot prove continuous below-band price without a TWAP. **Full closure requires the floor redesign (M-15/H-5/L-33
-  — add-only bands placed below spot, or a TWAP-gated commit), a product decision, ideally reviewed by the external
-  auditor before it ships.** This is the top open item; do not treat the floor as forced-fill-safe until it lands.
+  duration-enforced. Interim hardening (`MAX_OBSERVED_GAP` restart of a stale `belowSince`) closes the atomic
+  WHOLE-CARVE fill and any replay off a `belowSince` stale by more than `MAX_OBSERVED_GAP` (1h). But because
+  `COMMIT_COOLDOWN == MIN_DWELL`, a BOUNDED slice (≤`MAX_COMMIT_BPS`) can still be force-committed off a `belowSince`
+  stale by ≤1h — in a **single cheap tx** (the stale `belowSince` may have been set by anyone's earlier
+  commit-region poke; the attacker holds no position between commits, so the cost is ~2× the pool fee per commit,
+  **not** arbitrage/price risk), draining the carve over ~`1/MAX_COMMIT_BPS` commits one per `COMMIT_COOLDOWN`. A
+  poke-based dwell cannot prove continuous below-band price without a TWAP. **Full closure requires the floor
+  redesign (M-15/H-5/L-33 — add-only bands placed below spot, or a TWAP-gated commit), a product decision, ideally
+  reviewed by the external auditor before it ships.** This is the top open item; do not treat the floor as
+  forced-fill-safe until it lands.
 
 ## 6. Validation performed (internal)
 

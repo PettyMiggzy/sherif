@@ -229,11 +229,14 @@ told to find a bypass/regression/underflow/reachability break, plus three holist
   Added to `createPresale`. Test: `presale.sim.test.js` bounds test.
 - **H-5 (HIGH, re-confirmed by the floor sweep) — INTERIM HARDENING + OPEN.** The shipped `MIN_DWELL` guard is
   bypassable: `belowSince` is poke-observed, so a value left over from a prior healthy period is STALE, and after
-  an un-poked dump an attacker atomically force-fills the carve — the dwell contributes nothing. Interim fix
-  (`MAX_OBSERVED_GAP` restarts a stale clock) closes the ATOMIC force-fill (test `[re-audit/H-5]`), and the code's
-  false "cannot be atomic" claim was corrected. It does NOT fully close H-5 (the two-push residual remains, since
-  `COMMIT_COOLDOWN == MIN_DWELL`). **Full closure is the floor redesign (M-15/H-5/L-33), the top open design
-  decision — see §0b "Open — design / product decisions" and AUDIT-SCOPE §5.**
+  an un-poked dump an attacker force-fills the carve off it — the dwell contributes nothing. Interim fix
+  (`MAX_OBSERVED_GAP` restarts a clock stale by >1h) closes the atomic WHOLE-CARVE fill and the >1h-stale replay
+  (test `[re-audit/H-5]`), and the code's false "cannot be atomic" claim was corrected. A self-verification pass
+  then caught that the first-cut comment still over-claimed, and it was corrected to the accurate residual: a
+  BOUNDED slice (≤`MAX_COMMIT_BPS`) can still be force-committed off a ≤1h-stale `belowSince` in a single cheap tx
+  (~2× pool fee per commit, no arbitrage cost), draining the carve over ~`1/MAX_COMMIT_BPS` commits. **Full closure
+  is the floor redesign (M-15/H-5/L-33), the top open design decision — see the "Open — design / product decisions"
+  list above and AUDIT-SCOPE §5.**
 
 
 ---

@@ -1,10 +1,11 @@
-// REGRESSION TEST for H-5 (see AUDITOR-HANDOFF.md). addFloor()'s entire protection was one live slot0 read
-// gating the irreversible commitment of the WHOLE on-hand carve. In M-15's state — the pad has dumped, spot
-// sits at or above the band and the carve has been parking — anyone could buy to force the tick below
-// floorTickLower, call addFloor(), and sell back, flipping the carve from "mint nothing" to "mint everything
-// at a stale band" inside one transaction. The fix targets the park→commit FLIP, not the timing: a commit now
-// needs the tick settled below the band for MIN_DWELL (so the attack cannot be atomic) and moves at most
-// MAX_COMMIT_BPS of the balance per COMMIT_COOLDOWN (so a fixed push cost buys a bounded slice).
+// REGRESSION TEST for H-5 (see AUDITOR-HANDOFF.md). addFloor()'s entire original protection was one live slot0
+// read gating the irreversible commitment of the WHOLE on-hand carve — anyone could buy to force the tick below
+// floorTickLower, call addFloor(), and sell back, flipping the carve into a stale band in one tx. The park→commit
+// FLIP guards (MIN_DWELL + MAX_COMMIT_BPS per COMMIT_COOLDOWN) close the atomic WHOLE-CARVE fill, and the
+// [re-audit/H-5] MAX_OBSERVED_GAP reset additionally closes replay off a belowSince stale by >1h (the test below).
+// HONEST RESIDUAL (NOT closed — needs the floor redesign, M-15/H-5/L-33): because COMMIT_COOLDOWN == MIN_DWELL a
+// BOUNDED slice can still be force-committed off a ≤1h-stale belowSince, cheaply, over several rounds. See the
+// contract header + AUDIT-SCOPE §5.
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { time, takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
