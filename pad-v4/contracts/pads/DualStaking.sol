@@ -187,15 +187,20 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     }
 
     /// @notice The boost (bps) a user would get right now, clamped to [1x, 4x]. Never reverts.
+    /// [M-17] The try/catch this used to rely on did not make that true. try/catch catches reverts but NOT a
+    /// failure to decode the return data — the decode runs in THIS frame after the call already succeeded, so an
+    /// oracle returning fewer than 32 bytes reverted here despite the catch. `_reweigh` calls this on every
+    /// stake, unstake and sync, so such an oracle froze every staker's PRINCIPAL, invisibly until someone tried
+    /// to unstake. A low-level staticcall with a length check makes "never reverts" actually hold.
     function boostOf(uint8 side, address user) public view returns (uint256) {
-        if (address(boostOracle) == address(0)) return BPS;
-        try boostOracle.boostBps(side, user) returns (uint256 b) {
-            if (b < BPS) return BPS;
-            if (b > MAX_BOOST_BPS) return MAX_BOOST_BPS;
-            return b;
-        } catch {
-            return BPS;
-        }
+        address oracle = address(boostOracle);
+        if (oracle == address(0)) return BPS;
+        (bool ok, bytes memory data) = oracle.staticcall(abi.encodeCall(IBoostOracle.boostBps, (side, user)));
+        if (!ok || data.length < 32) return BPS;
+        uint256 b = abi.decode(data, (uint256));
+        if (b < BPS) return BPS;
+        if (b > MAX_BOOST_BPS) return MAX_BOOST_BPS;
+        return b;
     }
 
     // ───────────────────────────────────────────── internal accounting ──
@@ -491,7 +496,11 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         emit RewarderSet(who, allowed);
     }
 
+    /// [M-17] Require code at set time. It does not make the read safe on its own — boostOf's staticcall does
+    /// that — but it removes the commonest way in: an EOA, or a CREATE2 address for an oracle not yet deployed.
+    /// (address(0) stays legal and means "no boost": boostOf short-circuits to BPS before any call.)
     function setBoostOracle(address oracle) external onlyOwner {
+        if (oracle != address(0) && oracle.code.length == 0) revert BadParam();
         boostOracle = IBoostOracle(oracle);
         emit BoostOracleSet(oracle);
     }

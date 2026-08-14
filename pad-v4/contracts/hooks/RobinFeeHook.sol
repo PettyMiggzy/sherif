@@ -252,12 +252,19 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         emit BuyTaxed(id, platformCut - referralCut, bufferCut);
     }
 
+    /// @dev [H-3] This read must be genuinely best-effort, and a `try/catch` is not enough to make it so.
+    /// try/catch catches reverts; it does NOT catch a failure to decode the return data, because that decode
+    /// happens in the CALLER's frame after the call has already succeeded — outside the protected region. A
+    /// callee returning fewer than 32 bytes (a 5-byte `PUSH1 0 PUSH1 0 RETURN` contract answers every selector
+    /// that way) therefore reverts the whole transaction, uncatchably. This read sits on the curb path of every
+    /// swap of a stock pad, and `guardAdapter` is written once in registerPool with no setter anywhere, so a pad
+    /// launched against such an adapter would revert every swap FOREVER, with its seed LP already locked in
+    /// LockVault and no path to change the adapter or recover the seed. A low-level staticcall plus a length
+    /// check restores the intended semantics: an unreadable adapter simply never curbs.
     function _scheduledEffectiveAt(address adapter) internal view returns (uint256) {
-        try IStockGuardAdapter(adapter).scheduledEffectiveAt() returns (uint256 ea) {
-            return ea;
-        } catch {
-            return 0;
-        }
+        (bool ok, bytes memory data) = adapter.staticcall(abi.encodeCall(IStockGuardAdapter.scheduledEffectiveAt, ()));
+        if (!ok || data.length < 32) return 0;
+        return abi.decode(data, (uint256));
     }
 
     // --------------------------------------------------------------------- //
