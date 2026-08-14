@@ -60,11 +60,17 @@ Money side = **currency0** (native ETH on curve pads; the stock ERC20 on stock p
    recipient can never brick a swap, a claim, or graduation. All payouts are accrue-and-pull + retriable.
 4. **Permanent lock** — the graduation LP NFT is owned by `LockVault` and can never be withdrawn/unlocked; floor +
    ambush principal can only ever leave by trading at the AMM marginal price (add-only, sandwich-proof).
-5. **Raise integrity** — a donation can't inflate `lpEth` past the reserve's pairing capacity (brick), the buffer is
-   excluded from the measured raise, and graduation nudges spot to the honest ceiling before seeding.
-6. **Governance** — per-pad config is immutable once stamped; `RobinV4FeeConfig` is forward-only (retuning affects
-   only future launches); a compromised platform wallet can mis-route only the platform's OWN cut, never user
-   principal, the locked LP, or the add-only floor/ambush.
+5. **Raise integrity** — a donation OR swap-sourced ETH ([L-8]: the anti-grief nudge's proceeds from third-party
+   planted liquidity) can't inflate `lpEth` past the reserve's pairing capacity (brick); both are excluded from the
+   measured raise, and graduation nudges spot to the honest ceiling before seeding.
+6. **Governance** — a LAUNCHED pad's hook tax is immutable once stamped. Caveats the operator must hold (not "only
+   its own cut"): (a) [M-14] `platformFeeWallet` is the ROOT ADMIN key — it authorizes every per-pad wiring setter,
+   so it determines where each pad's staking/floor/ambush/locked-LP sinks route; (b) [M-5] the `DualStaking` owner
+   (also the platform side) can retroactively raise `antiJitDelay` to lock already-staked principal (≤ MAX_ANTI_JIT)
+   and raise `platformClaimFeeBps` to skim rewards that accrued under a lower rate — so a compromised platform key
+   CAN reach user principal/rewards on the staking path; (c) [M-10] `RobinV4FeeConfig.setDefaults` is a second,
+   un-timelocked knob governing fee + geometry for future launches and can reprice an OPEN presale ([M-12]). The
+   locked LP and the add-only floor/ambush principal remain unreachable by any key.
 7. **Access control** — `registerPool` / `setBufferRecipient` are factory-only & one-shot; `setFloorRecipient` is
    platform-only & one-shot; creator repoint is 2-step; claims are permissionless but pay only registered destinations.
 

@@ -53,7 +53,7 @@ contract PadFactory {
         uint160 sqrtPriceX96; // initial pool price
         int24 tickSpacing;
         uint24 fee; // STATIC lp fee (must NOT carry the dynamic-fee flag)
-        uint16 buyTaxBps; // trade tax on buys → platform (bps of token output)
+        uint16 buyTaxBps; // trade tax on buys → platform ([L-5] bps of the quote INPUT — money-side fee-on-input)
         uint16 sellTaxBps; // trade tax on sells → creator + floor (bps of quote output)
         uint16 sellFloorShareBps; // share of the sell tax carved to the floor
         address creator;

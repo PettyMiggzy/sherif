@@ -139,6 +139,11 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint256 public ambushEthOwed; // the ambushGradBps share of the raise, swept to the ambush vault at graduation
     mapping(address => uint256) public gasBountyOwed; // graduation keeper bounty booked here iff its inline send failed
     uint256 public totalGasBountyOwed; // running sum of gasBountyOwed, so sweepToPlatform never mis-books a pending bounty
+    // [L-8] ETH the anti-grief nudge pulled out of THIRD-PARTY planted liquidity below the ceiling during
+    // _graduatePull. There is no curve liquidity below gradTick, so this is never legitimate raise — it is excluded
+    // from raisedEth and falls through to the step-9 platform sweep (a griefer's ETH → platform, not LP/creator).
+    // Set inside _graduatePull, consumed once in graduate(); the `graduated` one-shot makes a reset unnecessary.
+    uint256 private _nudgeEthExcluded;
 
     event Seeded(uint128 liquidity, uint256 tokens);
     event CurveFeesAccrued(uint256 eth, uint256 tokenFees);
@@ -338,8 +343,12 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
 
     function ready() public view returns (bool) {
         if (!seeded || graduated) return false;
-        (, int24 tick,,) = stateView.getSlot0(_poolId());
-        return tick <= gradTick; // curve fully sold (spot at the ceiling, or below it if a buy overshot)
+        // [L-16] Gate on the SQRT PRICE, not the tick. The nudge (line ~629) and CeilingNotRestored both compare
+        // sqrt price, and the state `tick == gradTick && spot > gradSqrt` (inside tick gradTick, above its lower
+        // boundary) passes `tick <= gradTick` while the curve is NOT fully sold — seeding the LP there would leak
+        // the exact bps [HIGH-2] guards. Spot at/below the ceiling boundary == fully sold.
+        (uint160 sp,,,) = stateView.getSlot0(_poolId());
+        return sp <= TickMath.getSqrtPriceAtTick(gradTick);
     }
 
     /// @notice Graduate at the ceiling. Waterfall on the raised ETH (V3 parity): carve the per-side rewards
@@ -349,8 +358,10 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     function graduate() external nonReentrant {
         if (!seeded) revert NotSeeded();
         if (graduated) revert AlreadyGraduated();
-        (, int24 tick,,) = stateView.getSlot0(_poolId());
-        if (tick > gradTick) revert NotReady(); // curve not fully sold yet
+        // [L-16] Gate on the SQRT PRICE, not the tick (matches ready(), the nudge, and CeilingNotRestored). This
+        // forecloses the `tick == gradTick && spot > gradSqrt` window that let the LP seed above the ceiling.
+        (uint160 curSqrt,,,) = stateView.getSlot0(_poolId());
+        if (curSqrt > TickMath.getSqrtPriceAtTick(gradTick)) revert NotReady(); // curve not fully sold yet
         graduated = true; // CEI: flip before any external interaction
 
         // Pull any buy-tax buffer the hook has parked (buyBufferShareBps carve, in ETH — the money side) into this
@@ -375,10 +386,11 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         //    never a manipulated price. Then it accrues fees and takes the principal to this contract.
         poolManager.unlock(abi.encode(Op.GRADUATE_PULL, uint256(0)));
 
-        // 2) the raise = the NET new unbooked ETH the pull delivered (principal + nudge proceeds), excluding both
-        //    the fee books AND any pre-existing donation. A fully-sold curve yields ~0 token, so the LP token leg
-        //    is the held-back RESERVE (all on-hand token → LP then staking).
-        uint256 raisedEth = (address(this).balance - platformEthOwed - floorEthOwed) - donatedBefore;
+        // 2) the raise = the NET new unbooked ETH the pull delivered, excluding the fee books, any pre-existing
+        //    donation, AND [L-8] the anti-grief nudge's ETH (swap proceeds from third-party planted liquidity below
+        //    the ceiling — never legitimate raise; it falls through to the step-9 platform sweep). A fully-sold curve
+        //    yields ~0 token, so the LP token leg is the held-back RESERVE (all on-hand token → LP then staking).
+        uint256 raisedEth = (address(this).balance - platformEthOwed - floorEthOwed) - donatedBefore - _nudgeEthExcluded;
         uint256 tokenReserve = IERC20(token).balanceOf(address(this));
         if (raisedEth == 0) revert EmptyRaise();
         if (tokenReserve == 0) revert NoReserve(); // [CRITICAL-1] must have a held-back reserve to pair the LP
@@ -647,6 +659,9 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
                 );
                 _resolve(currency0, sd.amount0()); // take any ETH out
                 _resolve(currency1, sd.amount1()); // settle the (tiny) token consumed
+                // [L-8] Record the nudge's ETH proceeds so graduate() can exclude them from the raise. In the honest
+                // overshoot case the zone below gradTick is empty, so this is ~0 and honest raise is unchanged.
+                _nudgeEthExcluded = sd.amount0() > 0 ? uint256(uint128(sd.amount0())) : 0;
             }
             (uint160 nowSqrt,,,) = stateView.getSlot0(_poolId());
             if (nowSqrt != gradSqrt) revert CeilingNotRestored(); // never seed the permanent LP at a fake price

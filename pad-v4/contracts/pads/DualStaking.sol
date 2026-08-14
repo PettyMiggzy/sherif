@@ -486,7 +486,13 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     /// accounting — so no allowance/transferFrom is needed on the hook's hot path.
     function fundTokenPushed(uint8 side, address asset) external nonReentrant returns (uint256 received) {
         _requireSide(side);
-        if (!isRewarder[msg.sender]) revert NotRewarder();
+        // [L-2] PERMISSIONLESS (matches the sibling RobinLockStaking.fundTokenPushed). This is pure measured-delta
+        // accounting — `received = balanceOf - accountedReserve` — so a stranger's poke can only ever credit tokens
+        // that have ALREADY been transferred into this contract; it can never move value or credit thin air. The old
+        // NotRewarder gate was load-bearing only under M-13's extend=TRUE (a dust poke could re-arm the window and
+        // stall the stream); with extend=FALSE that lever is gone, and the gate merely broke the documented recovery:
+        // RobinCurveV4.flushStaking() calls this UN-caught (RobinCurveV4.sol ~L439), so on a DualStaking sink the gate
+        // reverted NotRewarder for every caller. fundToken (transferFrom) and fundETH (msg.value) KEEP their gate.
         if (asset == ETH) revert BadAsset();
         if (!rewardInfo[side][asset].listed) revert NotListed();
         uint256 bal = IERC20(asset).balanceOf(address(this));
@@ -494,8 +500,8 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         if (received == 0) revert Zero();
         accountedReserve[asset] = bal;
         _updateReward(side, address(0));
-        // [M-13] extend=FALSE. This path is rewarder-gated, but the rewarders that use it are RELAYS whose push
-        // is triggered by anyone: RobinCurveV4.flushStaking() is permissionless with no once-only guard, and
+        // [M-13] extend=FALSE. This path is triggered by RELAYS whose push is callable by anyone:
+        // RobinCurveV4.flushStaking() is permissionless with no once-only guard, and
         // RobinAmbushVault.collectFees()/flushFees() realize LP fees and forward them on any caller's poke. With
         // extend=TRUE each such poke re-armed periodFinish to now + duration and re-divided the WHOLE undripped
         // reservoir over a fresh full window, so a stranger could stall the stream indefinitely for dust — and

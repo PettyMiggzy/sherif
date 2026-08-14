@@ -314,23 +314,28 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
     }
   });
 
-  // 7) ESCAPE HATCH: target met but never finalized -> past deadline+grace -> fail(2) -> full refunds
-  it("escape hatch: target met but never finalized -> fail(reason 2) past deadline+grace, full refunds", async () => {
+  // 7) [L-13] ESCAPE HATCH is anchored to when the raise FILLED (filledAt), not the deadline: an early-filled raise's
+  //    contributors aren't locked until a far-off deadline+grace. target met but never finalized -> fail(2) -> refunds.
+  it("[L-13] escape hatch opens at filledAt+grace, well before a far deadline -> fail(reason 2), full refunds", async () => {
     const now = await time.latest();
-    const deadline = BigInt(now) + 2n * 86400n;
-    const grace = 86400n;
+    const deadline = BigInt(now) + 5n * 86400n; // a FAR deadline (5 days out)
+    const grace = 86400n; // 1 day
     const { vault } = await openPresale({ target: E(3), deadline, perWalletCap: E(2), minContribution: E("0.1"), finalizeGrace: grace });
     const [a, b] = [signers[3], signers[4]];
     await expect(vault.connect(a).deposit({ value: E("1.5") })).to.not.be.reverted;
     await expect(vault.connect(b).deposit({ value: E("1.5") })).to.not.be.reverted;
-    expect(await vault.totalRaised()).to.equal(E(3)); // target met
+    expect(await vault.totalRaised()).to.equal(E(3)); // target met — the raise CLOSED here
+    const filledAt = await vault.filledAt();
+    expect(filledAt).to.be.gt(0n); // [L-13] stamped the moment the raise filled
 
-    // after the deadline but WITHIN grace, fail() reverts TargetMet (must finalize, not fail)
-    await time.increaseTo(deadline + 10n);
+    // WITHIN grace of the FILL (and still far before the deadline): fail() reverts TargetMet (must finalize)
+    await time.increaseTo(filledAt + grace / 2n);
     await expect(vault.fail()).to.be.revertedWithCustomError(vault, "TargetMet");
 
-    // past deadline+grace the escape hatch opens
-    await time.increaseTo(deadline + grace + 10n);
+    // past filledAt+grace — but STILL BEFORE the far deadline — the escape hatch already opens (the L-13 improvement:
+    // the OLD deadline-anchored hatch would have locked contributors until now+6 days; here it opens at now+1 day).
+    await time.increaseTo(filledAt + grace + 10n);
+    expect(BigInt(await time.latest())).to.be.lt(deadline); // proves the hatch opened BEFORE the deadline
     await expect(vault.fail()).to.emit(vault, "Failed").withArgs(2);
     expect(await vault.state()).to.equal(2);
 

@@ -119,6 +119,103 @@ Three things the remediation phase turned up that are worth knowing before you r
 
 ---
 
+## 0b. Remediation round 2 — external-audit follow-up
+
+After the external auditor's pass (the fixes recorded in §0 above), a second remediation round ran on
+`claude/robinhood-chain-website-8loxcm`: (1) every one of the auditor's fixes was **adversarially re-verified**
+(a finder specced the fix, a skeptic was told to find a bypass / incomplete patch / regression / weakened test),
+and (2) the still-open LOW/MEDIUM findings were triaged and the mechanical + doc ones fixed. Suite: **193
+passing / 6 pending**, green.
+
+### Re-verification of the auditor's fixes — 20 checked, 13 SOLID
+
+Five fixes were code-correct but had **no negative regression test** (deleting the guard left the suite green).
+Backfilled this round so an accidental future removal is caught by CI:
+
+| finding | the fix (still correct) | new negative test |
+|---|---|---|
+| **M-2** | `launch()` reverts `NotRegistrar` when the LockVault's registrar ≠ this factory | `test/regression/M2-I19.factory-guards.test.js` |
+| **I-1(19)** | ctor reverts `LockVaultMismatch` when factory PM ≠ LockVault PM | `test/regression/M2-I19.factory-guards.test.js` |
+| **M-21** | `setFloor`/`setAmbush` reject a non-receiving contract (`EthSendFailed`) | `test/unit/RobinCurveV4.grief.test.js` (`[M-21]`) |
+| **M-24** | `setFloorRecipient(hook)` reverts; `_payout` refuses a self-send | `test/unit/RobinFeeHook.adversarial.test.js` (`[M-24]`) |
+| **M-26** | ambush ctor cross-checks all five PoolKey fields vs the curve | `test/unit/RobinAmbushVault.test.js` (`[M-26]`) |
+
+Two fixes were judged **INCOMPLETE** — real residuals, surfaced as design decisions (below), not silently closed:
+
+- **H-2 INCOMPLETE.** The registry is pinned, but the securities check still self-certifies from the STOCK
+  side: `IStockRegistry` exposes only `paused()/isBlocked()`, no membership query, so a fake stock that returns
+  the (public) pinned registry address passes the gate and the freeze primitive is fully restored. Closing it
+  needs the registry to *attest the stock* (a new interface method + a gate on it). Stock pad has no live
+  surface today — left as a design decision.
+- **H-5 INCOMPLETE.** `MIN_DWELL` is observation-gated, not duration-enforced: `belowSince` is only reset by an
+  above-band poke that nothing forces, so two momentary pushes `MIN_DWELL` apart satisfy the dwell check and the
+  carve drains 20%/`COMMIT_COOLDOWN` indefinitely. The griefing mode survives. Must be redesigned together with
+  M-15 (floor idles in a drawdown) and L-33 — see design decisions.
+
+### Open findings fixed this round (mechanical + doc)
+
+| id | class | what changed |
+|---|---|---|
+| **M-4** | mech | `setFloorRecipient` requires the recipient to be a contract (`code.length > 0`) — matches the other four sink setters; an EOA floor target would strand the sell-tax carve. |
+| **M-11** | mech | `LockVault.claimStaking` PARKS (`NoStakingRecipient`) while the staking recipient is unwired instead of silently paying the platform; the accrual survives and pays the real recipient once wired. |
+| **M-22** | mech | `PresaleVault.finalize` checks the reveal FIRST (a wrong-salt poke can't leak a real preimage); header trust-model comment corrected. |
+| **L-1** | mech | `CurvePadFactoryV4.launch` computes the ETH the `[gradTick,startTick]` position yields for `curveSupply` and reverts `BadGeometry` below `MIN_RAISE_WEI` (1e15) — a too-high `startTickMag` no longer truncates the raise to ~0 and bricks `graduate()`. |
+| **L-2** | mech | `DualStaking.fundTokenPushed` is now permissionless (measured-delta accounting; a stranger can only credit already-transferred tokens) — the old rewarder gate broke `flushStaking()`'s documented recovery. `fundToken`/`fundETH` keep their gate. |
+| **L-4** | mech | `_decodeReferrer` matches only an intentionally-encoded referrer (`length == 32` + high-12-bytes-zero), so an aggregator payload can't silently name a pseudo-random referrer and strand the carve. |
+| **L-5** | doc | Corrected the stale buy-tax "buffer → LP/staking" comments (it routes to the PLATFORM at graduation) and the "bps of token output" mislabels (the buy tax is a money-side fee-on-INPUT) across `RobinV4FeeConfig`, `CurvePadFactoryV4`, `RobinFeeHook`, `IRobinInterfaces`, `PadFactory`. |
+| **L-6** | mech | `deploy-curve.js` requires `PLATFORM_WALLET` (no silent default to the hot deploy key); `DEPLOY.md` lists `RobinV4FeeConfig` as multisig/timelock-critical. |
+| **L-8** | mech | The anti-grief nudge's ETH (swap proceeds from third-party planted liquidity below the ceiling) is captured and EXCLUDED from the measured raise; it falls through to the platform sweep. |
+| **L-10** | mech | `DeterministicDeployer.deploy` rejects value sent on the adopt branch (`ValueOnAdopt`) instead of locking it. |
+| **L-11** | mech | `RobinFloorVault` resolves the platform sink LIVE from the timelocked registry at every use (mirrors LockVault/RobinFeeHook), so a wallet rotation reaches an already-deployed floor vault. |
+| **L-12** | mech | `PresaleVault.finalize` requires `MIN_FINALIZE_GAS` before the launch and bubbles an EMPTY-revert (out-of-gas) instead of irreversibly burning a funded presale to `Failed(3)`; only a typed launch-collision → `Failed(3)`. |
+| **L-13** | mech | The `Failed(2)` escape hatch (and finalize's upper bound) are anchored to `filledAt` (when the raise closed), not the deadline — an early-filled raise's contributors aren't locked until a far-off deadline+grace. |
+| **L-15** | doc | Hook-flag literals corrected `0x00C4 → 0x00CC` across `ROBIN-V4-ARCHITECTURE.md`, `DEPLOY.md`, and a fork-test title (`BEFORE_SWAP_RETURNS_DELTA 0x08` was missing from the decomposition). |
+| **L-16** | mech | `ready()`/`graduate()` gate on the SQRT PRICE, not the tick, closing the `tick == gradTick && spot > gradSqrt` window that let the permanent LP seed above the ceiling. |
+| **L-17** | mech | `RobinAmbushVault` requires a non-zero `stakingRecipient` at deploy (add-only vault, no setter — a 0 sink would strand token-side fees forever). |
+| **L-18** | mech | `RobinFloorVault`/`RobinAmbushVault` pre-realize accrued fees (zero-liquidity poke, routed like the collect path) BEFORE a positive add, so the fee destination no longer depends on whether the add or the collect lands first (a 1-wei donation could otherwise divert it). Guarded on liquidity > 0 (empty-position poke reverts). |
+| **L-20** | mech | `PresaleVault.finalize` expires at `filledAt + finalizeGrace` (`AfterDeadline`), so finalize and the `Failed(2)` hatch are never both live. |
+| **L-21** | mech | `PresaleVaultFactory.createPresale` re-runs the five pure-cfg `BadConfig` checks up front; `PresaleVault.initialize` rejects `minContribution > perWalletCap` (else every deposit reverts). |
+| **M-14, M-5, M-10, M-12, M-15** | doc | Honesty corrections landed regardless of the (still-open) design decisions — see below. |
+
+### Honesty-doc corrections (unconditional — the statements were false)
+
+- **M-14** `FeeWalletRegistry`/`DEPLOY.md`/`AUDIT-SCOPE.md §6`: `platformFeeWallet` is the protocol ROOT ADMIN
+  key (authorizes every per-pad wiring setter), not merely a payout address.
+- **M-10** `RobinV4FeeConfig` header/`DEPLOY.md`/`AUDIT-SCOPE.md §3`: `lpFee` is a second, effectively-uncapped
+  take (capped only at Uniswap's 100%); `setDefaults` is a real un-timelocked knob, not a forward-only default.
+- **M-12** `RobinV4FeeConfig` header: "can never touch an existing coin" is false for ETH already in an OPEN
+  presale (geometry is read live at finalize).
+- **M-5** `AUDIT-SCOPE.md §6`/econ doc: the `DualStaking` owner CAN reach user principal/rewards (retroactive
+  `antiJitDelay`/`platformClaimFeeBps`) — "only its own cut, never user principal" was false on this path.
+- **M-15** `RobinFloorVault` header/`AUDIT-SCOPE.md §4.4`: the floor is a FIXED band deepened while the token
+  trades ABOVE it — it does not "only ever deepen"; in a drawdown the carve parks.
+
+### Open — design / product decisions (NOT invented here; for the operator + external auditor)
+
+- **M-3 / L-27** — What `PadFactory` IS: a governed launchpad (read taxes from FeeConfig) or a permissionless
+  primitive (document caller-set taxes up to 3%/side + caller-chosen floor/staking). If `PadFactory` is not a
+  live product surface, the doc route closes it.
+- **M-10 (cap value)** — pick a Robin `MAX_LP_FEE` (one-line change; auditor suggests 1% = `10_000`).
+- **M-5 / M-12 / M-14** — which owner powers to defend (snapshot antiJit / snapshot claim-fee / timelock;
+  snapshot presale geometry; split the root-admin wiring role off the payout wallet).
+- **M-15 / H-5 / L-33** — the floor's design (place new bands below spot? a duration-enforced dwell?), designed
+  as one unit.
+- **H-2** — extend `IStockRegistry` to attest the stock, or keep the stock pad out of scope until it can.
+- **L-3** (leftover reserve if staking never wired), **L-14** (anti-JIT forfeit is claim-before-unstake
+  dodgeable), **L-25** (untaxed sibling pool), **L-32** (two staking one-shots for one concept).
+
+### Deferred mechanical (with rationale — revisit post-audit if the operator wants)
+
+- **L-9** (bind `cfg.creator` into the CREATE2 pre-image) — impact is REFUTED (negative-EV grief, no gain) and
+  the change touches `PadToken` (shared by 3 factories) + ~15 off-chain salt miners; not worth the churn/risk
+  right before external re-audit.
+- **L-24 (mech)** / **L-26** — touch the NFT-acceptance and the hot swap path respectively; deferred to avoid
+  graduation/swap regression risk on LOW findings. **L-29**, **L-30/L-31** (stock, not live), **L-19** (event
+  logs) — low value / design-gated.
+
+
+---
+
 ## 1. Summary
 
 | severity | count | of which measured |

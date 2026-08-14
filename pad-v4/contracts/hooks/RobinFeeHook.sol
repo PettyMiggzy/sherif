@@ -74,7 +74,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         address creator; // 2-step repointable by the creator only
         address pendingCreator;
         address floorRecipient; // where claimFloor forwards; 0 => floor parks in floorOwed
-        address bufferRecipient; // where claimBuffer forwards (the curve → permanent LP); 0 => parks in bufferOwed
+        address bufferRecipient; // where claimBuffer forwards (the curve, which sweeps it to the PLATFORM at grad [L-5]); 0 => parks in bufferOwed
         address guardAdapter; // stock guard; 0 => no curb
     }
 
@@ -477,12 +477,18 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     // --------------------------------------------------------------------- //
 
     /// @dev Extract a referrer address from swap hookData WITHOUT ever reverting on malformed data — a bad hookData
-    /// must never brick a swap. Reads the low 20 bytes of the first word; empty/short hookData → address(0) (no ref).
+    /// must never brick a swap. [L-4] Only an INTENTIONALLY-encoded referrer matches: hookData must be EXACTLY a
+    /// 32-byte word (a clean `abi.encode(address)`) whose high 12 bytes are zero. This stops a router/aggregator that
+    /// happens to put a ≥32-byte payload in hookData from silently naming a pseudo-random referrer (whose referralOwed
+    /// then accrues to an address only it can claim, stranding the matching ERC-6909 claim forever). Empty/short/long
+    /// or dirty-high-byte hookData → address(0) (no ref).
     function _decodeReferrer(bytes calldata hookData) internal pure returns (address r) {
-        if (hookData.length >= 32) {
+        if (hookData.length == 32) {
+            uint256 word;
             assembly {
-                r := and(calldataload(hookData.offset), 0xffffffffffffffffffffffffffffffffffffffff)
+                word := calldataload(hookData.offset)
             }
+            if (word >> 160 == 0) r = address(uint160(word));
         }
     }
 

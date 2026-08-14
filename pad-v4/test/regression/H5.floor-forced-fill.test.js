@@ -27,7 +27,7 @@ describe("H-5 — a forced tick can no longer flip the whole parked carve into t
 
   const FEE = 3000, TS = 60;
   const CARVE = E(50); // the parked carve an attacker wants to force in
-  let owner, lp, attacker, platform, pm, stateView, tok, sw, mod, vault, key, poolId;
+  let owner, lp, attacker, platform, pm, stateView, tok, sw, mod, vault, key, poolId, reg;
 
   beforeEach(async () => {
     [owner, lp, attacker, platform] = await ethers.getSigners();
@@ -47,8 +47,10 @@ describe("H-5 — a forced tick can no longer flip the whole parked carve into t
       { value: E(1000) }
     );
 
+    // [L-11] floor vault takes the timelocked registry; platformFeeWallet() resolves to `platform`.
+    reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
     vault = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), platform.address,
+      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
       ZERO, await tok.getAddress(), FEE, TS, ZERO, 0 /* anchor */, 10 /* width */
     );
 
@@ -144,7 +146,7 @@ describe("H-5 — a forced tick can no longer flip the whole parked carve into t
   it("the HONEST path is unaffected: a tick that has always been below the band commits every poke", async () => {
     // fresh pad, spot below the band from the start — the normal case the vault was built for
     const v2 = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), platform.address,
+      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
       ZERO, await tok.getAddress(), FEE, TS, ZERO, 0, 10
     );
     await sw.connect(attacker).swap( // put spot below the band and leave it there

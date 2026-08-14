@@ -68,7 +68,7 @@ describe("RobinCurveV4 — full graduation waterfall (real PoolManager + mock po
 
     // wire the permanent floor (band anchored just above the graduation tick)
     floor = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), platform.address,
+      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
       ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
     );
     await curve.connect(platform).setFloor(await floor.getAddress());

@@ -9,6 +9,8 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
+import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {IStateView} from "@uniswap/v4-periphery/src/interfaces/IStateView.sol";
 
 import {DeterministicDeployer} from "./DeterministicDeployer.sol";
@@ -44,6 +46,9 @@ contract CurvePadFactoryV4 {
     LockVault public immutable lockVault;
 
     uint160 internal constant HOOK_FLAGS = 0x00CC;
+    // [L-1] Minimum ETH the curve integral must yield for cfg.curveSupply over [gradTick, startTick]. A too-high
+    // startTickMag lets the raise truncate toward 0 wei, so graduate() would revert EmptyRaise permanently. 0.001 ETH.
+    uint256 internal constant MIN_RAISE_WEI = 1e15;
 
     struct LaunchConfig {
         string name;
@@ -153,6 +158,18 @@ contract CurvePadFactoryV4 {
             uint256 ss = uint256(TickMath.getSqrtPriceAtTick(startTick));
             if (uint256(cfg.reserveSupply) * ss * 100 < uint256(cfg.curveSupply) * sg * 105) revert BadConfig();
         }
+        // [L-1] RAISE FLOOR: the geometry checks above bound the LP token-leg pairing, not the ETH raise. Compute the
+        // ETH the single-sided position [gradTick, startTick] actually yields for cfg.curveSupply and reject a
+        // geometry whose raise would floor to ~0 wei (else graduate() reverts EmptyRaise forever). currency1 = token,
+        // so the sold supply is the amount1 leg; getAmount0ForLiquidity then gives the ETH walked out over the range.
+        {
+            uint160 sqGrad = TickMath.getSqrtPriceAtTick(gradTick);
+            uint160 sqStart = TickMath.getSqrtPriceAtTick(startTick);
+            uint128 curveL = LiquidityAmounts.getLiquidityForAmount1(sqGrad, sqStart, cfg.curveSupply);
+            // ETH walked out over [gradTick, startTick] for that liquidity (round DOWN — a lower bound on the raise),
+            // mirroring PresaleVault._absorbableIn's getAmount0Delta(gradSqrt, startSqrt, L, false).
+            if (SqrtPriceMath.getAmount0Delta(sqGrad, sqStart, curveL, false) < MIN_RAISE_WEI) revert BadGeometry();
+        }
 
         // 2) deploy the token (supply minted to this factory)
         token = deployer.deploy(
@@ -248,7 +265,7 @@ contract CurvePadFactoryV4 {
             )
         );
         isCurve[curve] = true;
-        // wire the curve as the buy-tax buffer sink (hardens the LP-binding reserve + deepens staking); known only now
+        // wire the curve as the buy-tax buffer sink ([L-5] the buffer is held as idle ETH, then swept to the PLATFORM at graduation); known only now
         RobinFeeHook(payable(hook)).setBufferRecipient(poolId, curve);
         IERC20(token).safeTransfer(curve, cfg.curveSupply); // the SOLD portion → seeded into the curve
         RobinCurveV4(payable(curve)).seed();

@@ -48,7 +48,7 @@ describe("RobinCurveV4 — graduation after a ceiling-CAPPED buy (no PriceLimitA
     await ds.listReward(0, tokAddr, 7 * 86400);
     await curve.connect(platform).setStaking(await ds.getAddress());
     floor = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), platform.address, ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
+      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(), ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
     );
     await curve.connect(platform).setFloor(await floor.getAddress());
   });

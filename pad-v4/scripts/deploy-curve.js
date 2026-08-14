@@ -56,7 +56,10 @@ async function legacyDeploy(name, args = []) {
 
 async function main() {
   const [deployer] = await ethers.getSigners();
-  const platform = process.env.PLATFORM_WALLET || deployer.address;
+  // [L-6] Require PLATFORM_WALLET explicitly. Defaulting it to the hot deploy key silently made that key the platform
+  // fee wallet AND the root admin (M-14) — undoing which costs FeeWalletRegistry.TIMELOCK (2 days). Fail loudly instead.
+  const platform = process.env.PLATFORM_WALLET;
+  if (!platform) throw new Error("PLATFORM_WALLET must be set (the platform fee wallet + root admin — never the hot deploy key)");
   console.log(`Deploying Robin V4 curve suite as ${deployer.address} (platform wallet ${platform})\n`);
 
   const dep = await legacyDeploy("DeterministicDeployer");

@@ -20,8 +20,8 @@ interface IStockGuardAdapter {
 }
 
 /// @notice Minimal registration surface the factory calls on the hook in the launch tx.
-/// The trade tax routes by DIRECTION:
-///   • BUY  (spend quote → get token): `buyTaxBps` of the token output → platform
+/// The trade tax routes by DIRECTION ([L-5] both taxes are money-side; the buy tax is a fee-on-INPUT, not on output):
+///   • BUY  (spend quote → get token): `buyTaxBps` of the quote INPUT → platform (+ curve buffer)
 ///   • SELL (spend token → get quote): `sellTaxBps` of the quote output → creator + floor,
 ///          where `sellFloorShareBps` of that sell tax is carved to the floor (out of the creator's cut).
 interface IRobinFeeHookAdmin {

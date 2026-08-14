@@ -230,6 +230,39 @@ describe("RobinFeeHook — adversarial", () => {
     await expect(hook.connect(platform).setFloorRecipient(id, creator.address)).to.be.revertedWithCustomError(hook, "FloorRecipientAlreadySet");
   });
 
+  it("[M-24] the hook can never be its own floor sink: setter rejects it, and a cfg-seeded self-send reverts PayoutFailed", async () => {
+    const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());
+    const hookAddr = await hook.getAddress();
+
+    // (a) the SETTER rejects the hook's own address — the M-24 entry point (a hook-as-floor pointer would make
+    //     claimFloor report success while moving nothing, stranding the carve permanently).
+    const id0 = poolIdOf({ currency0: ZERO, currency1: await tok.getAddress(), fee: 500, tickSpacing: 10, hooks: hookAddr });
+    await hook.connect(factory).registerPool(id0, CFG(ZERO, await tok.getAddress(), creator.address));
+    await expect(hook.connect(platform).setFloorRecipient(id0, hookAddr)).to.be.revertedWithCustomError(hook, "ZeroAddress");
+
+    // (b) the registerPool variant (floorRecipient seeded straight from cfg, NOT via the setter): accrue a real floor
+    //     carve via a sell, then claimFloor must revert PayoutFailed (the shared self-send guard in _payout) and LEAVE
+    //     the book intact — never zero it while emitting FloorClaimed, which is the exact M-24 silent loss.
+    const key = await seedPool(hook, tok);
+    const poolId = poolIdOf(key);
+    await hook.connect(factory).registerPool(poolId, CFG(ZERO, await tok.getAddress(), creator.address, { floorRecipient: hookAddr }));
+    await sw.connect(trader).swap(
+      key, { zeroForOne: true, amountSpecified: -ethers.parseEther("1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: ethers.parseEther("1") }
+    );
+    await tok.connect(owner).transfer(trader.address, 10n ** 22n);
+    await tok.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
+    await sw.connect(trader).swap(
+      key, { zeroForOne: false, amountSpecified: -(10n ** 21n), sqrtPriceLimitX96: MAX_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x"
+    );
+    const owedBefore = await hook.floorOwed(poolId, 0);
+    expect(owedBefore).to.be.gt(0n, "sell accrued a floor carve to the hook-as-floor pool");
+    await expect(hook.claimFloor(poolId, 0)).to.be.revertedWithCustomError(hook, "PayoutFailed");
+    expect(await hook.floorOwed(poolId, 0)).to.equal(owedBefore); // book NOT zeroed — the revert rolled it back
+  });
+
   it("creator repoint is 2-step and creator-only", async () => {
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
     const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());

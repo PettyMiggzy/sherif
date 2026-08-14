@@ -60,7 +60,7 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
     IPoolManager public immutable poolManager;
     IStateView public immutable stateView;
     address public immutable floorRecipient; // ETH LP-fee sink (immutable)
-    address public immutable stakingRecipient; // token LP-fee sink; may be 0 (then token fees stay idle-in-vault)
+    address public immutable stakingRecipient; // token LP-fee sink; [L-17] required non-zero at deploy (see ctor)
 
     Currency public immutable currency0; // ETH (address 0)
     Currency public immutable currency1; // token
@@ -88,7 +88,7 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         address poolManager_,
         address stateView_,
         address floorRecipient_,
-        address stakingRecipient_, // may be 0
+        address stakingRecipient_, // [L-17] must be non-zero (this vault is deployed post-graduation, after the staking pool exists)
         address curve_,
         Currency currency0_,
         Currency currency1_,
@@ -98,7 +98,13 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         uint24 gapSpacings, // spacings ABOVE gradTick before the band starts (0 => engages on the first dip)
         uint24 bandWidthSpacings // band width in tickSpacings (>=1)
     ) {
-        if (poolManager_ == address(0) || stateView_ == address(0) || floorRecipient_ == address(0) || curve_ == address(0)) {
+        // [L-17] stakingRecipient is required non-zero: this vault is add-only with no owner/withdraw/setter, so a
+        // 0 sink would strand every token-side band fee permanently idle-in-vault. It is deployed after graduation,
+        // once the staking pool exists, so the operator always has the real address at deploy time.
+        if (
+            poolManager_ == address(0) || stateView_ == address(0) || floorRecipient_ == address(0)
+                || stakingRecipient_ == address(0) || curve_ == address(0)
+        ) {
             revert ZeroAddress();
         }
         if (bandWidthSpacings == 0) revert BadBand();
@@ -190,8 +196,9 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
     }
 
     /// @dev Push the vault's idle token (collected token fees + any donated token) to staking; a revert leaves the
-    /// token in the staking pool to be credited by balance-accounting on a later push (mirrors the curve). If no
-    /// staking sink is wired, the token stays idle-in-vault (un-ruggable, retried later).
+    /// token in the staking pool to be credited by balance-accounting on a later push (mirrors the curve).
+    /// [L-17] stakingRecipient is guaranteed non-zero by the constructor, so the sink is always wired; the zero
+    /// guard below is defensive only.
     function _forwardStaking() internal returns (uint256) {
         address s = stakingRecipient;
         if (s == address(0)) return 0;
@@ -212,6 +219,20 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
     }
 
     function _add(uint256 amt) internal returns (uint128 L) {
+        // [L-18] Realize accrued fees FIRST (same poke as _collect) and route them exactly as the collect path does:
+        // the ETH fee is parked into pendingFloorEth (excluded from the seed, forwarded to the floor on the next
+        // collect/flush) and the token fee is left idle-in-vault for staking. This makes the positive add below carry
+        // PURE PRINCIPAL, so the ETH-fee destination no longer depends on whether seedAmbush() or collectFees() lands
+        // first — a 1-wei donation could otherwise fold the ETH fee into the band as principal, diverting it from the
+        // floor. `amt` was fixed as (balance - pendingFloorEth) before this unlock, so parking the fee here keeps the
+        // seed principal exactly `amt` and preserves the fee ETH in the vault under pendingFloorEth.
+        // Guard on ambushLiquidity > 0: a zero-liquidity poke on a never-added position reverts
+        // CannotUpdateEmptyPosition, and an empty band has no accrued fees anyway, so the FIRST seed skips it.
+        if (ambushLiquidity > 0) {
+            (uint256 ethFee,) = _collect();
+            if (ethFee > 0) pendingFloorEth += ethFee;
+        }
+
         uint160 sLower = TickMath.getSqrtPriceAtTick(ambushTickLower);
         uint160 sUpper = TickMath.getSqrtPriceAtTick(ambushTickUpper);
         L = LiquidityAmounts.getLiquidityForAmount0(sLower, sUpper, amt);

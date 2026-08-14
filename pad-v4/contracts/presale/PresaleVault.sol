@@ -51,6 +51,9 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     uint64 public constant GRACE_MAX = 7 days;
     uint256 internal constant BPS = 10_000; // the hook's buy-tax denominator
     uint256 internal constant PIPS = 1_000_000; // the pool's lpFee denominator
+    // [L-12] Conservative gas floor for finalize()'s launch + pooled-buy. Guards against the EIP-150 63/64 rule
+    // silently converting a fully-funded presale to an irreversible Failed(3) when finalize is called under-gassed.
+    uint256 internal constant MIN_FINALIZE_GAS = 2_000_000;
 
     // ── immutable-after-initialize config ──
     ICurvePadFactoryV4 public curvePadFactory;
@@ -70,6 +73,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     bool private _expectingUnlock; // gates unlockCallback to a finalize the vault itself initiated
 
     uint256 public totalRaised;
+    uint64 public filledAt; // [L-13] block.timestamp the raise first reached target (0 until then); anchors the grace window
     address public token;
     uint256 public totalTokensBought;
     uint256 public pooledEthSpent;
@@ -104,6 +108,8 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     error KeyMismatch();
     error ZeroBought();
     error BadParams();
+    error InsufficientGas();
+    error LaunchReverted();
 
     /// @notice One-shot initializer, called by the factory in the creation tx (clones have no constructor args).
     function initialize(
@@ -120,6 +126,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         if (
             curvePadFactory_ == address(0) || saltCommitment_ == bytes32(0) || target_ < MIN_TARGET
                 || perWalletCap_ == 0 || minContribution_ == 0 || minContribution_ > target_
+                || minContribution_ > perWalletCap_ // [L-21] else every deposit reverts (below floor → BelowMin, at/above → CapExceeded)
                 || deadline_ < block.timestamp + MIN_DURATION || deadline_ > block.timestamp + MAX_DURATION
                 || finalizeGrace_ < GRACE_MIN || finalizeGrace_ > GRACE_MAX
         ) revert BadParams();
@@ -155,6 +162,9 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         if (contribution[msg.sender] == 0) depositors.push(msg.sender);
         contribution[msg.sender] += accept;
         totalRaised += accept;
+        // [L-13] stamp the instant the raise closes (target == hardCap, so this fires exactly once), anchoring the
+        // finalize grace window to when the raise actually filled — not to an arbitrary far-off deadline.
+        if (filledAt == 0 && totalRaised == target) filledAt = uint64(block.timestamp);
 
         uint256 refundTrim = msg.value - accept;
         if (refundTrim > 0) {
@@ -178,6 +188,13 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         if (keccak256(abi.encode(tokenSalt, hookSalt, curveSalt)) != saltCommitment) revert BadReveal();
         if (finalized || failed) revert NotOpen();
         if (totalRaised < target) revert TargetNotMet();
+        // [L-20] The preimage-holder's launch option EXPIRES at the end of the grace window (anchored to filledAt,
+        // like fail()'s reason-2 hatch below), so finalize and the Failed(2) escape hatch are never both live: past
+        // this point only fail() reason 2 (100% refunds) is reachable, giving L-13's contributor lock a hard ceiling.
+        if (block.timestamp > uint256(filledAt) + finalizeGrace) revert AfterDeadline();
+        // [L-12] Guarantee enough gas for launch + the pooled buy BEFORE flipping state, so an under-gassed call can
+        // never let the EIP-150 63/64 rule brick the atomic launch and silently convert a funded presale to Failed(3).
+        if (gasleft() < MIN_FINALIZE_GAS) revert InsufficientGas();
         finalized = true;
 
         // launch: deploys token+hook+curve, inits the pool at startTick, seeds the single-sided curve. Takes NO ETH
@@ -190,14 +207,19 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         PoolId poolId;
         try curvePadFactory.launch(c, tokenSalt, hookSalt, curveSalt) returns (address a, address b, address cc, PoolId pid) {
             (tok, hook, curve, poolId) = (a, b, cc, pid);
-        } catch {
+        } catch (bytes memory reason) {
             // [audit] The committed launch was SNIPED — curvePadFactory.launch(cfg, salts) is permissionless and fully
             // determined by the public cfg + the just-revealed salts, so a front-runner can launch (and buy) it first,
-            // after which this re-entry reverts (registerPool AlreadyRegistered / the drained factory can't seed).
-            // Rather than revert — which would lock contributors for the whole finalizeGrace window (fail() reason 2)
-            // or permanently — FAIL the presale NOW so 100% refunds open immediately. On Robinhood Chain's
-            // single-sequencer FCFS ordering this is not reachable; it exists so a public-mempool / decentralized-
-            // sequencer deployment can never brick the vault or trap contributor ETH.
+            // after which this re-entry reverts with a TYPED error (registerPool AlreadyRegistered / PoolAlreadyInitialized
+            // / the drained factory's SafeERC20 seed-transfer failure). Rather than revert — which would lock
+            // contributors for the whole finalizeGrace window (fail() reason 2) — FAIL the presale NOW so 100% refunds
+            // open immediately. On Robinhood Chain's single-sequencer FCFS ordering this is not reachable; it exists so
+            // a public-mempool / decentralized-sequencer deployment can never brick the vault or trap contributor ETH.
+            // [L-12] An EMPTY revert (no error data) is the signature of an out-of-gas / unexpected failure, NOT a
+            // deterministic launch-collision — bubble it (finalize stays retriable, state rolled back) instead of
+            // irreversibly burning a funded presale to Failed(3). The MIN_FINALIZE_GAS floor above already excludes
+            // the common under-gas cause; this guards the deep-call 1/64 residue.
+            if (reason.length == 0) revert LaunchReverted();
             finalized = false;
             failed = true;
             emit Failed(3); // 3 = committed launch sniped / front-run
@@ -318,19 +340,27 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     // ── fail / refund ────────────────────────────────────────────────────────────────
 
     /// @notice Move the presale to Failed if it can no longer succeed: (1) past the deadline under target, or (2)
-    /// past deadline+grace still not finalized (escape hatch — even if target was met but finalize was withheld or
-    /// bricked). Permissionless.
+    /// [L-13] past filledAt+grace with the target met but not finalized (escape hatch — finalize was withheld or
+    /// bricked). Anchoring (2) to when the raise CLOSED, not the deadline, means an early-filled raise's contributors
+    /// aren't locked until a far-off deadline. Permissionless.
     function fail() external nonReentrant {
         if (finalized || failed) revert NotOpen();
-        if (block.timestamp <= deadline) revert BeforeDeadline();
         if (totalRaised < target) {
+            // under target: can only fail once the deadline lapses (deposits may still fill it until then)
+            if (block.timestamp <= deadline) revert BeforeDeadline();
             failed = true;
             emit Failed(1);
-        } else if (block.timestamp > uint256(deadline) + finalizeGrace) {
-            failed = true;
-            emit Failed(2);
         } else {
-            revert TargetMet(); // target met, within grace → must finalize, not fail
+            // [L-13] target met: the escape hatch is anchored to when the raise CLOSED (filledAt), not the arbitrary
+            // deadline, so an EARLY-filled raise isn't locked until a far-off deadline+grace. filledAt is guaranteed
+            // set here (target is reachable only via deposit(), which stamps it) and is always <= deadline (deposits
+            // revert past the deadline). Matches finalize()'s [L-20] upper bound: exactly one of the two is ever live.
+            if (block.timestamp > uint256(filledAt) + finalizeGrace) {
+                failed = true;
+                emit Failed(2);
+            } else {
+                revert TargetMet(); // target met, within grace → must finalize, not fail
+            }
         }
     }
 

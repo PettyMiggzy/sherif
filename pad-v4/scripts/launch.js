@@ -82,7 +82,8 @@ async function main() {
   const ratio = Number(cfg.sqrtPriceX96) / 2 ** 96;
   const anchorTick = Math.floor(Math.log(ratio * ratio) / Math.log(1.0001));
   const floor = await FloorF.deploy(
-    d.poolManager, d.stateView, platform, ethers.ZeroAddress, token, FEE, TS, hook, anchorTick, FLOOR_BAND_SPACINGS, { type: 0 }
+    // [L-11] pass the timelocked registry, not a raw platform address, so a wallet rotation reaches the floor vault
+    d.poolManager, d.stateView, d.feeWalletRegistry, ethers.ZeroAddress, token, FEE, TS, hook, anchorTick, FLOOR_BAND_SPACINGS, { type: 0 }
   );
   await floor.waitForDeployment();
   const floorAddr = await floor.getAddress();

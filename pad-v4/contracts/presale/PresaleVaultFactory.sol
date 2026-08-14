@@ -41,6 +41,15 @@ contract PresaleVaultFactory {
         uint64 finalizeGrace
     ) external returns (address vault) {
         if (saltCommitment == bytes32(0)) revert BadParams();
+        // [L-21] Re-run the FIVE pure-cfg checks CurvePadFactoryV4.launch enforces (its lines 126-129) up front, so a
+        // config that `launch` rejects unconditionally can't reach a live presale and strand contributor ETH until
+        // finalize inevitably fails. These are pure functions of cfg — no geometry, no FeeConfig, no timing — so they
+        // are stable across any governed retune. The retunable reserve-margin check (launch line 154) is deliberately
+        // NOT hoisted (that is M-12 territory): it reads governed defaults + tick math and can move under a live presale.
+        if (
+            cfg.creator == address(0) || cfg.supply == 0 || cfg.curveSupply == 0 || cfg.reserveSupply == 0
+                || cfg.curveSupply + cfg.reserveSupply != cfg.supply
+        ) revert BadParams();
         vault = Clones.clone(implementation);
         PresaleVault(vault).initialize(
             curvePadFactory, cfg, saltCommitment, target, deadline, perWalletCap, minContribution, finalizeGrace

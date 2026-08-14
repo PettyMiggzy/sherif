@@ -44,8 +44,10 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
       { value: ethers.parseEther("50") }
     );
 
+    // [L-11] the floor vault now takes the timelocked registry; platformFeeWallet() resolves to `platform`.
+    const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
     vault = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), platform.address,
+      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
       ZERO, await tok.getAddress(), FEE, TS, ZERO, 0 /* anchorTick = launch tick 0 */, 10 // band = 10 spacings wide
     );
   });

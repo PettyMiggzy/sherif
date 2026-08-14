@@ -10,6 +10,7 @@ pragma solidity 0.8.26;
 contract DeterministicDeployer {
     error DeployFailed();
     error AlreadyDeployed();
+    error ValueOnAdopt();
 
     event Deployed(address indexed addr, bytes32 indexed salt);
 
@@ -18,10 +19,16 @@ contract DeterministicDeployer {
     /// necessarily created from this exact `initCode` — a byte-identical deployment. So instead of
     /// reverting AlreadyDeployed (which lets anyone brick a launch by front-running an identical
     /// pre-deploy), we return the existing address. Griefing a launch is impossible; the outcome is
-    /// the same contract either way. (No value is forwarded on adoption; our callers deploy value-free.)
+    /// the same contract either way. [L-10] The adopt branch cannot forward `msg.value` (the code
+    /// already exists — there is nothing to construct with it) and this contract has no withdraw path,
+    /// so value sent on adoption would be permanently locked. Reject it rather than trap it. Our own
+    /// callers deploy value-free; a third-party payable FRESH deploy still works.
     function deploy(bytes32 salt, bytes calldata initCode) external payable returns (address addr) {
         address predicted = addressOf(salt, keccak256(initCode));
-        if (predicted.code.length != 0) return predicted;
+        if (predicted.code.length != 0) {
+            if (msg.value != 0) revert ValueOnAdopt();
+            return predicted;
+        }
 
         bytes memory code = initCode;
         assembly ("memory-safe") {

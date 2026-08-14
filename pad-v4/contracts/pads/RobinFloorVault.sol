@@ -15,12 +15,19 @@ import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.so
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {IStateView} from "@uniswap/v4-periphery/src/interfaces/IStateView.sol";
+import {IFeeWalletRegistry} from "../interfaces/IRobinInterfaces.sol";
 
 /// @title RobinFloorVault — a permanent, fee-funded price floor
-/// @notice A single-sided QUOTE (currency0) position placed just below the token's price: a standing
+/// @notice A single-sided QUOTE (currency0) position at a FIXED band just below the launch price: a standing
 /// buy wall that catches sellers if the token dumps. It is fed by the pad's fee carve (the sell-tax
 /// floor slice + optionally LP fees), and it is ADD-ONLY — there is deliberately NO remove/withdraw
-/// path, so the wall can only ever deepen. That absence IS the "can't rug to zero" guarantee.
+/// path. That absence IS the "can't rug to zero" guarantee.
+///
+/// [M-15] HONEST SCOPE: the wall is a FIXED buy wall at the launch price, DEEPENED WHILE THE TOKEN TRADES ABOVE IT.
+/// It does not "only ever deepen" unconditionally — once spot falls INTO/below the single fixed band, addFloor()
+/// parks the carve (a single-sided currency0 add isn't clean there) and it idles until price recovers above the
+/// band. So a token in a sustained drawdown accrues carve that sits parked rather than adding depth. Widening this
+/// to place new bands below spot is a product decision (see M-15/H-5/L-33 in AUDITOR-HANDOFF.md), not shipped here.
 ///
 /// Not a vault-with-shares: nobody deposits, nobody redeems, no USDG is ever trapped. It simply turns
 /// fee revenue into permanent, un-pullable price support. The vault manages its position as raw
@@ -42,7 +49,9 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
 
     IPoolManager public immutable poolManager;
     IStateView public immutable stateView;
-    address public immutable feeRecipient; // where collected floor LP fees go (platform)
+    // [L-11] Resolve the platform sink LIVE from the timelocked registry at each use, so a 2-day platform-wallet
+    // rotation reaches an already-deployed floor vault instead of paying the retired key forever (mirrors LockVault).
+    IFeeWalletRegistry public immutable feeRegistry;
 
     // the pool (stored as components; PoolKey is rebuilt in memory)
     Currency public immutable currency0; // quote
@@ -95,7 +104,7 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     constructor(
         address poolManager_,
         address stateView_,
-        address feeRecipient_,
+        address feeRegistry_, // [L-11] the timelocked registry, not a raw platform address
         Currency currency0_,
         Currency currency1_,
         uint24 fee_,
@@ -104,11 +113,11 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         int24 anchorTick, // the pad's intended launch tick — the band anchors here, NOT to live spot
         uint24 bandWidthSpacings // how many tickSpacings wide the wall is (>=1)
     ) {
-        if (poolManager_ == address(0) || stateView_ == address(0) || feeRecipient_ == address(0)) revert ZeroAddress();
+        if (poolManager_ == address(0) || stateView_ == address(0) || feeRegistry_ == address(0)) revert ZeroAddress();
         if (bandWidthSpacings == 0) revert BadBand();
         poolManager = IPoolManager(poolManager_);
         stateView = IStateView(stateView_);
-        feeRecipient = feeRecipient_;
+        feeRegistry = IFeeWalletRegistry(feeRegistry_);
         currency0 = currency0_;
         currency1 = currency1_;
         fee = fee_;
@@ -174,6 +183,15 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     }
 
     function _add(uint256 amt) internal returns (uint128 L) {
+        // [L-18] Realize any accrued fees FIRST (this is exactly _collect: a zero-liquidity poke that routes both
+        // legs to the platform), so the positive add below carries PURE PRINCIPAL. Without this, a positive
+        // modifyLiquidity returns callerDelta = principal + feesAccrued, folding the currency0 fees into the wall as
+        // principal — a different destination than the collect path — so a 1-wei donation could let anyone pre-empt a
+        // keeper sweep and divert fees by choosing which call lands first. Pre-realizing makes fee routing deterministic.
+        // Guard on floorLiquidity > 0: a zero-liquidity poke on a never-added position reverts CannotUpdateEmptyPosition,
+        // and an empty band has no accrued fees anyway, so the FIRST add correctly skips it.
+        if (floorLiquidity > 0) _collect();
+
         uint160 sLower = TickMath.getSqrtPriceAtTick(floorTickLower);
         uint160 sUpper = TickMath.getSqrtPriceAtTick(floorTickUpper);
         L = LiquidityAmounts.getLiquidityForAmount0(sLower, sUpper, amt);
@@ -190,10 +208,10 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         );
         // currency0 is the floor's own working capital (ETH principal) → keep any positive delta in the vault.
         _resolve(currency0, delta.amount0(), address(this));
-        // [audit] currency1 (token) is NEVER floor principal on this single-sided currency0 wall, so a positive
-        // delta.amount1() here is realized token-side LP fees. Route them to feeRecipient (exactly like _collect) —
-        // taking them to the vault would strand them, since no function moves an idle currency1 balance out.
-        _resolve(currency1, delta.amount1(), feeRecipient);
+        // [audit] currency1 (token) is NEVER floor principal on this single-sided currency0 wall; fees were already
+        // realized to the platform by the _collect() above, so this is ~0. Route defensively to the platform anyway —
+        // taking a stray to the vault would strand it, since no function moves an idle currency1 balance out.
+        _resolve(currency1, delta.amount1(), feeRegistry.platformFeeWallet());
         floorLiquidity += L;
         // [H-5] parkedQuote is reconciled by the caller from the real balance after the unlock closes — this
         // call now commits a SLICE, so zeroing it here would under-report the carve still waiting.
@@ -209,9 +227,10 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         );
         int128 a0 = delta.amount0();
         int128 a1 = delta.amount1();
-        if (a0 > 0) poolManager.take(currency0, feeRecipient, uint256(uint128(a0)));
-        if (a1 > 0) poolManager.take(currency1, feeRecipient, uint256(uint128(a1)));
-        emit FloorFeesCollected(a0 > 0 ? uint256(uint128(a0)) : 0, a1 > 0 ? uint256(uint128(a1)) : 0, feeRecipient);
+        address to = feeRegistry.platformFeeWallet(); // [L-11] resolved live from the timelocked registry
+        if (a0 > 0) poolManager.take(currency0, to, uint256(uint128(a0)));
+        if (a1 > 0) poolManager.take(currency1, to, uint256(uint128(a1)));
+        emit FloorFeesCollected(a0 > 0 ? uint256(uint128(a0)) : 0, a1 > 0 ? uint256(uint128(a1)) : 0, to);
     }
 
     /// @dev Settle what the vault owes / take what it is owed for one currency.

@@ -92,7 +92,7 @@ adapters/
 ```
 PadFactory.launch(padType, cfg)  ── one atomic legacy type-0 tx ──►
   1. PadToken           via CREATE2 (salt mined so token address > quote  ⇒ pad = currency1)
-  2. RobinFeeHook       via CREATE2 (salt mined so low-14-bits == 0xC4;  ctor SELF-ASSERTS or reverts)
+  2. RobinFeeHook       via CREATE2 (salt mined so low-14-bits == 0xCC;  ctor SELF-ASSERTS or reverts)
   3. POOL_MANAGER.initialize(key)      # key.fee = STATIC fee (NOT dynamic flag) — see §3.1 / RESOLVES A2
   4. factory.registerPool(poolId, cfg) # binds immutable FeeConfig atomically, same tx, before any swap
   5. POSITION_MANAGER.mint(seed LP)  →  recipient = LockVault   (NFT never touches a withdraw-capable address)
@@ -128,10 +128,9 @@ Runtime data flow:
 
 #### 3.1 Flags, fee model, and the decisions that kill A1/A2/G1/G2
 
-> **[M-6] SUPERSEDED IN PART.** `REQUIRED_FLAGS` shipped as **`0x00CC`**, not `0x00C4`. The static-fee,
-> no-`beforeInitialize` and always-additional decisions below are accurate and did ship.
+> **[M-6/L-15] Corrected to what shipped.** `REQUIRED_FLAGS` is **`0x00CC`** (`BaseHook.sol:30`); `BEFORE_SWAP_RETURNS_DELTA (0x08)` was added when the buy tax became a fee-on-input. The static-fee, no-`beforeInitialize` and always-additional decisions below are accurate and did ship.
 
-- **One hook bytecode, one salt family. `REQUIRED_FLAGS = 0x00C4`** = `BEFORE_SWAP (0x80) | AFTER_SWAP (0x40) | AFTER_SWAP_RETURNS_DELTA (0x04)`. `[RESOLVES G1]` — this exact word is the miner target, the ctor self-assert, and a public `REQUIRED_FLAGS` constant the factory cross-checks. No 0x44 vs 0x2044 disagreement remains.
+- **One hook bytecode, one salt family. `REQUIRED_FLAGS = 0x00CC`** = `BEFORE_SWAP (0x80) | AFTER_SWAP (0x40) | BEFORE_SWAP_RETURNS_DELTA (0x08) | AFTER_SWAP_RETURNS_DELTA (0x04)` (the authority is the `BaseHook.REQUIRED_FLAGS` constant). `[RESOLVES G1]` — this exact word is the miner target, the ctor self-assert, and a public `REQUIRED_FLAGS` constant the factory cross-checks. No 0x44 vs 0x2044 disagreement remains.
 - **No `beforeInitialize`.** `[RESOLVES G2]` — config is bound by `factory.registerPool(poolId, cfg)` in the same launch tx; an unregistered pool has `feeBps==0` and the hook is inert for it. Dropping `beforeInitialize` also removes the "which `sender` calls initialize" ambiguity entirely. Factory calls `POOL_MANAGER.initialize` **directly** (no separate PoolInitializer contract).
 - **The skim is ALWAYS ADDITIONAL, never "carved."** `[RESOLVES A1]` The hook holds no LP position (seed LP is in LockVault, floor is in RobinFloorVault), so there is nothing to carve from. The trader pays `LP fee + skim`. Delete every "carved / no extra cost" claim.
 - **The pool uses a STATIC LP fee, NOT the dynamic-fee flag.** `[RESOLVES A2]` A static fee means the locked seed LP and the floor actually accrue fees (their only return). We do **not** set `0x800000` and we do **not** call `updateDynamicLPFee`. `beforeSwap` exists solely for the stock guard-window curb (§3.4), never to set a fee. Anti-JIT at the pool layer is intentionally forgone; anti-JIT lives in DualStaking. `[RESOLVES B2]`
@@ -289,7 +288,7 @@ The old invariant "deposit/withdraw fully function even if USDG paused" is **fal
 3. `afterSwap` never reverts from a yield/harvest/stock-take failure (every path guarded).
 4. `totalAssets()` depends only on realized pool-held quote + on-hand folded fees — never `availableRewardsOf`.
 5. Every skim leg `≤ uint128(type(int128).max)` or the hook returns zero delta.
-6. `uint160(hook) & 0x3FFF == 0x00C4`, asserted in ctor (deploy-time failure) and cross-checked by factory against `hook.REQUIRED_FLAGS`.
+6. `uint160(hook) & 0x3FFF == 0x00CC`, asserted in ctor (deploy-time failure) and cross-checked by factory against `hook.REQUIRED_FLAGS`.
 7. Owner can repoint only `platformFeeWallet` (timelocked) and creator only its own slot; no selector moves locked funds/floor liquidity.
 8. Holder claim is per-currency; a blocked stock leg never blocks the ETH/token leg.
 9. Decimal round-trip deposit→redeem loses ≤1 wei, rounding against the user in both directions.
@@ -315,10 +314,10 @@ A. Collect LaunchConfig (name, symbol, supply, padType, quote, seedLiquidity, sq
    creator, creatorBps 100..1000, platformBps, holderBps, tickSpacing, STATIC fee, guardWindow).
 B. Predict PadToken CREATE2 address; ensure it sorts > quote (mine tokenSalt).
 C. Build hook init-code = bytecode ++ abi.encode(token, feeRegistry, creator, bps…, quote, adapter).
-D. MINE hookSalt so CREATE2(DEPLOYER, salt, initCodeHash) & 0x3FFF == 0x00C4   (~2^14 tries, sub-second).
+D. MINE hookSalt so CREATE2(DEPLOYER, salt, initCodeHash) & 0x3FFF == 0x00CC   (~2^14 tries, sub-second).
 E. If USDG pad: pre-stage Paxos Design-A group (off critical path).
 F. factory.launch(padType, cfg, tokenSalt, hookSalt) as legacy type-0, gasPrice=eth_gasPrice*1.2, gasLimit ~5.5M.
-G. Assert receipt: PadLaunched; token & hook == predicted; hook&0x3FFF==0xC4; LockVault owns the NFT.
+G. Assert receipt: PadLaunched; token & hook == predicted; hook&0x3FFF==0xCC; LockVault owns the NFT.
 H. Verify token + hook on Blockscout (ctor args must match exactly).
 I. Register poolId with the indexer for the fee-collect keeper + reward accounting.
 ```

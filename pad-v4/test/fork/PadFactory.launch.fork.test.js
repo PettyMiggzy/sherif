@@ -20,7 +20,7 @@ describe("PadFactory — full ETH-pad launch on live 0x8366", function () {
     if (!process.env.FORK_RPC) this.skip();
   });
 
-  it("launches: token+hook deployed, hook flags 0xC4, pool registered, LockVault owns the seed NFT", async () => {
+  it("launches: token+hook deployed, hook flags 0xCC, pool registered, LockVault owns the seed NFT", async () => {
     const [deployer, platform, creator] = await ethers.getSigners();
 
     const dep = await (await ethers.getContractFactory("DeterministicDeployer")).deploy();

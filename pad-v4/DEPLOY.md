@@ -22,14 +22,22 @@ PadFactory → (lockVault.setFactory) → StakingFactory`. Writes `deploy.local.
 Then, out of band:
 - **Verify all** on Blockscout (`npx hardhat verify --network robinhood <addr> <ctor args>`).
 - **Transfer `FeeWalletRegistry` ownership** to the platform multisig (`Ownable2Step`: `transferOwnership`
-  then the multisig `acceptOwnership`). This is the only mutable knob in the system; it must be multisig-held.
+  then the multisig `acceptOwnership`). It must be multisig-held. Two things to hold with root-key security, not
+  treasury-receiver security:
+  - **`FeeWalletRegistry.platformFeeWallet` [M-14]** is the protocol ROOT ADMIN key, not just a payout address —
+    it is the AUTHORIZATION check for every one-shot per-pad wiring setter (`RobinCurveV4.setStaking/setFloor/
+    setAmbush`, `RobinFeeHook.setFloorRecipient`, `LockVault.setStakingRecipient`), so it determines where each
+    pad's value sinks route. The 2-day timelock governs CHANGING the wallet, not what it may do.
+  - **`RobinV4FeeConfig` ownership [M-10/L-6]** is a SECOND live, un-timelocked knob: `setDefaults` governs fee AND
+    geometry for every future launch (a bad geometry bricks every future pad — [L-1]) and can reprice an open
+    presale ([M-12]). Transfer it to the multisig too and treat it as timelock-critical.
 
 ## 2. Launch a pad + wire it (per coin)
 ```bash
 NAME="Troll Cat" SYMBOL=TROLL SUPPLY=1000000 LP_TOKENS=500000 SEED_ETH=1 \
   npx hardhat run scripts/launch.js --network robinhood
 ```
-This atomically launches the pad (token + hook@0x…C4 + pool + locked seed LP), then deploys and wires the
+This atomically launches the pad (token + hook@0x…CC + pool + locked seed LP), then deploys and wires the
 `RobinFloorVault` (`hook.setFloorRecipient`, one-shot) and a `DualStaking` pool via `StakingFactory`, and
 points the LockVault token-leg fee at the reward keeper. Record is appended to `deploy.local.json`.
 
@@ -64,6 +72,11 @@ Two of these deserve their own line because they are the ones that used to be mi
   correct and permanent. Set it after and the lock registers with `address(0)`; since **[M-11]**
   `claimStaking` reverts `NoStakingRecipient` in that state rather than silently paying the platform
   treasury, so the miss is loud — but repairing it needs the separate `setStakingRecipient` one-shot.
+- **Set up the `DualStaking` pool itself.** After deploying the pad's `DualStaking` pool, `listReward` the
+  token on the side the curve funds (this is done in `scripts/testnet-e2e-graduate.js`). Since **[L-2]**
+  `DualStaking.fundTokenPushed` is now permissionless (measured-delta accounting), the curve's
+  `flushStaking()` push no longer needs the curve registered as a rewarder — but `fundToken`/`fundETH`
+  (the pull/msg.value paths) still do, so keep `setRewarder(curve, true)` if you use those.
 
 Verify all five before you consider a pad live:
 
@@ -91,8 +104,11 @@ a theft risk.
 | 1% trade tax (hook) | → platform | → creator 0.8% + floor 0.2% |
 
 - Holders earn by **staking** (no lock; 5% platform claim fee). Any ERC20 can get a pool via `StakingFactory`.
-- The floor is a **permanent, add-only** quote buy-wall — no remove path exists.
-- The only mutable knob system-wide is `FeeWalletRegistry.platformFeeWallet` (Ownable2Step + 2-day timelock).
+- The floor is a **permanent, add-only** quote buy-wall — no remove path exists. [M-15] It is a FIXED band at the
+  launch price, deepened while the token trades ABOVE it; in a sustained drawdown the carve parks rather than adding.
+- Two live governance knobs (NOT one): `FeeWalletRegistry.platformFeeWallet` (Ownable2Step + 2-day timelock, and the
+  [M-14] root-admin key that authorizes every per-pad wiring setter) AND `RobinV4FeeConfig.setDefaults` ([M-10]
+  un-timelocked; governs fee + geometry for future launches and can reprice an open presale — [M-12]). Both multisig.
 
 ## Ground truth (Robinhood Chain, chainId 4663)
 ```

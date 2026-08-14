@@ -61,7 +61,7 @@ describe("SIM — graduation value conservation (nothing stranded, every sink fu
     await ds.listReward(TOKEN, tokAddr, 7 * 86400);
     await curve.connect(platform).setStaking(await ds.getAddress());
     const floor = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), platform.address, ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
+      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(), ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
     );
     await curve.connect(platform).setFloor(await floor.getAddress());
     // wire the two-sided ambush vault — the ambushGradBps (5%) share of the raise is swept here at graduation.

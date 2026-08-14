@@ -54,13 +54,30 @@ describe("RobinCurveV4 — graduation grief recovery (restoreCeiling)", () => {
     await ds.listReward(0, tokAddr, 7 * 86400);
     await curve.connect(platform).setStaking(await ds.getAddress());
     floor = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), platform.address, ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
+      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(), ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
     );
     await curve.connect(platform).setFloor(await floor.getAddress());
 
     // fund the players with token
     await tok.connect(owner).transfer(trader.address, ethers.parseEther("2000"));
     await tok.connect(owner).transfer(attacker.address, ethers.parseEther("100000"));
+  });
+
+  it("[M-21] setFloor / setAmbush reject a contract that cannot receive ETH (EthSendFailed), never silently re-park", async () => {
+    // A FRESH curve with floor/ambush unset (the before-block curve already wired them), reusing the deployed infra.
+    const curve2 = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
+      await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
+      await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
+      ZERO, await tok.getAddress(), FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address
+    );
+    // `tok` is a plain ERC20: it HAS code (passes the code.length gate) but has neither receive() nor a payable
+    // fallback, so the M-21 probe `f.call{value:0}("")` reverts → EthSendFailed. Without the probe, wiring it would
+    // succeed and then floorEthOwed/ambushEthOwed — whose ONLY exit is a plain value transfer to this one-shot sink —
+    // would be stranded forever while flushFloor()/flushAmbush() kept returning success.
+    await expect(curve2.connect(platform).setFloor(await tok.getAddress())).to.be.revertedWithCustomError(curve2, "EthSendFailed");
+    await expect(curve2.connect(platform).setAmbush(await tok.getAddress())).to.be.revertedWithCustomError(curve2, "EthSendFailed");
+    // control: a contract WITH receive() (the real floor vault) still wires fine — the probe accepts a valid sink.
+    await expect(curve2.connect(platform).setFloor(await floor.getAddress())).to.not.be.reverted;
   });
 
   it("buys the curve out (spot overshoots below the ceiling)", async () => {

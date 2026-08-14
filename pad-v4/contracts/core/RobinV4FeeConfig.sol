@@ -9,9 +9,16 @@ import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step
 /// exact fee it was born with (the trust guarantee: a coin's tax can never be raised after the fact). This is
 /// the single authority that lets us retune pad economics/curve geometry WITHOUT ever redeploying the factory.
 ///
-/// Hard caps below bound what any future launch can carry, so even a compromised/fat-fingered owner cannot
-/// push a new pad's tax past the ceiling. Live pads are immutable regardless of this contract's state, so
-/// there is no timelock: a defaults change is forward-only and can never touch an existing coin.
+/// Hard caps below bound the HOOK taxes any future launch can carry, so even a compromised/fat-fingered owner
+/// cannot push a new pad's buy/sell tax past the ceiling. TWO caveats the operator must hold (see M-10, M-12):
+///   • [M-10] `lpFee` is NOT bounded by the ≤2% story — it is capped only at Uniswap's structural MAX_LP_FEE (100%),
+///     and on a Robin pad routes mostly to protocol-owned positions, so it is a SECOND, effectively-uncapped take.
+///     `setDefaults` is therefore a real un-timelocked economic knob, not merely a forward-only default — pick a
+///     Robin lpFee cap as policy and hold this owner key with the same care as the fee wallet.
+///   • [M-12] "forward-only, can never touch an existing coin" holds for a LAUNCHED pad (its fee is stamped
+///     immutably at launch) but NOT for ETH already sitting in an OPEN PRESALE: PresaleVault reads geometry/lpFee
+///     live at finalize, so an in-cap retune that lands while a presale is open silently reprices — or bricks — it.
+/// Govern this owner as a live capability (multisig, ideally a timelock), not a set-and-forget default source.
 contract RobinV4FeeConfig is Ownable2Step {
     uint16 public constant BPS = 10000;
     uint16 public constant MAX_TAX_BPS = 200; // ≤2% per side on any future launch
@@ -23,14 +30,15 @@ contract RobinV4FeeConfig is Ownable2Step {
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
 
     /// @dev v3-economics model: graduation rewards are a PERCENTAGE of the raise (so they scale with any MC),
-    /// and a slice of the BUY tax stays in the curve as a liquidity buffer (softens price impact + deepens the
-    /// permanent LP). All bps are immutable per-pad once stamped at launch.
+    /// and a slice of the BUY tax is held in the curve as an idle ETH balance through the curve phase, then swept
+    /// to the PLATFORM at graduation ([L-5] it is a deferred platform reward — NOT LP depth, and it gives no price
+    /// support while held). All bps are immutable per-pad once stamped at launch.
     struct Defaults {
         uint16 buyTaxBps; // hook: buy trade tax (→ platform + curve buffer, split by buyBufferShareBps)
         uint16 sellTaxBps; // hook: sell trade tax → creator + floor
         uint16 sellFloorShareBps; // share of the SELL tax carved to the floor (rest → creator)
         uint16 buyLpFloorShareBps; // share of the BUY LP fee held in the curve → swept to the floor at grad
-        uint16 buyBufferShareBps; // share of the BUY tax kept in the curve as a liquidity buffer (rest → platform)
+        uint16 buyBufferShareBps; // [L-5] share of BUY tax parked in the curve as ETH, swept to platform at grad; rest → platform at accrual (both end at platform)
         uint16 referralShareBps; // share of the PLATFORM buy cut paid to a referrer (from swap hookData); rest → platform
         uint16 platformGradBps; // platform share of the raise at graduation
         uint16 creatorGradBps; // creator share of the raise at graduation

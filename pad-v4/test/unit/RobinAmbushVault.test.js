@@ -21,13 +21,17 @@ function poolIdOf(k) {
 
 describe("RobinAmbushVault — two-sided ETH-seeded ambush band", () => {
   const FEE = 3000, TS = 60;
-  let owner, lp, trader, floorSink, pm, stateView, tok, mod, sw, key, poolId;
+  let owner, lp, trader, floorSink, pm, stateView, tok, mod, sw, key, poolId, stakingStub;
 
   beforeEach(async () => {
     [owner, lp, trader, floorSink] = await ethers.getSigners();
     pm = await (await ethers.getContractFactory("PoolManager")).deploy(owner.address);
     stateView = await (await ethers.getContractFactory("RobinStateView")).deploy(await pm.getAddress());
     tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    // [L-17] the ambush vault now requires a non-zero staking recipient. For tests that don't exercise staking, a
+    // code-bearing stub stands in: _forwardStaking safeTransfers idle token to it and try/catches its (absent)
+    // fundTokenPushed — an EOA here would break the empty-return decode, so the stub must be a contract.
+    stakingStub = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(0);
     key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: ZERO };
     poolId = poolIdOf(key);
     await pm.initialize(key, SQRT_1_1); // tick 0
@@ -48,7 +52,8 @@ describe("RobinAmbushVault — two-sided ETH-seeded ambush band", () => {
     const curve = await (await ethers.getContractFactory("MockCurveGrad"))
       .deploy(gradTick, ZERO, await tok.getAddress(), FEE, TS, ZERO);
     return (await ethers.getContractFactory("RobinAmbushVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), floorRecipient, stakingRecipient ?? ZERO,
+      // [L-17] stakingRecipient must be non-zero; default to a code-bearing stub for tests that don't exercise staking
+      await pm.getAddress(), await stateView.getAddress(), floorRecipient, stakingRecipient ?? (await stakingStub.getAddress()),
       await curve.getAddress(), ZERO, await tok.getAddress(), FEE, TS, ZERO, 0 /* gap */, 10 /* width spacings */
     );
   }
@@ -154,8 +159,22 @@ describe("RobinAmbushVault — two-sided ETH-seeded ambush band", () => {
     const curve = await (await ethers.getContractFactory("MockCurveGrad"))
       .deploy(0, ZERO, await tok.getAddress(), FEE, TS, ZERO);
     await expect(
-      F.deploy(await pm.getAddress(), await stateView.getAddress(), floorSink.address, ZERO,
-        await curve.getAddress(), ZERO, await tok.getAddress(), FEE, TS, ZERO, 0, 0) // width 0
+      F.deploy(await pm.getAddress(), await stateView.getAddress(), floorSink.address, floorSink.address,
+        await curve.getAddress(), ZERO, await tok.getAddress(), FEE, TS, ZERO, 0, 0) // width 0 → BadBand (staking non-zero so ZeroAddress isn't hit first)
     ).to.be.revertedWithCustomError(F, "BadBand");
+  });
+
+  it("[M-26] rejects a PoolKey that does not match the curve's (the exploit's failing branch)", async () => {
+    // The curve publishes key K = (ZERO, tok, FEE, TS, ZERO). A vault that anchors to THIS curve's gradTick but points
+    // its own PoolKey at a DIFFERENT pool would deliver this pad's ambush share as unrecoverable liquidity over there.
+    // The M-26 ctor guard cross-checks all five key fields against the curve; deploying with a mismatched fee must revert.
+    const F = await ethers.getContractFactory("RobinAmbushVault");
+    const curve = await (await ethers.getContractFactory("MockCurveGrad"))
+      .deploy(0, ZERO, await tok.getAddress(), FEE, TS, ZERO); // curve's fee == FEE
+    const WRONG_FEE = 500;
+    await expect(
+      F.deploy(await pm.getAddress(), await stateView.getAddress(), floorSink.address, floorSink.address,
+        await curve.getAddress(), ZERO, await tok.getAddress(), WRONG_FEE, TS, ZERO, 0, 10) // fee != curve.fee()
+    ).to.be.revertedWithCustomError(F, "PoolKeyMismatch");
   });
 });
