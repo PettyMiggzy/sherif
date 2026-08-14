@@ -178,6 +178,13 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
     await expect(
       presaleFactory.createPresale(cfg, salts.commitment, E(3), okDeadline, E(2), E("0.1"), 60n)
     ).to.be.revertedWithCustomError(impl, "BadParams");
+
+    // [L-21 / re-audit] a pure-cfg config launch rejects UNCONDITIONALLY (tickSpacing <= 0) must not reach a live
+    // presale (else contributor ETH is locked until finalize inevitably reverts BadGeometry). createPresale rejects it.
+    const badTs = { ...cfg, tickSpacing: 0 };
+    await expect(
+      presaleFactory.createPresale(badTs, salts.commitment, E(3), okDeadline, E(2), E("0.1"), 86400n)
+    ).to.be.revertedWithCustomError(presaleFactory, "BadParams");
   });
 
   // 3) deposit mechanics

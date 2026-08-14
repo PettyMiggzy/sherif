@@ -49,6 +49,7 @@ contract PresaleVaultFactory {
         if (
             cfg.creator == address(0) || cfg.supply == 0 || cfg.curveSupply == 0 || cfg.reserveSupply == 0
                 || cfg.curveSupply + cfg.reserveSupply != cfg.supply
+                || cfg.tickSpacing <= 0 // [re-audit] launch's 6th unconditional pure-cfg reject (CurvePadFactoryV4 `ts <= 0`)
         ) revert BadParams();
         vault = Clones.clone(implementation);
         PresaleVault(vault).initialize(

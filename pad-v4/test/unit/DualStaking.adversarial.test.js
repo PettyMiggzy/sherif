@@ -176,4 +176,26 @@ describe("DualStaking — adversarial", () => {
     expect(await ds.staked(STOCK, alice.address)).to.equal(0n);
     expect(await stk.balanceOf(alice.address)).to.equal(10n ** 24n); // exactly her original balance
   });
+
+  it("[re-audit/L-2] fundTokenPushed: permissionless when SINGLE-listed, rewarder-gated when DUAL-listed", async () => {
+    // SINGLE-listed reward → attribution is unambiguous → permissionless (this is the flushStaking() recovery path).
+    const rw = await erc20(owner);
+    await ds.connect(owner).listReward(TOKEN, await rw.getAddress(), 7 * DAY); // TOKEN side ONLY
+    await ds.connect(bob).stake(TOKEN, 1000n); // give the TOKEN side weight to receive the stream
+    await rw.connect(owner).transfer(await ds.getAddress(), 500n * 10n ** 18n); // arrived (parked) delta
+    await expect(ds.connect(alice).fundTokenPushed(TOKEN, await rw.getAddress())).to.not.be.reverted; // a stranger may push
+
+    // DUAL-listed reward → `side` is caller-asserted and accountedReserve is per-asset, so a stranger could steal
+    // reward attribution between sides. Only a trusted rewarder (who pushes for a KNOWN side) may resolve it.
+    const dual = await erc20(owner);
+    await ds.connect(owner).listReward(TOKEN, await dual.getAddress(), 7 * DAY);
+    await ds.connect(owner).listReward(STOCK, await dual.getAddress(), 7 * DAY); // listed on BOTH sides
+    await dual.connect(owner).transfer(await ds.getAddress(), 500n * 10n ** 18n); // arrived delta (meant for one side)
+    // a stranger naming EITHER side is now rejected
+    await expect(ds.connect(alice).fundTokenPushed(STOCK, await dual.getAddress())).to.be.revertedWithCustomError(ds, "NotRewarder");
+    await expect(ds.connect(alice).fundTokenPushed(TOKEN, await dual.getAddress())).to.be.revertedWithCustomError(ds, "NotRewarder");
+    // the trusted rewarder resolves it by naming the correct side
+    await ds.connect(bob).stake(STOCK, 1000n); // STOCK side weight to receive
+    await expect(ds.connect(rewarder).fundTokenPushed(STOCK, await dual.getAddress())).to.not.be.reverted;
+  });
 });

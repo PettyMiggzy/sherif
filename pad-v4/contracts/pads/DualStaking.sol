@@ -486,15 +486,20 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
     /// accounting — so no allowance/transferFrom is needed on the hook's hot path.
     function fundTokenPushed(uint8 side, address asset) external nonReentrant returns (uint256 received) {
         _requireSide(side);
-        // [L-2] PERMISSIONLESS (matches the sibling RobinLockStaking.fundTokenPushed). This is pure measured-delta
-        // accounting — `received = balanceOf - accountedReserve` — so a stranger's poke can only ever credit tokens
-        // that have ALREADY been transferred into this contract; it can never move value or credit thin air. The old
-        // NotRewarder gate was load-bearing only under M-13's extend=TRUE (a dust poke could re-arm the window and
-        // stall the stream); with extend=FALSE that lever is gone, and the gate merely broke the documented recovery:
-        // RobinCurveV4.flushStaking() calls this UN-caught (RobinCurveV4.sol ~L439), so on a DualStaking sink the gate
+        // [L-2] PERMISSIONLESS when the attribution is UNAMBIGUOUS. This is pure measured-delta accounting
+        // — `received = balanceOf - accountedReserve` — so a stranger's poke can only ever credit tokens ALREADY
+        // transferred in; it can never move value or credit thin air. The old blanket NotRewarder gate was
+        // load-bearing only under M-13's extend=TRUE (gone now), and it broke the documented recovery:
+        // RobinCurveV4.flushStaking() calls this UN-caught (RobinCurveV4.sol ~L457), so on a DualStaking sink the gate
         // reverted NotRewarder for every caller. fundToken (transferFrom) and fundETH (msg.value) KEEP their gate.
         if (asset == ETH) revert BadAsset();
         if (!rewardInfo[side][asset].listed) revert NotListed();
+        // [re-audit] `accountedReserve` is keyed per-ASSET, and `side` is caller-asserted — so if `asset` is listed on
+        // BOTH sides (the "earn the other" config), a stranger could name either side and misattribute the arrived
+        // delta to the wrong book (theft of reward attribution between stakers). Only a trusted rewarder — who pushes
+        // for a KNOWN side — may resolve that ambiguity. When `asset` is listed on a single side the attribution is
+        // unambiguous and the push stays permissionless (this is the flushStaking() recovery path: TOKEN, pad token).
+        if (rewardInfo[side == 0 ? 1 : 0][asset].listed && !isRewarder[msg.sender]) revert NotRewarder();
         uint256 bal = IERC20(asset).balanceOf(address(this));
         received = bal - accountedReserve[asset];
         if (received == 0) revert Zero();

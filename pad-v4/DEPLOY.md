@@ -74,9 +74,11 @@ Two of these deserve their own line because they are the ones that used to be mi
   treasury, so the miss is loud — but repairing it needs the separate `setStakingRecipient` one-shot.
 - **Set up the `DualStaking` pool itself.** After deploying the pad's `DualStaking` pool, `listReward` the
   token on the side the curve funds (this is done in `scripts/testnet-e2e-graduate.js`). Since **[L-2]**
-  `DualStaking.fundTokenPushed` is now permissionless (measured-delta accounting), the curve's
-  `flushStaking()` push no longer needs the curve registered as a rewarder — but `fundToken`/`fundETH`
-  (the pull/msg.value paths) still do, so keep `setRewarder(curve, true)` if you use those.
+  `DualStaking.fundTokenPushed` is permissionless when the asset is listed on a SINGLE side (the common pad —
+  token listed once on the token side), the curve's `flushStaking()` push no longer needs the curve registered
+  as a rewarder. Two exceptions still need `setRewarder(curve, true)`: `fundToken`/`fundETH` (the
+  pull/`msg.value` paths), and an "earn the other" pad where the token is listed on BOTH sides (the push side is
+  then caller-asserted, so only a trusted rewarder may resolve it).
 
 Verify all five before you consider a pad live:
 
