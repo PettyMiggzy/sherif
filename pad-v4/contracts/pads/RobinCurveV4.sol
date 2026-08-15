@@ -69,7 +69,8 @@ interface IRobinFeeHookCreator {
 ///   • streams the LEFTOVER reserve tokens (+ any token/sell LP fees) into the pad's staking pool (holder rewards),
 ///   • sweeps the held buy-LP carve (buyLpFloorShareBps of the ETH/buy LP fees) into the permanent floor vault.
 ///
-/// v2 curve-phase LP-fee routing: ETH (buy) fees → 80% platform / 20% floor; token (sell) fees → staking. Platform
+/// v2 curve-phase LP-fee routing: ETH (buy) fees → 100% platform (buyLpFloorShareBps default 0; 0% to floor);
+/// token (sell) fees → staking. Platform
 /// and creator payouts are accrue-and-pull (`claimPlatform`/`claimCreator`), never sent inline, so a bad recipient
 /// can never brick collectFees/graduate. All economic params are stamped IMMUTABLY by the factory from the governed
 /// RobinV4FeeConfig — this contract cannot self-set fees.

@@ -25,7 +25,7 @@ pointers. Last updated: 2026-08-15.
 |---|---|---|
 | AMM | Uniswap **v3** (factory+pool only, no NPM/router on-chain) | Uniswap **v4** hooks |
 | Status | **Deployed to mainnet** (v2.1, 2026-07-24) — see `LIVE_DEPLOYMENT.md` | Contracts + tests complete, **audit-pending**, not deployed |
-| Core | `CurvePadFactory`, `PadRouter`, `FeeConfig`, `Bond`, `MilestoneVault`, `LiquidityLocker` | `CurvePadFactoryV4`, `RobinFeeHook`, `RobinCurveV4`, `LockVault`, `RobinFloorVault`, `RobinAmbushVault`, `DualStaking`, `PresaleVault` |
+| Core | `CurvePadFactory`, `CurvePool`, `PadRouter`, `FeeConfig`, `Bond`, `FloorCoop`, `RewardVault` | `CurvePadFactoryV4`, `RobinFeeHook`, `RobinCurveV4`, `LockVault`, `RobinFloorVault`, `RobinAmbushVault`, `DualStaking`, `PresaleVault` |
 | Where recent work is | stable | **active — branch `claude/robinhood-chain-website-8loxcm`** |
 
 **The live product is v3.** pad-v4 is the next-gen rewrite. Don't confuse their fee models (§5).
@@ -62,24 +62,26 @@ Root docs: `LIVE_DEPLOYMENT.md` (live addresses), `HANDOFF.md` (v3 brief), `CLAU
 
 ## 5. The money model — v3 LIVE vs v4 TARGET (they DIVERGE)
 
-**These are different. Any fee sheet must say which it represents.**
+**These are different. Any fee sheet must say which it represents. The FULL contract-verified numbers (with
+`file:line` for every value) live in [`ECONOMICS-VERIFIED.md`](./ECONOMICS-VERIFIED.md) — the single source of
+truth; the summaries below are the headline only.**
 
 **v3 — LIVE on mainnet today** (the `CurvePadFactory` / `CurvePool` / `Bond` / `FloorCoop` family). Verified
-against the deployed contracts, not older docs — **`MilestoneVault` / `AthVault` are NOT deployed** (they belong to
-an earlier `$SHERIFF` design; ignore them for the live model):
-- **Supply split at launch:** **75% to the curve / 25% to the Bond's Ambush** (`AMBUSH_BPS = 2500`).
-- **Platform-level fees** (owner-tunable via `FeeConfig`, no redeploy): LP fee (1% pool, every trade) →
-  **platform 90% / creator 10%**; swap-desk fee (router cut) → **platform 45% / creator 45% / floor 10%**.
-- **Per-launch trade tax** (the launcher chooses, hard-capped by the router): `buyBps ≤ 400`, `sellBps ≤ 400`
-  (≤4% each). The tax proceeds split `walletBps / floorBps / burnBps` (sum to 100%) → **project wallet / deepen the
-  Bond floor / auto-burn** to `0x…dEaD`. **Burn is this auto-burn via `burnBps`**, NOT a WETH buyback. (Deploy/test
-  scripts commonly use 1%/1% with 100% to the project wallet, but it is per-launch — read `configOf(token)` on-chain
-  for a given coin; do NOT quote a single protocol-wide buy/sell tax.)
-- **Graduation:** ceiling-only **4.2 ETH**; **0.5 ETH to creator AND 0.5 ETH to platform** (each capped `raise/4`,
-  per `CurvePool.graduate()`); the **Bond** (protocol-owned MM: Sherwood + Bounty + Ambush) keeps the rest (~3.2 ETH),
-  posted at grad and locked forever.
-- **Staking / LP-deepening:** `FloorCoop` (per-token locked-LP staking for any coin — 10% deposit fee, 5% of swap
-  fees to protocol, 30/60/90/365/forever locks, 1–3× weight, 15% early-exit penalty) and `RewardVault` ($ROBIN).
+against the deployed contracts — **`MilestoneVault` / `AthVault` are NOT deployed** (earlier `$SHERIFF` design):
+- **Supply split at launch:** **75% curve / 25% Bond Ambush** (`AMBUSH_BPS = 2500`); zero platform/dev premine.
+- **Per-launch trade tax:** dev-chosen **1%–4% per side** (1% floor, 4% cap). The mandatory **base 1% goes to the
+  PLATFORM on buys** (0.9% now + 0.1% released at grad) and **to the CREATOR on sells**; any tax **above 1%** splits
+  **25% platform / 75% project**, and the project 75% is split wallet / Bond-floor / **buy-and-burn** (`burnBps` →
+  `flushBurn` *buys the token with the escrowed ETH and sends it to `0x…dEaD`* — a real buy-and-burn, not a token
+  skim). Read `configOf(token)` per coin; do NOT quote one protocol-wide tax.
+- **Platform fee splits** (owner-tunable via `FeeConfig`): LP swap fees → **90% platform / 10% creator**; the
+  configurable swap-desk split (when wired) → **45% platform / 45% creator / 10% floor**. Plus **+0.25%/side reward
+  legs** (buy→trader pool, sell→holder pool) to `RewardVault`, off until wired.
+- **Graduation:** ceiling-only ~**4.2 ETH**; **0.5 ETH to creator AND 0.5 ETH to platform** (each capped `raise/4`);
+  the **Bond** posts the rest as **Sherwood (60% full-range LP) + Bounty (40% WETH buy wall) + Ambush (token sell
+  wall)**, locked forever.
+- **Staking / LP-deepening:** `FloorCoop` (locked-LP staking, 10% deposit fee, 5% of fees, 30/60/90/365/forever
+  locks, 1–3× weight, 15%→45% scaled early-exit penalty) and `RewardVault` ($ROBIN).
 
 **v4 — TARGET (built this session in `pad-v4/`, not deployed):**
 - **Platform is ETH-only — never holds a pad token** (invariant, tested).
@@ -214,10 +216,10 @@ so the repo cannot answer this.
   numbers." Full v4 model stays in this repo (§5, `pad-v4/ROBIN-V4-CURVE-ECON.md`). Promote deliberately later.
 - **Fee sheet for external sharing (Uniswap/launchers).** The built artifact is **v4-TARGET**
   (published: `https://claude.ai/code/artifact/95c45fc7-4b71-4030-b1fc-dec8462ee9a3`). **What is LIVE is v3.**
-  Default: build a **v3-LIVE** version for anything shared now, from the **verified** live model in §5 (75/25
-  curve/Bond supply; LP 90/10; swap 45/45/10; per-launch tax ≤4% each split wallet/floor/burn with **auto-burn via
-  `burnBps`**; grad 0.5 creator + 0.5 platform each capped raise/4; `FloorCoop`/`RewardVault` staking). Do **not**
-  reuse the old `MilestoneVault` buyback description — it isn't deployed. Keep the v4 sheet for internal/roadmap.
+  Default: build a **v3-LIVE** version for anything shared now, taken **directly from `ECONOMICS-VERIFIED.md`**
+  (do not hand-derive — that's how the earlier errors crept in). Key headline: base 1% goes platform-on-buys /
+  creator-on-sells, above-1% splits 25/75, LP 90/10, grad 0.5+0.5, buy-and-burn via `burnBps`. Do **not** reuse the
+  old `MilestoneVault` description — it isn't deployed. Keep the v4 sheet for internal/roadmap.
 - **v4 burn shape — CLOSED.** Direct token-burn (the treasury receives token; no buyback swap). Correct for v4's
   funding. Revisit only if the funding flips to holding ETH.
 

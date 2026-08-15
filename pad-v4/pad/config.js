@@ -45,7 +45,7 @@ export const GRAD = {
   gradRewardEth: 0.5,    // platform 0.5 + creator 0.5 at graduation (capped raise/4)
   lpFeeBps: 100,         // 1% pool LP fee
   tradeTaxBps: 100,      // 1% directional hook tax
-  buyLpFloorShareBps: 2000, // 20% of buy LP fee deferred → floor at graduation
+  buyLpFloorShareBps: 0, // 100% of buy LP fee → platform (live default; set >0 only to re-fund floor from the buy-LP leg)
   ethUsd: 2450,          // display FX; wire to an oracle/feed at deploy
 };
 

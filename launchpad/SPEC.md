@@ -6,6 +6,10 @@ rule-bound treasury, automatic buy-and-burn, a 1% platform fee, and launch-time 
 
 > ⚠️ **Not audited.** This is a reference implementation. Get a professional audit before mainnet
 > value. Nothing here is financial or legal advice.
+>
+> 📌 **Economics superseded by [`../ECONOMICS-VERIFIED.md`](../ECONOMICS-VERIFIED.md)** — the contract-verified
+> source of truth. The market-cap / price figures in this design doc are illustrative old-geometry estimates;
+> quote the verified reference (and `LIVE_DEPLOYMENT.md`) for real numbers.
 
 ## Confirmed on-chain facts (verified this session)
 | Thing | Value |
@@ -132,10 +136,10 @@ Bond on your token."** Take from the outlaws robbing the chart, give it back to 
 | Total supply | **1,000,000,000** (fixed) |
 | Split | **75% bonding curve · 25% Ambush** (the Bond's sell-into-green engine) |
 | Start price | `VIRT_ETH = 0.8 ETH` → **start MC ≈ $1,880** (1 ETH), no oracle |
-| Graduation | when the curve collects **4 ETH (~$7.5k)** → grad FDV **36 ETH (~$68k)** |
-| Anti-snipe | 0.1-ETH per-buy cap for the first 5 min |
+| Graduation | ceiling-only; ~**4.2 ETH** raised → Bond posted, floor keeps ≥50% (FDV illustrative) |
+| Anti-snipe | buy-side %-of-supply caps: dead 2s, then maxTx 0.5% / wallet 1% (to 60s), maxTx 1% / wallet 2% (to 300s) |
 | Starting LP | **$10k+ combined** ($5k ETH / $5k tokens), buy-side-weighted |
-| Platform take | **full 1%** every trade (curve buys + LP swap fees) + Tribute ETH — **not** the floor's funding |
+| Platform take | **1% every trade, SPLIT** (owner-tunable) — router buys/sells 45% platform / 45% creator / 10% floor; LP swap fees 90% platform / 10% creator — + Tribute ETH — **not** the floor's funding |
 
 `CurveLaunchFactory.launch({name, symbol, dev})` is the whole interface. (ETH assumed ~$1,880.)
 
