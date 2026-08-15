@@ -64,12 +64,22 @@ Root docs: `LIVE_DEPLOYMENT.md` (live addresses), `HANDOFF.md` (v3 brief), `CLAU
 
 **These are different. Any fee sheet must say which it represents.**
 
-**v3 — LIVE on mainnet today** (all owner-tunable via `FeeConfig`, no redeploy):
-- LP fee (1% pool, every trade) → **platform 90% / creator 10%**.
-- Swap-desk fee (router cut) → **platform 45% / creator 45% / floor 10%**.
-- Graduation: ceiling-only **4.2 ETH**; **0.5 ETH to creator AND 0.5 ETH to platform** (each capped raise/4, per `CurvePool.graduate()`); Bond floor keeps the rest (~3.2 ETH).
-- Burn: `MilestoneVault` — 30% treasury, TWAP-gated tranche sells (2x/3x…), **dev-triggered buyback**
-  (holds WETH → swaps to token → burns to `0x…dEaD`), 50% dev / 50% buyback split.
+**v3 — LIVE on mainnet today** (the `CurvePadFactory` / `CurvePool` / `Bond` / `FloorCoop` family). Verified
+against the deployed contracts, not older docs — **`MilestoneVault` / `AthVault` are NOT deployed** (they belong to
+an earlier `$SHERIFF` design; ignore them for the live model):
+- **Supply split at launch:** **75% to the curve / 25% to the Bond's Ambush** (`AMBUSH_BPS = 2500`).
+- **Platform-level fees** (owner-tunable via `FeeConfig`, no redeploy): LP fee (1% pool, every trade) →
+  **platform 90% / creator 10%**; swap-desk fee (router cut) → **platform 45% / creator 45% / floor 10%**.
+- **Per-launch trade tax** (the launcher chooses, hard-capped by the router): `buyBps ≤ 400`, `sellBps ≤ 400`
+  (≤4% each). The tax proceeds split `walletBps / floorBps / burnBps` (sum to 100%) → **project wallet / deepen the
+  Bond floor / auto-burn** to `0x…dEaD`. **Burn is this auto-burn via `burnBps`**, NOT a WETH buyback. (Deploy/test
+  scripts commonly use 1%/1% with 100% to the project wallet, but it is per-launch — read `configOf(token)` on-chain
+  for a given coin; do NOT quote a single protocol-wide buy/sell tax.)
+- **Graduation:** ceiling-only **4.2 ETH**; **0.5 ETH to creator AND 0.5 ETH to platform** (each capped `raise/4`,
+  per `CurvePool.graduate()`); the **Bond** (protocol-owned MM: Sherwood + Bounty + Ambush) keeps the rest (~3.2 ETH),
+  posted at grad and locked forever.
+- **Staking / LP-deepening:** `FloorCoop` (per-token locked-LP staking for any coin — 10% deposit fee, 5% of swap
+  fees to protocol, 30/60/90/365/forever locks, 1–3× weight, 15% early-exit penalty) and `RewardVault` ($ROBIN).
 
 **v4 — TARGET (built this session in `pad-v4/`, not deployed):**
 - **Platform is ETH-only — never holds a pad token** (invariant, tested).
@@ -204,8 +214,10 @@ so the repo cannot answer this.
   numbers." Full v4 model stays in this repo (§5, `pad-v4/ROBIN-V4-CURVE-ECON.md`). Promote deliberately later.
 - **Fee sheet for external sharing (Uniswap/launchers).** The built artifact is **v4-TARGET**
   (published: `https://claude.ai/code/artifact/95c45fc7-4b71-4030-b1fc-dec8462ee9a3`). **What is LIVE is v3.**
-  Default: build a **v3-LIVE** version for anything shared now (LP 90/10, swap 45/45/10, grad 0.5 creator + 0.5
-  platform each capped raise/4, `MilestoneVault` dev-triggered buyback-burn); keep the v4 sheet for internal/roadmap.
+  Default: build a **v3-LIVE** version for anything shared now, from the **verified** live model in §5 (75/25
+  curve/Bond supply; LP 90/10; swap 45/45/10; per-launch tax ≤4% each split wallet/floor/burn with **auto-burn via
+  `burnBps`**; grad 0.5 creator + 0.5 platform each capped raise/4; `FloorCoop`/`RewardVault` staking). Do **not**
+  reuse the old `MilestoneVault` buyback description — it isn't deployed. Keep the v4 sheet for internal/roadmap.
 - **v4 burn shape — CLOSED.** Direct token-burn (the treasury receives token; no buyback swap). Correct for v4's
   funding. Revisit only if the funding flips to holding ETH.
 
