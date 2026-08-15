@@ -64,11 +64,11 @@ async function deployStack(deployer, platform) {
 }
 
 describe("SIM — Arrow migration launcher (buy out curve, graduate, airdrop to holders)", () => {
-  let deployer, platform, dev, h1, h2, h3, S, launcher;
+  let deployer, platform, dev, h1, h2, h3, stranger, S, launcher;
   let factoryAddr, depAddr, pmAddr, regAddr, tagN = 0;
 
   before(async () => {
-    [deployer, platform, dev, h1, h2, h3] = await ethers.getSigners();
+    [deployer, platform, dev, h1, h2, h3, stranger] = await ethers.getSigners();
     S = await deployStack(deployer, platform);
     launcher = await (await ethers.getContractFactory("ArrowLauncher")).deploy(
       await S.factory.getAddress(), await S.reg.getAddress()
@@ -190,5 +190,28 @@ describe("SIM — Arrow migration launcher (buy out curve, graduate, airdrop to 
     await (await launcher.connect(dev).launch(cfg, salts.tokenSalt, salts.hookSalt, salts.curveSalt, root, { value: E(9) })).wait();
     // the launcher is a singleton reused across launches — it must never accrue ETH (or a later dev could sweep it)
     expect(await ethers.provider.getBalance(await launcher.getAddress())).to.equal(0n);
+  });
+
+  it("[audit M1] a donation to the singleton is NOT swept to the next dev's refund — only this launch's change is refunded", async () => {
+    // an attacker force-sends ETH into the launcher hoping the next dev sweeps it
+    await stranger.sendTransaction({ to: await launcher.getAddress(), value: E(3) });
+    expect(await ethers.provider.getBalance(await launcher.getAddress())).to.equal(E(3));
+
+    const tag = "ARW" + (tagN++);
+    const cfg = makeCfg(tag, CURVE, RESERVE);
+    const salts = await prepareSalts(tag, cfg);
+    const root = ethers.id("holders-" + tag);
+    const devBefore = await ethers.provider.getBalance(dev.address);
+    const rc = await (await launcher.connect(dev).launch(cfg, salts.tokenSalt, salts.hookSalt, salts.curveSalt, root, { value: E(9) })).wait();
+    const gas = rc.gasUsed * rc.gasPrice;
+    const devAfter = await ethers.provider.getBalance(dev.address);
+
+    // the donated 3 ETH STAYS in the launcher (not handed to the dev)
+    expect(await ethers.provider.getBalance(await launcher.getAddress())).to.equal(E(3));
+    // the dev's net spend is 0.5 (platform) + buyout, plus gas — NOT reduced by the donation. So the dev spent
+    // strictly MORE than the 0.5 fee (they didn't pocket the 3 ETH), and less than the full 9 (change refunded).
+    const netSpent = devBefore - devAfter - gas;
+    expect(netSpent).to.be.gt(E("0.5")); // paid fee + buyout, did NOT receive the 3 ETH donation
+    expect(netSpent).to.be.lt(E(9));     // got real change back
   });
 });

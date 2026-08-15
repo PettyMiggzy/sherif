@@ -111,4 +111,20 @@ describe("ArrowDistributor — no-withdraw merkle self-claim", () => {
     for (const b of banned) expect(names).to.not.include(b);
     expect(names).to.include("claim");
   });
+
+  it("[audit L3] clamps the tail claim to on-hand balance — a dust shortfall never bricks a whole claim", async () => {
+    // Fund the distributor 1 wei SHORT of the committed sum (simulates the v4 pool rounding `bought` down by dust).
+    const short = await (await ethers.getContractFactory("ArrowDistributor")).deploy(await token.getAddress(), root);
+    await token.connect(owner).transfer(await short.getAddress(), total - 1n); // 1 wei short of 8000
+    // first two claim their exact amounts
+    await short.claim(entries[0].index, entries[0].account, entries[0].amount, getProof(layers, entries[0].index));
+    await short.claim(entries[1].index, entries[1].account, entries[1].amount, getProof(layers, entries[1].index));
+    // the tail claimant is owed 4500 but only 4499 remain — clamped, NOT reverted; they get 4499, not zero
+    const owed = entries[2].amount;
+    await expect(short.claim(entries[2].index, entries[2].account, owed, getProof(layers, entries[2].index)))
+      .to.emit(short, "Claimed").withArgs(entries[2].index, entries[2].account, owed - 1n);
+    expect(await token.balanceOf(entries[2].account)).to.equal(owed - 1n); // short by exactly the 1-wei dust
+    expect(await token.balanceOf(await short.getAddress())).to.equal(0n); // drained to zero, nothing bricked/stranded
+    expect(await short.isClaimed(entries[2].index)).to.equal(true);
+  });
 });

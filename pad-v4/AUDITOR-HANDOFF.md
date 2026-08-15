@@ -274,6 +274,42 @@ Operator directive: *"Platform wants no tokens at all — if there's something i
 
 ---
 
+## 0d. Arrow launcher — adversarial audit (new audit surface)
+
+`contracts/arrow/ArrowLauncher.sol` + `ArrowDistributor.sol` are NEW, unaudited, ETH-handling code that composes over
+the audited curve/factory/hook (modifying none of it). Put through a 25-agent adversarial gauntlet (`arrow-audit`,
+finders per dimension → skeptic refutation → synthesis). **No theft-of-funds bug; 10 candidates refuted** — including
+the self-`cfg.creator` instant-graduation keeper-bounty "exploit" (economically neutral — the collector holds nothing
+sellable), the over-request buy-tax concern (tax is fee-on-input on ETH; token output is untaxed; margin over-tax is
+negligible), the reconstructed-PoolKey concern (re-read from the same feeConfig, same tx), and the instant-grad
+dependency (permitted today, flagged as a coupling).
+
+**Fixed this round (Arrow-only, no audited-contract change):**
+- **M1 (medium) — ETH over-extraction.** The refund read the whole `address(this).balance`, so a donation/force-send
+  into the reused singleton would be swept to whoever launched next. Now snapshots the pre-existing balance and
+  refunds only the within-tx change. Test `arrow.sim.test.js [audit M1]`.
+- **L3 (low, real brick) — distributor tail-claimant.** `bought = curveSupply − pool-rounding dust`; a snapshot
+  summing to exactly `curveSupply` would revert the last all-or-nothing claim forever. `ArrowDistributor.claim` now
+  clamps the payout to the on-hand balance (last claimant short by ≤ dust, no-withdraw guarantee intact). Test
+  `ArrowDistributor.test.js [audit L3]`.
+
+**Open for the external auditor (documented, not code-changed):**
+- **L1/L2 (low, mempool-only) — front-run identity-hijack / griefing DoS.** A public-mempool copycat can reuse
+  `cfg`+salts to occupy the deterministic addresses (revert the dev tx) or substitute their own `merkleRoot` to
+  redirect the bought supply to their holders. No theft (attacker funds their own copycat). Not reachable on the
+  target single-sequencer FCFS chain. Recommended hardening (ArrowLauncher-only): bind `merkleRoot` (+ `msg.sender`)
+  into the effective CREATE2 salts so a substituted root yields a different token address (copied hookSalt →
+  `HookFlagsMismatch`). Deferred as a deliberate, reviewed change rather than an autonomous deterministic-address edit.
+- **Design honesty — "no dev holds the bag".** The guarantee is *no single dev wallet holds the supply + transparent
+  immutable on-chain distribution* — NOT sybil-resistance. A malicious dev can commit a root over their own/sybil
+  addresses; Arrow cannot verify holders are real. Pitch precisely.
+- **Stranded remainder (info).** An under-committed root strands the positive remainder forever (no withdraw) — the
+  honest core of the trustless design; the L3 clamp handles only the dust direction.
+
+Full report + per-agent findings: workflow `wf_c4f933ae-dcf`.
+
+---
+
 ## 1. Summary
 
 | severity | count | of which measured |

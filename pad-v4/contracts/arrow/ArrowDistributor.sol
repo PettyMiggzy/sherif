@@ -53,15 +53,23 @@ contract ArrowDistributor is ReentrancyGuard {
 
     /// @notice Claim `amount` for `account` against the committed root. Permissionless — the caller may be the holder
     /// or anyone acting on their behalf; the tokens ALWAYS go to `account`, never the caller. Each index claims once.
+    /// @dev [audit L3] The distributor is funded with the MEASURED buyout output, which the v4 pool rounds down in
+    /// its own favour — so `bought` is generically `curveSupply − dust`. If a dev commits leaf amounts summing to
+    /// exactly `curveSupply`, the final claim would otherwise revert on an insufficient-balance transfer and brick
+    /// that holder's ENTIRE airdrop forever (no withdraw path). We clamp the payout to the on-hand balance: the last
+    /// claimant is short by at most the pool dust instead of losing everything, and the no-withdraw guarantee holds
+    /// (tokens still leave only via a valid leaf, only to `account`).
     function claim(uint256 index, address account, uint256 amount, bytes32[] calldata proof) external nonReentrant {
         if (claimed.get(index)) revert AlreadyClaimed();
         // Double-hashed leaf (OZ convention) — prevents a leaf preimage from colliding with an internal node.
         bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(index, account, amount))));
         if (!MerkleProof.verifyCalldata(proof, merkleRoot, leaf)) revert InvalidProof();
 
+        uint256 bal = token.balanceOf(address(this));
+        uint256 pay = amount <= bal ? amount : bal; // clamp to on-hand; a dust shortfall can't brick a whole claim
         claimed.set(index); // effects before interaction (bitmap marks the index spent)
-        totalClaimed += amount;
-        token.safeTransfer(account, amount);
-        emit Claimed(index, account, amount);
+        totalClaimed += pay;
+        if (pay > 0) token.safeTransfer(account, pay);
+        emit Claimed(index, account, pay);
     }
 }

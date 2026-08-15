@@ -107,6 +107,11 @@ contract ArrowLauncher is IUnlockCallback, ReentrancyGuard {
         if (merkleRoot == bytes32(0)) revert EmptyRoot();
         if (msg.value <= PLATFORM_FEE) revert BelowPlatformFee();
 
+        // [audit M1] Snapshot any pre-existing balance (a donation / force-send to the receive() below, or ETH
+        // stranded by an earlier launch) so step-7 refunds ONLY this launch's change — never sweeps a stranger's
+        // donation to whoever calls next. This singleton must not accrue value to a caller. preBal stays put.
+        uint256 preBal = address(this).balance - msg.value;
+
         // 1) flat platform fee off the top → the platform (ETH only). Sent first; CEI-safe (no state depends on it).
         uint256 budget = msg.value - PLATFORM_FEE;
         _sendEth(feeRegistry.platformFeeWallet(), PLATFORM_FEE);
@@ -154,8 +159,9 @@ contract ArrowLauncher is IUnlockCallback, ReentrancyGuard {
         IERC20(token).safeTransfer(distributor, bought);
 
         // 7) refund the dev every ETH the launch didn't spend (unspent buyout budget + the graduation keeper bounty
-        //    this contract collected as the caller of graduate()). The dev keeps NO token — only their ETH change.
-        uint256 leftover = address(this).balance;
+        //    this contract collected as the caller of graduate()), EXCLUDING any pre-existing balance ([audit M1]).
+        //    The dev keeps NO token — only their ETH change.
+        uint256 leftover = address(this).balance - preBal;
         if (leftover > 0) _sendEth(msg.sender, leftover);
 
         emit ArrowLaunched(msg.sender, token, curve, distributor, PLATFORM_FEE, spent, bought, merkleRoot);
