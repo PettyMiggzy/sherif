@@ -174,15 +174,28 @@ correction in Fix 1 must end up in whichever `START-HERE` wins.
 - This refresh **brings the live `FeeConfig` / `PlatformFeeSplitter` / `FloorCoop` contracts into the Labs tree**
   (currently missing) and makes the A fixes automatic.
 
-### D. Infra — the coin-site subdomain wildcard (Vercel)
+### D. Infra — WHICH repo serves the site, then the subdomain wildcard (Vercel)
 
-1. **Check first:** open `https://test123.robinlabs.fun`. Loads a "not found / claim" page → already live, done.
-   Vercel/SSL/DNS error → add it (below).
-2. **Add** domain `*.robinlabs.fun` in the **pad** Vercel project (root dir `pad/`, the one serving `www.robinlabs.fun`).
-3. **DNS:** add what Vercel shows — a `CNAME` name `*` → `cname.vercel-dns.com`. **Wildcard SSL needs the domain on
-   Vercel's nameservers** (`ns1/ns2.vercel-dns.com`); since `www` already works it's likely already there → one click.
-4. **Verify:** re-open `https://test123.robinlabs.fun`. No code change needed — `pad/vercel.json` already rewrites
-   `*.robinlabs.fun` → `/site.html`. Then a creator claims a slug at `robinlab.io/website.html?c=<coin>`.
+**Context (2026-08-15):** `Robinlabz/Labs` was deleted and re-imported. `www.robinlab.io` is confirmed **still live**
+(full site, no errors) — so it's either served by `sherif`, or by a **frozen last-build from the old (deleted) Labs**
+(Vercel keeps serving the last deployment after a repo is deleted; it just stops deploying new pushes). The
+domain↔repo binding is **only in the Vercel dashboard**, never in the repo (`vercel.json` = rewrites/headers only),
+so the repo cannot answer this.
+
+**D0. Determine the serving repo (do first):** Vercel dashboard → the project that lists `robinlab.io` under
+**Settings → Domains** → **Deployments** → latest **Production** deploy shows `Source: owner/repo @ branch @ commit`
+(or **Settings → Git** shows the connected repo). 
+- If it's **`sherif`** → nothing broke; re-point to Labs *deliberately* during the migration (C).
+- If it's the **old/deleted Labs** → the site is on a frozen build; **re-link Vercel to the re-imported Labs (or to
+  sherif) in Settings → Git → Connect** to restore deploys. Re-importing does NOT auto-reconnect Vercel.
+
+**D1. The coin-site wildcard** (same project — root dir `pad/`, the one serving `www.robinlabs.fun`):
+1. Check: open `https://test123.robinlabs.fun`. "Not found / claim" page → already live, done. Vercel/SSL/DNS error → add it.
+2. Add domain `*.robinlabs.fun` to that project.
+3. DNS: add what Vercel shows — `CNAME` name `*` → `cname.vercel-dns.com`. **Wildcard SSL needs the domain on
+   Vercel's nameservers** (`ns1/ns2.vercel-dns.com`); since `www` works it's likely already there → one click.
+4. Verify: re-open `https://test123.robinlabs.fun`. No code change — `pad/vercel.json` already rewrites
+   `*.robinlabs.fun` → `/site.html`. Creators then claim a slug at `robinlab.io/website.html?c=<coin>`.
 
 ### E. Decisions (recommended defaults — none is blocking; confirm when convenient)
 
@@ -220,6 +233,6 @@ Remaining (each has exact steps above — nothing is undocumented):
 - [ ] **A** — Labs public repo: 3 fixes (grad both legs · factory address+table · ceiling-only graduation).
 - [ ] **B** — reconcile the two branches; the grad fix survives into the winning `START-HERE`.
 - [ ] **C** — run the migration (all Robin Labs content → Labs, secret-scanned, clean start).
-- [ ] **D** — verify/add the `*.robinlabs.fun` Vercel wildcard.
+- [ ] **D** — confirm in Vercel which repo serves the site (Labs was deleted+re-imported; reconnect if needed), then verify/add the `*.robinlabs.fun` wildcard.
 - [ ] **E** — confirm the v4-promotion + fee-sheet-version defaults (or override).
 - [ ] **F** — send pad-v4 to external audit before any v4 mainnet.
