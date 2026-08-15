@@ -1,7 +1,10 @@
-# Robin Labs — Handoff Brief
+# Robin Labs — Handoff Brief (v3 launchpad)
 
-Read this first. It's the full context for anyone (or any new session) picking up
-Robin Labs. Everything you need to continue is here.
+> **Superseded by [`START-HERE.md`](./START-HERE.md)** — the master orientation + complete executable handoff
+> (both v3-live and v4, the repo map, the sherif→Labs migration, and every open item with exact steps). This file
+> remains as the focused v3-launchpad brief; where it disagrees with `START-HERE.md`, `START-HERE.md` wins.
+
+This is the full context for the v3 launchpad specifically. Everything you need to continue is here.
 
 ## What Robin Labs is
 
