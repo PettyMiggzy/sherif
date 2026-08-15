@@ -39,15 +39,28 @@ OWNER = the cold wallet. Factory deploy block: **17752965**. Deployed: 2026-07-2
 
 ## Graduation is keeper-triggered — operational note (verified on-chain 2026-08-15)
 
-`graduate()` is **permissionless + bounty-paid**, NOT auto-called inside a buy. The router caps buys AT the ceiling
-(`gradSqrtPriceX96`, never overshoots); graduation then needs a keeper (`launchpad/scripts/grad.js`) or any
-bounty-hunting bot to call `graduate()` the moment `ready()` is true. **It is "automatic" only while a keeper runs.**
+On the live **`CurvePool`**, graduation is **NOT automatic and NOT incentivized.** The router caps buys AT the ceiling
+(`gradSqrtPriceX96`, never overshoots), but `graduate()` is a separate permissionless call that pays **no caller
+bounty** (only 0.5 ETH creator + 0.5 ETH platform — nothing to `msg.sender`), and there is **no auto-grad in the buy
+tx** (that lives only in the non-deployed `BondingCurve`). So **no third-party bot is incentivized to graduate a
+coin** — without an operator keeper, a coin that hits the ceiling sits tradeable-but-capped with its Bond floor
+unposted, indefinitely. (`grad.js` is a one-shot livetest, not a daemon.)
 
-Live state (via `api.robinlab.io`): **9 coins, 46k trades, ~115 ETH all-time volume, 0 graduated.** That zero is
-expected — no coin has reached the 4.2 ETH ceiling (furthest: **ROBIN ~49%**, MILO ~11%, rest ≈0; on-chain
-`ready()`=false for all). **Consequence: the production graduation path has never fired.** Before any coin nears the
-ceiling (ROBIN first), CONFIRM `grad.js` is running against the live factory — otherwise a coin can sit at the
-ceiling, tradeable but capped, with its Bond floor unposted until someone claims the bounty.
+**FIX — run the keeper:** `launchpad/scripts/grad-keeper.js` is an always-on daemon that polls every coin and calls
+`graduate()` the instant `ready()` flips true.
+```
+KEEPER_PK=0x… node launchpad/scripts/grad-keeper.js      # live
+node launchpad/scripts/grad-keeper.js --dry-run           # read-only status
+```
+Validated read-only against the live chain (2026-08-15): correctly swept all 9 coins and read each curve's on-chain
+`ready()`. **Run it on the operator box before any coin nears the ceiling.**
+
+Live state (via `api.robinlab.io`): **9 coins, 46k trades, ~115 ETH all-time volume, 0 graduated** — expected, no coin
+has reached the 4.2 ETH ceiling (furthest **ROBIN ~49%**, MILO ~11%, rest ≈0; on-chain `ready()`=false for all). The
+production graduation path has therefore never fired; the keeper closes that gap before it matters.
+
+> **v4 note:** the v4 curve DOES pay a keeper bounty (`GRAD_BOUNTY` = min 0.2%, 0.02 ETH), so v4 graduations are
+> bot-incentivized — but running the keeper is still the reliable path.
 
 ## What's already done
 - ✅ v2.1 contracts deployed + verified on Blockscout (source readable) via the V2 `standard-input`
