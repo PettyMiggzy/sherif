@@ -34,7 +34,11 @@ const DEFAULTS = {
   buyTaxBps: Number(process.env.BUY_TAX_BPS || 100), // 1% buy tax (ETH, fee-on-input) → 0.2% buffer / 0.2% referrer / rest platform
   sellTaxBps: Number(process.env.SELL_TAX_BPS || 100), // 1% sell trade tax → 0.8% creator / 0.2% floor
   sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 2000), // 20% of the sell tax (=0.2% of trade) → floor
-  buyLpFloorShareBps: Number(process.env.BUY_LP_FLOOR_SHARE_BPS || 2000), // 20% of the buy LP fee → floor at grad
+  // [fee-model] BUY-side ETH LP fee → 100% platform (0% held for the floor). The platform keeps all ETH LP fees; the
+  // deep RobinFloorVault is funded from ELSEWHERE — the ongoing sell-tax floor slice (sellFloorShareBps) + the ambush
+  // vault's forwarded ETH LP fees — never the buy-LP carve. Set >0 only if you deliberately want to re-fund the floor
+  // from the buy-LP leg (splits it platform/floor at graduation).
+  buyLpFloorShareBps: Number(process.env.BUY_LP_FLOOR_SHARE_BPS || 0),
   buyBufferShareBps: Number(process.env.BUY_BUFFER_SHARE_BPS || 2000), // 20% of the buy tax (=0.2% of trade) → curve buffer
   referralShareBps: Number(process.env.REFERRAL_SHARE_BPS || 2500), // 25% of the platform buy cut (=0.2% of trade) → referrer
   platformGradBps: Number(process.env.PLATFORM_GRAD_BPS || 1000), // 10% of the raise → platform at graduation

@@ -5,8 +5,9 @@
  *   2. factory.launch(...)  → deploys token + hook + pool + seed LP (atomic), floorRecipient unset
  *   3. deploys RobinFloorVault for the new pool and wires it via hook.setFloorRecipient (one-shot)
  *   4. creates a DualStaking pool for the token via StakingFactory (5% fee, no lock)
- *   5. points the LockVault token-leg LP fee at the staking reward keeper (setStakingRecipient, one-shot)
- *  5b. points the floor vault's token-leg LP fee at the same keeper (setTokenSink, one-shot) — platform stays ETH-only
+ *  4b. deploys the per-pad RobinTokenTreasury (70% staking / 30% creator-burn) — every token-side LP fee sinks here
+ *   5. points the LockVault token-leg LP fee at the treasury (setStakingRecipient, one-shot)
+ *  5b. points the floor vault's token-leg LP fee at the treasury (setTokenSink, one-shot) — platform stays ETH-only
  * Appends the launch record to deploy.local.json.
  *
  * Usage (env): PRIVATE_KEY (=platform/deployer), ROBINHOOD_RPC,
@@ -99,22 +100,32 @@ async function main() {
   const stakingPool = sev.args.pool;
   console.log(`  stakingPool ${stakingPool}  (owner accepts via acceptOwnership; keeper ${rewardKeeper} funds token LP fee)`);
 
-  // 5) point the LockVault token-leg LP fee at the reward keeper (it forwards to the pool as a stream)
-  const lockVault = await ethers.getContractAt("LockVault", d.lockVault);
-  await legacy(lockVault, "setStakingRecipient", [lpTokenId, rewardKeeper]); // platform-gated
-  console.log(`  lockVault stakingRecipient -> ${rewardKeeper}`);
+  // 4b) [fee-model] deploy the per-pad TOKEN treasury — the single sink every token-side LP fee terminates at. On
+  //     distribute() it splits 70% → the staking pool / 30% retained as the public burn reserve; the creator (only)
+  //     burns the retained 30% when they choose (they pay the gas). The platform never holds a pad token.
+  const TreasuryF = await ethers.getContractFactory("RobinTokenTreasury");
+  const treasury = await TreasuryF.deploy(token, stakingPool, cfg.creator, { type: 0 });
+  await treasury.waitForDeployment();
+  const treasuryAddr = await treasury.getAddress();
+  console.log(`  tokenTreasury ${treasuryAddr}  (70% staking / 30% burn; creator ${cfg.creator} burns)`);
 
-  // 5b) [fee-model] point the floor vault's TOKEN-side LP fee at the same reward keeper. The platform takes ETH
-  //     only and never holds pad tokens — the floor's token leg parks in-vault until this one-shot sink is wired,
-  //     then sweepTokenFees() forwards it to staking. Mirrors the LockVault token leg above.
-  await legacy(floor, "setTokenSink", [rewardKeeper]); // platform-gated, one-shot
-  console.log(`  floorVault tokenSink -> ${rewardKeeper}`);
+  // 5) point the LockVault token-leg (sell-side) LP fee at the treasury (it splits + retains the burn share)
+  const lockVault = await ethers.getContractAt("LockVault", d.lockVault);
+  await legacy(lockVault, "setStakingRecipient", [lpTokenId, treasuryAddr]); // platform-gated
+  console.log(`  lockVault stakingRecipient -> treasury`);
+
+  // 5b) [fee-model] point the floor vault's TOKEN-side LP fee at the same treasury. The floor's token leg parks
+  //     in-vault until this one-shot sink is wired, then sweepTokenFees() forwards it to the treasury.
+  await legacy(floor, "setTokenSink", [treasuryAddr]); // platform-gated, one-shot
+  console.log(`  floorVault tokenSink -> treasury`);
 
   d.launches = d.launches || [];
-  d.launches.push({ token, hook, poolId: poolId.toString?.() ?? poolId, lpTokenId: lpTokenId.toString(), floorVault: floorAddr, stakingPool, tokenSalt, symbol: cfg.symbol });
+  d.launches.push({ token, hook, poolId: poolId.toString?.() ?? poolId, lpTokenId: lpTokenId.toString(), floorVault: floorAddr, stakingPool, tokenTreasury: treasuryAddr, tokenSalt, symbol: cfg.symbol });
   fs.writeFileSync(file, JSON.stringify(d, null, 2));
   console.log(`\nLaunched + wired. Record appended to ${file}.`);
-  console.log(`Next: platform multisig calls acceptOwnership() on ${stakingPool}; list token as a reward + add the keeper as rewarder if not already.`);
+  console.log(`Next: platform multisig calls acceptOwnership() on ${stakingPool}; list token as a reward + add the keeper as rewarder.`);
+  console.log(`      At graduation, point the RobinAmbushVault's stakingRecipient at the treasury ${treasuryAddr} too.`);
+  console.log(`      Keeper loop: claim token fees to the treasury, call treasury.distribute() (70% → pool), then pool.fundTokenPushed to book rewards.`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
