@@ -222,6 +222,12 @@ so the repo cannot answer this.
   old `MilestoneVault` description — it isn't deployed. Keep the v4 sheet for internal/roadmap.
 - **v4 burn shape — CLOSED.** Direct token-burn (the treasury receives token; no buyback swap). Correct for v4's
   funding. Revisit only if the funding flips to holding ETH.
+- **Anti-snipe — DECIDED: NONE. "Bots are traders too."** Fair launch, no launch-time guards. **v4 already delivers
+  this** — `PadToken` is a plain immutable ERC20 (no `maxTx`/`maxWallet`/blocklist/transfer hook). The **live v3**
+  still has a minimal auto-expiring window in `LaunchToken` (dead 2s → maxTx 0.5%/wallet 1% to 60s → 1%/2% to 300s,
+  hardcoded by the deployed factory). Existing v3 coins keep it (immutable). To drop it from *new* v3 launches =
+  zero the anti-snipe params in `CurvePadFactory` and **redeploy the factory** (offered, not yet done — it would
+  diverge the source from the live `0x8aa92d…` bytecode). Stop selling anti-snipe as a feature in the pitch.
 
 ### F. pad-v4 external audit (before ANY v4 mainnet)
 

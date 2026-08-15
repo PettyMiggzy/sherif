@@ -2,7 +2,8 @@
 
 A fair-launch **launchpad-for-many** on **Robinhood Chain** (Arbitrum Orbit L2, chainId 4663).
 Any team launches a token that is **tradeable on Uniswap v3 + DexScreener-indexed day one**, with a
-rule-bound treasury, automatic buy-and-burn, a 1% platform fee, and launch-time anti-snipe guards.
+a permanent protocol-owned floor (the Bond), automatic buy-and-burn, and a 1% platform fee. **Fair launch — bots
+are traders too** (the live v3's minimal auto-expiring anti-snipe window is being retired; v4 launches with none).
 
 > ⚠️ **Not audited.** This is a reference implementation. Get a professional audit before mainnet
 > value. Nothing here is financial or legal advice.
@@ -61,6 +62,11 @@ Reverts as a unit; partial launch impossible.
 - Invariants: I1 each k once · I2 `totalSold ≤ allocation` · I3 sequential+monotone · I4 ≤1 per cooldown · I5 `wethBalance ≥ buybackReserve` · I6 reserve only exits via burn.
 
 ## Anti-snipe (LaunchToken `_update`)
+> 🏹 **Product stance: being retired — "bots are traders too."** The go-forward design is a fair launch with NO
+> anti-snipe (v4 launches with none — a plain immutable token). The window below is what the **currently-deployed**
+> v3 factory bakes into each `LaunchToken`; it stays on existing coins (immutable) and is removed for new launches by
+> zeroing these params and redeploying `CurvePadFactory`. Documented for accuracy, not as a headline feature.
+
 Orbit note: uses **`block.timestamp`** (block.number tracks the parent L1 block on Orbit). All windows immutable, auto-expiring, **no owner extend**, **sells never blocked** (anti-honeypot).
 - Exempt set: pool, factory, vault, locker (so LP add / treasury hold / routing never revert).
 - Pre-enable: only exempt addresses can move tokens.

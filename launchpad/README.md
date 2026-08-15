@@ -2,7 +2,9 @@
 
 A fair-launch **launchpad-for-many** on **Robinhood Chain** (Arbitrum Orbit L2, chainId 4663). Any team
 launches a token that is **tradeable on Uniswap v3 + DexScreener-indexed day one**, with a rule-bound
-30% treasury, automatic buy-and-burn, a 1% platform fee, and launch-time anti-snipe guards.
+a permanent protocol-owned floor (the Bond), automatic buy-and-burn, and a 1% platform fee. **Fair launch — bots
+are traders too** (no anti-snipe going forward; the live v3 keeps only a minimal auto-expiring window, retired on
+the next factory redeploy).
 
 > ⚠️ **Not audited. Reference implementation.** An internal adversarial review was run, but you MUST get a
 > professional third-party audit before putting real value on mainnet. Nothing here is financial/legal advice.

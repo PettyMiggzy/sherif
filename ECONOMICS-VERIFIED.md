@@ -28,6 +28,9 @@ flush/withdraw calls **outside** the trade path — they never revert a trade an
 - Curve geometry (START_TICK_MAG / CURVE_WIDTH / MIN_GRAD_WIDTH): per-factory immutable [FACTORY]
 
 ### 1.2 LaunchToken — transfer tax & anti-snipe
+> **Product stance: anti-snipe is being RETIRED ("bots are traders too" — fair launch, no guards). v4 already has
+> NONE (`PadToken` is a plain immutable ERC20). The window below is what the deployed v3 factory bakes in; it stays
+> on existing v3 coins (immutable) and is dropped for new v3 launches by zeroing the params + redeploying the factory.**
 - **Transfer tax = 0.** No mint, no sell-blacklist, no pausable transfers — `LaunchToken.sol:8-10`
 - Anti-snipe = auto-expiring, **buy-side-only, revert-based** guard [FIXED] — `CurvePadFactory.sol:151-160`, enforced `LaunchToken.sol:170-181`:
   - dead window `deadSecs=2s` (buys revert) · phase1 `60s`: maxTx **0.5%** / maxWallet **1%** / 2s cooldown ·
