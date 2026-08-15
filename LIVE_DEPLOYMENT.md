@@ -37,6 +37,18 @@ OWNER = the cold wallet. Factory deploy block: **17752965**. Deployed: 2026-07-2
   the remainder (≥50% of the raise, ~3.2 ETH).
 - Retune from `admin.html` → **Fee dials** (owner-only): `setLpCreatorBps`, `setSwapSplit`.
 
+## Graduation is keeper-triggered — operational note (verified on-chain 2026-08-15)
+
+`graduate()` is **permissionless + bounty-paid**, NOT auto-called inside a buy. The router caps buys AT the ceiling
+(`gradSqrtPriceX96`, never overshoots); graduation then needs a keeper (`launchpad/scripts/grad.js`) or any
+bounty-hunting bot to call `graduate()` the moment `ready()` is true. **It is "automatic" only while a keeper runs.**
+
+Live state (via `api.robinlab.io`): **9 coins, 46k trades, ~115 ETH all-time volume, 0 graduated.** That zero is
+expected — no coin has reached the 4.2 ETH ceiling (furthest: **ROBIN ~49%**, MILO ~11%, rest ≈0; on-chain
+`ready()`=false for all). **Consequence: the production graduation path has never fired.** Before any coin nears the
+ceiling (ROBIN first), CONFIRM `grad.js` is running against the live factory — otherwise a coin can sit at the
+ceiling, tradeable but capped, with its Bond floor unposted until someone claims the bounty.
+
 ## What's already done
 - ✅ v2.1 contracts deployed + verified on Blockscout (source readable) via the V2 `standard-input`
   endpoint (the shared verifier `scripts/lib/blockscout.cjs` uses V2, so coins verify robustly too).
