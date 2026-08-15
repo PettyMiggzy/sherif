@@ -157,4 +157,38 @@ describe("SIM — Arrow migration launcher (buy out curve, graduate, airdrop to 
     await expect(launcher.connect(dev).launch(cfg, salts.tokenSalt, salts.hookSalt, salts.curveSalt, ethers.ZeroHash, { value: E(60) }))
       .to.be.revertedWithCustomError(launcher, "EmptyRoot");
   });
+
+  // ── adversarial ──────────────────────────────────────────────────────────────────
+
+  it("gates unlockCallback to the pool manager — a stranger cannot drive a rogue swap through the launcher", async () => {
+    const key = { currency0: ZERO, currency1: dev.address, fee: FEE, tickSpacing: TS, hooks: ZERO };
+    const data = abi.encode(["uint256", "tuple(address,address,uint24,int24,address)", "uint160"],
+      [1n, [key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks], 1n]);
+    await expect(launcher.connect(dev).unlockCallback(data)).to.be.revertedWithCustomError(launcher, "NotPoolManager");
+  });
+
+  it("a contract dev that cannot receive ETH bricks only its OWN launch — atomic revert, no funds lost", async () => {
+    const tag = "ARW" + (tagN++);
+    const cfg = makeCfg(tag, CURVE, RESERVE);
+    const salts = await prepareSalts(tag, cfg);
+    const root = ethers.id("holder-root");
+    const rejectDev = await (await ethers.getContractFactory("ArrowRejectDev")).deploy();
+
+    // the launcher's ETH refund send to this contract (no receive()) fails → the whole launch reverts atomically.
+    const data = launcher.interface.encodeFunctionData("launch", [cfg, salts.tokenSalt, salts.hookSalt, salts.curveSalt, root]);
+    await expect(rejectDev.doLaunch(await launcher.getAddress(), data, { value: E(8) }))
+      .to.be.revertedWithCustomError(launcher, "EthSendFailed");
+    // nothing was left stranded: the reverted tx returns all the ETH; the launcher holds none, no pad exists
+    expect(await ethers.provider.getBalance(await launcher.getAddress())).to.equal(0n);
+  });
+
+  it("leaves ZERO ETH residue in the singleton launcher after a successful launch (change all refunded)", async () => {
+    const tag = "ARW" + (tagN++);
+    const cfg = makeCfg(tag, CURVE, RESERVE);
+    const salts = await prepareSalts(tag, cfg);
+    const root = ethers.id("holders-" + tag);
+    await (await launcher.connect(dev).launch(cfg, salts.tokenSalt, salts.hookSalt, salts.curveSalt, root, { value: E(9) })).wait();
+    // the launcher is a singleton reused across launches — it must never accrue ETH (or a later dev could sweep it)
+    expect(await ethers.provider.getBalance(await launcher.getAddress())).to.equal(0n);
+  });
 });
