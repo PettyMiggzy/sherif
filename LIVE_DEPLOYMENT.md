@@ -32,7 +32,9 @@ OWNER = the cold wallet. Factory deploy block: **17752965**. Deployed: 2026-07-2
 - **Swap desk fee** (the router's cut): split **platform 45% / creator 45% / floor 10%** by default
   (`swapPlatformBps/swapCreatorBps/swapFloorBps = 4500/4500/1000`, must sum to 10000). Read by
   `PadRouter._distribute`.
-- **Graduation** stays ceiling-only at **4.2 ETH**; the creator still receives **0.5 ETH** at graduation.
+- **Graduation** stays ceiling-only at **4.2 ETH**. At graduation `GRAD_REWARD` pays **0.5 ETH to the creator AND
+  0.5 ETH to the platform** (each capped at `raise/4` — verified in `CurvePool.graduate()`), and the Bond floor keeps
+  the remainder (≥50% of the raise, ~3.2 ETH).
 - Retune from `admin.html` → **Fee dials** (owner-only): `setLpCreatorBps`, `setSwapSplit`.
 
 ## What's already done

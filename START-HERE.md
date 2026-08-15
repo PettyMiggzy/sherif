@@ -10,7 +10,7 @@ pointers. Last updated: 2026-08-15.
 
 **Robin Labs** — a creator-first **memecoin launchpad on Robinhood Chain** (Arbitrum Orbit L2, EVM,
 **chainId 4663**). One-tx launches into a real Uniswap pool, a bonding curve, a **ceiling-only graduation at
-~4.2 ETH** (creator gets **0.5 ETH** at grad), a permanently-locked protocol floor, and holder staking.
+~4.2 ETH** (creator **and** platform each get **0.5 ETH** at grad), a permanently-locked protocol floor, and holder staking.
 
 - **Formerly branded `$SHERIFF`** (Sheriff of Nottingham theme). The `$SHERIFF`-named folders/files
   (`launchpad/`, `bot/`, root `README.md`, `game/`) are the **old branding of the same project**, not separate
@@ -67,7 +67,7 @@ Root docs: `LIVE_DEPLOYMENT.md` (live addresses), `HANDOFF.md` (v3 brief), `CLAU
 **v3 — LIVE on mainnet today** (all owner-tunable via `FeeConfig`, no redeploy):
 - LP fee (1% pool, every trade) → **platform 90% / creator 10%**.
 - Swap-desk fee (router cut) → **platform 45% / creator 45% / floor 10%**.
-- Graduation: ceiling-only **4.2 ETH**, **creator 0.5 ETH** at grad.
+- Graduation: ceiling-only **4.2 ETH**; **0.5 ETH to creator AND 0.5 ETH to platform** (each capped raise/4, per `CurvePool.graduate()`); Bond floor keeps the rest (~3.2 ETH).
 - Burn: `MilestoneVault` — 30% treasury, TWAP-gated tranche sells (2x/3x…), **dev-triggered buyback**
   (holds WETH → swaps to token → burns to `0x…dEaD`), 50% dev / 50% buyback split.
 
