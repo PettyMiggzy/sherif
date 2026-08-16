@@ -137,7 +137,10 @@ defaults from `pad-v4/scripts/deploy-curve.js` (env-overridable).
 
 ### 2.9 Platform-ETH-only invariant (system-wide)
 Platform receives ETH (currency0) only, never holds pad tokens. Every currency1 stream terminates at staking or the
-RobinTokenTreasury (70/30). — `RobinTokenTreasury.sol:9-11`, `RobinCurveV4.sol:135,263`, `RobinFloorVault.sol:46`
+RobinTokenTreasury (70/30). The one indirect path — the DualStaking claim fee on the pad-token reward — is
+**contract-exempted** (round-3 F1): `DualStaking.claim()` charges `fee = asset == address(tokenAsset) ? 0 : …`, so
+no `platformClaimFeeBps` setting can skim a pad token to the platform key (money-side rewards still carry the fee).
+— `RobinTokenTreasury.sol:9-11`, `RobinCurveV4.sol:135,263`, `RobinFloorVault.sol:46`, `DualStaking.sol:392`
 
 ---
 

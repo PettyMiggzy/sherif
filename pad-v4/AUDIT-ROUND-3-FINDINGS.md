@@ -15,21 +15,26 @@ model** with the deployed config and the curve path. Three findings, all verifie
 permanent-strand. The headline invariant the hand-off advertises as *"tested, highest-value"* does not hold as
 deployed.
 
-> **REMEDIATION STATUS (build session) — all three addressed.**
-> - **F1 — fixed + docs corrected.** `deploy.js` `STAKING_CLAIM_FEE_BPS` default `500 → 0` (platform forgoes the
->   token-denominated staking claim fee, so no pad token reaches the platform key). The invariant claim in
->   `AUDIT-ROUND-3-BRIEF.md`, `AUDITOR-HANDOFF.md §0c`, and `ECON §5` is corrected to **config/wiring-enforced, not
->   fully contract-enforced** (an owner setting a nonzero token claim fee re-opens it — governance caveat). A
->   structural fix (route the token claim fee to treasury/burn) is flagged back to you. Your R3F1 demo was converted
->   into an end-to-end regression proving 0 under the shipped config + the nonzero-fee caveat. Tests:
->   `R3F1.platform-token-invariant.demo.test.js`, `DualStaking.adversarial.test.js [F1]`.
+> **REMEDIATION STATUS (build session) — all three addressed; F1 upgraded to a STRUCTURAL fix.**
+> - **F1 — fixed STRUCTURALLY (contract-enforced), not just by config.** Two layers: (a) `deploy.js`
+>   `STAKING_CLAIM_FEE_BPS` default `500 → 0`; and (b) **the real fix — `DualStaking.claim()` now exempts the pad
+>   token (`asset == address(tokenAsset)`) from the platform claim fee unconditionally**
+>   (`fee = asset == address(tokenAsset) ? 0 : amount*bps/BPS`, `DualStaking.sol:392`). No owner setting of
+>   `platformClaimFeeBps`, and no matter which side lists the token, can route a pad token to `platformTreasury`.
+>   The earlier "governance caveat" (a nonzero token claim fee re-opens the leak) **no longer exists** — the
+>   invariant is now contract-enforced for the pad token; money-side (ETH/stock) rewards still carry the fee. The
+>   invariant claim in `AUDIT-ROUND-3-BRIEF.md §6`, `AUDITOR-HANDOFF.md §0c`, and `ECON §53` is upgraded from
+>   "config/wiring-enforced" to **"contract-enforced for the pad token."** Tests upgraded to prove the exemption is
+>   unbypassable at fee 500 and narrow (money-side fee intact):
+>   `R3F1.platform-token-invariant.demo.test.js` (3 cases), `DualStaking.adversarial.test.js [F1]` (3 cases).
 > - **F3 — fixed.** `launch.js` now wires `curve.setStaking = the pool` (it was never wired → reservoir would park);
 >   `setStaking` reverts `StakingAssetMismatch` on a non-pool, so the reservoir is 100% staking. `ECON` corrected: the
 >   70/30 treasury split applies to **post-graduation** token LP fees; curve-phase fees ride the reservoir to staking.
 > - **F2 — fixed.** `RobinFloorVault.setTokenSink` now carries the `code.length` + self guards its peers have.
 >
-> An independent exhaustive platform-token sweep (build session) is running to confirm no *further* token→platform
-> path beyond F1 before the invariant is re-declared. Fixes on branch, tests green.
+> An independent exhaustive 20-agent platform-token sweep (build session) confirmed no *further* token→platform path
+> beyond the F1 claim-fee skim under the shipped deploy, and recommended exactly this structural exemption. Now
+> applied. Fixes on branch, full suite green.
 
 ---
 
@@ -61,6 +66,14 @@ asserts the platform balance goes `0 → 3.5` pad tokens. Runs green today (the 
 hand-off to scope the invariant to **LP-fee routing** and disclose the staking claim fee as a bounded (≤10%,
 owner-zeroable) token cut. Conservation itself holds (the cut is accounted and disclosed via M-16) — this is an
 invariant/marketing-vs-reality gap, not a leak.
+
+> **RESOLVED (build session): a stronger structural variant of (a).** Rather than rely on a deploy default that an
+> owner could later flip, `DualStaking.claim()` (`:392`) now exempts the pad token unconditionally:
+> `fee = asset == address(tokenAsset) ? 0 : (amount * platformClaimFeeBps) / BPS;`. `tokenAsset` is the launched
+> pad token; its reward can never be skimmed regardless of `platformClaimFeeBps` or which side lists it. The
+> constructor already rejects `tokenAsset == address(0)` and ETH uses a distinct sentinel, so the exemption can only
+> ever match the pad token. `deploy.js` still ships the fee at 0 as belt-and-suspenders. The invariant is now
+> **contract-enforced for the pad token**, not governance-dependent.
 
 ---
 

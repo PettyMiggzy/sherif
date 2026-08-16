@@ -137,29 +137,50 @@ describe("DualStaking — adversarial", () => {
     expect((await ethers.provider.getBalance(bob.address)) - bBefore).to.equal(fee);
   });
 
-  it("[F1] shipped default claim fee 0 — a TOKEN reward skims ZERO to the platform (invariant holds)", async () => {
-    // The pad-token staking pool rewards the PAD TOKEN (the 70% LP-fee stream). A platform claim-fee would skim
-    // that token to platformTreasury (== platformFeeWallet in the deploy), breaking "platform holds no pad token".
-    // The shipped deploy fixes this by defaulting the fee to 0. `stk` stands in for the token reward asset.
-    await ds.connect(owner).listReward(TOKEN, await stk.getAddress(), DAY);
+  it("[F1] the PAD TOKEN reward skims ZERO to the platform under the shipped default (claim fee 0)", async () => {
+    // The pad-token staking pool rewards the PAD TOKEN itself (the 70% LP-fee stream RobinTokenTreasury pushes).
+    // `tok` IS the tokenAsset (the launched pad token). A platform claim-fee on it would skim pad tokens to
+    // platformTreasury (== platformFeeWallet in the deploy), breaking "the platform never holds a pad token".
+    await ds.connect(owner).listReward(TOKEN, await tok.getAddress(), DAY); // pad token as its own reward
     await ds.connect(owner).setPlatformTreasury(bob.address); // a platform-controlled key
     expect(await ds.platformClaimFeeBps()).to.equal(0n); // shipped default (deploy.js CLAIM_FEE_BPS = 0)
     await ds.connect(alice).stake(TOKEN, 1000n);
-    await stk.connect(owner).transfer(rewarder.address, ethers.parseEther("10"));
-    await stk.connect(rewarder).approve(await ds.getAddress(), ethers.MaxUint256);
-    await ds.connect(rewarder).fundToken(TOKEN, await stk.getAddress(), ethers.parseEther("10"));
+    await tok.connect(owner).transfer(rewarder.address, ethers.parseEther("10"));
+    await tok.connect(rewarder).approve(await ds.getAddress(), ethers.MaxUint256);
+    await ds.connect(rewarder).fundToken(TOKEN, await tok.getAddress(), ethers.parseEther("10"));
     await time.increase(DAY + 10);
-    expect(await ds.earned(TOKEN, alice.address, await stk.getAddress())).to.be.gt(0n);
-    const bBefore = await stk.balanceOf(bob.address);
-    await ds.connect(alice).claim(TOKEN, await stk.getAddress());
-    expect(await ds.platformFeesOwed(await stk.getAddress())).to.equal(0n); // platform accrued NO token
-    await expect(ds.connect(rewarder).claimPlatformFees(await stk.getAddress())).to.be.revertedWithCustomError(ds, "Zero");
-    expect(await stk.balanceOf(bob.address)).to.equal(bBefore); // treasury received zero token
+    expect(await ds.earned(TOKEN, alice.address, await tok.getAddress())).to.be.gt(0n);
+    const bBefore = await tok.balanceOf(bob.address);
+    await ds.connect(alice).claim(TOKEN, await tok.getAddress());
+    expect(await ds.platformFeesOwed(await tok.getAddress())).to.equal(0n); // platform accrued NO pad token
+    await expect(ds.connect(rewarder).claimPlatformFees(await tok.getAddress())).to.be.revertedWithCustomError(ds, "Zero");
+    expect(await tok.balanceOf(bob.address)).to.equal(bBefore); // treasury received zero pad token
   });
 
-  it("[F1] proves the leak the fee-0 default prevents — a nonzero token claim fee reaches the platform key", async () => {
+  it("[F1 STRUCTURAL] the PAD TOKEN reward skims ZERO to the platform EVEN with a nonzero claim fee — unbypassable", async () => {
+    // The structural fix: claim() exempts asset == tokenAsset unconditionally. No owner setting of the claim fee
+    // can route a pad token to the platform. This is the same mis-config the auditor demonstrated (fee 500) —
+    // it now skims nothing.
+    await ds.connect(owner).listReward(TOKEN, await tok.getAddress(), DAY);
+    await ds.connect(owner).setPlatformClaimFee(500); // the mis-config that USED to re-open F1
+    await ds.connect(owner).setPlatformTreasury(bob.address);
+    await ds.connect(alice).stake(TOKEN, 1000n);
+    await tok.connect(owner).transfer(rewarder.address, ethers.parseEther("10"));
+    await tok.connect(rewarder).approve(await ds.getAddress(), ethers.MaxUint256);
+    await ds.connect(rewarder).fundToken(TOKEN, await tok.getAddress(), ethers.parseEther("10"));
+    await time.increase(DAY + 10);
+    const bBefore = await tok.balanceOf(bob.address);
+    await ds.connect(alice).claim(TOKEN, await tok.getAddress());
+    expect(await ds.platformFeesOwed(await tok.getAddress())).to.equal(0n); // structurally exempt → NOTHING accrued
+    await expect(ds.connect(rewarder).claimPlatformFees(await tok.getAddress())).to.be.revertedWithCustomError(ds, "Zero");
+    expect(await tok.balanceOf(bob.address)).to.equal(bBefore); // platform key received zero pad token — leak closed
+  });
+
+  it("[F1] the exemption is NARROW — a non-pad-token (money-side) reward STILL carries the claim fee", async () => {
+    // Guard against over-fixing: the platform's legitimate cut of money-side rewards (here `stk`, a non-tokenAsset)
+    // must be untouched. Only asset == tokenAsset is exempt.
     await ds.connect(owner).listReward(TOKEN, await stk.getAddress(), DAY);
-    await ds.connect(owner).setPlatformClaimFee(500); // the mis-config that re-opens F1
+    await ds.connect(owner).setPlatformClaimFee(500);
     await ds.connect(owner).setPlatformTreasury(bob.address);
     await ds.connect(alice).stake(TOKEN, 1000n);
     await stk.connect(owner).transfer(rewarder.address, ethers.parseEther("10"));
@@ -167,10 +188,10 @@ describe("DualStaking — adversarial", () => {
     await ds.connect(rewarder).fundToken(TOKEN, await stk.getAddress(), ethers.parseEther("10"));
     await time.increase(DAY + 10);
     await ds.connect(alice).claim(TOKEN, await stk.getAddress());
-    expect(await ds.platformFeesOwed(await stk.getAddress())).to.be.gt(0n); // token accrued to the platform
+    expect(await ds.platformFeesOwed(await stk.getAddress())).to.be.gt(0n); // money-side fee still applies
     const bBefore = await stk.balanceOf(bob.address);
     await ds.connect(rewarder).claimPlatformFees(await stk.getAddress());
-    expect(await stk.balanceOf(bob.address)).to.be.gt(bBefore); // platform key received pad-side token — the F1 leak
+    expect(await stk.balanceOf(bob.address)).to.be.gt(bBefore); // platform legitimately collects the non-token fee
   });
 
   it("single-book pool (no paired stock): TOKEN stakes, STOCK side is disabled", async () => {

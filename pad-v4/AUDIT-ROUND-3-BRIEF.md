@@ -58,13 +58,16 @@ added/changed **after** that and has **not** been externally reviewed — cross-
 - `pads/RobinLpVault.sol` — not on the shipped launch path.
 
 ## 6. Key invariants to verify
-- **Platform is ETH-only** — the platform key holds no pad token (currency1). **Enforced by config + wiring, NOT
-  fully contract-enforced** (corrected after round-3 finding F1): all token sinks route to the treasury/staking, and
-  the shipped deploy sets the DualStaking claim fee to **0** so no pad-token staking reward is skimmed to the platform
-  key (which `deploy.js` conflates with the staking `platformTreasury`). An owner setting a nonzero token claim fee
-  re-opens the skim — a governance caveat. Tested end-to-end (`R3F1` + `DualStaking [F1]`). **Please assess whether
-  this should be structurally enforced** (route the token claim fee to treasury/burn, or scope the fee to money-side
-  assets) rather than left to deploy/governance discipline.
+- **Platform is ETH-only** — the platform key holds no pad token (currency1). **Contract-enforced for the pad
+  token** (round-3 finding F1, structurally fixed): all token sinks route to the treasury/staking, and
+  `DualStaking.claim()` (`:392`) exempts the pad token from the platform claim fee unconditionally
+  (`fee = asset == address(tokenAsset) ? 0 : amount*bps/BPS`) — so no owner setting of `platformClaimFeeBps`, and no
+  matter which side lists the token, can skim a pad token to the platform key (which `deploy.js` conflates with the
+  staking `platformTreasury`). The constructor rejects `tokenAsset == address(0)` and ETH is a distinct sentinel, so
+  the exemption can only ever match the pad token; money-side (ETH/stock) rewards still carry the fee, and the
+  shipped deploy also defaults the fee to 0. The earlier governance caveat (a nonzero token claim fee re-opened the
+  skim) **no longer exists**. Tested end-to-end (`R3F1` 3 cases + `DualStaking [F1]` 3 cases, including fee-500
+  unbypassability and the narrow money-side exemption).
 - **No dev mint** — `supply == curveSupply + reserveSupply`; creator premine 0.
 - **LP locked forever** — graduation LP NFT → `LockVault`, no remove/decrease/burn/transfer selector.
 - **Add-only floor + ambush** — no remove/withdraw path; principal leaves only by trading at the AMM's marginal price.

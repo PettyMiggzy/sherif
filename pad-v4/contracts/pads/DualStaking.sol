@@ -387,9 +387,16 @@ contract DualStaking is ReentrancyGuard, Ownable2Step {
         if (amount == 0) revert Zero();
         rewardsAccrued[side][asset][msg.sender] = 0;
         // Platform cut of the reward (NO lock, principal untouched). Accrue-and-pull to the treasury.
-        // [M-16] This applies to EVERY reward a staker claims, whatever funded it. There is no per-tranche
-        // provenance in the accumulator, so a donation cannot be exempted here — see donateETH's note.
-        uint256 fee = (amount * platformClaimFeeBps) / BPS;
+        // [M-16] Within a fee-carrying asset this applies to EVERY reward a staker claims, whatever funded it:
+        // there is no per-tranche provenance in the accumulator, so a donation cannot be exempted here — see
+        // donateETH's note. (The asset-level pad-token exemption below is orthogonal — it drops the fee for the
+        // whole `tokenAsset` accumulator, not per tranche.)
+        // [R3-F1] STRUCTURAL invariant: the platform takes ETH only and NEVER a pad token. `tokenAsset` is the
+        // launched pad token (currency1); its reward is exempt from the platform claim fee unconditionally, so
+        // no owner setting of `platformClaimFeeBps` — and no matter which side lists the token — can ever skim
+        // a pad token to `platformTreasury`. This makes "the platform never holds a pad token" contract-enforced
+        // rather than deploy/governance-dependent. Money-side (ETH/stock) rewards still carry the fee.
+        uint256 fee = asset == address(tokenAsset) ? 0 : (amount * platformClaimFeeBps) / BPS;
         net = amount - fee;
         if (fee > 0) {
             platformFeesOwed[asset] += fee;

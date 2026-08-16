@@ -1,15 +1,18 @@
-// ROUND-3 FINDING F1 — REGRESSION (was a leak demonstrator; now verifies the fix).
+// ROUND-3 FINDING F1 — REGRESSION (was a leak demonstrator; now verifies the STRUCTURAL fix).
 //
 // The original finding: deploy.js wired ONE key as both the fee-registry platformFeeWallet AND the staking pool's
 // platformTreasury, with a 5% claim fee (StakingFactory(platform, _, 500)). RobinTokenTreasury.distribute() routes
-// 70% of token-side LP fees into the DualStaking pool as a pad-token reward; on claim, DualStaking skims 5% into
-// platformFeesOwed[padToken], and claimPlatformFees sends those pad tokens to the platform key — so "the platform
+// 70% of token-side LP fees into the DualStaking pool as a pad-token reward; on claim, DualStaking skimmed 5% into
+// platformFeesOwed[padToken], and claimPlatformFees sent those pad tokens to the platform key — so "the platform
 // never holds a pad token" was FALSE as deployed.
 //
-// The fix (F1): deploy.js now defaults STAKING_CLAIM_FEE_BPS to 0 — the platform takes ETH only and deliberately
-// forgoes the token-denominated staking claim fee. This test drives the FULL end-to-end path (token fee → treasury
-// → 70% to the pool → staker claim → claimPlatformFees) and asserts the platform ends with ZERO pad token under the
-// shipped config, and — as an honest governance caveat — that a nonzero claim fee re-opens the exact leak.
+// The fix (F1, structural): DualStaking.claim() now exempts the pad token (`tokenAsset`) from the platform claim
+// fee UNCONDITIONALLY — `fee = asset == address(tokenAsset) ? 0 : amount*bps/BPS`. No owner setting of
+// platformClaimFeeBps, and no matter which side lists the token, can route a pad token to platformTreasury. The
+// invariant is now CONTRACT-enforced, not deploy/governance-dependent. This test drives the FULL end-to-end path
+// (token fee → treasury → 70% to the pool → staker claim → claimPlatformFees) and asserts the platform ends with
+// ZERO pad token EVEN WHEN a nonzero claim fee is set — and, as a guard against over-fixing, that a money-side
+// (ETH) reward STILL carries the fee so the platform's legitimate ETH revenue is untouched.
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
@@ -20,7 +23,7 @@ const E = (x) => ethers.parseEther(String(x));
 
 // Build the pad's token treasury + DualStaking pool exactly as deploy.js/launch.js wire them, with a chosen claim
 // fee, then run one full token-fee → staking → claim → platform-pull cycle. Returns the pad token the platform got.
-async function runCycle(claimFeeBps) {
+async function runTokenCycle(claimFeeBps) {
   const [platformOwner, platform, creator, staker, keeper] = await ethers.getSigners();
   const padToken = await (await ethers.getContractFactory("TestERC20")).deploy(10n ** 30n);
   const ds = await (await ethers.getContractFactory("DualStaking")).deploy(
@@ -52,14 +55,40 @@ async function runCycle(claimFeeBps) {
   return (await padToken.balanceOf(platform.address)) - platBefore;
 }
 
-describe("R3-F1 [regression] platform-token invariant across the staking claim path", () => {
+describe("R3-F1 [regression] platform-token invariant is contract-enforced across the staking claim path", () => {
   it("[FIXED] shipped deploy (claim fee 0): the platform receives ZERO pad token end-to-end", async () => {
-    const received = await runCycle(0);
-    expect(received).to.equal(0n); // "platform never holds a pad token" now HOLDS under the shipped config
+    const received = await runTokenCycle(0);
+    expect(received).to.equal(0n);
   });
 
-  it("[governance caveat] a nonzero staking claim fee re-opens the leak — exactly what the fee-0 default prevents", async () => {
-    const received = await runCycle(500); // the mis-config the auditor originally demonstrated
-    expect(received).to.be.gt(0n); // pad token reaches the platform key — do NOT set a token claim fee on pad pools
+  it("[FIXED — structural] even a nonzero staking claim fee (500) skims ZERO pad token — the exemption is unbypassable", async () => {
+    const received = await runTokenCycle(500); // the exact mis-config the auditor originally demonstrated
+    expect(received).to.equal(0n); // pad token is structurally exempt regardless of platformClaimFeeBps
+  });
+
+  it("[guard] a money-side (ETH) reward STILL carries the platform claim fee — the fix does not disable ETH revenue", async () => {
+    const [platformOwner, platform, , staker, keeper] = await ethers.getSigners();
+    const padToken = await (await ethers.getContractFactory("TestERC20")).deploy(10n ** 30n);
+    const ds = await (await ethers.getContractFactory("DualStaking")).deploy(
+      await padToken.getAddress(), ethers.ZeroAddress, platformOwner.address, 0, ethers.ZeroAddress, ethers.ZeroHash, TOKEN
+    );
+    const ETH = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+    await ds.setPlatformTreasury(platform.address);
+    await ds.setPlatformClaimFee(500);
+    await ds.setRewarder(keeper.address, true);
+
+    await padToken.transfer(staker.address, E(1000));
+    await padToken.connect(staker).approve(await ds.getAddress(), ethers.MaxUint256);
+    await ds.connect(staker).stake(TOKEN, E(1000));
+
+    // fund an ETH reward on the TOKEN side (ETH is auto-listed in the constructor)
+    await ds.connect(keeper).fundETH(TOKEN, { value: E(10) });
+    await time.increase(7 * DAY + 1);
+
+    const platBefore = await ethers.provider.getBalance(platform.address);
+    await ds.connect(staker).claim(TOKEN, ETH);
+    await ds.connect(keeper).claimPlatformFees(ETH);
+    const got = (await ethers.provider.getBalance(platform.address)) - platBefore;
+    expect(got).to.be.gt(0n); // the platform's legitimate ETH claim fee is untouched by the pad-token exemption
   });
 });
