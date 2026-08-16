@@ -111,21 +111,21 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
   });
 
   it("[fee-model] sweepTokenFees reverts until the platform wires the sink, then forwards to it — never platform", async () => {
-    const sink = lp; // stand-in for the pad's staking / buyback pool
+    const sink = await mod.getAddress(); // contract stand-in (setTokenSink now requires a code-bearing sink, not an EOA)
     // parked token is real, but there is no sink yet
     expect(await tok.balanceOf(await vault.getAddress())).to.be.gt(0n);
     await expect(vault.sweepTokenFees()).to.be.revertedWithCustomError(vault, "NoTokenSink");
 
     // only the platform may wire it, and only once
-    await expect(vault.connect(trader).setTokenSink(sink.address)).to.be.revertedWithCustomError(vault, "NotPlatform");
-    await vault.connect(platform).setTokenSink(sink.address);
+    await expect(vault.connect(trader).setTokenSink(sink)).to.be.revertedWithCustomError(vault, "NotPlatform");
+    await vault.connect(platform).setTokenSink(sink);
     await expect(vault.connect(platform).setTokenSink(trader.address)).to.be.revertedWithCustomError(vault, "TokenSinkAlreadySet");
 
     const parked = await tok.balanceOf(await vault.getAddress());
-    const sinkBefore = await tok.balanceOf(sink.address);
+    const sinkBefore = await tok.balanceOf(sink);
     const platTokBefore = await tok.balanceOf(platform.address);
     await vault.sweepTokenFees(); // permissionless — anyone can push it to the wired sink
-    expect(await tok.balanceOf(sink.address)).to.equal(sinkBefore + parked);
+    expect(await tok.balanceOf(sink)).to.equal(sinkBefore + parked);
     expect(await tok.balanceOf(await vault.getAddress())).to.equal(0n);
     // the platform STILL never touched the token
     expect(await tok.balanceOf(platform.address)).to.equal(platTokBefore);

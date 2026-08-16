@@ -137,6 +137,42 @@ describe("DualStaking — adversarial", () => {
     expect((await ethers.provider.getBalance(bob.address)) - bBefore).to.equal(fee);
   });
 
+  it("[F1] shipped default claim fee 0 — a TOKEN reward skims ZERO to the platform (invariant holds)", async () => {
+    // The pad-token staking pool rewards the PAD TOKEN (the 70% LP-fee stream). A platform claim-fee would skim
+    // that token to platformTreasury (== platformFeeWallet in the deploy), breaking "platform holds no pad token".
+    // The shipped deploy fixes this by defaulting the fee to 0. `stk` stands in for the token reward asset.
+    await ds.connect(owner).listReward(TOKEN, await stk.getAddress(), DAY);
+    await ds.connect(owner).setPlatformTreasury(bob.address); // a platform-controlled key
+    expect(await ds.platformClaimFeeBps()).to.equal(0n); // shipped default (deploy.js CLAIM_FEE_BPS = 0)
+    await ds.connect(alice).stake(TOKEN, 1000n);
+    await stk.connect(owner).transfer(rewarder.address, ethers.parseEther("10"));
+    await stk.connect(rewarder).approve(await ds.getAddress(), ethers.MaxUint256);
+    await ds.connect(rewarder).fundToken(TOKEN, await stk.getAddress(), ethers.parseEther("10"));
+    await time.increase(DAY + 10);
+    expect(await ds.earned(TOKEN, alice.address, await stk.getAddress())).to.be.gt(0n);
+    const bBefore = await stk.balanceOf(bob.address);
+    await ds.connect(alice).claim(TOKEN, await stk.getAddress());
+    expect(await ds.platformFeesOwed(await stk.getAddress())).to.equal(0n); // platform accrued NO token
+    await expect(ds.connect(rewarder).claimPlatformFees(await stk.getAddress())).to.be.revertedWithCustomError(ds, "Zero");
+    expect(await stk.balanceOf(bob.address)).to.equal(bBefore); // treasury received zero token
+  });
+
+  it("[F1] proves the leak the fee-0 default prevents — a nonzero token claim fee reaches the platform key", async () => {
+    await ds.connect(owner).listReward(TOKEN, await stk.getAddress(), DAY);
+    await ds.connect(owner).setPlatformClaimFee(500); // the mis-config that re-opens F1
+    await ds.connect(owner).setPlatformTreasury(bob.address);
+    await ds.connect(alice).stake(TOKEN, 1000n);
+    await stk.connect(owner).transfer(rewarder.address, ethers.parseEther("10"));
+    await stk.connect(rewarder).approve(await ds.getAddress(), ethers.MaxUint256);
+    await ds.connect(rewarder).fundToken(TOKEN, await stk.getAddress(), ethers.parseEther("10"));
+    await time.increase(DAY + 10);
+    await ds.connect(alice).claim(TOKEN, await stk.getAddress());
+    expect(await ds.platformFeesOwed(await stk.getAddress())).to.be.gt(0n); // token accrued to the platform
+    const bBefore = await stk.balanceOf(bob.address);
+    await ds.connect(rewarder).claimPlatformFees(await stk.getAddress());
+    expect(await stk.balanceOf(bob.address)).to.be.gt(bBefore); // platform key received pad-side token — the F1 leak
+  });
+
   it("single-book pool (no paired stock): TOKEN stakes, STOCK side is disabled", async () => {
     const solo = await (await ethers.getContractFactory("DualStaking")).deploy(
       await tok.getAddress(), ethers.ZeroAddress, owner.address, 0, ethers.ZeroAddress, ethers.ZeroHash, TOKEN
