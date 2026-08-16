@@ -10,7 +10,8 @@ cd pad-v4 && npm install && npm test && npm run test:sim   # green
 FORK_RPC=<rpc> npm run test:fork                            # 2 passing vs live 0x8366
 ```
 Set env (never commit): `PRIVATE_KEY` (deployer), `ROBINHOOD_RPC`, `PLATFORM_WALLET` (multisig),
-optionally `STAKING_CLAIM_FEE_BPS` (default 500 = 5%).
+optionally `STAKING_CLAIM_FEE_BPS` (default **0** — [R3-F1] the platform takes ETH only; a nonzero value would
+only charge money-side (ETH/stock) reward claims, since the pad token is contract-exempt from the fee).
 
 ## 1. Bootstrap the platform stack (once)
 ```bash
@@ -38,8 +39,10 @@ NAME="Troll Cat" SYMBOL=TROLL SUPPLY=1000000 LP_TOKENS=500000 SEED_ETH=1 \
   npx hardhat run scripts/launch.js --network robinhood
 ```
 This atomically launches the pad (token + hook@0x…CC + pool + locked seed LP), then deploys and wires the
-`RobinFloorVault` (`hook.setFloorRecipient`, one-shot) and a `DualStaking` pool via `StakingFactory`, and
-points the LockVault token-leg fee at the reward keeper. Record is appended to `deploy.local.json`.
+`RobinFloorVault` (`hook.setFloorRecipient`, one-shot), a `DualStaking` pool via `StakingFactory`, and the
+per-pad `RobinTokenTreasury` (70% staking / 30% creator-burn) — pointing the LockVault token-leg fee
+(`setStakingRecipient`) **and** the floor's token leg (`setTokenSink`) at the treasury, so the platform stays
+ETH-only. Record is appended to `deploy.local.json`.
 
 Follow-ups (platform multisig):
 - `acceptOwnership()` on the new staking pool.
@@ -105,7 +108,8 @@ a theft risk.
 | LP fee (locked seed LP) | → platform | → staking pool |
 | 1% trade tax (hook) | → platform | → creator 0.8% + floor 0.2% |
 
-- Holders earn by **staking** (no lock; 5% platform claim fee). Any ERC20 can get a pool via `StakingFactory`.
+- Holders earn by **staking** (no lock; claim fee = factory-set, shipped **0**, and the pad token is
+  contract-exempt from it regardless — [R3-F1]). Any ERC20 can get a pool via `StakingFactory`.
 - The floor is a **permanent, add-only** quote buy-wall — no remove path exists. [M-15] It is a FIXED band at the
   launch price, deepened while the token trades ABOVE it; in a sustained drawdown the carve parks rather than adding.
 - Two live governance knobs (NOT one): `FeeWalletRegistry.platformFeeWallet` (Ownable2Step + 2-day timelock, and the

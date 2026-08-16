@@ -87,7 +87,9 @@ against the deployed contracts — **`MilestoneVault` / `AthVault` are NOT deplo
 - **Platform is ETH-only — never holds a pad token** (invariant, tested).
 - Buy tax 1% (ETH, fee-on-input): 0.2% curve buffer→platform, 0.2% referrer (if ref link), rest→platform.
 - Sell tax 1% (ETH output): 0.2% floor, 0.8% creator.
-- LP fee 1%: **ETH leg → 100% platform**; **token leg → `RobinTokenTreasury` (70% staking / 30% creator-burn)**.
+- LP fee 1%: **ETH leg → 100% platform**; **token leg → `RobinTokenTreasury` (70% staking / 30% creator-burn)** —
+  path-scoped [R3-F3]: on the curve path the locked-LP sell-leg + graduation reservoir go **100% to staking**
+  instead (Arrow excepted — its sell-leg is wired post-hoc to the treasury); see `pad-v4/ROBIN-V4-CURVE-ECON.md §5`.
   Burn = **direct token burn** to `0x…dEaD` (the treasury already receives token, so no buyback swap), creator-gated.
 - Graduation waterfall (of the raise, after keeper bounty `min(0.2%, 0.02 ETH)`): platform 10 / creator 10 /
   ambush 5 / locked LP ~75. Grad is permissionless + bounty-driven (auto in practice).

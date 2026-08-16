@@ -226,7 +226,8 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
     const P = await launchPad(S, deployer, creator, "PADC", { supply: curveSupply + reserveSupply, curveSupply, reserveSupply });
     const { key, tok, curve } = P;
 
-    // ── wire the pad's holder-staking pool (stake the token, earn the streamed token; 5% claim fee, no hold) ──
+    // ── wire the pad's holder-staking pool (stake the token, earn the streamed token; no claim fee — and the
+    //    pad token is contract-exempt from the platform claim fee regardless [R3-F1]; no hold) ──
     const ds = await (await ethers.getContractFactory("DualStaking")).deploy(P.token, ZERO, deployer.address, 0, ZERO, ethers.ZeroHash, 0);
     await ds.setRewarder(await curve.getAddress(), true);
     await ds.listReward(0, P.token, 7 * 86400); // Side.TOKEN earns the token
@@ -265,7 +266,7 @@ describe("SIM E2E — buys/sells through the hook: no bot protection, no crazy s
     const before = await tok.balanceOf(alice.address);
     await expect(ds.connect(alice).claim(0, P.token)).to.not.be.reverted;
     const afterClaim = await tok.balanceOf(alice.address);
-    expect(afterClaim).to.be.gt(before); // received the streamed reward (net of the 5% claim fee)
+    expect(afterClaim).to.be.gt(before); // received the streamed reward in full (pad token: no platform claim fee, ever [R3-F1])
     await expect(ds.connect(alice).unstake(0, staked[alice.address])).to.not.be.reverted; // principal returned
     expect(await tok.balanceOf(alice.address)).to.equal(afterClaim + staked[alice.address]);
   });

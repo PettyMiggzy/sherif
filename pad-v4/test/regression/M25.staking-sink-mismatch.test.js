@@ -93,6 +93,20 @@ describe("M-25 mis-wired staking sink, replayed against the patched contracts", 
     expect(await curve.staking()).to.equal(await ds.getAddress());
   });
 
+  it("[R3] setStaking/setFloor/setAmbush REJECT the curve itself — self passes every other probe", async () => {
+    // The curve's own token() getter satisfies _probeStakeAsset, it has no TO_STAKING_BPS, and it carries a
+    // receive() that passes the setFloor/setAmbush zero-value send probe — so before the self guard, a platform
+    // fat-finger of the curve's own address would strand the reservoir (self-transfer + flushStaking bricked) or
+    // the ETH carves (value self-transfer). All three one-shots must survive the rejection unspent.
+    const self = await curve.getAddress();
+    await expect(curve.connect(platform).setStaking(self)).to.be.revertedWithCustomError(curve, "ZeroAddress");
+    await expect(curve.connect(platform).setFloor(self)).to.be.revertedWithCustomError(curve, "ZeroAddress");
+    await expect(curve.connect(platform).setAmbush(self)).to.be.revertedWithCustomError(curve, "ZeroAddress");
+    expect(await curve.staking()).to.equal(ZERO);
+    expect(await curve.floor()).to.equal(ZERO);
+    expect(await curve.ambush()).to.equal(ZERO);
+  });
+
   it("setStaking still ACCEPTS both correctly-wired sinks, and the one-shot stays one-shot", async () => {
     const good = await lockStakingFor(tok);
     await curve.connect(platform).setStaking(await good.getAddress());

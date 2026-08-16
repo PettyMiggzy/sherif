@@ -7,7 +7,7 @@
 | **Repo / branch** | `Robinlabz/Labs` (canonical) · working branch `claude/robinhood-chain-website-8loxcm` |
 | **Commit** | branch tip (round-3 findings F1/F2/F3 + re-audit items N1/N2 all closed — see `AUDIT-ROUND-3-FINDINGS.md` banner + `AUDIT-ROUND-3-REMEDIATION-REAUDIT.md` response) |
 | **Compiler** | solc **0.8.26**, `viaIR: true`, optimizer **runs 1**, evmVersion **cancun** |
-| **Build / test** | `cd pad-v4 && npm i && npx hardhat compile && npx hardhat test` → **232 passing / 6 pending / 0 failing** |
+| **Build / test** | `cd pad-v4 && npm i && npx hardhat compile && npx hardhat test` → **233 passing / 6 pending / 0 failing** |
 | **Chain** | Robinhood Chain (Arbitrum Orbit L2, EVM, chainId **4663**). Uniswap **v4** hooks. NOT yet deployed. |
 
 ## 1. What this is
@@ -20,7 +20,7 @@ deployed) — the v3 is **not** in this scope.
 Your original report + our round-1 remediation are the ledger baseline (`AUDITOR-HANDOFF.md §0`). The following was
 added/changed **after** that and has **not** been externally reviewed — cross-referenced in the ledger:
 - **§0b round-2 remediation** — 20 mechanical/doc fixes + a self-audit gauntlet (L-2, L-21, H-5 interim, M-3/M-5/M-10/M-12/H-2 driven).
-- **§0c fee-model round 2** — platform is ETH-only; ETH buy-LP fee → **100% platform** (`buyLpFloorShareBps` default 0); token LP fee → new **`RobinTokenTreasury`** (70% staking / 30% creator-burn to `0x…dEaD`); the `RobinFloorVault` platform-token leak was closed.
+- **§0c fee-model round 2** — platform is ETH-only; ETH buy-LP fee → **100% platform** (`buyLpFloorShareBps` default 0); token LP fee → new **`RobinTokenTreasury`** (70% staking / 30% creator-burn to `0x…dEaD`; **path-scoped** — the curve-path locked-LP sell-leg + reservoir go 100% to staking instead, see `ECON §5` [R3-F3]); the `RobinFloorVault` platform-token leak was closed.
 - **§0d Arrow** — a NEW migration launcher (`contracts/arrow/`) + its 25-agent internal audit (2 fund-safety fixes applied).
 - **`ECONOMICS-VERIFIED.md`** — a contract-verified reference for every fee/split/cap (v3-live + v4), produced this round.
 

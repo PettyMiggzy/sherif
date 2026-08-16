@@ -133,7 +133,7 @@ defaults from `pad-v4/scripts/deploy-curve.js` (env-overridable).
 
 ### 2.8 Vault LP-fee routing
 - RobinFloorVault: ETH leg → platform (live from timelocked registry); TOKEN leg NEVER to platform — parks in-vault, `sweepTokenFees()` → tokenSink; add-only — `RobinFloorVault.sol:41-46,119`
-- RobinAmbushVault: ETH → floor vault, token → staking; add-only, token never to platform — `RobinAmbushVault.sol:80,164,202-209`
+- RobinAmbushVault: ETH → floor vault, token → its immutable deploy-time `stakingRecipient` (runbook: the `RobinTokenTreasury`, 70/30); add-only, token never to platform — `RobinAmbushVault.sol:63,91,202-209`
 
 ### 2.9 Platform-ETH-only invariant (system-wide)
 Platform receives ETH (currency0) only, never holds pad tokens. Every currency1 stream terminates at staking or the

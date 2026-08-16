@@ -42,8 +42,8 @@ pause→kickstart, forfeiture-without-window-reset (anti-grief), and rewarder ga
 **Feature 2 — dual staking**
 | Contract | Role |
 |---|---|
-| `pads/DualStaking.sol` | Two-book "earn the other" streaming staking. Stake token **or** stock; each side streams a reward basket (ETH, the other asset, extra tokens). Audited RobinStaking engine per side (forfeit-to-stayers, empty-pool pause, measured-delta) + optional anti-JIT hold + bounded boost (≤4x, oracle try/catch) + `fundTokenPushed`. **No lock** by default — JIT is stopped by streaming + forfeit-to-stayers. **Platform revenue** = a configurable claim fee (default 5%, capped 10%) skimmed off rewards on claim, accrue-and-pull to the platform treasury. Single-book mode (`stock == 0`) works for **any ERC20**. |
-| `pads/StakingFactory.sol` | One call spins up a staking pool for any token (single- or two-book), with the 5% claim fee + no lock baked in and ownership handed to the platform multisig. Every existing Robin coin can get stake-to-earn, not just V4 pads. |
+| `pads/DualStaking.sol` | Two-book "earn the other" streaming staking. Stake token **or** stock; each side streams a reward basket (ETH, the other asset, extra tokens). Audited RobinStaking engine per side (forfeit-to-stayers, empty-pool pause, measured-delta) + optional anti-JIT hold + bounded boost (≤4x, oracle try/catch) + `fundTokenPushed`. **No lock** by default — JIT is stopped by streaming + forfeit-to-stayers. **Platform revenue** = a configurable claim fee (capped 10%; **shipped 0**, and the pad token is contract-exempt from it regardless — [R3-F1]) skimmed off money-side rewards on claim, accrue-and-pull to the platform treasury. Single-book mode (`stock == 0`) works for **any ERC20**. |
+| `pads/StakingFactory.sol` | One call spins up a staking pool for any token (single- or two-book), with the factory's claim-fee default (shipped 0) + no lock baked in and ownership handed to the platform multisig. Every existing Robin coin can get stake-to-earn, not just V4 pads. |
 
 **Feature 3 — the floor**
 | Contract | Role |

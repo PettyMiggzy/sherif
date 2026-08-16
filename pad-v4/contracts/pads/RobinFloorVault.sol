@@ -223,7 +223,8 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
         if (tokenSink != address(0)) revert TokenSinkAlreadySet();
         // [F2] must be a real external contract (the staking/treasury sink), never a zero/EOA or this vault itself —
-        // matches the code.length + self guards the peer setters (setStaking/setFloor/setAmbush) carry.
+        // the same zero + code.length + self guard set the peer one-shot sink setters carry
+        // (curve.setStaking/setFloor/setAmbush [R3], LockVault.setStakingRecipient [R3-F2], hook.setFloorRecipient).
         if (sink == address(0) || sink.code.length == 0 || sink == address(this)) revert ZeroAddress();
         tokenSink = sink;
         emit TokenSinkSet(sink);

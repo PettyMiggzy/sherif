@@ -72,9 +72,17 @@ with OZ sorted-pair (`MerkleProof.verify`) internal nodes. See `test/sim/arrow.s
 - **Contract devs.** The ETH refund is a plain send to `msg.sender`; a dev contract that reverts on receive bricks
   its own launch (the whole tx reverts — no funds lost). Launch from an EOA, or an address that accepts ETH.
 - **Post-graduation wiring is still the operator's job.** Arrow graduates the pad instantly but does **not** wire the
-  staking pool / token treasury / floor vault — that's the standard post-graduation runbook (deploy the staking pool
-  + `RobinTokenTreasury`, point the `LockVault` token leg + floor `tokenSink` + ambush at the treasury). Until then,
-  the sell-side token LP fees **park** safely (the sinks are non-bricking / revert-and-retry), losing nothing.
+  staking pool / token treasury / floor vault. Because Arrow graduates with `curve.staking` **unset**, the lock
+  registers `stakingRecipient = 0` — so unlike the standard curve runbook (where `setStaking` runs BEFORE
+  `graduate()` and the sell-leg is hard-wired to the pool), the Arrow sell-leg is wired post-hoc [R3-F3]:
+  1. deploy the `DualStaking` pool, then `curve.setStaking(pool)` — still valid post-graduation; the parked
+     reservoir then reaches the pool via `flushStaking()` (100% staking — `setStaking` rejects the treasury's
+     splitter shape, so the reservoir can never take the 70/30);
+  2. deploy the `RobinTokenTreasury`, then `LockVault.setStakingRecipient(lpTokenId, treasury)` — the sell-leg
+     token LP fee carries the 70/30 + creator-burn (possible on the Arrow path precisely because the register was 0);
+  3. `floor.setTokenSink(treasury)`; the `RobinAmbushVault` (if used) is **deployed with**
+     `stakingRecipient = treasury` — it is an immutable constructor arg, there is no setter.
+  Until wired, the sell-side token LP fees **park** safely (the sinks are non-bricking / revert-and-retry), losing nothing.
 
 ## Tests
 

@@ -7,7 +7,8 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 /// @title StakingFactory
 /// @notice One call spins up a `DualStaking` pool for ANY ERC20 — every existing Robin coin can get a
 /// stake-to-earn pool, not just V4 pads. Bakes in the platform economics at deploy time:
-///   • the platform claim fee (default 5%) routed to the platform treasury
+///   • the platform claim fee (constructor-set; the shipped deploy passes 0, and the pad token is
+///     contract-exempt from it regardless — R3-F1) routed to the platform treasury
 ///   • no lock by default (antiJitDelay 0) — JIT is handled by streaming + forfeit-to-stayers
 /// Pass `stock == address(0)` for a plain single-book pool (just stake the coin, earn rewards); pass a
 /// real stock for the two-book "earn the other" pad. Ownership is handed to the platform multisig

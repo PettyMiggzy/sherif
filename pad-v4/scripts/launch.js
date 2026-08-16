@@ -4,7 +4,7 @@
  *   1. mines the hook salt (address low-14-bits == 0x00CC)
  *   2. factory.launch(...)  → deploys token + hook + pool + seed LP (atomic), floorRecipient unset
  *   3. deploys RobinFloorVault for the new pool and wires it via hook.setFloorRecipient (one-shot)
- *   4. creates a DualStaking pool for the token via StakingFactory (5% fee, no lock)
+ *   4. creates a DualStaking pool for the token via StakingFactory (claim fee = factory default, shipped 0; no lock)
  *  4b. deploys the per-pad RobinTokenTreasury (70% staking / 30% creator-burn) — every token-side LP fee sinks here
  *   5. points the LockVault token-leg LP fee at the treasury (setStakingRecipient, one-shot)
  *  5b. points the floor vault's token-leg LP fee at the treasury (setTokenSink, one-shot) — platform stays ETH-only
@@ -93,7 +93,7 @@ async function main() {
   await legacy(hookC, "setFloorRecipient", [poolId, floorAddr]); // platform-gated (signer must be platform)
   console.log(`  floorVault ${floorAddr}  (wired)`);
 
-  // 4) staking pool for the token (5% fee, no lock)
+  // 4) staking pool for the token (claim fee = the factory's immutable default — shipped 0 per deploy.js [F1]; no lock)
   const stakingFactory = await ethers.getContractAt("StakingFactory", d.stakingFactory);
   const src = await legacy(stakingFactory, "createPool", [token, process.env.STOCK || ethers.ZeroAddress, 0, rewardKeeper]);
   const sev = src.logs.map((l) => { try { return stakingFactory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "StakingPoolCreated");
@@ -129,7 +129,6 @@ async function main() {
   fs.writeFileSync(file, JSON.stringify(d, null, 2));
   console.log(`\nLaunched + wired. Record appended to ${file}.`);
   console.log(`Next: platform multisig calls acceptOwnership() on ${stakingPool}; list token as a reward + add the keeper as rewarder.`);
-  console.log(`      At graduation, point the RobinAmbushVault's stakingRecipient at the treasury ${treasuryAddr} too.`);
   console.log(`      Keeper loop: claim token fees to the treasury, call treasury.distribute() (70% → pool), then pool.fundTokenPushed to book rewards.`);
 }
 

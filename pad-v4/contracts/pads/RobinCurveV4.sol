@@ -540,7 +540,10 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     function setStaking(address s) external {
         if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
         if (staking != address(0)) revert AlreadySet();
-        if (s == address(0) || s.code.length == 0) revert ZeroAddress(); // [LOW-3] must be a contract (the pool)
+        // [LOW-3] must be a contract (the pool); [R3] never this curve itself — self passes every probe below
+        // (token is a public immutable, so curve.token() == token) and a self-wire would self-transfer the
+        // graduation reservoir, bake stakingRecipient = curve into the LockVault, and brick flushStaking forever.
+        if (s == address(0) || s.code.length == 0 || s == address(this)) revert ZeroAddress();
         if (_probeStakeAsset(s) != token) revert StakingAssetMismatch();
         // [R3-N2] the token treasury PASSES the asset probe (its token() IS the pad token), but the reservoir must
         // land 100% on a staking pool — never through the 70/30 splitter (30% of the dump would burn). Reject the
@@ -570,7 +573,9 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     function setFloor(address f) external {
         if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
         if (floor != address(0)) revert AlreadySet();
-        if (f == address(0) || f.code.length == 0) revert ZeroAddress(); // must be a contract (the vault)
+        // must be a contract (the vault); [R3] never self — the curve has receive(), so self would pass the
+        // send probe below and floorEthOwed's sweep would become a value self-transfer that strands the carve.
+        if (f == address(0) || f.code.length == 0 || f == address(this)) revert ZeroAddress();
         // [M-21] floorEthOwed's ONLY exit is a plain value transfer to this address, and this setter is a
         // one-shot with no re-point. Prove the target can accept one BEFORE spending it: a contract with
         // neither receive() nor a payable fallback reverts here, instead of silently re-parking the carve
@@ -586,7 +591,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     function setAmbush(address a) external {
         if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
         if (ambush != address(0)) revert AlreadySet();
-        if (a == address(0) || a.code.length == 0) revert ZeroAddress(); // must be a contract (the vault)
+        // must be a contract (the vault); [R3] never self — same self-transfer strand as setFloor.
+        if (a == address(0) || a.code.length == 0 || a == address(this)) revert ZeroAddress();
         // [M-21] same as setFloor: ambushEthOwed can only ever leave by a value transfer to this address, and
         // the setter cannot be re-pointed. Reject a target that cannot take a plain send.
         (bool ok,) = a.call{value: 0}("");

@@ -163,3 +163,15 @@ Once (1)-(4) are done, re-fetch and the external package can honestly state F1/F
 >    one-shot not spent, real pool still accepted). Docs updated to cite the real guard.
 > 5. **F1 nit → refreshed.** `deploy.js` now explains a nonzero `STAKING_CLAIM_FEE_BPS` only charges money-side
 >    rewards (the pad token is contract-exempt); 0 stays the shipped default as posture + belt-and-suspenders.
+>
+> **Post-fix verification sweep (build session, 10-agent finder→skeptic).** All five fixes verified HOLDING; the
+> completeness lenses surfaced 12 skeptic-confirmed residuals — all stale-doc/comment residue outside the memo's
+> named surfaces plus two hardening items — closed in the follow-up commit: (a) the curve's own
+> `setStaking`/`setFloor`/`setAmbush` now carry the **self**-check too (self passed every probe; strand chain
+> M25-`[R3]`-tested); (b) `ARROW.md`'s post-grad wiring made mechanically precise — the **Arrow** sub-path
+> graduates with `staking` unset so its lock registers 0 and the sell-leg IS wired post-hoc to the treasury
+> (70/30), unlike the standard curve runbook's pool hard-wire — and ECON §5/§53, the brief §2, `START-HERE`,
+> `ECONOMICS-VERIFIED §2.8`, and `AUDITOR-HANDOFF §0c` now carry that Arrow nuance + the ambush's immutable
+> deploy-time recipient; (c) the stale "5% claim fee default" purged from `DEPLOY.md`/`README`/`launch.js`/
+> `StakingFactory` natspec; (d) `launch.js`'s impossible ambush epilogue line removed; (e) the `LockVault` [M-11]
+> comment and ECON's error-name cite corrected.

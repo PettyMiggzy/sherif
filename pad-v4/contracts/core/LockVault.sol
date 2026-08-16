@@ -151,9 +151,10 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
     function claimStaking(uint256 tokenId, uint256 currencyIndex) external nonReentrant returns (uint256 amount) {
         Lock storage lk = locks[tokenId];
         if (!lk.registered) revert NotRegistered();
-        // [M-11] PARK, don't silently pay the platform, while the staking recipient is unwired. Registering the
-        // lock with stakingRecipient==0 is the SHIPPED default on the curve path (graduate() copies curve.staking,
-        // which the runbook sets "at/near graduation"), so the old `?: platformFeeWallet()` fallback irreversibly
+        // [M-11] PARK, don't silently pay the platform, while the staking recipient is unwired. The lock registers
+        // with stakingRecipient==0 on the PadFactory path (wired to the treasury post-launch) and on the ARROW path
+        // (instant graduation with curve.staking unset; the standard curve runbook instead mandates setStaking
+        // BEFORE graduate(), so that register carries the pool), so the old `?: platformFeeWallet()` fallback irreversibly
         // routed the locked LP's holder (sell-side) fee stream to the treasury on the first claim — an honest keeper
         // sweep was enough to trigger it. collectFees still accrues into stakingOwed while unwired, so nothing is
         // lost: once setStakingRecipient wires the real recipient, the whole parked accrual pays it in full. Mirrors
