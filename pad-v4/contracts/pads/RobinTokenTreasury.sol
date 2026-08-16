@@ -11,9 +11,12 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///   • PadFactory (seed-LP) pads — the `LockVault` sell-leg (the platform wires `setStakingRecipient(treasury)`
 ///     post-launch) and `RobinFloorVault.tokenSink`.
 ///   • Curve pads — `RobinFloorVault.tokenSink` and the `RobinAmbushVault` token leg (its immutable
-///     `stakingRecipient`, chosen at deploy) only. The curve-path `LockVault` sell-leg does NOT come here: at
-///     graduation `registerLaunch` hard-wires it to `curve.staking` (the pool) — 100% staking, permanently — and
-///     the graduation reservoir dump likewise goes 100% to the pool (`setStaking` rejects this splitter's shape).
+///     `stakingRecipient`, chosen at deploy). On the standard curve runbook (`setStaking` BEFORE `graduate()`)
+///     the `LockVault` sell-leg does NOT come here: `registerLaunch` hard-wires it to `curve.staking` (the pool)
+///     — 100% staking, and a non-zero register can never be rewired. The ARROW sub-path is the exception: it
+///     graduates with `staking` unset, the lock registers 0, and the runbook wires the sell-leg post-hoc to THIS
+///     treasury (70/30, see ARROW.md). The graduation reservoir always goes 100% to the pool on every curve
+///     sub-path (`setStaking` rejects this splitter's shape).
 /// Each source forwards its token here by a plain transfer.
 ///
 /// On `distribute()` (permissionless) the freshly-arrived token is split:
