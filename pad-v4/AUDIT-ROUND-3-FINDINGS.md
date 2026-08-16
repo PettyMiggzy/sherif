@@ -15,6 +15,22 @@ model** with the deployed config and the curve path. Three findings, all verifie
 permanent-strand. The headline invariant the hand-off advertises as *"tested, highest-value"* does not hold as
 deployed.
 
+> **REMEDIATION STATUS (build session) — all three addressed.**
+> - **F1 — fixed + docs corrected.** `deploy.js` `STAKING_CLAIM_FEE_BPS` default `500 → 0` (platform forgoes the
+>   token-denominated staking claim fee, so no pad token reaches the platform key). The invariant claim in
+>   `AUDIT-ROUND-3-BRIEF.md`, `AUDITOR-HANDOFF.md §0c`, and `ECON §5` is corrected to **config/wiring-enforced, not
+>   fully contract-enforced** (an owner setting a nonzero token claim fee re-opens it — governance caveat). A
+>   structural fix (route the token claim fee to treasury/burn) is flagged back to you. Your R3F1 demo was converted
+>   into an end-to-end regression proving 0 under the shipped config + the nonzero-fee caveat. Tests:
+>   `R3F1.platform-token-invariant.demo.test.js`, `DualStaking.adversarial.test.js [F1]`.
+> - **F3 — fixed.** `launch.js` now wires `curve.setStaking = the pool` (it was never wired → reservoir would park);
+>   `setStaking` reverts `StakingAssetMismatch` on a non-pool, so the reservoir is 100% staking. `ECON` corrected: the
+>   70/30 treasury split applies to **post-graduation** token LP fees; curve-phase fees ride the reservoir to staking.
+> - **F2 — fixed.** `RobinFloorVault.setTokenSink` now carries the `code.length` + self guards its peers have.
+>
+> An independent exhaustive platform-token sweep (build session) is running to confirm no *further* token→platform
+> path beyond F1 before the invariant is re-declared. Fixes on branch, tests green.
+
 ---
 
 ## F1 · MEDIUM (audit-integrity) / LOW (fund-safety) · "the platform never holds a pad token" is FALSE as deployed
