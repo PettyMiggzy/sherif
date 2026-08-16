@@ -67,3 +67,29 @@ Once both read consistently with `ARROW.md`, all seven sites agree and the exter
   operator-liveness-dependent, not a loss.
 - All one-shot setters survive a rejected self/EOA/treasury attempt unspent (still wirable to the correct target).
 - F1 (structural pad-token exemption) remains intact and unbypassable.
+
+---
+
+## FINAL — residual CLOSED at `73ba4e5` · round 3 fully closed
+
+The build session added the Arrow sub-path carve-out to both flagged sites (`73ba4e5`, commit *"R3 pass-2
+residual: add the Arrow sell-leg carve-out to the 2 doc sites missing it"*). Verified:
+
+- **Docs-only change** — `RobinTokenTreasury.sol` edit is entirely within the `/// @notice` docstring (no
+  executable code), plus the one-line `AUDITOR-HANDOFF.md §0c` clause. Compile clean; the `233 / 6 / 0` unit +
+  `32 / 0` sim baseline at `ec3d7aa` carries over unchanged (nothing executable touched).
+- **`RobinTokenTreasury.sol:11-19`** — now scopes the "sell-leg 100% to the pool" claim to the *standard curve
+  runbook* and names the *Arrow sub-path exception* (registers 0 → post-hoc to treasury 70/30); the reservoir is
+  correctly stated as always 100% to the pool on every sub-path. The over-stated "permanently" is gone.
+- **`AUDITOR-HANDOFF.md §0c`** — now carries the matching Arrow clause (the clause the `ec3d7aa` message had
+  claimed but not actually delivered).
+- **Consistency sweep** — all seven sites (ARROW.md, ECON §2/§5, START-HERE, BRIEF, treasury docstring, HANDOFF
+  §0c) now agree on the Arrow sub-path; no stale absolute claim survives (`permanently` hits elsewhere are the LP
+  lock / recipient-freeze / unrelated findings, or this audit trail quoting the old text).
+
+**Verdict — round 3 is fully closed at `73ba4e5`.** Every finding across the original audit and both re-audit
+passes — F1, F2, F3, N1, N2, the setter self-guards, the Arrow model gap, the sweep residuals, and this final
+doc-precision item — is resolved. The two invariants that matter are **contract-enforced**, not operator
+discipline: the platform can never hold a pad token (any fee, any side), and the graduation reservoir can never
+route through the 70/30 splitter (any path). Fund-safety was clean throughout — no theft, brick, or permanent
+strand found across two passes. **The external-auditor package can ship against `73ba4e5` at `233 / 32` green.**
