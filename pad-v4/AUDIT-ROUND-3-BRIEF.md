@@ -5,9 +5,9 @@
 | | |
 |---|---|
 | **Repo / branch** | `Robinlabz/Labs` (canonical) · working branch `claude/robinhood-chain-website-8loxcm` |
-| **Commit** | `2ade67a` |
+| **Commit** | branch tip (round-3 findings F1/F2/F3 + re-audit items N1/N2 all closed — see `AUDIT-ROUND-3-FINDINGS.md` banner + `AUDIT-ROUND-3-REMEDIATION-REAUDIT.md` response) |
 | **Compiler** | solc **0.8.26**, `viaIR: true`, optimizer **runs 1**, evmVersion **cancun** |
-| **Build / test** | `cd pad-v4 && npm i && npx hardhat compile && npx hardhat test` → **225 passing / 6 pending / 0 failing** |
+| **Build / test** | `cd pad-v4 && npm i && npx hardhat compile && npx hardhat test` → **232 passing / 6 pending / 0 failing** |
 | **Chain** | Robinhood Chain (Arbitrum Orbit L2, EVM, chainId **4663**). Uniswap **v4** hooks. NOT yet deployed. |
 
 ## 1. What this is

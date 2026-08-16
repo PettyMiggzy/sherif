@@ -78,6 +78,21 @@ describe("M-25 mis-wired staking sink, replayed against the patched contracts", 
     expect(await curve.staking()).to.equal(ZERO);
   });
 
+  it("[R3-N2] setStaking REJECTS this pad's own RobinTokenTreasury — the splitter shape, despite passing the asset probe", async () => {
+    // The treasury exposes token() == THIS pad's token, so the stake-asset probe alone would accept it — and the
+    // graduation reservoir would then run through the 70/30 split, silently burning 30% of the dump. The splitter
+    // guard (TO_STAKING_BPS() probe) must catch it.
+    const ds = await dualStakingFor(tok); // a real pool, only so the treasury constructor has a staking target
+    const treasury = await (await ethers.getContractFactory("RobinTokenTreasury")).deploy(
+      tokAddr, await ds.getAddress(), creator.address
+    );
+    await expect(curve.connect(platform).setStaking(await treasury.getAddress()))
+      .to.be.revertedWithCustomError(curve, "StakingAssetMismatch");
+    expect(await curve.staking()).to.equal(ZERO); // the one-shot was NOT spent — the pool can still be wired
+    await curve.connect(platform).setStaking(await ds.getAddress()); // and the REAL pool still passes
+    expect(await curve.staking()).to.equal(await ds.getAddress());
+  });
+
   it("setStaking still ACCEPTS both correctly-wired sinks, and the one-shot stays one-shot", async () => {
     const good = await lockStakingFor(tok);
     await curve.connect(platform).setStaking(await good.getAddress());

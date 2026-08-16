@@ -75,8 +75,8 @@ async function main() {
   console.log(`Launching ${cfg.name} (${cfg.symbol})…`);
   const rc = await legacy(factory, "launch", [cfg, tokenSalt, hookSalt], seedEth);
   const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "PadLaunched");
-  const { token, hook, curve, poolId, lpTokenId } = ev.args;
-  console.log(`  token ${token}\n  hook  ${hook}\n  curve ${curve}\n  pool  ${poolId}\n  lpNFT ${lpTokenId}`);
+  const { token, hook, poolId, lpTokenId } = ev.args;
+  console.log(`  token ${token}\n  hook  ${hook}\n  pool  ${poolId}\n  lpNFT ${lpTokenId}`);
 
   // 3) deploy + wire the floor vault — anchor the band to the INTENDED launch tick (from sqrtPriceX96),
   //    never a live read, so it can't be pushed off before the (non-atomic) vault deploy.
@@ -100,14 +100,10 @@ async function main() {
   const stakingPool = sev.args.pool;
   console.log(`  stakingPool ${stakingPool}  (owner accepts via acceptOwnership; keeper ${rewardKeeper} funds token LP fee)`);
 
-  // 4a) [F3] wire the CURVE's graduation reservoir dump → the staking POOL (100% staking). graduate()'s
-  //     _fundStaking pushes the whole leftover (reserve + any curve-phase token fees) to curve.staking; without
-  //     this it parks until flushStaking(). It MUST be the pool, not the treasury — setStaking probes the sink's
-  //     stake asset and reverts StakingAssetMismatch on a non-pool. So the reservoir is 100% staking (decided),
-  //     and only POST-GRAD token LP fees (LockVault/floor/ambush → treasury) get the 70/30 split.
-  const curveC = await ethers.getContractAt("RobinCurveV4", curve);
-  await legacy(curveC, "setStaking", [stakingPool]); // platform-gated, one-shot
-  console.log(`  curve staking -> pool (grad reservoir → 100% staking)`);
+  // [R3-N1] NO curve wiring here: this script drives the PadFactory (seed-LP) path — PadLaunched carries no
+  // curve address, and these pads have no curve, no reservoir, and no graduation. Curve pads are launched by
+  // the CURVE runbook (deploy-curve.js → check-wiring.js), which wires curve.setStaking(pool) BEFORE graduate()
+  // so the reservoir dump is 100% staking (setStaking requires a pool and rejects the treasury's splitter shape).
 
   // 4b) [fee-model] deploy the per-pad TOKEN treasury — the single sink every token-side LP fee terminates at. On
   //     distribute() it splits 70% → the staking pool / 30% retained as the public burn reserve; the creator (only)

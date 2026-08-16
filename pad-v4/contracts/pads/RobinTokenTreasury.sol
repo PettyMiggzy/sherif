@@ -6,10 +6,15 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title RobinTokenTreasury — the per-pad TOKEN-fee split + public burn treasury
-/// @notice The platform takes ETH only and never holds pad tokens, so every TOKEN-side (currency1) LP fee stream
-/// terminates HERE, not on the treasury key. This contract is the single sink the pad's post-graduation token-fee
-/// sources point at (`LockVault` sell-leg, `RobinFloorVault.tokenSink`, `RobinAmbushVault` staking leg); each
-/// forwards its token here by a plain transfer.
+/// @notice The platform takes ETH only and never holds pad tokens: the TOKEN-side (currency1) LP fee streams that
+/// carry the 70/30 split terminate HERE, never on the treasury key. Which streams those are is PATH-SCOPED [R3-F3]:
+///   • PadFactory (seed-LP) pads — the `LockVault` sell-leg (the platform wires `setStakingRecipient(treasury)`
+///     post-launch) and `RobinFloorVault.tokenSink`.
+///   • Curve pads — `RobinFloorVault.tokenSink` and the `RobinAmbushVault` token leg (its immutable
+///     `stakingRecipient`, chosen at deploy) only. The curve-path `LockVault` sell-leg does NOT come here: at
+///     graduation `registerLaunch` hard-wires it to `curve.staking` (the pool) — 100% staking, permanently — and
+///     the graduation reservoir dump likewise goes 100% to the pool (`setStaking` rejects this splitter's shape).
+/// Each source forwards its token here by a plain transfer.
 ///
 /// On `distribute()` (permissionless) the freshly-arrived token is split:
 ///   • `TO_STAKING_BPS` (70%)  → the pad's staking pool (holders earn it; booked into rewards by the keeper's

@@ -27,14 +27,21 @@ deployed.
 >   "config/wiring-enforced" to **"contract-enforced for the pad token."** Tests upgraded to prove the exemption is
 >   unbypassable at fee 500 and narrow (money-side fee intact):
 >   `R3F1.platform-token-invariant.demo.test.js` (3 cases), `DualStaking.adversarial.test.js [F1]` (3 cases).
-> - **F3 — fixed.** `launch.js` now wires `curve.setStaking = the pool` (it was never wired → reservoir would park);
->   `setStaking` reverts `StakingAssetMismatch` on a non-pool, so the reservoir is 100% staking. `ECON` corrected: the
->   70/30 treasury split applies to **post-graduation** token LP fees; curve-phase fees ride the reservoir to staking.
-> - **F2 — fixed.** `RobinFloorVault.setTokenSink` now carries the `code.length` + self guards its peers have.
+> - **F3 — fixed (completed on re-audit pass 2).** The reservoir wiring lives in the CURVE runbook
+>   (`deploy-curve.js` → `check-wiring.js`; `curve.setStaking(pool)` BEFORE `graduate()`), NOT `launch.js` — the
+>   first-pass `launch.js` graft was itself a bug (re-audit N1) and is removed. `setStaking` now **rejects the
+>   treasury's splitter shape** (`TO_STAKING_BPS()` probe, [R3-N2]) on top of the stake-asset probe, so the
+>   reservoir structurally cannot route through the 70/30. Docs state the path-scoped truth: the **curve-path**
+>   LockVault sell-leg is hard-wired at graduation to the **pool (100% staking, permanent)**; the treasury's 70/30
+>   applies to the PadFactory sell-leg + floor `tokenSink` + ambush.
+> - **F2 — fixed (completed on re-audit pass 2).** `RobinFloorVault.setTokenSink` carries the `code.length` + self
+>   guards — and the peer the finding named, `LockVault.setStakingRecipient`, now carries the same mirrored guard.
 >
 > An independent exhaustive 20-agent platform-token sweep (build session) confirmed no *further* token→platform path
 > beyond the F1 claim-fee skim under the shipped deploy, and recommended exactly this structural exemption. Now
-> applied. Fixes on branch, full suite green.
+> applied. A follow-up re-audit (`AUDIT-ROUND-3-REMEDIATION-REAUDIT.md`) verified F1 closed and surfaced the
+> completeness residuals above + two new items (N1 `launch.js` graft, N2 false probe rationale) — **all five
+> hand-off items closed on this branch.** Fixes on branch, full suite green.
 
 ---
 

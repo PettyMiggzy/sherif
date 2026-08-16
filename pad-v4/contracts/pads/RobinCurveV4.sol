@@ -38,6 +38,14 @@ interface IStakeAssetProbe {
     function tokenAsset() external view returns (address);
 }
 
+/// @dev [R3-N2] Shape probe for the one KNOWN token-holding non-pool: the per-pad `RobinTokenTreasury` exposes
+/// `token()` == the pad token, so the stake-asset probe alone cannot tell it from a staking pool — and wiring the
+/// graduation reservoir through the treasury's 70/30 splitter would silently burn 30% of the dump (the decided
+/// model is reservoir → 100% staking). No staking sink exposes `TO_STAKING_BPS()`; its presence marks a splitter.
+interface ITreasurySplitProbe {
+    function TO_STAKING_BPS() external view returns (uint16);
+}
+
 interface IFloorVault {
     function addFloor() external returns (uint128);
 }
@@ -534,6 +542,12 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         if (staking != address(0)) revert AlreadySet();
         if (s == address(0) || s.code.length == 0) revert ZeroAddress(); // [LOW-3] must be a contract (the pool)
         if (_probeStakeAsset(s) != token) revert StakingAssetMismatch();
+        // [R3-N2] the token treasury PASSES the asset probe (its token() IS the pad token), but the reservoir must
+        // land 100% on a staking pool — never through the 70/30 splitter (30% of the dump would burn). Reject the
+        // splitter shape so "the reservoir can never route through the treasury" is contract-enforced, not
+        // operator discipline. Pools have no fallback, so this staticcall cleanly fails for them.
+        (bool splitter, bytes memory sd) = s.staticcall(abi.encodeCall(ITreasurySplitProbe.TO_STAKING_BPS, ()));
+        if (splitter && sd.length == 32) revert StakingAssetMismatch();
         staking = s;
         emit StakingSet(s);
     }

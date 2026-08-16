@@ -100,7 +100,11 @@ contract LockVault is IERC721Receiver, ReentrancyGuard {
         Lock storage lk = locks[tokenId];
         if (!lk.registered) revert NotRegistered();
         if (lk.stakingRecipient != address(0)) revert StakingRecipientAlreadySet();
-        if (recipient == address(0)) revert ZeroAddress();
+        // [R3-F2] mirror the RobinFloorVault.setTokenSink / hook.setFloorRecipient guards: this is a ONE-SHOT with
+        // no rescue path and claimStaking pays the recipient forever, so an EOA or self mis-wire would permanently
+        // freeze/misroute the locked LP's token-side fee stream (self would satisfy claims with a no-op transfer
+        // while this vault also holds a receive()). Must be a live contract (the staking pool / token treasury).
+        if (recipient == address(0) || recipient.code.length == 0 || recipient == address(this)) revert ZeroAddress();
         lk.stakingRecipient = recipient;
         emit StakingRecipientSet(tokenId, recipient);
     }

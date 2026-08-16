@@ -49,14 +49,21 @@ describe("LockVault — collect-only, locked forever, quote→platform / token�
       .to.be.revertedWithCustomError(vault, "AlreadyRegistered");
   });
 
-  it("setStakingRecipient is platform-only and one-shot", async () => {
+  it("setStakingRecipient is platform-only, one-shot, and guarded like its peers [R3-F2]", async () => {
     // platform wallet is `other` (the registry's initial wallet)
     await vault.connect(factory).registerLaunch(2, ZERO, c1.address, ZERO); // unset at launch
-    await expect(vault.connect(factory).setStakingRecipient(2, staking.address))
+    const sink = await reg.getAddress(); // any live CONTRACT stands in for the staking pool / treasury
+    await expect(vault.connect(factory).setStakingRecipient(2, sink))
       .to.be.revertedWithCustomError(vault, "NotPlatform");
-    await vault.connect(other).setStakingRecipient(2, staking.address);
-    expect((await vault.locks(2)).stakingRecipient).to.equal(staking.address);
-    await expect(vault.connect(other).setStakingRecipient(2, factory.address))
+    // [R3-F2] mirror of floor.setTokenSink: the recipient is one-shot with NO rescue and claimStaking pays it
+    // forever — an EOA or the vault itself would permanently freeze/misroute the token-side fee stream.
+    await expect(vault.connect(other).setStakingRecipient(2, staking.address))
+      .to.be.revertedWithCustomError(vault, "ZeroAddress"); // EOA — not a contract
+    await expect(vault.connect(other).setStakingRecipient(2, await vault.getAddress()))
+      .to.be.revertedWithCustomError(vault, "ZeroAddress"); // self
+    await vault.connect(other).setStakingRecipient(2, sink);
+    expect((await vault.locks(2)).stakingRecipient).to.equal(sink);
+    await expect(vault.connect(other).setStakingRecipient(2, sink))
       .to.be.revertedWithCustomError(vault, "StakingRecipientAlreadySet");
   });
 
@@ -73,7 +80,7 @@ describe("LockVault — collect-only, locked forever, quote→platform / token�
     await expect(vault.claimStaking(3, 1)).to.be.revertedWithCustomError(vault, "NoStakingRecipient");
     // once the platform wires the real recipient, the same claim reverts NothingToClaim (nothing owed yet) — i.e. it
     // now targets the recipient and the accrual survives the unwired window (collectFees credits stakingOwed either way).
-    await vault.connect(other).setStakingRecipient(3, staking.address);
+    await vault.connect(other).setStakingRecipient(3, await reg.getAddress()); // [R3-F2] must be a contract now
     await expect(vault.claimStaking(3, 1)).to.be.revertedWithCustomError(vault, "NothingToClaim");
   });
 });

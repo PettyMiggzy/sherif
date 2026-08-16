@@ -48,11 +48,11 @@ async function main() {
   console.log(`  lockVault.setFactory -> ${await factory.getAddress()}\n`);
 
   // Staking: one factory spins up a stake-to-earn pool for ANY token (no lock).
-  // [F1] Claim fee defaults to 0 — the pad-token staking pools reward the PAD TOKEN, so a platform claim-fee skim
-  // would route pad tokens to `platformTreasury` (which the deploy sets == platformFeeWallet), violating the
-  // "platform takes ETH only, never holds a pad token" invariant. The platform's revenue is the ETH streams (buy
-  // tax, 100% of the ETH LP fee, the graduation waterfall) — it deliberately forgoes the token-denominated staking
-  // claim fee. Do NOT set STAKING_CLAIM_FEE_BPS > 0 on a pad-token pool, or the invariant breaks (see F1).
+  // [F1] Claim fee defaults to 0 — the platform takes ETH only. Since the R3-F1 STRUCTURAL fix,
+  // DualStaking.claim() exempts the pad token from this fee unconditionally, so a nonzero STAKING_CLAIM_FEE_BPS
+  // can no longer route pad tokens to the platform — it would only charge money-side (ETH/stock) reward claims.
+  // The 0 default is belt-and-suspenders + posture: the platform's revenue is the ETH streams (buy tax, 100% of
+  // the ETH LP fee, the graduation waterfall), not a cut of what stakers earn.
   const CLAIM_FEE_BPS = Number(process.env.STAKING_CLAIM_FEE_BPS || 0);
   const stakingFactory = await legacyDeploy("StakingFactory", [platform, deployer.address, CLAIM_FEE_BPS]);
   console.log("");

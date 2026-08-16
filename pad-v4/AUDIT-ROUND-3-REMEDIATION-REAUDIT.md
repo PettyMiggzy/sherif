@@ -141,3 +141,25 @@ sink whose `token()`/`tokenAsset()` resolves to a `RobinTokenTreasury` shape.
 5. **F1 nit:** refresh the `deploy.js:55` comment — a nonzero claim fee no longer "breaks the invariant."
 
 Once (1)-(4) are done, re-fetch and the external package can honestly state F1/F2/F3 all closed.
+
+---
+
+> **BUILD-SESSION RESPONSE — all 5 hand-off items closed (this commit).**
+> 1. **F2 residual → closed.** `LockVault.setStakingRecipient` now reverts on `zero || code.length == 0 || self`
+>    (mirrors `setTokenSink`). Tests: `LockVault.test.js` `[R3-F2]` (EOA + self rejected; contract accepted;
+>    platform-only + one-shot preserved).
+> 2. **F3 docs → corrected at all three sites.** `ECON §5` + `§53` + the `RobinTokenTreasury` docstring now state
+>    the path-scoped truth: curve-path LockVault sell-leg → **pool, 100% staking, permanent** (hard-wired by
+>    `registerLaunch` from `curve.staking`); the treasury's 70/30 sources are the **PadFactory** sell-leg +
+>    floor `tokenSink` + ambush.
+> 3. **N1 → de-grafted.** `launch.js` no longer destructures `curve` or calls `setStaking` (PadFactory pads have
+>    no curve); a breadcrumb points at the curve runbook (`deploy-curve.js` → `check-wiring.js`), where the
+>    wiring already lived.
+> 4. **N2 → made TRUE instead of merely corrected.** Rather than only rewording the rationale, `setStaking` now
+>    **rejects the treasury's splitter shape**: a sink exposing `TO_STAKING_BPS()` reverts `StakingAssetMismatch`
+>    (`RobinCurveV4` `[R3-N2]`; neither staking sink exposes it, and pools have no fallback so the staticcall
+>    cleanly fails for them). The `setStaking(treasury)` mis-wire — 30% reservoir burn — is now contract-blocked,
+>    not operator discipline. Test: `M25.staking-sink-mismatch.test.js` `[R3-N2]` (own-pad treasury rejected,
+>    one-shot not spent, real pool still accepted). Docs updated to cite the real guard.
+> 5. **F1 nit → refreshed.** `deploy.js` now explains a nonzero `STAKING_CLAIM_FEE_BPS` only charges money-side
+>    rewards (the pad token is contract-exempt); 0 stays the shipped default as posture + belt-and-suspenders.
