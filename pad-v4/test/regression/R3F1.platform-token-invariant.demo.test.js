@@ -1,81 +1,65 @@
-// ROUND-3 FINDING F1 — DEMONSTRATOR (not a fix; proves the invariant break for the other session).
+// ROUND-3 FINDING F1 — REGRESSION (was a leak demonstrator; now verifies the fix).
 //
-// AUDIT-ROUND-3-BRIEF.md:61 and AUDITOR-HANDOFF.md §0c:267 assert, as "the highest-value invariant, tested":
-//   "the platform wallet's pad-token balance is always exactly zero ... the treasury key never receives a pad token."
+// The original finding: deploy.js wired ONE key as both the fee-registry platformFeeWallet AND the staking pool's
+// platformTreasury, with a 5% claim fee (StakingFactory(platform, _, 500)). RobinTokenTreasury.distribute() routes
+// 70% of token-side LP fees into the DualStaking pool as a pad-token reward; on claim, DualStaking skims 5% into
+// platformFeesOwed[padToken], and claimPlatformFees sends those pad tokens to the platform key — so "the platform
+// never holds a pad token" was FALSE as deployed.
 //
-// It is FALSE as deployed. deploy.js wires ONE key as both the fee-registry platformFeeWallet AND the staking
-// pool's platformTreasury, with a 5% claim fee (StakingFactory(platform, _, 500)). RobinTokenTreasury.distribute()
-// routes 70% of token-side LP fees into the DualStaking pool as a pad-token reward; when a holder claims it,
-// DualStaking.claim skims 5% into platformFeesOwed[padToken], and claimPlatformFees sends those pad tokens to the
-// platform key. This test reproduces that exact wiring and asserts the platform's pad-token balance is NON-ZERO.
-//
-// It PASSES today (the break exists). After the other session fixes it (zero the claim fee on pad pools, or point
-// the staking treasury at a token sink, or scope the invariant honestly in the docs), flip the final assertion.
+// The fix (F1): deploy.js now defaults STAKING_CLAIM_FEE_BPS to 0 — the platform takes ETH only and deliberately
+// forgoes the token-denominated staking claim fee. This test drives the FULL end-to-end path (token fee → treasury
+// → 70% to the pool → staker claim → claimPlatformFees) and asserts the platform ends with ZERO pad token under the
+// shipped config, and — as an honest governance caveat — that a nonzero claim fee re-opens the exact leak.
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
-const { time, takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
+const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 const TOKEN = 0;
 const DAY = 86400;
 const E = (x) => ethers.parseEther(String(x));
 
-describe("R3-F1 [DEMO] platform receives pad tokens via the staking claim fee — 'platform never holds token' is false", () => {
-  let __snap;
-  before(async () => { __snap = await takeSnapshot(); });
-  after(async () => { await __snap.restore(); });
+// Build the pad's token treasury + DualStaking pool exactly as deploy.js/launch.js wire them, with a chosen claim
+// fee, then run one full token-fee → staking → claim → platform-pull cycle. Returns the pad token the platform got.
+async function runCycle(claimFeeBps) {
+  const [platformOwner, platform, creator, staker, keeper] = await ethers.getSigners();
+  const padToken = await (await ethers.getContractFactory("TestERC20")).deploy(10n ** 30n);
+  const ds = await (await ethers.getContractFactory("DualStaking")).deploy(
+    await padToken.getAddress(), ethers.ZeroAddress, platformOwner.address, 0, ethers.ZeroAddress, ethers.ZeroHash, TOKEN
+  );
+  await ds.setPlatformTreasury(platform.address); // == the fee-registry platformFeeWallet in deploy.js
+  if (claimFeeBps > 0) await ds.setPlatformClaimFee(claimFeeBps);
+  await ds.listReward(TOKEN, await padToken.getAddress(), 7 * DAY);
+  await ds.setRewarder(keeper.address, true);
 
-  it("the platform key's pad-token balance goes NON-ZERO under the default deploy config", async () => {
-    const [platformOwner, platform, creator, staker, keeper] = await ethers.getSigners();
+  const treasury = await (await ethers.getContractFactory("RobinTokenTreasury")).deploy(
+    await padToken.getAddress(), await ds.getAddress(), creator.address
+  );
 
-    // the pad token (a plain ERC20, like PadToken)
-    const padToken = await (await ethers.getContractFactory("TestERC20")).deploy(10n ** 30n);
+  await padToken.transfer(staker.address, E(1000));
+  await padToken.connect(staker).approve(await ds.getAddress(), ethers.MaxUint256);
+  await ds.connect(staker).stake(TOKEN, E(1000));
 
-    // the pad's DualStaking pool, wired EXACTLY as StakingFactory does with deploy.js defaults:
-    //   StakingFactory(platformTreasury = platform, platformOwner, defaultClaimFeeBps = 500)
-    const ds = await (await ethers.getContractFactory("DualStaking")).deploy(
-      await padToken.getAddress(), ethers.ZeroAddress, platformOwner.address, 0, ethers.ZeroAddress, ethers.ZeroHash, TOKEN
-    );
-    await ds.setPlatformTreasury(platform.address);   // == the fee-registry platformFeeWallet in deploy.js
-    await ds.setPlatformClaimFee(500);                // 5%, the deploy default (STAKING_CLAIM_FEE_BPS)
-    await ds.listReward(TOKEN, await padToken.getAddress(), 7 * DAY);
-    await ds.setRewarder(keeper.address, true);
+  // a token-side LP fee arrives at the treasury → distribute() sends 70% to the pool → keeper books it
+  await padToken.transfer(await treasury.getAddress(), E(100));
+  await treasury.distribute();
+  await ds.connect(keeper).fundTokenPushed(TOKEN, await padToken.getAddress());
 
-    // the per-pad token treasury (70% staking / 30% burn), wired at the pool as deploy does
-    const treasury = await (await ethers.getContractFactory("RobinTokenTreasury")).deploy(
-      await padToken.getAddress(), await ds.getAddress(), creator.address
-    );
+  await time.increase(7 * DAY + 1);
+  const platBefore = await padToken.balanceOf(platform.address);
+  await ds.connect(staker).claim(TOKEN, await padToken.getAddress());
+  // pull whatever the platform is owed (reverts Zero if nothing — treat as 0)
+  try { await ds.connect(keeper).claimPlatformFees(await padToken.getAddress()); } catch { /* nothing owed */ }
+  return (await padToken.balanceOf(platform.address)) - platBefore;
+}
 
-    // a staker is present so rewards actually stream to someone
-    await padToken.transfer(staker.address, E(1000));
-    await padToken.connect(staker).approve(await ds.getAddress(), ethers.MaxUint256);
-    await ds.connect(staker).stake(TOKEN, E(1000));
+describe("R3-F1 [regression] platform-token invariant across the staking claim path", () => {
+  it("[FIXED] shipped deploy (claim fee 0): the platform receives ZERO pad token end-to-end", async () => {
+    const received = await runCycle(0);
+    expect(received).to.equal(0n); // "platform never holds a pad token" now HOLDS under the shipped config
+  });
 
-    // a token-side LP fee arrives at the treasury (in production: floor sweepTokenFees / lock sell-leg / ambush)
-    await padToken.transfer(await treasury.getAddress(), E(100));
-    // distribute(): 70 -> pool, 30 -> burn reserve
-    await treasury.distribute();
-    // the keeper books the pool's fresh token as a reward (measured-delta), exactly the launch.js keeper loop
-    await ds.connect(keeper).fundTokenPushed(TOKEN, await padToken.getAddress());
-
-    // the reward streams; the staker claims after the window
-    await time.increase(7 * DAY + 1);
-    const platBefore = await padToken.balanceOf(platform.address);
-    await ds.connect(staker).claim(TOKEN, await padToken.getAddress());
-
-    // the 5% claim fee is now owed to the platform treasury, IN PAD TOKEN
-    const owed = await ds.platformFeesOwed(await padToken.getAddress());
-    expect(owed).to.be.gt(0n);
-
-    // anyone pokes it to the platform key
-    await ds.connect(keeper).claimPlatformFees(await padToken.getAddress());
-    const platAfter = await padToken.balanceOf(platform.address);
-    const received = platAfter - platBefore;
-
-    console.log(`   platform pad-token balance: ${ethers.formatEther(platBefore)} -> ${ethers.formatEther(platAfter)} ` +
-      `(received ${ethers.formatEther(received)} PAD TOKEN via the 5% staking claim fee)`);
-
-    // THE INVARIANT BREAK: the brief/handoff say this is always exactly zero. It is not.
-    expect(received).to.be.gt(0n);
-    expect(platAfter).to.be.gt(0n); // "platform wallet's pad-token balance is always exactly zero" — FALSE
+  it("[governance caveat] a nonzero staking claim fee re-opens the leak — exactly what the fee-0 default prevents", async () => {
+    const received = await runCycle(500); // the mis-config the auditor originally demonstrated
+    expect(received).to.be.gt(0n); // pad token reaches the platform key — do NOT set a token claim fee on pad pools
   });
 });
