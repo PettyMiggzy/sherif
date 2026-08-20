@@ -22,3 +22,13 @@ launchpad/typechain-types/
 
 # pad-v4 audit scratch — exploratory PoCs from adversarial audit runs (evidence, not suite)
 pad-v4/test/scratch/
+
+# pad-v4 audit prototypes — driven only by the gitignored scratch tests above. Kept out of the audit package
+# so no unshipped contract compiles into it. H5ObsHook/H5TwapGateVault are TWAP-redesign drafts (the real fix
+# will be implemented properly); JC4Probes/ArrowLauncherSaltBound are probes for claims already recorded in
+# AUDIT-ROUND-3-EXTERNAL-RESPONSE.md and the H5 regression test.
+pad-v4/contracts/test/H5ObsHook.sol
+pad-v4/contracts/test/H5ObsHookMin.sol
+pad-v4/contracts/test/H5TwapGateVault.sol
+pad-v4/contracts/test/JC4Probes.sol
+pad-v4/contracts/test/ArrowLauncherSaltBound.sol
