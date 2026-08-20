@@ -19,8 +19,17 @@ Sibling to the untouched v3 pad in `../launchpad`. Full design: `ROBIN-V4-ARCHIT
 | **1% trade tax** (the hook) | → Platform | → Creator **0.8%** + Floor **0.2%** |
 
 Holders are rewarded by **staking** (stake the coin → earn stocks/ETH via DualStaking), funded by the
-sell-side LP fee. The floor carve comes out of the creator's sell tax and builds a permanent, un-ruggable
-USDG buy-wall under the price. All numbers are per-pool config.
+sell-side LP fee. The floor carve comes out of the creator's sell tax and builds an **add-only** buy-wall
+under the price — liquidity placed there is permanent (no remove/withdraw selector exists). All numbers
+are per-pool config.
+
+> **Do not describe the floor as "un-ruggable" or "can't be rugged to zero."** Round-3 external finding
+> **H-5** (independently reproduced) shows the *parked* carve can be force-committed into the fixed band at
+> stale launch-era prices by an attacker who ends token-flat, and then swept back out — measured at up to
+> ~96% of the parked carve on the shipped configuration. What IS structurally true: no withdraw path exists,
+> and no user deposit or the locked seed LP is ever at risk. The guarantee is "add-only, nobody can pull it
+> out", NOT "the floor's value cannot be extracted". See `FLOOR-REDESIGN.md` +
+> `AUDIT-ROUND-3-EXTERNAL-RESPONSE.md` §1.
 
 Coverage includes adversarial cases: unregistered-pool inertness, the D2 guarded-take (a blocklisted
 fee currency skips the skim instead of bricking the swap), buy→platform / sell→creator+floor routing,
