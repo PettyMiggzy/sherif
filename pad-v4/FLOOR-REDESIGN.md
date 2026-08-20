@@ -60,7 +60,26 @@ exploitable, because the freshly-placed single-sided ETH is converted at that ma
 The lesson: the commit/placement price must come from a source the attacker CANNOT move within a transaction —
 i.e. a manipulation-resistant TWAP, not live `slot0`. There is no spot-based scheme (gate OR placement) that is safe.
 
-## The only surviving direction: a TWAP-gated commit
+## ⚠️ UPDATE — the TWAP-gated commit below was ALSO refuted; see `FLOOR-H5-CLOSURE-SPEC.md`
+
+The section below was written before the external round-3 review and before this surface was measured. It is
+kept for the reasoning trail, but **a plain TWAP-gated commit is now REFUTED too** — the fifth design to fall
+here. A 4-design × red-team panel measured the naive TWAP conjunct making the attack **strictly better for the
+attacker** (peak extraction +23.84 → +31.92 ETH; break-even carve/pool-depth ~30% → 4.0%), because:
+
+- **holding costs nothing per unit time** (measured: identical 1.110618 ETH round-trip cost at 0s and at 3h of
+  hold), so a gate priced in "wait W" is inert, and one that lets a single round trip fund several commits is
+  cheaper than what ships today; and
+- **a TWAP is a decaying memory** — after a genuine crash it keeps reading below-band for a bounded interval,
+  inside which the attack is fully atomic again.
+
+The surviving direction replaces *averaging* with an **exact, swap-witnessed duration proof** (`aboveLowerTs`
+watermark) plus an **episode-scoped, non-refilling commit allowance** that bounds ETH committed per unit of
+attacker cost. See **`FLOOR-H5-CLOSURE-SPEC.md`**. What DOES carry forward from the auditor's §2 is correction
+(a): any gate must retain a live-spot-below-band check, or the wall silently mints itself out of parked token
+fees instead of reverting (independently measured).
+
+## The (refuted) direction as originally proposed: a TWAP-gated commit
 
 Since every spot-based scheme is exploitable (above), the commit/placement price must come from a
 manipulation-resistant **time-weighted average price** the attacker cannot move within a transaction:
