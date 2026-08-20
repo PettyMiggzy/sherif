@@ -1,6 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
+const { brandedTokenSalt } = require("../helpers/brand");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAINNET-FORK E2E SWARM — deploys the FULL new ETH-fee curve suite FRESH against the REAL mainnet v4 stack
@@ -65,7 +66,10 @@ describe("Mainnet-fork E2E swarm — new ETH-fee suite vs live v4", function () 
       tickSpacing: SPACING, creator: creator.address,
     };
     const TokenF = await ethers.getContractFactory("PadToken");
-    const tokenSalt = ethers.id("tok-" + tag);
+    // [brand] the factory rejects any token address not ending in `faf0` — mine the salt (seeded per-tag so two
+    // pads with identical config still land on different addresses). MUST run before the hook mining below,
+    // because the hook init-code embeds the predicted token address.
+    const tokenSalt = await brandedTokenSalt(await dep.getAddress(), await factory.getAddress(), cfg, ethers.id("tok-" + tag));
     const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, 18, cfg.supply, await factory.getAddress()])]);
     const predicted = ethers.getCreate2Address(await dep.getAddress(), tokenSalt, ethers.keccak256(tokenInit));
     const { salt: hookSalt } = mineHookSalt(await dep.getAddress(), hookInitCode(HookF.bytecode, POOL_MANAGER, await factory.getAddress(), await reg.getAddress(), predicted));

@@ -2,6 +2,7 @@ const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
+const { brandedTokenSalt } = require("../helpers/brand");
 
 // SIM — the trustless PresaleVault + PresaleVaultFactory end to end, on a REAL local Uniswap v4 stack.
 // A creator opens a refundable ETH presale (target + deadline + per-wallet cap) via the factory. Anyone deposits;
@@ -73,7 +74,10 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
   }
 
   async function prepareSalts(tag, cfg) {
-    const tokenSalt = ethers.id("tok-" + tag);
+    // [brand] the token address must end in `faf0` or CurvePadFactoryV4.launch reverts BadTokenSuffix — which
+    // finalize() would swallow into Failed(3). Mine the salt from the SAME cfg that goes into the commitment,
+    // seeded with the tag so two identical-config presales still land on different addresses.
+    const tokenSalt = await brandedTokenSalt(depAddr, factoryAddr, cfg, ethers.id("tok-" + tag));
     const curveSalt = ethers.id("curve-" + tag);
     const TokenF = await ethers.getContractFactory("PadToken");
     const tokenInit = ethers.concat([

@@ -19,6 +19,7 @@ import {RobinFeeHook} from "../hooks/RobinFeeHook.sol";
 import {IRobinFeeHookAdmin} from "../interfaces/IRobinInterfaces.sol";
 import {IPositionManagerMinimal} from "../interfaces/IPositionManagerMinimal.sol";
 import {IPermit2Minimal} from "../interfaces/IPermit2Minimal.sol";
+import {PadBrand} from "./PadBrand.sol";
 
 /// @title PadFactory — immutable one-tx launch orchestrator (Feature 1: the ETH pad)
 /// @notice Atomically, in one legacy type-0 tx:
@@ -137,6 +138,11 @@ contract PadFactory {
                 abi.encode(cfg.name, cfg.symbol, cfg.decimals, cfg.supply, address(this))
             )
         );
+
+        // [brand] every Robin pad token address ends in `faf0` — the caller mines `tokenSalt` for it
+        // (scripts/mine.js mineTokenSalt). Checked before ANY pool/LP state is written, so an unmined
+        // salt fails loudly and cannot half-create a pad. See contracts/core/PadBrand.sol.
+        PadBrand.requireBrand(token);
 
         // native ETH is currency0 (address 0, sorts lowest); the token must be currency1
         Currency currency0 = Currency.wrap(address(0));

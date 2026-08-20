@@ -1,6 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
+const { brandedTokenSalt, tokenInitCode } = require("../helpers/brand");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Feature 4 — RobinBlue stock-pad launch against the LIVE V4 stack, using a MockStock as the quote
@@ -52,16 +53,18 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
       floorRecipient: ethers.ZeroAddress, stakingRecipient: ethers.ZeroAddress,
     };
 
-    // mine tokenSalt so the token address sorts ABOVE the stock (quote = currency0)
+    // mine tokenSalt so the token address sorts ABOVE the stock (quote = currency0) AND carries the `faf0`
+    // brand suffix — PadBrand.requireBrand reverts the launch otherwise, so this path must satisfy BOTH
+    // constraints at once (the helper's extraOk predicate re-seeds until one address does).
+    const depAddr = await dep.getAddress();
+    const factoryAddr = await factory.getAddress();
     const TokenF = await ethers.getContractFactory("PadToken");
-    const tokenCtor = abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()]);
-    const tokenInitHash = ethers.keccak256(ethers.concat([TokenF.bytecode, tokenCtor]));
-    let tokenSalt, predictedToken;
-    for (let i = 0n; ; i++) {
-      const s = ethers.zeroPadValue(ethers.toBeHex(i), 32);
-      const a = ethers.getCreate2Address(await dep.getAddress(), s, tokenInitHash);
-      if (a.toLowerCase() > stockAddr) { tokenSalt = s; predictedToken = a; break; }
-    }
+    const tokenSalt = await brandedTokenSalt(
+      depAddr, factoryAddr, cfg, ethers.id("robin-nvda-1"), (a) => BigInt(a) > BigInt(stockAddr)
+    );
+    const predictedToken = ethers.getCreate2Address(
+      depAddr, tokenSalt, ethers.keccak256(tokenInitCode(TokenF.bytecode, cfg, factoryAddr))
+    );
 
     // mine the hook salt (token in init-code)
     const HookF = await ethers.getContractFactory("RobinFeeHook");

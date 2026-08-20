@@ -41,7 +41,9 @@ added/changed **after** that and has **not** been externally reviewed — cross-
    confirm the 100%-platform ETH-LP flip and the 70/30 split + creator-burn. See `ROBIN-V4-CURVE-ECON.md`.
 
 ## 4. Scope inventory
-**NEW this round:** `arrow/ArrowLauncher.sol`, `arrow/ArrowDistributor.sol`, `pads/RobinTokenTreasury.sol`.
+**NEW this round:** `arrow/ArrowLauncher.sol`, `arrow/ArrowDistributor.sol`, `pads/RobinTokenTreasury.sol`,
+`core/PadBrand.sol` (**brand suffix** — every pad token address must end in `faf0`; enforced in all three
+factories' `launch`, so callers must mine `tokenSalt`. Pure mask+compare, reverts before any state write).
 **MODIFIED this round:** `pads/RobinFloorVault.sol` (token-leak fix + `tokenSink`/`sweepTokenFees`), `pads/RobinCurveV4.sol`
 (buy-LP routing default), `core/RobinV4FeeConfig.sol` (M-10 lpFee cap), `core/PadFactory.sol` (M-3 caps),
 `core/CurvePadFactoryV4.sol` (L-1 min-raise), `pads/DualStaking.sol` (M-5), `presale/PresaleVault.sol` (M-12),
@@ -83,7 +85,10 @@ added/changed **after** that and has **not** been externally reviewed — cross-
 
 ## 8. Known open items (documented — no need to re-derive)
 - **Floor H-5 TWAP** (focus area 1) — structural fix pending your review.
-- **Arrow L1/L2** — mempool front-run/hijack, not reachable on FCFS; salt-binding hardening proposed, not built.
+- **Arrow L1/L2** — mempool front-run/hijack, not reachable on FCFS. Salt-binding was proposed and is NOT built —
+  and per the external auditor it is only a copycat deterrent anyway (the factory `launch` is permissionless and
+  takes raw salts, so `ArrowLauncher` is bypassable; the merkle root isn't bound to the pad address). Commit-reveal
+  is the real fix if Arrow ever ships to a public mempool. See `ARROW.md`.
 - **Arrow dev-sybil honesty** — "no dev holds the bag" = no single dev wallet + transparent immutable distribution, NOT
   sybil-resistance (a dev can commit a root over their own addresses). Pitch precisely.
 - **Deferred LOW mechanicals** — L-3, L-14, L-25, L-32 (see `AUDITOR-HANDOFF.md §0b "Still open"`).

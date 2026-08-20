@@ -18,7 +18,7 @@
 const { ethers } = require("hardhat");
 const fs = require("fs");
 const path = require("path");
-const { mineHookSalt, hookInitCode } = require("./mine");
+const { mineHookSalt, mineTokenSalt, hookInitCode } = require("./mine");
 
 const SQRT_1_1 = 79228162514264337593543950336n; // launch at price 1:1 (tick 0); override via SQRT_PRICE
 const FEE = 3000; // static lp fee
@@ -59,15 +59,17 @@ async function main() {
   const HookF = await ethers.getContractFactory("RobinFeeHook");
   const abi = ethers.AbiCoder.defaultAbiCoder();
 
-  // 1) predict the token CREATE2 address (factory deploys it), then mine the hook salt against the
-  //    exact init-code the factory builds — which now includes the token so each hook is unique.
-  const tokenSalt = ethers.id(`${cfg.symbol}-${cfg.name}-${d.padFactory}-${process.env.SALT_NONCE || "0"}`);
+  // 1) MINE the token CREATE2 address so it ends in the Robin brand suffix `faf0`, then mine the hook salt
+  //    against the exact init-code the factory builds — which includes the token, so token mining MUST run
+  //    first and each hook stays unique. Both mines are local keccak loops (~65k / ~16k tries), sub-second.
+  const baseSalt = ethers.id(`${cfg.symbol}-${cfg.name}-${d.padFactory}-${process.env.SALT_NONCE || "0"}`);
   const TokenF = await ethers.getContractFactory("PadToken");
   const tokenInit = ethers.concat([
     TokenF.bytecode,
     abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, d.padFactory]),
   ]);
-  const predictedToken = ethers.getCreate2Address(d.deterministicDeployer, tokenSalt, ethers.keccak256(tokenInit));
+  const { salt: tokenSalt, addr: predictedToken, tries } = mineTokenSalt(d.deterministicDeployer, tokenInit, baseSalt);
+  console.log(`  mined token CA ${predictedToken} (ends …${predictedToken.slice(-4)}, ${tries} tries)`);
   const initCode = hookInitCode(HookF.bytecode, d.poolManager, d.padFactory, d.feeWalletRegistry, predictedToken);
   const { salt: hookSalt } = mineHookSalt(d.deterministicDeployer, initCode);
 

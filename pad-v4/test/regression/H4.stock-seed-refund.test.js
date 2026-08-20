@@ -8,6 +8,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
+const { brandedTokenSalt, tokenInitCode } = require("../helpers/brand");
 
 const FLAGS = 0xccn, MASK = 0x3fffn;
 const SQRT_1_1 = 79228162514264337593543950336n;
@@ -58,23 +59,21 @@ describe("H-4 — the stock seed's remainder goes back to whoever paid it", () =
     floorRecipient: floorSink.address, stakingRecipient: stakingSink.address,
   });
 
-  // mine tokenSalt so the pad token sorts ABOVE the stock, and hookSalt for the 0x00CC flags
+  // mine tokenSalt so the pad token carries the `faf0` brand suffix AND sorts ABOVE the stock,
+  // and hookSalt for the 0x00CC flags (hook init-code embeds the predicted token, so token mining runs first)
   async function mineSalts(cfg) {
     const depAddr = await dep.getAddress();
+    const factoryAddr = await factory.getAddress();
     const PadToken = await ethers.getContractFactory("PadToken");
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const abi = ethers.AbiCoder.defaultAbiCoder();
-    const stockAddr = (await stock.getAddress()).toLowerCase();
+    const stockAddr = await stock.getAddress();
 
-    let tokenSalt, tokenAddr;
-    for (let i = 0n; ; i++) {
-      const salt = ethers.zeroPadValue(ethers.toBeHex(i), 32);
-      const init = ethers.concat([PadToken.bytecode,
-        abi.encode(["string", "string", "uint8", "uint256", "address"],
-          [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()])]);
-      const a = ethers.getCreate2Address(depAddr, salt, ethers.keccak256(init));
-      if (BigInt(a) > BigInt(stockAddr)) { tokenSalt = salt; tokenAddr = a; break; }
-    }
+    const tokenSalt = await brandedTokenSalt(depAddr, factoryAddr, cfg, undefined,
+      (addr) => BigInt(addr) > BigInt(stockAddr));
+    const tokenAddr = ethers.getCreate2Address(depAddr, tokenSalt,
+      ethers.keccak256(tokenInitCode(PadToken.bytecode, cfg, factoryAddr)));
+
     let hookSalt;
     const hookInit = ethers.concat([HookF.bytecode, abi.encode(["address", "address", "address", "address"],
       [await pm.getAddress(), await factory.getAddress(), await reg.getAddress(), tokenAddr])]);

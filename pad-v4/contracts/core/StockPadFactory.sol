@@ -21,6 +21,7 @@ import {StockQuoteAdapter} from "../adapters/StockQuoteAdapter.sol";
 import {IRobinFeeHookAdmin} from "../interfaces/IRobinInterfaces.sol";
 import {IPositionManagerMinimal} from "../interfaces/IPositionManagerMinimal.sol";
 import {IPermit2Minimal} from "../interfaces/IPermit2Minimal.sol";
+import {PadBrand} from "./PadBrand.sol";
 
 /// @title StockPadFactory — RobinBlue: launch a token paired against a tokenized STOCK quote
 /// @notice Sibling to the native-ETH PadFactory. The quote is an ERC20 stock (18-dec), so:
@@ -165,6 +166,10 @@ contract StockPadFactory {
             )
         );
         if (token <= stock) revert TokenMisordered(); // currency0 = stock < currency1 = token
+        // [brand] every Robin pad token address ends in `faf0` — the caller mines `tokenSalt` for it. NOTE: on
+        // this path the mine must satisfy BOTH constraints (suffix AND token > stock); keep mining until it does.
+        // See contracts/core/PadBrand.sol.
+        PadBrand.requireBrand(token);
         // [M-27] launch() is permissionless and NOTHING upstream is keyed on the whole PoolKey: the deterministic
         // deployer ADOPTS a byte-identical pre-deploy rather than reverting, the token init-code carries only
         // (name, symbol, decimals, supply, factory), the hook init-code only (poolManager, factory, registry,

@@ -19,3 +19,6 @@ launchpad/cache/
 launchpad/.env
 launchpad/typechain-types/
 *.env.bak-*
+
+# pad-v4 audit scratch — exploratory PoCs from adversarial audit runs (evidence, not suite)
+pad-v4/test/scratch/

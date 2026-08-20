@@ -38,6 +38,23 @@ Then, out of band:
 NAME="Troll Cat" SYMBOL=TROLL SUPPLY=1000000 LP_TOKENS=500000 SEED_ETH=1 \
   npx hardhat run scripts/launch.js --network robinhood
 ```
+**Brand suffix — every pad token CA ends in `faf0`.** Step 1 mines the token's CREATE2 salt so the deployed
+token address ends in `faf0` (`scripts/mine.js` `mineTokenSalt`; ~65k expected tries, measured ~2s per launch),
+then mines the hook salt against that token — order matters, since the hook's init-code embeds the token
+address. A Robin coin is therefore recognizable from its contract address alone, which makes impersonation
+visible. Tested by `test/unit/VanityCA.test.js`.
+
+> **Enforced ON-CHAIN, not by convention.** `PadBrand.requireBrand` (`contracts/core/PadBrand.sol`) is called by
+> `PadFactory.launch`, `CurvePadFactoryV4.launch` (which also covers the Arrow path) and `StockPadFactory.launch`,
+> and reverts `BadTokenSuffix(token)` on any unbranded address — before a single pool/LP write, so an unmined salt
+> wastes gas but can never half-create a pad. There is no flag to disable it and no privileged bypass, deliberately:
+> a tooling-only convention would hold exactly as long as every client remembered to mine, which is the
+> "config-enforced, not contract-enforced" weakness round-3 finding **F1** was restructured to eliminate.
+>
+> **Consequence for any launch client** (our UI, partner bots, direct callers): you MUST mine `tokenSalt` before
+> calling `launch`, or the call reverts. Use `mineTokenSalt`; a browser client should use a WASM keccak, since
+> plain JS is ~2s. On the **stock** path the mine must satisfy BOTH the suffix and `token > stock`.
+
 This atomically launches the pad (token + hook@0x…CC + pool + locked seed LP), then deploys and wires the
 `RobinFloorVault` (`hook.setFloorRecipient`, one-shot), a `DualStaking` pool via `StakingFactory`, and the
 per-pad `RobinTokenTreasury` (70% staking / 30% creator-burn) — pointing the LockVault token-leg fee

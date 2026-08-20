@@ -10,6 +10,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
+const { brandedTokenSalt, tokenInitCode } = require("../helpers/brand");
 
 const FLAGS = 0xccn, MASK = 0x3fffn;
 const SQRT_1_1 = 79228162514264337593543950336n;
@@ -56,17 +57,21 @@ describe("H-2 — a stock pad can no longer be launched against a self-certified
 
   async function mineSalts(cfg) {
     const depAddr = await dep.getAddress();
+    const facAddr = await factory.getAddress();
     const PadToken = await ethers.getContractFactory("PadToken");
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const abi = ethers.AbiCoder.defaultAbiCoder();
-    let tokenSalt, tokenAddr;
-    for (let i = 0n; ; i++) {
-      const salt = ethers.zeroPadValue(ethers.toBeHex(i), 32);
-      const init = ethers.concat([PadToken.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"],
-        [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()])]);
-      const a = ethers.getCreate2Address(depAddr, salt, ethers.keccak256(init));
-      if (BigInt(a) > BigInt(cfg.stock)) { tokenSalt = salt; tokenAddr = a; break; }
-    }
+    // [brand] PadBrand.requireBrand now rejects any launch whose token address does not end in `faf0`, so the
+    // salt must be MINED — and for a stock pad it must still sort ABOVE the stock (currency0 = stock ordering).
+    // Mined here, from the very cfg that is about to be launched, so the two can never drift apart.
+    const tokenSalt = await brandedTokenSalt(
+      depAddr, facAddr, cfg,
+      ethers.id(`h2-${cfg.stock}-${cfg.name}`), // per-pad seed: distinct pads get distinct addresses
+      (a) => BigInt(a) > BigInt(cfg.stock)
+    );
+    const tokenAddr = ethers.getCreate2Address(
+      depAddr, tokenSalt, ethers.keccak256(tokenInitCode(PadToken.bytecode, cfg, facAddr))
+    );
     let hookSalt;
     const hookInit = ethers.concat([HookF.bytecode, abi.encode(["address", "address", "address", "address"],
       [await pm.getAddress(), await factory.getAddress(), await reg.getAddress(), tokenAddr])]);

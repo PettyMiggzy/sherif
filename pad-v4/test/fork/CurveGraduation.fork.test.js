@@ -1,6 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
+const { brandedTokenSalt } = require("../helpers/brand");
 
 // Feature 5 (curve-on-V4) — the DEFINITIVE end-to-end proof against the LIVE V4 stack: launch a free
 // single-sided curve pad, buy it OUT (overshooting the ceiling), then graduate — asserting the ceiling
@@ -53,9 +54,12 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
       tickSpacing: SPACING, creator: creator.address,
     };
 
-    // predict token addr → mine hook salt (hook init-code carries the token)
+    // mine the BRANDED token salt (address must end in `faf0`), THEN predict the token addr → mine the hook
+    // salt (the hook init-code carries the token, so token mining must run first)
     const TokenF = await ethers.getContractFactory("PadToken");
-    const tokenSalt = ethers.id("rcrv-1");
+    const tokenSalt = await brandedTokenSalt(
+      await dep.getAddress(), await factory.getAddress(), cfg, ethers.id("rcrv-1")
+    );
     const tokenInit = ethers.concat([
       TokenF.bytecode,
       abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()]),

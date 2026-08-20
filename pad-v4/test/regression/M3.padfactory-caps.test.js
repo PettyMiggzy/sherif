@@ -1,5 +1,6 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
+const { brandedTokenSalt } = require("../helpers/brand");
 
 // [M-3 / L-27] PadFactory is live tooling (deploy.js / launch.js) and used to let a launcher stamp their OWN
 // buy/sell taxes up to the hook's 3%/side and carve up to 100% of the sell tax to a launcher-chosen address.
@@ -9,7 +10,7 @@ const { expect } = require("chai");
 const ZERO = ethers.ZeroAddress;
 
 describe("[M-3 / L-27] PadFactory governed tax caps", () => {
-  let owner, platform, creator, factory;
+  let owner, platform, creator, factory, depAddr, factoryAddr;
 
   const baseCfg = () => ({
     name: "Robin P", symbol: "P", decimals: 18,
@@ -31,10 +32,20 @@ describe("[M-3 / L-27] PadFactory governed tax caps", () => {
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(),
       await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress()
     );
+    depAddr = await dep.getAddress();
+    factoryAddr = await factory.getAddress();
   });
 
-  // the cap checks revert at the top of launch(), before any deployment — dummy salts are fine.
-  const launch = (over) => factory.launch({ ...baseCfg(), ...over }, ethers.id("t"), ethers.id("h"));
+  // The cap checks revert at the top of launch(), before any deployment — but [brand] PadBrand.requireBrand
+  // rejects any token address not ending in `faf0`, so a dummy tokenSalt would give these tests a SECOND way
+  // to revert and a cap regression could pass as BadTokenSuffix. Mine the branded salt from the exact cfg
+  // that is handed to launch() (so the two can never drift), keeping the old `id("t")` seed as the per-pad
+  // base. The hook salt stays a dummy: no test here is meant to get as far as the hook.
+  const launch = async (over) => {
+    const cfg = { ...baseCfg(), ...over };
+    const tokenSalt = await brandedTokenSalt(depAddr, factoryAddr, cfg, ethers.id("t"));
+    return factory.launch(cfg, tokenSalt, ethers.id("h"));
+  };
 
   it("rejects buyTaxBps > 2%", async () => {
     await expect(launch({ buyTaxBps: 201 })).to.be.revertedWithCustomError(factory, "BadConfig");
@@ -50,7 +61,8 @@ describe("[M-3 / L-27] PadFactory governed tax caps", () => {
   });
   it("a config AT the caps passes the governance gate (2% / 50% / 1%)", async () => {
     // at-cap params clear the BadConfig gate; the launch then proceeds past it (and reverts LATER for an unrelated
-    // reason — no seed value / unmined salt — never BadConfig), proving the caps don't reject a valid governed config.
+    // reason — the dummy, unmined HOOK salt / no seed value — never BadConfig, and never the brand check either
+    // since the token salt is mined), proving the caps don't reject a valid governed config.
     await expect(launch({ buyTaxBps: 200, sellTaxBps: 200, sellFloorShareBps: 5000, fee: 10000 }))
       .to.not.be.revertedWithCustomError(factory, "BadConfig");
   });

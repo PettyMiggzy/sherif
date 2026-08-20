@@ -63,4 +63,8 @@ module.exports = {
     ],
   },
   sourcify: { enabled: false },
+  // [brand] Launch tests now MINE a `faf0` token address (PadBrand.requireBrand), ~65k keccak tries (~2s) per
+  // distinct pad config — and a stock pad mines against two constraints at once. Mocha's 40s default is too
+  // tight for the suites that launch several pads in one test.
+  mocha: { timeout: 180000 },
 };

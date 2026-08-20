@@ -105,7 +105,14 @@ An adversarial audit (`arrow-audit`, 25 agents: finders per dimension → skepti
   exactly `curveSupply` would revert the last claim forever (all-or-nothing transfer). `claim` now clamps to the
   on-hand balance. Test: `ArrowDistributor.test.js` `[audit L3]`.
 - **[L1/L2 — DOCUMENTED, mempool-only] front-run identity-hijack / griefing.** Not reachable on the target
-  single-sequencer FCFS chain; the salt-binding hardening (above) is the fix if ever deployed to a public mempool.
+  single-sequencer FCFS chain. **The salt-binding hardening above is a copycat DETERRENT, not a cryptographic
+  close — do not call it "the fix" for a public mempool** (external-auditor correction, verified): the binding
+  lives in `ArrowLauncher`, but `CurvePadFactoryV4.launch` is `external` with **no access control** and takes
+  raw salts, so an attacker simply bypasses `ArrowLauncher` and calls the factory directly with the
+  reconstructed effective salt (every input is public calldata); and the distributor's `merkleRoot` is a
+  separate `CREATE` arg **not bound to the pad address**, so airdrop identity-hijack survives it regardless.
+  If Arrow is ever deployed to a public/shared-mempool chain the real fix is **commit-reveal** (or binding the
+  `merkleRoot` into the pad address itself).
 - **[design — HONESTY] "no dev holds the bag / clean bubble map".** The guarantee is that no single dev *wallet*
   holds the supply and the distribution is transparent + immutable on-chain — NOT that the committed root can't be
   sybil'd. A malicious dev can still commit a root over their own/sybil addresses; Arrow cannot verify holders are

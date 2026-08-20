@@ -2,6 +2,7 @@ const { ethers, network } = require("hardhat");
 const { expect } = require("chai");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
+const { brandedTokenSalt } = require("../helpers/brand");
 
 // SIM E2E — the full trade lifecycle THROUGH THE REAL FEE HOOK on a real local Uniswap v4 PoolManager.
 // Proves the things that burned us before, across different dev-buy + airdrop shapes:
@@ -49,7 +50,9 @@ async function launchPad(S, deployer, creator, tag, { supply, curveSupply, reser
     supply, curveSupply, reserveSupply, tickSpacing: TS, creator: creator.address,
   };
   const TokenF = await ethers.getContractFactory("PadToken");
-  const tokenSalt = ethers.id("tok-" + tag);
+  // [brand] the token address must end in `faf0` or the factory reverts BadTokenSuffix — mine the salt from
+  // the EXACT cfg being launched (per-tag base salt keeps two pads of the same shape on different addresses).
+  const tokenSalt = await brandedTokenSalt(await S.dep.getAddress(), await S.factory.getAddress(), cfg, ethers.id("tok-" + tag));
   const tokenInit = ethers.concat([
     TokenF.bytecode,
     abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await S.factory.getAddress()]),

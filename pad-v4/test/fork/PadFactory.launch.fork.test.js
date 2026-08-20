@@ -2,6 +2,7 @@ const { ethers } = require("hardhat");
 const abi = ethers.AbiCoder.defaultAbiCoder();
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode, HOOK_FLAGS, FLAG_MASK } = require("../../scripts/mine");
+const { brandedTokenSalt } = require("../helpers/brand");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Full one-tx ETH-pad launch against the LIVE V4 stack (PoolManager 0x8366 +
@@ -38,7 +39,11 @@ describe("PadFactory — full ETH-pad launch on live 0x8366", function () {
       buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000,
       creator: creator.address, floorRecipient: ethers.ZeroAddress, stakingRecipient: ethers.ZeroAddress,
     };
-    const tokenSalt = ethers.id("robin-blue-1");
+    // [brand] the token address must end in `faf0` or PadBrand.requireBrand reverts the launch — mine the
+    // salt exactly like production does, seeded with this pad's old fixed salt so the address stays unique.
+    const tokenSalt = await brandedTokenSalt(
+      await dep.getAddress(), await factory.getAddress(), cfg, ethers.id("robin-blue-1")
+    );
 
     // predict the token address (deployed by the factory via CREATE2) so we can build the hook init-code
     const TokenF = await ethers.getContractFactory("PadToken");

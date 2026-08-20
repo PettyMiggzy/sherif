@@ -8,6 +8,7 @@ const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { time, takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
+const { brandedTokenSalt } = require("../helpers/brand");
 
 const abi = ethers.AbiCoder.defaultAbiCoder();
 const E = (x) => ethers.parseEther(String(x));
@@ -69,7 +70,10 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
   }
 
   async function prepareSalts(tag, cfg) {
-    const tokenSalt = ethers.id("tok-" + tag);
+    // [brand] the pad token address must end in `faf0` or the factory reverts BadTokenSuffix — mine the salt
+    // from the EXACT cfg being launched. This path reaches the factory via PresaleVault.finalize, and the
+    // commitment below binds the mined salt, so presale finalization stays consistent.
+    const tokenSalt = await brandedTokenSalt(depAddr, factoryAddr, cfg, ethers.id("tok-" + tag));
     const curveSalt = ethers.id("curve-" + tag);
     const TokenF = await ethers.getContractFactory("PadToken");
     const tokenInit = ethers.concat([TokenF.bytecode,

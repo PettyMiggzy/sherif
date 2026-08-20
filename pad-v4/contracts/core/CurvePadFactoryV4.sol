@@ -21,6 +21,7 @@ import {PadToken} from "../pads/PadToken.sol";
 import {RobinFeeHook} from "../hooks/RobinFeeHook.sol";
 import {RobinCurveV4} from "../pads/RobinCurveV4.sol";
 import {IRobinFeeHookAdmin} from "../interfaces/IRobinInterfaces.sol";
+import {PadBrand} from "./PadBrand.sol";
 
 /// @title CurvePadFactoryV4 — free single-sided bonding-curve launch on Uniswap V4
 /// @notice One tx, NO ETH seed: deploy the token, mine+deploy the fee hook, initialize the pool at the curve
@@ -182,6 +183,12 @@ contract CurvePadFactoryV4 {
                 abi.encode(cfg.name, cfg.symbol, cfg.decimals, cfg.supply, address(this))
             )
         );
+
+        // [brand] every Robin pad token address ends in `faf0` — the caller mines `tokenSalt` for it
+        // (scripts/mine.js mineTokenSalt). Checked before ANY pool/curve state is written, so an unmined salt
+        // fails loudly and cannot half-create a pad. Covers the Arrow path too, since ArrowLauncher launches
+        // through this factory. See contracts/core/PadBrand.sol.
+        PadBrand.requireBrand(token);
 
         // [M-27] launch() is permissionless and NOTHING upstream is keyed on the whole PoolKey: the deterministic
         // deployer ADOPTS a byte-identical pre-deploy rather than reverting, the token init-code carries only

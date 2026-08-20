@@ -1,5 +1,6 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
+const { brandedTokenSalt } = require("../helpers/brand");
 
 // [M-2] + [I-1(19)] — negative regression tests for the two CurvePadFactoryV4 wiring guards the verify pass found
 // were code-correct but UNCOVERED (every existing test wires the SAME position manager + registers the SAME factory,
@@ -75,7 +76,12 @@ describe("[M-2 / I-1(19)] CurvePadFactoryV4 wiring guards — failing branches",
       supply: 10n ** 24n, curveSupply: 7n * 10n ** 23n, reserveSupply: 3n * 10n ** 23n,
       tickSpacing: TS, creator: creator.address,
     };
-    await expect(factory.launch(cfg, ethers.id("t"), ethers.id("h"), ethers.id("c")))
+    // [brand] mine a VALID branded tokenSalt so the only thing left to reject this launch is the M-2 guard —
+    // an unmined salt would revert BadTokenSuffix and the test would pass for the wrong reason.
+    const tokenSalt = await brandedTokenSalt(
+      await B.dep.getAddress(), await factory.getAddress(), cfg, ethers.id("t")
+    );
+    await expect(factory.launch(cfg, tokenSalt, ethers.id("h"), ethers.id("c")))
       .to.be.revertedWithCustomError(factory, "NotRegistrar");
   });
 
@@ -88,7 +94,11 @@ describe("[M-2 / I-1(19)] CurvePadFactoryV4 wiring guards — failing branches",
       supply: 10n ** 24n, curveSupply: 7n * 10n ** 23n, reserveSupply: 3n * 10n ** 23n,
       tickSpacing: TS, creator: creator.address,
     };
-    await expect(factory.launch(cfg, ethers.id("t"), ethers.id("h"), ethers.id("c")))
+    // [brand] valid mined salt — see the sibling test: the M-2 guard must be the ONLY reason this reverts.
+    const tokenSalt = await brandedTokenSalt(
+      await B.dep.getAddress(), await factory.getAddress(), cfg, ethers.id("t")
+    );
+    await expect(factory.launch(cfg, tokenSalt, ethers.id("h"), ethers.id("c")))
       .to.be.revertedWithCustomError(factory, "NotRegistrar");
   });
 
@@ -110,7 +120,11 @@ describe("[M-2 / I-1(19)] CurvePadFactoryV4 wiring guards — failing branches",
       supply: 200n * 10n ** 18n, curveSupply: 100n * 10n ** 18n, reserveSupply: 100n * 10n ** 18n,
       tickSpacing: 100, creator: creator.address,
     };
-    await expect(factory.launch(tiny, ethers.id("t"), ethers.id("h"), ethers.id("c")))
+    // [brand] valid mined salt so the revert can only be the L-1 raise floor, never BadTokenSuffix.
+    const tokenSalt = await brandedTokenSalt(
+      await B.dep.getAddress(), await factory.getAddress(), tiny, ethers.id("t")
+    );
+    await expect(factory.launch(tiny, tokenSalt, ethers.id("h"), ethers.id("c")))
       .to.be.revertedWithCustomError(factory, "BadGeometry");
   });
 });

@@ -9,6 +9,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
+const { brandedTokenSalt } = require("../helpers/brand");
 
 const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
@@ -154,13 +155,17 @@ describe("M-27 — a pad token can only be launched once per factory", () => {
     floorRecipient: platform.address, stakingRecipient: platform.address, ...over,
   });
 
-  async function mineSalts(cfg) {
+  // [brand] the token salt is MINED (PadBrand.requireBrand: every pad token address ends in `faf0`), and it
+  // must be mined FIRST — the hook init-code embeds the predicted token address, so the hook salt is only
+  // valid for the token address the mined salt produces.
+  async function mineSalts(cfg, baseSalt) {
     const depAddr = await dep.getAddress();
     const TokenF = await ethers.getContractFactory("PadToken");
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const init = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"],
       [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()])]);
-    const tokenAddr = ethers.getCreate2Address(depAddr, ethers.ZeroHash, ethers.keccak256(init));
+    const tokenSalt = await brandedTokenSalt(depAddr, await factory.getAddress(), cfg, baseSalt);
+    const tokenAddr = ethers.getCreate2Address(depAddr, tokenSalt, ethers.keccak256(init));
     const hookInit = ethers.concat([HookF.bytecode, abi.encode(["address", "address", "address", "address"],
       [await pm.getAddress(), await factory.getAddress(), await reg.getAddress(), tokenAddr])]);
     const hookHash = ethers.keccak256(hookInit);
@@ -170,7 +175,7 @@ describe("M-27 — a pad token can only be launched once per factory", () => {
       const a = ethers.getCreate2Address(depAddr, s, hookHash);
       if ((BigInt(a) & MASK) === FLAGS) { hookSalt = s; break; }
     }
-    return { tokenSalt: ethers.ZeroHash, hookSalt, tokenAddr };
+    return { tokenSalt, hookSalt, tokenAddr };
   }
 
   it("the same salts with a DIFFERENT fee can no longer open a second pool over the same token", async () => {
@@ -193,9 +198,11 @@ describe("M-27 — a pad token can only be launched once per factory", () => {
     // the guard is only airtight if poolOf is written at the earliest point poolId exists — otherwise a
     // re-entrant creator callback could slip a second launch past it inside the same transaction
     const cfg = cfgFor({ name: "Pad2", symbol: "PAD2" });
-    const { tokenSalt: ts2, hookSalt: hs2, tokenAddr } = await mineSalts(cfg);
-    // a fresh token salt so this is a genuinely new pad
-    const salt2 = ethers.id("m27-second");
+    const seed2 = ethers.id("m27-second");
+    const { tokenSalt: ts2, hookSalt: hs2, tokenAddr } = await mineSalts(cfg, seed2);
+    // a fresh token salt so this is a genuinely new pad — mined off `seed2` so it carries the `faf0` brand
+    // and still lands somewhere no other pad in this file occupies (memoized, so this costs one mine)
+    const salt2 = await brandedTokenSalt(await dep.getAddress(), await factory.getAddress(), cfg, seed2);
     const TokenF = await ethers.getContractFactory("PadToken");
     const init = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"],
       [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()])]);
