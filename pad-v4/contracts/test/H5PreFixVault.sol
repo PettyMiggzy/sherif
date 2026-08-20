@@ -44,7 +44,7 @@ import {IFeeWalletRegistry} from "../interfaces/IRobinInterfaces.sol";
 /// forwarded by `sweepTokenFees()` to the pad's `tokenSink` (its staking / buyback pool), wired once by the
 /// platform after the pool exists (mirrors `hook.setFloorRecipient` / `LockVault.setStakingRecipient`).
 /// This keeps the platform ETH-only — no pad-token supply ever lands on the treasury key.
-contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
+contract H5PreFixVault is IUnlockCallback, ReentrancyGuard {
     using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
     using SafeERC20 for IERC20;
@@ -103,20 +103,7 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     /// clock stays valid and every poke commits its slice once MIN_DWELL has elapsed.
     uint32 public constant MIN_DWELL = 10 minutes;
     uint16 public constant MAX_COMMIT_BPS = 2000; // ≤20% of the on-hand carve per commit
-    // [R3-H5] MUST stay STRICTLY GREATER THAN MAX_OBSERVED_GAP. That inequality — not the one against MIN_DWELL —
-    // is what bites: spacing commits beyond the observation gap forces the `nowTs > prevObserved + MAX_OBSERVED_GAP`
-    // branch to RE-ARM `belowSince` before every commit, so the stale clock the forced-fill rides cannot survive
-    // from one commit to the next. Measured on real contract code in
-    // test/regression/H5.floor-forced-fill.test.js: shipped 10m ⇒ attacker +8.7340 ETH / 17.85 of a 20 ETH carve
-    // consumed; 65m (this value) ⇒ attacker −0.2090 ETH, carve consumed 0.0000, floorLiquidity 0.
-    // The external auditor instead recommended COMMIT_COOLDOWN > MIN_DWELL; that is INERT (bit-identical
-    // +8.7340 ETH — the attacker is token-flat between commits, so waiting costs him nothing) and is NOT shipped.
-    // HONEST SCOPE: this closes the demonstrated once-per-cooldown loop and roughly doubles the paid round-trips
-    // a smarter two-poke attacker needs, but it does NOT close the sustained-hold variant — it only paces it.
-    // The real closure is still the floor redesign (TWAP-gated commit + a RETAINED live-spot-below-band check,
-    // or below-spot bands). See FLOOR-REDESIGN.md and AUDIT-ROUND-3-EXTERNAL-RESPONSE.md §1-2.
-    // Honest-path cost: a keeper deploys the parked carve one 20% slice per 65 min instead of per 10 min.
-    uint32 public constant COMMIT_COOLDOWN = 65 minutes;
+    uint32 public constant COMMIT_COOLDOWN = 10 minutes;
     // [re-audit/H-5] If nobody has poked for longer than this, the dwell clock is UNTRUSTED and restarts (see addFloor).
     // Must exceed the honest keeper cadence (~COMMIT_COOLDOWN) so routine operation never resets, but bounds how stale
     // `belowSince` can get during an un-poked dump.

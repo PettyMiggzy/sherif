@@ -119,6 +119,22 @@ deploy into the wall → collect the wall's fees. **The keeper can only move alr
 immutable destinations — it can never redirect or steal.** A compromised keeper key is a liveness risk, not
 a theft risk.
 
+> ### [R3-H5] REQUIRED keeper cadence — poke faster than `MAX_OBSERVED_GAP`
+> `COMMIT_COOLDOWN` is now **65 min**, deliberately **greater than `MAX_OBSERVED_GAP` (60 min)** — that is the
+> inequality that defeats the H-5 forced-fill (see `RobinFloorVault` `[R3-H5]` and
+> `test/regression/H5.floor-forced-fill.test.js`). It has a direct operational consequence:
+>
+> **A keeper that pokes `addFloor` only once per `COMMIT_COOLDOWN` will NEVER commit the carve.** Each poke would
+> land more than `MAX_OBSERVED_GAP` after the previous one, re-arming `belowSince` every time, so `MIN_DWELL` is
+> never satisfied. **Poke every ~5-10 minutes** (comfortably inside the gap); commits then land once per
+> cooldown, one `MAX_COMMIT_BPS` (20%) slice at a time — so a parked carve deploys over ~12h, not ~2h. That is
+> the intended trade.
+>
+> Treat the floor poke as a **security control, not revenue plumbing**: a poke while the pad is dumped
+> (`tick >= floorTickLower`) zeroes `belowSince` and denies an attacker the stale clock outright. Alert if
+> `belowSince` ages. NOTE it is *not* a complete defence on its own — against a sustained-hold attacker the tick
+> stays below the band, so pokes confirm the dwell instead of resetting it.
+
 ## Money model (per pad)
 | | BUY (quote→token) | SELL (token→quote) |
 |---|---|---|

@@ -70,11 +70,17 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
     // fund the vault with the native carve
     await owner.sendTransaction({ to: await vault.getAddress(), value: ethers.parseEther("5") });
     // [H-5] the first poke only records that the tick is below the band; a commit needs MIN_DWELL of settled
-    // time and moves at most MAX_COMMIT_BPS per COMMIT_COOLDOWN, so drain it over several pokes
+    // time and moves at most MAX_COMMIT_BPS per COMMIT_COOLDOWN, so drain it over several pokes.
+    // [R3-H5] Since COMMIT_COOLDOWN (65m) > MAX_OBSERVED_GAP (60m), the honest keeper MUST poke *within* the
+    // observation gap — poking only once per cooldown re-arms `belowSince` every time and therefore NEVER
+    // commits. This models the required cadence: a poke every MIN_DWELL, with commits landing once per cooldown.
     await vault.addFloor();
     expect(await vault.floorLiquidity()).to.equal(0n); // nothing commits on a just-observed tick
-    for (let i = 0; i < 12; i++) {
-      await time.increase(Number(await vault.COMMIT_COOLDOWN()) + 1);
+    // Each commit takes one COMMIT_COOLDOWN (65m) and moves 20%, so draining to <0.5 of a 5 ETH carve needs
+    // ~11 commits (0.8^11 ≈ 0.086) ⇒ ~12h of keeper pokes at the MIN_DWELL cadence.
+    const dwell = Number(await vault.MIN_DWELL()) + 1;
+    for (let i = 0; i < 90; i++) {
+      await time.increase(dwell);
       await vault.addFloor();
     }
 

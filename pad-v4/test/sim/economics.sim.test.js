@@ -131,9 +131,13 @@ describe("SIM — the floor only ever grows and absorbs dumps", () => {
     let last = 0n;
     // [H-5] a commit needs the tick settled below the band for MIN_DWELL and is rate-limited per
     // COMMIT_COOLDOWN, so advance time between pokes. Monotonicity is the property under test either way.
+    // [R3-H5] COMMIT_COOLDOWN (65m) now EXCEEDS MAX_OBSERVED_GAP (60m), so pokes must land INSIDE the gap or
+    // `belowSince` re-arms every time and nothing ever commits. Poke at the MIN_DWELL cadence (the required
+    // keeper behaviour, see DEPLOY.md §3) and let the cooldown pace the commits.
+    const dwell = Number(await vault.MIN_DWELL()) + 1;
     for (let i = 0; i < 8; i++) {
       await owner.sendTransaction({ to: vaultAddr, value: ethers.parseEther("2") });
-      await time.increase(Number(await vault.COMMIT_COOLDOWN()) + 1);
+      for (let p = 0; p < 8; p++) { await time.increase(dwell); await vault.addFloor(); }
       await vault.addFloor();
       const L = await vault.floorLiquidity();
       expect(L).to.be.gte(last, "floor liquidity must never decrease"); // monotonic
