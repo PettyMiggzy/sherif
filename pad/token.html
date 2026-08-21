@@ -1369,11 +1369,17 @@ async function loadHolders(){
 }
 
 // refresh the live feed periodically
-setInterval(() => { if (COIN) loadTrades(); }, 12000);
-setInterval(() => { if (COIN) loadHolders(); }, 30000);
+// [rpc] Only poll while the tab is actually visible; refresh once on return (listener below).
+setInterval(() => { if (document.hidden) return; if (COIN) loadTrades(); }, 12000);
+setInterval(() => { if (document.hidden) return; if (COIN) loadHolders(); }, 30000);
 // Keep MC / price / stage live as OTHER people trade - one cheap indexer query every 12s
 // (the snapshot is refreshed on every trade, so this tracks the market without a chain read).
-setInterval(async () => { if (!COIN || DEMO) return; const c = await Pad.coin(TOKEN).catch(() => null); if (c) paintStats(viewFromApi(c)); }, 12000);
+setInterval(async () => { if (document.hidden || !COIN || DEMO) return; const c = await Pad.coin(TOKEN).catch(() => null); if (c) paintStats(viewFromApi(c)); }, 12000);
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden || !COIN || DEMO) return;
+  loadTrades(); loadHolders();
+  const c = await Pad.coin(TOKEN).catch(() => null); if (c) paintStats(viewFromApi(c));
+});
 
 // Reshape the indexer's coin snapshot into the same shape curveInfo() returns, so the
 // stats row and the bond panel render from it when the live RPC read fails.

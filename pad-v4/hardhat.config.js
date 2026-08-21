@@ -20,7 +20,16 @@ module.exports = {
     // REAL v4 PoolManager 0x8366. Never commit the key: FORK_RPC=<url> npx hardhat test test/fork/*.js
     hardhat: process.env.FORK_RPC
       ? {
-          forking: { url: process.env.FORK_RPC },
+          forking: {
+            url: process.env.FORK_RPC,
+            // FORK_BLOCK pins the fork so hardhat caches state on disk per (url, blockNumber) instead of
+            // re-fetching everything from the RPC on every run. It is OFF by default because the public
+            // Robinhood node is NOT an archive node: measured retention is under 10,000 blocks (~100s at the
+            // chain's ~100ms block time), so any pinned constant goes stale within minutes and every run then
+            // fails with `metadata is not found`. Set FORK_BLOCK only when pointing FORK_RPC at an archive
+            // node — then repeat runs cost ~no network at all.
+            ...(process.env.FORK_BLOCK ? { blockNumber: Number(process.env.FORK_BLOCK) } : {}),
+          },
           chainId: Number(process.env.FORK_CHAINID || 4663),
           hardfork: "cancun",
           // EDR needs the hardfork for historical blocks on these non-standard chains; both Robinhood

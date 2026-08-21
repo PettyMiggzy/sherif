@@ -833,8 +833,12 @@ async function refreshTrending() {
   const r = await boardQuery({ sort:'trending', filter:'all', q:'', offset:0, limit:14 });
   renderTicker(r.coins);
 }
-setInterval(refreshTrending, 20000);
-refreshActivity(); setInterval(refreshActivity, 12000); // live buys stream across the ticker
+setInterval(() => { if (!document.hidden) refreshTrending(); }, 20000);
+refreshActivity();
+// [rpc] Pause the live feeds while the tab is backgrounded, refresh once when it comes back. A tab left
+// open in another window used to poll indefinitely; on screen the behaviour is unchanged.
+setInterval(() => { if (!document.hidden) refreshActivity(); }, 12000); // live buys stream across the ticker
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { refreshActivity(); refreshTrending(); } });
 
 loadStats(); initHero();
 </script>

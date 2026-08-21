@@ -15,7 +15,19 @@ module.exports = {
     // run against the REAL Uniswap v3 factory + WETH (not the mock). Never commit the key —
     // pass it via env: `FORK_RPC=<alchemy url> npx hardhat test test/fork/*.js`.
     hardhat: process.env.FORK_RPC
-      ? { forking: { url: process.env.FORK_RPC }, chainId: 4663 }
+      ? {
+          forking: {
+            url: process.env.FORK_RPC,
+            // FORK_BLOCK pins the fork so hardhat caches state on disk per (url, blockNumber) instead of
+            // re-fetching everything from the RPC on every run. It is OFF by default because the public
+            // Robinhood node is NOT an archive node: measured retention is under 10,000 blocks (~100s at the
+            // chain's ~100ms block time), so any pinned constant goes stale within minutes and every run then
+            // fails with `metadata is not found`. Set FORK_BLOCK only when pointing FORK_RPC at an archive
+            // node — then repeat runs cost ~no network at all.
+            ...(process.env.FORK_BLOCK ? { blockNumber: Number(process.env.FORK_BLOCK) } : {}),
+          },
+          chainId: 4663,
+        }
       : {},
     // Robinhood Chain (fill RPC + PRIVATE_KEY via env before deploying)
     robinhood: {

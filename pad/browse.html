@@ -1057,7 +1057,7 @@ async function refreshActivity() {
   if (document.hidden || DEMO) return;
   try { const a = await Pad.activity(30); if (a && a.length) { TK_BUYS = a; buildTicker(); } } catch {}
 }
-setInterval(refreshActivity, 12000); refreshActivity();
+setInterval(() => { if (!document.hidden) refreshActivity(); }, 12000); refreshActivity();
 
 async function initBoard() {
   buildTabs();
@@ -1097,7 +1097,10 @@ async function refreshTrending() {
   renderTicker(blendExternal(r.coins));
   if (curSort === 'trending' && !curQ && !busy && window.scrollY < 240) resetBoard({ soft:true });
 }
-setInterval(refreshTrending, 20000);
+setInterval(() => { if (!document.hidden) refreshTrending(); }, 20000);
+// [rpc] A hidden tab polled forever. These feeds only matter to someone looking at them, so pause while
+// backgrounded and refresh once on return — same liveness on screen, far fewer calls off it.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { refreshActivity(); refreshTrending(); } });
 let _qt; $('fq').addEventListener('input', () => {
   const v = ($('fq').value || '').trim();
   // Paste a full contract address → jump straight to that coin's page (works even for a coin the
