@@ -91,7 +91,7 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     /// restarts the dwell clock after any long un-poked gap so a stale `belowSince` cannot be replayed. Together these
     /// close the atomic WHOLE-CARVE force-fill and any replay off a belowSince stale by more than MAX_OBSERVED_GAP.
     ///
-    /// [R3-H5 CLOSED] The residual these constants could not close — a bounded slice force-committed off a
+    /// [R3-H5 OPEN — see AUDIT-ROUND-3-EXTERNAL-ADDENDUM-2.md] The residual these constants could not close — a bounded slice force-committed off a
     /// stale `belowSince`, and its worse sustained-hold variant (measured +9.47 ETH, 83% of the carve drained,
     /// with NO keeper) — is closed by the SWAP-WITNESSED GATE, not by any of these values. See
     /// FLOOR-H5-CLOSURE-SPEC.md. The constants below are RETAINED UNCHANGED as subordinate AND-terms: they cost

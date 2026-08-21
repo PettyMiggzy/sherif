@@ -1,10 +1,16 @@
 # Floor redesign — closing H-5 / M-15 / L-33 structurally
 
-**Status: SUPERSEDED — H-5 is CLOSED (see the RESOLVED section below and `FLOOR-H5-CLOSURE-SPEC.md`).**
-This file is retained as the reasoning trail: five designs were proposed and refuted on this surface (M-7's
-mid-curve build, M-15's naive live-`slot0` gate, H-5's dwell, the "place below spot" redesign below, and the
-external auditor's blessed TWAP-gated commit). None of them is what closed it. **Do not implement anything in
-this document.**
+**Status: H-5 IS STILL OPEN.** This file is the reasoning trail for SIX designs proposed and refuted on this one
+surface: M-7's mid-curve build, M-15's naive live-`slot0` gate, H-5's dwell, the "place below spot" redesign
+below, the external auditor's blessed TWAP-gated commit, and now the swap-witnessed gate that was briefly
+believed to close it. **Do not implement anything in this document.**
+
+The recurring reason they fail is worth stating once: an honest keeper commits when the price has genuinely been
+below the band, and an attacker reproduces that by *holding* the price there — which costs him nothing per unit
+of time. On-chain the two are the same observation. No gate built on *duration* can separate them, which is why
+the sixth design fell the same way as the first five. Closing this needs a different discriminator (deploy only
+fees that arrived during the episode; or add liquidity atomically inside the sell that funds it), or the floor's
+guarantee needs descoping. See `AUDIT-ROUND-3-EXTERNAL-ADDENDUM-2.md`.
 
 ## The three findings, restated
 
@@ -59,21 +65,24 @@ exploitable, because the freshly-placed single-sided ETH is converted at that ma
 The lesson: the commit/placement price must come from a source the attacker CANNOT move within a transaction —
 i.e. a manipulation-resistant TWAP, not live `slot0`. There is no spot-based scheme (gate OR placement) that is safe.
 
-## ✅ RESOLVED — H-5 is closed by a swap-witnessed gate, NOT by any of the five designs below
+## ⛔ NOT RESOLVED — the swap-witnessed gate is the SIXTH refuted design (see ADDENDUM-2)
 
-**Implemented and measured** (`FLOOR-H5-CLOSURE-SPEC.md`, `test/regression/H5.floor-forced-fill.test.js` 5-6).
-Same pad, same 1% hook tax, same 12-hour sustained-hold attack — the only difference is the gate:
+**The table below is REAL but was read wrongly.** It was measured at `episodeBaseWei = 0`, i.e. with the commit
+allowance pinned at zero — a floor that can never deploy anything. The gate was not what stopped the attacker.
+At an allowance large enough for the floor to function, the same armed gate is drained for **+8.34 ETH (74%)**
+(H5 case 7). Duration is free for an attacker, so a gate that proves duration cannot separate him from an honest
+crash. Kept for the record:
 
 | | attacker PnL | commits | carve drained |
 |---|---|---|---|
 | pre-gate vault | **+9.4754 ETH** | 8 | 16.64 / 20 (83%) |
 | **armed gate** | **-1.1106 ETH** | **0** | **0.00 / 20** |
 
-The mechanism is not a price *estimate* of any kind. `RobinFeeHook` stamps a timestamp on every swap whose
-PRE-swap tick sits at or above the band, so `now >= aboveLowerTs + MIN_BELOW_DURATION` is an EXACT proof that the
-price was never above the band for that whole span — and the attacker's own push is a swap whose pre-swap tick is
-above the band, so he shuts the gate in the transaction that opens the attack. The honest path is untouched:
-after a genuine 196-minute recovery the keeper still commits (case 6).
+The watermark itself is sound and worth keeping: `RobinFeeHook` stamps every swap whose PRE-swap tick sits at or
+above the band, so `now >= aboveLowerTs + MIN_BELOW_DURATION` really is an exact proof that the price was never
+above the band for that span. The error was believing that proof is worth anything. It establishes only that the
+price *was* below the band — never *why* — and an attacker who simply holds it there satisfies it for the price
+of one round trip. Measured: the first attacker commit lands at minute 210 at every nonzero allowance.
 
 ## ⚠️ The TWAP-gated commit below was ALSO refuted; see `FLOOR-H5-CLOSURE-SPEC.md`
 

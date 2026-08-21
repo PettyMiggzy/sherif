@@ -168,12 +168,12 @@ describe("[R3 H-5] floor forced-fill: the attack, and which one-constant fix act
     await snap.restore();
   });
 
-  it("5. [R3-H5 CLOSURE] the ARMED swap-witnessed gate defeats the sustained hold — nothing commits", async () => {
+  it("5. [R3-EXT-2 CORRECTED] armed gate + a ZERO allowance blocks the hold — but that is P2, NOT P1", async () => {
     const snap = await takeSnapshot();
-    // The REAL vault with the hook gate armed. The attacker's own push is a swap whose PRE-swap tick is at/above
-    // the band, so the hook stamps `aboveLowerTs` in the very transaction that starts the attack — and every
-    // subsequent poke is inside MIN_BELOW_DURATION of that stamp. He cannot buy his way past it: holding longer
-    // only means holding, and any excursion re-stamps it.
+    // [R3-EXT-2] READ WITH CASE 7. This case runs at the lab's DEFAULT episodeBaseWei of 0n, so P2's allowance
+    // is zero and nothing can commit for anyone. It does NOT prove P1 closes the attack — case 7 shows the same
+    // armed gate is drained for +8.34 ETH once the base is raised enough for the floor to actually function.
+    // Retained because a zero allowance IS the only safe setting measured so far, and this pins that fact.
     // CONTROL FIRST — identical pad, identical 1% hook tax, but the PRE-GATE vault (shipped constant fix only).
     // This isolates the gate as the cause: the difference below cannot be attributed to the tax or to the hook.
     const C = await buildLab({ ...LAB, hookTaxBps: 100, vaultContract: "H5GapCooldownVault" });
@@ -190,6 +190,28 @@ describe("[R3 H-5] floor forced-fill: the attack, and which one-constant fix act
     expect(R.floorL).to.equal(0n); // nothing was force-committed
     expect(R.pnl).to.be.lt(0n); // and he paid fees for the privilege
     await snap.restore();
+  });
+
+  it("7. [R3-EXT-2] THE BASE BIND — no single EPISODE_BASE_WEI is both safe and functional", async () => {
+    // The external auditor's addendum-2 finding, reproduced. Case 5's "0 commits" is NOT P1 working: the lab
+    // defaults episodeBaseWei to 0n, which pins P2's allowance at zero — a floor that can never deploy anything.
+    // P1 only proves 195 minutes of continuous below-band price, and by the design's own T1 (holding is free per
+    // unit time) that is exactly what a sustained hold buys for one round-trip fee. On-chain a held price and a
+    // genuine crash are indistinguishable, so the gate opens at t0+195m for BOTH — note firstCommit is identical
+    // at every nonzero base below. The ONLY real bound is P2, and it binds against liveness:
+    //   safe values strand the carve; functional values revive the full attack. ~5 orders of magnitude apart.
+    const rows = [];
+    for (const base of [0n, E(1), E(20)]) {
+      const snap = await takeSnapshot();
+      const L = await buildLab({ ...LAB, hookTaxBps: 100, episodeBaseWei: base });
+      const R = await runSustainedHold(L, { pokeSec: 1800, pokes: 24, taxBps: 100 });
+      rows.push({ base, ...R });
+      console.log(`   base ${f(base).padStart(8)} ETH -> attacker ${f(R.pnl).padStart(9)} ETH, ${R.commits} commits, consumed ${f(R.consumed)}/20`);
+      await snap.restore();
+    }
+    expect(rows[0].commits).to.equal(0); // base 0: safe, but the allowance is zero — nothing ever deploys
+    expect(rows[2].pnl).to.be.gt(0n); // base ~= carve: the armed gate is drained anyway. P1 did NOT close it.
+    expect(rows[2].consumed).to.be.gt(rows[0].consumed); // strictly worse as the base is raised for liveness
   });
 
   it("6. [R3-H5 CLOSURE] the HONEST path still deploys the carve once the price genuinely settles below", async () => {

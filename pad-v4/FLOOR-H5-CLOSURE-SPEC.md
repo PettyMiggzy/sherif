@@ -1,6 +1,13 @@
-# H-5 closure — design specification (P1/P2/P3 NOW IMPLEMENTED)
+# H-5 — design specification (P1/P2/P3 IMPLEMENTED; **H-5 IS STILL OPEN**)
 
-> **STATUS: IMPLEMENTED AND MEASURED.** P1 (the swap-witnessed gate), P2 (episode allowance, with the [R3 N-B]
+> ## ⛔ SUPERSEDED BY `AUDIT-ROUND-3-EXTERNAL-ADDENDUM-2.md` — THIS DESIGN DOES NOT CLOSE H-5.
+> Independently confirmed by re-measurement: P1 proves *duration below the band*, and duration is free for an
+> attacker (T1), so the gate opens identically for a held price and a real crash. The A/B that appeared to show
+> closure was run at `episodeBaseWei = 0` — a floor that cannot deploy anything. Raise the base enough for the
+> floor to function and the armed gate is drained for **+8.34 ETH (74% of the carve)**. See H5 case 7.
+> The runbook now ships `0`, which is safe but only deploys ETH arriving *during* a below-band episode.
+>
+> **STATUS (superseded): implemented and measured.** P1 (the swap-witnessed gate), P2 (episode allowance, with the [R3 N-B]
 > correction) and P3 (retained live-spot precondition) are on the branch. **P4 (the TWAP conjunct) is DEFERRED** —
 > by this spec's own §0 table it "kills nothing new — it is provably implied by P1", yet it needs a 128-slot
 > oracle ring, a new `FeeHookDeployer`, and ctor changes to all three factories. On a surface that has refuted

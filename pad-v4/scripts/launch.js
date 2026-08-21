@@ -92,14 +92,16 @@ async function main() {
     // [R3-H5 P2] episodeBaseWei — the per-episode base allowance, taken from the LAUNCH CONFIG and never from a
     // chain read (a live-liquidity read is inflatable by a JIT straddle across the non-atomic launch->deploy gap).
     //
-    // LIVENESS-FIRST PENDING AUDITOR RATIFICATION. The spec's 1bp-of-seed sizing was MEASURED to starve the
-    // honest path: the allowance counts only ETH that arrives AFTER the episode opens, so at 1bp a carve that
-    // accrued BEFORE a dump becomes effectively undeployable for the life of that episode — the floor stops
-    // being a floor precisely when it is needed. P1 (the swap-witnessed gate) is what actually closes H-5, and
-    // it closes it on its own (measured: 0 commits, carve untouched, attacker -1.11 ETH). P2 is the secondary
-    // bound on an attacker who genuinely sustains MIN_BELOW_DURATION of held price, and its tightness is an
-    // economic tradeoff the external auditor should set. Shipping generous-but-bounded until then.
-    seedEth,
+    // [R3-EXT-2] SHIPS AT 0 — THE ONLY VALUE THAT IS NOT A LIVE DRAIN. The previous value here (seedEth) was
+    // wrong and is withdrawn. P1 does NOT close H-5 on its own: it proves 195 minutes of continuous below-band
+    // price, which by T1 (holding is free per unit time) a sustained hold buys for one round-trip fee, so the
+    // gate opens identically for a held price and a genuine crash (measured: first commit at minute 210 at EVERY
+    // nonzero base). P2's allowance is therefore the only real bound, and it binds against liveness — at
+    // base ~= the carve the armed gate is drained for +8.34 ETH (74%), at base 0 the attacker gets nothing.
+    // 0 is safe. It is NOT fully functional: only ETH arriving DURING a below-band episode deploys, so carve
+    // banked during a crash stays parked. That is a product limitation to disclose, not a closure — see
+    // AUDIT-ROUND-3-EXTERNAL-ADDENDUM-2.md. Do not raise this without re-running H5 case 7.
+    0n,
     { type: 0 }
   );
   await floor.waitForDeployment();
