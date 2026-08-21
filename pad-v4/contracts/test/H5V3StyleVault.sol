@@ -79,6 +79,16 @@ contract H5V3StyleVault is IUnlockCallback, ReentrancyGuard {
     // v3 Bond parity: refuse to act while spot is shoved away from the mean (Bond._requireUnmanipulated).
     int24 public constant MAX_DEV = 300; // ~3%, the shipped v3 value
 
+    // [MARGIN] How far BELOW the anchor price the wall is placed, in ticks (higher tick = lower price).
+    // This is the parameter no previous design had. Every one of them tried to decide WHETHER the price was
+    // honest — unanswerable, because a sustained hold is indistinguishable from a real move. This instead makes
+    // a successful manipulation WORTHLESS: to sell into the wall above true value, the attacker must first walk
+    // the price up by more than the margin, and that walk costs real market impact he has to unwind. The cost
+    // is priced in capital, not in time, so "holding is free" no longer buys anything.
+    int24 public marginTicks;
+
+    function setMargin(int24 m) external { marginTicks = m; }
+
     // Stand-in for the hook TWAP. Injected here so this variant measures the ECONOMICS of conservative
     // anchoring on its own; production would read a real oracle. Uniswap v3 gives pool.observe() for free and
     // v4 does not, so the real port needs an oracle in RobinFeeHook.
@@ -278,7 +288,7 @@ contract H5V3StyleVault is IUnlockCallback, ReentrancyGuard {
         //    fake a recovery and `max` falls back to the honest mean, so the wall does not follow. Push spot up
         //    and the wall is placed even cheaper, which is worse for the pusher. No profitable direction, and
         //    crucially NO DURATION TEST — nothing here asks how long the price has been anywhere.
-        int24 anchor = spot > mean ? spot : mean;
+        int24 anchor = (spot > mean ? spot : mean) + marginTicks; // conservative side, then pushed DEEPER
         int24 lo = _alignUp(anchor + 1, tickSpacing);
         int24 hi = lo + int24(int256(uint256(widthSpacings))) * tickSpacing;
         if (hi <= lo || lo < TickMath.minUsableTick(tickSpacing) || hi > TickMath.maxUsableTick(tickSpacing)) {

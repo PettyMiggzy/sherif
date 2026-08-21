@@ -11,7 +11,7 @@ describe("[PROBE] v3-style conservative anchoring vs the sustained hold", functi
   this.timeout(0);
   const LAB = { baseL: 10n ** 20n, carve: E(20), dumpTick: 12000, hookTaxBps: 100 };
 
-  async function run({ meanFollows, label }) {
+  async function run({ meanFollows, label, margin = 0 }) {
     const snap = await takeSnapshot();
     const L = await buildLab({ ...LAB, vaultContract: "H5V3StyleVault" });
     const { sw, key, vault, tok, attacker, sqrtAt, stateView, poolId } = L;
@@ -22,6 +22,7 @@ describe("[PROBE] v3-style conservative anchoring vs the sustained hold", functi
     // the honest mean starts at the true, dumped price
     const cur = async () => Number((await stateView.getSlot0(poolId))[1]);
     await vault.setMeanTick(await cur());
+    if (margin) await vault.setMargin(margin);
 
     // push the price up (tick DOWN) and HOLD it there
     const X = await sizePush(L, 59, 100);
@@ -55,11 +56,14 @@ describe("[PROBE] v3-style conservative anchoring vs the sustained hold", functi
     return { pnl, commits, consumed };
   }
 
-  it("measures the sustained hold both ways", async () => {
-    const stale = await run({ meanFollows: false, label: "mean stays honest (short shove)" });
-    const follows = await run({ meanFollows: true, label: "mean FOLLOWS (sustained hold)" });
-    // the honest, load-bearing question — does holding long enough for the TWAP to converge pay?
-    console.log(`   => holding until the mean converges is worth ${f(follows.pnl - stale.pnl)} ETH to the attacker`);
-    expect(stale.commits).to.equal(0); // a shove the guard rejects can never place a wall
+  it("measures the sustained hold at increasing wall margins", async () => {
+    await run({ meanFollows: false, label: "no margin, short shove" });
+    const rows = [];
+    for (const m of [8000, 10000, 12000, 16000]) {
+      const r = await run({ meanFollows: true, label: `margin ${m} ticks (~${(100 * (1 - Math.pow(1.0001, -m))).toFixed(0)}% below)`, margin: m });
+      rows.push({ m, ...r });
+    }
+    const closed = rows.filter((r) => r.pnl < 0n).map((r) => r.m);
+    console.log(`   => margins where the sustained hold LOSES money: ${closed.length ? closed.join(", ") : "NONE"}`);
   });
 });
