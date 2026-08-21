@@ -24,7 +24,8 @@
 //   the original 30s × (1 + 2/coin) sequential loop.
 //
 // Env:
-//   RPC_URL             (default https://api.robinlab.io/rpc)
+//   RPC_URL             (default https://rpc.mainnet.chain.robinhood.com — the chain node, NOT the shared
+//                        api.robinlab.io proxy, which rate-limits and returns 400 `upstream 429`)
 //   API_BASE            (default https://api.robinlab.io)  — coin list source
 //   KEEPER_PK           the keeper's private key (omit ⇒ forced --dry-run, read-only)
 //   POLL_SECS           (default 60)
@@ -39,7 +40,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const { ethers } = require("ethers");
 
-const RPC = process.env.RPC_URL || "https://api.robinlab.io/rpc";
+// Default to the CHAIN's own RPC, not our api.robinlab.io proxy: the proxy fronts this same node, is shared
+// with the website/indexer, and was returning HTTP 400 `{"error":"upstream 429"}` for every call — which had
+// silently killed this keeper (no graduations were firing). Pointing straight at the chain also removes this
+// daemon's load from the proxy entirely. Override with RPC_URL if the chain endpoint ever needs bypassing.
+const RPC = process.env.RPC_URL || "https://rpc.mainnet.chain.robinhood.com";
 const API = process.env.API_BASE || "https://api.robinlab.io";
 const POLL = Math.max(5, Number(process.env.POLL_SECS || 60)) * 1000;
 const COINS_REFRESH = Math.max(60, Number(process.env.COINS_REFRESH_SECS || 600)) * 1000;
@@ -99,6 +104,13 @@ async function sweepReady(live) {
   } catch (e) {
     const m = e.shortMessage || e.message || "";
     if (batchOn && BATCH_REJECTED.test(m)) {
+      // A 400 does NOT prove batching is the problem: a rate-limited or unhealthy endpoint returns 400 too (ours
+      // served HTTP 400 `{"error":"upstream 429"}` for EVERY call), and sequential mode cannot fix that — it just
+      // multiplies the requests. Probe with ONE plain call first; only a working single call proves the array
+      // payload was at fault. ethers sends a lone queued request as an object, not a 1-element array.
+      let singleOk = true;
+      try { await curveOf(live[0].curve).ready(); } catch { singleOk = false; }
+      if (!singleOk) throw e; // endpoint is unhealthy → fall through to backoff, keep batching for later
       batchOn = false;
       provider = makeProvider(1);
       contracts.clear(); // old instances hold the previous provider
