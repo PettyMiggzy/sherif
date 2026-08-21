@@ -30,7 +30,7 @@ const suite = process.env.FORK_RPC ? describe : describe.skip;
 suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", function () {
   this.timeout(600000);
 
-  async function build({ withBond, depthX = 1n }) {
+  async function build({ withBond, depthX = 1n, keep, moat, deep }) {
     const [dep, platform, curveSigner, attacker] = await ethers.getSigners();
     const SUPPLY = 1_000_000_000n * ONE;
     const TOK = await (await ethers.getContractFactory("CurveToken")).deploy("Bonded", "BOND", SUPPLY, dep.address);
@@ -44,9 +44,9 @@ suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", functi
 
     const wethW = await ethers.getContractAt(
       ["function deposit() payable", "function transfer(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"], WETH);
-    const bond = await (await ethers.getContractFactory("Bond")).deploy(tokAddr, WETH, FACTORY, platform.address, curveSigner.address);
+    const bond = await (await ethers.getContractFactory(deep ? "BondDeep" : "Bond")).deploy(tokAddr, WETH, FACTORY, platform.address, curveSigner.address);
     const bondAddr = await bond.getAddress();
-    const keepWeth = (ONE / 2n) * depthX, moatWeth = ONE / 2n; // Sherwood scales; the Bounty wall does not
+    const keepWeth = keep ?? (ONE / 2n) * depthX, moatWeth = moat ?? ONE / 2n;
     const keepTokens = 25_000_000n * ONE * depthX, rampTokens = 250_000_000n * ONE;
     await (await wethW.connect(dep).deposit({ value: keepWeth + moatWeth })).wait();
     await (await wethW.connect(dep).transfer(bondAddr, keepWeth + moatWeth)).wait();
@@ -94,6 +94,61 @@ suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", functi
   // nearly free, and once the mean converges the guard passes and the walls re-place at the HELD price. This is
   // the exact variant that beats the v4 conservative-anchoring port (+10.65 ETH there), so it must be tried
   // against the live design before anyone trusts either.
+  // The REAL graduation shape: CurvePool.SHERWOOD_WETH_BPS = 6000, so 60% of the raise goes to the full-range
+  // Sherwood and 40% into the Bounty wall. Calibration puts a graduating raise at ~4.09 ETH.
+  // THE FIX, measured. Same real graduation shape, same 20s hold — sweeping how DEEP the Bounty wall starts.
+  // The wall keeps its 6600-tick width; only where it begins moves. Shipped v3 starts it at 200 (~at spot).
+  it("FIX SWEEP: how deep must the Bounty wall start before the hold stops paying?", async () => {
+    const raise = 4090000000000000000n;
+    const keep = (raise * 6000n) / 10000n, moat = raise - (raise * 6000n) / 10000n;
+    for (const near of [200, 3000, 6000, 9000, 12000, 16000]) {
+      const out = {};
+      for (const poke of [true, false]) {
+        const L = await build({ withBond: true, keep, moat, deep: true });
+        const { TOK, tokAddr, wethW, bond, swap, warp, attacker } = L;
+        await bond.setBountyBand(near, near + 6600);
+        await warp(1000);
+        const w0 = await wethW.balanceOf(attacker.address);
+        const t0 = await TOK.balanceOf(attacker.address);
+        await swap(attacker, WETH, ONE / 2n);
+        const bought = (await TOK.balanceOf(attacker.address)) - t0;
+        await warp(20);
+        if (poke) { try { await (await bond.poke()).wait(); } catch (e) { /* refused */ } }
+        await swap(attacker, tokAddr, bought);
+        expect((await TOK.balanceOf(attacker.address)) - t0).to.equal(0n);
+        out[poke ? "poked" : "clean"] = (await wethW.balanceOf(attacker.address)) - w0;
+      }
+      const edge = out.poked - out.clean;
+      const depthPct = (100 * (1 - Math.pow(1.0001, -near))).toFixed(0);
+      console.log(`   wall starts ${String(near).padStart(5)} ticks (~${String(depthPct).padStart(2)}% below) | attacker ${f(out.poked).padStart(9)} | EDGE ${f(edge).padStart(9)} ${edge > 0n ? "  <-- still pays" : ""}`);
+    }
+  });
+
+  it("REAL graduation parameters (60/40 split of a 4.09 ETH raise)", async () => {
+    const raise = 4090000000000000000n;
+    const keep = (raise * 6000n) / 10000n, moat = raise - (raise * 6000n) / 10000n;
+    for (const [holdSec, shove] of [[20, ONE / 2n], [20, 2n * ONE], [60, 2n * ONE]]) {
+      const out = {};
+      for (const poke of [true, false]) {
+        const L = await build({ withBond: true, keep, moat });
+        const { TOK, tokAddr, wethW, bond, swap, warp, attacker } = L;
+        await warp(1000);
+        const w0 = await wethW.balanceOf(attacker.address);
+        const t0 = await TOK.balanceOf(attacker.address);
+        await swap(attacker, WETH, shove);
+        const bought = (await TOK.balanceOf(attacker.address)) - t0;
+        await warp(holdSec);
+        if (poke) { try { await (await bond.poke()).wait(); } catch (e) { /* refused */ } }
+        await swap(attacker, tokAddr, bought);
+        expect((await TOK.balanceOf(attacker.address)) - t0).to.equal(0n);
+        out[poke ? "poked" : "clean"] = (await wethW.balanceOf(attacker.address)) - w0;
+      }
+      const edge = out.poked - out.clean;
+      const pct = Number((edge * 10000n) / moat) / 100;
+      console.log(`   hold ${String(holdSec).padStart(3)}s shove ${f(shove, 2)} | poked ${f(out.poked).padStart(9)} | clean ${f(out.clean).padStart(9)} | EDGE ${f(edge).padStart(9)} = ${pct.toFixed(1)}% of the ${f(moat, 2)} ETH wall`);
+    }
+  });
+
   it("SUSTAINED HOLD: shove, wait for the 15s TWAP to converge, poke, release — WITH CONTROLS", async () => {
     // Each configuration is run TWICE — identical trades, the only difference being whether the Bond is poked
     // while the price is held. The DIFFERENCE is what manipulating the Bond was actually worth. Without this
