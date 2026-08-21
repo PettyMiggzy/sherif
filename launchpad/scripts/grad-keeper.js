@@ -201,27 +201,49 @@ async function tick(provider, wallet) {
   if (DRY) console.log(ts(), `swept ${live.length} coins, ${readyCount} ready (dry-run — no tx sent)`);
 }
 
+// Detect the network, retrying forever. A daemon must NEVER exit because the RPC was briefly unreachable:
+// doing so hands systemd a crash-loop (Restart=always) that spins every RestartSec and can trip its start
+// limit, leaving the keeper permanently dead exactly when the chain comes back.
+async function connect() {
+  for (let i = 0; ; i++) {
+    try {
+      const probe = new ethers.JsonRpcProvider(RPC, undefined, { batchMaxCount: 1 });
+      return await probe.getNetwork();
+    } catch (e) {
+      const wait = Math.min(2 ** i, 60);
+      console.log(ts(), `RPC ${RPC} unreachable (${e.shortMessage || e.message}) — retrying in ${wait}s`);
+      await new Promise((r) => setTimeout(r, wait * 1000));
+    }
+  }
+}
+
 async function main() {
   // Pin the network after ONE detection so ethers never re-issues eth_chainId on later calls.
-  const probe = new ethers.JsonRpcProvider(RPC, undefined, { batchMaxCount: 1 });
-  const net = await probe.getNetwork();
-  netPinned = net;
+  netPinned = await connect();
+  const net = netPinned;
   provider = makeProvider(BATCH);
 
   let wallet = null;
   if (!DRY) {
-    wallet = new ethers.Wallet(process.env.KEEPER_PK, provider);
-    const bal = await provider.getBalance(wallet.address);
-    console.log(ts(), `keeper ${wallet.address}  balance ${ethers.formatEther(bal)} ETH`);
+    wallet = new ethers.Wallet(process.env.KEEPER_PK, provider); // local, no RPC — safe before any call
+    try {
+      const bal = await provider.getBalance(wallet.address);
+      console.log(ts(), `keeper ${wallet.address}  balance ${ethers.formatEther(bal)} ETH`);
+    } catch (e) {
+      // Informational only — never a reason to refuse to start.
+      console.log(ts(), `keeper ${wallet.address}  (balance unavailable: ${e.shortMessage || e.message})`);
+    }
   }
   console.log(
     ts(),
     `grad-keeper up — chainId ${net.chainId}, poll ${POLL / 1000}s, coin-list refresh ${COINS_REFRESH / 1000}s, ` +
     `batch ${batchOn ? "on (auto-downgrades if rejected)" : "off"}, mode ${DRY ? "DRY-RUN (read-only)" : "LIVE"}`
   );
-  await tick(provider, wallet);
+  await tick(provider, wallet).catch((e) => console.log(ts(), "first tick failed:", e.shortMessage || e.message));
   if (process.argv.includes("--once")) return;
   setInterval(() => tick(provider, wallet).catch((e) => console.log(ts(), "tick error:", e.message)), POLL);
 }
 
-main().catch((e) => { console.error(e.shortMessage || e.message); process.exit(1); });
+// Reaching here means a non-network fault (bad KEEPER_PK, bad env) — those are worth exiting on, since a
+// restart cannot fix them and a loud failure is better than a daemon that silently does nothing.
+main().catch((e) => { console.error(ts(), "fatal:", e.shortMessage || e.message); process.exit(1); });
