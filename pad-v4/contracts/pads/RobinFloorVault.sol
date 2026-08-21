@@ -111,10 +111,16 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     // consumed; 65m (this value) ⇒ attacker −0.2090 ETH, carve consumed 0.0000, floorLiquidity 0.
     // The external auditor instead recommended COMMIT_COOLDOWN > MIN_DWELL; that is INERT (bit-identical
     // +8.7340 ETH — the attacker is token-flat between commits, so waiting costs him nothing) and is NOT shipped.
-    // HONEST SCOPE: this closes the demonstrated once-per-cooldown loop and roughly doubles the paid round-trips
-    // a smarter two-poke attacker needs, but it does NOT close the sustained-hold variant — it only paces it.
-    // The real closure is still the floor redesign (TWAP-gated commit + a RETAINED live-spot-below-band check,
-    // or below-spot bands). See FLOOR-REDESIGN.md and AUDIT-ROUND-3-EXTERNAL-RESPONSE.md §1-2.
+    // HONEST SCOPE — [R3 N-A] READ THIS BEFORE TRUSTING THE GREEN TEST. This closes the TOKEN-FLAT round-trip
+    // loop ONLY. It does NOT close, and barely paces, the SUSTAINED-HOLD variant: an attacker who pushes the tick
+    // below the band ONCE, HOLDS it, and pokes on a cadence he chooses UNDER MAX_OBSERVED_GAP keeps `lastObserved`
+    // fresh, so `belowSince` never re-arms and this constant is never consulted. Measured on THIS shipped vault
+    // (H5.floor-forced-fill case 4): +10.4840 ETH over 8 commits, 16.64 of a 20 ETH carve consumed (83%).
+    // Case 3's green is an artifact of a hard-coded >gap cadence that is attacker-UNFAVOURABLE — the attacker
+    // picks the cadence, so do not read it as "the floor is fixed".
+    // The real closure is NOT the TWAP-gated commit either (that was measured WORSE than shipping nothing:
+    // holding is free per unit time, and a TWAP keeps reading below-band for a while after a genuine crash).
+    // See FLOOR-H5-CLOSURE-SPEC.md for the surviving design; FLOOR-REDESIGN.md records the five refuted ones.
     // Honest-path cost: a keeper deploys the parked carve one 20% slice per 65 min instead of per 10 min.
     uint32 public constant COMMIT_COOLDOWN = 65 minutes;
     // [re-audit/H-5] If nobody has poked for longer than this, the dwell clock is UNTRUSTED and restarts (see addFloor).

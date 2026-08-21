@@ -28,6 +28,19 @@ episode-scoped, non-refilling allowance) — with the TWAP retained only as defe
 check alongside any TWAP gate — IS correct and is carried forward as P3 (independently confirmed: without it the
 wall silently mints itself out of parked token fees rather than reverting).
 
+## MUST-FIX BEFORE IMPLEMENTING — [R3 N-B] P2's episode never resets on a SHALLOW dump
+
+The external auditor design-reviewed this spec and confirmed **P1 (the swap-witnessed `aboveLowerTs` watermark)
+is airtight — ship it.** But they found a real hole in **P2**: the episode allowance only resets when the tick
+crosses **`floorTickUpper`**. A dump that stalls anywhere inside the band, `[floorTickLower, floorTickUpper)`,
+never crosses that pivot, so the episode never rolls and the allowance stays effectively uncapped. They measured
+the force-fill going **net-positive at the band midpoint (~tick 700)** — and that entire profitable window sits
+below the reset pivot.
+
+Consequence: this spec's headline ("≈3,700× unprofitable at any hold duration", "full closure") is **true only
+for deep dumps**. Anchor the episode at **arming / first below-band observation** rather than only on crossing
+the upper tick, then re-derive the bound across the shallow-dump range before this is called a closure.
+
 ---
 
 # FINAL SPECIFICATION — H‑5 closure: **Swap‑Witnessed Below‑Band Gate + Episode‑Scoped Commit Allowance (OTG‑2)**

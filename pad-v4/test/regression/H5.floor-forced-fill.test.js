@@ -20,9 +20,17 @@ const { MAX_SQRT_LIMIT, E, f, buildLab, ledger, sizePush } = require("../helpers
 //     contract code: bit-identical attacker PnL, only the wall-clock stretches. Their stated rationale ("forces
 //     the attacker to hold a price-risked position across the gap") is false: he is token-flat between commits,
 //     so waiting is free. DO NOT SHIP THIS AS A MITIGATION.
-//   • COMMIT_COOLDOWN > MAX_OBSERVED_GAP — WORKS. Spacing commits beyond the observation gap forces the
-//     `nowTs > prevObserved + MAX_OBSERVED_GAP` branch to re-arm `belowSince` every time, so the stale clock the
-//     attack rides can never survive to the next commit.
+//   • COMMIT_COOLDOWN > MAX_OBSERVED_GAP — works ONLY against the token-flat round-trip loop above. Spacing
+//     commits beyond the observation gap forces the `nowTs > prevObserved + MAX_OBSERVED_GAP` branch to re-arm
+//     `belowSince`, so the stale clock THAT variant rides cannot survive to the next commit.
+//
+// [R3 N-A] BUT IT IS NOT A CLOSURE, AND CASE 3'S GREEN IS NOT EVIDENCE THAT IT IS. Case 3 hard-codes
+// `gapSec: 3901` — a >MAX_OBSERVED_GAP cadence that is attacker-UNFAVOURABLE. The attacker picks the cadence.
+// Case 4 below runs the SUSTAINED-HOLD variant: one push, held, poked every 30 min (under the 60 min gap), so
+// `lastObserved` never goes stale, `belowSince` never re-arms, and the shipped constant is never consulted.
+// Slices commit anyway. Holding costs nothing per unit time on a single-sequencer chain with no arbitrage, so
+// "he must hold a price-risked position" is not a cost. Treat case 3 as scoped to ONE variant, never as
+// "the floor is fixed" — the structural closure is FLOOR-H5-CLOSURE-SPEC.md.
 //
 // Both variants are REAL contracts, byte-identical to RobinFloorVault except the one constant
 // (contracts/test/H5CooldownVariantVault.sol = 30 min, H5GapCooldownVault.sol = 65 min).
@@ -54,6 +62,43 @@ async function runAttack(L, { rounds, taxBps = 0, gapSec }) {
     await time.increase(gapSec);
   }
   return { best, carve0, floorL: await vault.floorLiquidity() };
+}
+
+// [R3 N-A] The SUSTAINED-HOLD variant. Unlike runAttack, the attacker is NOT token-flat between commits: he
+// pushes the tick below the band ONCE and HOLDS it there, poking on a cadence HE chooses (< MAX_OBSERVED_GAP)
+// so the observation clock never goes stale, then unwinds through every wall he minted at the end.
+async function runSustainedHold(L, { pokeSec, pokes, taxBps = 0 }) {
+  const { sw, key, vault, tok, attacker, sqrtAt } = L;
+  const led = ledger(attacker.address);
+  const start = await ethers.provider.getBalance(attacker.address);
+  const carve0 = await ethers.provider.getBalance(await vault.getAddress());
+
+  const X = await sizePush(L, 59, taxBps);
+  const tb = await tok.balanceOf(attacker.address);
+  await led.track(sw.connect(attacker).swap(
+    key, { zeroForOne: true, amountSpecified: -X, sqrtPriceLimitX96: await sqrtAt(59) },
+    { takeClaims: false, settleUsingBurn: false }, "0x", { value: X }
+  ));
+  const bought = (await tok.balanceOf(attacker.address)) - tb; // HELD, not sold back
+
+  let commits = 0;
+  for (let i = 0; i < pokes; i++) {
+    await time.increase(pokeSec);
+    const before = await vault.floorLiquidity();
+    await led.track(vault.connect(attacker).addFloor());
+    if ((await vault.floorLiquidity()) > before) commits++;
+  }
+
+  await led.track(sw.connect(attacker).swap( // unwind through every freshly-minted ETH wall
+    key, { zeroForOne: false, amountSpecified: -bought, sqrtPriceLimitX96: MAX_SQRT_LIMIT },
+    { takeClaims: false, settleUsingBurn: false }, "0x"
+  ));
+  expect(await tok.balanceOf(attacker.address)).to.equal(tb); // flat at the END of the run, not between commits
+  return {
+    pnl: (await ethers.provider.getBalance(attacker.address)) - start + led.gas,
+    consumed: carve0 - (await ethers.provider.getBalance(await vault.getAddress())),
+    commits, carve0, floorL: await vault.floorLiquidity(),
+  };
 }
 
 describe("[R3 H-5] floor forced-fill: the attack, and which one-constant fix actually works", function () {
@@ -106,6 +151,20 @@ describe("[R3 H-5] floor forced-fill: the attack, and which one-constant fix act
     expect(R.best.pnl).to.be.lt(0n); // the attacker pays and gets nothing
     expect(R.floorL).to.equal(0n); // nothing was ever force-committed
     expect(R.best.consumed).to.equal(0n); // the carve is untouched
+    await snap.restore();
+  });
+
+  it("4. [N-A] SUSTAINED HOLD defeats the shipped fix — the attacker chooses the poke cadence", async () => {
+    const snap = await takeSnapshot();
+    const L = await buildLab({ ...LAB }); // the REAL shipped vault, fix and all
+    expect(await L.vault.COMMIT_COOLDOWN()).to.be.gt(await L.vault.MAX_OBSERVED_GAP()); // fix present...
+    // ...and irrelevant: poking every 30 min stays inside MAX_OBSERVED_GAP (60 min), so the re-arm branch that
+    // case 3 relies on never fires. Case 3 only passes because its 65-min gap is attacker-unfavourable.
+    const R = await runSustainedHold(L, { pokeSec: 1800, pokes: 24 }); // 12h of held pressure
+    console.log(`   sustained hold: ${f(R.pnl)} ETH, ${R.commits} commits, carve consumed ${f(R.consumed)}/${f(R.carve0)}`);
+    expect(R.commits).to.be.gt(0); // slices DO land despite COMMIT_COOLDOWN > MAX_OBSERVED_GAP
+    expect(R.consumed).to.be.gt(0n); // the carve is reachable — the shipped fix does not protect it
+    expect(R.floorL).to.be.gt(0n); // ETH was force-committed into the stale band
     await snap.restore();
   });
 });
