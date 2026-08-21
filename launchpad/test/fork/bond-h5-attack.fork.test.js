@@ -30,7 +30,7 @@ const suite = process.env.FORK_RPC ? describe : describe.skip;
 suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", function () {
   this.timeout(600000);
 
-  async function build({ withBond }) {
+  async function build({ withBond, depthX = 1n }) {
     const [dep, platform, curveSigner, attacker] = await ethers.getSigners();
     const SUPPLY = 1_000_000_000n * ONE;
     const TOK = await (await ethers.getContractFactory("CurveToken")).deploy("Bonded", "BOND", SUPPLY, dep.address);
@@ -46,8 +46,8 @@ suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", functi
       ["function deposit() payable", "function transfer(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"], WETH);
     const bond = await (await ethers.getContractFactory("Bond")).deploy(tokAddr, WETH, FACTORY, platform.address, curveSigner.address);
     const bondAddr = await bond.getAddress();
-    const keepWeth = ONE / 2n, moatWeth = ONE / 2n;
-    const keepTokens = 25_000_000n * ONE, rampTokens = 250_000_000n * ONE;
+    const keepWeth = (ONE / 2n) * depthX, moatWeth = ONE / 2n; // Sherwood scales; the Bounty wall does not
+    const keepTokens = 25_000_000n * ONE * depthX, rampTokens = 250_000_000n * ONE;
     await (await wethW.connect(dep).deposit({ value: keepWeth + moatWeth })).wait();
     await (await wethW.connect(dep).transfer(bondAddr, keepWeth + moatWeth)).wait();
     await (await TOK.connect(dep).transfer(bondAddr, keepTokens + rampTokens)).wait();
@@ -66,7 +66,7 @@ suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", functi
     };
     const warp = async (s) => { await ethers.provider.send("evm_increaseTime", [s]); await ethers.provider.send("evm_mine", []); };
     await (await TOK.connect(dep).transfer(attacker.address, 400_000_000n * ONE)).wait();
-    await (await wethW.connect(attacker).deposit({ value: 3n * ONE })).wait();
+    await (await wethW.connect(attacker).deposit({ value: 200n * ONE })).wait();
     return { TOK, tokAddr, pool, wethW, bond, swap, warp, attacker, dep };
   }
 
@@ -89,6 +89,38 @@ suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", functi
     if (drift !== 0n) throw new Error("not token-flat: " + drift);
     return { pnl: (await wethW.balanceOf(attacker.address)) - w0, pokeLanded, why };
   }
+
+  // THE SUSTAINED HOLD. The v3 guard compares spot to a 15-SECOND TWAP. Holding a price for 15 seconds is
+  // nearly free, and once the mean converges the guard passes and the walls re-place at the HELD price. This is
+  // the exact variant that beats the v4 conservative-anchoring port (+10.65 ETH there), so it must be tried
+  // against the live design before anyone trusts either.
+  it("SUSTAINED HOLD: shove, wait for the 15s TWAP to converge, poke, release — WITH CONTROLS", async () => {
+    // Each configuration is run TWICE — identical trades, the only difference being whether the Bond is poked
+    // while the price is held. The DIFFERENCE is what manipulating the Bond was actually worth. Without this
+    // control a positive number means nothing: buying through the Ambush and selling into the Bounty is simply
+    // trading against the walls, which is what they are for.
+    for (const [holdSec, shove, depthX] of [[20, ONE / 5n, 1n], [20, ONE, 10n], [20, 5n * ONE, 50n], [60, 20n * ONE, 200n]]) {
+      const res = {};
+      for (const poke of [true, false]) {
+        const L = await build({ withBond: true, depthX });
+        const { TOK, tokAddr, wethW, bond, swap, warp, attacker } = L;
+        await warp(1000);
+        const w0 = await wethW.balanceOf(attacker.address);
+        const t0 = await TOK.balanceOf(attacker.address);
+        await swap(attacker, WETH, shove); // shove, then HOLD
+        const bought = (await TOK.balanceOf(attacker.address)) - t0;
+        await warp(holdSec); // let the 15s mean converge on the held price
+        let landed = false;
+        if (poke) { try { await (await bond.poke()).wait(); landed = true; } catch (e) { /* refused */ } }
+        await swap(attacker, tokAddr, bought); // release
+        expect((await TOK.balanceOf(attacker.address)) - t0).to.equal(0n); // token-flat
+        res[poke ? "poked" : "clean"] = { pnl: (await wethW.balanceOf(attacker.address)) - w0, landed };
+      }
+      const edge = res.poked.pnl - res.clean.pnl;
+      console.log(`   depth x${String(depthX).padStart(3)} hold ${String(holdSec).padStart(3)}s shove ${f(shove, 2)} | poke ${res.poked.landed ? "LANDED " : "REFUSED"} | poked ${f(res.poked.pnl).padStart(9)} | clean ${f(res.clean.pnl).padStart(9)} | EDGE ${f(edge).padStart(9)}`);
+      if (edge > 0n) console.log(`      ^^ PROFITABLE at depth x${depthX}`);
+    }
+  });
 
   it("cannot be profited from, at any shove size the guard allows", async () => {
     // Sweep the shove size. Small shoves stay inside MAX_DEV so the poke LANDS — those are the ones that

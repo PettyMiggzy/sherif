@@ -90,7 +90,7 @@ async function buildLab(cfg) {
     await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
     ZERO, await tok.getAddress(), FEE, TS, hookAddr, 0 /* anchorTick = launch */, cfg.bandSpacings ?? 20,
   ];
-  if (vaultName === "RobinFloorVault") vaultArgs.push(cfg.episodeBaseWei ?? 0n);
+  if (vaultName === "RobinFloorVault" || vaultName === "H5V3StyleVault") vaultArgs.push(cfg.episodeBaseWei ?? 0n);
   const vault = await (await ethers.getContractFactory(vaultName)).deploy(...vaultArgs);
   // shipped wiring: the sell-tax floor carve flows to the vault (attacker-favourable — their own sell-back
   // partially re-funds the carve they are draining)
