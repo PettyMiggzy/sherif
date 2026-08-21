@@ -8,27 +8,45 @@
 // behavior lives only in the non-deployed BondingCurve). Without this daemon a coin that reaches the ceiling sits
 // tradeable-but-capped, with its Bond floor unposted, until someone manually graduates it.
 //
-// This process polls every coin and calls graduate() the moment ready() flips true. Run it on the operator box
-// BEFORE any coin nears the ceiling (ROBIN is the closest, ~49%).
+// This process polls every coin and calls graduate() the moment ready() flips true.
+//
+// RPC BUDGET (this daemon runs 24/7 against a shared endpoint, so it is written to be cheap):
+//   • ONE batched JSON-RPC request per poll — every coin's ready() goes out in a single HTTP POST
+//     (ethers coalesces same-tick calls up to `batchMaxCount`), instead of 2 sequential round-trips per coin.
+//   • `ready()` ALONE is the gate: CurvePool.ready() already returns false when `graduated` is true
+//     (CurvePool.sol:249), and graduate() re-checks `graduated`+`ready()` on-chain (:256-258), so the separate
+//     pre-flight graduated() call was pure waste and is gone. A lost race just reverts and is caught.
+//   • The coin list is cached and refetched every COINS_REFRESH_SECS (new coins appear rarely), not every poll.
+//   • Coins known graduated (API flag, or graduated by us) are retired from the poll set permanently.
+//   • The network is pinned after one detection so ethers never re-issues eth_chainId.
+//   • Consecutive RPC failures back off exponentially instead of hammering a struggling endpoint.
+//   At the defaults that is ~1 request/60s + a coin-list fetch every 10 min (~1.6k/day), versus ~55k/day for
+//   the original 30s × (1 + 2/coin) sequential loop.
 //
 // Env:
-//   RPC_URL     (default https://api.robinlab.io/rpc)
-//   API_BASE    (default https://api.robinlab.io)  — coin list source
-//   KEEPER_PK   the keeper's private key (omit ⇒ forced --dry-run, read-only)
-//   POLL_SECS   (default 30)
-//   GAS_LIMIT   (default 3500000)
+//   RPC_URL             (default https://api.robinlab.io/rpc)
+//   API_BASE            (default https://api.robinlab.io)  — coin list source
+//   KEEPER_PK           the keeper's private key (omit ⇒ forced --dry-run, read-only)
+//   POLL_SECS           (default 60)
+//   COINS_REFRESH_SECS  (default 600) — how often to refetch the coin list
+//   RPC_BATCH           set to "0" to disable JSON-RPC batching (if the endpoint rejects array payloads)
+//   GAS_LIMIT           (default 3500000)
 // Flags: --dry-run  (read-only: report ready/graduated status, send NO transactions)
+//        --once     (single sweep, then exit)
 //
 // Run:  KEEPER_PK=0x… node launchpad/scripts/grad-keeper.js
-//       node launchpad/scripts/grad-keeper.js --dry-run
+//       node launchpad/scripts/grad-keeper.js --dry-run --once
 // ─────────────────────────────────────────────────────────────────────────────
 const { ethers } = require("ethers");
 
 const RPC = process.env.RPC_URL || "https://api.robinlab.io/rpc";
 const API = process.env.API_BASE || "https://api.robinlab.io";
-const POLL = Math.max(5, Number(process.env.POLL_SECS || 30)) * 1000;
+const POLL = Math.max(5, Number(process.env.POLL_SECS || 60)) * 1000;
+const COINS_REFRESH = Math.max(60, Number(process.env.COINS_REFRESH_SECS || 600)) * 1000;
 const GAS = BigInt(process.env.GAS_LIMIT || 3_500_000);
 const DRY = process.argv.includes("--dry-run") || !process.env.KEEPER_PK;
+// One HTTP POST carries every ready() call. 0 ⇒ disable batching for endpoints that reject array payloads.
+const BATCH = process.env.RPC_BATCH === "0" ? 1 : 100;
 
 const CURVE_ABI = [
   "function ready() view returns (bool)",
@@ -38,50 +56,129 @@ const CURVE_ABI = [
 
 const ts = () => new Date().toISOString().replace("T", " ").slice(0, 19);
 
-async function fetchCoins() {
+// ── cached state (keeps the steady-state cost at one batched request per poll) ──
+let coins = [];          // last known coin list
+let coinsAt = 0;         // when it was fetched
+const done = new Set();  // curves known graduated — never polled again
+const contracts = new Map(); // curve => ethers.Contract (avoid re-instantiating every poll)
+let provider = null;     // swappable: downgraded in place if the endpoint rejects batch payloads
+let batchOn = BATCH > 1; // auto-downgraded on the first batch rejection
+let netPinned = null;
+let fails = 0;           // consecutive RPC failures → exponential backoff
+let skipTicks = 0;       // ticks to skip while backing off
+let quietSince = 0;      // suppress repeated "nothing to watch" spam
+
+async function refreshCoins() {
+  if (coins.length && Date.now() - coinsAt < COINS_REFRESH) return;
   const r = await fetch(`${API}/api/coins`);
   if (!r.ok) throw new Error(`coins ${r.status}`);
   const d = await r.json();
-  return (d.coins || []).filter((c) => c.curve).map((c) => ({ sym: c.symbol, curve: c.curve, graduated: !!c.graduated }));
+  coins = (d.coins || []).filter((c) => c.curve).map((c) => ({ sym: c.symbol, curve: c.curve, graduated: !!c.graduated }));
+  coinsAt = Date.now();
+  for (const c of coins) if (c.graduated) done.add(c.curve); // retire indexer-confirmed graduates
+}
+
+function curveOf(addr) {
+  let c = contracts.get(addr);
+  if (!c) { c = new ethers.Contract(addr, CURVE_ABI, provider); contracts.set(addr, c); }
+  return c;
+}
+
+function makeProvider(batchMax) {
+  return new ethers.JsonRpcProvider(RPC, netPinned, { batchMaxCount: batchMax, staticNetwork: netPinned });
+}
+
+// Some endpoints (and some proxies in front of them) reject JSON-RPC ARRAY payloads outright. Rather than make
+// the operator discover that and set RPC_BATCH=0 by hand, detect it once and downgrade to sequential for good.
+const BATCH_REJECTED = /400|bad request|parse error|invalid request|not supported|unsupported/i;
+const RATE_LIMITED = /429|rate.?limit|too many/i;
+
+async function sweepReady(live) {
+  try {
+    return await Promise.all(live.map((c) => curveOf(c.curve).ready()));
+  } catch (e) {
+    const m = e.shortMessage || e.message || "";
+    if (batchOn && BATCH_REJECTED.test(m)) {
+      batchOn = false;
+      provider = makeProvider(1);
+      contracts.clear(); // old instances hold the previous provider
+      console.log(ts(), `endpoint rejected a batched payload (${m.slice(0, 80)}) — downgrading to sequential for this run`);
+      return await Promise.all(live.map((c) => curveOf(c.curve).ready()));
+    }
+    throw e;
+  }
 }
 
 async function tick(provider, wallet) {
-  let coins;
-  try { coins = await fetchCoins(); } catch (e) { console.log(ts(), "coin fetch failed:", e.message); return; }
+  if (skipTicks > 0) { skipTicks--; return; }
+  try { await refreshCoins(); } catch (e) { console.log(ts(), "coin fetch failed:", e.message); }
+  if (!coins.length) return;
+
+  const live = coins.filter((c) => !done.has(c.curve));
+  if (!live.length) {
+    if (Date.now() - quietSince > 3600_000) { console.log(ts(), "all coins graduated — idle"); quietSince = Date.now(); }
+    return;
+  }
+
+  // ONE batched request: every ready() is issued in the same event-loop tick, so ethers coalesces them
+  // into a single JSON-RPC array payload. ready() is false when graduated, so it is the whole gate.
+  let states;
+  try {
+    states = await sweepReady(live);
+    fails = 0;
+  } catch (e) {
+    const m = e.shortMessage || e.message || "";
+    fails++;
+    // A rate-limited endpoint needs a LONGER pause than a transient error — backing off slowly here is the
+    // difference between letting it recover and keeping it pinned at 429.
+    const cap = RATE_LIMITED.test(m) ? 60 : 30;
+    skipTicks = Math.min(2 ** fails, cap);
+    console.log(ts(), `ready() sweep failed (${fails}):`, m, `— backing off ${skipTicks} polls`);
+    return;
+  }
+
   let readyCount = 0;
-  for (const c of coins) {
-    if (c.graduated) continue;
+  for (let i = 0; i < live.length; i++) {
+    const c = live[i];
+    if (DRY) console.log(ts(), `  ${c.sym.padEnd(10)} ready=${states[i]}`);
+    if (!states[i]) continue;
+    readyCount++;
+    if (DRY) { console.log(ts(), `  🎓 ${c.sym} is READY — [dry-run] would graduate ${c.curve}`); continue; }
     try {
-      const curve = new ethers.Contract(c.curve, CURVE_ABI, provider);
-      if (await curve.graduated()) continue; // re-check on-chain (indexer can lag)
-      const ready = await curve.ready();
-      if (DRY) console.log(ts(), `  ${c.sym.padEnd(10)} ready=${ready}`);
-      if (!ready) continue;
-      readyCount++;
-      if (DRY) { console.log(ts(), `  🎓 ${c.sym} is READY — [dry-run] would graduate ${c.curve}`); continue; }
       console.log(ts(), `🎓 ${c.sym} READY — graduating ${c.curve} …`);
-      const tx = await curve.connect(wallet).graduate({ gasLimit: GAS });
+      const tx = await curveOf(c.curve).connect(wallet).graduate({ gasLimit: GAS });
       console.log(ts(), `  sent ${tx.hash}`);
       await tx.wait();
+      done.add(c.curve); // retire it — never polled again
       console.log(ts(), `  ✅ ${c.sym} graduated`);
     } catch (e) {
-      console.log(ts(), `  ${c.sym} error:`, e.shortMessage || e.message);
+      const m = e.shortMessage || e.message;
+      // AlreadyGraduated ⇒ someone beat us to it; retire it rather than retrying forever.
+      if (/AlreadyGraduated/i.test(m)) { done.add(c.curve); console.log(ts(), `  ${c.sym} already graduated elsewhere — retired`); }
+      else console.log(ts(), `  ${c.sym} error:`, m);
     }
   }
-  if (DRY) console.log(ts(), `swept ${coins.length} coins, ${readyCount} ready (dry-run — no tx sent)`);
+  if (DRY) console.log(ts(), `swept ${live.length} coins, ${readyCount} ready (dry-run — no tx sent)`);
 }
 
 async function main() {
-  const provider = new ethers.JsonRpcProvider(RPC);
-  const net = await provider.getNetwork();
+  // Pin the network after ONE detection so ethers never re-issues eth_chainId on later calls.
+  const probe = new ethers.JsonRpcProvider(RPC, undefined, { batchMaxCount: 1 });
+  const net = await probe.getNetwork();
+  netPinned = net;
+  provider = makeProvider(BATCH);
+
   let wallet = null;
   if (!DRY) {
     wallet = new ethers.Wallet(process.env.KEEPER_PK, provider);
     const bal = await provider.getBalance(wallet.address);
     console.log(ts(), `keeper ${wallet.address}  balance ${ethers.formatEther(bal)} ETH`);
   }
-  console.log(ts(), `grad-keeper up — chainId ${net.chainId}, poll ${POLL / 1000}s, mode ${DRY ? "DRY-RUN (read-only)" : "LIVE"}`);
-  // one immediate tick, then loop
+  console.log(
+    ts(),
+    `grad-keeper up — chainId ${net.chainId}, poll ${POLL / 1000}s, coin-list refresh ${COINS_REFRESH / 1000}s, ` +
+    `batch ${batchOn ? "on (auto-downgrades if rejected)" : "off"}, mode ${DRY ? "DRY-RUN (read-only)" : "LIVE"}`
+  );
   await tick(provider, wallet);
   if (process.argv.includes("--once")) return;
   setInterval(() => tick(provider, wallet).catch((e) => console.log(ts(), "tick error:", e.message)), POLL);
