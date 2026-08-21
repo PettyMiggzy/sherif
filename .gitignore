@@ -21,7 +21,7 @@ launchpad/typechain-types/
 *.env.bak-*
 
 # pad-v4 audit scratch — exploratory PoCs from adversarial audit runs (evidence, not suite)
-pad-v4/test/scratch/
+pad-v4/.audit-scratch/
 
 # pad-v4 audit prototypes — driven only by the gitignored scratch tests above. Kept out of the audit package
 # so no unshipped contract compiles into it. H5ObsHook/H5TwapGateVault are TWAP-redesign drafts (the real fix

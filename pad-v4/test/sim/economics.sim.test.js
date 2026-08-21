@@ -114,19 +114,45 @@ describe("SIM — the floor only ever grows and absorbs dumps", () => {
     const pm = await (await ethers.getContractFactory("PoolManager")).deploy(owner.address);
     const stateView = await (await ethers.getContractFactory("RobinStateView")).deploy(await pm.getAddress());
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
-    const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: ZERO };
+    const reg0 = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
+    // [R3-H5] The commit gate is swap-witnessed and fail-closed, so the floor needs the real hook to function
+    // at all — a hookless pool parks forever. This is also the production configuration.
+    const dep = await (await ethers.getContractFactory("DeterministicDeployer")).deploy();
+    const HookF = await ethers.getContractFactory("RobinFeeHook");
+    const hookInit = ethers.concat([HookF.bytecode, ethers.AbiCoder.defaultAbiCoder().encode(
+      ["address", "address", "address", "address"],
+      [await pm.getAddress(), owner.address, await reg0.getAddress(), await tok.getAddress()])]);
+    let hookSalt, hookAddr;
+    for (let i = 0n; ; i++) {
+      const sl = ethers.zeroPadValue(ethers.toBeHex(i), 32);
+      const a = ethers.getCreate2Address(await dep.getAddress(), sl, ethers.keccak256(hookInit));
+      if ((BigInt(a) & 0x3fffn) === 0xccn) { hookSalt = sl; hookAddr = a; break; }
+    }
+    await dep.deploy(hookSalt, hookInit);
+    const hook = HookF.attach(hookAddr);
+    const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: hookAddr };
     await pm.initialize(key, SQRT_1_1);
+    const poolIdE = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+      ["tuple(address,address,uint24,int24,address)"], [[key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks]]));
+    await hook.connect(owner).registerPool(poolIdE, {
+      currency0: ZERO, currency1: await tok.getAddress(), creator: owner.address, floorRecipient: ZERO,
+      guardAdapter: ZERO, buyTaxBps: 1, sellTaxBps: 0, sellFloorShareBps: 0,
+      buyBufferShareBps: 0, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,
+    });
     const mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());
     const sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
     await tok.connect(owner).transfer(lp.address, 10n ** 24n);
     await tok.connect(lp).approve(await mod.getAddress(), ethers.MaxUint256);
     await mod.connect(lp).modifyLiquidity(key, { tickLower: -12000, tickUpper: 12000, liquidityDelta: 10n ** 19n, salt: ethers.ZeroHash }, "0x", { value: ethers.parseEther("500") });
 
-    const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
     const vault = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(), ZERO, await tok.getAddress(), 3000, 60, ZERO, 0, 20
+      await pm.getAddress(), await stateView.getAddress(), await reg0.getAddress(), ZERO, await tok.getAddress(),
+      3000, 60, hookAddr, 0, 20,
+      0 // episodeBaseWei: 0 => first-episode allowance is inflow-equal (honest-path default)
     );
     const vaultAddr = await vault.getAddress();
+    await hook.connect(platform).setFloorRecipient(poolIdE, vaultAddr);
+    await vault.connect(platform).armGate(); // [R3-H5] without this every poke parks
 
     let last = 0n;
     // [H-5] a commit needs the tick settled below the band for MIN_DWELL and is rate-limited per

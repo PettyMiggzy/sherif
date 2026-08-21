@@ -45,7 +45,7 @@ async function buildLab(cfg) {
   const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
 
   let hookAddr = ZERO, hook = null;
-  if (cfg.hookTaxBps) {
+  if (cfg.hookTaxBps || cfg.withHook) {
     const dep = await (await ethers.getContractFactory("DeterministicDeployer")).deploy();
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const initCode = ethers.concat([
@@ -65,7 +65,7 @@ async function buildLab(cfg) {
   if (hook) {
     await hook.connect(factorySigner).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address, floorRecipient: ZERO,
-      guardAdapter: ZERO, buyTaxBps: cfg.hookTaxBps, sellTaxBps: cfg.hookTaxBps, sellFloorShareBps: 2000,
+      guardAdapter: ZERO, buyTaxBps: cfg.hookTaxBps ?? 0, sellTaxBps: cfg.hookTaxBps ?? 0, sellFloorShareBps: 2000,
       buyBufferShareBps: 2000, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,
     });
     await hook.connect(factorySigner).setBufferRecipient(poolId, owner.address);
@@ -83,13 +83,22 @@ async function buildLab(cfg) {
   );
   const depthAtLaunch = await ethers.provider.getBalance(await pm.getAddress());
 
-  const vault = await (await ethers.getContractFactory(cfg.vaultContract ?? "RobinFloorVault")).deploy(
+  // The H5* variant vaults are byte-identical copies of EARLIER shipped versions, so they keep the OLD
+  // constructor. Only the real vault takes the [R3-H5 P2] episodeBaseWei param.
+  const vaultName = cfg.vaultContract ?? "RobinFloorVault";
+  const vaultArgs = [
     await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
-    ZERO, await tok.getAddress(), FEE, TS, hookAddr, 0 /* anchorTick = launch */, cfg.bandSpacings ?? 20
-  );
+    ZERO, await tok.getAddress(), FEE, TS, hookAddr, 0 /* anchorTick = launch */, cfg.bandSpacings ?? 20,
+  ];
+  if (vaultName === "RobinFloorVault") vaultArgs.push(cfg.episodeBaseWei ?? 0n);
+  const vault = await (await ethers.getContractFactory(vaultName)).deploy(...vaultArgs);
   // shipped wiring: the sell-tax floor carve flows to the vault (attacker-favourable — their own sell-back
   // partially re-funds the carve they are draining)
-  if (hook) await hook.connect(platform).setFloorRecipient(poolId, await vault.getAddress());
+  if (hook) {
+    await hook.connect(platform).setFloorRecipient(poolId, await vault.getAddress());
+    // [R3-H5 P1] Arm the swap-witnessed gate. Only the real vault has it; the H5* variants predate it.
+    if (vaultName === "RobinFloorVault" && cfg.armGate !== false) await vault.connect(platform).armGate();
+  }
 
   // helpers -------------------------------------------------------------------
   const sqrtAt = (t) => tick.sqrt(t);

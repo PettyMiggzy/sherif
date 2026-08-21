@@ -28,11 +28,39 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
     pm = await (await ethers.getContractFactory("PoolManager")).deploy(owner.address);
     stateView = await (await ethers.getContractFactory("RobinStateView")).deploy(await pm.getAddress());
     tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    // [L-11] the floor vault takes the timelocked registry; platformFeeWallet() resolves to `platform`.
+    const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
 
-    // plain pool (no hook) to isolate the floor mechanics
-    key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: ZERO };
+    // [R3-H5] The floor's commit gate is SWAP-WITNESSED and fail-closed: without a hook stamping the
+    // watermark there is nothing to prove below-band duration with, so the carve parks forever. A hookless
+    // pool is not a weaker case to test — it is an unusable one — and a plain pool is just as attackable
+    // (cases 1a/2 of the H-5 regression extract +8.73 ETH from one). So this fixture now runs the real hook
+    // with the smallest legal tax, which is also the production configuration.
+    const dep = await (await ethers.getContractFactory("DeterministicDeployer")).deploy();
+    const HookF = await ethers.getContractFactory("RobinFeeHook");
+    const hookInit = ethers.concat([
+      HookF.bytecode,
+      abi.encode(["address", "address", "address", "address"],
+        [await pm.getAddress(), owner.address /* factory */, await reg.getAddress(), await tok.getAddress()]),
+    ]);
+    const FLAGS = 0xccn, MASK = 0x3fffn;
+    let hookSalt, hookAddr;
+    for (let i = 0n; ; i++) {
+      const sl = ethers.zeroPadValue(ethers.toBeHex(i), 32);
+      const a = ethers.getCreate2Address(await dep.getAddress(), sl, ethers.keccak256(hookInit));
+      if ((BigInt(a) & MASK) === FLAGS) { hookSalt = sl; hookAddr = a; break; }
+    }
+    await dep.deploy(hookSalt, hookInit);
+    const hook = HookF.attach(hookAddr);
+
+    key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: hookAddr };
     poolId = poolIdOf(key);
     await pm.initialize(key, SQRT_1_1); // tick 0
+    await hook.connect(owner).registerPool(poolId, {
+      currency0: ZERO, currency1: await tok.getAddress(), creator: owner.address, floorRecipient: ZERO,
+      guardAdapter: ZERO, buyTaxBps: 1, sellTaxBps: 0, sellFloorShareBps: 0,
+      buyBufferShareBps: 0, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,
+    });
 
     mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());
     sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
@@ -44,12 +72,14 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
       { value: ethers.parseEther("50") }
     );
 
-    // [L-11] the floor vault now takes the timelocked registry; platformFeeWallet() resolves to `platform`.
-    const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
     vault = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
       await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
-      ZERO, await tok.getAddress(), FEE, TS, ZERO, 0 /* anchorTick = launch tick 0 */, 10 // band = 10 spacings wide
+      ZERO, await tok.getAddress(), FEE, TS, hookAddr, 0 /* anchorTick = launch tick 0 */,
+      10, // band = 10 spacings wide
+      0 // episodeBaseWei: 0 => first-episode allowance is inflow-equal (honest-path default)
     );
+    await hook.connect(platform).setFloorRecipient(poolId, await vault.getAddress());
+    await vault.connect(platform).armGate(); // [R3-H5] without this every poke parks (R_ORACLE)
   });
 
   it("places the band just above spot (pure currency0 region)", async () => {

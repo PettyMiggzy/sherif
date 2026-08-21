@@ -14,6 +14,7 @@ import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmo
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
 import {DeterministicDeployer} from "./DeterministicDeployer.sol";
+import {FeeHookDeployer} from "./FeeHookDeployer.sol";
 import {LockVault} from "./LockVault.sol";
 import {PadToken} from "../pads/PadToken.sol";
 import {RobinFeeHook} from "../hooks/RobinFeeHook.sol";
@@ -46,6 +47,7 @@ contract StockPadFactory {
     IPositionManagerMinimal public immutable positionManager;
     IPermit2Minimal public immutable permit2;
     DeterministicDeployer public immutable deployer;
+    FeeHookDeployer public immutable feeHookDeployer; // [R3-H5] holds the hook creationCode
     address public immutable feeRegistry;
     LockVault public immutable lockVault;
 
@@ -119,9 +121,11 @@ contract StockPadFactory {
         address deployer_,
         address feeRegistry_,
         address lockVault_,
-        address stockRegistry_
+        address stockRegistry_,
+        address feeHookDeployer_ // [R3-H5] offloads RobinFeeHook creationCode — see FeeHookDeployer
     ) {
-        if (stockRegistry_ == address(0)) revert BadConfig();
+        if (stockRegistry_ == address(0) || feeHookDeployer_ == address(0)) revert BadConfig();
+        feeHookDeployer = FeeHookDeployer(feeHookDeployer_);
         stockRegistry = stockRegistry_;
         poolManager = IPoolManager(poolManager_);
         positionManager = IPositionManagerMinimal(positionManager_);
@@ -181,10 +185,9 @@ contract StockPadFactory {
         Currency currency1 = Currency.wrap(token);
 
         // 2) deploy the flag-mined hook (token in init-code ⇒ unique address)
-        hook = deployer.deploy(
-            hookSalt,
-            abi.encodePacked(type(RobinFeeHook).creationCode, abi.encode(poolManager, address(this), feeRegistry, token))
-        );
+        // creationCode offloaded to FeeHookDeployer (EIP-170); the CREATE2 is still done by the shared
+        // DeterministicDeployer over identical init code, so the mined hook address is unchanged.
+        hook = feeHookDeployer.deploy(hookSalt, abi.encode(poolManager, address(this), feeRegistry, token));
         if (uint160(hook) & 0x3FFF != HOOK_FLAGS) revert HookFlagsMismatch();
         if (RobinFeeHook(payable(hook)).REQUIRED_FLAGS() != HOOK_FLAGS) revert HookFlagsMismatch();
 

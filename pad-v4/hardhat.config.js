@@ -66,5 +66,8 @@ module.exports = {
   // [brand] Launch tests now MINE a `faf0` token address (PadBrand.requireBrand), ~65k keccak tries (~2s) per
   // distinct pad config — and a stock pad mines against two constraints at once. Mocha's 40s default is too
   // tight for the suites that launch several pads in one test.
-  mocha: { timeout: 180000 },
+  // [R3] Raised from 180s: the faf0 brand mining (test/helpers/brand.js) adds a real keccak loop per launch,
+  // and the H-5 attack lab drives multi-hour simulated runs. Individual files pass comfortably; the margin is
+  // for late-in-suite slowdown on a long serial run, not for any single slow assertion.
+  mocha: { timeout: 600000 },
 };

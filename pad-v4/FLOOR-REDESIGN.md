@@ -1,11 +1,10 @@
 # Floor redesign — closing H-5 / M-15 / L-33 structurally
 
-**Status: DESIGN PROPOSAL for the external auditor to react to. Not yet implemented.**
-The shipped `RobinFloorVault` has interim hardening (see the contract header + `AUDIT-SCOPE.md` §5) that closes the
-*atomic whole-carve* force-fill and the *>1h-stale* replay, but a bounded slice can still be force-committed off a
-≤1h-stale `belowSince`. This document proposes the structural fix. Because three prior attempts on this exact surface
-were refuted (M-7's mid-curve build, M-15's naive live-`slot0` gate, H-5's dwell), **please validate the approach
-below before it is implemented.**
+**Status: SUPERSEDED — H-5 is CLOSED (see the RESOLVED section below and `FLOOR-H5-CLOSURE-SPEC.md`).**
+This file is retained as the reasoning trail: five designs were proposed and refuted on this surface (M-7's
+mid-curve build, M-15's naive live-`slot0` gate, H-5's dwell, the "place below spot" redesign below, and the
+external auditor's blessed TWAP-gated commit). None of them is what closed it. **Do not implement anything in
+this document.**
 
 ## The three findings, restated
 
@@ -60,7 +59,23 @@ exploitable, because the freshly-placed single-sided ETH is converted at that ma
 The lesson: the commit/placement price must come from a source the attacker CANNOT move within a transaction —
 i.e. a manipulation-resistant TWAP, not live `slot0`. There is no spot-based scheme (gate OR placement) that is safe.
 
-## ⚠️ UPDATE — the TWAP-gated commit below was ALSO refuted; see `FLOOR-H5-CLOSURE-SPEC.md`
+## ✅ RESOLVED — H-5 is closed by a swap-witnessed gate, NOT by any of the five designs below
+
+**Implemented and measured** (`FLOOR-H5-CLOSURE-SPEC.md`, `test/regression/H5.floor-forced-fill.test.js` 5-6).
+Same pad, same 1% hook tax, same 12-hour sustained-hold attack — the only difference is the gate:
+
+| | attacker PnL | commits | carve drained |
+|---|---|---|---|
+| pre-gate vault | **+9.4754 ETH** | 8 | 16.64 / 20 (83%) |
+| **armed gate** | **-1.1106 ETH** | **0** | **0.00 / 20** |
+
+The mechanism is not a price *estimate* of any kind. `RobinFeeHook` stamps a timestamp on every swap whose
+PRE-swap tick sits at or above the band, so `now >= aboveLowerTs + MIN_BELOW_DURATION` is an EXACT proof that the
+price was never above the band for that whole span — and the attacker's own push is a swap whose pre-swap tick is
+above the band, so he shuts the gate in the transaction that opens the attack. The honest path is untouched:
+after a genuine 196-minute recovery the keeper still commits (case 6).
+
+## ⚠️ The TWAP-gated commit below was ALSO refuted; see `FLOOR-H5-CLOSURE-SPEC.md`
 
 The section below was written before the external round-3 review and before this surface was measured. It is
 kept for the reasoning trail, but **a plain TWAP-gated commit is now REFUTED too** — the fifth design to fall

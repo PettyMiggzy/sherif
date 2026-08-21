@@ -144,7 +144,7 @@ describe("[R3 H-5] floor forced-fill: the attack, and which one-constant fix act
 
   it("3. SHIPPED RobinFloorVault (COMMIT_COOLDOWN > MAX_OBSERVED_GAP) — attacker loses, carve untouched", async () => {
     const snap = await takeSnapshot();
-    const L = await buildLab({ ...LAB }); // the REAL shipped vault, now carrying the fix
+    const L = await buildLab({ ...LAB, vaultContract: "H5GapCooldownVault" }); // pre-gate vault + the constant fix
     expect(await L.vault.COMMIT_COOLDOWN()).to.be.gt(await L.vault.MAX_OBSERVED_GAP()); // the actual fix
     const R = await runAttack(L, { rounds: 12, gapSec: 3901 });
     console.log(`   cooldown 65m > gap 60m: best ${f(R.best.pnl)} ETH, carve consumed ${f(R.best.consumed)}, floorLiquidity ${R.floorL}`);
@@ -156,7 +156,7 @@ describe("[R3 H-5] floor forced-fill: the attack, and which one-constant fix act
 
   it("4. [N-A] SUSTAINED HOLD defeats the shipped fix — the attacker chooses the poke cadence", async () => {
     const snap = await takeSnapshot();
-    const L = await buildLab({ ...LAB }); // the REAL shipped vault, fix and all
+    const L = await buildLab({ ...LAB, vaultContract: "H5GapCooldownVault" }); // pre-gate vault, constant fix only
     expect(await L.vault.COMMIT_COOLDOWN()).to.be.gt(await L.vault.MAX_OBSERVED_GAP()); // fix present...
     // ...and irrelevant: poking every 30 min stays inside MAX_OBSERVED_GAP (60 min), so the re-arm branch that
     // case 3 relies on never fires. Case 3 only passes because its 65-min gap is attacker-unfavourable.
@@ -165,6 +165,52 @@ describe("[R3 H-5] floor forced-fill: the attack, and which one-constant fix act
     expect(R.commits).to.be.gt(0); // slices DO land despite COMMIT_COOLDOWN > MAX_OBSERVED_GAP
     expect(R.consumed).to.be.gt(0n); // the carve is reachable — the shipped fix does not protect it
     expect(R.floorL).to.be.gt(0n); // ETH was force-committed into the stale band
+    await snap.restore();
+  });
+
+  it("5. [R3-H5 CLOSURE] the ARMED swap-witnessed gate defeats the sustained hold — nothing commits", async () => {
+    const snap = await takeSnapshot();
+    // The REAL vault with the hook gate armed. The attacker's own push is a swap whose PRE-swap tick is at/above
+    // the band, so the hook stamps `aboveLowerTs` in the very transaction that starts the attack — and every
+    // subsequent poke is inside MIN_BELOW_DURATION of that stamp. He cannot buy his way past it: holding longer
+    // only means holding, and any excursion re-stamps it.
+    // CONTROL FIRST — identical pad, identical 1% hook tax, but the PRE-GATE vault (shipped constant fix only).
+    // This isolates the gate as the cause: the difference below cannot be attributed to the tax or to the hook.
+    const C = await buildLab({ ...LAB, hookTaxBps: 100, vaultContract: "H5GapCooldownVault" });
+    const RC = await runSustainedHold(C, { pokeSec: 1800, pokes: 24, taxBps: 100 });
+    console.log(`   CONTROL (gate NOT armed): ${f(RC.pnl)} ETH, ${RC.commits} commits, consumed ${f(RC.consumed)}/${f(RC.carve0)}`);
+    expect(RC.commits).to.be.gt(0); // the attack still lands when the gate is unarmed
+
+    const L = await buildLab({ ...LAB, hookTaxBps: 100 });
+    expect(await L.vault.MIN_BELOW_DURATION()).to.equal(195 * 60);
+    const R = await runSustainedHold(L, { pokeSec: 1800, pokes: 24, taxBps: 100 }); // same run, gate ARMED
+    console.log(`   GATED sustained hold:      ${f(R.pnl)} ETH, ${R.commits} commits, consumed ${f(R.consumed)}/${f(R.carve0)}`);
+    expect(R.commits).to.equal(0); // not one slice landed
+    expect(R.consumed).to.equal(0n); // the carve is untouched
+    expect(R.floorL).to.equal(0n); // nothing was force-committed
+    expect(R.pnl).to.be.lt(0n); // and he paid fees for the privilege
+    await snap.restore();
+  });
+
+  it("6. [R3-H5 CLOSURE] the HONEST path still deploys the carve once the price genuinely settles below", async () => {
+    const snap = await takeSnapshot();
+    const L = await buildLab({ ...LAB, hookTaxBps: 100, episodeBaseWei: E(20) });
+    // A GENUINE recovery: a real buyer lifts the price back above the wall and it STAYS there. That last
+    // above-band swap stamps the watermark; nothing else trades, so a full MIN_BELOW_DURATION of honest
+    // below-band price accrues and the keeper's poke commits — exactly what the attacker cannot fake, because
+    // faking it means holding the price himself for the same 195 minutes with zero excursions.
+    const X = await sizePush(L, 59, 100);
+    await L.sw.connect(L.trader).swap(
+      L.key, { zeroForOne: true, amountSpecified: -X, sqrtPriceLimitX96: await L.sqrtAt(59) },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: X }
+    );
+    await time.increase(196 * 60);
+    await L.vault.connect(L.lp).addFloor(); // first poke arms the legacy belowSince dwell
+    await time.increase(11 * 60); // MIN_DWELL
+    await L.vault.connect(L.lp).addFloor();
+    const L1 = await L.vault.floorLiquidity();
+    console.log(`   honest keeper after a real 196m recovery: floorLiquidity ${L1}`);
+    expect(L1).to.be.gt(0n); // the floor still works — the gate costs liveness only to manipulators
     await snap.restore();
   });
 });

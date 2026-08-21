@@ -3,7 +3,7 @@
  * Reads the bootstrap addresses from deploy.local.json (produced by scripts/deploy.js), then:
  *   1. mines the hook salt (address low-14-bits == 0x00CC)
  *   2. factory.launch(...)  → deploys token + hook + pool + seed LP (atomic), floorRecipient unset
- *   3. deploys RobinFloorVault for the new pool and wires it via hook.setFloorRecipient (one-shot)
+ *   3. deploys RobinFloorVault, wires it via hook.setFloorRecipient, and ARMS its below-band gate (one-shot each)
  *   4. creates a DualStaking pool for the token via StakingFactory (claim fee = factory default, shipped 0; no lock)
  *  4b. deploys the per-pad RobinTokenTreasury (70% staking / 30% creator-burn) — every token-side LP fee sinks here
  *   5. points the LockVault token-leg LP fee at the treasury (setStakingRecipient, one-shot)
@@ -87,13 +87,29 @@ async function main() {
   const anchorTick = Math.floor(Math.log(ratio * ratio) / Math.log(1.0001));
   const floor = await FloorF.deploy(
     // [L-11] pass the timelocked registry, not a raw platform address, so a wallet rotation reaches the floor vault
-    d.poolManager, d.stateView, d.feeWalletRegistry, ethers.ZeroAddress, token, FEE, TS, hook, anchorTick, FLOOR_BAND_SPACINGS, { type: 0 }
+    d.poolManager, d.stateView, d.feeWalletRegistry, ethers.ZeroAddress, token, FEE, TS, hook, anchorTick,
+    FLOOR_BAND_SPACINGS,
+    // [R3-H5 P2] episodeBaseWei — the per-episode base allowance, taken from the LAUNCH CONFIG and never from a
+    // chain read (a live-liquidity read is inflatable by a JIT straddle across the non-atomic launch->deploy gap).
+    //
+    // LIVENESS-FIRST PENDING AUDITOR RATIFICATION. The spec's 1bp-of-seed sizing was MEASURED to starve the
+    // honest path: the allowance counts only ETH that arrives AFTER the episode opens, so at 1bp a carve that
+    // accrued BEFORE a dump becomes effectively undeployable for the life of that episode — the floor stops
+    // being a floor precisely when it is needed. P1 (the swap-witnessed gate) is what actually closes H-5, and
+    // it closes it on its own (measured: 0 commits, carve untouched, attacker -1.11 ETH). P2 is the secondary
+    // bound on an attacker who genuinely sustains MIN_BELOW_DURATION of held price, and its tightness is an
+    // economic tradeoff the external auditor should set. Shipping generous-but-bounded until then.
+    seedEth,
+    { type: 0 }
   );
   await floor.waitForDeployment();
   const floorAddr = await floor.getAddress();
   const hookC = HookF.attach(hook);
   await legacy(hookC, "setFloorRecipient", [poolId, floorAddr]); // platform-gated (signer must be platform)
-  console.log(`  floorVault ${floorAddr}  (wired)`);
+  // [R3-H5 P1] Arm the swap-witnessed below-band gate. MANDATORY: until this lands the hook does not stamp the
+  // watermark, the vault reads the gate as unarmed, and the carve PARKS forever (safe, but never deployed).
+  await legacy(floor, "armGate", []);
+  console.log(`  floorVault ${floorAddr}  (wired + gate armed)`);
 
   // 4) staking pool for the token (claim fee = the factory's immutable default — shipped 0 per deploy.js [F1]; no lock)
   const stakingFactory = await ethers.getContractAt("StakingFactory", d.stakingFactory);

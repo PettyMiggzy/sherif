@@ -42,3 +42,10 @@ interface IRobinFeeHookAdmin {
 
     function registerPool(PoolId id, PoolFeeConfig calldata cfg) external;
 }
+
+/// @notice The hook's floor-gate surface, used by `RobinFloorVault`. [R3-H5 P1] The vault ARMS its own gate
+/// (passing its immutable band) and READS the witness as one flat word.
+interface IRobinFloorGate {
+    function armFloorGate(PoolId id, int24 lo) external;
+    function floorGateWord(PoolId id) external view returns (uint256);
+}

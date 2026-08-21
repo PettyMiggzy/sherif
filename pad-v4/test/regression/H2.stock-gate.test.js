@@ -40,9 +40,11 @@ describe("H-2 — a stock pad can no longer be launched against a self-certified
     realStock = await (await ethers.getContractFactory("MockStock")).deploy(await realReg.getAddress(), 10n ** 27n);
     await realReg.setRegistered(await realStock.getAddress(), true); // [H-2] the registry ATTESTS the real stock
 
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     factory = await (await ethers.getContractFactory("StockPadFactory")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(),
-      await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress(), await realReg.getAddress()
+      await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress(), await realReg.getAddress(),
+      await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
   });

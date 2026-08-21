@@ -38,9 +38,10 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
     await stockReg.setRegistered(await stock.getAddress(), true); // [H-2] the registry attests the stock
     const stockAddr = (await stock.getAddress()).toLowerCase();
 
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     const factory = await (await ethers.getContractFactory("StockPadFactory")).deploy(
       POOL_MANAGER, POSITION_MANAGER, PERMIT2, await dep.getAddress(), await reg.getAddress(),
-      await lockVault.getAddress(), await stockReg.getAddress()
+      await lockVault.getAddress(), await stockReg.getAddress(), await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
 

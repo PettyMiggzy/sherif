@@ -1,4 +1,33 @@
-# H-5 closure — design specification (NOT YET IMPLEMENTED)
+# H-5 closure — design specification (P1/P2/P3 NOW IMPLEMENTED)
+
+> **STATUS: IMPLEMENTED AND MEASURED.** P1 (the swap-witnessed gate), P2 (episode allowance, with the [R3 N-B]
+> correction) and P3 (retained live-spot precondition) are on the branch. **P4 (the TWAP conjunct) is DEFERRED** —
+> by this spec's own §0 table it "kills nothing new — it is provably implied by P1", yet it needs a 128-slot
+> oracle ring, a new `FeeHookDeployer`, and ctor changes to all three factories. On a surface that has refuted
+> five designs, that much novel machinery for zero incremental security is the likeliest way to add a new
+> critical. Flagged for the auditor rather than shipped.
+>
+> **Measured closure** (`test/regression/H5.floor-forced-fill.test.js` cases 5-6), same pad, same 1% hook tax,
+> same 12-hour sustained-hold run, only the gate differing:
+>
+> | | attacker PnL | commits | carve drained |
+> |---|---|---|---|
+> | control — pre-gate vault | **+9.4754 ETH** | 8 | 16.64 / 20 (83%) |
+> | **armed gate** | **-1.1106 ETH** | **0** | **0.00 / 20** |
+>
+> The honest path still deploys (case 6): after a genuine 196-minute recovery the keeper commits normally.
+>
+> **[R3 N-B] correction applied.** The episode anchors on the ABOVE-LOWER watermark, not an above-upper one, so a
+> shallow dump that stalls inside the band can no longer hold one episode open forever.
+>
+> ### OPEN — P2 sizing is a liveness/security tradeoff the auditor must set
+> The spec's `EPISODE_BASE_WEI = seedQuoteWei / 10_000` (1 bp) was measured to **starve the honest path**: the
+> allowance counts only ETH arriving AFTER the episode opens, so a carve accrued BEFORE a dump is effectively
+> undeployable for that episode — the floor stops being a floor exactly when it is needed. This is a real
+> M-15-class liveness regression the spec understated. Since P1 closes the measured attack ON ITS OWN, the
+> runbook currently ships a generous-but-bounded `episodeBaseWei` (`seedEth`) and P2 stands as the secondary
+> bound on an attacker who genuinely sustains `MIN_BELOW_DURATION`. Tightening it is an economic call for the
+> external auditor, with the liveness cost above on the table.
 
 > **Status: DESIGN, red-teamed, awaiting implementation + external review.**
 > The shipped interim hardening (`COMMIT_COOLDOWN` 65m > `MAX_OBSERVED_GAP` 60m, see `RobinFloorVault` `[R3-H5]`

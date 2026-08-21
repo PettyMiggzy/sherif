@@ -15,7 +15,7 @@ import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.so
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {IStateView} from "@uniswap/v4-periphery/src/interfaces/IStateView.sol";
-import {IFeeWalletRegistry} from "../interfaces/IRobinInterfaces.sol";
+import {IFeeWalletRegistry, IRobinFloorGate} from "../interfaces/IRobinInterfaces.sol";
 
 /// @title RobinFloorVault — a permanent, fee-funded price floor
 /// @notice A single-sided QUOTE (currency0) position at a FIXED band just below the launch price: a standing
@@ -91,16 +91,21 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     /// restarts the dwell clock after any long un-poked gap so a stale `belowSince` cannot be replayed. Together these
     /// close the atomic WHOLE-CARVE force-fill and any replay off a belowSince stale by more than MAX_OBSERVED_GAP.
     ///
-    /// [re-audit/H-5] HONEST RESIDUAL — this is NOT a full fix. Because COMMIT_COOLDOWN == MIN_DWELL, a BOUNDED slice
-    /// (≤MAX_COMMIT_BPS) can still be force-committed off a belowSince stale by ≤MAX_OBSERVED_GAP — in a SINGLE cheap
-    /// tx (belowSince may have been set by anyone's earlier commit-region poke; the attacker holds no position between
-    /// commits, so the cost is ~2× the pool fee per commit, NOT arbitrage), draining the carve over ~1/MAX_COMMIT_BPS
-    /// commits one per COMMIT_COOLDOWN. A poke-observed dwell fundamentally cannot prove continuous below-band price
-    /// without a TWAP. The real closure is the floor redesign (M-15/H-5/L-33: add-only bands placed BELOW current
-    /// spot, or a TWAP-gated commit) — a product decision.
+    /// [R3-H5 CLOSED] The residual these constants could not close — a bounded slice force-committed off a
+    /// stale `belowSince`, and its worse sustained-hold variant (measured +9.47 ETH, 83% of the carve drained,
+    /// with NO keeper) — is closed by the SWAP-WITNESSED GATE, not by any of these values. See
+    /// FLOOR-H5-CLOSURE-SPEC.md. The constants below are RETAINED UNCHANGED as subordinate AND-terms: they cost
+    /// nothing, they keep the auditor's `COMMIT_COOLDOWN > MIN_DWELL` requirement a live referent, and every
+    /// measured control stays in place.
     ///
-    /// The honest path is barely touched: during normal operation a keeper pokes within MAX_OBSERVED_GAP, so the
-    /// clock stays valid and every poke commits its slice once MIN_DWELL has elapsed.
+    /// Why a TWAP is NOT the answer (and why this is not one): a time-weighted average is a DECAYING MEMORY, so
+    /// after a genuine crash it keeps reading below-band for a bounded interval, and inside that interval the
+    /// force-fill is fully atomic again. Measured: the naive TWAP conjunct made the attack STRICTLY BETTER for
+    /// the attacker (peak +23.84 -> +31.92 ETH; break-even carve/depth ~30% -> 4.0%). Waiting is also free —
+    /// a push->hold->sell-back round trip cost 1.110618 ETH at 0s of hold and 1.110618 ETH at 3h — so no gate
+    /// priced in elapsed time can work. The gate below is priced in something the attacker cannot fake: an
+    /// EXACT, swap-witnessed proof that the price was never above the band, where his own push is the swap that
+    /// resets it.
     uint32 public constant MIN_DWELL = 10 minutes;
     uint16 public constant MAX_COMMIT_BPS = 2000; // ≤20% of the on-hand carve per commit
     // [R3-H5] MUST stay STRICTLY GREATER THAN MAX_OBSERVED_GAP. That inequality — not the one against MIN_DWELL —
@@ -129,12 +134,55 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     uint32 public constant MAX_OBSERVED_GAP = 1 hours;
     uint16 internal constant BPS = 10_000;
 
+    // ───────────────────── [R3-H5] the structural closure: P1 gate + P2 episode allowance ─────────────────────
+    // Continuous, SWAP-WITNESSED, unaveraged below-band time required before any commit. The hook stamps
+    // `aboveLowerTs` on every swap whose PRE-swap tick is at/above the band, so passing this proves the price was
+    // below the band at EVERY instant of the window — the attacker's own push stamps it and shuts the gate in the
+    // same transaction. 195 min = 3 x COMMIT_COOLDOWN (the external auditor's window requirement, literal).
+    uint32 public constant MIN_BELOW_DURATION = 195 minutes;
+    // Per-episode share of the band's size at episode start. g < 2*beta_net/G_max = 0.016; 0.005 gives 3.2x margin
+    // against the "push down through a token-heavy band" lever (the attacker must refill it and pays fees on 2x
+    // the notional to sweep it back).
+    uint16 public constant EPISODE_BAND_BPS = 50; // 0.5%
+
+    // Why a poke parked, for operators and tests.
+    uint8 internal constant R_ORACLE = 1; // hook unreadable / unarmed / armed for a different band
+    uint8 internal constant R_SPOT = 2; // live spot inside/above the band (settlement precondition)
+    uint8 internal constant R_WARMUP = 3; // gate armed less than MIN_BELOW_DURATION ago
+    uint8 internal constant R_BELOW = 4; // price was at/above the band too recently  <-- THE GATE
+    uint8 internal constant R_DWELL = 5; // legacy poke dwell (retained, subordinate)
+    uint8 internal constant R_COOLDOWN = 6; // legacy pace limiter (retained, unchanged)
+    uint8 internal constant R_BUDGET = 7; // episode allowance exhausted
+
     uint64 public belowSince; // when the tick was first OBSERVED below the band (0 = last observation was not)
     uint64 public lastCommitAt; // when the last slice was committed
     uint64 public lastObserved; // block.timestamp of the last addFloor observation (any tick) — [re-audit/H-5] anti-stale
 
+    // [R3-H5 P2] EPISODE = one continuous run of below-band price, identified by the hook watermark that opened
+    // it. Within one episode the vault may commit at most EPISODE_BASE_WEI + EPISODE_BAND_BPS of the band's size
+    // at episode start + every wei that ARRIVED during the episode. It does NOT refill with time — that is the
+    // whole point: holding a manipulated price costs an attacker nothing per second (measured: a push->hold->
+    // sell-back round trip cost the same at 0s and at 3h), so a time-refilling budget is free money. Anchoring
+    // per episode prices the allowance against a ROUND TRIP instead.
+    //
+    // [R3 N-B] The anchor is the ABOVE-LOWER watermark, not an above-UPPER one. Anchoring on the upper edge left
+    // a shallow dump that stalls inside the band unable to ever roll the episode, so the allowance accumulated
+    // without bound in exactly the range where the force-fill is profitable. Anchoring on the lower edge means a
+    // fresh allowance requires letting price back above the band — which also restarts MIN_BELOW_DURATION.
+    uint64 public episodeAnchor; // the aboveLowerTs value that opened the current episode
+    uint256 public episodeStartQuote; // parked carve when it opened
+    uint256 public episodeStartBand; // bandQuoteWei when it opened
+    uint256 public bandQuoteWei; // cumulative currency0 principal committed into the band (monotone)
+
+    // Runbook value: seedQuoteWei / 10_000 (1 bp of pool depth). Derived from the LAUNCH CONFIG, never from a
+    // chain read — a live-liquidity read is inflatable by a JIT straddle across the non-atomic launch->deploy gap.
+    uint256 public immutable EPISODE_BASE_WEI;
+
     event FloorAdded(uint256 quoteUsed, uint128 liquidityAdded, uint128 totalLiquidity);
     event FloorSkipped(int24 currentTick, uint256 parked);
+    event FloorParked(uint8 reason, int24 spot, uint256 parked); // [R3-H5] which gate layer refused
+    event FloorEpisodeReset(uint64 anchor, uint256 startQuote, uint256 startBand);
+    event FloorCommitted(uint256 quoteUsed, uint128 liquidityAdded, uint256 allowance, uint256 bandQuoteWei);
     event FloorFeesCollected(uint256 amount0, uint256 amount1, address ethTo); // ethTo = platform; token (amount1) parks
     event TokenSinkSet(address indexed sink);
     event TokenFeesSwept(address indexed to, uint256 amount);
@@ -156,7 +204,8 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         int24 tickSpacing_,
         IHooks hooks_,
         int24 anchorTick, // the pad's intended launch tick — the band anchors here, NOT to live spot
-        uint24 bandWidthSpacings // how many tickSpacings wide the wall is (>=1)
+        uint24 bandWidthSpacings, // how many tickSpacings wide the wall is (>=1)
+        uint256 episodeBaseWei // [R3-H5 P2] per-episode base allowance; runbook = seedQuoteWei / 10_000
     ) {
         if (poolManager_ == address(0) || stateView_ == address(0) || feeRegistry_ == address(0)) revert ZeroAddress();
         if (bandWidthSpacings == 0) revert BadBand();
@@ -182,6 +231,7 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         }
         floorTickLower = lower;
         floorTickUpper = upper;
+        EPISODE_BASE_WEI = episodeBaseWei;
     }
 
     /// @notice Deploy on-hand quote (the carve) into the permanent wall. Permissionless. If spot has fallen
@@ -193,40 +243,106 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     function addFloor() external nonReentrant returns (uint128 added) {
         uint256 amt = currency0.balanceOfSelf();
         if (amt == 0) return 0;
-        (, int24 tick,,) = stateView.getSlot0(_poolId());
+        PoolId id = _poolId();
+
+        // ── L1 · READ THE HOOK GATE. Infallible: low-level staticcall, length check, flat single-word decode.
+        //    Unarmed / unreadable / armed for a DIFFERENT band ⇒ PARK. Never a revert, never a brick.
+        (bool gOk, uint64 armedAt, uint64 aboveLowerTs) = _gateState(id);
+        if (!gOk) return _park(amt, 0, R_ORACLE);
+
+        // ── L2 · EPISODE BOOKKEEPING. Done BEFORE any early return so the snapshot is always taken at the
+        //    earliest poke of the episode, never at a later one the attacker chose.
+        if (aboveLowerTs != episodeAnchor) {
+            episodeAnchor = aboveLowerTs;
+            episodeStartQuote = amt;
+            episodeStartBand = bandQuoteWei;
+            emit FloorEpisodeReset(aboveLowerTs, amt, bandQuoteWei);
+        }
+
+        // ── L3 · LIVE SPOT — DEMOTED from "the gate" to a SETTLEMENT PRECONDITION [external auditor (a)].
+        //    This is the ONLY guarantee the band is pure-currency0 at current spot, which _add's
+        //    getLiquidityForAmount0 + _resolve(currency1, …) depend on. Without it a gate that passed while spot
+        //    sat inside/above the band would not revert — it would silently mint the "ETH wall" out of PARKED
+        //    TOKEN FEES (measured: 0 ETH and 4.27 TOKEN consumed), which belong to stakers. It is
+        //    monotone-conservative: it can only turn a commit into a PARK, never force one. The legacy poke-dwell
+        //    bookkeeping is preserved here EXACTLY as shipped.
+        (, int24 spot,,) = stateView.getSlot0(id);
         uint64 nowTs = uint64(block.timestamp);
         uint64 prevObserved = lastObserved;
-        lastObserved = nowTs; // record THIS observation (used to detect an untrusted gap on the next one)
-        if (tick >= floorTickLower) {
-            belowSince = 0; // observation: NOT below → the dwell clock restarts from the next one
-            parkedQuote = amt;
-            emit FloorSkipped(tick, amt);
-            return 0;
+        lastObserved = nowTs;
+        if (spot >= floorTickLower) {
+            belowSince = 0;
+            return _park(amt, spot, R_SPOT);
         }
-        // [re-audit/H-5] `belowSince` is only ADVANCED by pokes, and pokes are not incentivized during a dump — so a
-        // value left over from a prior healthy period would be STALE and let an attacker force-fill the carve off it
-        // after an un-poked dump. Restart the clock whenever we can't trust the price stayed below since the last
-        // observation: never below (belowSince==0), OR the gap since the last poke is too long to vouch for continuity.
-        // CLOSES: the atomic WHOLE-CARVE fill (MAX_COMMIT_BPS caps each commit, COMMIT_COOLDOWN one per block) and any
-        // replay off a belowSince stale by MORE than MAX_OBSERVED_GAP.
-        // RESIDUAL (needs the floor redesign, M-15/H-5/L-33 — NOT closed here): because COMMIT_COOLDOWN == MIN_DWELL, a
-        // BOUNDED slice (≤MAX_COMMIT_BPS) can still be force-committed off a belowSince stale by ≤MAX_OBSERVED_GAP — in
-        // a SINGLE cheap tx (belowSince may have been set by anyone's earlier commit-region poke; the attacker holds no
-        // position between commits, so the cost is ~2× the pool fee per commit, NOT arbitrage/price risk), draining the
-        // carve over ~1/MAX_COMMIT_BPS commits, one per COMMIT_COOLDOWN. A TWAP-gated commit or add-only bands below
-        // spot are the real closure; this is interim hardening, not a full fix.
         if (belowSince == 0 || nowTs > prevObserved + MAX_OBSERVED_GAP) belowSince = nowTs;
-        // not settled below the band long enough, or too soon after the last slice → record and park
-        if (block.timestamp < uint256(belowSince) + MIN_DWELL || block.timestamp < uint256(lastCommitAt) + COMMIT_COOLDOWN) {
-            parkedQuote = amt;
-            emit FloorSkipped(tick, amt);
-            return 0;
-        }
+
+        // ── L4 · THE GATE. Exact, unaveraged, swap-witnessed proof of CONTINUOUS below-band price. The tick
+        //    cannot move without a swap; every swap's PRE-swap tick is inspected by the hook (including
+        //    same-second swaps); and the tail [last swap, now] is covered by the L3 live read above. So passing
+        //    here PROVES the tick was < floorTickLower at every instant of [now - MIN_BELOW_DURATION, now].
+        if (nowTs < armedAt + MIN_BELOW_DURATION) return _park(amt, spot, R_WARMUP);
+        if (nowTs < aboveLowerTs + MIN_BELOW_DURATION) return _park(amt, spot, R_BELOW);
+
+        // ── L6 · LEGACY PACE — retained UNCHANGED, values UNCHANGED. Subordinate AND-terms.
+        if (block.timestamp < uint256(belowSince) + MIN_DWELL) return _park(amt, spot, R_DWELL);
+        if (block.timestamp < uint256(lastCommitAt) + COMMIT_COOLDOWN) return _park(amt, spot, R_COOLDOWN);
+
+        // ── L7 · SIZE — the episode allowance. Every term is a CEILING, so the composed policy is never more
+        //    permissive than the shipped MAX_COMMIT_BPS.
+        uint256 allow = _episodeAllowance(amt);
         uint256 slice = (amt * MAX_COMMIT_BPS) / BPS;
-        if (slice == 0) slice = amt; // a balance too small to slice goes in whole rather than sticking forever
-        lastCommitAt = uint64(block.timestamp);
+        if (slice == 0 && amt <= allow) slice = amt; // too small to slice goes in whole — but never above allowance
+        if (slice > allow) slice = allow;
+        if (slice > amt) slice = amt;
+        if (slice == 0) return _park(amt, spot, R_BUDGET);
+
         added = abi.decode(poolManager.unlock(abi.encode(Op.ADD, slice)), (uint128));
+        if (added > 0) lastCommitAt = nowTs; // never burn a cooldown on a no-op mint
         parkedQuote = currency0.balanceOfSelf(); // whatever this commit did not take stays parked, exactly
+        emit FloorCommitted(slice, added, allow, bandQuoteWei);
+    }
+
+    function _park(uint256 amt, int24 spot, uint8 reason) private returns (uint128) {
+        parkedQuote = amt;
+        emit FloorSkipped(spot, amt); // signature UNCHANGED — existing assertions keep working
+        emit FloorParked(reason, spot, amt); // which layer said no
+        return 0;
+    }
+
+    /// @dev Read the hook's gate witness as ONE flat word and verify it is armed for THIS band. Decoded with
+    /// shifts from raw returndata — never `abi.decode` of a multi-value return, whose cleanliness check runs in
+    /// OUR frame outside any try/catch ([H-3]). Any failure ⇒ (false, …) ⇒ the caller parks.
+    function _gateState(PoolId id) private view returns (bool ok, uint64 armedAt, uint64 aboveLowerTs) {
+        (bool s, bytes memory d) = address(hooks).staticcall(
+            abi.encodeWithSelector(IRobinFloorGate.floorGateWord.selector, id)
+        );
+        if (!s || d.length < 32) return (false, 0, 0);
+        uint256 w;
+        assembly ("memory-safe") { w := mload(add(d, 32)) }
+        armedAt = uint64(uint40(w));
+        aboveLowerTs = uint64(uint40(w >> 40));
+        // Armed for a DIFFERENT band (a re-anchored vault, a mis-wire) is as untrustworthy as unarmed.
+        if (armedAt == 0 || int24(uint24(w >> 80)) != floorTickLower) return (false, 0, 0);
+        ok = true;
+    }
+
+    /// @dev Within one episode, cumulative band growth never exceeds the base + a share of the band at episode
+    /// start + every wei that arrived during the episode. Cumulative inflow is DERIVABLE, never tracked:
+    /// currency0 leaves this vault ONLY as a commit into the band (currency0 LP fees go straight to the platform
+    /// inside _collect and never enter this balance; currency1 is an ERC20), so
+    /// `cumInflow == balance + bandQuoteWei` and inflow this episode collapses to `amt - episodeStartQuote`.
+    function _episodeAllowance(uint256 amt) internal view returns (uint256) {
+        uint256 cap = EPISODE_BASE_WEI + (episodeStartBand * EPISODE_BAND_BPS) / BPS;
+        if (amt >= episodeStartQuote) return cap + (amt - episodeStartQuote);
+        uint256 spent = episodeStartQuote - amt; // cap already consumed this episode
+        return spent >= cap ? 0 : cap - spent;
+    }
+
+    /// @notice Arm this pad's gate in the hook, one-shot, by the platform. MUST be part of the launch runbook:
+    /// until it is armed the gate reads unarmed and the carve PARKS (safe, but it never deploys).
+    function armGate() external {
+        if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
+        IRobinFloorGate(address(hooks)).armFloorGate(_poolId(), floorTickLower);
     }
 
     /// @notice Collect the wall's accrued LP fees: the ETH (currency0) leg to the platform, the TOKEN (currency1)
@@ -301,6 +417,7 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
         // platform holds no pad tokens); sweepTokenFees() forwards it to the token sink. No longer stranded.
         _resolve(currency1, delta.amount1(), address(this));
         floorLiquidity += L;
+        bandQuoteWei += amt; // [R3-H5 P2] cumulative currency0 principal in the band; prices the episode allowance
         // [H-5] parkedQuote is reconciled by the caller from the real balance after the unlock closes — this
         // call now commits a SLICE, so zeroing it here would under-report the carve still waiting.
         emit FloorAdded(amt, L, floorLiquidity);

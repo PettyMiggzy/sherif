@@ -80,6 +80,32 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
 
     mapping(PoolId => PoolConfig) public config;
 
+    // ─────────────────────────── [R3-H5 P1] the swap-witnessed below-band gate ───────────────────────────
+    // The floor's park->commit decision used to be gated on a price the attacker could move inside one tx.
+    // Averaging (a TWAP) does NOT fix that: a time-weighted mean is a DECAYING MEMORY, so after any genuine
+    // crash it keeps reading below-band for a while, and inside that interval the force-fill is atomic again
+    // (measured; see FLOOR-H5-CLOSURE-SPEC.md). What closes it is an EXACT, unaveraged duration proof:
+    //
+    //   the tick cannot move without a swap, and every swap passes through beforeSwap, so stamping the
+    //   timestamp of every swap whose PRE-swap tick is at/above the band makes `aboveLowerTs` a complete
+    //   witness. `now >= aboveLowerTs + MIN_BELOW_DURATION` therefore PROVES the price was continuously
+    //   below the band for that whole span — and the attacker's own push is itself a swap whose pre-swap
+    //   tick is above the band, so he stamps the watermark and closes the gate in the same transaction.
+    //
+    // O(1), no ring, no averaging, no keeper poke. The vault reads it via a flat single word (`floorGateWord`).
+    struct FloorGate {
+        int24 gateLower; // == the vault's floorTickLower; the only edge this gate witnesses
+        uint40 armedAt; // when the gate was armed — also the warm-up anchor (0 = unarmed)
+        uint40 aboveLowerTs; // last swap whose PRE-swap tick was >= gateLower (0 = never since arming)
+    }
+
+    mapping(PoolId => FloorGate) public floorGate;
+
+    // `PoolManager.swap` reads slot0 (checkPoolInitialized) BEFORE calling beforeSwap and only runs the swap
+    // afterwards, so inside beforeSwap this slot still holds the PRE-swap tick, already warm.
+    bytes32 private constant POOLS_SLOT = bytes32(uint256(6)); // StateLibrary.POOLS_SLOT
+    bytes4 private constant EXTSLOAD_SEL = 0x1e2eaeaf; // Extsload.extsload(bytes32) — bare assembly, cannot revert
+
     // Accrue-and-pull books. currencyIndex ∈ {0 = money side (quote/ETH), 1 = token}. Both taxes are
     // money-side, so live entries sit at index 0; index 1 is retained only for the generic claim signature.
     mapping(PoolId => mapping(uint256 => uint256)) public platformOwed; // from buys (money side)
@@ -89,6 +115,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     // referral carve from buys (money side): the referrer (passed in swap hookData) earns a slice of the platform's
     // buy cut. Keyed by referrer → money-side currency (address(0) for ETH), so one claim sweeps every ETH pad.
     mapping(address referrer => mapping(address quote => uint256)) public referralOwed;
+    event FloorGateArmed(PoolId indexed id, address vault, int24 gateLower);
 
     event PoolRegistered(PoolId indexed id, address indexed creator, uint16 buyTaxBps, uint16 sellTaxBps);
     event BuyTaxed(PoolId indexed id, uint256 platformCut, uint256 bufferCut); // money side
@@ -114,6 +141,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     error BufferRecipientAlreadySet();
     error ZeroAddress();
     error NoFloorRecipient();
+    error FloorGateAlreadyArmed(); // [R3-H5 P1] one-shot arming
     error NoBufferRecipient();
     error NothingToClaim();
     error BadGuardWindow();
@@ -204,6 +232,11 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
                 if (diff <= c.guardWindow) revert CorporateActionCurb();
             }
         }
+        // [R3-H5 P1] Witness the PRE-swap tick. Placed AFTER the curb (a curbed swap reverts the whole tx
+        // anyway) and BEFORE the early return below — that return fires on SELLS, on buyTaxBps == 0 and on the
+        // curve controller's own swaps, all of which move the tick and MUST be observed. Recording only taxed
+        // buys would hand an attacker a free unobserved direction straight through the gate.
+        if (c.registered) _observe(id);
 
         // BUY tax = fee on the money-side INPUT. zeroForOne spends currency0 (the quote) → a BUY. Sells (oneForZero)
         // are taxed in afterSwap from the money-side OUTPUT. Skip: unregistered, the hook's own swaps, sells, rate 0.
@@ -538,4 +571,55 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
 
     /// @dev Needed so native-ETH `take` fee collections land here.
     receive() external payable {}
+
+    // ───────────────────────── [R3-H5 P1] observation, arming, and the read ─────────────────────────
+
+    /// @dev Read this pool's PRE-swap tick straight out of the PoolManager's slot0. INFALLIBLE by
+    /// construction: a low-level staticcall plus a length check, and the word is decoded in assembly.
+    /// Never `StateLibrary.getSlot0` — its `abi.decode` runs in OUR frame after the call returns, outside
+    /// any try/catch, which is the exact [H-3] trap `_scheduledEffectiveAt` was rewritten to dodge.
+    function _preSwapTick(PoolId id) private view returns (bool ok, int24 tick) {
+        bytes32 slot = keccak256(abi.encodePacked(PoolId.unwrap(id), POOLS_SLOT));
+        (bool s, bytes memory d) = address(poolManager).staticcall(abi.encodeWithSelector(EXTSLOAD_SEL, slot));
+        if (!s || d.length < 32) return (false, 0); // never revert on the swap hot path
+        assembly ("memory-safe") {
+            tick := signextend(2, shr(160, mload(add(d, 32)))) // slot0: [sqrtPriceX96 (160) | tick (24) | ...]
+        }
+        ok = true;
+    }
+
+    /// @dev Stamp the watermark when the pre-swap tick sits at/above the floor band. Bounded: at most one
+    /// SSTORE, and only while the price is in the band region — a healthy pad (spot below the band) pays a
+    /// single warm SLOAD. An UNREADABLE tick is treated as ABOVE the band: conservative, because that can
+    /// only ever delay a commit, never enable one.
+    function _observe(PoolId id) private {
+        FloorGate storage g = floorGate[id];
+        if (g.armedAt == 0) return; // gate not armed for this pool — nothing to witness
+        (bool ok, int24 t) = _preSwapTick(id);
+        if (!ok || t >= g.gateLower) g.aboveLowerTs = uint40(block.timestamp);
+    }
+
+    /// @notice Bind this pool's floor band edge into the hook so every swap witnesses it. Called BY THE
+    /// FLOOR VAULT itself (which is platform-gated on its side), so the edge comes from the vault's own
+    /// immutable and needs no call back into it. The sender check subsumes registration and recipient
+    /// presence: an unregistered pool has `floorRecipient == 0`, which no caller can equal. One-shot,
+    /// because a re-armable gate could be reset to dodge the witness.
+    function armFloorGate(PoolId id, int24 lo) external {
+        if (msg.sender != config[id].floorRecipient) revert NotPlatform();
+        if (floorGate[id].armedAt != 0) revert FloorGateAlreadyArmed();
+        (bool ok, int24 t) = _preSwapTick(id);
+        uint40 n = uint40(block.timestamp);
+        // Conservative arming: if the price is already at/above the band (or unreadable) the watermark starts
+        // hot, so the vault parks until a full MIN_BELOW_DURATION of below-band price has been witnessed.
+        floorGate[id] = FloorGate({gateLower: lo, armedAt: n, aboveLowerTs: (!ok || t >= lo) ? n : 0});
+        emit FloorGateArmed(id, msg.sender, lo);
+    }
+
+    /// @notice The gate state as ONE flat word, so a reader can decode it with shifts and never risk an
+    /// `abi.decode` cleanliness revert on a multi-value return.
+    /// Layout: [0..39] armedAt | [40..79] aboveLowerTs | [80..103] gateLower (int24 two's complement).
+    function floorGateWord(PoolId id) external view returns (uint256) {
+        FloorGate storage g = floorGate[id];
+        return uint256(g.armedAt) | (uint256(g.aboveLowerTs) << 40) | (uint256(uint24(g.gateLower)) << 80);
+    }
 }
