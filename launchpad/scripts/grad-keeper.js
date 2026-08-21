@@ -30,6 +30,9 @@
 //   KEEPER_PK           the keeper's private key (omit ⇒ forced --dry-run, read-only)
 //   POLL_SECS           (default 60)
 //   COINS_REFRESH_SECS  (default 600) — how often to refetch the coin list
+//   COINS_CACHE         (default ~/.grad-keeper-coins.json) — disk cache of the last good coin list, so the
+//                        keeper keeps graduating across an API outage or a restart (the RPC it polls is the
+//                        chain's own node and is independent of that API)
 //   RPC_BATCH           set to "0" to disable JSON-RPC batching (if the endpoint rejects array payloads)
 //   GAS_LIMIT           (default 3500000)
 // Flags: --dry-run  (read-only: report ready/graduated status, send NO transactions)
@@ -39,6 +42,9 @@
 //       node launchpad/scripts/grad-keeper.js --dry-run --once
 // ─────────────────────────────────────────────────────────────────────────────
 const { ethers } = require("ethers");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 
 // Default to the CHAIN's own RPC, not our api.robinlab.io proxy: the proxy fronts this same node, is shared
 // with the website/indexer, and was returning HTTP 400 `{"error":"upstream 429"}` for every call — which had
@@ -72,6 +78,21 @@ let netPinned = null;
 let fails = 0;           // consecutive RPC failures → exponential backoff
 let skipTicks = 0;       // ticks to skip while backing off
 let quietSince = 0;      // suppress repeated "nothing to watch" spam
+// The coin LIST comes from our own API, but the chain RPC we poll does not — so an API outage must not blind
+// the keeper. Persist the last good list and fall back to it (survives restarts too).
+const CACHE = process.env.COINS_CACHE || path.join(os.homedir(), ".grad-keeper-coins.json");
+
+function saveCoins() {
+  try { fs.writeFileSync(CACHE, JSON.stringify(coins)); } catch { /* cache is best-effort, never fatal */ }
+}
+
+function loadCoins() {
+  try {
+    const c = JSON.parse(fs.readFileSync(CACHE, "utf8"));
+    if (Array.isArray(c) && c.length) { coins = c; return true; }
+  } catch { /* no cache yet */ }
+  return false;
+}
 
 async function refreshCoins() {
   if (coins.length && Date.now() - coinsAt < COINS_REFRESH) return;
@@ -81,6 +102,7 @@ async function refreshCoins() {
   coins = (d.coins || []).filter((c) => c.curve).map((c) => ({ sym: c.symbol, curve: c.curve, graduated: !!c.graduated }));
   coinsAt = Date.now();
   for (const c of coins) if (c.graduated) done.add(c.curve); // retire indexer-confirmed graduates
+  saveCoins();
 }
 
 function curveOf(addr) {
@@ -123,7 +145,13 @@ async function sweepReady(live) {
 
 async function tick(provider, wallet) {
   if (skipTicks > 0) { skipTicks--; return; }
-  try { await refreshCoins(); } catch (e) { console.log(ts(), "coin fetch failed:", e.message); }
+  try {
+    await refreshCoins();
+  } catch (e) {
+    // Fall back to the last good list rather than going blind — the chain RPC is still reachable.
+    if (!coins.length && loadCoins()) console.log(ts(), `coin fetch failed (${e.message}) — using ${coins.length} cached coins`);
+    else console.log(ts(), "coin fetch failed:", e.message);
+  }
   if (!coins.length) return;
 
   const live = coins.filter((c) => !done.has(c.curve));
