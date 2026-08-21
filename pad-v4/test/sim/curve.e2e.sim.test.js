@@ -50,7 +50,7 @@ async function launchPad(S, deployer, creator, tag, { supply, curveSupply, reser
     supply, curveSupply, reserveSupply, tickSpacing: TS, creator: creator.address,
   };
   const TokenF = await ethers.getContractFactory("PadToken");
-  // [brand] the token address must end in `faf0` or the factory reverts BadTokenSuffix — mine the salt from
+  // [brand] the token address must end in `1ab5` or the factory reverts BadTokenSuffix — mine the salt from
   // the EXACT cfg being launched (per-tag base salt keeps two pads of the same shape on different addresses).
   const tokenSalt = await brandedTokenSalt(await S.dep.getAddress(), await S.factory.getAddress(), cfg, ethers.id("tok-" + tag));
   const tokenInit = ethers.concat([

@@ -3,7 +3,7 @@ const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
 const { brandedTokenSalt } = require("../helpers/brand");
 
-// [brand] Every Robin pad token address must end in `faf0`. This is enforced IN THE CONTRACT
+// [brand] Every Robin pad token address must end in `1ab5`. This is enforced IN THE CONTRACT
 // (PadBrand.requireBrand, called by all three factories' launch), never merely by the launch tooling — an
 // off-chain convention would hold only as long as every client remembered to mine, which is exactly the
 // "config-enforced, not contract-enforced" weakness round-3 F1 was restructured to eliminate.
@@ -16,7 +16,7 @@ const ZERO = ethers.ZeroAddress;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 const START = 6000, GRAD = 3000, TS = 60, FEE = 10000, MINGRAD = 1800;
 
-describe("[brand] pad token addresses are contract-forced to end in faf0", () => {
+describe("[brand] pad token addresses are contract-forced to end in 1ab5", () => {
   let deployer, platform, creator, S;
 
   before(async () => {
@@ -69,7 +69,7 @@ describe("[brand] pad token addresses are contract-forced to end in faf0", () =>
     // a plain arbitrary salt, exactly what every launch used before the brand rule
     const tokenSalt = ethers.id("arbitrary-unmined-salt");
     const { hookSalt, predicted } = await hookSaltFor(cfg, tokenSalt);
-    expect(predicted.toLowerCase().endsWith("faf0")).to.equal(false); // precondition: genuinely unbranded
+    expect(predicted.toLowerCase().endsWith("1ab5")).to.equal(false); // precondition: genuinely unbranded
 
     await expect(S.factory.launch(cfg, tokenSalt, hookSalt, ethers.id("curve-UNBRAND")))
       .to.be.revertedWithCustomError(S.factory, "BadTokenSuffix")
@@ -78,7 +78,7 @@ describe("[brand] pad token addresses are contract-forced to end in faf0", () =>
     expect(await S.factory.poolOf(predicted)).to.equal(ethers.ZeroHash);
   });
 
-  it("ACCEPTS a mined salt, and the live token really ends in faf0", async () => {
+  it("ACCEPTS a mined salt, and the live token really ends in 1ab5", async () => {
     const cfg = cfgFor("BRANDED");
     const tokenSalt = await brandedTokenSalt(await S.dep.getAddress(), await S.factory.getAddress(), cfg, ethers.id("tok-BRANDED"));
     const { hookSalt } = await hookSaltFor(cfg, tokenSalt);
@@ -86,8 +86,8 @@ describe("[brand] pad token addresses are contract-forced to end in faf0", () =>
     const [token] = await S.factory.launch.staticCall(cfg, tokenSalt, hookSalt, ethers.id("curve-BRANDED"));
     await (await S.factory.launch(cfg, tokenSalt, hookSalt, ethers.id("curve-BRANDED"))).wait();
 
-    expect(token.toLowerCase().endsWith("faf0")).to.equal(true);
-    expect(BigInt(token) & 0xffffn).to.equal(0xfaf0n);
+    expect(token.toLowerCase().endsWith("1ab5")).to.equal(true);
+    expect(BigInt(token) & 0xffffn).to.equal(0x1ab5n);
     // it is a real, fully-launched pad — not just an address that passed a check
     expect(await (await ethers.getContractAt("PadToken", token)).symbol()).to.equal("BRANDED");
     expect(await S.factory.poolOf(token)).to.not.equal(ethers.ZeroHash);
@@ -97,7 +97,7 @@ describe("[brand] pad token addresses are contract-forced to end in faf0", () =>
     const src = require("fs").readFileSync(__dirname + "/../../contracts/core/PadBrand.sol", "utf8");
     expect(src).to.not.match(/function set|onlyOwner|bool .*enabled|immutable/); // no switch of any kind
     // the constant is the literal suffix, so a silent retune is visible in the diff
-    expect(src).to.match(/SUFFIX\s*=\s*0xfaf0/);
+    expect(src).to.match(/SUFFIX\s*=\s*0x1ab5/);
     expect(src).to.match(/SUFFIX_MASK\s*=\s*0xffff/);
   });
 });

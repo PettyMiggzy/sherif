@@ -70,7 +70,7 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
   }
 
   async function prepareSalts(tag, cfg) {
-    // [brand] the pad token address must end in `faf0` or the factory reverts BadTokenSuffix — mine the salt
+    // [brand] the pad token address must end in `1ab5` or the factory reverts BadTokenSuffix — mine the salt
     // from the EXACT cfg being launched. This path reaches the factory via PresaleVault.finalize, and the
     // commitment below binds the mined salt, so presale finalization stays consistent.
     const tokenSalt = await brandedTokenSalt(depAddr, factoryAddr, cfg, ethers.id("tok-" + tag));

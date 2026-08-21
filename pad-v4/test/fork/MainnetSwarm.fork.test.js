@@ -66,7 +66,7 @@ describe("Mainnet-fork E2E swarm — new ETH-fee suite vs live v4", function () 
       tickSpacing: SPACING, creator: creator.address,
     };
     const TokenF = await ethers.getContractFactory("PadToken");
-    // [brand] the factory rejects any token address not ending in `faf0` — mine the salt (seeded per-tag so two
+    // [brand] the factory rejects any token address not ending in `1ab5` — mine the salt (seeded per-tag so two
     // pads with identical config still land on different addresses). MUST run before the hook mining below,
     // because the hook init-code embeds the predicted token address.
     const tokenSalt = await brandedTokenSalt(await dep.getAddress(), await factory.getAddress(), cfg, ethers.id("tok-" + tag));

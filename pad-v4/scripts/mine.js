@@ -3,10 +3,10 @@ const { ethers } = require("hardhat");
 const HOOK_FLAGS = 0xccn; // BEFORE_SWAP | AFTER_SWAP | BEFORE_SWAP_RETURNS_DELTA | AFTER_SWAP_RETURNS_DELTA
 const FLAG_MASK = 0x3fffn;
 
-// Brand suffix: every Robin pad token address ends in `faf0`, so a Robin coin is recognizable (and
+// Brand suffix: every Robin pad token address ends in `1ab5`, so a Robin coin is recognizable (and
 // impersonation is visible) straight from its contract address. 16 bits ⇒ ~65k expected tries; measured
 // ~2s / ~73k tries per launch in node (see mineTokenSalt). A browser miner should use a WASM keccak.
-const CA_SUFFIX = 0xfaf0n;
+const CA_SUFFIX = 0x1ab5n;
 const CA_SUFFIX_MASK = 0xffffn; // low 16 bits == the last 4 hex characters of the address
 
 /// Mine a CREATE2 salt so the hook deployed by `deployerAddr` lands on an address whose low 14
@@ -21,7 +21,7 @@ function mineHookSalt(deployerAddr, initCode, maxTries = 5_000_000) {
   throw new Error("hook salt not found within maxTries");
 }
 
-/// Mine a CREATE2 salt so the pad TOKEN lands on an address ending in `faf0` (the Robin brand suffix).
+/// Mine a CREATE2 salt so the pad TOKEN lands on an address ending in `1ab5` (the Robin brand suffix).
 ///
 /// Salts are derived as keccak256(baseSalt, i) rather than the raw counter `mineHookSalt` uses, because the
 /// token's init-code hash is a function of (name, symbol, decimals, supply, factory) — two pads sharing all
@@ -34,7 +34,7 @@ function mineHookSalt(deployerAddr, initCode, maxTries = 5_000_000) {
 function mineTokenSalt(deployerAddr, initCode, baseSalt, opts = {}) {
   const { suffix = CA_SUFFIX, maxTries = 20_000_000, accept } = opts;
   const initCodeHash = ethers.keccak256(initCode);
-  const want = suffix.toString(16).padStart(4, "0"); // "faf0" — the last 4 hex chars of the address
+  const want = suffix.toString(16).padStart(4, "0"); // "1ab5" — the last 4 hex chars of the address
 
   // Hash the CREATE2 preimage `0xff ++ deployer ++ salt ++ initCodeHash` in ONE preallocated 85-byte buffer,
   // mutating only the counter bytes per try. Going through ethers.getCreate2Address instead costs a hex

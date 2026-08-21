@@ -38,8 +38,8 @@ Then, out of band:
 NAME="Troll Cat" SYMBOL=TROLL SUPPLY=1000000 LP_TOKENS=500000 SEED_ETH=1 \
   npx hardhat run scripts/launch.js --network robinhood
 ```
-**Brand suffix — every pad token CA ends in `faf0`.** Step 1 mines the token's CREATE2 salt so the deployed
-token address ends in `faf0` (`scripts/mine.js` `mineTokenSalt`; ~65k expected tries, measured ~2s per launch),
+**Brand suffix — every pad token CA ends in `1ab5`.** Step 1 mines the token's CREATE2 salt so the deployed
+token address ends in `1ab5` (`scripts/mine.js` `mineTokenSalt`; ~65k expected tries, measured ~2s per launch),
 then mines the hook salt against that token — order matters, since the hook's init-code embeds the token
 address. A Robin coin is therefore recognizable from its contract address alone, which makes impersonation
 visible. Tested by `test/unit/VanityCA.test.js`.

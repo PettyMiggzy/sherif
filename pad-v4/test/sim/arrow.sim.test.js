@@ -84,7 +84,7 @@ describe("SIM — Arrow migration launcher (buy out curve, graduate, airdrop to 
     return { name: "Arrow " + tag, symbol: tag, decimals: 18, supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, creator: dev.address };
   }
   async function prepareSalts(tag, cfg) {
-    // [brand] the pad token address must end in `faf0` or CurvePadFactoryV4 (which ArrowLauncher launches
+    // [brand] the pad token address must end in `1ab5` or CurvePadFactoryV4 (which ArrowLauncher launches
     // through) reverts BadTokenSuffix — mine the salt from the EXACT cfg being launched, against the CURVE
     // FACTORY (the token's mintTo), not the launcher. The per-tag base salt keeps same-shape pads distinct.
     const tokenSalt = await brandedTokenSalt(depAddr, factoryAddr, cfg, ethers.id("tok-" + tag));

@@ -155,7 +155,7 @@ describe("M-27 — a pad token can only be launched once per factory", () => {
     floorRecipient: platform.address, stakingRecipient: platform.address, ...over,
   });
 
-  // [brand] the token salt is MINED (PadBrand.requireBrand: every pad token address ends in `faf0`), and it
+  // [brand] the token salt is MINED (PadBrand.requireBrand: every pad token address ends in `1ab5`), and it
   // must be mined FIRST — the hook init-code embeds the predicted token address, so the hook salt is only
   // valid for the token address the mined salt produces.
   async function mineSalts(cfg, baseSalt) {
@@ -200,7 +200,7 @@ describe("M-27 — a pad token can only be launched once per factory", () => {
     const cfg = cfgFor({ name: "Pad2", symbol: "PAD2" });
     const seed2 = ethers.id("m27-second");
     const { tokenSalt: ts2, hookSalt: hs2, tokenAddr } = await mineSalts(cfg, seed2);
-    // a fresh token salt so this is a genuinely new pad — mined off `seed2` so it carries the `faf0` brand
+    // a fresh token salt so this is a genuinely new pad — mined off `seed2` so it carries the `1ab5` brand
     // and still lands somewhere no other pad in this file occupies (memoized, so this costs one mine)
     const salt2 = await brandedTokenSalt(await dep.getAddress(), await factory.getAddress(), cfg, seed2);
     const TokenF = await ethers.getContractFactory("PadToken");

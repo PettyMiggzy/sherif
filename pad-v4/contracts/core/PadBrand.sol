@@ -3,8 +3,8 @@ pragma solidity 0.8.26;
 
 /// @title PadBrand — the Robin pad-token address brand suffix
 /// @notice Every pad token launched through a Robin factory lands on an address whose last four hex
-/// characters are `faf0`. The suffix is a VISIBLE, on-chain-checkable mark of authenticity: a coin that
-/// does not end in `faf0` did not come from a Robin factory, so impersonating a Robin launch requires
+/// characters are `1ab5`. The suffix is a VISIBLE, on-chain-checkable mark of authenticity: a coin that
+/// does not end in `1ab5` did not come from a Robin factory, so impersonating a Robin launch requires
 /// mining a colliding vanity address rather than simply deploying a lookalike token.
 ///
 /// This is enforced in the CONTRACT, not in the launch tooling, and deliberately so: an off-chain-only
@@ -19,7 +19,7 @@ pragma solidity 0.8.26;
 /// can never half-create a pad.
 library PadBrand {
     /// @dev The last 4 hex chars of every Robin pad token address.
-    uint160 internal constant SUFFIX = 0xfaf0;
+    uint160 internal constant SUFFIX = 0x1ab5;
     /// @dev Low 16 bits == the last 4 hex characters.
     uint160 internal constant SUFFIX_MASK = 0xffff;
 

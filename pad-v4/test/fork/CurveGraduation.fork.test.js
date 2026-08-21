@@ -54,7 +54,7 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
       tickSpacing: SPACING, creator: creator.address,
     };
 
-    // mine the BRANDED token salt (address must end in `faf0`), THEN predict the token addr → mine the hook
+    // mine the BRANDED token salt (address must end in `1ab5`), THEN predict the token addr → mine the hook
     // salt (the hook init-code carries the token, so token mining must run first)
     const TokenF = await ethers.getContractFactory("PadToken");
     const tokenSalt = await brandedTokenSalt(

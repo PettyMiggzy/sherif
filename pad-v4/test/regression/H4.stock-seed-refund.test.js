@@ -61,7 +61,7 @@ describe("H-4 — the stock seed's remainder goes back to whoever paid it", () =
     floorRecipient: floorSink.address, stakingRecipient: stakingSink.address,
   });
 
-  // mine tokenSalt so the pad token carries the `faf0` brand suffix AND sorts ABOVE the stock,
+  // mine tokenSalt so the pad token carries the `1ab5` brand suffix AND sorts ABOVE the stock,
   // and hookSalt for the 0x00CC flags (hook init-code embeds the predicted token, so token mining runs first)
   async function mineSalts(cfg) {
     const depAddr = await dep.getAddress();

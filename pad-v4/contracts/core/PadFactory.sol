@@ -139,7 +139,7 @@ contract PadFactory {
             )
         );
 
-        // [brand] every Robin pad token address ends in `faf0` — the caller mines `tokenSalt` for it
+        // [brand] every Robin pad token address ends in `1ab5` — the caller mines `tokenSalt` for it
         // (scripts/mine.js mineTokenSalt). Checked before ANY pool/LP state is written, so an unmined
         // salt fails loudly and cannot half-create a pad. See contracts/core/PadBrand.sol.
         PadBrand.requireBrand(token);

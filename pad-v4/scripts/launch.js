@@ -59,7 +59,7 @@ async function main() {
   const HookF = await ethers.getContractFactory("RobinFeeHook");
   const abi = ethers.AbiCoder.defaultAbiCoder();
 
-  // 1) MINE the token CREATE2 address so it ends in the Robin brand suffix `faf0`, then mine the hook salt
+  // 1) MINE the token CREATE2 address so it ends in the Robin brand suffix `1ab5`, then mine the hook salt
   //    against the exact init-code the factory builds — which includes the token, so token mining MUST run
   //    first and each hook stays unique. Both mines are local keccak loops (~65k / ~16k tries), sub-second.
   const baseSalt = ethers.id(`${cfg.symbol}-${cfg.name}-${d.padFactory}-${process.env.SALT_NONCE || "0"}`);

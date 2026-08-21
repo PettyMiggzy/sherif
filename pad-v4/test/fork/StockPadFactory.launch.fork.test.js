@@ -54,7 +54,7 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
       floorRecipient: ethers.ZeroAddress, stakingRecipient: ethers.ZeroAddress,
     };
 
-    // mine tokenSalt so the token address sorts ABOVE the stock (quote = currency0) AND carries the `faf0`
+    // mine tokenSalt so the token address sorts ABOVE the stock (quote = currency0) AND carries the `1ab5`
     // brand suffix — PadBrand.requireBrand reverts the launch otherwise, so this path must satisfy BOTH
     // constraints at once (the helper's extraOk predicate re-seeds until one address does).
     const depAddr = await dep.getAddress();

@@ -39,7 +39,7 @@ describe("PadFactory — full ETH-pad launch on live 0x8366", function () {
       buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000,
       creator: creator.address, floorRecipient: ethers.ZeroAddress, stakingRecipient: ethers.ZeroAddress,
     };
-    // [brand] the token address must end in `faf0` or PadBrand.requireBrand reverts the launch — mine the
+    // [brand] the token address must end in `1ab5` or PadBrand.requireBrand reverts the launch — mine the
     // salt exactly like production does, seeded with this pad's old fixed salt so the address stays unique.
     const tokenSalt = await brandedTokenSalt(
       await dep.getAddress(), await factory.getAddress(), cfg, ethers.id("robin-blue-1")

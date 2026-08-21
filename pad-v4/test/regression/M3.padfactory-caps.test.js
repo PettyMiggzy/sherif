@@ -37,7 +37,7 @@ describe("[M-3 / L-27] PadFactory governed tax caps", () => {
   });
 
   // The cap checks revert at the top of launch(), before any deployment — but [brand] PadBrand.requireBrand
-  // rejects any token address not ending in `faf0`, so a dummy tokenSalt would give these tests a SECOND way
+  // rejects any token address not ending in `1ab5`, so a dummy tokenSalt would give these tests a SECOND way
   // to revert and a cap regression could pass as BadTokenSuffix. Mine the branded salt from the exact cfg
   // that is handed to launch() (so the two can never drift), keeping the old `id("t")` seed as the per-pad
   // base. The hook salt stays a dummy: no test here is meant to get as far as the hook.

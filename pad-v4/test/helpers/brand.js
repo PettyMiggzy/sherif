@@ -2,7 +2,7 @@ const { ethers } = require("hardhat");
 const { mineTokenSalt } = require("../../scripts/mine");
 
 // [brand] Since PadBrand.requireBrand, every factory REJECTS a launch whose token address does not end in
-// `faf0`, so tests can no longer pass an arbitrary `tokenSalt` — they must mine one exactly like production
+// `1ab5`, so tests can no longer pass an arbitrary `tokenSalt` — they must mine one exactly like production
 // does (scripts/launch.js). This helper mirrors the PadToken init-code all three factories build on-chain
 // (name, symbol, decimals, supply, factory-as-mintTo) and returns a salt that lands the branded address.
 //
@@ -20,7 +20,7 @@ function tokenInitCode(TokenBytecode, cfg, factoryAddr) {
   ]);
 }
 
-/// Mine a `tokenSalt` whose CREATE2 token address carries the `faf0` brand suffix.
+/// Mine a `tokenSalt` whose CREATE2 token address carries the `1ab5` brand suffix.
 /// @param deployerAddr the DeterministicDeployer the factory uses
 /// @param factoryAddr  the factory (it is the token's `mintTo` constructor arg)
 /// @param cfg          the LaunchConfig (needs name, symbol, decimals, supply)

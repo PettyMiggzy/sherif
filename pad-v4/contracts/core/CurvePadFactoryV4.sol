@@ -184,7 +184,7 @@ contract CurvePadFactoryV4 {
             )
         );
 
-        // [brand] every Robin pad token address ends in `faf0` — the caller mines `tokenSalt` for it
+        // [brand] every Robin pad token address ends in `1ab5` — the caller mines `tokenSalt` for it
         // (scripts/mine.js mineTokenSalt). Checked before ANY pool/curve state is written, so an unmined salt
         // fails loudly and cannot half-create a pad. Covers the Arrow path too, since ArrowLauncher launches
         // through this factory. See contracts/core/PadBrand.sol.

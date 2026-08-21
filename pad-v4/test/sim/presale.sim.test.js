@@ -74,7 +74,7 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
   }
 
   async function prepareSalts(tag, cfg) {
-    // [brand] the token address must end in `faf0` or CurvePadFactoryV4.launch reverts BadTokenSuffix — which
+    // [brand] the token address must end in `1ab5` or CurvePadFactoryV4.launch reverts BadTokenSuffix — which
     // finalize() would swallow into Failed(3). Mine the salt from the SAME cfg that goes into the commitment,
     // seeded with the tag so two identical-config presales still land on different addresses.
     const tokenSalt = await brandedTokenSalt(depAddr, factoryAddr, cfg, ethers.id("tok-" + tag));

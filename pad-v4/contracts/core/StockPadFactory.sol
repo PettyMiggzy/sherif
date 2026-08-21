@@ -170,7 +170,7 @@ contract StockPadFactory {
             )
         );
         if (token <= stock) revert TokenMisordered(); // currency0 = stock < currency1 = token
-        // [brand] every Robin pad token address ends in `faf0` — the caller mines `tokenSalt` for it. NOTE: on
+        // [brand] every Robin pad token address ends in `1ab5` — the caller mines `tokenSalt` for it. NOTE: on
         // this path the mine must satisfy BOTH constraints (suffix AND token > stock); keep mining until it does.
         // See contracts/core/PadBrand.sol.
         PadBrand.requireBrand(token);

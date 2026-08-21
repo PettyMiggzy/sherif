@@ -42,7 +42,7 @@ added/changed **after** that and has **not** been externally reviewed — cross-
 
 ## 4. Scope inventory
 **NEW this round:** `arrow/ArrowLauncher.sol`, `arrow/ArrowDistributor.sol`, `pads/RobinTokenTreasury.sol`,
-`core/PadBrand.sol` (**brand suffix** — every pad token address must end in `faf0`; enforced in all three
+`core/PadBrand.sol` (**brand suffix** — every pad token address must end in `1ab5`; enforced in all three
 factories' `launch`, so callers must mine `tokenSalt`. Pure mask+compare, reverts before any state write).
 **MODIFIED this round:** `pads/RobinFloorVault.sol` (token-leak fix + `tokenSink`/`sweepTokenFees`), `pads/RobinCurveV4.sol`
 (buy-LP routing default), `core/RobinV4FeeConfig.sol` (M-10 lpFee cap), `core/PadFactory.sol` (M-3 caps),

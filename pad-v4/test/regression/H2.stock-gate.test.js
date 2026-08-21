@@ -63,7 +63,7 @@ describe("H-2 — a stock pad can no longer be launched against a self-certified
     const PadToken = await ethers.getContractFactory("PadToken");
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const abi = ethers.AbiCoder.defaultAbiCoder();
-    // [brand] PadBrand.requireBrand now rejects any launch whose token address does not end in `faf0`, so the
+    // [brand] PadBrand.requireBrand now rejects any launch whose token address does not end in `1ab5`, so the
     // salt must be MINED — and for a stock pad it must still sort ABOVE the stock (currency0 = stock ordering).
     // Mined here, from the very cfg that is about to be launched, so the two can never drift apart.
     const tokenSalt = await brandedTokenSalt(
