@@ -12,7 +12,7 @@ const suite = process.env.FORK_RPC ? describe : describe.skip;
 suite("CurvePadFactory — one-call DEX-day-one launch", function () {
   this.timeout(240000);
 
-  it("launch() -> live+tradeable Uniswap pool with opening guard -> buy out -> graduate into the Bond", async () => {
+  it("launch() -> live+tradeable Uniswap pool, NO opening guard -> buy out -> graduate into the Bond", async () => {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
 
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
@@ -40,7 +40,12 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     // live on a real Uniswap pool from block one
     expect(await TOK.totalSupply()).to.equal(1_000_000_000n * ONE);
     expect(await TOK.tradingEnabled()).to.equal(true);
-    expect(await TOK.antiSnipeActive()).to.equal(true); // opening guard is on
+    // [v2] NO opening guard, ever — the factory launches every coin with a zero GuardConfig. This assertion is
+    // inverted from v1 on purpose: it is the thing most likely to be reintroduced by accident, so it is pinned
+    // against the LIVE chain rather than only in the unit tests.
+    expect(await TOK.antiSnipeActive()).to.equal(false);
+    expect(await TOK.maxTxNow()).to.equal(ethers.MaxUint256);
+    expect(await TOK.maxWalletNow()).to.equal(ethers.MaxUint256);
     expect(await curveC.curveL()).to.be.greaterThan(0n); // curve position seeded
     expect((await pool.slot0()).sqrtPriceX96).to.be.greaterThan(0n);
 
@@ -57,17 +62,20 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     await ethers.provider.send("evm_increaseTime", [5]); // past the 2s dead window, into phase 1
     await ethers.provider.send("evm_mine", []);
 
-    // ===== the opening guard is real: an oversized first-window buy reverts =====
-    await expect(buy(ONE / 2n)).to.be.reverted; // 0.5 WETH would blow past the 1% wallet cap -> revert
-
-    // ===== but a small buy trades fine — DEX day one, pre-graduation =====
+    // ===== [v2] the buy that v1 REVERTED now succeeds — this is the removal, measured on live chain =====
+    // Under v1 this exact call reverted: 0.5 WETH blew past the 1% wallet cap inside the opening window. On v2
+    // there is no window and no cap, so it fills. Keeping the same amount makes the behaviour change explicit
+    // rather than hiding it behind a rewritten test.
     const t0 = await TOK.balanceOf(buyer.address);
-    await (await buy(ONE / 500n)).wait(); // 0.002 WETH, within the cap
-    expect(await TOK.balanceOf(buyer.address)).to.be.greaterThan(t0);
+    await (await buy(ONE / 2n)).wait();
+    const bigFill = (await TOK.balanceOf(buyer.address)) - t0;
+    expect(bigFill).to.be.greaterThan(0n);
 
-    // ===== after the window, buy out the curve (capped at the graduation price) =====
-    await ethers.provider.send("evm_increaseTime", [400]); // guard fully expired
-    await ethers.provider.send("evm_mine", []);
+    // a small buy still trades fine too, and there is no per-wallet cooldown between the two
+    await (await buy(ONE / 500n)).wait();
+    expect((await TOK.balanceOf(buyer.address)) - t0).to.be.greaterThan(bigFill);
+
+    // ===== buy out the curve (capped at the graduation price). No window to wait out any more. =====
     expect(await TOK.antiSnipeActive()).to.equal(false);
     await (await buy(55n * ONE, await curveC.gradSqrtPriceX96())).wait();
     expect(await curveC.ready()).to.equal(true);
@@ -229,7 +237,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect((await wethW.balanceOf(dev.address)) - devBefore, "creator earns 0.5 at the ceiling").to.equal(ethers.parseEther("0.5"));
   });
 
-  it("fast graduation INSIDE the anti-snipe window exempts the Bond — poke() works, floor recycles (CP-2)", async () => {
+  it("INSTANT graduation in the launch tx posts a working Bond — poke() works, floor recycles (CP-2)", async () => {
     // Regression: a big dev buy fills the whole curve in the launch tx, so the coin graduates at t≈launchTime,
     // deep inside the 300s anti-snipe window. Bond.poke()'s pool.collect() moves the ~25% Ambush reserve back to
     // the Bond (reads as a "buy": from == pool). Before the fix the Bond was NOT guard-exempt, so that transfer
@@ -256,26 +264,30 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const TOK = await ethers.getContractAt("LaunchToken", token);
     const curveC = await ethers.getContractAt("CurvePool", curve);
 
-    // the dev buy filled the curve to the ceiling — graduatable immediately, and we're still inside the window
+    // the dev buy filled the curve to the ceiling — graduatable immediately
     expect(await curveC.ready(), "ceiling reached by the dev buy").to.equal(true);
-    expect(await TOK.antiSnipeActive(), "still inside the anti-snipe window").to.equal(true);
+    // [v2] there is no window to be inside any more. What this case originally proved (the Bond survives a
+    // graduation that lands mid-window) is now vacuous; what it still proves — an INSTANT graduation, in the
+    // same breath as the launch, posts a working Bond — is the part worth keeping.
+    expect(await TOK.antiSnipeActive(), "v2 launches carry no guard at all").to.equal(false);
 
-    // graduate INSIDE the window
     await (await curveC.graduate()).wait();
     expect(await curveC.graduated()).to.equal(true);
     const bondAddr = await curveC.bond();
     const bond = await ethers.getContractAt("Bond", bondAddr);
     expect(await bond.posted()).to.equal(true);
 
-    // THE FIX: the freshly-posted Bond is guard-exempt
-    expect(await TOK.isExempt(bondAddr), "Bond exempted from the anti-snipe guard at graduation").to.equal(true);
+    // [V2-8] CurvePool still exempts the fresh Bond at graduation. With no guard the exemption cannot matter,
+    // but the call is still made (try/catch, idempotent) — so assert it lands, because the same CurvePool has to
+    // keep working for a future guarded factory. It is belt-and-braces now, not the fix it used to be.
+    expect(await TOK.isExempt(bondAddr), "Bond still exempted at graduation, harmlessly").to.equal(true);
 
-    // let the 15s poke TWAP build, but stay INSIDE the 300s window
+    // let the 15s poke TWAP build
     await ethers.provider.send("evm_increaseTime", [30]);
     await ethers.provider.send("evm_mine", []);
-    expect(await TOK.antiSnipeActive(), "poke happens while the guard is still active").to.equal(true);
 
-    // poke() moves the Ambush reserve (pool -> Bond) — would have reverted MaxTx/MaxWallet without the exemption
+    // poke() moves the Ambush reserve (pool -> Bond), which reads as a "buy". Under v1 that needed the exemption
+    // to survive maxTx/maxWallet; on v2 nothing gates it. Either way it must work on a just-graduated coin.
     await (await bond.poke()).wait();
     expect(await bond.bountyL()).to.be.greaterThan(0n);
     expect(await bond.ambushL()).to.be.greaterThan(0n);
