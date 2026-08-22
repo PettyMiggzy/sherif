@@ -25,6 +25,8 @@ green, fork suites included. What is left is operational: deploy, verify, repoin
 | V2-9 | LOW | v1 stays authorized after deploy | **accepted — owner decision** |
 | V2-10 | INFO | deeper band vs `_clamp` | not reachable at shipped geometry |
 | V2-11 | **MED** | the LIVE Bond's wall sits inside `MAX_DEV` | **v1 only — informs V2-9** |
+| V2-12 | **MED** | copy described v2 while v1 is deployed | **FIXED** |
+| V2-13 | LOW | other ad claims swept vs contracts | **2 fixed, 1 for the owner** |
 
 ---
 
@@ -184,6 +186,35 @@ ticks [163000, 169600]; token-as-token0 puts it at [-194200, -187600]. Both well
 single-sided with respect to spot (`BOUNTY_NEAR = 9000 > MAX_DEV = 300`, enforced in the `Bond` constructor).
 
 ---
+
+## V2-12 — MEDIUM. The site advertised v2 behaviour while v1 is what is deployed. **FIXED.**
+
+Self-inflicted, and worth recording because it is the trap this whole area sets. The first pass at V2-1/V2-2
+rewrote the copy to describe the **deep wall and the removed guard** — both of which are v2, and v2 is not
+deployed. That made the site false in a new direction: today the live factory has the shallow wall and the guard
+ON, so "can't be drained" and "no trading limits" were claims about a factory nobody can launch on yet.
+
+Fixed by making every claim **factory-independent** — true under v1 today and still true after v2 ships:
+
+- Floor: only what is structurally guaranteed by both — protocol-owned, and **no withdraw path exists in the
+  contract**. Nothing about how deep it bids or what it catches, since that is exactly what differs.
+- Guard: asserts neither. `create.html` leads on "sells never blocked — no tax, no blacklist, no sell
+  restriction of any kind", which holds either way (the guard was always buy-side only). `docs.html` no longer
+  claims a guard nor its absence. `admin.html`'s blocklist panel describes the *condition* ("works only for a
+  coin whose factory launches with a window") rather than naming a factory.
+
+**When v2 ships**, the stronger deep-wall claim becomes available and is worth taking — a floor that cannot be
+farmed is a better story than one that buys every dip. Do it as part of the deploy, not before.
+
+## V2-13 — LOW. Other advertising claims, swept against the contracts. **2 fixed, 1 for the owner.**
+
+| claim | verdict |
+|---|---|
+| "keep **95%** of every trade's fee" | **true** — `FloorCoop.FEE_CUT_BPS = 500`. But the summary cards omitted the 10% open fee (`OPEN_FEE_BPS = 1000`) that `add-lp.html` discloses properly. **Qualifier added** to the cards. |
+| "pays the creator **0.5 ETH**" (promo) | **conditionally false** — the payout is `min(GRAD_REWARD, raisedWeth / 4)`, so a smaller raise pays less, and creator-chosen valuation makes small raises reachable. `index.html` already said "up to"; promo did not. **Fixed to "up to".** |
+| "every coin that graduates gets a **DexScreener 10x Boost**, funded by Robin Labs" | **cannot be verified from code** — an operational promise with no contract backing, and untested since no coin has graduated. Left in place: only the owner can say whether it is a commitment they are making. If not, take it down. |
+| "LP locked forever" | **true** — no withdraw/decrease path on the Sherwood position. |
+| staking / rewards pages | **correctly gated** — `stakingFactory`, `robinStaking`, `rewardConverter` are unset in config and `isDeployed()` hides the UI. `rewardVault` is deployed, so those claims are backed. |
 
 ## V2-11 — MEDIUM (v1 only). The LIVE Bond's wall sits inside the poke deviation tolerance.
 

@@ -488,9 +488,9 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
          Pauses on hover; static (all six shown) if JS is off or reduced-motion. -->
     <div class="wgrid" id="whyGrid" style="transition:opacity .34s ease">
       <div class="card wcard"><img src="assets/icons/reward.png" alt="" /><h3>Get paid to graduate</h3><p>Hit the target and Robin Labs pays you up to <b class="lime">0.5 ETH</b>, straight to your wallet, no strings.</p></div>
-      <div class="card wcard"><img src="assets/icons/reward-floor.png" alt="" /><h3>A floor that can't be drained</h3><p>At the Bond your coin gets a <b>protocol-owned floor</b> that can't be pulled and can't be farmed. It sits deep on purpose, so it's still there when a real crash comes.</p></div>
+      <div class="card wcard"><img src="assets/icons/reward-floor.png" alt="" /><h3>A floor that can't be pulled</h3><p>At the Bond your coin gets a <b>protocol-owned floor</b>. There is no withdraw path in the contract, so nobody, us included, can ever take it back out.</p></div>
       <div class="card wcard"><img src="assets/icons/community.png" alt="" /><h3>Fair launch, real pair</h3><p>No presale, no insiders. One tx spins up a real Uniswap v3 pair with charts on DexScreener from block one.</p></div>
-      <div class="card wcard"><img src="assets/icons/locked.png" alt="" /><h3>Earn fees on your own LP</h3><p>Lock liquidity into your graduated coin and keep <b class="lime">95%</b> of every trade's fee, real ETH.</p></div>
+      <div class="card wcard"><img src="assets/icons/locked.png" alt="" /><h3>Earn fees on your own LP</h3><p>Lock liquidity into your graduated coin and keep <b class="lime">95%</b> of every trade's fee, real ETH. A 10% fee applies when you open.</p></div>
       <div class="card wcard"><img src="assets/icons/boost.png" alt="" /><h3>We boost you at graduation</h3><p>Every coin that graduates gets a <b class="lime">DexScreener 10× Boost</b>, funded by Robin Labs, instant promotion the moment you hit the DEX.</p></div>
     </div>
     <div class="whydots" id="whyDots" aria-hidden="true"></div>
@@ -499,8 +499,8 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
   (function () {
     var FEATS = [
       { i: 'reward.png',        h: 'Get paid to graduate',    p: 'Hit the target and Robin Labs pays you up to <b class="lime">0.5 ETH</b>, straight to your wallet, no strings.' },
-      { i: 'reward-floor.png',  h: "A floor that can't be drained", p: 'At the Bond your coin gets a <b>protocol-owned floor</b> that can’t be pulled and can’t be farmed. It sits deep on purpose, so it’s still there when a real crash comes.' },
-      { i: 'locked.png',        h: 'Earn fees on your own LP', p: 'Lock liquidity into your graduated coin and keep <b class="lime">95%</b> of every trade’s fee, real ETH.' },
+      { i: 'reward-floor.png',  h: "A floor that can't be pulled", p: 'At the Bond your coin gets a <b>protocol-owned floor</b>. There is no withdraw path in the contract, so nobody, us included, can ever take it back out.' },
+      { i: 'locked.png',        h: 'Earn fees on your own LP', p: 'Lock liquidity into your graduated coin and keep <b class="lime">95%</b> of every trade’s fee, real ETH. A 10% fee applies when you open.' },
       { i: 'community.png',     h: 'Fair launch, real pair',   p: 'No presale, no insiders. One tx spins up a real Uniswap v3 pair with charts on DexScreener from block one.' },
       { i: 'boost.png',         h: 'We boost you at graduation', p: 'Every coin that graduates gets a <b class="lime">DexScreener 10× Boost</b>, funded by Robin Labs, instant promotion the moment you hit the DEX.' },
     ];
