@@ -86,7 +86,22 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
     const conf = await hookC.config(await factory.poolOf(token));
     expect(conf.registered).to.equal(true);
     expect(conf.quoteIsStock).to.equal(true);
-    expect(conf.guardAdapter).to.equal(await adapter.getAddress());
+    // [H-2] The curb adapter is DERIVED, never supplied — so assert the derivation itself rather than a
+    // handle to one we made. It is CREATE2 over keccak256(abi.encode(stock, registry)) with the adapter's
+    // init-code, through the same DeterministicDeployer, which is exactly what makes a launcher-authored
+    // adapter (a freeze primitive) impossible to slip onto the curb path.
+    const AdapterF = await ethers.getContractFactory("StockQuoteAdapter");
+    const adapterInit = ethers.concat([
+      AdapterF.bytecode,
+      abi.encode(["address", "address"], [await stock.getAddress(), await stockReg.getAddress()]),
+    ]);
+    const expectedAdapter = ethers.getCreate2Address(
+      await dep.getAddress(),
+      ethers.keccak256(abi.encode(["address", "address"], [await stock.getAddress(), await stockReg.getAddress()])),
+      ethers.keccak256(adapterInit)
+    );
+    expect(conf.guardAdapter).to.equal(expectedAdapter);
+    expect(await ethers.provider.getCode(expectedAdapter)).to.not.equal("0x"); // really deployed there
 
     const posm = await ethers.getContractAt("IPositionManagerMinimal", POSITION_MANAGER);
     expect(await posm.ownerOf(lpTokenId)).to.equal(await lockVault.getAddress());

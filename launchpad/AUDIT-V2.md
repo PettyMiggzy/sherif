@@ -8,22 +8,23 @@ the deep Bounty wall, the removal of the anti-snipe guard, and creator-chosen su
 **Method.** Source review plus local tests (`test/v2-stack.test.js`, `test/fdv-supply.test.js`). No RPC, so
 nothing here is confirmed against live chain state or a fork; findings that need a fork are marked **OPEN**.
 
-**Verdict: two blockers, both outside the contracts.** No fund-loss or brick finding in the new code. What
-blocks the deploy is that v2 makes several live user-facing claims false, and that the wall constant has not been
-re-measured since it became a parameter.
+**Verdict: two blockers, both copy.** No fund-loss or brick finding in the new code. V2-4 is now **closed with
+measurements on a fork against the real contract** (below). What still blocks the deploy is that v2 makes several
+live user-facing claims false.
 
 | id | sev | area | status |
 |---|---|---|---|
 | V2-1 | **MED** | "buys every dip" copy is false under a deep wall | **BLOCKER — open** |
 | V2-2 | **MED** | anti-snipe copy/UI is false with no guard | **BLOCKER — open** |
 | V2-3 | LOW | dead `seedBlocklist` entrypoint | **fixed** |
-| V2-4 | MED | deep wall not re-swept since parameterization | **OPEN — needs fork** |
+| V2-4 | MED | deep wall not re-swept since parameterization | **CLOSED — measured** |
 | V2-5 | LOW | uncapped dev buy + no guard + deep wall compound | accepted (product) |
 | V2-6 | INFO | small-supply truncation | verified unreachable |
 | V2-7 | INFO | frozen `deploy()` selector | pinned by test |
 | V2-8 | INFO | graduation `exemptAddress` now a no-op | benign |
 | V2-9 | LOW | v1 stays authorized after deploy | runbook |
 | V2-10 | INFO | deeper band vs `_clamp` | not reachable at shipped geometry |
+| V2-11 | **MED** | the LIVE Bond's wall sits inside `MAX_DEV` | **v1 only — informs V2-9** |
 
 ---
 
@@ -67,16 +68,34 @@ owner-only pass-through would revert `WindowOver` on every call. An owner entryp
 than no entrypoint: it advertises a protection the factory cannot deliver. Removed, with the reasoning left in
 place at the call site. Pinned by `test/v2-stack.test.js` ("the factory exposes NO blocklist entrypoint").
 
-## V2-4 — MEDIUM. **OPEN.** The wall constant has not been re-measured since it became a parameter.
+## V2-4 — MEDIUM. **CLOSED.** The shipped wall was re-measured on a fork against the real `Bond`.
 
-`BOUNTY_NEAR = 9000` comes from the earlier attack sweep run against the settable `BondDeep` harness, which put
-the profitability crossover at ~6000 ticks and saturation at ~12000. Since then the band moved from a `constant`
-on `Bond` to an immutable supplied by `BondDeployer`. The number should be the same — nothing about the placement
-math changed — but *should be* is not *is*.
+Run against live Robinhood Chain (`rpc.mainnet.chain.robinhood.com`), real graduation shape (4.09 ETH raise,
+`SHERWOOD_WETH_BPS = 6000`, so 60% Sherwood / 40% Bounty), sustained-hold attack, each row run **twice** — once
+poking the Bond while the price is held and once not. The difference between those two runs is the EDGE: what
+manipulating the Bond was actually worth, with plain trading-against-the-walls subtracted out.
 
-`test/fork/bond-h5-attack.fork.test.js` now takes `near`/`far`, so re-running the sweep against the real `Bond`
-(not the harness) is a one-line change. **Do it before v2 takes real money.** Until then the H-5 fix is
-argued-for, not measured, in its shipped form.
+| wall starts | depth | attacker PnL | **edge** | |
+|---|---|---|---|---|
+| 200 | ~2% | +0.222341 | **+0.229890** | still pays — **this is what is live** |
+| 3000 | ~26% | +0.075542 | **+0.083092** | still pays |
+| 6000 | ~45% | −0.021620 | −0.014071 | crossover |
+| **9000** | **~59%** | **−0.072436** | **−0.064886** | **shipped** |
+| 12000 | ~70% | −0.090253 | −0.082704 | saturating |
+| 16000 | ~80% | −0.090840 | −0.083290 | saturated |
+
+Then the same attack against the **real, shipped `Bond`** rather than the `BondDeep` harness the sweep uses —
+which is the specific gap this finding was about:
+
+```
+LIVE today  200/6800  | attacker  0.222341 | EDGE  0.229890   <-- STILL PAYS
+SHIPPED v2 9000/15600 | attacker -0.072436 | EDGE -0.064886   <- no edge
+```
+
+The test asserts both directions: the attack **must still reproduce** against the live band (or it would prove
+nothing about the fix), and the shipped band must leave no edge. 9000 is past the crossover with margin and
+inside saturation — 12000 and 16000 buy almost nothing more, so there is no reason to go deeper and give up more
+of the floor's usefulness.
 
 ## V2-5 — LOW, accepted. No guard + uncapped dev buy + a deep wall compound each other.
 
@@ -142,10 +161,21 @@ single-sided with respect to spot (`BOUNTY_NEAR = 9000 > MAX_DEV = 300`, enforce
 
 ---
 
+## V2-11 — MEDIUM (v1 only). The LIVE Bond's wall sits inside the poke deviation tolerance.
+
+Found by accident, and worth recording: v2's `Bond` constructor requires `BOUNTY_NEAR > MAX_DEV`, and the
+**deployed** Bond has `BOUNTY_NEAR = 200` against `MAX_DEV = 300`. The live configuration is one the new
+validation refuses to construct. The fork tests that reproduce the attack against what is live now have to use
+the `BondDeep` harness, because the real contract will no longer build at those numbers.
+
+That is not a workaround, it is the finding: within ±`MAX_DEV` a mean-only recenter can straddle spot, so the
+Bounty band stops being strictly single-sided and can end up holding token instead of the WETH it is supposed to
+be bidding with. It is a second, independent reason not to leave v1 as a live launch path — see **V2-9**.
+
 ## Before deploy
 
 1. **Rewrite the floor copy** (V2-1) and the **anti-snipe copy** (V2-2). Blocking — these are claims to users.
-2. **Re-run the H-5 sweep on a fork** against the real parameterized `Bond` (V2-4). Blocking for real money.
-3. Run the v2 launch + graduation end-to-end on a fork (needs RPC).
-4. Decide V2-9 — revoke v1 or knowingly leave it open.
+2. ~~Re-run the H-5 sweep~~ — **done**, see V2-4. The fix is measured on the shipped contract.
+3. Run the v2 launch + graduation end-to-end on a fork.
+4. Decide V2-9 — revoke v1 or knowingly leave it open. **V2-11 strengthens the case for revoking.**
 5. Verify both contracts on Blockscout; repoint `pad/assets/config.js`.

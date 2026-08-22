@@ -32,7 +32,11 @@ suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", functi
 
   async function build({ withBond, depthX = 1n, keep, moat, deep, near, far }) {
     const [dep, platform, curveSigner, attacker] = await ethers.getSigners();
-    const SUPPLY = 1_000_000_000n * ONE;
+    // Scale with depthX: the deep-book controls fund the Bond with 25M*depthX + 250M tokens, so a fixed 1e27
+    // supply starves the depthX=50 and 200 rows (they need 1.5e27 and 5.25e27) and they revert on the transfer
+    // rather than running. Supply does not set the pool price here — the pool is initialized at a fixed
+    // sqrtPrice — so scaling it only funds the fixture.
+    const SUPPLY = 1_000_000_000n * ONE * depthX;
     const TOK = await (await ethers.getContractFactory("CurveToken")).deploy("Bonded", "BOND", SUPPLY, dep.address);
     const tokAddr = await TOK.getAddress();
     const factory = await ethers.getContractAt("IUniswapV3Factory", FACTORY);
@@ -44,12 +48,18 @@ suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", functi
 
     const wethW = await ethers.getContractAt(
       ["function deposit() payable", "function transfer(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"], WETH);
-    // Bond's wall band is now a constructor immutable (supplied in production by the BondDeployer). Default to
-    // the LEGACY 200/6800 band so this file keeps reproducing the attack against what is LIVE today; a case that
-    // wants the shipped deep wall passes `near`/`far` explicitly. BondDeep stays for the settable sweep.
-    const bond = deep
+    // WHICH Bond to build.
+    //
+    // The DEPLOYED Bond starts its wall at 200 ticks — which is INSIDE MAX_DEV (300), and v2's Bond constructor
+    // now rejects exactly that as `bounty geometry`. So the real contract can no longer be built at the live
+    // band, and every case here that reproduces the attack against what is LIVE has to use `BondDeep`, the
+    // settable harness that models the deployed contract. That is not a workaround: the validation refusing to
+    // construct the live configuration is the finding.
+    //
+    // Passing `near`/`far` explicitly builds the REAL, shipped Bond — which is what closes V2-4.
+    const bond = (deep || near === undefined)
       ? await (await ethers.getContractFactory("BondDeep")).deploy(tokAddr, WETH, FACTORY, platform.address, curveSigner.address)
-      : await (await ethers.getContractFactory("Bond")).deploy(tokAddr, WETH, FACTORY, platform.address, curveSigner.address, near ?? 200, far ?? 6800);
+      : await (await ethers.getContractFactory("Bond")).deploy(tokAddr, WETH, FACTORY, platform.address, curveSigner.address, near, far);
     const bondAddr = await bond.getAddress();
     const keepWeth = keep ?? (ONE / 2n) * depthX, moatWeth = moat ?? ONE / 2n;
     const keepTokens = 25_000_000n * ONE * depthX, rampTokens = 250_000_000n * ONE;
@@ -127,6 +137,45 @@ suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", functi
       const depthPct = (100 * (1 - Math.pow(1.0001, -near))).toFixed(0);
       console.log(`   wall starts ${String(near).padStart(5)} ticks (~${String(depthPct).padStart(2)}% below) | attacker ${f(out.poked).padStart(9)} | EDGE ${f(edge).padStart(9)} ${edge > 0n ? "  <-- still pays" : ""}`);
     }
+  });
+
+  // [V2-4] CLOSES THE AUDIT ITEM. The sweep above runs against BondDeep, the settable harness. The shipped wall
+  // is an immutable on the REAL Bond, stamped by BondDeployer — so the number that ships has to be measured on
+  // the contract that ships, not on the harness it was chosen with. Same attack, same graduation shape, real
+  // Bond both times: the live band first (to confirm the attack still reproduces at all), then the shipped one.
+  it("[V2-4] the SHIPPED band on the REAL Bond kills the edge — measured, not argued", async () => {
+    const raise = 4090000000000000000n;
+    const keep = (raise * 6000n) / 10000n, moat = raise - (raise * 6000n) / 10000n;
+    const results = {};
+    // legacy runs on BondDeep (the real Bond REFUSES to be built at 200 — see build()); shipped runs on the
+    // real, immutable-band Bond, which is the whole point of the case.
+    for (const [label, near, far] of [["LIVE today  200/6800", 200, 6800], ["SHIPPED v2 9000/15600", 9000, 15600]]) {
+      const out = {};
+      const legacy = near < 300;
+      for (const poke of [true, false]) {
+        const L = legacy
+          ? await build({ withBond: true, keep, moat, deep: true })
+          : await build({ withBond: true, keep, moat, near, far });
+        const { TOK, tokAddr, wethW, bond, swap, warp, attacker } = L;
+        await warp(1000);
+        const w0 = await wethW.balanceOf(attacker.address);
+        const t0 = await TOK.balanceOf(attacker.address);
+        await swap(attacker, WETH, ONE / 2n);
+        const bought = (await TOK.balanceOf(attacker.address)) - t0;
+        await warp(20); // the sustained hold — free, which is why no duration gate can help
+        if (poke) { try { await (await bond.poke()).wait(); } catch (e) { /* refused */ } }
+        await swap(attacker, tokAddr, bought);
+        expect((await TOK.balanceOf(attacker.address)) - t0).to.equal(0n); // token-flat: pure extraction
+        out[poke ? "poked" : "clean"] = (await wethW.balanceOf(attacker.address)) - w0;
+      }
+      const edge = out.poked - out.clean;
+      results[near] = edge;
+      console.log(`   ${label} | attacker ${f(out.poked).padStart(9)} | EDGE ${f(edge).padStart(9)} ${edge > 0n ? "  <-- STILL PAYS" : "  <- no edge"}`);
+    }
+    // the attack must still REPRODUCE on the live band, or this test proves nothing about the fix
+    expect(results[200], "attack must still reproduce against the live wall").to.be.gt(0n);
+    // and the shipped band must remove the edge entirely
+    expect(results[9000], "shipped wall must leave no poke edge").to.be.lte(0n);
   });
 
   it("REAL graduation parameters (60/40 split of a 4.09 ETH raise)", async () => {
