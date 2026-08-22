@@ -22,7 +22,7 @@ live user-facing claims false.
 | V2-6 | INFO | small-supply truncation | verified unreachable |
 | V2-7 | INFO | frozen `deploy()` selector | pinned by test |
 | V2-8 | INFO | graduation `exemptAddress` now a no-op | benign |
-| V2-9 | LOW | v1 stays authorized after deploy | runbook |
+| V2-9 | LOW | v1 stays authorized after deploy | **accepted — owner decision** |
 | V2-10 | INFO | deeper band vs `_clamp` | not reachable at shipped geometry |
 | V2-11 | **MED** | the LIVE Bond's wall sits inside `MAX_DEV` | **v1 only — informs V2-9** |
 
@@ -139,12 +139,24 @@ as a buy and would trip maxTx/maxWallet if a coin graduated inside the window. W
 trip. The call is `try/catch` and idempotent, so it stays harmless — no change needed, and leaving it means the
 same `CurvePool` still works for a future guarded factory.
 
-## V2-9 — LOW. v1 remains authorized on the router after v2 deploys.
+## V2-9 — LOW. v1 remains authorized on the router. **ACCEPTED — owner decision: leave it in place.**
 
-`PadRouter.setFactory` is an allowlist, so v1 keeps its authorization and a coin **can still launch on it** and
-receive the shallow, farmable wall. Closing that is `router.removeFactory(<v1>)`, which cannot disturb any live
-coin (`register` is once-only and theirs is already done). The runbook calls this out as a decision, not a
-default — leaving v1 open is a choice to keep an exploitable launch path available.
+`PadRouter.setFactory` is an allowlist, so v1 keeps its authorization when v2 deploys. The owner has decided to
+**leave v1 as-is and simply not use it** (ROBIN launched from it; a migration may happen later). Recorded, not
+argued — but the residual is written down so nobody rediscovers it as a surprise:
+
+- **v1's `launch()` is permissionless.** The UI pointing only at v2 keeps ordinary users away, but anyone calling
+  the contract directly can still launch a coin on v1 and receive the shallow, farmable wall (V2-4: edge
+  **+0.2299 ETH**) and a Bounty band inside `MAX_DEV` (V2-11). If that ever happens, it is a Robin Labs coin with
+  a floor we know is drainable.
+- **Nothing about ROBIN required this.** `register` is once-only (`PadRouter:199`, `AlreadySet`) and
+  `removeFactory` only clears `isFactory` — ROBIN's config is already written and immutable, so revoking v1 would
+  not have touched its trading, taxes, curve, or a future graduation. A later migration would not need v1
+  authorized either. The decision to leave it open is therefore a standalone one, and can be reversed at any time
+  with a single `router.removeFactory(<v1>)` if a stray launch ever shows up there.
+
+**Monitoring instead of revoking:** since v1 stays live, watch it. A `Launched` event from the v1 factory after
+v2 goes up is the signal that this residual has become real.
 
 ## V2-10 — INFO. A deeper band sits closer to the tick clamp. Not reachable at the shipped geometry.
 
@@ -177,5 +189,5 @@ be bidding with. It is a second, independent reason not to leave v1 as a live la
 1. **Rewrite the floor copy** (V2-1) and the **anti-snipe copy** (V2-2). Blocking — these are claims to users.
 2. ~~Re-run the H-5 sweep~~ — **done**, see V2-4. The fix is measured on the shipped contract.
 3. Run the v2 launch + graduation end-to-end on a fork.
-4. Decide V2-9 — revoke v1 or knowingly leave it open. **V2-11 strengthens the case for revoking.**
+4. ~~Decide V2-9~~ — **decided: leave v1 authorized and unused.** Residual + monitoring in V2-9.
 5. Verify both contracts on Blockscout; repoint `pad/assets/config.js`.

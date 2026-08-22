@@ -57,13 +57,13 @@ and there is no window).
 
 1. **Verify both contracts** on Blockscout.
 2. **Point the UI** at the new factory (`pad/assets/config.js` → `padFactory`).
-3. **Decide about v1.** It stays authorized on the router, so a coin *can* still launch on it and get the
-   shallow, farmable wall. To close that:
-   ```
-   router.removeFactory(<v1 factory>)
-   ```
-   This cannot disturb any live coin — `register` is once-only and theirs is already done. It only stops NEW
-   registrations. Leaving v1 authorized is a choice to keep an exploitable launch path open; make it deliberately.
+3. **v1: leave it authorized, do not use it.** Decided by the owner — ROBIN launched from it and a migration may
+   happen later. **Do not call `router.removeFactory` on v1.**
+
+   The residual, so it is not a surprise: v1's `launch()` stays permissionless, so a direct caller (not via the
+   UI) can still create a coin there and get the shallow, farmable wall. **Watch for a `Launched` event from the
+   v1 factory** once v2 is up — that is the signal this has stopped being theoretical. Reversing the decision is
+   one call, `router.removeFactory(<v1>)`, and it cannot disturb any live coin (`register` is once-only).
 
 ## Source pinning
 
