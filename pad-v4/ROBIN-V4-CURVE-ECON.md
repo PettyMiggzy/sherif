@@ -24,6 +24,12 @@ callback, BalanceDelta). currency0 = native ETH (address 0); currency1 = the pad
 ## 2. Economic parameters (governed defaults)
 
 - **Geometry (V3-ported, proven):** `startTickMag 201600`, `curveWidth 23000` (≈10× chart), `minGradWidth 22800`, tickSpacing **100**. 1B supply @ **73% curve / 27% reserve** → start MC ~$3.34k, graduate MC ~$33.3k, **~4.1 ETH raised** (see `test/sim/curve.calibration.sim.test.js`, measured on the V4 curve).
+  - **[FDV] These are DEFAULTS, not the only launch.** A creator sets their own `supply` and their own
+    `LaunchConfig.startTickMag` (0 = the default above). Supply is bounded by nothing; the factory bounds
+    `supply x launch price` — the implied FDV — against `RobinV4FeeConfig.minFdvWei/maxFdvWei` (shipped
+    **0.05–100 ETH**) and reverts `MarketCapOutOfRange`. `curveWidth` stays global, so the numbers above scale
+    with the chosen valuation and every coin still graduates at the same ~10× multiple of its own launch price.
+    See `SUPPLY-AND-VALUATION.md`.
 - **No dev mint:** `supply == curveSupply + reserveSupply` EXACTLY (factory reverts `BadConfig` otherwise). The creator receives **zero** tokens at launch — they buy from the curve like everyone else. No premine, no pre-bought bag.
 - **Both taxes are MONEY-SIDE (currency0: ETH on a curve/ETH pad, the stock ERC20 on a stock pad) — never the pad coin.**
 - **Buy tax 1%** taken **FEE-ON-INPUT** in `beforeSwap` (a slice of the ETH the buyer spends, before the pool swaps the rest): `buyBufferShareBps` = 20% → **0.2% curve buffer** (held as ETH by the curve through the curve phase → **platform at graduation**); `referralShareBps` = 25% of the platform cut → **0.2% referrer** (only when a ref link is passed in swap `hookData`; carved from the platform, never the trader); remainder → **platform** (0.8%, or 0.6% when a referral is present).

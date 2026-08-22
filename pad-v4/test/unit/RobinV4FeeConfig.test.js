@@ -8,6 +8,9 @@ const GOOD = {
   buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyLpFloorShareBps: 0, buyBufferShareBps: 2000, referralShareBps: 2500,
   platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
   lpFee: 10000, startTickMag: 201600, curveWidth: 25800, minGradWidth: 22800,
+  // [FDV] band deliberately OPEN in this fixture: these tests exercise curve mechanics over many toy
+  // supplies, not the product's valuation policy. The band itself is proven in FDV.creator-supply.test.js.
+  minFdvWei: 1n, maxFdvWei: (1n << 128n) - 1n,
 };
 const DYNAMIC_FEE_FLAG = 0x800000;
 

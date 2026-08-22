@@ -62,7 +62,7 @@ function unpackDelta(d) {
 
 let factory, SW, sv;
 async function launch(tag, creator, curveTok = 470_000) {
-  const cfg = { name: "Robin " + tag, symbol: tag, decimals: 18, supply: E(curveTok * 2 + 100_000), curveSupply: E(curveTok), reserveSupply: E(curveTok), tickSpacing: TS, creator: creator.address };
+  const cfg = { name: "Robin " + tag, symbol: tag, decimals: 18, supply: E(curveTok * 2 + 100_000), curveSupply: E(curveTok), reserveSupply: E(curveTok), tickSpacing: TS, startTickMag: 0, creator: creator.address };
   const TokenF = await ethers.getContractFactory("PadToken");
   const tokenSalt = ethers.id("tok-" + tag);
   const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, 18, cfg.supply, A.factory])]);

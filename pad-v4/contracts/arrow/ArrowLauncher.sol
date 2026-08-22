@@ -18,6 +18,7 @@ import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 
 import {ICurvePadFactoryV4, LaunchConfig} from "../interfaces/ICurvePadFactoryV4.sol";
+import {PadValuation} from "../core/PadValuation.sol";
 import {RobinV4FeeConfig} from "../core/RobinV4FeeConfig.sol";
 import {IFeeWalletRegistry} from "../interfaces/IRobinInterfaces.sol";
 import {ArrowDistributor} from "./ArrowDistributor.sol";
@@ -130,7 +131,8 @@ contract ArrowLauncher is IUnlockCallback, ReentrancyGuard {
             tickSpacing: cfg.tickSpacing,
             hooks: IHooks(hook)
         });
-        int24 startTick = int24(d.startTickMag);
+        // [FDV] resolve exactly as the factory did one call ago: a cfg-chosen start tick overrides the default.
+        int24 startTick = PadValuation.startTickOf(cfg.startTickMag, d.startTickMag);
         int24 gradTick = startTick - d.curveWidth;
         uint160 gradSqrt = TickMath.getSqrtPriceAtTick(gradTick);
 

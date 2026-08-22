@@ -55,6 +55,9 @@ async function deployStack(deployer, platform) {
     buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 0, buyLpFloorShareBps: 0, buyBufferShareBps: 2000, referralShareBps: 0,
     platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
     lpFee: FEE, startTickMag: START, curveWidth: WIDTH, minGradWidth: MINGRAD,
+    // [FDV] band deliberately OPEN in this fixture: these tests exercise curve mechanics over many toy
+    // supplies, not the product's valuation policy. The band itself is proven in FDV.creator-supply.test.js.
+    minFdvWei: 1n, maxFdvWei: (1n << 128n) - 1n,
   });
   const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
     await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
@@ -81,7 +84,7 @@ describe("SIM — Arrow migration launcher (buy out curve, graduate, airdrop to 
   });
 
   function makeCfg(tag, curveSupply, reserveSupply) {
-    return { name: "Arrow " + tag, symbol: tag, decimals: 18, supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, creator: dev.address };
+    return { name: "Arrow " + tag, symbol: tag, decimals: 18, supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: dev.address };
   }
   async function prepareSalts(tag, cfg) {
     // [brand] the pad token address must end in `1ab5` or CurvePadFactoryV4 (which ArrowLauncher launches

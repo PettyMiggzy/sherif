@@ -33,6 +33,9 @@ describe("[brand] pad token addresses are contract-forced to end in 1ab5", () =>
       buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 0, buyLpFloorShareBps: 0, buyBufferShareBps: 2000, referralShareBps: 0,
       platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
       lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: MINGRAD,
+      // [FDV] band deliberately OPEN in this fixture: these tests exercise curve mechanics over many toy
+      // supplies, not the product's valuation policy. The band itself is proven in FDV.creator-supply.test.js.
+      minFdvWei: 1n, maxFdvWei: (1n << 128n) - 1n,
     });
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
@@ -45,7 +48,7 @@ describe("[brand] pad token addresses are contract-forced to end in 1ab5", () =>
   const cfgFor = (tag) => ({
     name: "Robin " + tag, symbol: tag, decimals: 18,
     supply: 2000n * 10n ** 18n, curveSupply: 1000n * 10n ** 18n, reserveSupply: 1000n * 10n ** 18n,
-    tickSpacing: TS, creator: creator.address,
+    tickSpacing: TS, startTickMag: 0, creator: creator.address,
   });
 
   // mine the hook salt against whatever token address `tokenSalt` produces (the hook init-code embeds it)

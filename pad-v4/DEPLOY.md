@@ -67,6 +67,25 @@ Follow-ups (platform multisig):
   keeper can stream the token-leg LP fee to stakers.
 - Verify token + hook + floor vault on Blockscout.
 
+## 2a. Creator-chosen supply + valuation (curve pads)
+
+A curve creator picks **their own supply** — 10,000 tokens or 10,000,000,000, the pad does not care — and
+**their own launch price** (`LaunchConfig.startTickMag`; `0` = use the governed default). What the factory
+bounds is neither number alone but their product: the implied fully-diluted value at launch, checked against
+`RobinV4FeeConfig.minFdvWei/maxFdvWei` and reverted as `MarketCapOutOfRange(fdvWei)` before any state write.
+
+Shipped band (`scripts/deploy-curve.js`, env `MIN_FDV_ETH` / `MAX_FDV_ETH`): **0.05 ETH – 100 ETH**. For
+reference the shipped geometry puts a 1B supply at ~1.76 ETH FDV and a ~4.1 ETH raise to graduate at 73%
+on the curve.
+
+> **The band is WEI and it is a live governance knob** — this chain has no USD oracle, so the operator retunes
+> it as ETH moves. A launch client MUST read `factory.fdvBand()` rather than hardcode it, and can price a
+> creator's choice with `factory.quoteFdvWei(supply, startTick)` (the exact value `launch` checks) or the
+> `scripts/valuation.js` helper (`startTickForFdv`). `curveWidth` stays global, so every coin still graduates
+> at the same multiple of its own launch price no matter what supply or valuation was chosen.
+
+Full rationale, measurements and migration notes: `SUPPLY-AND-VALUATION.md`.
+
 ## 2b. Launch a CURVE pad + wire it (per coin)
 
 The curve path (`CurvePadFactoryV4` → `RobinCurveV4` → graduation) is the flagship product and had **no

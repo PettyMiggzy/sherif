@@ -50,6 +50,13 @@ contract RobinV4FeeConfig is Ownable2Step {
         int24 startTickMag; // curve start-price magnitude (sign set by token/quote ordering at launch)
         int24 curveWidth; // tick span from start to the graduation CEILING
         int24 minGradWidth; // informational min-grad marker (< curveWidth)
+        // [FDV] Creator-chosen valuation band. A creator picks SUPPLY and START PRICE freely; what is bounded is
+        // the product of the two — the implied fully-diluted value at launch. Bounding FDV instead of supply is
+        // what makes supply cosmetic: 10k tokens or 10bn tokens can both launch, because only the valuation has
+        // to be sane. Denominated in WEI, not USD, because this chain has no USD oracle — so these are re-tuned
+        // by the owner as ETH moves, and a client must READ them rather than assume a constant.
+        uint128 minFdvWei;
+        uint128 maxFdvWei;
     }
 
     Defaults private _d;
@@ -112,6 +119,9 @@ contract RobinV4FeeConfig is Ownable2Step {
         if (d.lpFee & DYNAMIC_FEE_FLAG != 0 || d.lpFee > MAX_LP_FEE) revert BadParam();
         if (d.startTickMag <= 0 || d.curveWidth <= 0) revert BadParam();
         if (d.minGradWidth <= 0 || d.minGradWidth >= d.curveWidth) revert BadParam();
+        // [FDV] A zero floor would let a creator launch at a dust valuation where the raise truncates toward 0;
+        // an inverted band would reject every launch and brick the pad. Both are owner fat-fingers, so fail loud.
+        if (d.minFdvWei == 0 || d.maxFdvWei < d.minFdvWei) revert BadParam();
         // Exact tick-spacing alignment (startTick/curveWidth % tickSpacing) is enforced by the factory/pool at
         // launch; here we only bound magnitudes and ordering so a bad default can't slip past the caps.
     }

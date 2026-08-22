@@ -19,6 +19,7 @@ import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmo
 
 import {ICurvePadFactoryV4, LaunchConfig} from "../interfaces/ICurvePadFactoryV4.sol";
 import {RobinV4FeeConfig} from "../core/RobinV4FeeConfig.sol";
+import {PadValuation} from "../core/PadValuation.sol";
 
 /// @title PresaleVault — a trustless, refundable ETH presale for a not-yet-launched Robin V4 curve
 /// @notice One instance PER presale (EIP-1167 clone, initialize()-d atomically by the factory). A creator opens a
@@ -69,6 +70,9 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     // saltCommitment covers only the salts, so without this an in-cap `setDefaults` retune while the presale is OPEN
     // would silently reprice — or (at an unreachable graduation) brick — a fully-funded raise. finalize() refuses to
     // launch if the live defaults have moved from these.
+    // [FDV] This is the RESOLVED start tick (cfg override if the creator set one, else the governed default at
+    // open), NOT the raw default. A presale that pins its own launch price is unaffected by a later retune of the
+    // global default, and one that inherits the default still tracks it — which is exactly what M-12 wants.
     int24 public snapStartTickMag;
     int24 public snapCurveWidth;
     uint24 public snapLpFee;
@@ -144,9 +148,16 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         cfg = cfg_;
         // [M-12] snapshot the governed geometry the contributors are committing to
         RobinV4FeeConfig.Defaults memory d0 = RobinV4FeeConfig(curvePadFactory.feeConfig()).defaults();
-        snapStartTickMag = d0.startTickMag;
+        snapStartTickMag = PadValuation.startTickOf(cfg_.startTickMag, d0.startTickMag);
         snapCurveWidth = d0.curveWidth;
         snapLpFee = uint24(d0.lpFee);
+        // [FDV] Fail HERE, not at finalize. The factory bounds supply x launch price, so a presale opened with an
+        // out-of-band valuation can take deposits for its whole duration and then hit `MarketCapOutOfRange` inside
+        // `finalize`'s try/catch — which refunds everyone (safe) but burns the raise and mislabels it Failed(3)
+        // "sniped". Checking the same band at open turns a creator's arithmetic mistake into a failed transaction.
+        // (This is best-effort, not a guarantee: the band is a live governance knob and can move mid-presale.)
+        uint256 fdv0 = PadValuation.fdvWei(cfg_.supply, snapStartTickMag);
+        if (fdv0 < d0.minFdvWei || fdv0 > d0.maxFdvWei) revert BadParams();
         saltCommitment = saltCommitment_;
         target = target_;
         deadline = deadline_;
@@ -212,7 +223,10 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         // to the snapshot, and an in-cap setDefaults retune must not silently reprice or brick their funded raise.
         // (Reverting keeps the presale OPEN; if the operator won't restore the geometry, fail() reason 2 refunds 100%.)
         RobinV4FeeConfig.Defaults memory d0 = RobinV4FeeConfig(curvePadFactory.feeConfig()).defaults();
-        if (d0.startTickMag != snapStartTickMag || d0.curveWidth != snapCurveWidth || uint24(d0.lpFee) != snapLpFee) {
+        if (
+            PadValuation.startTickOf(cfg.startTickMag, d0.startTickMag) != snapStartTickMag
+                || d0.curveWidth != snapCurveWidth || uint24(d0.lpFee) != snapLpFee
+        ) {
             revert GeometryChanged();
         }
         finalized = true;
@@ -257,7 +271,9 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
             hooks: IHooks(hook)
         });
         if (PoolId.unwrap(key.toId()) != PoolId.unwrap(poolId)) revert KeyMismatch();
-        int24 startTick = int24(d.startTickMag);
+        // [FDV] the SAME resolution the factory just used to initialize the pool — a per-launch start tick must
+        // reach the buy sizing below, or the pooled buy would be priced off a tick the pool never launched at.
+        int24 startTick = PadValuation.startTickOf(c.startTickMag, d.startTickMag);
         int24 gradTick = startTick - d.curveWidth;
         uint160 gradSqrt = TickMath.getSqrtPriceAtTick(gradTick);
 

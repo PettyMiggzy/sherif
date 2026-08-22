@@ -31,6 +31,9 @@ async function deployStack(deployer, platform) {
     buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 0, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 0,
     platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
     lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: MINGRAD,
+    // [FDV] band deliberately OPEN in this fixture: these tests exercise curve mechanics over many toy
+    // supplies, not the product's valuation policy. The band itself is proven in FDV.creator-supply.test.js.
+    minFdvWei: 1n, maxFdvWei: (1n << 128n) - 1n,
   });
   const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
     await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
@@ -69,7 +72,7 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
   function makeCfg(tag, { supply, curveSupply, reserveSupply }) {
     return {
       name: "Robin " + tag, symbol: tag, decimals: 18,
-      supply, curveSupply, reserveSupply, tickSpacing: TS, creator: creator.address,
+      supply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: creator.address,
     };
   }
 
@@ -204,6 +207,7 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
       buyLpFloorShareBps: d.buyLpFloorShareBps, buyBufferShareBps: d.buyBufferShareBps, referralShareBps: d.referralShareBps,
       platformGradBps: d.platformGradBps, creatorGradBps: d.creatorGradBps, ambushGradBps: d.ambushGradBps,
       lpFee: d.lpFee, startTickMag: START + TS, curveWidth: d.curveWidth, minGradWidth: d.minGradWidth,
+      minFdvWei: d.minFdvWei, maxFdvWei: d.maxFdvWei,
     };
     await S.feeCfg.connect(deployer).setDefaults(retuned);
     try {

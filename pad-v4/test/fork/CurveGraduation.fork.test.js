@@ -38,6 +38,9 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
       buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 0, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 0,
       platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
       lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: 1800,
+      // [FDV] band deliberately OPEN in this fixture: these tests exercise curve mechanics over many toy
+      // supplies, not the product's valuation policy. The band itself is proven in FDV.creator-supply.test.js.
+      minFdvWei: 1n, maxFdvWei: (1n << 128n) - 1n,
     });
 
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
@@ -51,7 +54,7 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
       name: "Robin Curve", symbol: "rCRV", decimals: 18,
       // NO DEV MINT: supply == curveSupply + reserveSupply exactly (creator gets nothing at launch)
       supply: 300n * 10n ** 18n, curveSupply: 100n * 10n ** 18n, reserveSupply: 200n * 10n ** 18n,
-      tickSpacing: SPACING, creator: creator.address,
+      tickSpacing: SPACING, startTickMag: 0, creator: creator.address,
     };
 
     // mine the BRANDED token salt (address must end in `1ab5`), THEN predict the token addr → mine the hook

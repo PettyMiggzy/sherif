@@ -173,6 +173,19 @@ library PoolMath {
         }
     }
 
+    /// @notice Implied fully-diluted value, in WEI, of `supply` raw token units launched at `startTickMag`.
+    /// @dev THE LAUNCHPAD'S SUPPLY POLICY IN ONE LINE. A creator's supply number means nothing on its own —
+    /// 10,000 tokens and 10,000,000,000 tokens are equally legitimate — so what gets bounded is supply x launch
+    /// price, and supply itself is left free. `startTickMag` is the POSITIVE magnitude the factory launches at;
+    /// the sign is flipped later by token/WETH ordering, which does not change the valuation (at +mag the token
+    /// is token1 and price is tokens-per-WETH; at -mag it is token0 and price is WETH-per-token — reciprocals,
+    /// so `supply / 1.0001^mag` either way). Two mulDiv steps, because sqrtP^2 alone overflows uint256 at the
+    /// high ticks every curve launches at.
+    function fdvWei(uint256 supply, int24 startTickMag) internal pure returns (uint256) {
+        uint256 s = uint256(getSqrtRatioAtTick(startTickMag));
+        return Math.mulDiv(Math.mulDiv(supply, Q96, s), Q96, s);
+    }
+
     /// @notice WETH-per-token (1e18-scaled) at a TWAP mean tick — manipulation-resistant (unlike spot).
     function twapPriceWethPerToken(int24 tick, bool tokenIsToken0) internal pure returns (uint256) {
         return quoteWethPerToken(getSqrtRatioAtTick(tick), tokenIsToken0);

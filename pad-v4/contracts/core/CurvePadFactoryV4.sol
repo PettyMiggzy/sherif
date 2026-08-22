@@ -22,6 +22,7 @@ import {RobinFeeHook} from "../hooks/RobinFeeHook.sol";
 import {RobinCurveV4} from "../pads/RobinCurveV4.sol";
 import {IRobinFeeHookAdmin} from "../interfaces/IRobinInterfaces.sol";
 import {PadBrand} from "./PadBrand.sol";
+import {PadValuation} from "./PadValuation.sol";
 
 /// @title CurvePadFactoryV4 — free single-sided bonding-curve launch on Uniswap V4
 /// @notice One tx, NO ETH seed: deploy the token, mine+deploy the fee hook, initialize the pool at the curve
@@ -62,6 +63,10 @@ contract CurvePadFactoryV4 {
         uint256 curveSupply; // tokens SOLD via the single-sided curve
         uint256 reserveSupply; // tokens HELD BACK (never in the curve) to pair the permanent LP + feed staking
         int24 tickSpacing;
+        // [FDV] Creator-chosen launch-price magnitude in ticks; 0 = use the governed default. This is the ONLY
+        // geometry knob a caller gets: `curveWidth` (launch -> graduation ceiling) stays global, so picking a
+        // start price moves the valuation without changing the multiple every coin graduates at.
+        int24 startTickMag;
         address creator; // gets supply - curveSupply - reserveSupply
     }
 
@@ -87,6 +92,7 @@ contract CurvePadFactoryV4 {
     error BadConfig();
     error AlreadyLaunched();
     error BadGeometry();
+    error MarketCapOutOfRange(uint256 fdvWei); // [FDV] supply x launch price outside the governed band
     error NotCurve();
     error PoolAlreadyInit();
 
@@ -118,6 +124,26 @@ contract CurvePadFactoryV4 {
         if (address(lockVault.positionManager()) != positionManager_) revert LockVaultMismatch();
     }
 
+    // ── launch-client helpers (pure/view; nothing on the hot path calls these) ─────────────────────────────
+    //
+    // A creator picks SUPPLY and VALUATION, not a tick. These two reads are what a UI needs to turn that choice
+    // into a `LaunchConfig` without reimplementing Q96 tick math or reaching into the FeeConfig's layout — and,
+    // more importantly, without HARDCODING a band: `minFdvWei`/`maxFdvWei` are wei on a chain with no USD oracle,
+    // so the operator retunes them as ETH moves and a client that baked in yesterday's numbers starts quoting
+    // launches that revert.
+
+    /// @notice The implied fully-diluted value, in wei, that `supply` tokens launched at `startTick` would carry.
+    /// @dev EXACTLY the value `launch` checks against the band — same library, no second implementation.
+    function quoteFdvWei(uint256 supply, int24 startTick) external pure returns (uint256) {
+        return PadValuation.fdvWei(supply, startTick);
+    }
+
+    /// @notice The currently-governed valuation band [min, max] in wei. Read it; never assume it.
+    function fdvBand() external view returns (uint256 minWei, uint256 maxWei) {
+        RobinV4FeeConfig.Defaults memory d = feeConfig.defaults();
+        return (d.minFdvWei, d.maxFdvWei);
+    }
+
     /// @notice Launch a free single-sided curve pad. `tokenSalt` is any CREATE2 salt (token only needs to sort
     /// above native(0), always true). `hookSalt` is mined off-chain so the hook carries flags 0x00CC.
     function launch(LaunchConfig calldata cfg, bytes32 tokenSalt, bytes32 hookSalt, bytes32 curveSalt)
@@ -140,8 +166,13 @@ contract CurvePadFactoryV4 {
         // 1) governed defaults, snapshotted + stamped immutably
         RobinV4FeeConfig.Defaults memory d = feeConfig.defaults(); // all shares/geometry validated in the FeeConfig
         int24 ts = cfg.tickSpacing;
-        if (ts <= 0 || d.startTickMag % ts != 0 || d.curveWidth % ts != 0) revert BadGeometry();
-        int24 startTick = int24(d.startTickMag); // token = currency1 ⇒ launch at the high (top) tick
+        // [FDV] The creator may pick their own launch price; 0 keeps the governed default. `curveWidth` stays
+        // GLOBAL on purpose — it is the tick span from launch to the graduation ceiling, so holding it fixed
+        // means every coin still graduates at the SAME multiple of its own launch price no matter what
+        // valuation or supply was chosen. Only the absolute starting point moves.
+        int24 startMag = PadValuation.startTickOf(cfg.startTickMag, int24(d.startTickMag));
+        if (ts <= 0 || startMag <= 0 || startMag % ts != 0 || d.curveWidth % ts != 0) revert BadGeometry();
+        int24 startTick = startMag; // token = currency1 ⇒ launch at the high (top) tick
         int24 gradTick = startTick - int24(d.curveWidth); // ceiling (lower); startTick/gradTick are ts-aligned
         // gradTick must be strictly ABOVE minUsableTick: at == it, √grad == √minTick and _mintPermanentLp's
         // getLiquidityForAmount1(√min, √grad, …) divides by zero (reverting graduation). [D-2]
@@ -154,6 +185,16 @@ contract CurvePadFactoryV4 {
         if (startTick > maxTick || gradTick <= TickMath.minUsableTick(ts) || gradTick > maxTick - 80000) {
             revert BadGeometry();
         }
+        // [FDV] BOUND THE VALUATION, NOT THE SUPPLY. Supply is deliberately unconstrained — 10,000 tokens and
+        // 10,000,000,000 tokens are both legitimate — because supply alone means nothing; what matters is
+        // supply x price. currency0 is ETH and currency1 is the token, so the pool price is TOKENS-PER-ETH and
+        // the implied fully-diluted value in wei is supply / price = supply * 2^192 / sqrtP^2. That is computed
+        // in two mulDiv steps because sqrtP^2 alone overflows uint256 at high ticks.
+        {
+            uint256 fdvWei = PadValuation.fdvWei(cfg.supply, startTick);
+            if (fdvWei < d.minFdvWei || fdvWei > d.maxFdvWei) revert MarketCapOutOfRange(fdvWei);
+        }
+
         // [HIGH-2] the reserve must be big enough that the ETH leg binds at graduation — otherwise the raise
         // would leak to the platform book, or (too small) brick graduation and trap the raise forever. Require
         // reserveSupply ≥ curveSupply·√grad/√start with a 5% margin (√grad < √start ⇒ threshold < curveSupply).

@@ -48,6 +48,14 @@ const DEFAULTS = {
   startTickMag: Number(process.env.START_TICK_MAG || 201600), // curve top (launch price magnitude) — V3 parity
   curveWidth: Number(process.env.CURVE_WIDTH || 23000), // start → graduation ceiling span (~10x chart)
   minGradWidth: Number(process.env.MIN_GRAD_WIDTH || 22800), // informational min-grad marker (< curveWidth)
+  // [FDV] The creator-chosen-supply band. Supply itself is UNBOUNDED — a creator may mint 10,000 tokens or
+  // 10,000,000,000; what the factory bounds is supply x launch price, i.e. the implied fully-diluted value.
+  // Reference point: the shipped geometry above (startTickMag 201600) puts a 1,000,000,000-token supply at
+  // ~1.76 ETH FDV and a ~4.05 ETH raise to graduate, so this band spans roughly 1/35x to 57x that launch.
+  // Denominated in WEI because this chain has no USD oracle — RETUNE THESE as ETH moves, and note that a
+  // launch client must READ minFdvWei()/maxFdvWei() rather than hardcode them.
+  minFdvWei: ethers.parseEther(process.env.MIN_FDV_ETH || "0.05"),
+  maxFdvWei: ethers.parseEther(process.env.MAX_FDV_ETH || "100"),
 };
 
 async function legacyDeploy(name, args = []) {

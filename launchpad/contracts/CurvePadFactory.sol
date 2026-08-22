@@ -93,8 +93,21 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     mapping(address => Record) public recordOf;
     address[] public allTokens;
 
-    error BadValue();
+    // ---- creator-chosen supply: bound the VALUATION, not the token count ----
+    // TOTAL_SUPPLY above is now a DEFAULT, not a law: `launchWithSupply` lets a creator pick any supply and any
+    // launch price. Supply alone carries no information — what has to stay sane is supply x price, the implied
+    // fully-diluted value at launch. So the band below is the only thing checked, and supply is unbounded.
+    //
+    // WEI, not USD: this chain has no USD oracle, so the owner retunes the band as ETH moves and a launch client
+    // must READ it. It is seeded in the constructor to +/-32x of whatever THIS factory's own default geometry
+    // implies, so a fresh deploy is immediately sane without a second governance step.
+    uint256 public minFdvWei;
+    uint256 public maxFdvWei;
 
+    error BadValue();
+    error MarketCapOutOfRange(uint256 fdvWei);
+
+    event FdvBandChanged(uint256 minWei, uint256 maxWei);
     event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought);
     event PlatformChanged(address platform);
 
@@ -136,17 +149,77 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         START_TICK_MAG = startTickMag_;
         CURVE_WIDTH = curveWidth_;
         MIN_GRAD_WIDTH = minGradWidth_;
+        // seed the valuation band around this factory's OWN default launch, so the default `launch()` is always
+        // in band by construction and a creator gets a 32x window either side of it before governance touches it
+        uint256 f = PoolMath.fdvWei(TOTAL_SUPPLY, startTickMag_);
+        minFdvWei = f / 32;
+        maxFdvWei = f * 32;
+        emit FdvBandChanged(minFdvWei, maxFdvWei);
+    }
+
+    /// @notice Retune the launch valuation band. Owner-only, takes effect on FUTURE launches only (a live pad's
+    /// geometry is immutable). Denominated in wei — this chain has no USD oracle, so the band has to move as ETH does.
+    function setFdvBand(uint256 minWei, uint256 maxWei) external onlyOwner {
+        if (minWei == 0 || maxWei < minWei) revert BadValue();
+        minFdvWei = minWei;
+        maxFdvWei = maxWei;
+        emit FdvBandChanged(minWei, maxWei);
+    }
+
+    /// @notice The implied FDV, in wei, of `supply` tokens launched at `startTickMag` — EXACTLY the value
+    /// `launchWithSupply` checks against the band. A UI can price a creator's choice before they spend gas.
+    function quoteFdvWei(uint256 supply, int24 startTickMag) external pure returns (uint256) {
+        return PoolMath.fdvWei(supply, startTickMag);
     }
 
     receive() external payable {} // for WETH.withdraw refunds during a dev buy
 
     /// @notice One tx: token + real pool + seeded curve + trading on. Send ETH to also make the dev's first
     /// buy (≤2%) in the same tx, before trading opens to anyone else. DEX + DexScreener day one.
+    /// @dev The original entrypoint, unchanged for every existing caller: the factory's default supply at the
+    /// factory's default launch price. Identical to `launchWithSupply(p, 0, 0)`.
     function launch(LaunchParams calldata p) external payable nonReentrant returns (address token, address curve, address pool) {
+        return _launch(p, 0, 0);
+    }
+
+    /// @notice Same launch, with the creator choosing their own SUPPLY and their own LAUNCH PRICE.
+    /// @param supply total token units to mint; 0 = this factory's default (1,000,000,000e18).
+    /// @param startTickMag positive launch-price magnitude in ticks (multiple of 200); 0 = the factory default.
+    ///        A HIGHER magnitude is a CHEAPER token, so raising it while holding supply lowers the valuation.
+    /// @dev Supply is bounded by NOTHING. What is checked is supply x launch price — the implied FDV — against
+    /// [minFdvWei, maxFdvWei], reverting `MarketCapOutOfRange` before a single byte of state is written. That is
+    /// what makes supply cosmetic: at equal FDV a 10,000-token coin and a 1,000,000,000-token coin take the same
+    /// money for the same percentage of the coin. `CURVE_WIDTH` stays factory-wide, so every coin still graduates
+    /// at the same multiple of its own launch price no matter what supply or valuation was chosen.
+    function launchWithSupply(LaunchParams calldata p, uint256 supply, int24 startTickMag)
+        external
+        payable
+        nonReentrant
+        returns (address token, address curve, address pool)
+    {
+        return _launch(p, supply, startTickMag);
+    }
+
+    function _launch(LaunchParams calldata p, uint256 supply_, int24 startTickMag_)
+        internal
+        returns (address token, address curve, address pool)
+    {
         if (p.dev == address(0)) revert BadValue();
 
-        uint256 ambushAmt = (TOTAL_SUPPLY * AMBUSH_BPS) / 10_000;
-        uint256 curveAmt = TOTAL_SUPPLY - ambushAmt;
+        uint256 totalSupply = supply_ == 0 ? TOTAL_SUPPLY : supply_;
+        int24 mag = startTickMag_ == 0 ? START_TICK_MAG : startTickMag_;
+        // The same bounds the constructor enforces on the factory default, re-run per launch: a caller-supplied
+        // magnitude must be positive, spacing-aligned, and leave the derived ceiling inside the usable range —
+        // otherwise CurvePool's seed() would revert mid-launch instead of failing here, before anything exists.
+        if (mag <= 0 || mag % 200 != 0 || mag + CURVE_WIDTH > 887200) revert BadValue();
+        {
+            uint256 fdv = PoolMath.fdvWei(totalSupply, mag);
+            if (fdv < minFdvWei || fdv > maxFdvWei) revert MarketCapOutOfRange(fdv);
+        }
+
+        uint256 ambushAmt = (totalSupply * AMBUSH_BPS) / 10_000;
+        uint256 curveAmt = totalSupply - ambushAmt;
+        if (ambushAmt == 0 || curveAmt == 0) revert BadValue(); // a supply too small to split 75/25 at all
 
         LaunchToken.GuardConfig memory g = LaunchToken.GuardConfig({
             deadSecs: 2,
@@ -165,15 +238,15 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         bytes32 salt = keccak256(
             abi.encodePacked(address(this), p.dev, p.name, p.symbol, block.number, block.timestamp, allTokens.length)
         );
-        token = tokenDeployer.deploy(p.name, p.symbol, TOTAL_SUPPLY, address(this), g, salt);
+        token = tokenDeployer.deploy(p.name, p.symbol, totalSupply, address(this), g, salt);
 
-        int24 startTick = token < WETH ? -START_TICK_MAG : START_TICK_MAG;
+        int24 startTick = token < WETH ? -mag : mag;
         curve = curveDeployer.deploy(
             token, WETH, v3Factory, platform, p.dev, bondDeployer, feeConfig, curveAmt, ambushAmt, startTick, CURVE_WIDTH, MIN_GRAD_WIDTH
         );
         pool = ICurvePool(curve).pool();
 
-        IERC20(token).safeTransfer(curve, TOTAL_SUPPLY);
+        IERC20(token).safeTransfer(curve, totalSupply);
         LaunchToken(token).setCurve(curve); // lets the curve exempt the Bond it posts at graduation
         LaunchToken(token).enableTrading(pool, curve, uint64(block.timestamp));
         LaunchToken(token).exemptAddress(router); // router receives tokens on burnDev/flushBurn — never a sniper

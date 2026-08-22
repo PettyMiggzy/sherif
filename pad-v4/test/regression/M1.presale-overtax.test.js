@@ -41,6 +41,9 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
       buyBufferShareBps: 2000, referralShareBps: 0,
       platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
       lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: MINGRAD,
+      // [FDV] band deliberately OPEN in this fixture: these tests exercise curve mechanics over many toy
+      // supplies, not the product's valuation policy. The band itself is proven in FDV.creator-supply.test.js.
+      minFdvWei: 1n, maxFdvWei: (1n << 128n) - 1n,
     });
     factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
@@ -65,7 +68,7 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
     const curveSupply = 2n * 10n ** 17n, reserveSupply = 2n * 10n ** 17n; // 0.2e18 each
     return {
       name: "Robin " + tag, symbol: tag, decimals: 18,
-      supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, creator: creator.address,
+      supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: creator.address,
     };
   }
 

@@ -49,6 +49,9 @@ describe("SIM — production-geometry calibration (start ~$3.4k, graduate ~$34k,
       buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 0,
       platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
       lpFee: FEE, startTickMag: START, curveWidth: WIDTH, minGradWidth: MINGRAD,
+      // [FDV] band deliberately OPEN in this fixture: these tests exercise curve mechanics over many toy
+      // supplies, not the product's valuation policy. The band itself is proven in FDV.creator-supply.test.js.
+      minFdvWei: 1n, maxFdvWei: (1n << 128n) - 1n,
     });
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
@@ -57,7 +60,7 @@ describe("SIM — production-geometry calibration (start ~$3.4k, graduate ~$34k,
     await lockVault.setFactory(await factory.getAddress());
 
     // launch: no-mint 1B @ 750M curve / 250M reserve, tickSpacing 100
-    const cfg = { name: "Calibrate", symbol: "CAL", decimals: 18, supply: SUPPLY, curveSupply: CURVE, reserveSupply: RESERVE, tickSpacing: TS, creator: creator.address };
+    const cfg = { name: "Calibrate", symbol: "CAL", decimals: 18, supply: SUPPLY, curveSupply: CURVE, reserveSupply: RESERVE, tickSpacing: TS, startTickMag: 0, creator: creator.address };
     // [brand] the token address must end in `1ab5` (PadBrand.requireBrand) — mine the salt exactly like production.
     const tokenSalt = await brandedTokenSalt(await dep.getAddress(), await factory.getAddress(), cfg, ethers.id("cal-tok"));
     const curveSalt = ethers.id("cal-curve");

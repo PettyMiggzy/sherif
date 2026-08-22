@@ -281,6 +281,88 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect(await bond.ambushL()).to.be.greaterThan(0n);
   });
 
+  it("[FDV] launchWithSupply: a 10,000-token coin is a REAL coin — same valuation, same trade, as a 1B one", async () => {
+    const [dep, platform, dev, buyer] = await ethers.getSigners();
+
+    const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
+    const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
+    const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
+      WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 201600, 23000, 22800
+    );
+    await (await router.setFactory(await factory.getAddress())).wait();
+    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+
+    // 100,000x less supply, priced ~100,000x higher per token (ln(1e5)/1e-4 ~ 115,100 ticks, aligned to 200)
+    const SMALL_SUPPLY = 10_000n * ONE, SMALL_MAG = 201600 - 115200;
+    const bigFdv = await factory.quoteFdvWei(1_000_000_000n * ONE, 201600);
+    const smallFdv = await factory.quoteFdvWei(SMALL_SUPPLY, SMALL_MAG);
+    // the two launches are the same size of company, to within the 200-tick spacing
+    const drift = Number(smallFdv > bigFdv ? smallFdv - bigFdv : bigFdv - smallFdv) / Number(bigFdv);
+    expect(drift, "same valuation at 100,000x different supply").to.be.lessThan(0.03);
+
+    const rc = await (await factory.launchWithSupply(
+      { name: "Tiny Supply", symbol: "TINY", dev: dev.address, tax: NOTAX }, SMALL_SUPPLY, SMALL_MAG
+    )).wait();
+    const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
+    const { token, curve, pool: poolAddr } = ev.args;
+    const TOK = await ethers.getContractAt("LaunchToken", token);
+    const curveC = await ethers.getContractAt("CurvePool", curve);
+    const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
+
+    // a real, live, tradeable coin — not a degenerate one
+    expect(await TOK.totalSupply()).to.equal(SMALL_SUPPLY);
+    expect(await TOK.tradingEnabled()).to.equal(true);
+    expect(await curveC.curveL()).to.be.greaterThan(0n);
+    expect((await pool.slot0()).sqrtPriceX96).to.be.greaterThan(0n);
+    // 75/25 curve/ambush split holds at any supply
+    expect(await curveC.curveSupply()).to.equal((SMALL_SUPPLY * 7500n) / 10000n);
+
+    const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
+    const wethW = await ethers.getContractAt(
+      ["function deposit() payable", "function approve(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"], WETH);
+    await (await wethW.connect(buyer).deposit({ value: 10n * ONE })).wait();
+    await (await wethW.connect(buyer).approve(await probe.getAddress(), 10n * ONE)).wait();
+    await ethers.provider.send("evm_increaseTime", [400]); // clear the anti-snipe window
+    await ethers.provider.send("evm_mine", []);
+
+    // 0.25 ETH buys a MEANINGFUL slice of the coin — the point of choosing your own supply is that the number
+    // of tokens is cosmetic, so this must be a normal-looking percentage, not dust and not the whole float
+    await (await probe.connect(buyer).swapExactIn(poolAddr, WETH, ONE / 4n)).wait();
+    const got = await TOK.balanceOf(buyer.address);
+    const ppm = (got * 1_000_000n) / SMALL_SUPPLY;
+    expect(ppm, "0.25 ETH buys a real slice of a 10k-supply coin").to.be.greaterThan(1000n); // > 0.1%
+    expect(ppm).to.be.lessThan(750_000n); // and does not eat the curve
+
+    // and it still graduates: buy the rest of the curve up to the ceiling
+    await (await probe.connect(buyer).swapExactInLimit(poolAddr, WETH, 9n * ONE, await curveC.gradSqrtPriceX96())).wait();
+    expect(await curveC.ready(), "a 10,000-supply coin graduates like any other").to.equal(true);
+  });
+
+  it("[FDV] the band is enforced on the REAL launch path, not just in the quote", async () => {
+    const [dep, platform, dev] = await ethers.getSigners();
+    const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
+    const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
+    const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
+      WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
+      await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 201600, 23000, 22800
+    );
+    await (await router.setFactory(await factory.getAddress())).wait();
+    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const p = { name: "Dust", symbol: "DUST", dev: dev.address, tax: NOTAX };
+
+    // 10,000 tokens at the DEFAULT price is a dust valuation: the curve would raise ~nothing and never graduate
+    const fdv = await factory.quoteFdvWei(10_000n * ONE, 201600);
+    await expect(factory.launchWithSupply(p, 10_000n * ONE, 0))
+      .to.be.revertedWithCustomError(factory, "MarketCapOutOfRange").withArgs(fdv);
+    // the default launch is always in band by construction
+    await expect(factory.launch({ ...p, symbol: "OKAY" })).to.not.be.reverted;
+  });
+
   it("graduate() corrects a MANIPULATED post-buyout price back to the ceiling — floor-drain closed, no DoS (CP-1)", async () => {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
 

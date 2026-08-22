@@ -61,6 +61,9 @@ async function main() {
     buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 2500,
     platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
     lpFee: FEE, startTickMag: START, curveWidth: WIDTH, minGradWidth: 22800,
+    // [FDV] band deliberately OPEN in this fixture: these tests exercise curve mechanics over many toy
+    // supplies, not the product's valuation policy. The band itself is proven in FDV.creator-supply.test.js.
+    minFdvWei: 1n, maxFdvWei: (1n << 128n) - 1n,
   }]);
   const factory = await dep("CurvePadFactoryV4", [
     POOL_MANAGER, await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
@@ -71,7 +74,7 @@ async function main() {
   console.log(`  CurvePadFactoryV4      ${await factory.getAddress()}\n  swap router            ${await SW.getAddress()}\n`);
 
   // ── launch a SMALL pad so a tiny buy sells it out (production geometry, but curve=100k tokens) ──
-  const cfg = { name: "Robin E2E", symbol: "rE2E", decimals: 18, supply: 200_000n * ONE, curveSupply: 100_000n * ONE, reserveSupply: 100_000n * ONE, tickSpacing: TS, creator: w.address };
+  const cfg = { name: "Robin E2E", symbol: "rE2E", decimals: 18, supply: 200_000n * ONE, curveSupply: 100_000n * ONE, reserveSupply: 100_000n * ONE, tickSpacing: TS, startTickMag: 0, creator: w.address };
   const TokenF = await ethers.getContractFactory("PadToken");
   const tokenSalt = ethers.id("e2e-" + Date.now());
   const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, 18, cfg.supply, await factory.getAddress()])]);

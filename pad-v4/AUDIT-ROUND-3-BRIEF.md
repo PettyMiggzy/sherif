@@ -41,12 +41,19 @@ added/changed **after** that and has **not** been externally reviewed — cross-
    confirm the 100%-platform ETH-LP flip and the 70/30 split + creator-burn. See `ROBIN-V4-CURVE-ECON.md`.
 
 ## 4. Scope inventory
-**NEW this round:** `arrow/ArrowLauncher.sol`, `arrow/ArrowDistributor.sol`, `pads/RobinTokenTreasury.sol`,
+**NEW this round:** `core/PadValuation.sol` (**creator-chosen supply** — supply is unbounded; the factory instead
+bounds `supply x launch price`, the implied FDV, against a governed `minFdvWei/maxFdvWei` band and reverts
+`MarketCapOutOfRange`. `LaunchConfig` gained a per-launch `startTickMag` (0 = governed default) and the same
+library resolves that tick in `CurvePadFactoryV4`, `PresaleVault` and `ArrowLauncher` so the two launchers cannot
+price a buyout off a different tick than the pool was initialized at. See `SUPPLY-AND-VALUATION.md`),
+`arrow/ArrowLauncher.sol`, `arrow/ArrowDistributor.sol`, `pads/RobinTokenTreasury.sol`,
 `core/PadBrand.sol` (**brand suffix** — every pad token address must end in `1ab5`; enforced in all three
 factories' `launch`, so callers must mine `tokenSalt`. Pure mask+compare, reverts before any state write).
 **MODIFIED this round:** `pads/RobinFloorVault.sol` (token-leak fix + `tokenSink`/`sweepTokenFees`), `pads/RobinCurveV4.sol`
-(buy-LP routing default), `core/RobinV4FeeConfig.sol` (M-10 lpFee cap), `core/PadFactory.sol` (M-3 caps),
-`core/CurvePadFactoryV4.sol` (L-1 min-raise), `pads/DualStaking.sol` (M-5), `presale/PresaleVault.sol` (M-12),
+(buy-LP routing default), `core/RobinV4FeeConfig.sol` (M-10 lpFee cap; **FDV band**), `core/PadFactory.sol` (M-3 caps),
+`core/CurvePadFactoryV4.sol` (L-1 min-raise; **FDV band + per-launch start tick**), `pads/DualStaking.sol` (M-5),
+`presale/PresaleVault.sol` (M-12; the geometry snapshot now pins the RESOLVED start tick), `arrow/ArrowLauncher.sol`
+(buyout sizing reads the resolved start tick),
 `adapters/StockQuoteAdapter.sol` (H-2), `core/LockVault.sol` (M-11 doc).
 **Core suite (context, reviewed before):** `hooks/RobinFeeHook.sol`, `pads/RobinCurveV4.sol`, `core/CurvePadFactoryV4.sol`,
 `core/CurveV4Deployer.sol`, `core/DeterministicDeployer.sol`, `core/FeeWalletRegistry.sol`, `core/LockVault.sol`,

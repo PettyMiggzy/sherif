@@ -139,7 +139,7 @@ Bond on your token."** Take from the outlaws robbing the chart, give it back to 
 **Fixed, oracle-free pad terms (identical for every launch — projects only pick name / ticker / dev):**
 | Term | Value |
 |---|---|
-| Total supply | **1,000,000,000** (fixed) |
+| Total supply | **1,000,000,000** default — see *creator-chosen supply* below |
 | Split | **75% bonding curve · 25% Ambush** (the Bond's sell-into-green engine) |
 | Start price | `VIRT_ETH = 0.8 ETH` → **start MC ≈ $1,880** (1 ETH), no oracle |
 | Graduation | ceiling-only; ~**4.2 ETH** raised → Bond posted, floor keeps ≥50% (FDV illustrative) |
@@ -148,6 +148,20 @@ Bond on your token."** Take from the outlaws robbing the chart, give it back to 
 | Platform take | **1% every trade, SPLIT** (owner-tunable) — router buys/sells 45% platform / 45% creator / 10% floor; LP swap fees 90% platform / 10% creator — + Tribute ETH — **not** the floor's funding |
 
 `CurveLaunchFactory.launch({name, symbol, dev})` is the whole interface. (ETH assumed ~$1,880.)
+
+**Creator-chosen supply (NOT on the deployed factory — ships with the next one).** `launchWithSupply(p, supply,
+startTickMag)` lets a creator pick any supply and any launch price; `launch(p)` is unchanged and equals
+`launchWithSupply(p, 0, 0)`. Supply is bounded by **nothing** — what the factory bounds is `supply x launch
+price`, the implied fully-diluted value, against an owner-governed `[minFdvWei, maxFdvWei]` band, reverting
+`MarketCapOutOfRange` before any state is written. That is what makes supply cosmetic rather than a trap: at
+equal FDV a 10,000-token coin and a 1,000,000,000-token coin take the same money for the same *percentage* of
+the coin, and both graduate at the same multiple of their own launch price (`CURVE_WIDTH` stays factory-wide).
+Fixing supply while fixing price is what made small supplies broken before — 10,000 tokens at the 1B launch
+price is a ~0.00000000000002 ETH company whose curve raises nothing and can never graduate.
+
+The band is seeded in the constructor to ±32× of the factory's own default launch and retuned by the owner via
+`setFdvBand` — it is denominated in **wei** because this chain has no USD oracle, so a launch client must read
+`minFdvWei()`/`maxFdvWei()` and can price a creator's choice with `quoteFdvWei(supply, startTickMag)`.
 
 **The Bond — a protocol-owned market maker, posted at graduation, locked forever.** (Robin Hood brand names;
 the `Bond.sol` identifiers use the engine names in parentheses.)

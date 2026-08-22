@@ -20,6 +20,9 @@ const DEFAULTS = {
   buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 0, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000,
   referralShareBps: 0, platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
   lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: MINGRAD,
+  // [FDV] band deliberately OPEN in this fixture: these tests exercise curve mechanics over many toy
+  // supplies, not the product's valuation policy. The band itself is proven in FDV.creator-supply.test.js.
+  minFdvWei: 1n, maxFdvWei: (1n << 128n) - 1n,
 };
 
 async function base(deployer, platform) {
@@ -74,7 +77,7 @@ describe("[M-2 / I-1(19)] CurvePadFactoryV4 wiring guards — failing branches",
     const cfg = {
       name: "Robin X", symbol: "X", decimals: 18,
       supply: 10n ** 24n, curveSupply: 7n * 10n ** 23n, reserveSupply: 3n * 10n ** 23n,
-      tickSpacing: TS, creator: creator.address,
+      tickSpacing: TS, startTickMag: 0, creator: creator.address,
     };
     // [brand] mine a VALID branded tokenSalt so the only thing left to reject this launch is the M-2 guard —
     // an unmined salt would revert BadTokenSuffix and the test would pass for the wrong reason.
@@ -92,7 +95,7 @@ describe("[M-2 / I-1(19)] CurvePadFactoryV4 wiring guards — failing branches",
     const cfg = {
       name: "Robin X", symbol: "X", decimals: 18,
       supply: 10n ** 24n, curveSupply: 7n * 10n ** 23n, reserveSupply: 3n * 10n ** 23n,
-      tickSpacing: TS, creator: creator.address,
+      tickSpacing: TS, startTickMag: 0, creator: creator.address,
     };
     // [brand] valid mined salt — see the sibling test: the M-2 guard must be the ONLY reason this reverts.
     const tokenSalt = await brandedTokenSalt(
@@ -118,7 +121,7 @@ describe("[M-2 / I-1(19)] CurvePadFactoryV4 wiring guards — failing branches",
     const tiny = {
       name: "Robin Dust", symbol: "DUST", decimals: 18,
       supply: 200n * 10n ** 18n, curveSupply: 100n * 10n ** 18n, reserveSupply: 100n * 10n ** 18n,
-      tickSpacing: 100, creator: creator.address,
+      tickSpacing: 100, startTickMag: 0, creator: creator.address,
     };
     // [brand] valid mined salt so the revert can only be the L-1 raise floor, never BadTokenSuffix.
     const tokenSalt = await brandedTokenSalt(

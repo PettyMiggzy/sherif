@@ -13,6 +13,9 @@ struct LaunchConfig {
     uint256 curveSupply; // tokens sold via the single-sided curve
     uint256 reserveSupply; // tokens held back to pair the permanent LP + feed staking
     int24 tickSpacing;
+    // [FDV] Creator-chosen launch price magnitude; 0 = use the governed default. Together with `supply` this
+    // sets the implied valuation, which the factory bounds against RobinV4FeeConfig's FDV band.
+    int24 startTickMag;
     address creator;
 }
 

@@ -52,7 +52,7 @@ function selectorOf(e) {
 }
 
 async function launch(factory, tag, creator) {
-  const cfg = { name: "Robin " + tag, symbol: tag, decimals: 18, supply: E(1_040_000), curveSupply: E(470_000), reserveSupply: E(470_000), tickSpacing: TS, creator };
+  const cfg = { name: "Robin " + tag, symbol: tag, decimals: 18, supply: E(1_040_000), curveSupply: E(470_000), reserveSupply: E(470_000), tickSpacing: TS, startTickMag: 0, creator };
   const TokenF = await ethers.getContractFactory("PadToken");
   const tokenSalt = ethers.id("tok-" + tag);
   const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, 18, cfg.supply, A.factory])]);
