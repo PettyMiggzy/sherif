@@ -24,7 +24,12 @@ function priceFDV(sqrtP, tokenIsToken0) {
   return { wethPerToken, mcapEth, mcapUsd: mcapEth * ETH_USD };
 }
 
-describe("Curve tracer — real FDV vs ETH raised, step by step", function () {
+// Needs a REAL Uniswap v3 (CurvePool.seed mints a concentrated position the mock cannot), so it is gated on
+// FORK_RPC exactly like test/fork/*. Without the gate these run in a plain `npx hardhat test` and fail with a
+// bare "reverted without a reason string" — four permanent red tests that look like regressions and train
+// everyone to ignore the suite. Run: FORK_RPC=<rpc> npx hardhat test <this file>
+const forkSuite = process.env.FORK_RPC ? describe : describe.skip;
+forkSuite("Curve tracer — real FDV vs ETH raised, step by step", function () {
   this.timeout(180000);
   for (const S of SETS) {
     it(`traces ${S.name}`, async () => {

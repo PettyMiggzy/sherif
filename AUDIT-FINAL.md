@@ -76,6 +76,39 @@ already exist in `pad-v4/scripts/valuation.js` and port directly), the realised-
 - **Frontend fund paths** — allowance bounded to exactly the sell amount rather than the Trading API's
   `MaxUint256`; `quoteMinOut` slippage guard on both legs.
 
+### SEC-2 — the test suite was not a gate. **FIXED.**
+
+Every test file shares ONE in-process chain (no global fixture) and the sim suites move tens of ETH per case on
+top of a 16.7M-gas-per-tx cap. At hardhat's default 10,000 ETH the accounts ran dry partway through a run, and
+everything after failed with "sender doesn't have enough funds" — indistinguishable from a regression.
+
+| | passing | failing |
+|---|---|---|
+| before | 110 | **51** |
+| after funding accounts | 189 | **4** |
+| after gating the 4 fork-only files | **189** | **0** |
+
+47 of those 51 were an empty wallet. The last 4 (`sim-grad-grief` x2, `trace-curve`, `trace-devbuy`) need a real
+Uniswap v3 — `CurvePool.seed` mints a concentrated position the mock cannot — but were not gated behind
+`FORK_RPC` the way `test/fork/*` is. All four pass on a fork; they are now gated, so the default run is honest.
+
+This is not cosmetic. A suite failing ~45% of the time for environmental reasons **cannot gate a deploy**,
+because a real regression hides in the noise. It can now.
+
+### SEC-3 — the full suite CANNOT be run against a fork of the public node. Shard it.
+
+The public Robinhood RPC is not an archive node (retention measured under 10,000 blocks). A full run takes ~7
+minutes, outliving the pinned fork block, and the run **aborts mid-way**:
+
+```
+Fatal external error: ... JsonRpcError { code: -32000, message: "metadata is not found, 43402976" }
+```
+
+Individual fork files finish inside the window and pass. So CI (and anyone re-verifying this) must run the
+non-fork suite as one job and fork files individually or in small groups — never `FORK_RPC=… npx hardhat test`
+across everything. Verified green this way: `curvepad.fork` 8, `bond-h5-attack.fork` 5, pad-v4 `test:fork` 4,
+plus the three newly-gated files 4.
+
 ### SEC-1 — custody is the largest counterparty risk in the product, and no contract can reduce it
 
 Not a bug; a shape. `launchbot` is **fully custodial with no self-custody escape** — a user cannot export their

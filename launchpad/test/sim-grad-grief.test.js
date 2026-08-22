@@ -8,7 +8,12 @@ const V3_FACTORY = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
 const ONE = 10n ** 18n;
 const START_TICK_MAG = 201600, CURVE_WIDTH = 23000, MIN_GRAD_WIDTH = 22800;
 
-describe("Graduation grief — spot shoved above the ceiling must not block graduation", function () {
+// Needs a REAL Uniswap v3 (CurvePool.seed mints a concentrated position the mock cannot), so it is gated on
+// FORK_RPC exactly like test/fork/*. Without the gate these run in a plain `npx hardhat test` and fail with a
+// bare "reverted without a reason string" — four permanent red tests that look like regressions and train
+// everyone to ignore the suite. Run: FORK_RPC=<rpc> npx hardhat test <this file>
+const forkSuite = process.env.FORK_RPC ? describe : describe.skip;
+forkSuite("Graduation grief — spot shoved above the ceiling must not block graduation", function () {
   this.timeout(180000);
   it("attacker pushes spot past the ceiling; graduate() nudges back and still posts the Bond", async () => {
     const [dep, platform, dev, buyer, attacker] = await ethers.getSigners();
