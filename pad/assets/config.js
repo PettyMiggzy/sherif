@@ -57,7 +57,11 @@ export const CONTRACTS = {
 
   // Our FloorCoopFactory - deploys a per-coin community floor vault (add to the buy-wall, earn dip-buy
   // fees, withdrawable after a cooldown). LIVE.
-  floorCoopFactory: "0x564EDF561Bed46C972d5D44D84f5FAc9C5118668",
+  // [removed] The user-funded locked-LP vault is no longer offered: it let anyone add liquidity and later
+  // withdraw it, which cuts against the pad's "liquidity locked forever" guarantee. The factory is still on
+  // chain (nothing can undeploy it) but coopCount() is 0 — no vault was ever created and nobody has a
+  // position, so nothing is stranded by unsetting this. Left as "" so isDeployed() gates every code path.
+  floorCoopFactory: "",
 
   // Our PlatformFeeSplitter - routes the platform's cut ($ROBIN buyback split). Standalone; used by the
   // admin panel to read/set the split. Key MUST be `splitter` to match ADMIN_ABI.splitter and admin.html.

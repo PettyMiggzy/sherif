@@ -156,10 +156,8 @@
 
   <!-- FLOORCOOP + SPLITTER -->
   <section id="secMisc">
-    <h2>⚙️ FloorCoop &amp; Splitter</h2>
+    <h2>⚙️ Splitter</h2>
     <p class="desc">The LP-staking treasury sink and the platform-fee splitter ($ROBIN buyback).</p>
-    <div class="row"><div class="lbl"><b>FloorCoop treasury</b><span>receives 10% open fee + 5% cut + penalties</span></div><div class="val" id="valFloorTreasury">-</div></div>
-    <div class="row"><div class="lbl"><b>Set FloorCoop treasury</b></div><input class="addr" id="inFloorTreasury" placeholder="0x treasury" /><button class="btn sm" data-act="setTreasury" data-arg="inFloorTreasury">Set</button></div>
     <div class="row"><div class="lbl"><b>Splitter → $ROBIN share</b><span id="valRobin">-</span></div><input class="num" id="inRobinBps" placeholder="bps (0-10000)" /><button class="btn sm" data-act="setRobinShareBps" data-arg="inRobinBps">Set</button></div>
     <div class="row"><div class="lbl"><b>Splitter → $ROBIN sink</b></div><input class="addr" id="inRobinSink" placeholder="0x robin sink" /><button class="btn sm" data-act="setRobinSink" data-arg="inRobinSink">Set</button></div>
     <div class="row"><div class="lbl"><b>Splitter → platform treasury</b></div><input class="addr" id="inSplitTreasury" placeholder="0x platform treasury" /><button class="btn sm" data-act="setPlatformTreasury" data-arg="inSplitTreasury">Set</button></div>
@@ -223,7 +221,6 @@ const TARGET = {
   withdrawPlatform: 'padRouter', withdrawPlatformCut: 'padRouter', setFactory: 'padRouter', removeFactory: 'padRouter', setRewardVault: 'padRouter', rescueUngraduated: 'padRouter',
   setPlatform: 'padFactory', seedBlocklist: 'padFactory',
   setPoster: 'rewardVault', setGuardian: 'rewardVault', setChallengeWindow: 'rewardVault', setClaimWindow: 'rewardVault', veto: 'rewardVault',
-  setTreasury: 'floorCoopFactory',
   setRobinShareBps: 'splitter', setRobinSink: 'splitter', setPlatformTreasury: 'splitter',
   setLpCreatorBps: 'feeConfig',
 };
@@ -311,9 +308,7 @@ async function refresh() {
     } catch {}
   } else { const sr = $('secRewards'); if (sr) sr.classList.add('notdeployed'); const rs = $('rwdState'); if (rs) rs.textContent = 'not deployed'; }
 
-  // ── FloorCoop + splitter ──
-  if (isDeployed('floorCoopFactory')) { try { $('valFloorTreasury').textContent = short(await C('floorCoopFactory').treasury()); } catch {} }
-  else { $('valFloorTreasury').textContent = 'not deployed'; }
+  // ── splitter ──
   if (isDeployed('splitter')) { try { const s = C('splitter'); const [bps, sink] = await Promise.all([s.robinShareBps(), s.robinSink()]); $('valRobin').textContent = `now ${bps} bps → ${short(sink)}`; } catch {} }
   else { $('valRobin').textContent = 'splitter not deployed'; }
 
