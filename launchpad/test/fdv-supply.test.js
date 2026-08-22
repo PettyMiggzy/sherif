@@ -106,6 +106,11 @@ describe("[FDV] v3 pad — creators choose supply; the factory bounds the valuat
     await expect(f.connect(other).setFdvBand(lo, hi)).to.be.reverted; // not the owner
     await expect(as(f).setFdvBand(0, hi)).to.be.revertedWithCustomError(f, "BadValue");
     await expect(as(f).setFdvBand(hi, lo)).to.be.revertedWithCustomError(f, "BadValue");
+    // and a constant rail the owner cannot tune past — loose enough never to block a real retune
+    const hard = await f.HARD_MAX_FDV_WEI();
+    expect(hard).to.equal(ethers.parseEther("1000000"));
+    await expect(as(f).setFdvBand(lo, hard + 1n)).to.be.revertedWithCustomError(f, "BadValue");
+    await expect(as(f).setFdvBand(lo, hard)).to.not.be.reverted;
     await expect(as(f).setFdvBand(lo, hi)).to.emit(f, "FdvBandChanged").withArgs(lo, hi);
     expect(await f.minFdvWei()).to.equal(lo);
     expect(await f.maxFdvWei()).to.equal(hi);

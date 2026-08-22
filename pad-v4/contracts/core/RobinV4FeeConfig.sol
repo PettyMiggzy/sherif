@@ -30,6 +30,12 @@ contract RobinV4FeeConfig is Ownable2Step {
     // so it also subsumes the "static fee above the Uniswap max bricks initialize" concern. Production lpFee is
     // exactly 10_000, so it passes at the boundary (`>` not `>=`); a launch can never carry an lpFee above 1%.
     uint24 public constant MAX_LP_FEE = 10_000;
+    // [FDV] A constant rail above the owner-tunable valuation band — the same shape as MAX_LP_FEE. This is a
+    // FAT-FINGER GUARD, not a policy: at ~10,000x the shipped 100 ETH ceiling it never binds a real retune, it
+    // only stops `maxFdvWei` being set to something like type(uint128).max, which would silently disable the
+    // upper half of the band. Deliberately loose, because the band is denominated in WEI on a chain with no USD
+    // oracle: the operator must stay free to move it a long way as ETH moves, in either direction.
+    uint128 public constant HARD_MAX_FDV_WEI = 1_000_000 ether;
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
 
     /// @dev v3-economics model: graduation rewards are a PERCENTAGE of the raise (so they scale with any MC),
@@ -121,7 +127,7 @@ contract RobinV4FeeConfig is Ownable2Step {
         if (d.minGradWidth <= 0 || d.minGradWidth >= d.curveWidth) revert BadParam();
         // [FDV] A zero floor would let a creator launch at a dust valuation where the raise truncates toward 0;
         // an inverted band would reject every launch and brick the pad. Both are owner fat-fingers, so fail loud.
-        if (d.minFdvWei == 0 || d.maxFdvWei < d.minFdvWei) revert BadParam();
+        if (d.minFdvWei == 0 || d.maxFdvWei < d.minFdvWei || d.maxFdvWei > HARD_MAX_FDV_WEI) revert BadParam();
         // Exact tick-spacing alignment (startTick/curveWidth % tickSpacing) is enforced by the factory/pool at
         // launch; here we only bound magnitudes and ordering so a bad default can't slip past the caps.
     }

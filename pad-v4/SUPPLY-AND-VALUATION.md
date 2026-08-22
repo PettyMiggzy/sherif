@@ -110,6 +110,31 @@ A UI that offers a button the contract would reject is a UI that reverts on clic
 > buried. Note also that the tick grid rounds: `launchFieldsFor` returns the REALISED market cap, within one
 > tick-spacing of the target, and that is the number to show.
 
+## Four traps, taken from hood.dev's live implementation
+
+Their launcher is source-verified on Blockscout, so these are read from deployed code and live `eth_call`, not
+from their marketing. Three of the four we would have shipped ourselves.
+
+| their bug | us |
+|---|---|
+| **The `$2.5K` preset reverts.** Their band is ETH-denominated (`minFdvWei` 1.11 ETH) but the buttons are labelled in dollars, so as ETH rose the cheapest button drifted under the floor. It is on their live page today and fails in the user's wallet. | **`marketCapPresetStatus(factory, ethUsd)`** returns a usable flag + reason per preset so a UI greys the dead ones out. Regression-tested at ETH prices that kill the bottom AND the top of the grid. |
+| **"caps every wallet for roughly the first 74 minutes"** — `restrictionBlocks = 366` at a measured 0.1s block time is **36.6 seconds**. Someone hardcoded a 12s Ethereum assumption. | Not reachable: our v3 guard is denominated in **seconds** (`deadSecs`/`phase1Secs`/`antiSnipeSecs`), never blocks. |
+| **Tick snapping is invisible** — you type 4000 and silently get $4,023 (their spacing 200 = 2.02% rungs). | `launchFieldsFor` returns the **realised** market cap, and our v4 spacing is 100 (~1.005% rungs). Show the realised number, never the typed one. |
+| **A live Alchemy key ships in their client bundle.** | Ours is server-side behind `api.robinlab.io/rpc`; the browser never sees a provider key. |
+
+One more worth copying rather than avoiding: **preflight the launch before asking for a signature.**
+`preflightLaunch(factory, cfg, ...salts)` static-calls the real `launch` and decodes the custom error, so a
+creator reads `MarketCapOutOfRange` or `BadGeometry` in the form instead of in a failed transaction. The band
+check alone is not enough — geometry and the reserve margin can still reject a config the band accepts.
+
+## Governance rails
+
+`minFdvWei`/`maxFdvWei` are owner-tunable, and they have to be: the band is **wei** on a chain with no USD
+oracle, so the operator must be free to move it a long way as ETH moves. `setDefaults` rejects a zero floor and
+an inverted band, and `HARD_MAX_FDV_WEI` (**1,000,000 ETH**, mirrored on the v3 factory) caps the ceiling. That
+constant is a fat-finger guard, not a policy — at ~10,000x the shipped 100 ETH ceiling it never binds a real
+retune, it only stops `maxFdvWei` being set to `type(uint128).max` and silently disabling half the band.
+
 ## What the band is and isn't
 
 It **is** an admission check that stops two failure modes, both fail-closed before any state write:

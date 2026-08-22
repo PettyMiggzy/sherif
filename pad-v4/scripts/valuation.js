@@ -80,6 +80,9 @@ const MARKET_CAP_PRESETS_USD = [2500, 4000, 10000, 25000];
  */
 function usdToWei(usd, ethUsd) {
   if (!(ethUsd > 0)) throw new Error("valuation: need a positive ETH/USD price");
+  // Float division, so the low digits of the wei value are noise. That is fine HERE and only here: the result
+  // is a market-cap TARGET that immediately gets snapped to the tick grid, whose rungs are ~1% apart, so a
+  // sub-wei rounding cannot change the tick. Never reuse this for an amount that gets transferred.
   return BigInt(Math.round((Number(usd) / Number(ethUsd)) * 1e18));
 }
 
@@ -103,6 +106,66 @@ async function launchFieldsFor(factory, wholeTokens, marketCapUsd, ethUsd, tickS
   return { supply, startTickMag: tick, fdvWei, marketCapUsd: weiToUsd(fdvWei, ethUsd) };
 }
 
+/**
+ * Which market-cap presets are actually launchable RIGHT NOW, and why not if not.
+ *
+ * THIS IS THE hood.dev $2.5K BUG, and it is worth naming because we would have shipped it too. Their band is
+ * ETH-denominated (min 1.11 ETH) while their preset buttons are labelled in dollars, so as ETH rose the $2.5K
+ * button drifted under the floor — it is on their live page today and it reverts `MarketCapOutOfRange` when
+ * clicked. A dollar preset over a wei band is a button whose validity depends on the ETH price, so it has to be
+ * re-checked on every price tick and DISABLED, not left to fail in the user's wallet.
+ *
+ * Returns one row per preset so a UI can grey out the dead ones and say why, rather than throwing.
+ */
+async function marketCapPresetStatus(factory, ethUsd) {
+  const [min, max] = await factory.fdvBand();
+  return MARKET_CAP_PRESETS_USD.map((usd) => {
+    const wei = usdToWei(usd, ethUsd);
+    const below = wei < min, above = wei > max;
+    return {
+      usd,
+      wei,
+      usable: !below && !above,
+      reason: below ? "below the protocol's minimum valuation" : above ? "above the protocol's maximum valuation" : null,
+    };
+  });
+}
+
+/**
+ * Dry-run a launch against the real contract before asking anyone to sign.
+ * `assertInBand` catches the valuation, but a launch can still fail on geometry or the reserve margin, and the
+ * creator should read that in the form rather than in a failed transaction. Returns null on success, or the
+ * revert (decoded custom error name where the factory declares one).
+ */
+async function preflightLaunch(factory, cfg, tokenSalt, hookSalt, curveSalt) {
+  try {
+    await factory.launch.staticCall(cfg, tokenSalt, hookSalt, curveSalt);
+    return null;
+  } catch (e) {
+    return { ...decodeRevert(factory, e), message: e?.shortMessage ?? String(e?.message ?? e) };
+  }
+}
+
+/**
+ * Pull the custom-error NAME out of a failed call. Three layers, because where the error data ends up depends
+ * on the provider: ethers decodes it into `e.revert` against a live node, but some providers (Hardhat's, for
+ * one) only bubble the raw bytes — or nothing but a message string. A preflight that reports "it failed" is
+ * almost useless to a creator; the whole point is to say WHICH rule they broke, so it is worth all three.
+ */
+function decodeRevert(contract, e) {
+  if (e?.revert?.name) return { name: e.revert.name, args: e.revert.args ?? null };
+  const data = e?.data ?? e?.info?.error?.data ?? e?.error?.data;
+  if (typeof data === "string" && data.length > 2) {
+    try {
+      const parsed = contract.interface.parseError(data);
+      if (parsed) return { name: parsed.name, args: parsed.args };
+    } catch { /* not one of ours — fall through to the message */ }
+  }
+  const m = /custom error '([A-Za-z0-9_]+)\(([^)]*)\)'/.exec(String(e?.message ?? ""));
+  if (m) return { name: m[1], args: m[2] === "" ? [] : m[2].split(",").map((x) => x.trim()) };
+  return { name: null, args: null };
+}
+
 /** The governed band expressed in dollars, for the "you can launch between $A and $B" line in a UI. */
 async function fdvBandUsd(factory, ethUsd) {
   const [min, max] = await factory.fdvBand();
@@ -112,4 +175,5 @@ async function fdvBandUsd(factory, ethUsd) {
 module.exports = {
   approxStartTick, startTickForFdv, assertInBand,
   SUPPLY_PRESETS, MARKET_CAP_PRESETS_USD, usdToWei, weiToUsd, launchFieldsFor, fdvBandUsd,
+  marketCapPresetStatus, preflightLaunch,
 };

@@ -10,7 +10,7 @@ const GOOD = {
   lpFee: 10000, startTickMag: 201600, curveWidth: 25800, minGradWidth: 22800,
   // [FDV] band deliberately OPEN in this fixture: these tests exercise curve mechanics over many toy
   // supplies, not the product's valuation policy. The band itself is proven in FDV.creator-supply.test.js.
-  minFdvWei: 1n, maxFdvWei: (1n << 128n) - 1n,
+  minFdvWei: 1n, maxFdvWei: 1_000_000n * 10n ** 18n, // = HARD_MAX_FDV_WEI
 };
 const DYNAMIC_FEE_FLAG = 0x800000;
 

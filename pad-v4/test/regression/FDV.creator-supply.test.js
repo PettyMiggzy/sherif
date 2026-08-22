@@ -265,6 +265,69 @@ describe("[FDV] creators choose their own supply; the FACTORY bounds the valuati
     expect(ppm).to.be.lessThan(750_000n); // a real slice, not the whole float
   });
 
+  it("a dollar preset over a WEI band goes stale as ETH moves — the client must disable it, not revert", async () => {
+    const { marketCapPresetStatus, MARKET_CAP_PRESETS_USD } = require("../../scripts/valuation");
+    // This is hood.dev's live $2.5K bug reproduced against OUR band: their floor is 1.11 ETH, their buttons are
+    // labelled in dollars, and as ETH rose the cheapest button drifted under the floor. Ours is 0.05 ETH, so the
+    // same thing happens — just at a much more extreme ETH price. The point is that it happens AT ALL.
+    const breaks = 25_000 / Number(ethers.formatEther(MIN_FDV)); // ETH price at which the $25K preset hits the floor
+    const rows = await marketCapPresetStatus(S.factory, breaks * 2); // twice that: every preset is now under water
+    expect(rows.every((r) => !r.usable), "all presets dead at an extreme ETH price").to.equal(true);
+    expect(rows[0].reason).to.match(/minimum/);
+
+    // and at a sane price they are all live, each with the right wei
+    const ok = await marketCapPresetStatus(S.factory, 3000);
+    expect(ok.every((r) => r.usable)).to.equal(true);
+    expect(ok.map((r) => r.usd)).to.deep.equal(MARKET_CAP_PRESETS_USD);
+    // (wei is derived through a float divide, so compare at the precision that actually matters — see usdToWei)
+    const want = ethers.parseEther(String(MARKET_CAP_PRESETS_USD[0] / 3000));
+    expect(ok[0].wei).to.be.closeTo(want, 10_000n);
+
+    // the top end is checked too, not just the floor
+    const rich = await marketCapPresetStatus(S.factory, 0.0001); // ETH worth ~nothing ⇒ dollar targets are huge
+    expect(rich.every((r) => !r.usable)).to.equal(true);
+    expect(rich[3].reason).to.match(/maximum/);
+  });
+
+  it("preflight surfaces the real revert BEFORE a signature, not after", async () => {
+    const { preflightLaunch } = require("../../scripts/valuation");
+    const supply = 1_000n * ONE; // dust valuation
+    const cfg = cfgFor("PRE", supply, 0);
+    const sa = await salts(cfg, "PRE");
+    const bad = await preflightLaunch(S.factory, cfg, sa.tokenSalt, sa.hookSalt, sa.curveSalt);
+    expect(bad, "a doomed launch must not preflight clean").to.not.equal(null);
+    expect(bad.name).to.equal("MarketCapOutOfRange");
+
+    // it also catches what assertInBand CANNOT: geometry the band knows nothing about
+    const badGeo = cfgFor("PRE2", 1_000_000_000n * ONE, START + 50); // not tick-spacing aligned
+    const sa2 = await salts(badGeo, "PRE2");
+    expect((await preflightLaunch(S.factory, badGeo, sa2.tokenSalt, sa2.hookSalt, sa2.curveSalt)).name)
+      .to.equal("BadGeometry");
+
+    // and a good config preflights clean
+    const good = cfgFor("PRE3", 1_000_000_000n * ONE, 0);
+    const sa3 = await salts(good, "PRE3");
+    expect(await preflightLaunch(S.factory, good, sa3.tokenSalt, sa3.hookSalt, sa3.curveSalt)).to.equal(null);
+  });
+
+  it("the owner cannot fat-finger the band past the constant rail", async () => {
+    const d = await S.feeCfg.defaults();
+    const asObj = {
+      buyTaxBps: d.buyTaxBps, sellTaxBps: d.sellTaxBps, sellFloorShareBps: d.sellFloorShareBps,
+      buyLpFloorShareBps: d.buyLpFloorShareBps, buyBufferShareBps: d.buyBufferShareBps, referralShareBps: d.referralShareBps,
+      platformGradBps: d.platformGradBps, creatorGradBps: d.creatorGradBps, ambushGradBps: d.ambushGradBps,
+      lpFee: d.lpFee, startTickMag: d.startTickMag, curveWidth: d.curveWidth, minGradWidth: d.minGradWidth,
+      minFdvWei: d.minFdvWei, maxFdvWei: d.maxFdvWei,
+    };
+    const hard = await S.feeCfg.HARD_MAX_FDV_WEI();
+    expect(hard).to.equal(ethers.parseEther("1000000"));
+    await expect(S.feeCfg.setDefaults({ ...asObj, maxFdvWei: hard + 1n }))
+      .to.be.revertedWithCustomError(S.feeCfg, "BadParam");
+    // the rail is LOOSE on purpose — it must never block a real retune, only an absurd one
+    await expect(S.feeCfg.setDefaults({ ...asObj, maxFdvWei: hard })).to.not.be.reverted;
+    await S.feeCfg.setDefaults(asObj); // restore for the cases after this one
+  });
+
   // ── 8. the launch client's tick math is the CHAIN's tick math ────────────────────────────────────────────
 
   it("the JS valuation helper agrees with the on-chain check across supplies from 10k to 100bn", async () => {

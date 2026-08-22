@@ -103,6 +103,11 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     // implies, so a fresh deploy is immediately sane without a second governance step.
     uint256 public minFdvWei;
     uint256 public maxFdvWei;
+    // A constant rail above the owner-tunable ceiling. This is a FAT-FINGER GUARD, not a policy: at ~10,000x
+    // the band this factory seeds itself with it never binds a real retune, it only stops maxFdvWei being set
+    // to something absurd. Deliberately loose, because the band is WEI on a chain with no USD oracle and the
+    // owner has to stay free to move it a long way in either direction as ETH moves.
+    uint256 public constant HARD_MAX_FDV_WEI = 1_000_000 ether;
 
     error BadValue();
     error MarketCapOutOfRange(uint256 fdvWei);
@@ -160,7 +165,7 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     /// @notice Retune the launch valuation band. Owner-only, takes effect on FUTURE launches only (a live pad's
     /// geometry is immutable). Denominated in wei — this chain has no USD oracle, so the band has to move as ETH does.
     function setFdvBand(uint256 minWei, uint256 maxWei) external onlyOwner {
-        if (minWei == 0 || maxWei < minWei) revert BadValue();
+        if (minWei == 0 || maxWei < minWei || maxWei > HARD_MAX_FDV_WEI) revert BadValue();
         minFdvWei = minWei;
         maxFdvWei = maxWei;
         emit FdvBandChanged(minWei, maxWei);
