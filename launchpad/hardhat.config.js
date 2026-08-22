@@ -16,6 +16,12 @@ module.exports = {
     // pass it via env: `FORK_RPC=<alchemy url> npx hardhat test test/fork/*.js`.
     hardhat: process.env.FORK_RPC
       ? {
+          // Every test file shares ONE in-process chain (there is no global fixture), and the sim//fork suites
+          // move tens of ETH per case on top of a 16.7M-gas cap per tx. At hardhat's default 10,000 ETH the
+          // accounts run dry partway through a full run and everything after fails with "sender doesn't have
+          // enough funds" — failures that look like regressions but are just an empty wallet. Fund them far
+          // past anything the suite can spend so a red test means a real red test.
+          accounts: { accountsBalance: "100000000000000000000000000" }, // 1e8 ETH
           forking: {
             url: process.env.FORK_RPC,
             // FORK_BLOCK pins the fork so hardhat caches state on disk per (url, blockNumber) instead of
@@ -28,7 +34,7 @@ module.exports = {
           },
           chainId: 4663,
         }
-      : {},
+      : { accounts: { accountsBalance: "100000000000000000000000000" } }, // same, for the non-fork run
     // Robinhood Chain (fill RPC + PRIVATE_KEY via env before deploying)
     robinhood: {
       url: process.env.ROBINHOOD_RPC || "https://robinhoodchain.blockscout.com/api/eth-rpc",
