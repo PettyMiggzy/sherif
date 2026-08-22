@@ -226,15 +226,32 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         uint256 curveAmt = totalSupply - ambushAmt;
         if (ambushAmt == 0 || curveAmt == 0) revert BadValue(); // a supply too small to split 75/25 at all
 
+        // ── NO ANTI-SNIPE GUARD. An all-zero GuardConfig, deliberately and permanently. ────────────────────
+        //
+        // Robinhood Chain is a single-sequencer FCFS L2 with no public mempool, so the attack the guard was
+        // built for — watch a pending buy, jump ahead of it — is not reachable here. The dev's opening buy is
+        // already atomic inside this launch tx, ahead of the field, so the guard was never protecting the dev.
+        //
+        // BE HONEST ABOUT WHAT THIS GIVES UP. FCFS removes mempool front-running; it does NOT remove launch
+        // sniping. A bot polling for new pools can still buy in the block after launch, and on FCFS the FASTEST
+        // bot wins deterministically every time rather than probabilistically. Every coin on this factory opens
+        // with no per-wallet cap, no max-tx, no cooldown and no dead window: first block, any size, any wallet.
+        // That is the product decision, taken with the trade understood.
+        //
+        // Mechanically zero is a complete off switch, not a weak setting: LaunchToken gates its entire guard
+        // block on `block.timestamp < launchTime + antiSnipeSecs`, which is false from the launch block onward,
+        // so maxTxNow()/maxWalletNow() report type(uint256).max and no guard branch is ever taken. It also makes
+        // `seedBlocklist` permanently unusable (it reverts WindowOver once the window is past) — correct for a
+        // factory that has no window at all, and worth knowing before anyone reaches for it.
         LaunchToken.GuardConfig memory g = LaunchToken.GuardConfig({
-            deadSecs: 2,
-            phase1Secs: 60,
-            antiSnipeSecs: 300,
-            maxTxBps1: 50,
-            maxWalletBps1: 100,
-            maxTxBps2: 100,
-            maxWalletBps2: 200,
-            cooldownSecs: 2
+            deadSecs: 0,
+            phase1Secs: 0,
+            antiSnipeSecs: 0,
+            maxTxBps1: 0,
+            maxWalletBps1: 0,
+            maxTxBps2: 0,
+            maxWalletBps2: 0,
+            cooldownSecs: 0
         });
         // CREATE2 salt with per-launch entropy (incl. block.number) so the token — and thus its Uniswap pool
         // address — can't be predicted from the deployer's nonce. An attacker who precreates+initializes the
@@ -310,12 +327,11 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         emit PlatformChanged(p_);
     }
 
-    /// @notice Owner-only pass-through so the platform can seed a coin's buy-side sniper blocklist during its
-    /// anti-snipe window (the token only accepts seedBlocklist from its factory). It is add-only and the token
-    /// auto-freezes it when the window ends, so it can never be used to block a normal holder's sell.
-    function seedBlocklist(address token, address[] calldata bots) external onlyOwner {
-        LaunchToken(token).seedBlocklist(bots);
-    }
+    // [v2] `seedBlocklist` IS DELIBERATELY GONE. It was an owner pass-through for seeding a coin's buy-side
+    // sniper blocklist during its anti-snipe window. This factory launches every coin with a zero GuardConfig,
+    // so there is no window and the token freezes its blocklist immediately — the call could only ever revert
+    // `WindowOver`. An owner-only entrypoint that always reverts is worse than no entrypoint: it advertises a
+    // protection this factory cannot provide. If a guarded variant is ever wanted, it comes back with the guard.
 
     function tokenCount() external view returns (uint256) {
         return allTokens.length;

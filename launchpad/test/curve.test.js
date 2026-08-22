@@ -29,7 +29,7 @@ async function setup() {
   const SUPPLY = 800_000_000n * ONE; // curve trading supply
   const RAMP = 200_000_000n * ONE;   // held by the curve, handed to the Bond's Ramparts at graduation
   const TOK = await (await ethers.getContractFactory("MockERC20")).deploy(SUPPLY + RAMP);
-  const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+  const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
   const VIRT = ONE, GRAD = 5n * ONE;
   const Curve = await ethers.getContractFactory("BondingCurve");
   const curve = await Curve.deploy(
@@ -144,7 +144,7 @@ describe("BondingCurve", () => {
     const V3 = await (await ethers.getContractFactory("MockUniswapV3Factory")).deploy();
     const SUPPLY = 800_000_000n * ONE;
     const TOK = await (await ethers.getContractFactory("MockERC20")).deploy(SUPPLY);
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const curve = await (await ethers.getContractFactory("BondingCurve")).deploy(
       await TOK.getAddress(), await WETH.getAddress(), await V3.getAddress(),
       platform.address, dev.address, ONE, SUPPLY, 50n * ONE, 3600, ONE / 10n, // 0.1 ETH cap, 1h window

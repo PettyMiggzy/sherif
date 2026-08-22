@@ -36,7 +36,7 @@ describe("[FDV] v3 pad — creators choose supply; the factory bounds the valuat
     const v3 = await at("MockUniswapV3Factory");
     const ltd = await at("LaunchTokenDeployer");
     const cpd = await at("CurvePoolDeployer");
-    const bd = await at("BondDeployer");
+    const bd = await at("BondDeployer", 9000, 15600); // shipped deep-wall band (BondGeometry)
     const router = await at("PadRouter", weth, dep.address);
     stack = [weth, v3, platform.address, dep.address, router, ltd, cpd, bd, ethers.ZeroAddress, START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH];
     factory = await newFactory();

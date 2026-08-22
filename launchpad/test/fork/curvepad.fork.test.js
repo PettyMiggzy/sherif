@@ -17,7 +17,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
 
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
@@ -99,7 +99,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
 
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
@@ -140,7 +140,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     // production graduation geometry: the coin graduates only at the ceiling (~$76k mcap)
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
@@ -179,7 +179,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
@@ -238,7 +238,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const [dep, platform, dev] = await ethers.getSigners();
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
@@ -286,7 +286,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
 
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
@@ -345,7 +345,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const [dep, platform, dev] = await ethers.getSigners();
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),
@@ -368,7 +368,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
 
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await router.getAddress(),

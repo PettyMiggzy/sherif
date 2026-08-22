@@ -18,7 +18,7 @@ async function main() {
   const g = (n) => ({ gasLimit: n });
   const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();  await ltd.waitForDeployment();
   const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();    await cpd.waitForDeployment();
-  const bd  = await (await ethers.getContractFactory("BondDeployer")).deploy();         await bd.waitForDeployment();
+  const bd  = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);         await bd.waitForDeployment();
   const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, me.address); await router.waitForDeployment();
   // tiny curve: start 207200, ceiling width 4000, min-grad width 2000
   const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(

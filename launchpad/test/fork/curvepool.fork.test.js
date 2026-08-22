@@ -18,7 +18,7 @@ suite("CurvePool on a Robinhood Chain fork — DEX day one", function () {
     const CURVE = 750_000_000n * ONE, AMBUSH = 250_000_000n * ONE; // 75% curve / 25% ambush = 1B
     const TOK = await (await ethers.getContractFactory("CurveToken")).deploy("Meme", "MEME", CURVE + AMBUSH, dep.address);
     const tokAddr = await TOK.getAddress();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
 
     // start price = ~1e-9 WETH/token (start MC ~1 ETH); tick sign depends on token/WETH ordering. width ~= 36x.
     const tokenIsToken0 = BigInt(tokAddr) < BigInt(WETH);

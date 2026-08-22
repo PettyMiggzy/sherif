@@ -44,12 +44,31 @@ contract BondingCurveDeployer {
     }
 }
 
+/// @notice Deploys the Bond, and OWNS ITS WALL GEOMETRY.
+/// @dev `deploy(...)`'s signature is FROZEN: the already-deployed CurvePool bytecode calls it with exactly these
+/// five arguments, and that CurvePool is reused by every factory (the pool deployer is shared and stateless). So
+/// the Bounty band cannot be threaded through the curve — it lives here instead, as constructor immutables that
+/// this deployer stamps into every Bond it builds.
+///
+/// The upshot is that RETUNING THE WALL IS A ONE-CONTRACT DEPLOY: stand up another BondDeployer with different
+/// numbers and hand it to a new factory. Nothing else in the stack changes, and no live coin is touched — a
+/// coin's Bond geometry is fixed by whichever deployer its curve was born pointing at.
 contract BondDeployer {
+    int24 public immutable bountyNear;
+    int24 public immutable bountyFar;
+
+    /// @param bountyNear_ ticks BELOW spot where the WETH buy wall starts (deeper = harder to farm, see Bond)
+    /// @param bountyFar_  ticks below spot where it ends. Both validated in the Bond constructor.
+    constructor(int24 bountyNear_, int24 bountyFar_) {
+        bountyNear = bountyNear_;
+        bountyFar = bountyFar_;
+    }
+
     function deploy(address token, address weth, address v3Factory, address platform, address curve)
         external
         returns (address)
     {
-        return address(new Bond(token, weth, v3Factory, platform, curve));
+        return address(new Bond(token, weth, v3Factory, platform, curve, bountyNear, bountyFar));
     }
 }
 

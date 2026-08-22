@@ -32,8 +32,21 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     // Band geometry (ticks from the current price; all multiples of SPACING). 1 tick ≈ 1.0001x.
-    int24 public constant BOUNTY_NEAR = 200; //   ~+0%   : Bounty starts one spacing off spot
-    int24 public constant BOUNTY_FAR = 6800; //   ~-49%  : ...down to roughly half price (a wide buy wall)
+    // Bounty geometry is IMMUTABLE-PER-BOND, not a constant, and is supplied by the BondDeployer that built it.
+    //
+    // [H-5] This is the deep-wall fix. A wall placed just off spot (the original NEAR=200) is drainable: an
+    // attacker holds the price down, the wall fills at his price, and he takes the spread. Duration-based gates
+    // cannot separate him from a real crash — holding a price costs nothing per unit time — so the wall is
+    // bounded in CAPITAL instead: place it far enough below that a successful manipulation is not worth what it
+    // costs to hold. Measured on the live v3 Bond, attacker profit crosses to negative around 6000 ticks below
+    // spot and saturates by ~12000; 9000 is the shipped value, inside that margin on both sides.
+    //
+    // They are per-BondDeployer rather than per-Bond because the LIVE CurvePool's bytecode calls
+    // `bondDeployer.deploy(token, weth, v3Factory, platform, curve)` with a FROZEN signature — a Bond cannot take
+    // new arguments from the curve. Holding them on the deployer keeps that call byte-identical while making the
+    // wall retunable: deploying another BondDeployer is the whole change, and nothing else moves.
+    int24 public immutable BOUNTY_NEAR;
+    int24 public immutable BOUNTY_FAR;
     int24 public constant AMBUSH_NEAR = 11000; // ~3.0x  : Ambush start ~3x
     int24 public constant AMBUSH_FAR = 32000; //  ~24.5x : ...up to ~25x
     int24 public constant MAX_DEV = 300; //     ~3%    : max spot-vs-TWAP deviation to allow a poke
@@ -82,8 +95,27 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     event Posted(uint128 sherwoodL, uint128 bountyL, uint128 ambushL);
     event Poked(int24 tick, uint128 bountyL, uint128 ambushL, uint256 sherwoodFees0, uint256 sherwoodFees1);
 
-    constructor(address token_, address weth_, address v3Factory_, address platform_, address curve_) {
+    constructor(
+        address token_,
+        address weth_,
+        address v3Factory_,
+        address platform_,
+        address curve_,
+        int24 bountyNear_,
+        int24 bountyFar_
+    ) {
         require(token_ != address(0) && weth_ != address(0) && platform_ != address(0) && curve_ != address(0), "zero");
+        // The wall must be a well-formed band, and it must sit strictly OUTSIDE the poke deviation tolerance.
+        // `near <= MAX_DEV` is the case the poke anchoring comment below warns about: within +/-MAX_DEV a
+        // mean-only recenter could straddle spot, so the band would stop being single-sided and the Bounty would
+        // hold token instead of the WETH it is supposed to be bidding with.
+        require(
+            bountyNear_ > MAX_DEV && bountyFar_ > bountyNear_ && bountyNear_ % SPACING == 0
+                && bountyFar_ % SPACING == 0 && bountyFar_ < PoolMath.MAX_TICK,
+            "bounty geometry"
+        );
+        BOUNTY_NEAR = bountyNear_;
+        BOUNTY_FAR = bountyFar_;
         address p = IUniswapV3Factory(v3Factory_).getPool(token_, weth_, POOL_FEE);
         if (p == address(0)) revert NoPool();
         (uint160 sp,,,,,,) = IUniswapV3Pool(p).slot0();
@@ -139,7 +171,8 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         // max(spot,mean), below-bands to min(spot,mean). Within the allowed ±MAX_DEV, an attacker who shoves spot to
         // make a wall richer for themselves (e.g. lift the Bounty bid toward true price to dump into) instead falls
         // back to the honest mean, removing the profitable component; whichever way they push, a band stays strictly
-        // single-sided w.r.t. spot (NEAR=200 < MAX_DEV=300 would otherwise let a mean-only center straddle spot).
+        // single-sided w.r.t. spot (a NEAR inside MAX_DEV would otherwise let a mean-only center straddle spot,
+        // which is exactly why the constructor requires BOUNTY_NEAR > MAX_DEV).
         int24 aboveAnchor = tick > mean ? tick : mean;
         int24 belowAnchor = tick < mean ? tick : mean;
 

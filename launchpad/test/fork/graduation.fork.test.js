@@ -18,7 +18,7 @@ suite("CurveLaunchFactory end-to-end on a Robinhood Chain fork (real Uniswap v3)
     // deploy the pad: deployers + factory (fixed oracle-free terms live in the factory)
     const td = await (await ethers.getContractFactory("CurveTokenDeployer")).deploy();
     const cd = await (await ethers.getContractFactory("BondingCurveDeployer")).deploy();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const factory = await (await ethers.getContractFactory("CurveLaunchFactory")).deploy(
       WETH, FACTORY, platform.address, dep.address, await td.getAddress(), await cd.getAddress(), await bd.getAddress()
     );

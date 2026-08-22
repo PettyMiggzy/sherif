@@ -34,7 +34,7 @@ suite("Calibration sim — NEW params (201600 / 23000 / 22800): ~$3.4k start / ~
   async function deployStack(dep, platform) {
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, V3_FACTORY, platform.address, dep.address, await router.getAddress(),

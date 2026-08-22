@@ -30,7 +30,7 @@ const suite = process.env.FORK_RPC ? describe : describe.skip;
 suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", function () {
   this.timeout(600000);
 
-  async function build({ withBond, depthX = 1n, keep, moat, deep }) {
+  async function build({ withBond, depthX = 1n, keep, moat, deep, near, far }) {
     const [dep, platform, curveSigner, attacker] = await ethers.getSigners();
     const SUPPLY = 1_000_000_000n * ONE;
     const TOK = await (await ethers.getContractFactory("CurveToken")).deploy("Bonded", "BOND", SUPPLY, dep.address);
@@ -44,7 +44,12 @@ suite("[H-5] the live v3 Bond under the attack that drains the v4 floor", functi
 
     const wethW = await ethers.getContractAt(
       ["function deposit() payable", "function transfer(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"], WETH);
-    const bond = await (await ethers.getContractFactory(deep ? "BondDeep" : "Bond")).deploy(tokAddr, WETH, FACTORY, platform.address, curveSigner.address);
+    // Bond's wall band is now a constructor immutable (supplied in production by the BondDeployer). Default to
+    // the LEGACY 200/6800 band so this file keeps reproducing the attack against what is LIVE today; a case that
+    // wants the shipped deep wall passes `near`/`far` explicitly. BondDeep stays for the settable sweep.
+    const bond = deep
+      ? await (await ethers.getContractFactory("BondDeep")).deploy(tokAddr, WETH, FACTORY, platform.address, curveSigner.address)
+      : await (await ethers.getContractFactory("Bond")).deploy(tokAddr, WETH, FACTORY, platform.address, curveSigner.address, near ?? 200, far ?? 6800);
     const bondAddr = await bond.getAddress();
     const keepWeth = keep ?? (ONE / 2n) * depthX, moatWeth = moat ?? ONE / 2n;
     const keepTokens = 25_000_000n * ONE * depthX, rampTokens = 250_000_000n * ONE;

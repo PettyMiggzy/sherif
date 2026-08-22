@@ -20,7 +20,7 @@ suite("CurvePool.collectFees on a Robinhood Chain fork — the platform's live 1
     const CURVE = 750_000_000n * ONE, AMBUSH = 250_000_000n * ONE;
     const TOK = await (await ethers.getContractFactory("CurveToken")).deploy("Meme", "MEME", CURVE + AMBUSH, dep.address);
     const tokAddr = await TOK.getAddress();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
 
     const tokenIsToken0 = BigInt(tokAddr) < BigInt(WETH);
     const startTick = tokenIsToken0 ? -207200 : 207200;

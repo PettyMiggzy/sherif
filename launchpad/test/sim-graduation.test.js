@@ -28,7 +28,7 @@ suite("Graduation sim — NEW calibration (201600 / 23000 / 22800) lands at ~4.2
     // ── deploy the pad stack with the NEW geometry ──────────────────────────────
     const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
     const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
+    const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
     const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
     const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, V3_FACTORY, platform.address, dep.address, await router.getAddress(),
