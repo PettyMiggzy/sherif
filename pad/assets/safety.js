@@ -117,7 +117,7 @@ export async function scanToken(token) {
     if (truthy(gp.is_honeypot) || truthy(gp.cannot_sell_all)) { checks.push(chk("warn", "Honeypot risk", "GoPlus flags this token as hard/impossible to sell.")); bad++; }
     else checks.push(chk("ok", "Not a honeypot", "GoPlus confirms sells go through."));
   } else if (tt.isOurCoin) {
-    checks.push(chk("ok", "Sells always open", "The template never blocks a holder's sell - the anti-snipe guard is buy-side only and auto-expires."));
+    checks.push(chk("ok", "Sells always open", "The template has no sell restriction of any kind - no tax, no blacklist, no cooldown."));
   }
 
   // 3) Trading tax

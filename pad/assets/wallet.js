@@ -213,8 +213,11 @@ function friendly(err, label) {
     return new Error("Not enough ETH to cover this and gas. Top up and try again.");
   if (s.includes("missing revert data") || s.includes("call_exception") || s.includes("cannot estimate gas"))
     return new Error("Couldn't simulate this - usually the wallet doesn't have enough ETH for the amount + gas. Lower the amount or top up, then retry.");
+  // Kept deliberately. Coins launched on the CURRENT factory carry no guard at all, so this can never fire for
+  // them - but the older factory is still authorized, so a coin launched there does have a window and can still
+  // produce these reverts. Removing the branch would hand those users a raw revert string.
   if (s.includes("maxwallet") || s.includes("maxtx") || s.includes("cooldown") || s.includes("antisnip"))
-    return new Error("The opening anti-snipe window caps buy size right now. Try a smaller amount or wait a minute.");
+    return new Error("This coin has an opening guard that caps buy size right now. Try a smaller amount or wait a minute.");
   if (s.includes("slippage") || s.includes("too little received") || s.includes("price"))
     return new Error("Price moved past your slippage. Raise slippage a touch or retry.");
   // Graduation race: spot drifted a hair off the ceiling between the check and the send. Not an error the

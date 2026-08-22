@@ -240,7 +240,7 @@
   <p>A coin's whole life touches four contracts:</p>
   <div class="tw"><table>
     <tr><th>Contract</th><th>Owns</th></tr>
-    <tr><td><span class="m">CurvePadFactory</span></td><td>Deploys the token + curve + pool in one tx, registers the coin with the router, runs the anti-snipe opening buy.</td></tr>
+    <tr><td><span class="m">CurvePadFactory</span></td><td>Deploys the token + curve + pool in one tx, registers the coin with the router, runs the creator's atomic opening buy.</td></tr>
     <tr><td><span class="m">CurvePool</span></td><td>The bonding curve, a single-sided v3 position spanning <span class="m">[startTick → gradTick]</span>. Owns graduation (ceiling-only at ~4.2 ETH).</td></tr>
     <tr><td><span class="m">PadRouter</span></td><td>The only trade path. Applies the 1% fee in-protocol, splits it to escrows, exposes dev fee controls.</td></tr>
     <tr><td><span class="m">Bond</span></td><td>Protocol-owned floor posted at graduation and locked forever: <em>Sherwood</em> (full-range LP), <em>Bounty</em> (WETH buy-wall), <em>Ambush</em> (token sell-wall). Fees compound back in via <span class="m">poke()</span>.</td></tr>
@@ -375,7 +375,7 @@ factory.on(<span class="s">"Launched"</span>, (token, curve, pool, dev) => {
 <span class="k">const</span> tx = <span class="k">await</span> factory.launch(params, { value: ethers.parseEther(<span class="s">"0.02"</span>) }); <span class="c">// opening buy</span>
 <span class="k">await</span> tx.wait();
 console.log(<span class="s">"launched"</span>, token);</pre></div>
-  <div class="note warn"><span class="lbl">Opening buy = anti-snipe, not a fee</span>The ETH you send is <em>your own buy</em>, executed inside the launch tx before anyone else can trade, it isn't a platform charge. It's uncapped: it climbs the curve up to the graduation ceiling, and any excess ETH is refunded.</div>
+  <div class="note warn"><span class="lbl">Opening buy = your buy, not a fee</span>The ETH you send is <em>your own buy</em>, executed inside the launch tx before anyone else can trade, it isn't a platform charge. It's uncapped: it climbs the curve up to the graduation ceiling, and any excess ETH is refunded.</div>
 
   <h2 id="trade"><span class="sec">03 · Integrate</span>Buy &amp; sell</h2>
   <div class="code"><div class="hd"><span class="lang">JavaScript · ethers v6</span><button class="cp">Copy</button></div><pre><span class="k">const</span> ROUTER = <span class="s">"0xA6BaAB820809C7fC8350311776627298f91F07eC"</span>;
@@ -483,7 +483,7 @@ GET /api/coins?sort=trending&filter=live&q=wood&limit=60
     <li><strong>No proxies, no upgrades.</strong> The contracts are immutable. The platform owner (Ownable2Step) can only set the fee wallet for <em>new</em> launches, never touch a live coin, its curve, or the Bond.</li>
     <li><strong>Floor-drain closed.</strong> Graduation refuses to post above the ceiling, the only unbacked price zone. Anywhere inside the curve, moving price up costs real WETH that <em>joins</em> the raise, so a manipulated graduation price is one the attacker paid for, and the floor sits below it.</li>
     <li><strong>Conservation.</strong> Every wei of WETH and every token is accounted for across the lifecycle, verified to the wei by a 300-run fuzz and a random-graduation battery.</li>
-    <li><strong>Anti-snipe.</strong> The creator's opening buy runs atomically inside the launch tx; a CREATE2 salt with per-launch entropy blocks pre-init pool DoS.</li>
+    <li><strong>Launch integrity.</strong> The creator's opening buy runs atomically inside the launch tx, before any other trade can land; a CREATE2 salt with per-launch entropy blocks pre-init pool DoS. Note there is <em>no</em> wallet-cap guard: coins launch with no buy restrictions at all, on a chain whose single sequencer has no public mempool to front-run from.</li>
     <li><strong>Fees in-protocol.</strong> The 1% is the Uniswap LP fee tier, not a side transfer, with no extra instruction ever attached to a user's transaction.</li>
   </ul>
   <div class="note"><span class="lbl">Audit</span>Three internal audit passes (manual, deep pre-production, and a dedicated adversarial pass) plus a live mainnet lifecycle validation. Findings and resolutions live in <span class="m">launchpad/AUDIT.md</span>; contract source in <span class="m">launchpad/contracts/</span>.</div>

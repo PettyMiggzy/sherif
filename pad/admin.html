@@ -149,7 +149,7 @@
   <!-- ANTI-SNIPE -->
   <section id="secSnipe">
     <h2>🎯 Anti-snipe blocklist</h2>
-    <p class="desc">During a coin's ≤300s anti-snipe window, add sniper addresses to its BUY-side blocklist. Add-only, buy-only, auto-frozen after the window, so it can never block a holder's sell.</p>
+    <p class="desc"><b>v1 coins only.</b> Coins launched on the current factory carry no anti-snipe window, so they have no blocklist to seed and the entrypoint does not exist on that factory. This panel still works for a coin launched on the older factory, and only inside its &le;300s window: add-only, buy-only, auto-frozen when the window ends, so it can never block a holder's sell.</p>
     <div class="row"><div class="lbl"><b>Coin</b></div><input class="addr" id="inSnipeToken" placeholder="0x coin token" /></div>
     <div class="row"><div class="lbl"><b>Bots (comma-separated)</b></div><input class="addr" id="inSnipeBots" placeholder="0xbot1, 0xbot2, …" /><button class="btn sm danger" data-act="seedBlocklist">Block</button></div>
   </section>

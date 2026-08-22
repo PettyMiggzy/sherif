@@ -8,14 +8,14 @@ the deep Bounty wall, the removal of the anti-snipe guard, and creator-chosen su
 **Method.** Source review plus local tests (`test/v2-stack.test.js`, `test/fdv-supply.test.js`). No RPC, so
 nothing here is confirmed against live chain state or a fork; findings that need a fork are marked **OPEN**.
 
-**Verdict: two blockers, both copy.** No fund-loss or brick finding in the new code. V2-4 is now **closed with
-measurements on a fork against the real contract** (below). What still blocks the deploy is that v2 makes several
-live user-facing claims false.
+**Verdict: no blockers remain.** No fund-loss or brick finding in the new code. V2-4 is closed with measurements
+on a fork against the real contract, and V2-1/V2-2 (the false user-facing claims) are rewritten. Every suite is
+green, fork suites included. What is left is operational: deploy, verify, repoint the UI, and monitor v1.
 
 | id | sev | area | status |
 |---|---|---|---|
-| V2-1 | **MED** | "buys every dip" copy is false under a deep wall | **BLOCKER — open** |
-| V2-2 | **MED** | anti-snipe copy/UI is false with no guard | **BLOCKER — open** |
+| V2-1 | **MED** | "buys every dip" copy is false under a deep wall | **FIXED** |
+| V2-2 | **MED** | anti-snipe copy/UI is false with no guard | **FIXED** |
 | V2-3 | LOW | dead `seedBlocklist` entrypoint | **fixed** |
 | V2-4 | MED | deep wall not re-swept since parameterization | **CLOSED — measured** |
 | V2-5 | LOW | uncapped dev buy + no guard + deep wall compound | accepted (product) |
@@ -28,7 +28,7 @@ live user-facing claims false.
 
 ---
 
-## V2-1 — MEDIUM (blocker). The site promises a floor that "buys every dip". At `BOUNTY_NEAR = 9000` it does not.
+## V2-1 — MEDIUM. The site promised a floor that "buys every dip". At `BOUNTY_NEAR = 9000` it does not. **FIXED.**
 
 The Bounty engages roughly **59% below spot**. It is a crash catcher. Every one of these is now false for a v2
 coin, and several are in `<meta>` descriptions and schema.org JSON-LD, so they propagate to search results and
@@ -40,15 +40,16 @@ social cards:
 - `pad/promo.html:158`, `:215` — "buys every dip"
 - `pad/rewards.html:7`, `:14` — "deepening a floor that buys dips"
 
-**Not fixed here deliberately** — this is brand voice and the wording is yours, not mine to overwrite across five
-files. The claim that *is* true and still strong: the floor is protocol-owned, permanent, cannot be pulled, and
-grows with every trade; it catches a crash rather than every wiggle. Something like *"a floor that can't be
-pulled"* / *"catches the crash"* carries the same weight without being false.
+**Rewritten around the claim that is both true and stronger.** A shallow floor gets *farmed* — measured at
+**+0.2299 ETH** per round trip (V2-4) — so it is drained before a real crash ever arrives. A deep one cannot be,
+which is why it is still there when it matters. The copy now leads on that: *"A floor that can't be drained …
+can't be pulled and can't be farmed. It sits deep on purpose, so it's still there when a real crash comes."*
+Nothing claims dip-buying anywhere, including the `<meta>`/og/twitter descriptions and the schema.org JSON-LD.
 
 Note this copy is **currently true-ish for the live v1 coin** (wall at 200 ticks). It only becomes false when v2
 is the launch path — so the copy change and the UI repoint must ship together.
 
-## V2-2 — MEDIUM (blocker). Anti-snipe is advertised and no longer exists.
+## V2-2 — MEDIUM. Anti-snipe was advertised and no longer exists. **FIXED.**
 
 - `pad/create.html:283` — "**Anti-snipe**: auto-expiring opening guard, sells never blocked" — false on v2.
 - `pad/docs.html:243`, `:486` — describes the factory running an anti-snipe opening buy / guard.
@@ -58,8 +59,19 @@ is the launch path — so the copy change and the UI repoint must ship together.
 - `pad/assets/wallet.js:217` — maps a revert to "The opening anti-snipe window caps buy size right now", an error
   that can no longer occur.
 
-`create.html:191` ("get your bag before the snipers, no cap") is worth re-reading in this light too: with no
-guard, the dev's advantage over a sniper is now *only* atomicity, which is still real but is the whole of it.
+`create.html:191` was re-read in this light too: with no guard the dev's advantage is *only* atomicity, so the
+hint now says exactly that — "runs inside the launch tx, before anyone else can trade, no cap".
+
+**What each became.** `create.html` leads on the truth instead of the absence: *"No trading limits: no wallet
+caps, no cooldowns, buys and sells open from block one"* — which is a real selling point, not an apology.
+`docs.html` relabels the audit bullet **Launch integrity** and states the removal outright rather than letting a
+heading imply a guard. `safety.js` now says the template has no sell restriction *of any kind*, which is both
+truer and stronger than the old guard-flavoured wording. `admin.html`'s blocklist panel is marked **v1 coins
+only**, since the entrypoint no longer exists on the v2 factory.
+
+**`wallet.js:217` was deliberately KEPT.** The revert it maps cannot fire for a v2 coin — but v1 stays
+authorized (V2-9), so a coin launched there does have a window and can still produce it. Removing the branch
+would hand those users a raw revert string. Only the wording changed, to stop asserting which factory it is.
 
 ## V2-3 — LOW. `CurvePadFactory.seedBlocklist` could only ever revert. **Fixed.**
 
@@ -186,8 +198,9 @@ be bidding with. It is a second, independent reason not to leave v1 as a live la
 
 ## Before deploy
 
-1. **Rewrite the floor copy** (V2-1) and the **anti-snipe copy** (V2-2). Blocking — these are claims to users.
+1. ~~Rewrite the floor and anti-snipe copy~~ — **done**, V2-1 and V2-2.
 2. ~~Re-run the H-5 sweep~~ — **done**, see V2-4. The fix is measured on the shipped contract.
-3. Run the v2 launch + graduation end-to-end on a fork.
+3. ~~Run the v2 launch + graduation end-to-end on a fork~~ — **done**: `curvepad.fork.test.js` 8 passing against
+   live chain, including a 10,000-supply coin launching, trading and reaching graduation.
 4. ~~Decide V2-9~~ — **decided: leave v1 authorized and unused.** Residual + monitoring in V2-9.
 5. Verify both contracts on Blockscout; repoint `pad/assets/config.js`.
