@@ -58,4 +58,58 @@ async function assertInBand(factory, fdvWei) {
   }
 }
 
-module.exports = { approxStartTick, startTickForFdv, assertInBand };
+// ── the creator-facing layer: presets and dollars ──────────────────────────────────────────────────────────
+//
+// A creator does not think in ticks, and they barely think in wei. They think "1B supply, $4K market cap" —
+// which is exactly how hood.dev frames the same two choices (supply presets 100M/420M/1B/69B, market-cap
+// presets $2.5K/$4K/$10K/$25K, each with a freeform box beside it). The presets are a curated SUBSET of what
+// the contract allows, not the limit: the band is what the contract enforces, and anything inside it launches.
+
+/** Supply quick-picks, in WHOLE tokens. The box beside them takes any number; nothing here is a bound. */
+const SUPPLY_PRESETS = [100_000_000n, 420_000_000n, 1_000_000_000n, 69_000_000_000n];
+
+/** Opening market-cap quick-picks, in USD. Same deal — a starting point, not a constraint. */
+const MARKET_CAP_PRESETS_USD = [2500, 4000, 10000, 25000];
+
+/**
+ * USD -> wei. Kept as its own function because it is THE weak link in the whole flow and should be visible:
+ * `ethUsd` comes from off-chain and nothing on-chain can check it. This chain has no USD oracle, which is why
+ * the contract's band is denominated in wei and the dollars live entirely in the client. A stale `ethUsd` does
+ * not produce a wrong launch — it produces a launch at a different dollar valuation than the creator read on
+ * screen, and if it is stale enough the band rejects it. Quote it fresh, and show the ETH figure too.
+ */
+function usdToWei(usd, ethUsd) {
+  if (!(ethUsd > 0)) throw new Error("valuation: need a positive ETH/USD price");
+  return BigInt(Math.round((Number(usd) / Number(ethUsd)) * 1e18));
+}
+
+/** wei -> USD, for presenting a band or a quote back to the creator. */
+function weiToUsd(wei, ethUsd) {
+  return (Number(wei) / 1e18) * Number(ethUsd);
+}
+
+/**
+ * The whole creator flow in one call: "N whole tokens, opening at $X" -> the LaunchConfig fields.
+ * Returns { supply, startTickMag, fdvWei, marketCapUsd } ready to drop into a launch, having checked the
+ * governed band first so a doomed config never reaches a wallet prompt.
+ */
+async function launchFieldsFor(factory, wholeTokens, marketCapUsd, ethUsd, tickSpacing) {
+  const supply = BigInt(wholeTokens) * 10n ** 18n;
+  const targetWei = usdToWei(marketCapUsd, ethUsd);
+  await assertInBand(factory, targetWei);
+  const { tick, fdvWei } = await startTickForFdv(factory, supply, targetWei, tickSpacing);
+  // report what the creator will ACTUALLY get, not what they asked for: the tick grid rounds, so the realised
+  // market cap is within one tick-spacing of the target and the UI should show the realised number.
+  return { supply, startTickMag: tick, fdvWei, marketCapUsd: weiToUsd(fdvWei, ethUsd) };
+}
+
+/** The governed band expressed in dollars, for the "you can launch between $A and $B" line in a UI. */
+async function fdvBandUsd(factory, ethUsd) {
+  const [min, max] = await factory.fdvBand();
+  return { minUsd: weiToUsd(min, ethUsd), maxUsd: weiToUsd(max, ethUsd), minWei: min, maxWei: max };
+}
+
+module.exports = {
+  approxStartTick, startTickForFdv, assertInBand,
+  SUPPLY_PRESETS, MARKET_CAP_PRESETS_USD, usdToWei, weiToUsd, launchFieldsFor, fdvBandUsd,
+};

@@ -225,7 +225,47 @@ describe("[FDV] creators choose their own supply; the FACTORY bounds the valuati
     await expect(open(cfgFor("POK", 1_000_000_000n * ONE, 0))).to.not.be.reverted;
   });
 
-  // ── 7. the launch client's tick math is the CHAIN's tick math ────────────────────────────────────────────
+  // ── 7. the creator-facing preset grid: every combination has to actually launch ──────────────────────────
+
+  it("every supply x market-cap preset combination lands in band and produces a valid launch tick", async () => {
+    const { SUPPLY_PRESETS, MARKET_CAP_PRESETS_USD, launchFieldsFor, fdvBandUsd } = require("../../scripts/valuation");
+    const ETH_USD = 3000; // the client quotes this off-chain; the contract only ever sees wei
+    const band = await fdvBandUsd(S.factory, ETH_USD);
+    // the shipped band has to be wide enough to CONTAIN the presets, or the UI offers buttons that revert
+    expect(band.minUsd).to.be.lessThan(Math.min(...MARKET_CAP_PRESETS_USD));
+    expect(band.maxUsd).to.be.greaterThan(Math.max(...MARKET_CAP_PRESETS_USD));
+
+    for (const whole of SUPPLY_PRESETS) {
+      for (const usd of MARKET_CAP_PRESETS_USD) {
+        const f = await launchFieldsFor(S.factory, whole, usd, ETH_USD, TS);
+        expect(f.startTickMag % TS, `${whole} @ $${usd}`).to.equal(0);
+        expect(f.startTickMag).to.be.greaterThan(0);
+        // the realised market cap is within one tick-spacing of what the creator asked for
+        expect(Math.abs(f.marketCapUsd - usd) / usd, `${whole} @ $${usd}`).to.be.lessThan(0.01);
+        // and it is a launch the factory would actually accept, by the factory's own arithmetic
+        expect(await S.factory.quoteFdvWei(f.supply, f.startTickMag)).to.equal(f.fdvWei);
+      }
+    }
+  });
+
+  it("the widest preset corner — 69,000,000,000 tokens at $25K — is a real, tradeable launch", async () => {
+    const { launchFieldsFor } = require("../../scripts/valuation");
+    const f = await launchFieldsFor(S.factory, 69_000_000_000n, 25_000, 3000, TS);
+    const P = await launch("WIDE", f.supply, f.startTickMag);
+    expect(await tickOf(P.poolId)).to.equal(f.startTickMag);
+
+    // 690,000x the supply of the 10k coin, and the same 0.25 ETH still buys a comparable slice of it
+    const spend = ethers.parseEther("0.25");
+    await SW.connect(buyer).swap(
+      P.key, { zeroForOne: true, amountSpecified: -spend, sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: spend }
+    );
+    const ppm = ((await P.tok.balanceOf(buyer.address)) * 1_000_000n) / f.supply;
+    expect(ppm).to.be.greaterThan(0n);
+    expect(ppm).to.be.lessThan(750_000n); // a real slice, not the whole float
+  });
+
+  // ── 8. the launch client's tick math is the CHAIN's tick math ────────────────────────────────────────────
 
   it("the JS valuation helper agrees with the on-chain check across supplies from 10k to 100bn", async () => {
     for (const whole of [10_000n, 1_000_000n, 1_000_000_000n, 100_000_000_000n]) {

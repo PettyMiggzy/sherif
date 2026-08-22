@@ -86,6 +86,30 @@ Consequences a launch client must respect:
   `startTickForFdv(factory, supplyRaw, fdvWei, tickSpacing)` estimates in floating point and then refines
   against `quoteFdvWei`, so the client and the chain can never disagree about whether a config is in band.
 
+## The creator-facing layer: presets and dollars
+
+A creator does not think in ticks and barely thinks in wei. They think *"1B supply, $4K market cap"* — which is
+how hood.dev frames the identical two choices (supply quick-picks 100M / 420M / 1B / 69B, market-cap quick-picks
+$2.5K / $4K / $10K / $25K, each with a freeform box beside it). `scripts/valuation.js` carries that layer:
+
+```js
+const f = await launchFieldsFor(factory, 1_000_000_000n, 4000, ethUsd, tickSpacing);
+// -> { supply, startTickMag, fdvWei, marketCapUsd }   ready to drop into a LaunchConfig
+```
+
+The presets are a curated subset, never the limit — the contract's band is the only thing enforced, and
+`test/regression/FDV.creator-supply.test.js` proves all **16** supply x market-cap combinations land inside it
+and produce a valid launch tick, plus launches the widest corner (69,000,000,000 tokens at $25K) and trades it.
+A UI that offers a button the contract would reject is a UI that reverts on click; that test is what stops it.
+
+> **The dollars live entirely in the client, and `ethUsd` is the weak link.** This chain has no USD oracle, so
+> the contract's band is wei and nothing on-chain can check a price the client supplied. A stale `ethUsd` does
+> not create a wrong launch — it creates a launch at a different dollar valuation than the creator read on
+> screen, and if it is stale enough the band simply rejects it. Quote it fresh and show the ETH figure next to
+> the dollar one. `usdToWei` is deliberately its own exported function so this conversion is visible rather than
+> buried. Note also that the tick grid rounds: `launchFieldsFor` returns the REALISED market cap, within one
+> tick-spacing of the target, and that is the number to show.
+
 ## What the band is and isn't
 
 It **is** an admission check that stops two failure modes, both fail-closed before any state write:
