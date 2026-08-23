@@ -139,6 +139,42 @@ describe("[v2] the second pad: deep wall, no guard, frozen interfaces", () => {
     expect(iface.fragments.some((f) => f.name === "seedBlocklist")).to.equal(false);
   });
 
+  // ── 5. platform revenue: the ETH side of every LP fee ─────────────────────────────────────────────────────
+
+  it("[rev] the curve pays the ETH side of its LP fee 100% to the platform, creator keeps the token side", async () => {
+    const src = require("fs").readFileSync(__dirname + "/../contracts/CurvePool.sol", "utf8");
+    const call = /_splitFee\(IERC20\(WETH\), wethFees, ([^)]+)\)/.exec(src);
+    expect(call, "the WETH split call must exist").to.not.equal(null);
+    expect(call[1].trim(), "ETH side must be 0 creator bps = 100% platform").to.equal("0");
+    // and the token side must STILL pay the creator, or this silently took their whole LP income
+    expect(src).to.match(/_splitFee\(token, tokenFees, cbps\)/);
+  });
+
+  it("[rev] the Bond skims ONLY the collected fee, never the floor's principal", async () => {
+    // The single most dangerous way to implement this: read balanceOf AFTER the Bounty is torn down. At that
+    // point the contract's WETH balance is Sherwood fees PLUS the floor's entire capital, and skimming it would
+    // drain the floor from the inside — the exact attack the deep wall exists to stop. Pin the safe shape.
+    const src = require("fs").readFileSync(__dirname + "/../contracts/Bond.sol", "utf8");
+    const poke = /function poke\(\)[\s\S]*?\n    }/.exec(src)[0];
+    const skim = poke.indexOf("uint256 wethFee =");
+    const teardown = poke.indexOf("tear down Bounty");
+    expect(skim, "the skim must exist").to.be.greaterThan(-1);
+    expect(teardown, "the teardown must exist").to.be.greaterThan(-1);
+    expect(skim, "the skim must happen BEFORE the Bounty is torn down").to.be.lessThan(teardown);
+    // it must be derived from the collect() return values, not from a balance read
+    expect(/uint256 wethFee = tokenIsToken0 \? uint256\(kf1\) : uint256\(kf0\)/.test(poke)).to.equal(true);
+    expect(/wethFee[\s\S]{0,80}balanceOf/.test(poke), "must not be balance-derived").to.equal(false);
+  });
+
+  it("[rev] a failed fee transfer cannot brick poke()", async () => {
+    // poke() is the keeper path that recenters both walls. If a fee payout could revert it, a hostile or
+    // paused platform address would freeze the floor's recentering for every coin at once.
+    const src = require("fs").readFileSync(__dirname + "/../contracts/Bond.sol", "utf8");
+    const poke = /function poke\(\)[\s\S]*?\n    }/.exec(src)[0];
+    expect(poke).to.match(/\(bool okFee, bytes memory ret\)\s*=\s*\n?\s*WETH\.call\(/);
+    expect(poke, "must not use a reverting transfer for the fee").to.not.match(/safeTransfer\(\s*platform/);
+  });
+
   it("the dev buy is uncapped by supply, by construction", async () => {
     const src = require("fs").readFileSync(__dirname + "/../contracts/CurvePadFactory.sol", "utf8");
     expect(src).to.match(/no supply cap on the dev buy/);

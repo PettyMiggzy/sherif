@@ -67,7 +67,7 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     IUniswapV3Pool public immutable pool;
     address public immutable token0;
     address public immutable token1;
-    address public immutable platform; // retained for deploy-interface stability; no longer a fee sink
+    address public immutable platform; // [rev] receives the ETH side of the locked LP's trading fees
     address public immutable curve; // only the curve may post()
     bool public immutable tokenIsToken0;
     bool public immutable bountyBelow; // Bounty (WETH) sits below price iff WETH is token1
@@ -93,6 +93,7 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     error Manipulated();
 
     event Posted(uint128 sherwoodL, uint128 bountyL, uint128 ambushL);
+    event LpFeeToPlatform(uint256 wethAmount);
     event Poked(int24 tick, uint128 bountyL, uint128 ambushL, uint256 sherwoodFees0, uint256 sherwoodFees1);
 
     constructor(
@@ -183,7 +184,27 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         // below, so nothing is ever stranded.
         pool.burn(sherwoodLo, sherwoodHi, 0);
         (uint128 kf0, uint128 kf1) = pool.collect(address(this), sherwoodLo, sherwoodHi, U128_MAX, U128_MAX);
-        uint128 addL = PoolMath.fullRangeLiquidityOrZero(sp, kf0, kf1);
+
+        // [rev] THE PLATFORM TAKES THE ETH SIDE OF THE LOCKED LP's FEES. The token side still compounds, so the
+        // platform never holds a pad token — the same ETH-only invariant the v4 stack enforces.
+        //
+        // CRITICAL: this takes ONLY the fee just collected from the Sherwood position, measured right here. It
+        // must never be derived from `balanceOf` further down, because by then the Bounty has been torn down and
+        // this contract's WETH balance includes THE FLOOR'S PRINCIPAL. Skimming that would drain the floor from
+        // the inside — precisely what the deep wall exists to prevent. Fee-only, by construction.
+        uint256 wethFee = tokenIsToken0 ? uint256(kf1) : uint256(kf0);
+        if (wethFee > 0) {
+            // Best-effort: a failed transfer must never brick poke() (the keeper path that recenters the walls).
+            // On failure the fee falls through to the Bounty exactly as it did before.
+            (bool okFee, bytes memory ret) =
+                WETH.call(abi.encodeWithSelector(IERC20.transfer.selector, platform, wethFee));
+            if (okFee && (ret.length == 0 || abi.decode(ret, (bool)))) emit LpFeeToPlatform(wethFee);
+        }
+        // Whatever is left of the collected fee (the token side, plus the ETH side if that transfer failed)
+        // compounds into the permanent position exactly as before.
+        uint128 keep0 = tokenIsToken0 ? kf0 : 0;
+        uint128 keep1 = tokenIsToken0 ? 0 : kf1;
+        uint128 addL = PoolMath.fullRangeLiquidityOrZero(sp, keep0, keep1);
         if (addL > 0) {
             sherwoodL += addL;
             _mint(sherwoodLo, sherwoodHi, addL);

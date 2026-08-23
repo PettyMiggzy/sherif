@@ -214,8 +214,11 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         pool.burn(curveLo, curveHi, 0); // poke: moves accrued fees into tokensOwed, principal untouched
         (uint256 c0, uint256 c1) = pool.collect(address(this), curveLo, curveHi, U128_MAX, U128_MAX);
         (wethFees, tokenFees) = tokenIsToken0 ? (c1, c0) : (c0, c1);
+        // [rev] ETH SIDE OF THE LP FEE IS 100% PLATFORM, both during the curve and (via the Bond) after
+        // graduation. The creator's LP-fee share is paid on the TOKEN side only, which also keeps the platform
+        // ETH-only — it never takes custody of a pad token on this path.
         uint16 cbps = _lpCreatorBps();
-        _splitFee(IERC20(WETH), wethFees, cbps);
+        _splitFee(IERC20(WETH), wethFees, 0);
         _splitFee(token, tokenFees, cbps);
         emit FeesCollected(msg.sender, wethFees, tokenFees, cbps);
     }

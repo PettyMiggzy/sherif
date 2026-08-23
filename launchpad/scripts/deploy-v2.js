@@ -5,7 +5,7 @@
  * This is NOT a redeploy. The live factory (deploy.json `padFactory`) keeps running and the coin already
  * launched on it keeps trading, untouched. v2 is a parallel factory that new launches point at.
  *
- * Only TWO contracts are new. Everything else is reused live, which is possible because:
+ * Only THREE contracts are new. Everything else is reused live, which is possible because:
  *   • PadRouter carries an isFactory ALLOWLIST (`setFactory` is add, not set-once), explicitly so one router can
  *     serve two factories.
  *   • LaunchTokenDeployer and CurvePoolDeployer are permissionless and stateless — "reused across factories" by
@@ -58,7 +58,7 @@ async function main() {
 
   console.log(`network=${network.name}  deployer=${deployer.address}`);
   console.log(`reusing router=${C.padRouter}\n        feeConfig=${C.feeConfig}`);
-  console.log(`        launchTokenDeployer=${C.launchTokenDeployer}\n        curvePoolDeployer=${C.curvePoolDeployer}`);
+  console.log(`        launchTokenDeployer=${C.launchTokenDeployer}   (curve pool deployer is NEW — see below)`);
   console.log(`v1 factory (stays live)=${C.padFactory}\n`);
 
   const router = await ethers.getContractAt("PadRouter", C.padRouter);
@@ -83,12 +83,19 @@ async function main() {
     await (await ethers.getContractFactory("BondDeployer")).deploy(BOUNTY_NEAR, BOUNTY_FAR)
   );
 
-  // 2) the v2 factory, pointed at the NEW bond deployer and the LIVE everything-else
+  // 2) a NEW CurvePoolDeployer. CurvePool changed (the ETH side of the LP fee now pays 100% to the platform),
+  //    and CurvePool's bytecode is inlined in its deployer — so the live one would still mint the OLD pool.
+  const curvePoolDeployer = await track(
+    "CurvePoolDeployer",
+    await (await ethers.getContractFactory("CurvePoolDeployer")).deploy()
+  );
+
+  // 3) the v2 factory, pointed at BOTH new deployers and the LIVE everything-else
   const factory = await track(
     "CurvePadFactory(v2)",
     await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, V3_FACTORY, platform, owner, C.padRouter,
-      C.launchTokenDeployer, C.curvePoolDeployer, await bondDeployer.getAddress(), C.feeConfig,
+      C.launchTokenDeployer, await curvePoolDeployer.getAddress(), await bondDeployer.getAddress(), C.feeConfig,
       START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH
     )
   );
@@ -115,11 +122,12 @@ async function main() {
     note: "v2 pad — deployed ALONGSIDE v1, which stays live. See DEPLOY-V2.md.",
     bountyNear: BOUNTY_NEAR,
     bountyFar: BOUNTY_FAR,
-    contracts: { padFactory: factoryAddr, bondDeployer: await bondDeployer.getAddress() },
-    reused: {
-      padRouter: C.padRouter, feeConfig: C.feeConfig,
-      launchTokenDeployer: C.launchTokenDeployer, curvePoolDeployer: C.curvePoolDeployer,
+    contracts: {
+      padFactory: factoryAddr,
+      bondDeployer: await bondDeployer.getAddress(),
+      curvePoolDeployer: await curvePoolDeployer.getAddress(),
     },
+    reused: { padRouter: C.padRouter, feeConfig: C.feeConfig, launchTokenDeployer: C.launchTokenDeployer },
     v1: { padFactory: C.padFactory, bondDeployer: C.bondDeployer, stillAuthorized: await router.isFactory(C.padFactory) },
   };
   fs.writeFileSync(path.join(__dirname, "..", "deploy.v2.json"), JSON.stringify(out, null, 2));

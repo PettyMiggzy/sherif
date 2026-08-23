@@ -9,7 +9,7 @@ npx hardhat run scripts/deploy-v2.js                       # fork dry-run + gas 
 npx hardhat run scripts/deploy-v2.js --network robinhood   # real — PRIVATE_KEY must be the ROUTER OWNER
 ```
 
-## Why this is only two contracts
+## Why this is only three contracts
 
 | piece | v2 | why |
 |---|---|---|
@@ -17,7 +17,7 @@ npx hardhat run scripts/deploy-v2.js --network robinhood   # real — PRIVATE_KE
 | `CurvePadFactory` | **NEW** | zero guard, creator-chosen supply, points at the new bond deployer |
 | `PadRouter` | reused | `setFactory` is an **allowlist**, built so one router can serve two factories |
 | `LaunchTokenDeployer` | reused | permissionless, stateless, "reused across factories"; folds `msg.sender` into its CREATE2 salt so two factories can never collide on an address |
-| `CurvePoolDeployer` | reused | same — and its `CurvePool` takes `bondDeployer` as a plain address argument, so a new one drops straight in |
+| `CurvePoolDeployer` | **NEW** | `CurvePool` changed (ETH-side LP fee now 100% platform) and its bytecode is inlined in the deployer, so the live one would still mint the OLD pool |
 | `FeeConfig`, WETH, v3 factory | reused | shared infrastructure |
 
 ## What changes, and what it costs
@@ -45,6 +45,19 @@ and there is no window).
 `launchWithSupply(p, 0, 0)`. Supply is unbounded; the implied FDV is what is checked. See `SPEC.md`.
 
 **4. Dev buy stays uncapped.** Unchanged from v1 — bounded only by the curve ceiling and the ETH sent.
+
+**5. The platform takes the ETH side of every LP fee.** During the curve, `collectFees` pays the WETH side
+100% to the platform (the creator's LP share is now token-side only). After graduation the Bond forwards the
+WETH half of the locked position's trading fees to the platform on every `poke()`, while the token side still
+compounds. This is what makes a graduated coin keep paying: before this change the platform earned **nothing**
+from a coin once it graduated unless traders came back through the site.
+
+> **Safety note, because this one is easy to get wrong.** The Bond skims **only the fee it just collected from
+> the Sherwood position**, measured at `collect()`. It must never be derived from `balanceOf` later in `poke()`,
+> because by then the Bounty has been torn down and the contract's WETH balance includes **the floor's entire
+> principal** — skimming that would drain the floor from the inside, which is exactly what the deep wall exists
+> to prevent. The transfer is also best-effort (a low-level call), so a bad platform address can never brick
+> `poke()` and freeze wall recentering across every coin at once. Both properties are pinned by tests.
 
 ## Preconditions
 
