@@ -488,7 +488,7 @@ console.log(<span class="s">"launched"</span>, token);</pre></div>
     <tr><td>Graduation reward</td><td><strong>Creator + Platform</strong></td><td><strong>0.5 ETH each</strong> at the ceiling (capped at raise/4); the rest funds the floor</td></tr>
     <tr><td>Sherwood LP fees</td><td><strong>The floor</strong></td><td>Compound back into the locked Bond via <span class="m">poke()</span></td></tr>
   </table></div>
-  <div class="note"><span class="lbl">Creator income</span>a 10% share of the 1% LP fee + a 45% share of the swap-desk fee + a 0.5 ETH graduation reward. Every share is escrowed and paid by separate permissionless flushers, so a trade can never revert on a payout. Accounting is exact to the wei.</div>
+  <div class="note"><span class="lbl">Creator income</span>a 10% share of the 1% LP fee + a 45% share of the swap desk's 1.25%/side fee + a 0.5 ETH graduation reward. Every share is escrowed and paid by separate permissionless flushers, so a trade can never revert on a payout. Accounting is exact to the wei.</div>
 
   <h2 id="gradmodel"><span class="sec">04 · Economics</span>Graduation: one ceiling, no shortcuts</h2>
   <p>Graduation happens at exactly <strong>one</strong> place: the full ceiling (~4.2 ETH raised, ~$34k mcap). A coin graduates only when buys carry the price all the way to <span class="m">gradTick</span>: there is no early graduation, no creator override, and no timeout fallback. Below the ceiling the coin simply keeps trading on the curve, and sellers can always exit.</p>

@@ -56,6 +56,12 @@ both deployer and owner, and it is an EOA holding ~0.0151 ETH.
 
 `0xCDD5ff5d…` is neither the deployer nor the owner and appears nowhere in the
 router's history. Correct `deploy.json`; do not correct the chain read.
+**Closed.** `PadRouter.owner()` is `0x2aA74C8d97d89a7Cac1243262479687e5Db30eF8`.
+The router has exactly one `OwnershipTransferred` event — `0x0` to that address in
+the constructor at block 17,752,952 — and the same address sent the creation
+transaction, so it is deployer and owner both. Ownership has never moved and
+`0xCDD5ff5d…` appears nowhere in the router's history. `deploy.json` was wrong and
+has been corrected.
 
 ## Log
 
@@ -95,6 +101,24 @@ Newest first. One line each: what changed, and anything the other side must know
   trending bot calls only `sendPhoto`, `sendMessage` and `deleteMessage`, sets no
   webhook and never calls `getUpdates`, and stores no Telegram user id. Your
   "boards that only post" paragraph is accurate as written.
+- **main session** — $ROBIN added to the swap desk allowlist. NOTE FOR WHOEVER
+  DEPLOYS: the frontend list in `pad/assets/config.js` is only half of it. The
+  indexer gates the same set from the `UNISWAP_TOKENS` env var
+  (`indexer/src/uniproxy.js` builds `allowedSet()` from it), so if that env is not
+  updated in the running deployment the buy button appears and the swap is then
+  refused by the proxy. `indexer/.env.example` is updated; the live env is not
+  something this session can reach. Also dropped the "and in our mobile apps"
+  claim from `pad/privacy.html` — confirmed with the owner, no apps are live.
+
+- **main session** — acted on all three items from the trending-bot session.
+  `deploy.json` owner corrected. `pad/swap.html` no longer substitutes a coin in
+  silence: a `?c=` the desk does not carry still falls back to the top-volume
+  token, but now says which address was asked for and that this is a different
+  coin. `pad/docs.html` names the desk fee as 1.25%/side where it previously said
+  only "the swap-desk fee". Note on the fee: swap.html was already disclosing
+  1.25% to users in three places, so the site was never wrong — the compliance
+  brief was. $ROBIN sits in config as `platformToken`, not in `UNI_TOKENS`, so
+  whether to add it to the desk allowlist is an owner decision, not a bug fix.
 
 - **main session** — removed `bot/` (the Sheriff-PFP buy bot). It was not the bot
   Robin Labs runs and its behaviour did not match the product. Nothing outside the
