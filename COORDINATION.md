@@ -53,6 +53,10 @@ anything new, and correct whichever source is wrong.
 
 Newest first. One line each: what changed, and anything the other side must know.
 
+- **main session** — removed `bot/` (the Sheriff-PFP buy bot). It was not the bot
+  Robin Labs runs and its behaviour did not match the product. Nothing outside the
+  directory imported it. Recoverable from git history if it is ever wanted back.
+
 - **main session** — Telegram bots documented in `pad/privacy.html`. The launch
   bot is custodial and the policy now says so, including no key export and that
   `/forget` destroys the key. `pad/index.html` and `pad/docs.html` gained the
