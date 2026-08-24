@@ -239,9 +239,10 @@
 
   <!-- ROBIN TOKEN -->
   <h2 id="robin"><span class="sec">01 · Start here</span>The $ROBIN token</h2>
-  <p>$ROBIN is the Robin Labs platform token. It was not pre-mined, allocated or sold privately &mdash; it was
-  launched through <span class="m">CurvePadFactory</span>, the same public entrypoint any creator uses, on the
-  same terms. Every number below is checkable on the explorer.</p>
+  <p>$ROBIN is the Robin Labs platform token. It was launched through <span class="m">CurvePadFactory</span>
+  &mdash; the same public entrypoint any creator uses, on the same terms &mdash; in
+  <a href="https://robinhoodchain.blockscout.com/tx/0x12a444c5c4504d53de00bdaaa7de83d9be6e8acac6544b1867a07aa66abecf1c">transaction 0x12a444c5&hellip;</a>,
+  with a <span class="m">0.07 ETH</span> opening buy. Every number below is checkable on the explorer.</p>
 
   <div class="tw"><table>
     <tr><th>Field</th><th>Value</th></tr>
@@ -258,13 +259,18 @@
   <p><a href="https://robinhoodchain.blockscout.com/token/0x6696fe29288b586017e6f264c0091dba6c5ebeaf">View $ROBIN on Blockscout &rarr;</a></p>
 
   <h4>Distribution</h4>
-  <p>$ROBIN has the same distribution shape every pad coin has, because it is a pad coin. The entire supply is
-  minted to the bonding curve at launch and is only obtainable by buying it. There is no team wallet, no
-  investor tranche, no vesting schedule and no unlock cliff, because the factory has no mechanism to create
-  one &mdash; supply goes to the curve and nowhere else.</p>
-  <p>The only supply that leaves the curve outside a normal trade is the creator's opening buy, which is an
-  ordinary purchase executed atomically in the launch transaction at the same starting price as the first
-  public buy, and is visible as <span class="m">devBought</span> on the factory's <span class="m">Launched</span> event.</p>
+  <p>$ROBIN is a pad coin, so its supply followed the pad's ordinary path: the full
+  <span class="m">1,000,000,000</span> was minted to the bonding curve at launch, and the only way to obtain it
+  is to buy it from the curve or from the pool after graduation.</p>
+  <p>The one allocation outside a normal trade is the creator's opening buy, executed atomically inside the
+  launch transaction at the same starting price as the first public buy. For $ROBIN that was
+  <span class="m">0.07 ETH</span>, and it is recorded on-chain as <span class="m">devBought</span> on the
+  factory's <span class="m">Launched</span> event &mdash; check the launch transaction linked above rather than
+  taking this page's word for it.</p>
+  <p>Post-launch holdings move like any other token: nothing in <span class="m">LaunchToken</span> locks,
+  vests, or restricts a balance, so current distribution is whatever the
+  <a href="https://robinhoodchain.blockscout.com/token/0x6696fe29288b586017e6f264c0091dba6c5ebeaf?tab=holders">holders tab</a>
+  says it is at any moment.</p>
 
   <h4>What $ROBIN is for</h4>
   <p>The platform's share of above-default trading fees accrues in
