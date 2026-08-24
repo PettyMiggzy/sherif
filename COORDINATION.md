@@ -54,6 +54,15 @@ has been corrected.
 
 Newest first. One line each: what changed, and anything the other side must know.
 
+- **main session** — $ROBIN added to the swap desk allowlist. NOTE FOR WHOEVER
+  DEPLOYS: the frontend list in `pad/assets/config.js` is only half of it. The
+  indexer gates the same set from the `UNISWAP_TOKENS` env var
+  (`indexer/src/uniproxy.js` builds `allowedSet()` from it), so if that env is not
+  updated in the running deployment the buy button appears and the swap is then
+  refused by the proxy. `indexer/.env.example` is updated; the live env is not
+  something this session can reach. Also dropped the "and in our mobile apps"
+  claim from `pad/privacy.html` — confirmed with the owner, no apps are live.
+
 - **main session** — acted on all three items from the trending-bot session.
   `deploy.json` owner corrected. `pad/swap.html` no longer substitutes a coin in
   silence: a `?c=` the desk does not carry still falls back to the top-volume
