@@ -906,7 +906,11 @@ async function boot(){
   setAction('Loading…', true);
   await loadMeta();
   let want = (q.get('c') || '').toLowerCase();
+  // A ?c= for a coin the desk does not carry used to fall through to the top-volume token in silence, so a
+  // "buy $X" link would quietly open a swap for something else entirely. Fall back, but say so.
+  let notCarried = '';
   if (!isAddr(want) || !isUniToken(want)){
+    if (isAddr(want)) notCarried = want;
     const ranked = UNI_TOKENS.map((a) => META.get(a)).filter(Boolean).sort((x,y)=>(y.volUsd||0)-(x.volUsd||0));
     want = (ranked[0]?.addr || UNI_TOKENS[0]).toLowerCase();
   }
@@ -920,6 +924,7 @@ async function boot(){
   ensureFirewall();  // scan the default token's safety in the background
   LIVE = await Pad.uniLive();
   if (!LIVE) setStatus('The top-token swap desk goes live shortly - liquidity and pricing are being wired up. Check back soon.', '');
+  else if (notCarried) setStatus('The swap desk does not carry ' + notCarried.slice(0, 6) + '\u2026' + notCarried.slice(-4) + ' yet, so this is a different coin. Check the address before you trade.', '');
   if (Pad.account()) afterConnect();
   syncAction();
 }

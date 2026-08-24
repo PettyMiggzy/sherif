@@ -2,7 +2,7 @@
   "network": "robinhood",
   "chainId": 4663,
   "deployedAt": "2026-07-24T01:26:14.434Z",
-  "owner": "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf",
+  "owner": "0x2aA74C8d97d89a7Cac1243262479687e5Db30eF8",
   "platform": "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf",
   "factoryBlock": 17752965,
   "contracts": {
