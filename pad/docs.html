@@ -165,6 +165,7 @@
     <div class="grp">Start here</div>
     <a href="#overview">Overview</a>
     <a href="#network">Network &amp; addresses</a>
+    <a href="#robin">The $ROBIN token</a>
     <a href="#architecture">Architecture</a>
     <div class="grp">Contracts &amp; ABI</div>
     <a href="#factory">CurvePadFactory</a>
@@ -229,10 +230,49 @@
     <tr><td><span class="m">PadRouter</span></td><td class="addr">0xA6BaAB820809C7fC8350311776627298f91F07eC</td><td>The swap desk, every buy/sell goes through it</td></tr>
     <tr><td><span class="m">FeeConfig</span></td><td class="addr">0x064D977B66FCC29256510dBCD8cC0C51bBb2De14</td><td>Owner-governed fee dial, LP + swap split, retunable with no redeploy</td></tr>
     <tr><td><span class="m">PlatformFeeSplitter</span></td><td class="addr">0xca0EfD87B983CdeF56459051ecBE91aA5C87E17a</td><td>Routes the platform's cut (the $ROBIN buy-back split)</td></tr>
+    <tr><td><span class="m">$ROBIN</span></td><td class="addr">0x6696fe29288b586017e6f264c0091dba6c5ebeaf</td><td>The Robin Labs platform token, launched through the pad itself</td></tr>
     <tr><td><span class="m">WETH</span></td><td class="addr">0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73</td><td>Canonical wrapped ETH</td></tr>
     <tr><td><span class="m">UniswapV3Factory</span></td><td class="addr">0x1f7d7550b1b028f7571e69a784071f0205fd2efa</td><td>The real v3 factory each pool is created on</td></tr>
   </table></div>
   <p><span class="m">CurvePool</span> and <span class="m">Bond</span> addresses are <strong>per-coin</strong>, you get them from the factory's <span class="m">Launched</span> event or <span class="m">recordOf(token)</span>, and from <span class="m">router.bondOf(token)</span>.</p>
+
+
+  <!-- ROBIN TOKEN -->
+  <h2 id="robin"><span class="sec">01 · Start here</span>The $ROBIN token</h2>
+  <p>$ROBIN is the Robin Labs platform token. It was not pre-mined, allocated or sold privately &mdash; it was
+  launched through <span class="m">CurvePadFactory</span>, the same public entrypoint any creator uses, on the
+  same terms. Every number below is checkable on the explorer.</p>
+
+  <div class="tw"><table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Name</td><td><span class="m">ROBIN LABS</span></td></tr>
+    <tr><td>Ticker</td><td><span class="m">ROBIN</span></td></tr>
+    <tr><td>Contract</td><td class="addr">0x6696fe29288b586017e6f264c0091dba6c5ebeaf</td></tr>
+    <tr><td>Chain</td><td>Robinhood Chain (chainId <span class="m">4663</span>)</td></tr>
+    <tr><td>Decimals</td><td><span class="m">18</span></td></tr>
+    <tr><td>Total supply</td><td><span class="m">1,000,000,000</span> ROBIN (fixed &mdash; the token has no mint function)</td></tr>
+    <tr><td>Contract source</td><td><span class="m">LaunchToken.sol</span>, verified on Blockscout (solc v0.8.24)</td></tr>
+    <tr><td>Transfer tax</td><td><span class="m">None.</span> LaunchToken has no transfer hook and no tax path</td></tr>
+  </table></div>
+
+  <p><a href="https://robinhoodchain.blockscout.com/token/0x6696fe29288b586017e6f264c0091dba6c5ebeaf">View $ROBIN on Blockscout &rarr;</a></p>
+
+  <h4>Distribution</h4>
+  <p>$ROBIN has the same distribution shape every pad coin has, because it is a pad coin. The entire supply is
+  minted to the bonding curve at launch and is only obtainable by buying it. There is no team wallet, no
+  investor tranche, no vesting schedule and no unlock cliff, because the factory has no mechanism to create
+  one &mdash; supply goes to the curve and nowhere else.</p>
+  <p>The only supply that leaves the curve outside a normal trade is the creator's opening buy, which is an
+  ordinary purchase executed atomically in the launch transaction at the same starting price as the first
+  public buy, and is visible as <span class="m">devBought</span> on the factory's <span class="m">Launched</span> event.</p>
+
+  <h4>What $ROBIN is for</h4>
+  <p>The platform's share of above-default trading fees accrues in
+  <span class="m">PadRouter.platformCutEscrow</span> and is withdrawable only to the platform owner. Robin Labs
+  uses it to buy $ROBIN on the open market. Be precise about what that is: the withdrawal is on-chain and
+  verifiable, but the buy-back itself is executed off-chain at the platform's discretion. It is not enforced by
+  a contract, and $ROBIN holders have no on-chain claim on protocol fees. Treat it as a stated policy, not a
+  guarantee.</p>
 
   <!-- ARCHITECTURE -->
   <h2 id="architecture"><span class="sec">01 · Start here</span>Architecture</h2>

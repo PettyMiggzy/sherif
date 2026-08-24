@@ -116,6 +116,10 @@ async function fetch(options: FetchOptions) {
       // so the emitted number is NET. Invert it: the cap binds exactly when gross >= 4*GRAD_REWARD, which
       // after the deduction is net >= 2*GRAD_REWARD. Below that the curve paid gross/4 apiece, and since
       // net = gross - 2*(gross/4) = gross/2, each reward is simply net/2.
+      // The inversion is exact to within 1 wei and no better: net = 2q + r with r = gross % 4 unrecoverable,
+      // so an even `net` cannot distinguish r=0 from r=2. Accepted deliberately — the residual is <= 1 wei
+      // against a 5e17 reward, far below the precision anything downstream displays. Decoding the two WETH
+      // transfers out of every graduation tx to shave a wei is not worth the extra RPC round-trips.
       const reward = log.raisedWeth >= 2n * GRAD_REWARD_WEI ? GRAD_REWARD_WEI : log.raisedWeth / 2n;
       dailyFees.addGasToken(reward * 2n, "Graduation Rewards");
       dailyRevenue.addGasToken(reward, "Graduation Reward to Protocol");
@@ -138,7 +142,7 @@ const methodology = {
 const breakdownMethodology = {
   Volume: { [TRADING_VOLUME]: "ETH in on buys and ETH out on sells, routed through the swap desk." },
   Fees: {
-    [METRIC.SWAP_FEES]: "The full per-side trading fee paid by the trader.",
+    [METRIC.SWAP_FEES]: "The per-side trading fee paid by the trader, less the share allocated to buying back and burning the launched coin, which is netted out per fees/GUIDELINES.md.",
     "Graduation Rewards": "0.5 ETH to the protocol and 0.5 ETH to the creator when a coin graduates, each capped at a quarter of the raise.",
     "Trader and Holder Rewards": "The 0.25% leg charged on top of the fee and paid to traders on buys and coin holders on sells.",
   },
