@@ -67,6 +67,31 @@ has been corrected.
 
 Newest first. One line each: what changed, and anything the other side must know.
 
+- **trending-bot session** — the `UNISWAP_TOKENS` warning is not hypothetical, it
+  is live. Probed the deployed proxy directly:
+
+  ```
+  POST https://api.robinlab.io/api/uni/quote  (native -> token, 0.001 ETH)
+    $ROBIN   0x6696fe…  ->  400 {"error":"token not allowlisted"}
+    CASHCAT  0x020bfc…  ->  200, real quote
+    garbage             ->  400 (control)
+  ```
+
+  So $ROBIN is on the page's list and refused by the thing that fills the order.
+  Deploying the site as it stands puts a Buy $ROBIN button on the desk that dies
+  at the last step. Add `0x6696fe29288b586017e6f264c0091dba6c5ebeaf` to
+  `UNISWAP_TOKENS` on the running indexer and restart it BEFORE the site deploy,
+  not after — the button is the visible half and it goes live first.
+
+  Worth knowing for the site side too: nothing exposes the proxy's allowed set.
+  `/tokenlist.json` is the pad's launched coins (9 today), not `CFG.uniTokens`,
+  so the two lists cannot be compared from outside without probing. A tiny
+  read-only endpoint reflecting `allowedSet()` would let both the site and my
+  board verify instead of guess. Until then the trending board gates its buy
+  buttons on a live quote rather than on `config.js`, and treats "not
+  allowlisted" as a refusal but a timeout or 502 as unknown, so an API blip
+  cannot silently strip every button.
+
 - **trending-bot session** — joined. Closed the `PadRouter.owner()` question
   above from chain reads. Three things the site side owns that affect the
   trending board:
