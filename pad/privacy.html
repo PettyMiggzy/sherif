@@ -28,7 +28,7 @@
 <div class="wrap">
   <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="" onerror="this.style.display='none'" />ROBIN LABS</a>
   <h1>Privacy Policy</h1>
-  <p class="upd">Last updated: 27 July 2026</p>
+  <p class="upd">Last updated: 24 August 2026</p>
 
   <p>Robin Labs ("Robin Labs", "we", "us") operates a non-custodial launchpad and trading interface for tokens on Robinhood Chain, available at robinlab.io and in our mobile apps. This policy explains what we do and do not collect. In plain terms: we do not run accounts, we never hold your funds, and we never have your private keys or seed phrase.</p>
 
@@ -45,6 +45,42 @@
     <li><b>Coin profiles.</b> If you create a coin, you may optionally submit a logo, description, and social links. These are signed by your wallet and published publicly on your coin page. Do not submit anything you want kept private.</li>
     <li><b>Basic technical data.</b> Like most websites and apps, our servers may process standard request data (such as IP address and device or browser type) to deliver content and protect against abuse. We do not use this to identify you personally.</li>
   </ul>
+
+  <h2>Telegram bots</h2>
+  <p>We operate more than one Telegram bot and they handle data very differently, so they are described
+  separately. Whichever you use, the bot itself always shows its own disclaimer and command list.</p>
+
+  <h3>Boards that only post</h3>
+  <p>Our trending and new-launch boards are write-only. They post messages and remove their own previous posts,
+  and they use neither webhooks nor long polling, so they cannot receive a message or read what is said in a
+  channel they belong to. They keep public blockchain data, public token metadata (contract addresses, symbols,
+  logos, volume and liquidity figures) and the id of their own most recent post so the next one can replace it.
+  They keep nothing about you.</p>
+
+  <h3>The Robin Labs launch bot &mdash; please read this one</h3>
+  <p>This bot takes commands, so it receives the messages you send it. More importantly, <b>it is custodial</b>:
+  it creates a wallet for you and holds that wallet's private key on our server. This is a real and material
+  difference from the website, where you hold your own keys and we never touch them.</p>
+  <p>What we store for you is deliberately minimal: <b>your numeric Telegram user id</b>, <b>your wallet's
+  encrypted private key and its public address</b>, the coins you have launched, and a short-lived session so
+  multi-step commands remember where you were. We do not store your username, display name, phone number,
+  contact list, or the content of your messages beyond acting on the command in front of us.</p>
+  <p>Keys are encrypted at rest with AES-256-GCM under a key derived by scrypt from a master secret and a
+  per-user salt. A plaintext key exists only in memory for the instant a transaction is signed, and is never
+  written to disk and never logged. Be clear-eyed about what custody means all the same: <b>if our server is
+  compromised, funds held in bot wallets are at risk</b>, and there is no key-export command &mdash; you move
+  value out with <code>/withdraw</code>, not by taking the key with you. Keep in the bot only what you intend to
+  use.</p>
+  <p>Send <b><code>/forget</code></b> at any time and we erase your record entirely. Withdraw your balance
+  first, because erasing the record removes the key with it and the wallet cannot be recovered afterwards.</p>
+
+  <h3>Generated images</h3>
+  <p>Where a bot generates artwork for you, the work is done by a third-party image service. Your Telegram
+  identity is not sent to it: your user id is hashed on our side and used only to choose which colour and
+  expression variant you get, so what leaves our server is a text prompt containing no identifier.</p>
+
+  <p>If any bot of ours begins handling data differently from what is written above, we will update this policy
+  before that change goes live.</p>
 
   <h2>Third-party services</h2>
   <p>To function, the app talks to third parties, each with their own privacy practices we do not control: the wallet you choose, blockchain RPC providers, and data or routing services such as DexScreener, Uniswap, and LI.FI. Your interactions with those services are governed by their policies.</p>
