@@ -47,7 +47,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
 
     uint256 public constant MIN_TARGET = 0.01 ether;
     uint256 public constant MIN_DURATION = 1 hours;
-    uint256 public constant MAX_DURATION = 30 days;
+    uint256 public constant MAX_DURATION = 90 days;
     uint64 public constant GRACE_MIN = 1 hours;
     uint64 public constant GRACE_MAX = 7 days;
     uint256 internal constant BPS = 10_000; // the hook's buy-tax denominator
