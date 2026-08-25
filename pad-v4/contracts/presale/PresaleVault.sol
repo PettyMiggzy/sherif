@@ -20,6 +20,7 @@ import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmo
 import {ICurvePadFactoryV4, LaunchConfig} from "../interfaces/ICurvePadFactoryV4.sol";
 import {RobinV4FeeConfig} from "../core/RobinV4FeeConfig.sol";
 import {PadValuation} from "../core/PadValuation.sol";
+import {IFeeWalletRegistry} from "../interfaces/IRobinInterfaces.sol";
 
 /// @title PresaleVault — a trustless, refundable ETH presale for a not-yet-launched Robin V4 curve
 /// @notice One instance PER presale (EIP-1167 clone, initialize()-d atomically by the factory). A creator opens a
@@ -45,6 +46,10 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using BalanceDeltaLibrary for BalanceDelta;
 
+    /// @notice The platform's cut of a SUCCESSFUL raise, taken once at finalize. Never taken on a failed
+    /// presale — a refund is always the full deposit. Constant, so a contributor can read the terms off the
+    /// bytecode rather than trusting a setter.
+    uint256 public constant PLATFORM_FEE_BPS = 1000; // 10%
     uint256 public constant MIN_TARGET = 0.01 ether;
     uint256 public constant MIN_DURATION = 1 hours;
     uint256 public constant MAX_DURATION = 90 days;
@@ -88,6 +93,12 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     address public token;
     uint256 public totalTokensBought;
     uint256 public pooledEthSpent;
+    /// @notice The platform's cut, fixed at finalize. This is ACCOUNTING and never changes afterwards, because
+    /// `_payout` divides the leftover ETH by it — zeroing it on withdrawal would silently inflate every
+    /// contributor's ETH-back against a vault that no longer holds the money.
+    uint256 public platformFee;
+    /// @notice Whether that cut has been pulled yet. Separate from the amount for exactly the reason above.
+    bool public platformFeePaid;
 
     mapping(address => uint256) public contribution;
     mapping(address => bool) public claimed;
@@ -97,6 +108,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     event Deposited(address indexed user, uint256 amount, uint256 refundedTrim);
     event Finalized(address indexed token, address indexed curve, PoolId poolId, uint256 pooledEthSpent, uint256 tokensBought);
     event Claimed(address indexed user, uint256 tokenOut, uint256 ethBack);
+    event PlatformFeePaid(address indexed to, uint256 amount);
     event Failed(uint8 reason); // 1 = under target at deadline, 2 = grace escape hatch, 3 = committed launch sniped
     event Refunded(address indexed user, uint256 amount);
 
@@ -283,9 +295,16 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         // socialised that over-charge pro-rata across every contributor. Size the request to what this curve
         // can absorb; the surplus never enters the swap and leaves through the pro-rata ETH-back path that
         // `pooledEthSpent` already drives.
+        // The platform's cut comes off the top of a raise that SUCCEEDED, so it never touches a refund path:
+        // fail() leaves platformFee at zero and every deposit comes back whole. `totalRaised` is left
+        // untouched because it is the pro-rata denominator every contributor is measured against — the fee is
+        // subtracted from what the buy may spend, and again from the ETH-back pool in _claim.
+        platformFee = (totalRaised * PLATFORM_FEE_BPS) / BPS;
+        uint256 buyBudget = totalRaised - platformFee;
+
         uint256 amtIn =
             _absorbableIn(TickMath.getSqrtPriceAtTick(startTick), gradSqrt, c.curveSupply, d.lpFee, d.buyTaxBps);
-        if (amtIn > totalRaised) amtIn = totalRaised;
+        if (amtIn > buyBudget) amtIn = buyBudget;
         if (amtIn == 0) revert ZeroBought();
 
         // pooled buy, atomic with the launch
@@ -345,6 +364,21 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     // ── claim (after success) ─────────────────────────────────────────────────────────
 
     /// @notice Pull your pro-rata tokens (+ pro-rata refund of unspent ETH). One-shot.
+    /// @notice Pay the platform's accrued cut to the wallet the fee registry names right now. Permissionless —
+    /// the destination is not a parameter, so a caller can only push the platform's own money to the platform.
+    /// Pull rather than push because a wallet that reverts on receive would otherwise revert `finalize` and
+    /// convert a fully-funded raise into a Failed presale.
+    function withdrawPlatformFee() external nonReentrant {
+        uint256 amt = platformFee;
+        if (amt == 0 || platformFeePaid) return;
+        platformFeePaid = true; // CEI — the FLAG is what guards the re-entry, not the amount
+        address to = IFeeWalletRegistry(curvePadFactory.feeRegistry()).platformFeeWallet();
+        if (to == address(0)) revert BadParams();
+        (bool ok,) = payable(to).call{value: amt}("");
+        if (!ok) revert EthSendFailed();
+        emit PlatformFeePaid(to, amt);
+    }
+
     function claim() external nonReentrant {
         _claim(msg.sender, msg.sender);
     }
@@ -356,6 +390,15 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         _claim(msg.sender, to);
     }
 
+    /// @dev The ONE place a contributor's payout is computed. `previewClaim` and `_claim` both route through
+    /// here so the number a user is shown and the number they are paid can never drift apart — they did once,
+    /// when the platform fee was subtracted in the claim path and not the preview.
+    function _payout(uint256 c) internal view returns (uint256 tokenOut, uint256 ethBack) {
+        tokenOut = Math.mulDiv(c, totalTokensBought, totalRaised);
+        // The platform's cut is out of the vault's economics entirely: it is neither swapped nor returned.
+        ethBack = Math.mulDiv(c, totalRaised - pooledEthSpent - platformFee, totalRaised);
+    }
+
     function _claim(address user, address to) internal {
         if (!finalized) revert NotFinalized();
         uint256 c = contribution[user];
@@ -363,8 +406,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         if (claimed[user]) revert AlreadyClaimed();
         claimed[user] = true; // CEI
 
-        uint256 tokenOut = Math.mulDiv(c, totalTokensBought, totalRaised);
-        uint256 ethBack = Math.mulDiv(c, totalRaised - pooledEthSpent, totalRaised);
+        (uint256 tokenOut, uint256 ethBack) = _payout(c);
         IERC20(token).safeTransfer(to, tokenOut);
         if (ethBack > 0) {
             (bool ok,) = payable(to).call{value: ethBack}("");
@@ -429,8 +471,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     function previewClaim(address user) external view returns (uint256 tokenOut, uint256 ethBack) {
         uint256 c = contribution[user];
         if (c == 0 || !finalized || claimed[user]) return (0, 0);
-        tokenOut = Math.mulDiv(c, totalTokensBought, totalRaised);
-        ethBack = Math.mulDiv(c, totalRaised - pooledEthSpent, totalRaised);
+        (tokenOut, ethBack) = _payout(c);
     }
 
     /// @notice 0 = Open, 1 = Launched, 2 = Failed.

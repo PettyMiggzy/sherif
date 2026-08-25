@@ -26,6 +26,7 @@ interface ICurvePadFactoryV4 {
         external
         returns (address token, address hook, address curve, PoolId poolId);
     function feeConfig() external view returns (address);
+    function feeRegistry() external view returns (address);
     function poolManager() external view returns (address);
     function stateView() external view returns (address);
 }

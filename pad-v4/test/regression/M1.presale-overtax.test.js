@@ -137,7 +137,11 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
     const TARGET = E(3);
     const { vault } = await runPresale(TARGET);
     const spent = await vault.pooledEthSpent();
-    const surplus = TARGET - spent;
+    // The platform's 10% is taken off the top of a successful raise, so it is neither swapped nor returned —
+    // the surplus a contributor gets back is what is left after BOTH the buy and the fee.
+    const fee = await vault.platformFee();
+    expect(fee).to.equal((TARGET * 1000n) / 10000n);
+    const surplus = TARGET - spent - fee;
     expect(surplus).to.be.gt(0n);
 
     // previewClaim's ETH-back leg is the pro-rata share of exactly that surplus
@@ -156,7 +160,10 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
     // capacity for this geometry is ~0.130 ETH, so a 0.1 ETH target spends the WHOLE raise as before
     const TARGET = E("0.1");
     const { vault } = await runPresale(TARGET);
-    expect(await vault.pooledEthSpent()).to.equal(TARGET); // amtIn == totalRaised, byte-identical behaviour
+    const fee = await vault.platformFee();
+    // amtIn is capped at the post-fee budget, and the curve can absorb all of it, so the buy spends the budget
+    // exactly and nothing is left over for the ETH-back leg.
+    expect(await vault.pooledEthSpent()).to.equal(TARGET - fee);
     const [, ethBack] = await vault.previewClaim(a.address);
     expect(ethBack).to.equal(0n);
   });

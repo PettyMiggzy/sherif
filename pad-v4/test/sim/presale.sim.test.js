@@ -262,6 +262,80 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
   });
 
   // 4) SUCCESS PATH: reach target, finalize (launch + pooled buy), pro-rata claims
+  // ── the platform's 10% of a successful raise ────────────────────────────────────────────────────────
+  // The cut exists at all because the platform has to make money somewhere. What these pin is that it can
+  // only ever come out of a raise that WORKED, and that it cannot quietly grow past 10% or reach a refund.
+
+  it("[FEE] takes exactly 10% of a successful raise, and conservation still holds to the wei", async () => {
+    const { vault, salts } = await openPresale({ target: E(3), perWalletCap: E(1), minContribution: E("0.1") });
+    const ds = [signers[3], signers[4], signers[5]];
+    for (const d of ds) await vault.connect(d).deposit({ value: E(1) });
+    await vault.connect(signers[7]).finalize(salts.tokenSalt, salts.hookSalt, salts.curveSalt);
+
+    const raised = await vault.totalRaised();
+    const fee = await vault.platformFee();
+    expect(fee).to.equal((raised * 1000n) / 10000n); // exactly 10%, not "about"
+
+    // Every wei that came in leaves as exactly one of: the pooled buy, the platform cut, or ETH back to the
+    // contributor who deposited it. Nothing is stranded and nothing is conjured.
+    let sumEthBack = 0n;
+    for (const d of ds) {
+      const [, pvEth] = await vault.previewClaim(d.address);
+      sumEthBack += pvEth;
+    }
+    const spent = await vault.pooledEthSpent();
+    const dust = raised - spent - fee - sumEthBack;
+    expect(dust).to.be.gte(0n);            // never over-pays
+    expect(dust).to.be.lt(BigInt(ds.length)); // at most per-contributor rounding
+  });
+
+  it("[FEE] a failed presale takes nothing — refunds are the whole deposit", async () => {
+    const now = await time.latest();
+    const { vault } = await openPresale({
+      target: E(3), perWalletCap: E(1), minContribution: E("0.1"),
+      deadline: BigInt(now) + 3600n + 60n, finalizeGrace: 3600n,
+    });
+    const d = signers[6];
+    await vault.connect(d).deposit({ value: E(1) });
+    await time.increaseTo(now + 3600 + 120);
+    await vault.fail();
+
+    expect(await vault.platformFee()).to.equal(0n); // nothing accrued on the failure path
+    const back = await ethDelta(d.address, vault.connect(d).refund());
+    expect(back).to.equal(E(1)); // 100%, not 90%
+    await expect(vault.withdrawPlatformFee()).to.not.be.reverted; // no-op, not a revert
+  });
+
+  it("[FEE] withdrawPlatformFee pays the registry wallet, once, and is not a drain path", async () => {
+    const { vault, salts } = await openPresale({ target: E(3), perWalletCap: E(1), minContribution: E("0.1") });
+    for (const d of [signers[3], signers[4], signers[5]]) await vault.connect(d).deposit({ value: E(1) });
+    await vault.connect(signers[7]).finalize(salts.tokenSalt, salts.hookSalt, salts.curveSalt);
+
+    const fee = await vault.platformFee();
+    expect(fee).to.be.gt(0n);
+
+    // Permissionless caller, but the destination is not a parameter — it is whatever the registry names.
+    const before = await ethers.provider.getBalance(platform.address);
+    await (await vault.connect(signers[8]).withdrawPlatformFee()).wait();
+    expect((await ethers.provider.getBalance(platform.address)) - before).to.equal(fee);
+
+    // Drained once. A second call is a no-op, so it cannot be looped to empty the contributors' ETH-back pool.
+    // The AMOUNT deliberately stays put — _payout divides by it, so zeroing it on withdrawal would inflate
+    // every contributor's ETH-back against a vault that no longer holds the money. The FLAG is the guard.
+    expect(await vault.platformFeePaid()).to.equal(true);
+    expect(await vault.platformFee()).to.equal(fee);
+    const after2 = await ethers.provider.getBalance(platform.address);
+    await (await vault.connect(signers[8]).withdrawPlatformFee()).wait();
+    expect(await ethers.provider.getBalance(platform.address)).to.equal(after2);
+
+    // ...and the contributors can still be paid in full afterwards.
+    for (const d of [signers[3], signers[4], signers[5]]) {
+      const [, pvEth] = await vault.previewClaim(d.address);
+      const got = await ethDelta(d.address, vault.connect(d).claim());
+      expect(got).to.equal(pvEth);
+    }
+  });
+
   it("success path: three wallets fund, finalize launches+buys, depositors claim pro-rata", async () => {
     const { vault, vaultAddr, salts } = await openPresale({ target: E(3), perWalletCap: E(1), minContribution: E("0.1") });
     const ds = [signers[3], signers[4], signers[5]];
