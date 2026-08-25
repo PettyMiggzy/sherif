@@ -217,8 +217,24 @@ contract CurvePadFactoryV4 {
         }
 
         // 2) deploy the token (supply minted to this factory)
+        // [SALT BINDING] The caller's mined salt is folded together with the WHOLE config before it reaches
+        // the deployer, so the token address depends on every field of the launch and not just the salt.
+        //
+        // Without this, `tokenSalt` reached DeterministicDeployer raw while the token's init-code covered only
+        // (name, symbol, decimals, supply, factory). `cfg.creator`, `curveSupply`, `reserveSupply`,
+        // `tickSpacing` and `startTickMag` were in NEITHER — so anyone who saw a salt could replay the launch
+        // with those fields changed and land on the same address. `launch` is permissionless, `requireBrand`
+        // below makes mining compulsory so every salt in this system is a mined one sitting in public
+        // calldata, a reverted launch leaves that calldata in block history forever, and PresaleVault reveals
+        // its salts on-chain by design. The deployer ADOPTS an existing deployment rather than reverting,
+        // which made the replay smoother still.
+        //
+        // Binding the config rather than msg.sender is deliberate: the presale vault is the caller on that
+        // path, and its address is not knowable when the creator mines. Folding the config keeps mining
+        // reproducible for whoever legitimately submits it, while any substitution at all — a different
+        // creator, a different supply split, a different launch price — lands somewhere else entirely.
         token = deployer.deploy(
-            tokenSalt,
+            keccak256(abi.encode(cfg, tokenSalt)),
             abi.encodePacked(
                 type(PadToken).creationCode,
                 abi.encode(cfg.name, cfg.symbol, cfg.decimals, cfg.supply, address(this))

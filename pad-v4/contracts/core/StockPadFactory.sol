@@ -162,8 +162,17 @@ contract StockPadFactory {
         );
 
         // 1) deploy the token (supply to this factory), require it sorts ABOVE the stock ⇒ pad = currency1
+        // [SALT BINDING] Fold the WHOLE config in with the mined salt, so the token address depends on every
+        // field of the launch. The M-27 note below already recorded that the init-code carries only
+        // (name, symbol, decimals, supply, factory) and that the deployer ADOPTS a byte-identical pre-deploy;
+        // what it did not follow through on is that `cfg.creator`, the supply split, the tick spacing and the
+        // launch price were therefore all free for a replayer to change while landing on the victim's mined
+        // address. `requireBrand` makes mining compulsory here too, so every salt is a mined one in public
+        // calldata. Binding the config rather than msg.sender keeps mining reproducible for whoever
+        // legitimately submits the launch, including a presale vault whose address the creator cannot know
+        // when they mine.
         token = deployer.deploy(
-            tokenSalt,
+            keccak256(abi.encode(cfg, tokenSalt)),
             abi.encodePacked(
                 type(PadToken).creationCode,
                 abi.encode(cfg.name, cfg.symbol, cfg.decimals, cfg.supply, address(this))
