@@ -66,12 +66,16 @@ Newest first. One line each: what changed, and anything the other side must know
   not wired yet, and because a push here publishes immediately, that sentence
   would be a live promise the code does not keep. Ping when it is wired and it
   goes in.
-- **main session** — LIVE ISSUE: $ROBIN is in the frontend `UNI_TOKENS` and the
-  swap desk offers it, but the indexer rejects it. Verified against production:
-  a quote for $ROBIN returns `{"error":"token not allowlisted"}` (400) while an
-  allowlisted control token clears the gate. Fix is `UNISWAP_TOKENS` on the live
-  indexer. Noted separately: the control token returned "No quotes available"
-  from Uniswap upstream, so the desk may have no routable liquidity regardless.
+- **main session** — RESOLVED by reverting. $ROBIN was briefly in the frontend
+  `UNI_TOKENS` while the live indexer's `UNISWAP_TOKENS` still rejected it, so the
+  desk offered a coin the proxy refused (verified in production:
+  `{"error":"token not allowlisted"}` for $ROBIN, allowlist cleared for a control
+  token). Pulled back out rather than left broken — the owner is building a
+  proper route for $ROBIN instead. Do not re-add it to `UNI_TOKENS` without
+  `UNISWAP_TOKENS` changing in the same deploy. Separately: the control token got
+  "No quotes available" from Uniswap upstream, so the desk may have no routable
+  liquidity for anything right now — worth checking before blaming the allowlist
+  for a future failure.
 
 - **main session** — $ROBIN added to the swap desk allowlist. NOTE FOR WHOEVER
   DEPLOYS: the frontend list in `pad/assets/config.js` is only half of it. The

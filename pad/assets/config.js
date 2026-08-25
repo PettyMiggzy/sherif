@@ -392,7 +392,6 @@ export const UNI_TOKENS = [
   "0x8f100e99ddf699320724e37cb866770381d47382", "0xc42cf61c16aac797b991cf9c1ac8ae70ba74a286",
   "0x38bb87cf3e7344a82be7cd671c191f015b97eee6", "0x86e5ac7ec60eeec0a8989f1f1d617ae18c15fa0c",
   "0x41f41f7b849a25e027876c485544c8088f447a11",
-  "0x6696fe29288b586017e6f264c0091dba6c5ebeaf", // $ROBIN — the platform token; must also be in the indexer's UNISWAP_TOKENS env or the proxy rejects it
 ];
 export const UNI_FEE_BPS = 125; // our 1.25%/side integrator fee (matches the server); shown to the user, taken in-swap
 export const isUniToken = (a) => UNI_TOKENS.includes(String(a || "").toLowerCase());
