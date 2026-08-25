@@ -556,6 +556,25 @@ async function guardedSend(contract, method, args, valueWei, label, fallbackGas 
   } catch (e) { throw friendly(e, label); }
 }
 
+// Approvals are the one call a wallet's risk engine looks hardest at, and they used to be the one call here
+// that skipped guardedSend's eth_call preflight. So they get their own guard: simulate the exact approve as
+// the connected account BEFORE asking for a signature, so a doomed approval (a token that reverts on a
+// non-zero-to-non-zero allowance, a paused token, a wrong spender) is caught by us with a readable message
+// rather than by the wallet with a red warning screen. Never sends anything; it is a read.
+//
+// The allowance itself is already the shape a risk engine wants: exact-amount, never infinite, to one of our
+// own contracts. That is Rule 1 in this file and it is why the Trading API's approve(Permit2, MaxUint256) is
+// rewritten down to the sell amount at the check_approval path.
+async function guardedApprove(erc, spender, amount, label) {
+  await ensureOnChain();
+  try {
+    await erc.approve.staticCall(spender, amount, { from: _account });
+  } catch (e) {
+    throw friendly(e, label || "approve");
+  }
+  return erc.approve(spender, amount, await legacyOverrides());
+}
+
 // Legacy-tx overrides for user-signed calls that DON'T go through guardedSend
 // (approve). The chain lacks eth_maxPriorityFeePerGas, so a default type-2 tx
 // throws -32601 and corrupts the wallet's fee/balance state. Force a fully-priced
@@ -616,8 +635,8 @@ export async function disperse(token, recipients, amounts) {
     // USDT-safe: a token that forbids a non-zero -> non-zero approve needs the stale allowance reset to 0
     // first. Reset when it's non-zero OR unknown (a redundant reset is harmless for a normal token), so a
     // transient allowance-read failure can't skip the reset and make the second approve revert.
-    if (cur === null || cur > 0n) { const z = await erc.approve(CONTRACTS.disperse, 0n, await legacyOverrides()); await z.wait(); }
-    const atx = await erc.approve(CONTRACTS.disperse, total, await legacyOverrides());
+    if (cur === null || cur > 0n) { const z = await guardedApprove(erc, CONTRACTS.disperse, 0n, "reset allowance"); await z.wait(); }
+    const atx = await guardedApprove(erc, CONTRACTS.disperse, total, "approve airdrop");
     await atx.wait();
   }
   const d = new ethers.Contract(CONTRACTS.disperse, ABIS.disperse, _signer);
@@ -788,7 +807,7 @@ export async function sell({ token, tokenAmount, slippagePct = 8 }) {
 
   const allowance = await erc.allowance(_account, CONTRACTS.padRouter);
   if (allowance < amountIn) {
-    const atx = await erc.approve(CONTRACTS.padRouter, amountIn, await legacyOverrides()); // exact amount, our router; legacy tx (no 1559 on this chain)
+    const atx = await guardedApprove(erc, CONTRACTS.padRouter, amountIn, "approve sell"); // exact amount, our router
     await atx.wait();
   }
 
@@ -1402,7 +1421,7 @@ export async function createVestingLock(token, beneficiary, amount, startTs = 0,
   const erc = new ethers.Contract(token, ABIS.erc20, _signer);
   const allowance = await erc.allowance(_account, lock);
   if (allowance < amt) {
-    const atx = await erc.approve(lock, amt, await legacyOverrides()); // exact amount, our lock only, legacy tx
+    const atx = await guardedApprove(erc, lock, amt, "approve lock"); // exact amount, our lock only
     await atx.wait();
   }
   const dur = BigInt(Math.max(1, Math.round(durationDays * VEST_DAY)));
@@ -1598,7 +1617,13 @@ export async function uniEnsureApproval({ token, side, amountWei }) {
     data = UNI_APPROVE_IFACE.encodeFunctionData("approve", [dec.args[0], BigInt(amountWei)]);
   } catch { /* not a standard approve; leave as-is (spender is proxy-verified as Permit2) */ }
   const o = await legacyOverrides();
-  const tx = await _signer.sendTransaction({ to: ap.to, data, value: ap.value ? BigInt(ap.value) : 0n, ...o });
+  const value = ap.value ? BigInt(ap.value) : 0n;
+  // Preflight it like every other send here. This is the last path that reached the wallet unsimulated, and it
+  // is an approval, which is the call a wallet's risk engine scrutinises hardest — a revert surfacing as our
+  // message beats one surfacing as their warning screen.
+  try { await _read.call({ to: ap.to, data, value, from: _account }); }
+  catch (e) { throw friendly(e, "Approve"); }
+  const tx = await _signer.sendTransaction({ to: ap.to, data, value, ...o });
   await tx.wait();
   return true;
 }
@@ -1774,8 +1799,8 @@ export async function stakingStake(pool, amountWei) {
   let cur = null;
   try { cur = await erc.allowance(_account, pool); } catch { cur = null; }
   if (cur === null || cur < amount) {
-    if (cur === null || cur > 0n) { const z = await erc.approve(pool, 0n, await legacyOverrides()); await z.wait(); }
-    const a = await erc.approve(pool, amount, await legacyOverrides()); await a.wait();
+    if (cur === null || cur > 0n) { const z = await guardedApprove(erc, pool, 0n, "reset allowance"); await z.wait(); }
+    const a = await guardedApprove(erc, pool, amount, "approve stake"); await a.wait();
   }
   return guardedSend(s, "stake", [amount], 0n, "Stake");
 }
