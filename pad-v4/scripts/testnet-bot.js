@@ -8,6 +8,7 @@ const { ethers, network } = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 const { mineHookSalt, hookInitCode } = require("./mine");
+const { bindSalt } = require("../test/helpers/brand");
 
 const POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
 const MIN = 4295128739n + 1n, MAX = 1461446703485210103287273052203988822378723970342n - 1n;
@@ -45,7 +46,7 @@ async function main() {
   const TokenF = await ethers.getContractFactory("PadToken");
   const tokenSalt = ethers.id("rtest-" + Date.now());
   const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, 18, cfg.supply, C.curveFactory])]);
-  const predicted = ethers.getCreate2Address(C.deterministicDeployer, tokenSalt, ethers.keccak256(tokenInit));
+  const predicted = ethers.getCreate2Address(C.deterministicDeployer, bindSalt(cfg, tokenSalt), ethers.keccak256(tokenInit));
   const HookF = await ethers.getContractFactory("RobinFeeHook");
   const { salt: hookSalt } = mineHookSalt(C.deterministicDeployer, hookInitCode(HookF.bytecode, POOL_MANAGER, C.curveFactory, C.feeWalletRegistry, predicted));
   const curveSalt = ethers.id("rtest-curve-" + Date.now());

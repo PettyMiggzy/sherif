@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
-const { brandedTokenSalt } = require("../helpers/brand");
+const { bindSalt, brandedTokenSalt } = require("../helpers/brand");
 
 // [brand] Every Robin pad token address must end in `1ab5`. This is enforced IN THE CONTRACT
 // (PadBrand.requireBrand, called by all three factories' launch), never merely by the launch tooling — an
@@ -58,7 +58,7 @@ describe("[brand] pad token addresses are contract-forced to end in 1ab5", () =>
       TokenF.bytecode,
       abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await S.factory.getAddress()]),
     ]);
-    const predicted = ethers.getCreate2Address(await S.dep.getAddress(), tokenSalt, ethers.keccak256(init));
+    const predicted = ethers.getCreate2Address(await S.dep.getAddress(), bindSalt(cfg, tokenSalt), ethers.keccak256(init));
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const { salt } = mineHookSalt(
       await S.dep.getAddress(),

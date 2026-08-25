@@ -77,4 +77,15 @@ async function brandedTokenSalt(deployerAddr, factoryAddr, cfg, baseSalt, extraO
   return salt;
 }
 
-module.exports = { brandedTokenSalt, tokenInitCode, bindSalt, bindSaltFast };
+/// THE one place a pad token's address is predicted off-chain.
+///
+/// The factories hash `keccak256(abi.encode(cfg, tokenSalt))` before CREATE2, so predicting from the raw
+/// `tokenSalt` yields an address that will never exist. That is not a harmless mistake: the fee hook's
+/// init-code embeds the token address, so a wrong prediction mines a hook the factory cannot reach and the
+/// launch fails somewhere far away from the cause. Every call site that needs the address goes through here.
+function predictPadToken(deployerAddr, factoryAddr, cfg, tokenSalt, TokenBytecode) {
+  const init = tokenInitCode(TokenBytecode, cfg, factoryAddr);
+  return ethers.getCreate2Address(deployerAddr, bindSalt(cfg, tokenSalt), ethers.keccak256(init));
+}
+
+module.exports = { brandedTokenSalt, tokenInitCode, bindSalt, bindSaltFast, predictPadToken };

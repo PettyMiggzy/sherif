@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
-const { brandedTokenSalt, tokenInitCode } = require("../helpers/brand");
+const { predictPadToken, brandedTokenSalt, tokenInitCode } = require("../helpers/brand");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Feature 4 — RobinBlue stock-pad launch against the LIVE V4 stack, using a MockStock as the quote
@@ -63,9 +63,8 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
     const tokenSalt = await brandedTokenSalt(
       depAddr, factoryAddr, cfg, ethers.id("robin-nvda-1"), (a) => BigInt(a) > BigInt(stockAddr)
     );
-    const predictedToken = ethers.getCreate2Address(
-      depAddr, tokenSalt, ethers.keccak256(tokenInitCode(TokenF.bytecode, cfg, factoryAddr))
-    );
+    // cfg-bound salt: predict via the shared helper, never from the raw tokenSalt (see helpers/brand.js).
+    const predictedToken = predictPadToken(depAddr, factoryAddr, cfg, tokenSalt, TokenF.bytecode);
 
     // mine the hook salt (token in init-code)
     const HookF = await ethers.getContractFactory("RobinFeeHook");

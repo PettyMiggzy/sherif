@@ -8,7 +8,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
-const { brandedTokenSalt, tokenInitCode } = require("../helpers/brand");
+const { bindSalt, brandedTokenSalt, tokenInitCode } = require("../helpers/brand");
 
 const FLAGS = 0xccn, MASK = 0x3fffn;
 const SQRT_1_1 = 79228162514264337593543950336n;
@@ -73,7 +73,7 @@ describe("H-4 — the stock seed's remainder goes back to whoever paid it", () =
 
     const tokenSalt = await brandedTokenSalt(depAddr, factoryAddr, cfg, undefined,
       (addr) => BigInt(addr) > BigInt(stockAddr));
-    const tokenAddr = ethers.getCreate2Address(depAddr, tokenSalt,
+    const tokenAddr = ethers.getCreate2Address(depAddr, bindSalt(cfg, tokenSalt),
       ethers.keccak256(tokenInitCode(PadToken.bytecode, cfg, factoryAddr)));
 
     let hookSalt;

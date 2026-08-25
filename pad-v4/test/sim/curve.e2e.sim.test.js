@@ -2,7 +2,7 @@ const { ethers, network } = require("hardhat");
 const { expect } = require("chai");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
-const { brandedTokenSalt } = require("../helpers/brand");
+const { bindSalt, brandedTokenSalt } = require("../helpers/brand");
 
 // SIM E2E — the full trade lifecycle THROUGH THE REAL FEE HOOK on a real local Uniswap v4 PoolManager.
 // Proves the things that burned us before, across different dev-buy + airdrop shapes:
@@ -60,7 +60,7 @@ async function launchPad(S, deployer, creator, tag, { supply, curveSupply, reser
     TokenF.bytecode,
     abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await S.factory.getAddress()]),
   ]);
-  const predictedToken = ethers.getCreate2Address(await S.dep.getAddress(), tokenSalt, ethers.keccak256(tokenInit));
+  const predictedToken = ethers.getCreate2Address(await S.dep.getAddress(), bindSalt(cfg, tokenSalt), ethers.keccak256(tokenInit));
   const HookF = await ethers.getContractFactory("RobinFeeHook");
   const { salt: hookSalt } = mineHookSalt(
     await S.dep.getAddress(),

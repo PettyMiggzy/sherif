@@ -12,6 +12,7 @@
  */
 const { ethers, network } = require("hardhat");
 const { mineHookSalt, hookInitCode } = require("./mine");
+const { bindSalt } = require("../test/helpers/brand");
 
 const A = {
   poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
@@ -66,7 +67,7 @@ async function launch(tag, creator, curveTok = 470_000) {
   const TokenF = await ethers.getContractFactory("PadToken");
   const tokenSalt = ethers.id("tok-" + tag);
   const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, 18, cfg.supply, A.factory])]);
-  const predicted = ethers.getCreate2Address(A.deployer, tokenSalt, ethers.keccak256(tokenInit));
+  const predicted = ethers.getCreate2Address(A.deployer, bindSalt(cfg, tokenSalt), ethers.keccak256(tokenInit));
   const HookF = await ethers.getContractFactory("RobinFeeHook");
   const { salt: hookSalt } = mineHookSalt(A.deployer, hookInitCode(HookF.bytecode, A.poolManager, A.factory, A.feeRegistry, predicted));
   const curveSalt = ethers.id("curve-" + tag);

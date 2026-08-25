@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
-const { brandedTokenSalt } = require("../helpers/brand");
+const { predictPadToken, brandedTokenSalt } = require("../helpers/brand");
 
 // Feature 5 (curve-on-V4) — the DEFINITIVE end-to-end proof against the LIVE V4 stack: launch a free
 // single-sided curve pad, buy it OUT (overshooting the ceiling), then graduate — asserting the ceiling
@@ -67,7 +67,8 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
       TokenF.bytecode,
       abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()]),
     ]);
-    const predictedToken = ethers.getCreate2Address(await dep.getAddress(), tokenSalt, ethers.keccak256(tokenInit));
+    // cfg-bound salt: predict via the shared helper, never from the raw tokenSalt (see helpers/brand.js).
+    const predictedToken = predictPadToken(await dep.getAddress(), await factory.getAddress(), cfg, tokenSalt, TokenF.bytecode);
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const { salt: hookSalt } = mineHookSalt(await dep.getAddress(), hookInitCode(HookF.bytecode, POOL_MANAGER, await factory.getAddress(), await reg.getAddress(), predictedToken));
     const curveSalt = ethers.id("rcrv-curve-1");

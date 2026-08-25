@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
-const { brandedTokenSalt } = require("../helpers/brand");
+const { bindSalt, brandedTokenSalt } = require("../helpers/brand");
 
 // SIM — Arrow migration launcher end to end, on a REAL local Uniswap v4 stack.
 // A dev arrives with ETH + a committed merkle root of their holders. In ONE tx ArrowLauncher.launch:
@@ -94,7 +94,7 @@ describe("SIM — Arrow migration launcher (buy out curve, graduate, airdrop to 
     const curveSalt = ethers.id("curve-" + tag);
     const TokenF = await ethers.getContractFactory("PadToken");
     const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, factoryAddr])]);
-    const predictedToken = ethers.getCreate2Address(depAddr, tokenSalt, ethers.keccak256(tokenInit));
+    const predictedToken = ethers.getCreate2Address(depAddr, bindSalt(cfg, tokenSalt), ethers.keccak256(tokenInit));
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const { salt: hookSalt } = mineHookSalt(depAddr, hookInitCode(HookF.bytecode, pmAddr, factoryAddr, regAddr, predictedToken));
     return { tokenSalt, hookSalt, curveSalt };

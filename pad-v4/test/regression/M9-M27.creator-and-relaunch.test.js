@@ -9,7 +9,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
-const { brandedTokenSalt } = require("../helpers/brand");
+const { bindSalt, brandedTokenSalt } = require("../helpers/brand");
 
 const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
@@ -165,7 +165,7 @@ describe("M-27 — a pad token can only be launched once per factory", () => {
     const init = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"],
       [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()])]);
     const tokenSalt = await brandedTokenSalt(depAddr, await factory.getAddress(), cfg, baseSalt);
-    const tokenAddr = ethers.getCreate2Address(depAddr, tokenSalt, ethers.keccak256(init));
+    const tokenAddr = ethers.getCreate2Address(depAddr, bindSalt(cfg, tokenSalt), ethers.keccak256(init));
     const hookInit = ethers.concat([HookF.bytecode, abi.encode(["address", "address", "address", "address"],
       [await pm.getAddress(), await factory.getAddress(), await reg.getAddress(), tokenAddr])]);
     const hookHash = ethers.keccak256(hookInit);

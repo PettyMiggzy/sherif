@@ -8,6 +8,7 @@
  */
 const { ethers } = require("hardhat");
 const { mineHookSalt, hookInitCode } = require("./mine");
+const { bindSalt } = require("../test/helpers/brand");
 
 const POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
 const ZERO = ethers.ZeroAddress;
@@ -78,7 +79,7 @@ async function main() {
   const TokenF = await ethers.getContractFactory("PadToken");
   const tokenSalt = ethers.id("e2e-" + Date.now());
   const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, 18, cfg.supply, await factory.getAddress()])]);
-  const predicted = ethers.getCreate2Address(await dd.getAddress(), tokenSalt, ethers.keccak256(tokenInit));
+  const predicted = ethers.getCreate2Address(await dd.getAddress(), bindSalt(cfg, tokenSalt), ethers.keccak256(tokenInit));
   const HookF = await ethers.getContractFactory("RobinFeeHook");
   const { salt: hookSalt } = mineHookSalt(await dd.getAddress(), hookInitCode(HookF.bytecode, POOL_MANAGER, await factory.getAddress(), await reg.getAddress(), predicted));
   const curveSalt = ethers.id("e2ec-" + Date.now()); // ONE salt for both the staticCall prediction and the real launch

@@ -8,7 +8,7 @@ const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { time, takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
-const { brandedTokenSalt } = require("../helpers/brand");
+const { bindSalt, brandedTokenSalt } = require("../helpers/brand");
 
 const abi = ethers.AbiCoder.defaultAbiCoder();
 const E = (x) => ethers.parseEther(String(x));
@@ -82,7 +82,7 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
     const tokenInit = ethers.concat([TokenF.bytecode,
       abi.encode(["string", "string", "uint8", "uint256", "address"],
         [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, factoryAddr])]);
-    const predictedToken = ethers.getCreate2Address(depAddr, tokenSalt, ethers.keccak256(tokenInit));
+    const predictedToken = ethers.getCreate2Address(depAddr, bindSalt(cfg, tokenSalt), ethers.keccak256(tokenInit));
     const { salt: hookSalt } = mineHookSalt(depAddr, hookInitCode(hookF.bytecode, pmAddr, factoryAddr, regAddr, predictedToken));
     const commitment = ethers.keccak256(abi.encode(["bytes32", "bytes32", "bytes32"], [tokenSalt, hookSalt, curveSalt]));
     return { tokenSalt, hookSalt, curveSalt, commitment, predictedToken };

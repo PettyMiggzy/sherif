@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
-const { brandedTokenSalt } = require("../helpers/brand");
+const { bindSalt, brandedTokenSalt } = require("../helpers/brand");
 const { startTickForFdv, assertInBand, approxStartTick } = require("../../scripts/valuation");
 
 // [FDV] CREATOR-CHOSEN SUPPLY.
@@ -70,7 +70,7 @@ describe("[FDV] creators choose their own supply; the FACTORY bounds the valuati
       TokenF.bytecode,
       abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await S.factory.getAddress()]),
     ]);
-    const predicted = ethers.getCreate2Address(await S.dep.getAddress(), tokenSalt, ethers.keccak256(init));
+    const predicted = ethers.getCreate2Address(await S.dep.getAddress(), bindSalt(cfg, tokenSalt), ethers.keccak256(init));
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const { salt: hookSalt } = mineHookSalt(
       await S.dep.getAddress(),

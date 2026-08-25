@@ -2,7 +2,7 @@ const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
-const { brandedTokenSalt } = require("../helpers/brand");
+const { brandedTokenSalt, predictPadToken } = require("../helpers/brand");
 
 // SIM — the trustless PresaleVault + PresaleVaultFactory end to end, on a REAL local Uniswap v4 stack.
 // A creator opens a refundable ETH presale (target + deadline + per-wallet cap) via the factory. Anyone deposits;
@@ -83,11 +83,9 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
     const tokenSalt = await brandedTokenSalt(depAddr, factoryAddr, cfg, ethers.id("tok-" + tag));
     const curveSalt = ethers.id("curve-" + tag);
     const TokenF = await ethers.getContractFactory("PadToken");
-    const tokenInit = ethers.concat([
-      TokenF.bytecode,
-      abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, factoryAddr]),
-    ]);
-    const predictedToken = ethers.getCreate2Address(depAddr, tokenSalt, ethers.keccak256(tokenInit));
+    // via the shared helper: the factory binds the cfg into the salt, so a raw-salt prediction is an address
+    // that never exists — and the hook is mined against this value, so a wrong one fails far from its cause.
+    const predictedToken = predictPadToken(depAddr, factoryAddr, cfg, tokenSalt, TokenF.bytecode);
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const { salt: hookSalt } = mineHookSalt(depAddr, hookInitCode(HookF.bytecode, pmAddr, factoryAddr, regAddr, predictedToken));
     // saltCommitment == keccak256(abi.encode(tokenSalt, hookSalt, curveSalt)) — revealed only in finalize()

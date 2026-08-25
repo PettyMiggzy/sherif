@@ -2,7 +2,7 @@ const { ethers } = require("hardhat");
 const abi = ethers.AbiCoder.defaultAbiCoder();
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode, HOOK_FLAGS, FLAG_MASK } = require("../../scripts/mine");
-const { brandedTokenSalt } = require("../helpers/brand");
+const { predictPadToken, brandedTokenSalt } = require("../helpers/brand");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Full one-tx ETH-pad launch against the LIVE V4 stack (PoolManager 0x8366 +
@@ -51,7 +51,8 @@ describe("PadFactory — full ETH-pad launch on live 0x8366", function () {
       TokenF.bytecode,
       abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()]),
     ]);
-    const predictedToken = ethers.getCreate2Address(await dep.getAddress(), tokenSalt, ethers.keccak256(tokenInit));
+    // cfg-bound salt: predict via the shared helper, never from the raw tokenSalt (see helpers/brand.js).
+    const predictedToken = predictPadToken(await dep.getAddress(), await factory.getAddress(), cfg, tokenSalt, TokenF.bytecode);
 
     // mine the hook salt against the exact init-code the factory will build (includes the token)
     const HookF = await ethers.getContractFactory("RobinFeeHook");

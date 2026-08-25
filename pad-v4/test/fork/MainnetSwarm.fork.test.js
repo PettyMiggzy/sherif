@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
-const { brandedTokenSalt } = require("../helpers/brand");
+const { predictPadToken, brandedTokenSalt } = require("../helpers/brand");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAINNET-FORK E2E SWARM — deploys the FULL new ETH-fee curve suite FRESH against the REAL mainnet v4 stack
@@ -74,7 +74,8 @@ describe("Mainnet-fork E2E swarm — new ETH-fee suite vs live v4", function () 
     // because the hook init-code embeds the predicted token address.
     const tokenSalt = await brandedTokenSalt(await dep.getAddress(), await factory.getAddress(), cfg, ethers.id("tok-" + tag));
     const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, 18, cfg.supply, await factory.getAddress()])]);
-    const predicted = ethers.getCreate2Address(await dep.getAddress(), tokenSalt, ethers.keccak256(tokenInit));
+    // cfg-bound salt: predict via the shared helper, never from the raw tokenSalt (see helpers/brand.js).
+    const predicted = predictPadToken(await dep.getAddress(), await factory.getAddress(), cfg, tokenSalt, TokenF.bytecode);
     const { salt: hookSalt } = mineHookSalt(await dep.getAddress(), hookInitCode(HookF.bytecode, POOL_MANAGER, await factory.getAddress(), await reg.getAddress(), predicted));
     const curveSalt = ethers.id("curve-" + tag);
     const [token, hook, curveAddr] = await factory.launch.staticCall(cfg, tokenSalt, hookSalt, curveSalt);

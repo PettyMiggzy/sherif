@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
-const { brandedTokenSalt } = require("../helpers/brand");
+const { bindSalt, brandedTokenSalt } = require("../helpers/brand");
 
 // SIM — CALIBRATION at the REAL production geometry (not the toy START=6000 the other sims use).
 // Ports the proven V3 curve to V4 and PROVES the headline economics on the actual V4 curve impl:
@@ -66,7 +66,7 @@ describe("SIM — production-geometry calibration (start ~$3.4k, graduate ~$34k,
     const curveSalt = ethers.id("cal-curve");
     const TokenF = await ethers.getContractFactory("PadToken");
     const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()])]);
-    const predictedToken = ethers.getCreate2Address(await dep.getAddress(), tokenSalt, ethers.keccak256(tokenInit));
+    const predictedToken = ethers.getCreate2Address(await dep.getAddress(), bindSalt(cfg, tokenSalt), ethers.keccak256(tokenInit));
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const { salt: hookSalt } = mineHookSalt(await dep.getAddress(), hookInitCode(HookF.bytecode, await pm.getAddress(), await factory.getAddress(), await reg.getAddress(), predictedToken));
 
