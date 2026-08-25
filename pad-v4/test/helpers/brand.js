@@ -10,6 +10,19 @@ const { mineTokenSalt } = require("../../scripts/mine");
 // that launches the same pad shape repeatedly pays for it once.
 const _cache = new Map();
 
+// The exact preimage the factories hash: keccak256(abi.encode(cfg, tokenSalt)). Mining has to reproduce it
+// bit for bit or it finds addresses the factory will never deploy to. Field order and types mirror
+// LaunchConfig in contracts/interfaces/ICurvePadFactoryV4.sol.
+const CFG_TUPLE = "(string,string,uint8,uint256,uint256,uint256,int24,int24,address)";
+function bindSalt(cfg, tokenSalt) {
+  return ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      [CFG_TUPLE, "bytes32"],
+      [[cfg.name, cfg.symbol, cfg.decimals, cfg.supply, cfg.curveSupply, cfg.reserveSupply, cfg.tickSpacing, cfg.startTickMag, cfg.creator], tokenSalt]
+    )
+  );
+}
+
 function tokenInitCode(TokenBytecode, cfg, factoryAddr) {
   return ethers.concat([
     TokenBytecode,
@@ -35,9 +48,12 @@ async function brandedTokenSalt(deployerAddr, factoryAddr, cfg, baseSalt, extraO
 
   // `extraOk` is evaluated INSIDE the mining loop (only on a suffix hit), so a stock pad's second
   // constraint costs one extra comparison per hit rather than a discarded 65k-try pass.
-  const salt = mineTokenSalt(deployerAddr, init, seed, extraOk ? { accept: extraOk } : {}).salt;
+  const salt = mineTokenSalt(deployerAddr, init, seed, {
+    ...(extraOk ? { accept: extraOk } : {}),
+    saltWrap: (cand) => bindSalt(cfg, cand),
+  }).salt;
   _cache.set(key, salt);
   return salt;
 }
 
-module.exports = { brandedTokenSalt, tokenInitCode };
+module.exports = { brandedTokenSalt, tokenInitCode, bindSalt };

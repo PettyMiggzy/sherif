@@ -32,7 +32,7 @@ function mineHookSalt(deployerAddr, initCode, maxTries = 5_000_000) {
 /// Returns the mined salt plus the address it produces, so the caller can feed the SAME predicted token into
 /// the hook init-code (the hook's constructor takes the token, so token mining MUST run first).
 function mineTokenSalt(deployerAddr, initCode, baseSalt, opts = {}) {
-  const { suffix = CA_SUFFIX, maxTries = 20_000_000, accept } = opts;
+  const { suffix = CA_SUFFIX, maxTries = 20_000_000, accept, saltWrap } = opts;
   const initCodeHash = ethers.keccak256(initCode);
   const want = suffix.toString(16).padStart(4, "0"); // "1ab5" — the last 4 hex chars of the address
 
@@ -46,10 +46,28 @@ function mineTokenSalt(deployerAddr, initCode, baseSalt, opts = {}) {
   buf.set(ethers.getBytes(initCodeHash), 53);
   const view = new DataView(buf.buffer);
 
+  // The factories no longer hand the caller's salt to CREATE2 raw — they fold the whole LaunchConfig in
+  // first, so a replayer cannot change a field and still land on the mined address. Mining has to apply the
+  // same transform or every address it finds is one the factory will never reach. `saltWrap` maps a candidate
+  // to the salt the deployer will actually see.
+  //
+  // The candidate is counted in its OWN buffer rather than in `buf`. Counting in `buf` works only while the
+  // salt region still holds the candidate; once a wrapped value is written there, the next iteration's
+  // counter lands in the middle of a hash and the search stops enumerating anything.
+  const candBuf = saltWrap ? ethers.getBytes(baseSalt).slice() : null;
+  const candView = candBuf ? new DataView(candBuf.buffer) : null;
+
   for (let i = 0; i < maxTries; i++) {
     // Vary only the salt's LAST 8 bytes; the leading 24 bytes stay the per-pad `baseSalt`, so two pads with
     // byte-identical token init-code still search disjoint salt space and can never land on the same address.
-    view.setUint32(49, i, false); // bytes [49,53) — the tail of the salt region
+    let candidate = null;
+    if (saltWrap) {
+      candView.setUint32(28, i, false); // bytes [28,32) of the 32-byte candidate
+      candidate = ethers.hexlify(candBuf);
+      buf.set(ethers.getBytes(saltWrap(candidate)), 21);
+    } else {
+      view.setUint32(49, i, false); // bytes [49,53) — the tail of the salt region
+    }
     const h = ethers.keccak256(buf);
     if (h.endsWith(want)) {
       const addr = ethers.getAddress("0x" + h.slice(26));
@@ -57,7 +75,8 @@ function mineTokenSalt(deployerAddr, initCode, baseSalt, opts = {}) {
       // ordering). Checked inside this loop — and only on a suffix hit, so it costs nothing on the hot
       // path — rather than by re-running whole 65k-try passes and discarding the losers.
       if (accept && !accept(addr)) continue;
-      const salt = ethers.hexlify(buf.slice(21, 53));
+      // Return the CANDIDATE, not the wrapped value — the candidate is what the caller passes to `launch`.
+      const salt = candidate ?? ethers.hexlify(buf.slice(21, 53));
       return { salt, addr, initCodeHash, tries: i + 1 };
     }
   }
