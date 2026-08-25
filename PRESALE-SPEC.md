@@ -52,16 +52,26 @@ One `PresaleVault` per presale, EIP-1167 clone.
 Bounds: target ≥ 0.01 ETH, duration 1 hour – **90 days** (raised from 30 on your call),
 grace 1 hour – 7 days.
 
-Trust model: no owner, no admin, no operator. ETH leaves the vault only as the pooled buy or
-as a refund to the wallet that deposited it. Launch salts are commit-reveal so the pool
+Trust model: no owner, no admin, no operator. ETH leaves the vault only as the pooled buy, as
+a refund to the wallet that deposited it, or as the platform's 10% cut of a raise that
+succeeded (see section 3 — this is now BUILT). Launch salts are commit-reveal so the pool
 cannot be sniped before it exists; if someone lands the launch first the presale marks
 itself Failed and refunds open. It cannot brick and cannot be drained.
 
-## 3. Decided, not yet built
+## 3. Built
 
-**10% of the raise to the platform.** Nothing takes a fee anywhere in the presale today —
-not to open one, not on the raise. This is the largest gap between the code and the product
-you described.
+**10% of the raise to the platform.** Taken off the top in `finalize()`, so the pooled curve
+buy gets 90% of the raise and the platform pulls the rest via `withdrawPlatformFee()`.
+
+It only ever touches a raise that WORKED. `fail()` leaves `platformFee` at zero and every
+refund is the whole deposit, so the strongest promise the vault makes survives intact.
+`totalRaised` is untouched because it is the pro-rata denominator; the cut is subtracted from
+what the buy may spend and again from the ETH-back pool.
+
+Paid by pull rather than push: a platform wallet that reverts on receive would otherwise
+revert `finalize` and convert a fully-funded raise into a Failed presale. The destination is
+read from the fee registry and is not a caller parameter, so the permissionless withdraw can
+only move the platform's own money to the platform.
 
 It needs one decision before it can be written, because it breaks a promise the contract
 currently makes in its own header — *"ETH NEVER touches the creator"* — and the honest

@@ -120,8 +120,10 @@ spend.
 **3b. Target missed → 100% refunds.** Also refunds if the launch gets sniped, or via a grace-period escape hatch.
 
 ## Where the money goes
-**ETH never touches the creator.** It leaves the vault only as (a) the pooled curve buy or (b) a refund/claim to
-the person who deposited it. After that it's a normal Pad 2 curve — same taxes, same waterfall.
+**ETH never touches the creator.** It leaves the vault only as (a) the pooled curve buy, (b) a refund/claim to
+the person who deposited it, or (c) Robin Labs' 10% of a raise that hit its target. A presale that misses its
+target pays no fee at all — every refund is the whole deposit. After that it's a normal Pad 2 curve — same
+taxes, same waterfall.
 
 ## Staking
 Same as Pad 2 once launched.

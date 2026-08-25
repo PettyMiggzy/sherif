@@ -81,10 +81,6 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         string symbol;
         address dev;
         TaxParams tax;
-        // Caller-supplied CREATE2 salt, so a creator can mine their coin's address ending (the pad's default is
-        // `1ab5`, but any ending is allowed — it is a choice, not a rule, and nothing here enforces one).
-        // Zero means "factory picks", which reproduces the old unpredictable-salt behaviour exactly.
-        bytes32 tokenSalt;
     }
 
     struct Record {
@@ -188,7 +184,30 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     /// @dev The original entrypoint, unchanged for every existing caller: the factory's default supply at the
     /// factory's default launch price. Identical to `launchWithSupply(p, 0, 0)`.
     function launch(LaunchParams calldata p) external payable nonReentrant returns (address token, address curve, address pool) {
-        return _launch(p, 0, 0);
+        return _launch(p, 0, 0, bytes32(0));
+    }
+
+    /// @notice `launch`, with the creator supplying a mined CREATE2 salt so their coin's address ends how they
+    /// chose (the pad defaults to `1ab5`; any ending is allowed — it is an option, not a rule, and nothing here
+    /// enforces one). Separate from `launch` on purpose: `LaunchParams` is a published ABI that bots, the SDK
+    /// and the site all encode, so the branded path is additive rather than a breaking tuple change.
+    function launchWithSalt(LaunchParams calldata p, bytes32 tokenSalt)
+        external
+        payable
+        nonReentrant
+        returns (address token, address curve, address pool)
+    {
+        return _launch(p, 0, 0, tokenSalt);
+    }
+
+    /// @notice Creator-chosen supply AND a mined address ending, in one call.
+    function launchWithSupplyAndSalt(LaunchParams calldata p, uint256 supply, int24 startTickMag, bytes32 tokenSalt)
+        external
+        payable
+        nonReentrant
+        returns (address token, address curve, address pool)
+    {
+        return _launch(p, supply, startTickMag, tokenSalt);
     }
 
     /// @notice Same launch, with the creator choosing their own SUPPLY and their own LAUNCH PRICE.
@@ -206,10 +225,10 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         nonReentrant
         returns (address token, address curve, address pool)
     {
-        return _launch(p, supply, startTickMag);
+        return _launch(p, supply, startTickMag, bytes32(0));
     }
 
-    function _launch(LaunchParams calldata p, uint256 supply_, int24 startTickMag_)
+    function _launch(LaunchParams calldata p, uint256 supply_, int24 startTickMag_, bytes32 tokenSalt_)
         internal
         returns (address token, address curve, address pool)
     {
@@ -259,18 +278,22 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         });
         // A creator who mined an address ending supplies the salt; everyone else gets the old behaviour.
         //
-        // The block.number/block.timestamp entropy below exists to stop an attacker predicting the token — and
-        // therefore its Uniswap pool — and pre-creating that pool to brick the launch. Letting the caller name
-        // the salt gives that prediction away, which is safe here because the defence does not actually live at
-        // this layer: `LaunchTokenDeployer.deploy` folds msg.sender into the CREATE2 salt, so an attacker
-        // calling the deployer directly with this exact salt lands on a DIFFERENT address and cannot occupy
-        // ours. See the comment on that function — "the collision is gone". Robinhood Chain's single-sequencer
-        // FCFS ordering with no public mempool removes the race a mined salt would otherwise expose.
+        // The salt is bound to msg.sender HERE, at the factory. That is load-bearing and was got wrong once:
+        // `LaunchTokenDeployer.deploy` also folds msg.sender in, but on this path msg.sender IS THE FACTORY —
+        // one constant address for every creator — so that fold separates a direct caller of the public
+        // deployer from the factory, and separates nothing between two creators going through `launch()`.
         //
-        // A salt already used by this factory reverts inside CREATE2, which is the correct outcome: the launch
-        // fails, nothing is written, and the creator mines another.
-        bytes32 salt = p.tokenSalt != bytes32(0)
-            ? p.tokenSalt
+        // Without this binding the CREATE2 preimage is (deployer, keccak(factory, tokenSalt), keccak(initcode ++
+        // name, symbol, supply, factory, guard)) — every component public or caller-supplied, and `p.dev` in
+        // none of them, because LaunchToken's constructor does not take it. So anyone who learned a salt could
+        // land on that exact address with THEMSELVES as dev and their own tax settings. A salt leaks the moment
+        // a launch tx is mined, including a REVERTED one, whose calldata is in block history forever.
+        //
+        // Folding msg.sender in makes the address unreproducible by anyone else: a different caller mining the
+        // same target ending gets a different salt and a different address. Mining still works — the client
+        // mines over `keccak(msg.sender, candidate)`.
+        bytes32 salt = tokenSalt_ != bytes32(0)
+            ? keccak256(abi.encodePacked(msg.sender, tokenSalt_))
             : keccak256(
                 abi.encodePacked(address(this), p.dev, p.name, p.symbol, block.number, block.timestamp, allTokens.length)
             );

@@ -27,10 +27,14 @@ import {IFeeWalletRegistry} from "../interfaces/IRobinInterfaces.sol";
 /// presale with a TARGET + DEADLINE + per-wallet cap; anyone deposits ETH and can REFUND in full any time the
 /// presale fails. If the target is reached, `finalize()` launches the curve AND does the first curve buy ATOMICALLY
 /// in one tx, and presalers pull their tokens PRO-RATA at the resulting curve price (plus a pro-rata refund of any
-/// ETH the buy didn't spend). ETH NEVER touches the creator — it leaves the vault only as (a) the pooled curve buy
-/// or (b) a refund/claim to the very depositor who put it in.
+/// ETH the buy didn't spend). ETH NEVER touches the creator — it leaves the vault only as (a) the pooled curve buy,
+/// (b) a refund/claim to the very depositor who put it in, or (c) the platform's PLATFORM_FEE_BPS cut of a raise
+/// that SUCCEEDED, which is taken once in finalize() and pulled by withdrawPlatformFee(). A presale that fails
+/// takes no cut at all: every refund is the whole deposit.
 ///
-/// Trust model: no owner, no admin, no operator. Salts are COMMIT-REVEAL — only a preimage-holder (the creator, or
+/// Trust model: no owner, no admin, no operator over the vault itself. The one address it defers to is the
+/// destination of that platform cut, which it reads from FeeWalletRegistry — a contract with its own owner and a
+/// 2-day timelock. Nothing else here is settable by anyone. Salts are COMMIT-REVEAL — only a preimage-holder (the creator, or
 /// anyone they share it with) can finalize, so the freshly-launched pool is un-addressable until the reveal.
 /// [M-22] The commitment is SINGLE-USE: the salts become PUBLIC the moment ANY `finalize` tx is mined — including a
 /// REVERTED one, whose calldata is in block history forever, on any chain (a single-sequencer FCFS L2 with no public
@@ -364,6 +368,17 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     // ── claim (after success) ─────────────────────────────────────────────────────────
 
     /// @notice Pull your pro-rata tokens (+ pro-rata refund of unspent ETH). One-shot.
+    function claim() external nonReentrant {
+        _claim(msg.sender, msg.sender);
+    }
+
+    /// @notice Same as claim() but routes BOTH the token and the ETH to `to` (for a contract contributor that
+    /// reverts on a plain ETH receive). Value still only ever goes where the contributor directs.
+    function claimTo(address to) external nonReentrant {
+        if (to == address(0)) revert BadParams();
+        _claim(msg.sender, to);
+    }
+
     /// @notice Pay the platform's accrued cut to the wallet the fee registry names right now. Permissionless —
     /// the destination is not a parameter, so a caller can only push the platform's own money to the platform.
     /// Pull rather than push because a wallet that reverts on receive would otherwise revert `finalize` and
@@ -377,17 +392,6 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         (bool ok,) = payable(to).call{value: amt}("");
         if (!ok) revert EthSendFailed();
         emit PlatformFeePaid(to, amt);
-    }
-
-    function claim() external nonReentrant {
-        _claim(msg.sender, msg.sender);
-    }
-
-    /// @notice Same as claim() but routes BOTH the token and the ETH to `to` (for a contract contributor that
-    /// reverts on a plain ETH receive). Value still only ever goes where the contributor directs.
-    function claimTo(address to) external nonReentrant {
-        if (to == address(0)) revert BadParams();
-        _claim(msg.sender, to);
     }
 
     /// @dev The ONE place a contributor's payout is computed. `previewClaim` and `_claim` both route through
