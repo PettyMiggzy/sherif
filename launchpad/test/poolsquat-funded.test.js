@@ -99,29 +99,21 @@ describe("[F-1] an out-of-range WETH-only squat is repaired, not fatal", functio
 
     // --- the launch ---
     const params = { name: "Robin Meme", symbol: "MEME", dev: dev.address, tax: NOTAX(dev.address) };
-    let err = null, rc = null;
-    try { rc = await (await factory.connect(dev).launchWithSalt(params, salt)).wait(); }
-    catch (e) { err = e; }
-    console.log("LAUNCH RESULT:", err ? ("REVERTED: " + (err.shortMessage || err.message)) : "SUCCEEDED");
-    if (rc) {
-      const ev = rc.logs.map((l)=>{try{return factory.interface.parseLog(l);}catch{return null;}}).find(e=>e&&e.name==="Launched");
-      console.log("launched token:", ev.args.token, "expected:", token, "match:", ev.args.token===token);
-      const artD = await ethers.getContractFactory("LaunchToken");
-      const innerD = ethers.keccak256(ethers.solidityPacked(["address","bytes32"],[dev.address, salt]));
-      const outerD = ethers.keccak256(ethers.solidityPacked(["address","bytes32"],[await factory.getAddress(), innerD]));
-      const gD = { deadSecs:0, phase1Secs:0, antiSnipeSecs:0, maxTxBps1:0, maxWalletBps1:0, maxTxBps2:0, maxWalletBps2:0, cooldownSecs:0 };
-      const initD = ethers.concat([artD.bytecode, artD.interface.encodeDeploy(["Robin Meme","MEME",SUPPLY,await factory.getAddress(),gD])]);
-      console.log("inner",innerD,"outer",outerD,"initHash",ethers.keccak256(initD));
-      console.log("recompute:", ethers.getCreate2Address(await ltd.getAddress(), outerD, ethers.keccak256(initD)));
-      console.log("ltd:", await ltd.getAddress(), "factory:", await factory.getAddress());
-      console.log("token code len:", (await ethers.provider.getCode(ev.args.token)).length, " runtime match:", (await ethers.provider.getCode(ev.args.token)) === artD.interface ? "" : "");
-      console.log("launched pool :", ev.args.pool, "squatted pool:", poolAddr, "match:", ev.args.pool===poolAddr);
-      const curve = await ethers.getContractAt("CurvePool", ev.args.curve);
-      console.log("PoolPriceRepaired emitted:", rc.logs.some(l=>{try{return curve.interface.parseLog(l).name==="PoolPriceRepaired";}catch{return false;}}));
-    }
-    console.log("slot0 after:", (await pool.slot0())[0].toString(), " want:", getSqrtRatioAtTick(startTick).toString());
-    console.log("liquidity after:", (await pool.liquidity()).toString());
+    const rc = await (await factory.connect(dev).launchWithSalt(params, salt)).wait();
 
+    // The assertions this file existed for, and did not have. It previously only checked that the token had
+    // no code BEFORE the squat, then logged the outcome — so it passed just as happily while the launch
+    // reverted, which is exactly how it read when the one-wei brick was still open.
+    const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
+      .find((e) => e && e.name === "Launched");
+    expect(ev, "the launch did not emit Launched — the funded squat bricked it").to.not.equal(undefined);
+    expect(ev.args.token).to.equal(token);       // still the mined address, not a fresh one
+    expect(ev.args.pool).to.equal(poolAddr);     // the squatter's pool, repaired in place
 
+    const curve = await ethers.getContractAt("CurvePool", ev.args.curve);
+    expect(await curve.seeded()).to.equal(true);
+    expect((await pool.slot0())[1]).to.equal(await curve.startTick()); // landed on OUR tick, not theirs
+    const repaired = rc.logs.some((l) => { try { return curve.interface.parseLog(l).name === "PoolPriceRepaired"; } catch { return false; } });
+    expect(repaired).to.equal(true);             // and it went through the repair path to get there
   });
 });

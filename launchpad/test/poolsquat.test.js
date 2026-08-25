@@ -13,10 +13,11 @@ const V3_POOL_ART = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.
 // could brick a published contract address permanently for the cost of one initialize().
 //
 // CurvePool now repairs it in seed(): a swap against zero liquidity crosses no ticks and trades nothing, so it
-// walks the price back to the start tick for free. A squatter who also FUNDS the pool cannot be walked back for
-// free, and that case still reverts — costing them real liquidity instead of one cheap call. That funded case
-// is not asserted here and deliberately so: minting a position needs the token to have code, so it is only
-// reachable in the launch's own block, which single-sequencer FCFS ordering forecloses.
+// walks the price back to the start tick for free. A squatter who also FUNDS the pool is paid through with a
+// bounded budget — see poolsquat-funded.test.js, which is the case this comment used to wave away as
+// unreachable. It is very reachable: minting needs only the side of the range that is in range, so a WETH-only
+// position costs one wei and never touches the codeless token address. Believing otherwise is what left the
+// one-wei brick open.
 //
 // This runs against the REAL @uniswap/v3-core bytecode deployed locally, not the repo's mock and not a fork.
 // The mock cannot mint the concentrated position CurvePool seeds, and a fork of the public node is far too slow

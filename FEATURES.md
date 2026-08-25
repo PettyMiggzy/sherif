@@ -16,7 +16,7 @@ v4-only is NOT in what ships, however finished it is.
 | A2 | Creator's atomic opening buy, **uncapped** | ✅ | inside the launch tx, ahead of everyone |
 | A3 | **Creator picks supply** | ⚠️ **contract only** | `launchWithSupply` built + fork-tested; UI calls old `launch()`, no input, still says "fixed 1B" |
 | A4 | **Creator picks launch valuation** | ⚠️ **contract only** | `startTickMag` + FDV band; same UI gap as A3 |
-| A5 | **Creator picks their CA ending, default `1ab5`** | ❌ **NOT BUILT ANYWHERE** | see BRAND below — this is the one I had wrong |
+| A5 | **Every CA ends in `1ab5`** | ⚠️ **contract only** | `launchWithSalt` / `launchWithSupplyAndSalt` on v3; `PadBrand.requireBrand` on all three v4 factories. No client mines yet — `pad/assets/config.js`, `sdk/robinlabs.mjs`, `launchbot/config.js` still call plain `launch()`. Creators do NOT choose the ending: owner decision, it is a fixed brand |
 | A6 | Creator picks fee rate 1%–4% per side | ✅ | `TaxParams`; UI exposes it |
 | A7 | No anti-snipe guard | ✅ | zero `GuardConfig`, pinned on a live fork |
 | A8 | Anti-DoS launch (unpredictable token address) | ✅ | but see BRAND — it is what blocks A5 |
@@ -31,13 +31,23 @@ You want **creators to pick their own address ending, defaulting to `1ab5`**. Ne
   salt itself from `block.number`/`block.timestamp`, so it is unmineable by design.
 
 To get what you actually want, on the pad that ships:
-1. Accept a caller-supplied `tokenSalt` in the launch params (this is the real change — it replaces the block
-   entropy, which is safe because `LaunchTokenDeployer` already folds `msg.sender` into the salt and that is
-   what defeats the pre-init DoS; FCFS removes the mempool race).
-2. Enforce **only** that the address ends in the creator's chosen suffix — defaulting to `1ab5` when they do
-   not pick one — rather than forcing one global value.
-3. Mine it in the browser. `1ab5` alone is ~65k tries (~2s plain JS, far less with WASM keccak); each extra
-   chosen hex character multiplies the work by 16, so cap the length (hood.dev caps at 6).
+1. **Do NOT re-add `tokenSalt` to `LaunchParams`.** That was tried and reverted: the fifth struct field moved
+   the `launch` selector and broke the SDK, launchbot, `pad/assets/config.js` and the published ABI. The salt
+   reaches the factory through additive entrypoints instead — `launchWithSalt(p, tokenSalt)` and
+   `launchWithSupplyAndSalt(p, supply, startTickMag, tokenSalt)`.
+2. **The salt MUST be bound before it reaches CREATE2.** The original plan here claimed a caller-supplied salt
+   was safe "because `LaunchTokenDeployer` already folds `msg.sender` into the salt". That is false and it was
+   a critical: on the launch path `msg.sender` at the deployer is the FACTORY, one constant address for every
+   creator, so the fold separates a direct caller of the public deployer from the factory and separates
+   NOTHING between two creators. `p.dev` is not a `LaunchToken` constructor argument either, so the coin's
+   address did not depend on who was launching it — anyone who saw a salt could take that address with
+   themselves as dev. v3 binds `msg.sender`; the v4 factories bind the whole `LaunchConfig` (the presale vault
+   is the caller there, and its address is not knowable when the creator mines).
+3. The suffix is a RULE, not a choice — every Robin CA ends in `1ab5`. Because nobody picks it, no creator
+   needs to know their address before launching, so the client must RE-MINE on any failed launch rather than
+   retrying the same salt. That is what keeps a squatted pool from being permanent.
+
+See `AUDIT-PRESALE-FEE-AND-SALT.md` and commits 78c174c / 98a61ca before changing any of this.
 
 Decision needed: **is `1ab5` a floor or a default?** If every Robin coin must end in `1ab5` *and* creators may
 extend it (e.g. `…ab1ab5`), impersonation stays visible. If a creator may replace it entirely, the brand signal

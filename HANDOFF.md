@@ -43,7 +43,7 @@ docs/          GitBook- + Mintlify-ready docs generated from docs/src/*.md
 | WETH | `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` |
 | UniswapV3Factory | `0x1f7d7550b1b028f7571e69a784071f0205fd2efa` |
 
-- RPC (public): `https://robinhoodchain.blockscout.com/api/eth-rpc`
+- RPC (public): `https://rpc.mainnet.chain.robinhood.com`
 - Explorer: `https://robinhoodchain.blockscout.com`
 - Factory deploy block (for the indexer `START_BLOCK`): **17752965**
 - Contract owner (all): cold wallet `0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf`

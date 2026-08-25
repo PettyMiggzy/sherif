@@ -34,11 +34,18 @@ async function tryStep(label, fn) {
   }
 }
 
+function readJson(name) {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, "..", name), "utf8")); }
+  catch { return null; }
+}
+
 async function main() {
-  const file = path.join(__dirname, "..", "deploy.local.json");
-  const d = JSON.parse(fs.readFileSync(file, "utf8"));
+  const d = readJson("deploy.local.json") || {};
   const launches = d.launches || [];
-  if (launches.length === 0) return console.log("no launches to sweep");
+  // NOT an early return. The presale sweep lives in a different deploy artifact and does not depend on
+  // `launches` at all, so bailing here meant the fee was never collected on any deployment that had presales
+  // but no per-coin launch rows — which is every fresh one.
+  if (launches.length === 0) console.log("no per-coin launches to sweep");
 
   const [keeper] = await ethers.getSigners();
   const lockVault = await ethers.getContractAt("LockVault", d.lockVault);
@@ -76,18 +83,25 @@ async function main() {
 // than passed in, so this loop cannot misdirect anything — but nothing else calls it, so without this the
 // default outcome is that the fee is earned and never collected.
 async function sweepPresaleFees(d) {
-  if (!d.presaleVaultFactory) return console.log("\nno presale factory in deploy.local.json — skipping");
-  const f = await ethers.getContractAt("PresaleVaultFactory", d.presaleVaultFactory);
+  // The presale factory is written by deploy-curve.js into deploy.curve.json under `contracts.presaleFactory`.
+  // This used to look for a top-level `presaleVaultFactory` in deploy.local.json — wrong file, wrong nesting,
+  // wrong key — so the sweep silently skipped on every deployment that has ever existed. Read the real
+  // artifact, and still accept an override in the local one.
+  const curve = readJson("deploy.curve.json") || {};
+  const factoryAddr = d.presaleVaultFactory || (d.contracts && d.contracts.presaleFactory)
+    || (curve.contracts && curve.contracts.presaleFactory);
+  if (!factoryAddr) return console.log("\nno presale factory in deploy.curve.json — skipping");
+  const f = await ethers.getContractAt("PresaleVaultFactory", factoryAddr);
   const n = Number(await f.presaleCount());
   if (n === 0) return console.log("\nno presales opened yet");
   console.log(`\n▸ presale fees (${n} vault${n === 1 ? "" : "s"})`);
   for (let i = 0; i < n; i++) {
-    const addr = await f.presales(i);
-    const v = await ethers.getContractAt("PresaleVault", addr);
+    const vaultAddr = await f.presales(i);
+    const v = await ethers.getContractAt("PresaleVault", vaultAddr);
     // Read first so an unfinalized or already-paid vault costs a view call rather than a reverted tx.
     const [fee, paid] = await Promise.all([v.platformFee(), v.platformFeePaid()]);
     if (fee === 0n || paid) continue;
-    await tryStep(`withdraw ${ethers.formatEther(fee)} ETH from ${addr}`, () => v.withdrawPlatformFee({ type: 0 }));
+    await tryStep(`withdraw ${ethers.formatEther(fee)} ETH from ${vaultAddr}`, () => v.withdrawPlatformFee({ type: 0 }));
   }
 }
 

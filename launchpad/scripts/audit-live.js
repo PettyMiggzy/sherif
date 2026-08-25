@@ -15,7 +15,7 @@ for (const line of fs.readFileSync(path.join(__dirname, "..", ".env"), "utf8").s
   const i = t.indexOf("="); if (i === -1) continue;
   const k = t.slice(0, i).trim(); if (process.env[k] === undefined) process.env[k] = t.slice(i + 1).trim();
 }
-const RPC = process.env.ROBINHOOD_RPC || "https://robinhoodchain.blockscout.com/api/eth-rpc";
+const RPC = process.env.ROBINHOOD_RPC || "https://rpc.mainnet.chain.robinhood.com";
 
 const FACTORY  = "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074"; // live v2.1 CurvePadFactory
 const ROUTER   = "0xA6BaAB820809C7fC8350311776627298f91F07eC"; // live v2.1 PadRouter

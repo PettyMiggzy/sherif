@@ -27,7 +27,7 @@ if you batch many calls into one tx. (The [SDK](sdk.md) exports this as `legacyO
 
 ```js
 import { ethers } from "ethers";
-const provider = new ethers.JsonRpcProvider("https://robinhoodchain.blockscout.com/api/eth-rpc");
+const provider = new ethers.JsonRpcProvider("https://rpc.mainnet.chain.robinhood.com");
 const FACTORY = "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074";
 
 const factory = new ethers.Contract(FACTORY, [

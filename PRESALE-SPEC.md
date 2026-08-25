@@ -73,21 +73,17 @@ revert `finalize` and convert a fully-funded raise into a Failed presale. The de
 read from the fee registry and is not a caller parameter, so the permissionless withdraw can
 only move the platform's own money to the platform.
 
-It needs one decision before it can be written, because it breaks a promise the contract
-currently makes in its own header — *"ETH NEVER touches the creator"* — and the honest
-version of that promise has to change with it:
+The contract's own header used to promise *"ETH NEVER touches the creator — it leaves the vault
+only as (a) the pooled curve buy or (b) a refund/claim to the very depositor who put it in."*
+That sentence is now false and has been corrected in `PresaleVault.sol`, `PADS-EXPLAINED.md`
+and above: the cut is a third exit, and the header says so.
 
-- **Taken at finalize, off the top.** 10% to the platform, 90% into the pooled curve buy.
-  Depositors' refunds stay 100% on failure, because nothing is taken until the raise
-  succeeds. Cost: the coin launches with 10% less liquidity than the raise implies, and the
-  presale page has to say so plainly.
-- **Taken on deposit.** Do not. It makes a "100% refund" false, which is the strongest thing
-  the design currently offers.
+It is taken at finalize, off the top — 10% to the platform, 90% into the pooled curve buy —
+rather than on deposit. Taking it on deposit would have made "100% refund" false, which is
+the strongest thing the design offers. Because nothing is taken until the raise succeeds,
+every failure path is exactly as audited.
 
-Recommend the first. It is one branch in `finalize()`, it keeps every failure path exactly
-as audited, and it is honest to state.
-
-**Both pads.** v3 and v4, creator picks. The vault is currently hard-wired to v4 — it calls
+**Both pads — NOT BUILT.** v3 and v4, creator picks. The vault is currently hard-wired to v4 — it calls
 the v4 factory and swaps against the v4 PoolManager directly. v3 needs a launcher adapter;
 it is the simpler of the two because `PadRouter.buy()` does the swap, so no unlock callback
 and no pool math in the vault.
