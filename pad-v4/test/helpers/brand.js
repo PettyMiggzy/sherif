@@ -14,13 +14,31 @@ const _cache = new Map();
 // bit for bit or it finds addresses the factory will never deploy to. Field order and types mirror
 // LaunchConfig in contracts/interfaces/ICurvePadFactoryV4.sol.
 const CFG_TUPLE = "(string,string,uint8,uint256,uint256,uint256,int24,int24,address)";
+function cfgWords(cfg) {
+  return [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, cfg.curveSupply, cfg.reserveSupply, cfg.tickSpacing, cfg.startTickMag, cfg.creator];
+}
+
 function bindSalt(cfg, tokenSalt) {
   return ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      [CFG_TUPLE, "bytes32"],
-      [[cfg.name, cfg.symbol, cfg.decimals, cfg.supply, cfg.curveSupply, cfg.reserveSupply, cfg.tickSpacing, cfg.startTickMag, cfg.creator], tokenSalt]
-    )
+    ethers.AbiCoder.defaultAbiCoder().encode([CFG_TUPLE, "bytes32"], [cfgWords(cfg), tokenSalt])
   );
+}
+
+/// A `bindSalt` specialised to one cfg, for the mining hot path.
+///
+/// Calling bindSalt per try re-ABI-encodes a struct with two dynamic strings 65,000 times, and that — not the
+/// extra keccak — is what turned a ~2s mine into one that outran a 900s suite timeout. The encoding is stable:
+/// a dynamic tuple followed by a bytes32 lays out as [offset=0x40][tokenSalt][tuple data...], so the salt
+/// occupies exactly bytes [32,64) and everything else is constant for a given cfg. Encode once, then per try
+/// overwrite those 32 bytes and hash. One memcpy plus one keccak.
+function bindSaltFast(cfg) {
+  const buf = ethers.getBytes(
+    ethers.AbiCoder.defaultAbiCoder().encode([CFG_TUPLE, "bytes32"], [cfgWords(cfg), ethers.ZeroHash])
+  ).slice();
+  return (tokenSalt) => {
+    buf.set(ethers.getBytes(tokenSalt), 32);
+    return ethers.keccak256(buf);
+  };
 }
 
 function tokenInitCode(TokenBytecode, cfg, factoryAddr) {
@@ -43,17 +61,20 @@ async function brandedTokenSalt(deployerAddr, factoryAddr, cfg, baseSalt, extraO
   const TokenF = await ethers.getContractFactory("PadToken");
   const init = tokenInitCode(TokenF.bytecode, cfg, factoryAddr);
   const seed = baseSalt ?? ethers.id(`${cfg.symbol}-${cfg.name}-${factoryAddr}`);
-  const key = `${deployerAddr}|${ethers.keccak256(init)}|${seed}|${extraOk ? "x" : ""}`;
+  // The salt now depends on the WHOLE cfg, so the cache must key on the whole cfg. initCodeHash covers only
+  // name/symbol/decimals/supply — two pads differing solely in creator, supply split, spacing or start tick
+  // would otherwise collide here and be handed each other's salt.
+  const key = `${deployerAddr}|${ethers.keccak256(init)}|${seed}|${extraOk ? "x" : ""}|${bindSalt(cfg, ethers.ZeroHash)}`;
   if (_cache.has(key)) return _cache.get(key);
 
   // `extraOk` is evaluated INSIDE the mining loop (only on a suffix hit), so a stock pad's second
   // constraint costs one extra comparison per hit rather than a discarded 65k-try pass.
   const salt = mineTokenSalt(deployerAddr, init, seed, {
     ...(extraOk ? { accept: extraOk } : {}),
-    saltWrap: (cand) => bindSalt(cfg, cand),
+    saltWrap: bindSaltFast(cfg),
   }).salt;
   _cache.set(key, salt);
   return salt;
 }
 
-module.exports = { brandedTokenSalt, tokenInitCode, bindSalt };
+module.exports = { brandedTokenSalt, tokenInitCode, bindSalt, bindSaltFast };
