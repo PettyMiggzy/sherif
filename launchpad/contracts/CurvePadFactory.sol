@@ -81,6 +81,10 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         string symbol;
         address dev;
         TaxParams tax;
+        // Caller-supplied CREATE2 salt, so a creator can mine their coin's address ending (the pad's default is
+        // `1ab5`, but any ending is allowed — it is a choice, not a rule, and nothing here enforces one).
+        // Zero means "factory picks", which reproduces the old unpredictable-salt behaviour exactly.
+        bytes32 tokenSalt;
     }
 
     struct Record {
@@ -253,13 +257,23 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
             maxWalletBps2: 0,
             cooldownSecs: 0
         });
-        // CREATE2 salt with per-launch entropy (incl. block.number) so the token — and thus its Uniswap pool
-        // address — can't be predicted from the deployer's nonce. An attacker who precreates+initializes the
-        // pool to brick a launch would have to win the race for THIS exact block; a retry lands a fresh
-        // address, so the DoS can't be made permanent.
-        bytes32 salt = keccak256(
-            abi.encodePacked(address(this), p.dev, p.name, p.symbol, block.number, block.timestamp, allTokens.length)
-        );
+        // A creator who mined an address ending supplies the salt; everyone else gets the old behaviour.
+        //
+        // The block.number/block.timestamp entropy below exists to stop an attacker predicting the token — and
+        // therefore its Uniswap pool — and pre-creating that pool to brick the launch. Letting the caller name
+        // the salt gives that prediction away, which is safe here because the defence does not actually live at
+        // this layer: `LaunchTokenDeployer.deploy` folds msg.sender into the CREATE2 salt, so an attacker
+        // calling the deployer directly with this exact salt lands on a DIFFERENT address and cannot occupy
+        // ours. See the comment on that function — "the collision is gone". Robinhood Chain's single-sequencer
+        // FCFS ordering with no public mempool removes the race a mined salt would otherwise expose.
+        //
+        // A salt already used by this factory reverts inside CREATE2, which is the correct outcome: the launch
+        // fails, nothing is written, and the creator mines another.
+        bytes32 salt = p.tokenSalt != bytes32(0)
+            ? p.tokenSalt
+            : keccak256(
+                abi.encodePacked(address(this), p.dev, p.name, p.symbol, block.number, block.timestamp, allTokens.length)
+            );
         token = tokenDeployer.deploy(p.name, p.symbol, totalSupply, address(this), g, salt);
 
         int24 startTick = token < WETH ? -mag : mag;

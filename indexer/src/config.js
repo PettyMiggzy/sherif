@@ -25,7 +25,7 @@ const num = (k, d) => {
 };
 
 export const CFG = {
-  rpcUrl: process.env.RPC_URL || "https://robinhoodchain.blockscout.com/api/eth-rpc",
+  rpcUrl: process.env.RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
   // Upstream fallback for the /rpc read-proxy if the primary (paid) RPC errors.
   rpcFallback: process.env.RPC_FALLBACK || "https://robinhoodchain.blockscout.com/api/eth-rpc",
   // Optional BACKUP RPC (e.g. a QuikNode/paid endpoint, key in URL = SECRET, keep in .env). When set

@@ -37,7 +37,7 @@ module.exports = {
       : { accounts: { accountsBalance: "100000000000000000000000000" } }, // same, for the non-fork run
     // Robinhood Chain (fill RPC + PRIVATE_KEY via env before deploying)
     robinhood: {
-      url: process.env.ROBINHOOD_RPC || "https://robinhoodchain.blockscout.com/api/eth-rpc",
+      url: process.env.ROBINHOOD_RPC || "https://rpc.mainnet.chain.robinhood.com",
       chainId: 4663,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
