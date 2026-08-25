@@ -11,6 +11,17 @@ const path = require("path");
 
 const BLOCKSCOUT = process.env.BLOCKSCOUT_URL || "https://robinhoodchain.blockscout.com";
 const API = `${BLOCKSCOUT}/api`;
+// Optional Blockscout Pro key. The free tier rate-limits hard enough to stall a verification run or a
+// batch of address reads ("Too many requests"), and the limit is per-IP so retrying does not help. Set
+// BLOCKSCOUT_API_KEY in the environment to raise it. NEVER hardcode the key here — .env is gitignored.
+const BLOCKSCOUT_KEY = process.env.BLOCKSCOUT_API_KEY || "";
+// Blockscout accepts the key as an `apikey` query param on both the v1 and v2 APIs.
+function withKey(url) {
+  if (!BLOCKSCOUT_KEY) return url;
+  const u = new URL(url);
+  u.searchParams.set("apikey", BLOCKSCOUT_KEY);
+  return u.toString();
+}
 const ARTIFACTS = path.resolve(__dirname, "..", "..", "artifacts");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -41,7 +52,7 @@ function loadInput({ sol, name }) {
 
 async function isVerified(addr) {
   try {
-    const r = await fetch(`${BLOCKSCOUT}/api/v2/smart-contracts/${addr}`);
+    const r = await fetch(withKey(`${BLOCKSCOUT}/api/v2/smart-contracts/${addr}`));
     if (!r.ok) return false;
     const j = await r.json();
     return !!j.is_verified;
@@ -67,7 +78,7 @@ async function verifyAddress({ addr, sol, name, label }) {
       fd.set("autodetect_constructor_args", "true");
       fd.set("license_type", "mit");
       fd.set("files[0]", new Blob([stdJson], { type: "application/json" }), "input.json");
-      const r = await fetch(url, { method: "POST", body: fd });
+      const r = await fetch(withKey(url), { method: "POST", body: fd });
       const txt = await r.text();
       if (/already verified|already been verified/i.test(txt)) { console.log(`  ✓ already verified   ${tag}  ${addr}`); return "already"; }
       if (r.ok || /verification (started|already)/i.test(txt)) { started = true; break; }
