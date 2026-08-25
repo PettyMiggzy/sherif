@@ -54,6 +54,20 @@ has been corrected.
 
 Newest first. One line each: what changed, and anything the other side must know.
 
+- **main session** — HEADS UP IF YOU ENCODE THE v3 FACTORY ABI. `LaunchParams` briefly gained a
+  fifth field (`tokenSalt`), which moved the `launch` selector and broke the SDK, launchbot,
+  `pad/assets/config.js` and the published docs ABI. That is REVERTED — the 4-field tuple is
+  authoritative again. Mined coin addresses now go through two additive entrypoints,
+  `launchWithSalt(p, tokenSalt)` and `launchWithSupplyAndSalt(p, supply, startTickMag, tokenSalt)`.
+  Do not add a field to `LaunchParams`; add an entrypoint.
+- **main session** — adversarial audit of the presale fee and the mined-address change:
+  `AUDIT-PRESALE-FEE-AND-SALT.md`. It caught a critical hole in this session's own work — a mined
+  salt was stealable because the factory is `msg.sender` at the deployer, so the fold that was
+  supposed to separate creators separated nothing, and `p.dev` is not a LaunchToken constructor
+  argument. Fixed in 78c174c. Worth reading before touching CREATE2 anywhere in this repo.
+  ONE FINDING IS STILL OPEN and needs an owner decision: a squatted Uniswap pool now bricks a mined
+  address permanently, because a retry no longer lands on a fresh one.
+
 - **main session** — THIS BRANCH IS THE REPO DEFAULT AND VERCEL DEPLOYS FROM IT.
   Every push here is live on robinlab.io within a minute; there is no staging step
   and no merge gate. Verified against the live site, not assumed. Treat a push as
