@@ -7,7 +7,10 @@ counted, plus three independent designs for presale to v3. 22 findings survived 
 Fixed in `78c174c`: the critical salt-theft hole, the broken `LaunchParams` ABI, the missing salt
 coverage, the false trust invariant in three documents, and the misplaced NatSpec.
 
-STILL OPEN — the pool-squat brick (finding 2). Needs an owner decision.
+ALL TEN CLOSED as of `e1c34cd`. One correction to the memo's own advice: finding 2 proposed doing the repair
+"inside the pool constructor". That is not possible — a contract has no code at its own address until its
+constructor returns, so `pool.swap`'s callback would land on an empty address. The repair runs in `seed()`
+instead, which the factory calls later in the same launch transaction, so the launch is still atomic.
 
 ---
 
