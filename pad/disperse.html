@@ -55,6 +55,7 @@
     <label>Token address (the coin you're sending)</label>
     <input type="text" id="token" placeholder="0x…" />
     <div class="hint" id="tokenInfo"></div>
+    <div id="safetyBody" style="margin-top:10px"></div>
   </div>
 
   <div class="card">
@@ -82,6 +83,7 @@
 import { ethers } from "./assets/ethers.min.js";
 import * as Pad from "./assets/wallet.js";
 import { isDeployed } from "./assets/config.js";
+import { mountSafety } from "./assets/safety.js";
 
 const $ = (id) => document.getElementById(id);
 // loadedFor = the token address the current `decimals`/`parsed` amounts were scaled for; Send is
@@ -113,7 +115,13 @@ $('token').addEventListener('input', ()=>{ loadedFor=""; validate(); clearTimeou
 async function loadToken(){
   const t = $('token').value.trim();
   decimals = 18; symbol = ""; loadedFor = ""; $('tokenInfo').textContent = "";
-  if(!/^0x[0-9a-fA-F]{40}$/.test(t)) { validate(); return; }
+  if(!/^0x[0-9a-fA-F]{40}$/.test(t)) { $('safetyBody').innerHTML = ""; validate(); return; }
+  // Scan before the user is asked to approve anything. This page takes an ARBITRARY token address, so the
+  // holder may be about to grant an allowance on a contract they have never looked at. Latest-wins like the
+  // metadata read below, so a slow scan for an old address cannot paint over a newer one.
+  mountSafety($('safetyBody'), t).then(() => {
+    if ($('token').value.trim().toLowerCase() !== t.toLowerCase()) $('safetyBody').innerHTML = "";
+  });
   try{
     const m = await Pad.tokenMeta(t);
     // Latest-wins: if the field changed while this read was in flight, drop this (stale) result so a slow

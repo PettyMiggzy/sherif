@@ -27,6 +27,7 @@
 // ethers v6.13.4 is VENDORED locally (assets/ethers.min.js) - no runtime CDN
 // dependency, so the whole app is self-contained and auditable offline.
 import { ethers } from "./ethers.min.js";
+import { goPlusToken } from "./safety.js";
 import {
   CHAIN, CONTRACTS, ABIS, TOTAL_SUPPLY,
   GAS_BUFFER_WEI, isDeployed, API_BASE, hasApi,
@@ -567,12 +568,36 @@ async function guardedSend(contract, method, args, valueWei, label, fallbackGas 
 // rewritten down to the sell amount at the check_approval path.
 async function guardedApprove(erc, spender, amount, label) {
   await ensureOnChain();
+  if (amount > 0n) await honeypotGate(await erc.getAddress());
   try {
     await erc.approve.staticCall(spender, amount, { from: _account });
   } catch (e) {
     throw friendly(e, label || "approve");
   }
   return erc.approve(spender, amount, await legacyOverrides());
+}
+
+// Refuse to ask for an allowance on a token nobody can sell. This sits at the wallet layer rather than in any
+// one page so every approval path inherits it — including pages that do not exist yet, which is the failure
+// mode of doing this per-page.
+//
+// It blocks on the two verdicts that are unambiguous and unrecoverable for the user (honeypot, cannot sell
+// all) and on nothing else: taxes, mintability and ownership are judgement calls the page's safety panel
+// shows rather than decisions to make on someone's behalf. It FAILS OPEN — no data, a slow API, an
+// unsupported chain and any error all proceed — because the worst outcome of this check must be that it did
+// not help, never a legitimate approval it wedged. A zero approval (the reset leg some tokens require) is
+// skipped: revoking is always allowed.
+async function honeypotGate(token) {
+  let gp = null;
+  try { gp = await goPlusToken(token); } catch { return; }
+  if (!gp) return;
+  const yes = (v) => v === "1" || v === 1 || v === true;
+  if (yes(gp.is_honeypot)) {
+    throw new Error("This token is flagged as a honeypot — buyers can't sell it. Robin Labs won't ask your wallet to approve it.");
+  }
+  if (yes(gp.cannot_sell_all)) {
+    throw new Error("This token blocks holders from selling their full balance. Robin Labs won't ask your wallet to approve it.");
+  }
 }
 
 // Legacy-tx overrides for user-signed calls that DON'T go through guardedSend
