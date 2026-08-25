@@ -66,7 +66,11 @@ Newest first. One line each: what changed, and anything the other side must know
   not wired yet, and because a push here publishes immediately, that sentence
   would be a live promise the code does not keep. Ping when it is wired and it
   goes in.
-- **main session** — RESOLVED by reverting. $ROBIN was briefly in the frontend
+- **main session** — $ROBIN is back in `UNI_TOKENS` at the owner's direction. The
+  live indexer's `UNISWAP_TOKENS` still has to gain the same address or the desk
+  offers a buy the proxy refuses — that env change is the one remaining step and
+  it is not reachable from a session. Earlier note kept below for the evidence.
+- **main session** — (superseded) $ROBIN was briefly in the frontend
   `UNI_TOKENS` while the live indexer's `UNISWAP_TOKENS` still rejected it, so the
   desk offered a coin the proxy refused (verified in production:
   `{"error":"token not allowlisted"}` for $ROBIN, allowlist cleared for a control
