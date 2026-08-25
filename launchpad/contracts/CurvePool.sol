@@ -59,6 +59,10 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     int24 public immutable gradTick; // the curve's CEILING — the ONLY graduation point; buys climb to here, never past it
     int24 public immutable minGradTick; // vestigial geometry marker (kept for reporting); graduation is ceiling-only
 
+    /// @notice Most of the curve supply a squatted-pool repair may spend crossing planted liquidity. 200 = 0.5%.
+    /// Small on purpose: it bounds what a funded squat can extract, and anything costlier is not worth
+    /// repairing when re-mining a salt is free.
+    uint256 internal constant REPAIR_BUDGET_DIVISOR = 200;
     uint16 public constant SHERWOOD_WETH_BPS = 6000; // 60% of the raise -> Sherwood LP, 40% -> Bounty floor
     // Graduation reward paid to BOTH the creator and the platform at graduation, in WETH. Capped at raise/4 each
     // (below) so the Bond floor always keeps >=50% of the raise. Graduation only ever happens at the full ceiling
@@ -187,9 +191,41 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         uint160 want = PoolMath.getSqrtRatioAtTick(startTick);
         (uint160 cur,,,,,,) = pool.slot0();
         if (cur != want) {
-            if (pool.liquidity() != 0) revert BadPoolInit(); // funded squat — unreachable via the constructor
+            // Walk the price back to our start tick. Sizing matters: an EMPTY pool crosses nothing and costs
+            // nothing, but a squatter can plant an out-of-range position for one wei BEFORE the token exists
+            // (a single-sided range needs only the side that is in range, and WETH is available to them). Such
+            // a position reads as `pool.liquidity() == 0` at the hostile tick — it is not in range there — so
+            // it cannot be screened out in advance, only paid through. Offering `amountSpecified = 1` stops at
+            // the first funded tick and lands short of `want`, which is the whole brick.
+            //
+            // So offer a bounded budget instead. The swap is exact-input price-limited at `want`: Uniswap
+            // consumes only what the crossing actually costs and stops there, so a one-wei squat costs about a
+            // wei. The cap is what a squatter can extract by making the crossing expensive, and it is
+            // deliberately small — beyond it the launch reverts, the creator mines another salt, and the
+            // attacker has burned real liquidity for nothing.
+            //
+            // Crossing is only payable in the direction that SELLS the token this contract already holds; it
+            // holds no WETH at seed time. That happens to cover every squat an attacker can actually set up,
+            // and the reason is structural rather than lucky: to plant liquidity before the token has code
+            // they can only supply WETH, a WETH-only position must sit entirely on the WETH side of the
+            // current price, and crossing into it means acquiring WETH by paying token — which is exactly the
+            // payable direction. Funding the other side needs the token, which does not exist until the launch
+            // that this repair is part of.
+            //
+            // The `budget == 0` guard below is therefore the belt to that braces: if some path this reasoning
+            // has not anticipated leaves us needing to BUY, the swap is offered one wei, lands short of `want`
+            // and reverts rather than seeding the coin at a price nobody chose. A reverted launch costs a
+            // fresh salt; a mis-seeded one costs the raise.
+            bool sellingToken = tokenIsToken0 ? cur > want : cur < want;
+            uint256 budget;
+            if (sellingToken) {
+                uint256 bal = IERC20(tokenIsToken0 ? token0 : token1).balanceOf(address(this));
+                budget = curveSupply / REPAIR_BUDGET_DIVISOR;
+                if (budget > bal) budget = bal;
+            }
+            if (budget == 0) budget = 1; // empty pool: nothing is crossed, so nothing is spent
             _swapping = true;
-            pool.swap(address(this), cur > want, int256(1), want, "");
+            pool.swap(address(this), cur > want, int256(budget), want, "");
             _swapping = false;
             (cur,,,,,,) = pool.slot0();
             if (cur != want) revert BadPoolInit();
