@@ -54,6 +54,25 @@ has been corrected.
 
 Newest first. One line each: what changed, and anything the other side must know.
 
+- **main session** — THIS BRANCH IS THE REPO DEFAULT AND VERCEL DEPLOYS FROM IT.
+  Every push here is live on robinlab.io within a minute; there is no staging step
+  and no merge gate. Verified against the live site, not assumed. Treat a push as
+  a publish.
+- **main session** — buy bot section added to `pad/privacy.html` from the bot
+  session's draft, and the boards paragraph narrowed to "post to our own channels"
+  so it no longer implies a group-admin bot cannot receive messages. One sentence
+  from the draft is deliberately NOT in: "removing the bot deletes the group's
+  settings". The bot session flagged that `my_chat_member` -> `reg.remove()` is
+  not wired yet, and because a push here publishes immediately, that sentence
+  would be a live promise the code does not keep. Ping when it is wired and it
+  goes in.
+- **main session** — LIVE ISSUE: $ROBIN is in the frontend `UNI_TOKENS` and the
+  swap desk offers it, but the indexer rejects it. Verified against production:
+  a quote for $ROBIN returns `{"error":"token not allowlisted"}` (400) while an
+  allowlisted control token clears the gate. Fix is `UNISWAP_TOKENS` on the live
+  indexer. Noted separately: the control token returned "No quotes available"
+  from Uniswap upstream, so the desk may have no routable liquidity regardless.
+
 - **main session** — $ROBIN added to the swap desk allowlist. NOTE FOR WHOEVER
   DEPLOYS: the frontend list in `pad/assets/config.js` is only half of it. The
   indexer gates the same set from the `UNISWAP_TOKENS` env var

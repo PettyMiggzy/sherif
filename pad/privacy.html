@@ -51,11 +51,27 @@
   separately. Whichever you use, the bot itself always shows its own disclaimer and command list.</p>
 
   <h3>Boards that only post</h3>
-  <p>Our trending and new-launch boards are write-only. They post messages and remove their own previous posts,
+  <p>Our trending and new-launch boards, which post to our own channels, are write-only. They post messages and remove their own previous posts,
   and they use neither webhooks nor long polling, so they cannot receive a message or read what is said in a
   channel they belong to. They keep public blockchain data, public token metadata (contract addresses, symbols,
   logos, volume and liquidity figures) and the id of their own most recent post so the next one can replace it.
   They keep nothing about you.</p>
+
+  <h3>The Robin Labs buy bot</h3>
+  <p>This bot is added to a project's own Telegram group by that group's admins. It watches the public
+  blockchain for buys of the token they configure and posts a card when one happens. It is <b>read-only against
+  the chain</b>: it holds no keys, cannot trade, cannot move funds, and will never ask you for a wallet, a
+  private key or a seed phrase.</p>
+  <p><b>What it receives.</b> Telegram delivers every message in a group to a bot that has been made an
+  administrator, and this bot must be an administrator in order to post. So group messages do reach it. It acts
+  only on its own commands and discards everything else: it does not read, store, log or process the contents of
+  your group's conversation, and it builds no record of who said what.</p>
+  <p><b>What it stores.</b> Per group: the group's Telegram chat id and title, the token contract address to
+  watch, the display settings its admins chose (minimum buy size, emoji, dollars per emoji), a Telegram file
+  identifier if the group uploaded its own card artwork, and the numeric Telegram user id of the admin who ran
+  the setup command. Nothing else. No usernames, no phone numbers, no member lists, no message content.</p>
+  <p>An admin can send <code>/off</code> to stop it posting, or remove the bot from the group to end it
+  entirely.</p>
 
   <h3>The Robin Labs launch bot &mdash; please read this one</h3>
   <p>This bot takes commands, so it receives the messages you send it. More importantly, <b>it is custodial</b>:
