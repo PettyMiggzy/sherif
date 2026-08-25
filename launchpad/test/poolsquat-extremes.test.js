@@ -5,7 +5,7 @@ const POOL_FEE = 10000, START = 201600, WIDTH = 35800, MINGRAD = 19800;
 const MIN_SQRT = 4295128739n;
 const MAX_SQRT = 1461446703485210103287273052203988822378723970342n;
 
-describe("REPRO: extreme squat prices + repair gas", function () {
+describe("[F-1] the repair walks back from either end of the tick range", function () {
   this.timeout(300000);
   const NOTAX = (dev) => ({ buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev });
   async function predictToken(ltdAddr, factoryAddr, creator, tokenSalt, name, symbol, supply) {

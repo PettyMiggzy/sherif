@@ -25,7 +25,7 @@ function getSqrtRatioAtTick(tick) {
   return (ratio >> 32n) + (ratio % (1n << 32n) === 0n ? 0n : 1n);
 }
 
-describe("REPRO: out-of-range WETH-only squat blocks the seed() repair", function () {
+describe("[F-1] an out-of-range WETH-only squat is repaired, not fatal", function () {
   this.timeout(300000);
   const NOTAX = (dev) => ({ buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev });
 
@@ -38,7 +38,12 @@ describe("REPRO: out-of-range WETH-only squat blocks the seed() repair", functio
     return ethers.getCreate2Address(ltdAddr, outer, ethers.keccak256(init));
   }
 
-  it("a squatter funds the pool with WETH only, before the token exists, and the launch reverts", async () => {
+  // This started life as the audit agents' repro of a REAL defect: the first version of the repair offered the
+  // swap one wei, so a squatter who planted an out-of-range WETH-only position for ONE WEI — before the token
+  // had any code — left the swap short of the start tick and bricked the mined address permanently. The
+  // constructor's liquidity() screen could never have caught it: an out-of-range position reads as zero
+  // liquidity at the hostile tick. Kept as a regression test, with its name corrected to what now happens.
+  it("a one-wei out-of-range WETH squat no longer bricks the launch", async () => {
     const [dep, platform, dev, attacker] = await ethers.getSigners();
     const v3 = await (new ethers.ContractFactory(V3F.abi, V3F.bytecode, dep)).deploy();
     await v3.waitForDeployment();

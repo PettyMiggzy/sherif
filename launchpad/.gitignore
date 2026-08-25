@@ -11,3 +11,8 @@ scripts/_*
 
 # auto-verifier scan progress (regenerated at runtime; per-environment)
 scripts/.auto-verify-state.json
+
+# Scratch test files audit subagents write while reproducing a finding. They are transient — the agent
+# deletes them again — and a half-written one breaks `npx hardhat test` for everyone. Anything worth
+# keeping gets promoted to a real name (see test/poolsquat-*.test.js, which began this way).
+test/zz*.test.js
