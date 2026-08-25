@@ -1,5 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const V3_FACTORY_ART = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
 
 // [SALT] Creator-chosen coin ADDRESS on the v3 pad.
 //
@@ -26,7 +27,11 @@ describe("[SALT] a mined coin address belongs to the creator who mined it", () =
     const at = async (name, ...args) =>
       (await ethers.getContractFactory(name)).connect(dep).deploy(...args).then((c) => c.getAddress());
     const weth = await at("MockWETH9");
-    const v3 = await at("MockUniswapV3Factory");
+    // The REAL v3 factory, deployed locally from @uniswap/v3-core bytecode. The repo's mock cannot mint the
+    // concentrated position CurvePool seeds, so with it no launch completes and the prediction below could
+    // only ever be compared against itself — which is exactly how a wrong formula would slip through.
+    const v3 = await new ethers.ContractFactory(V3_FACTORY_ART.abi, V3_FACTORY_ART.bytecode, dep)
+      .deploy().then((c) => c.getAddress());
     ltd = await at("LaunchTokenDeployer");
     const cpd = await at("CurvePoolDeployer");
     const bd = await at("BondDeployer", 9000, 15600);
@@ -36,6 +41,8 @@ describe("[SALT] a mined coin address belongs to the creator who mined it", () =
       ethers.ZeroAddress, START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH
     );
     factoryAddr = await factory.getAddress();
+    // the router only accepts registrations from a factory it knows; without this every launch reverts OnlyFactory
+    await (await (await ethers.getContractAt("PadRouter", router)).connect(dep).setFactory(factoryAddr)).wait();
   });
 
   // The full chain: factory computes keccak(creator, tokenSalt); LaunchTokenDeployer then computes
@@ -96,8 +103,14 @@ describe("[SALT] a mined coin address belongs to the creator who mined it", () =
     // their coin's address before launching it.
     expect(await predict(other.address, salt, "Robin Meme", "MEME", SUPPLY)).to.not.equal(addr);
 
-    // The on-chain half — that launchWithSalt actually LANDS on this address — needs a real Uniswap v3 pool to
-    // mint the concentrated position, so it lives in test/fork/curvepad.fork.test.js rather than here.
+    // ...and the factory really does land there. Without this the two assertions above only prove the helper
+    // is self-consistent: a prediction formula that was wrong in the same way twice would pass them both.
+    const [landed] = await factory.connect(dev).launchWithSalt.staticCall(
+      { name: "Robin Meme", symbol: "MEME", dev: dev.address,
+        tax: { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address } },
+      salt
+    );
+    expect(landed).to.equal(addr);
   });
 
   it("a zero salt is NOT a mined salt — it must fall through to the entropy branch", async () => {
