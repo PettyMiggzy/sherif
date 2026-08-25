@@ -9,6 +9,8 @@
  *   5. hook.claimFloor(poolId, 0)              — the 0.2% sell-tax carve → the floor vault
  *   6. floorVault.addFloor()                   — deploy the carve into the permanent buy-wall
  *   7. floorVault.collectFloorFees()           — the wall's own LP fees → platform
+ * Then, across every presale the PresaleVaultFactory has ever opened:
+ *   8. presaleVault.withdrawPlatformFee()      — the platform's cut of a raise that succeeded
  * The keeper only MOVES already-owed funds to their fixed on-chain destinations; it can never redirect
  * them (every recipient is immutable in the contracts), so a compromised keeper key cannot steal — the
  * worst it can do is not run.
@@ -64,7 +66,29 @@ async function main() {
     await tryStep("deploy carve into wall", () => floor.addFloor({ type: 0 }));
     await tryStep("collect wall LP fees", () => floor.collectFloorFees({ type: 0 }));
   }
+  await sweepPresaleFees(d);
+
   console.log("\nsweep complete");
+}
+
+// The presale platform cut accrues inside each vault at finalize() and sits there until someone pulls it.
+// The pull is permissionless and has no deadline, and the destination is read from the fee registry rather
+// than passed in, so this loop cannot misdirect anything — but nothing else calls it, so without this the
+// default outcome is that the fee is earned and never collected.
+async function sweepPresaleFees(d) {
+  if (!d.presaleVaultFactory) return console.log("\nno presale factory in deploy.local.json — skipping");
+  const f = await ethers.getContractAt("PresaleVaultFactory", d.presaleVaultFactory);
+  const n = Number(await f.presaleCount());
+  if (n === 0) return console.log("\nno presales opened yet");
+  console.log(`\n▸ presale fees (${n} vault${n === 1 ? "" : "s"})`);
+  for (let i = 0; i < n; i++) {
+    const addr = await f.presales(i);
+    const v = await ethers.getContractAt("PresaleVault", addr);
+    // Read first so an unfinalized or already-paid vault costs a view call rather than a reverted tx.
+    const [fee, paid] = await Promise.all([v.platformFee(), v.platformFeePaid()]);
+    if (fee === 0n || paid) continue;
+    await tryStep(`withdraw ${ethers.formatEther(fee)} ETH from ${addr}`, () => v.withdrawPlatformFee({ type: 0 }));
+  }
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

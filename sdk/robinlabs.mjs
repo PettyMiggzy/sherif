@@ -17,7 +17,7 @@ export const CHAIN = {
   hex: "0x1237",
   name: "Robinhood Chain",
   currency: "ETH",
-  rpc: "https://robinhoodchain.blockscout.com/api/eth-rpc",
+  rpc: "https://rpc.mainnet.chain.robinhood.com",
   explorer: "https://robinhoodchain.blockscout.com",
   perTxGasCap: 16_777_216, // 2^24 — relevant only if you batch calls in one tx
 };

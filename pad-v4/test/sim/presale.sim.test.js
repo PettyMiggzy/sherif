@@ -320,8 +320,9 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
     expect((await ethers.provider.getBalance(platform.address)) - before).to.equal(fee);
 
     // Drained once. A second call is a no-op, so it cannot be looped to empty the contributors' ETH-back pool.
-    // The AMOUNT deliberately stays put — _payout divides by it, so zeroing it on withdrawal would inflate
-    // every contributor's ETH-back against a vault that no longer holds the money. The FLAG is the guard.
+    // The AMOUNT deliberately stays put — _payout SUBTRACTS it from the leftover pool, so zeroing it on
+    // withdrawal would inflate every unclaimed contributor's ETH-back against a vault that no longer holds the
+    // money. The FLAG is what guards re-entry, not the amount.
     expect(await vault.platformFeePaid()).to.equal(true);
     expect(await vault.platformFee()).to.equal(fee);
     const after2 = await ethers.provider.getBalance(platform.address);

@@ -78,6 +78,8 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
     bool private _minting;
     bool private _swapping;
 
+    event PoolPriceRepaired(address indexed pool, uint160 startSqrtPriceX96);
+
     error NotSeeded();
     error AlreadySeeded();
     error AlreadyGraduated();
@@ -146,14 +148,24 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         address p = IUniswapV3Factory(v3Factory_).getPool(token_, weth_, POOL_FEE);
         if (p == address(0)) p = IUniswapV3Factory(v3Factory_).createPool(token_, weth_, POOL_FEE);
         uint160 wantSqrt = PoolMath.getSqrtRatioAtTick(startTick_);
-        // Guard the initialize: a same-block front-runner could pre-create AND pre-initialize the
-        // (token, WETH, 10000) pool, which would make an unconditional initialize() revert and grief the
-        // launch. If it is already initialized we accept it ONLY when it sits at our exact start price;
-        // any other price is a hostile init and we revert loudly rather than launch onto a wrong curve.
+        // Guard the initialize: anyone can pre-create AND pre-initialize the (token, WETH, 10000) pool at a
+        // price of their choosing — `createPool` type-checks nothing and needs no code at the token address.
+        // Reverting on that used to be safe because the token address carried block entropy, so a retry landed
+        // somewhere fresh. Once a creator can MINE their address that is no longer true: every retry returns to
+        // the same pool, and a squatter bricks the address permanently (AUDIT.md F-1, reopened).
+        //
+        // So a wrong price is no longer fatal — it is repaired in `seed()`, which the factory calls later in
+        // this same launch transaction. It cannot be repaired HERE: dragging the price back needs a swap, the
+        // swap needs `uniswapV3SwapCallback`, and this contract has no code at its own address until the
+        // constructor returns, so the callback would land on an empty address.
+        //
+        // What IS decided here is whether repair is possible at all. An empty pool can be walked back to any
+        // price for nothing. A pool the squatter also funded cannot, so that stays a revert — the creator mines
+        // another salt, having cost the attacker real liquidity rather than one cheap `initialize`.
         (uint160 existingSqrt,,,,,,) = IUniswapV3Pool(p).slot0();
         if (existingSqrt == 0) {
             IUniswapV3Pool(p).initialize(wantSqrt);
-        } else if (existingSqrt != wantSqrt) {
+        } else if (existingSqrt != wantSqrt && IUniswapV3Pool(p).liquidity() != 0) {
             revert BadPoolInit();
         }
         pool = IUniswapV3Pool(p);
@@ -165,6 +177,24 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         if (seeded) revert AlreadySeeded();
         seeded = true;
         seedTime = uint64(block.timestamp); // record when the curve was seeded (informational)
+
+        // Repair a squatted pool (see the constructor). A swap against zero liquidity crosses no ticks and
+        // trades nothing — it just walks the price to the limit — so this drags a hostile init back to our
+        // start price for the cost of the call and settles zero in the callback. Direction is whichever side
+        // of `want` the squatter left it on. Re-read and insist afterwards: if anything about the pool stopped
+        // this landing exactly on `want`, minting the curve here would price the whole coin wrong, and a
+        // revert costs a fresh salt where a silent mis-seed would cost the raise.
+        uint160 want = PoolMath.getSqrtRatioAtTick(startTick);
+        (uint160 cur,,,,,,) = pool.slot0();
+        if (cur != want) {
+            if (pool.liquidity() != 0) revert BadPoolInit(); // funded squat — unreachable via the constructor
+            _swapping = true;
+            pool.swap(address(this), cur > want, int256(1), want, "");
+            _swapping = false;
+            (cur,,,,,,) = pool.slot0();
+            if (cur != want) revert BadPoolInit();
+            emit PoolPriceRepaired(address(pool), want);
+        }
         // Curve range: token0 => [start, grad] above; token1 => [grad, start] below.
         (int24 lo, int24 hi) = tokenIsToken0 ? (startTick, gradTick) : (gradTick, startTick);
         curveLo = lo;

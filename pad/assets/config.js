@@ -25,7 +25,11 @@ export const CHAIN = {
   // RPC given to the WALLET when adding the chain (wallet_addEthereumChain). MUST be a
   // full, write-capable endpoint - the wallet broadcasts the user's txs through it - so
   // it must NEVER include the read-only /rpc proxy (which refuses eth_sendRawTransaction).
-  walletRpcUrls: ["https://robinhoodchain.blockscout.com/api/eth-rpc"],
+  // This used to be the Blockscout endpoint the comment six lines up warns about, which
+  // meant every user we onboarded got handed the RPC that 429s their browser. The chain's
+  // own endpoint answers 200, serves access-control-allow-origin: * and accepts
+  // eth_sendRawTransaction.
+  walletRpcUrls: ["https://rpc.mainnet.chain.robinhood.com"],
   explorer: "https://robinhoodchain.blockscout.com",
 };
 

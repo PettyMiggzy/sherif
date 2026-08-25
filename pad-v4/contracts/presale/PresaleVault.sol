@@ -98,8 +98,9 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     uint256 public totalTokensBought;
     uint256 public pooledEthSpent;
     /// @notice The platform's cut, fixed at finalize. This is ACCOUNTING and never changes afterwards, because
-    /// `_payout` divides the leftover ETH by it — zeroing it on withdrawal would silently inflate every
-    /// contributor's ETH-back against a vault that no longer holds the money.
+    /// `_payout` SUBTRACTS it from the leftover ETH pool (the divisor there is `totalRaised`). Zeroing it on
+    /// withdrawal would silently inflate every unclaimed contributor's ETH-back against a vault that no longer
+    /// holds the money — the early claimers would drain the buy proceeds and the last one would revert.
     uint256 public platformFee;
     /// @notice Whether that cut has been pulled yet. Separate from the amount for exactly the reason above.
     bool public platformFeePaid;
