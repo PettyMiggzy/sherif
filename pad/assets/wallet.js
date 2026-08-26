@@ -35,6 +35,8 @@ import { wcWalletEntry, isWalletConnect, wcProvider, wcDisconnect, hasStoredSess
 // `node scripts/sync-miner.mjs` and pinned byte-for-byte by launchpad/test/miner-sync.test.js. Do not edit it
 // here: a stale copy mines addresses the factory never reaches and every launch reverts BadTokenSuffix.
 import { mineSaltAsync } from "./robin-mine.mjs";
+// [FDV] The supply/price conversion, kept dependency-free so the contract suite can test the same code.
+import { tickMagFor, magInRange } from "./fdv.mjs";
 import {
   CHAIN, CONTRACTS, ABIS, TOTAL_SUPPLY,
   GAS_BUFFER_WEI, isDeployed, API_BASE, hasApi,
@@ -727,7 +729,7 @@ export async function disperse(token, recipients, amounts) {
 // tax: {buyBps, sellBps, walletBps, floorBps, burnBps, projectWallet} - the
 // project's self-set tax (≤4%/side; splits sum to 100%). Omitting it still charges the
 // 1% floor - clampBps enforces a 100 bps minimum, so every coin pays at least 1% buy & sell.
-export async function launch({ name, symbol, dev, devBuyEth = "0", tax, onMining, onSigning }) {
+export async function launch({ name, symbol, dev, devBuyEth = "0", tax, supply, startTickMag, onMining, onSigning }) {
   if (!_signer) await connect();
   if (!isDeployed("padFactory"))
     throw new Error("The launch contract isn't live yet - the Pad is in pre-deploy audit.");
@@ -735,24 +737,97 @@ export async function launch({ name, symbol, dev, devBuyEth = "0", tax, onMining
   const factory = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _signer);
   const t = normalizeTax(tax, dev || _account);
   const params = { name, symbol, dev: dev || _account, tax: t };
-  // [BRAND] Mine the coin's address first. Every Robin coin ends in `1ab5` and the contract enforces it, so
-  // there is no unmined path — `launch(p)` reverts SaltRequired. ~65k tries, a few seconds; `mineSaltAsync`
-  // yields between chunks so the tab stays alive, and `onMining(tries)` drives a progress readout.
-  const { salt, addr } = await mineCoinAddress(factory, params, onMining);
+
+  // [FDV] A creator who chose their own supply / starting value goes down the supply entrypoint; anyone who
+  // left the defaults alone sends nothing extra. Both are the same launch — this is two arguments, not a
+  // second product.
+  const wantSupply = supply ? BigInt(supply) : 0n;
+  const wantMag = startTickMag ? Number(startTickMag) : 0;
+  const custom = wantSupply > 0n || wantMag > 0;
+
+  // The coin's address is mined against (creator, name, symbol, SUPPLY, factory), so the miner has to know
+  // the supply that will actually be minted. Mining against the default and then launching a different supply
+  // lands on an unbranded address and the launch reverts — resolve it once here and hand the same number to
+  // both the miner and the launch.
+  const effectiveSupply = wantSupply > 0n ? wantSupply : await factory.TOTAL_SUPPLY();
+
+  // [BRAND] Mine the coin's address. Every Robin coin ends in `1ab5` and the contract enforces it, so there
+  // is no unmined path — `launch(p)` reverts SaltRequired. ~65k tries, a few seconds; `mineSaltAsync` yields
+  // between chunks so the tab stays alive, and `onMining(tries)` drives a progress readout.
+  const { salt, addr } = await mineCoinAddress(factory, params, onMining, effectiveSupply);
   // Mining finishes seconds before the wallet prompt appears; without this the caller's last message is still
   // "mining" while the user is being asked to sign.
   if (onSigning) onSigning(addr);
-  const tx = await guardedSend(factory, "launchWithSalt", [params, salt], value, "Launch");
-  return tx; // await tx.wait() then Pad.launchedTokenOf(receipt) for the new coin address
+
+  return custom
+    ? guardedSend(factory, "launchWithSupplyAndSalt", [params, wantSupply, wantMag, salt], value, "Launch")
+    : guardedSend(factory, "launchWithSalt", [params, salt], value, "Launch");
+  // await tx.wait() then Pad.launchedTokenOf(receipt) for the new coin address
+}
+
+// ── [FDV] creator-chosen supply + starting value ─────────────────────────────
+// The factory bounds supply x launch price — the implied fully-diluted value — NOT supply. That is what makes
+// supply cosmetic instead of a trap: at equal FDV a 10,000-token coin and a 1,000,000,000-token coin take the
+// same money for the same PERCENTAGE of the coin, and both graduate at the same multiple of their own launch
+// price. Fixing supply while fixing price is what made small supplies broken — 10,000 tokens at the 1B launch
+// price is a ~0.00000000000002 ETH company whose curve raises nothing and can never graduate.
+//
+// The conversion itself lives in ./fdv.mjs, which has no browser dependencies so the contract suite can import
+// the very same code and check it against the factory (launchpad/test/fdv-site-math.test.js). Creators think
+// in "how many tokens" and "what's it worth", not in ticks.
+
+/// Everything the create page needs to show a creator what their choice actually does.
+///
+/// The valuation is quoted by `quoteFdvWei` ON THE FACTORY — the same function the contract checks against
+/// the band — so the number on the page is the number the launch will be judged by, not a second
+/// implementation of the same maths that can drift from it.
+export async function quoteLaunch(supplyTokens, fdvEth) {
+  const factory = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _read);
+  const supplyWei = ethers.parseUnits(String(supplyTokens || 0), 18);
+  const wantWei = ethers.parseEther(String(fdvEth || 0));
+  const mag = supplyWei > 0n && wantWei > 0n ? tickMagFor(supplyWei, wantWei) : 0;
+  const [minWei, maxWei, curveWidth] = await Promise.all([
+    factory.minFdvWei(), factory.maxFdvWei(), factory.CURVE_WIDTH(),
+  ]);
+  // The contract's own bounds on the magnitude, mirrored so the page can say WHY instead of letting the
+  // launch revert BadValue: positive, a multiple of 200, and leaving the derived ceiling inside Uniswap's
+  // usable tick range.
+  const magOk = magInRange(mag, curveWidth);
+  const fdvWei = magOk ? await factory.quoteFdvWei(supplyWei, mag) : 0n;
+  const ok = magOk && fdvWei >= minWei && fdvWei <= maxWei;
+  return {
+    supplyWei, startTickMag: mag, fdvWei, minWei, maxWei, ok,
+    reason: !magOk ? "That combination doesn't make a launchable price — try more tokens, or a lower value."
+      : fdvWei < minWei ? `Too cheap. The lowest this pad allows is ${ethers.formatEther(minWei)} ETH.`
+      : fdvWei > maxWei ? `Too expensive. The highest this pad allows is ${ethers.formatEther(maxWei)} ETH.`
+      : "",
+  };
+}
+
+/// Both reads below exist only on the factory that enforces the `1ab5` brand. If the site is still pointed at
+/// an older one they revert with an unreadable RPC error, so say the real thing instead: the site and the
+/// factory ship together (see launchpad/DEPLOY-V2.md) and this is what it looks like when they are out of step.
+function assertModernFactory() {
+  throw new Error(
+    "This site is built for the current launch contract, and the one it is pointed at is an older version. " +
+    "Nothing was sent. If you are the operator: update padFactory in assets/config.js."
+  );
 }
 
 /// Mine the `1ab5` salt for a specific launch, and return the address it will land on.
 ///
 /// Exported so the create page can show the creator their coin's real address BEFORE they sign, and so a
 /// wallet prompt is never the first thing that happens after several seconds of silence.
-export async function mineCoinAddress(factoryOrNull, params, onMining) {
+export async function mineCoinAddress(factoryOrNull, params, onMining, supplyOverride) {
   const factory = factoryOrNull || new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _signer || _provider);
-  const [tokenDeployer, supply] = await Promise.all([factory.tokenDeployer(), factory.TOTAL_SUPPLY()]);
+  // `supplyOverride` is the supply this launch will actually mint. It is part of the coin's init-code, so
+  // mining against the factory default while launching a different supply produces an address the factory
+  // never reaches — the launch then reverts BadTokenSuffix with nothing pointing at the cause.
+  const [tokenDeployer, defaultSupply] = await Promise.all([
+    factory.tokenDeployer().catch(assertModernFactory),
+    factory.TOTAL_SUPPLY().catch(assertModernFactory),
+  ]);
+  const supply = supplyOverride ? BigInt(supplyOverride) : defaultSupply;
   const dep = new ethers.Contract(tokenDeployer, ABIS.tokenDeployer, factory.runner);
   const ctx = {
     tokenDeployer,
@@ -1966,7 +2041,7 @@ export async function stakingClaimAll(pool, who) {
 if (typeof window !== "undefined") {
   window.addEventListener("robinpad:ready", ensureDisconnectUI);
   window.RobinPad = {
-    connect, disconnect, forgetWallet, account, short, linkTelegram, launch, mineCoinAddress, launchedTokenOf, buy, sell, getTax, disperse,
+    connect, disconnect, forgetWallet, account, short, linkTelegram, launch, mineCoinAddress, quoteLaunch, launchedTokenOf, buy, sell, getTax, disperse,
     setCoinProfile, getCoinProfile, profileMessage,
     estimateDevBuyEth, isDeployed, tokenBalance, tokenBalances, holdings, coinHolders,
     curveInfo, devEscrow, graduate, withdrawDev, burnDev, listCoins, tokenMeta,

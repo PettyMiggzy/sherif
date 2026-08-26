@@ -1,5 +1,5 @@
 /*
- * Browser check for the WalletConnect wiring. Run it:  node pad/e2e/walletconnect.mjs
+ * Browser checks for the pad front end. Run it:  node pad/e2e/pad.mjs
  *
  * This exists because the WalletConnect path cannot be exercised by the contract suites and cannot be fully
  * exercised without a phone — but almost everything that can actually break here breaks BEFORE a phone is
@@ -139,6 +139,64 @@ await page.close();
   // so adding WalletConnect must not have removed it.
   check("mobile still offers 'open in my wallet app'", () => assert.equal(r.hasDeepLink, true));
   await ctx.close();
+}
+
+// ── 4. the create page's supply / starting-value panel ───────────────────────
+// The chain-dependent half of this (does the quote agree with the factory) is covered by
+// launchpad/test/fdv-site-math.test.js against a real launch. What is checked HERE is the part that only
+// exists in the page: that the panel is opt-in, that it gates rather than guessing, and that a half-filled
+// form can never reach a wallet prompt.
+{
+  const p = await browser.newPage();
+  await p.route("**/*", onlyLocal);
+  await p.goto(base + "/create.html", { waitUntil: "domcontentloaded" });
+  await p.waitForTimeout(1500);
+
+  const panel = await p.evaluate(() => {
+    const d = document.getElementById("supplyPanel");
+    return { exists: !!d, open: d?.open === true, presets: [...(d?.querySelectorAll("[data-supply]") || [])].map((b) => b.textContent.trim()) };
+  });
+  check("the create page has a supply / starting-value panel", () => assert.equal(panel.exists, true));
+  // Opt-in on purpose: the one-click launch has to stay one click for anyone who does not care.
+  check("the panel is collapsed by default", () => assert.equal(panel.open, false));
+  check("it offers token-count presets", () => assert.deepEqual(panel.presets, ["1B", "100M", "1M", "10K"]));
+
+  const preset = await p.evaluate(async () => {
+    document.querySelector("[data-supply=\"10000\"]").click();
+    await new Promise((r) => setTimeout(r, 250));
+    return { field: document.getElementById("supplyIn").value, summary: document.getElementById("sSupply").textContent };
+  });
+  check("a preset fills the field and the summary follows it", () => {
+    assert.equal(preset.field, "10,000");
+    assert.equal(preset.summary, "10,000");
+  });
+
+  // Half-filled is the dangerous state: guessing the missing half would launch a coin priced somewhere the
+  // creator never chose, so it must refuse.
+  const half = await p.evaluate(async () => {
+    document.getElementById("fdvIn").value = "";
+    document.getElementById("supplyIn").value = "10000";
+    await window.fdvSync();
+    return { err: window.__fdvError, choice: window.__fdvChoice };
+  });
+  check("token count without a value is refused, not guessed", () => {
+    assert.match(half.err || "", /both/i);
+    assert.equal(half.choice, undefined);
+  });
+
+  // Both blank must go back to the plain default launch, with nothing extra sent.
+  const blank = await p.evaluate(async () => {
+    document.getElementById("supplyIn").value = "";
+    document.getElementById("fdvIn").value = "";
+    await window.fdvSync();
+    return { err: window.__fdvError, choice: window.__fdvChoice, summary: document.getElementById("sSupply").textContent };
+  });
+  check("clearing both returns to the standard launch", () => {
+    assert.equal(blank.err, undefined);
+    assert.equal(blank.choice, undefined);
+    assert.equal(blank.summary, "1,000,000,000");
+  });
+  await p.close();
 }
 
 await browser.close();

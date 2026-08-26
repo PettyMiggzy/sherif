@@ -51,6 +51,11 @@ export const CONTRACTS = {
   v3Factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
 
   // Our CurvePadFactory (one-call launch) - LIVE on Robinhood Chain.
+  // REPOINT THIS WITH THE NEXT DEPLOY. The address below is the ORIGINAL factory, which has neither the
+  // `1ab5` brand entrypoints (`launchWithSalt`) nor creator-chosen supply (`launchWithSupplyAndSalt`) — this
+  // site now calls both, so launching against it fails. The site and the factory ship together; see
+  // launchpad/DEPLOY-V2.md. `assertModernFactory()` in wallet.js turns the mismatch into a plain message
+  // rather than an unreadable RPC error if the two ever get out of step.
   padFactory: "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074",
 
   // Our PadRouter - the swap desk + project fee. Robinhood Chain has no canonical
@@ -154,8 +159,21 @@ export const ABIS = {
     // miner needs.
     "function launch((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax) p) payable returns (address token, address curve, address pool)",
     "function launchWithSalt((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax) p, bytes32 tokenSalt) payable returns (address token, address curve, address pool)",
+    // [FDV] Creator-chosen supply AND starting valuation. `supply` is in wei units (18 decimals) and
+    // `startTickMag` is a positive tick magnitude that must be a multiple of 200 — a HIGHER magnitude is a
+    // CHEAPER token, so raising it while holding supply lowers the valuation. Pass 0 for either to take the
+    // factory's own default.
+    "function launchWithSupplyAndSalt((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax) p, uint256 supply, int24 startTickMag, bytes32 tokenSalt) payable returns (address token, address curve, address pool)",
+    // What the factory bounds is supply x launch price — the implied fully-diluted value — not supply itself.
+    // The create page quotes the creator's choice through quoteFdvWei and checks it against the live band
+    // BEFORE spending gas, because the contract's own check reverts MarketCapOutOfRange.
+    "function quoteFdvWei(uint256 supply, int24 startTickMag) view returns (uint256)",
+    "function minFdvWei() view returns (uint256)",
+    "function maxFdvWei() view returns (uint256)",
     "function tokenDeployer() view returns (address)",
     "function TOTAL_SUPPLY() view returns (uint256)",
+    "function START_TICK_MAG() view returns (int24)",
+    "function CURVE_WIDTH() view returns (int24)",
     "function tokenCount() view returns (uint256)",
     "function allTokens(uint256) view returns (address)",
     "function recordOf(address) view returns (address token, address curve, address dev, uint256 at)",

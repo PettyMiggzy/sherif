@@ -269,6 +269,33 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
         </div>
       </div>
 
+      <!-- [FDV] Creator-chosen supply and starting value. Collapsed by default on purpose: the one-click
+           launch stays one click, and a creator who does not care never has to form an opinion. What the
+           contract bounds is supply x starting price, NOT supply — so a small token count is only safe when
+           the price moves with it, which is why these two inputs live together and are quoted together. -->
+      <details class="field" id="supplyPanel" style="border:1px solid var(--line-2,rgba(220,233,5,.14));border-radius:12px;padding:12px 14px;margin-bottom:14px;background:rgba(220,233,5,.03)">
+        <summary style="cursor:pointer;font-weight:800;list-style:none;display:flex;align-items:center;gap:8px">Supply &amp; starting value <span class="hint" style="font-weight:500">optional — defaults are fine</span></summary>
+        <div style="margin-top:12px">
+          <p class="hint" style="margin:0 0 10px">Most coins launch with <b>1,000,000,000</b> tokens. The token count is cosmetic: what decides how much your coin costs is the <b>starting value</b> below. Two coins opening at the same value take the same money for the same share of the coin, whether there are ten thousand tokens or a billion.</p>
+          <div class="row2">
+            <div class="field"><label for="supplyIn">Total tokens</label>
+              <input class="inp" id="supplyIn" inputmode="numeric" placeholder="1,000,000,000" oninput="fdvSync()" />
+              <div class="hint" id="supplyPresets" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+                <button type="button" class="preset" data-supply="1000000000">1B</button>
+                <button type="button" class="preset" data-supply="100000000">100M</button>
+                <button type="button" class="preset" data-supply="1000000">1M</button>
+                <button type="button" class="preset" data-supply="10000">10K</button>
+              </div>
+            </div>
+            <div class="field"><label for="fdvIn">Starting value (ETH)</label>
+              <input class="inp" id="fdvIn" inputmode="decimal" placeholder="1.76" oninput="fdvSync()" />
+              <div class="hint" style="margin-top:6px">What the whole coin is worth at launch, before anyone buys.</div>
+            </div>
+          </div>
+          <p class="hint" id="fdvNote" style="margin:10px 0 0">Leave both blank for the standard launch.</p>
+        </div>
+      </details>
+
       <button class="btn btn-lime" id="launchBtn" type="button">Launch coin</button>
       <p class="note" id="launchNote">Free to launch, you only pay network gas. One transaction: no token approval, no authority grant. The dev buy (if any) rides in the same tx, ahead of the field, no cap, and any ETH past the graduation ceiling is refunded.</p>
     </form>
@@ -276,7 +303,7 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
     <aside class="summary">
       <h3 id="sName">Your coin</h3>
       <div class="s-sub" id="sTick">$TICKER · Robinhood Chain</div>
-      <div class="li"><span class="ic">✓</span><div><b>1,000,000,000</b> supply · fixed, no mint</div></div>
+      <div class="li"><span class="ic">✓</span><div><b id="sSupply">1,000,000,000</b> supply · fixed, no mint</div></div>
       <div class="li"><span class="ic">✓</span><div><b>DEX + DexScreener day one</b>, real Uniswap v3 pool from block one</div></div>
       <div class="li"><span class="ic">✓</span><div><b>The Bond</b>, graduates into a protocol-owned floor it can't be rugged below</div></div>
       <div class="li"><span class="ic">✓</span><div><b>Graduate → we boost you</b>: every coin that hits the DEX gets a <b>DexScreener 10× Boost</b>, funded by Robin Labs</div></div>
@@ -516,6 +543,90 @@ async function refreshConnect() {
   $('connectBtn').textContent = a ? Pad.short(a) : 'Connect wallet';
 }
 
+// ── [FDV] supply + starting value ────────────────────────────────────────────
+// The factory bounds supply x starting price, not supply, so the two inputs are quoted TOGETHER and only
+// ever against the chain: Pad.quoteLaunch calls the factory's own quoteFdvWei and its own band, which is the
+// same function and the same numbers the launch will be judged by. Nothing here re-implements that maths, so
+// the page cannot drift from the contract and promise a launch that reverts.
+//
+// It writes two globals the launch handler reads:
+//   __fdvChoice  the verified choice to send, or undefined for a standard launch
+//   __fdvError   a plain reason the button should refuse, or undefined
+// Display only, and deliberately not read from anywhere: this chain has no USD oracle, so every dollar
+// figure on the site is an assumption. The number the launch is actually checked against is the ETH one.
+const ETH_USD = 1920;
+const fmtInt = (n) => Number(n).toLocaleString('en-US');
+let fdvSeq = 0;
+
+async function fdvSync() {
+  const raw = ($('supplyIn')?.value || '').replace(/[^0-9]/g, '');
+  const val = ($('fdvIn')?.value || '').trim();
+  const noteEl = $('fdvNote');
+  const supplyEl = $('sSupply');
+
+  // Mirror the token count into the summary card as soon as it is typed, BEFORE any of the refusals below.
+  // It used to sit after them, which meant clicking the "10K" preset left the card still reading
+  // 1,000,000,000 until a value was also entered — so the preset looked like it had done nothing.
+  if (supplyEl) supplyEl.textContent = raw ? fmtInt(raw) : '1,000,000,000';
+
+  // Neither filled in → the standard launch, exactly as before this panel existed.
+  if (!raw && !val) {
+    window.__fdvChoice = undefined; window.__fdvError = undefined;
+    if (noteEl) { noteEl.textContent = 'Leave both blank for the standard launch.'; noteEl.style.color = ''; }
+    return;
+  }
+  // One without the other cannot be quoted — and guessing the missing half is exactly how a creator ends up
+  // with a coin priced somewhere they never chose.
+  if (!raw || !val) {
+    window.__fdvChoice = undefined;
+    window.__fdvError = 'Fill in both the token count and the starting value, or clear both.';
+    if (noteEl) { noteEl.textContent = window.__fdvError; noteEl.style.color = 'var(--red)'; }
+    return;
+  }
+
+  if (noteEl) { noteEl.textContent = 'Checking…'; noteEl.style.color = ''; }
+
+  // The inputs fire on every keystroke; only the newest answer is allowed to win, or a slow earlier quote
+  // can land last and describe a value the creator has already typed past.
+  const seq = ++fdvSeq;
+  try {
+    const q = await Pad.quoteLaunch(raw, val);
+    if (seq !== fdvSeq) return;
+    if (!q.ok) {
+      window.__fdvChoice = undefined;
+      window.__fdvError = q.reason;
+      if (noteEl) { noteEl.textContent = q.reason; noteEl.style.color = 'var(--red)'; }
+      return;
+    }
+    window.__fdvChoice = { supplyWei: q.supplyWei, startTickMag: q.startTickMag };
+    window.__fdvError = undefined;
+    // Show the value the CONTRACT quoted, not the one that was typed: the launch price has to sit on a tick
+    // multiple of 200, so the real starting value is a hair off whatever was asked for, and the creator
+    // should see the number their coin actually opens at.
+    const eth = Number(q.fdvWei) / 1e18;
+    if (noteEl) {
+      noteEl.textContent = `${fmtInt(raw)} tokens opening at ${eth.toLocaleString('en-US', { maximumSignificantDigits: 4 })} ETH `
+        + `(about $${Math.round(eth * ETH_USD).toLocaleString('en-US')}) — that is the whole coin, before anyone buys.`;
+      noteEl.style.color = 'var(--green)';
+    }
+  } catch (e) {
+    if (seq !== fdvSeq) return;
+    // A failed quote must not silently fall through to a standard launch with the creator's numbers on
+    // screen — that would mint a supply they did not ask for.
+    window.__fdvChoice = undefined;
+    window.__fdvError = "Couldn't check that against the launch contract. Try again in a moment.";
+    if (noteEl) { noteEl.textContent = window.__fdvError; noteEl.style.color = 'var(--red)'; }
+  }
+}
+window.fdvSync = fdvSync;
+
+$('supplyPresets')?.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-supply]');
+  if (!b) return;
+  $('supplyIn').value = fmtInt(b.dataset.supply);
+  fdvSync();
+});
+
 // ── migrate-in: pull an existing token's name/ticker/logo from DexScreener so a project relaunching
 //    on Robin does not retype anything. The chain + address also become the coin's "Migrated from" badge. ──
 const isEvmAddr = (s) => /^0x[0-9a-fA-F]{40}$/.test(s);
@@ -620,6 +731,10 @@ $('launchBtn').addEventListener('click', async () => {
   catch (e) { return setNote(e.message, 'err'); }
   if (splitSpec && devEth <= 0) return setNote('Add a dev buy to split, or clear the split wallets.', 'err');
 
+  // [FDV] A choice the contract would reject must never reach a wallet prompt — fdvSync() has already asked
+  // the factory, so use its verdict rather than re-deriving it here.
+  if (window.__fdvError) return setNote(window.__fdvError, 'err');
+
   try {
     if (!Pad.account()) { await Pad.connect(); await refreshConnect(); }
     // [BRAND] Every Robin coin's address ends in `1ab5`, and the contract will not launch one that does not,
@@ -629,6 +744,11 @@ $('launchBtn').addEventListener('click', async () => {
     const mineNote = (tries) => setNote(`Mining your coin's address… ${tries.toLocaleString()} tried`);
     const tx = await Pad.launch({
       name, symbol, dev: Pad.account(), devBuyEth: devEth > 0 ? String(devEth) : '0', tax,
+      // [FDV] Both undefined unless the creator opened the panel and filled it in, in which case the launch
+      // goes through launchWithSupplyAndSalt instead. __fdvChoice is only ever set to a quote the CONTRACT
+      // said was in band, so this cannot send a combination that reverts MarketCapOutOfRange.
+      supply: window.__fdvChoice?.supplyWei,
+      startTickMag: window.__fdvChoice?.startTickMag,
       onMining: mineNote,
       // Fires once the address is mined, just before the wallet prompt — and hands over the coin's real
       // address, so the creator sees it before they sign rather than after it is live.
