@@ -9,7 +9,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
-const { bindSalt, brandedTokenSalt } = require("../helpers/brand");
+const { bindSalt, brandedTokenSalt, predictPadToken } = require("../helpers/brand");
 
 const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
@@ -185,40 +185,66 @@ describe("M-27 — a pad token can only be launched once per factory", () => {
     const firstPool = await factory.poolOf(tokenAddr);
     expect(firstPool).to.not.equal(ethers.ZeroHash);
 
-    // identical salts (so the deployer ADOPTS the existing token and hook) but a different pool key
+    // [SALT BINDING] The replay now dies one layer EARLIER than the AlreadyLaunched gate, and this test
+    // was updated to say so rather than to keep asserting the old error. The factory hashes
+    // keccak256(abi.encode(cfg, tokenSalt)) before CREATE2, so changing `fee` or `tickSpacing` moves the
+    // token to a different address entirely — one nobody mined — and `requireBrand` rejects it there. The
+    // attacker never reaches the point where a second pool over the SAME token is even expressible.
+    const TokenF = await ethers.getContractFactory("PadToken");
     for (const over of [{ fee: 500 }, { tickSpacing: 10 }, { fee: 10000, tickSpacing: 200 }]) {
-      await expect(factory.launch(cfgFor(over), tokenSalt, hookSalt, { value: E(1) }))
-        .to.be.revertedWithCustomError(factory, "AlreadyLaunched");
+      const variant = cfgFor(over);
+      const moved = predictPadToken(
+        await dep.getAddress(), await factory.getAddress(), variant, tokenSalt, TokenF.bytecode
+      );
+      expect(moved).to.not.equal(tokenAddr); // the address MOVED — that IS the fix
+      await expect(factory.launch(variant, tokenSalt, hookSalt, { value: E(1) }))
+        .to.be.revertedWithCustomError(factory, "BadTokenSuffix");
     }
     expect(await factory.poolOf(tokenAddr)).to.equal(firstPool); // the claim is unchanged
     expect(await factory.launchCount()).to.equal(1n);
+
+    // The one replay the binding cannot move is the byte-IDENTICAL one: same cfg, same salt, same address,
+    // so the deployer adopts the live token and the brand check passes. That path still has to be shut, and
+    // AlreadyLaunched is what shuts it.
+    await expect(factory.launch(cfg, tokenSalt, hookSalt, { value: E(1) }))
+      .to.be.revertedWithCustomError(factory, "AlreadyLaunched");
+    expect(await factory.launchCount()).to.equal(1n);
+
+    // And the strong form of the invariant: even an attacker who correctly MINES for the variant config
+    // cannot land on the original token. They get a different token — which is a different pad, not a
+    // second pool over someone else's.
+    const variant = cfgFor({ fee: 500 });
+    const v = await mineSalts(variant, ethers.id("m27-mined-variant"));
+    expect(v.tokenAddr).to.not.equal(tokenAddr);
+    await factory.launch(variant, v.tokenSalt, v.hookSalt, { value: E(1) });
+    expect(await factory.poolOf(tokenAddr)).to.equal(firstPool); // untouched
+    expect(await factory.poolOf(v.tokenAddr)).to.not.equal(firstPool);
+    expect(await factory.launchCount()).to.equal(2n);
   });
 
-  it("the token is claimed BEFORE any external call the launch makes", async () => {
-    // the guard is only airtight if poolOf is written at the earliest point poolId exists — otherwise a
-    // re-entrant creator callback could slip a second launch past it inside the same transaction
-    const cfg = cfgFor({ name: "Pad2", symbol: "PAD2" });
-    const seed2 = ethers.id("m27-second");
-    const { tokenSalt: ts2, hookSalt: hs2, tokenAddr } = await mineSalts(cfg, seed2);
-    // a fresh token salt so this is a genuinely new pad — mined off `seed2` so it carries the `1ab5` brand
-    // and still lands somewhere no other pad in this file occupies (memoized, so this costs one mine)
-    const salt2 = await brandedTokenSalt(await dep.getAddress(), await factory.getAddress(), cfg, seed2);
-    const TokenF = await ethers.getContractFactory("PadToken");
-    const init = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"],
-      [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, await factory.getAddress()])]);
-    const tok2 = ethers.getCreate2Address(await dep.getAddress(), salt2, ethers.keccak256(init));
-    const HookF = await ethers.getContractFactory("RobinFeeHook");
-    const hookHash = ethers.keccak256(ethers.concat([HookF.bytecode,
-      abi.encode(["address", "address", "address", "address"],
-        [await pm.getAddress(), await factory.getAddress(), await reg.getAddress(), tok2])]));
-    let hs;
-    for (let i = 0n; ; i++) {
-      const s = ethers.zeroPadValue(ethers.toBeHex(i), 32);
-      const a = ethers.getCreate2Address(await dep.getAddress(), s, hookHash);
-      if ((BigInt(a) & MASK) === FLAGS) { hs = s; break; }
-    }
-    await factory.launch(cfg, salt2, hs, { value: E(1) });
-    expect(await factory.poolOf(tok2)).to.not.equal(ethers.ZeroHash);
-    void ts2; void hs2; void tokenAddr;
+  it("the token is claimed BEFORE the refund hands control to the creator", async () => {
+    // The gate above is only airtight if `poolOf[token]` is written before any external call the launch
+    // makes. launch() has exactly one such window: the leftover-ETH refund, a raw call to `cfg.creator`
+    // near the end. So make the creator a contract that re-enters launch() from inside that refund and
+    // record which guard fires. A weaker version of this test just launched and checked poolOf was set —
+    // which would have passed just as happily with the write moved to the last line of the function.
+    const hostile = await (await ethers.getContractFactory("ReentrantPadCreator")).deploy();
+    // lpTokenAmount well under the ETH seed so the token leg binds and real ETH dust comes back —
+    // without a refund there is no re-entrancy window and the test would silently prove nothing.
+    const cfg = cfgFor({ name: "Pad2", symbol: "PAD2", lpTokenAmount: E(0.25), creator: await hostile.getAddress() });
+    const { tokenSalt, hookSalt, tokenAddr } = await mineSalts(cfg, ethers.id("m27-second"));
+
+    const payload = factory.interface.encodeFunctionData("launch", [cfg, tokenSalt, hookSalt]);
+    await hostile.arm(await factory.getAddress(), payload);
+
+    await factory.launch(cfg, tokenSalt, hookSalt, { value: E(1) });
+
+    expect(await hostile.reentered()).to.equal(true); // the window really opened
+    expect(await hostile.innerOk()).to.equal(false); // and the re-entrant launch was rejected
+    expect(await hostile.innerError()).to.equal(
+      factory.interface.getError("AlreadyLaunched").selector // by the uniqueness gate, not by luck
+    );
+    expect(await factory.poolOf(tokenAddr)).to.not.equal(ethers.ZeroHash);
+    expect(await factory.launchCount()).to.equal(3n); // the second launch never happened
   });
 });
