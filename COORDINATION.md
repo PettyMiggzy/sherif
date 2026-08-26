@@ -54,6 +54,23 @@ has been corrected.
 
 Newest first. One line each: what changed, and anything the other side must know.
 
+- **main session** — **BREAKING, and it lands with a new v3 factory: every coin address must now end in
+  `1ab5`.** `PadBrand.requireBrand` runs inside `CurvePadFactory._launch`; there is no flag and no bypass.
+  `launch(p)` and `launchWithSupply(p, s, m)` now ALWAYS revert `SaltRequired` — their block-derived salt was
+  unmineable, so under the rule they had no reachable success case. Everything launches through
+  `launchWithSalt` / `launchWithSupplyAndSalt` with a salt mined off-chain.
+  - If you encode the v3 factory ABI anywhere, you must mine. The one miner is
+    `launchpad/mine/robin-mine.mjs`; the site and the bot carry GENERATED copies refreshed by
+    `node scripts/sync-miner.mjs` and pinned by `launchpad/test/miner-sync.test.js`. Do not write a fourth
+    copy of the CREATE2 chain — three transcriptions of it have already been wrong.
+  - The init-code hash a miner needs comes from `LaunchTokenDeployer.tokenInitCodeHash()`, NOT from bundled
+    bytecode. That means the deploy stands up a **new LaunchTokenDeployer** (the live one predates the view),
+    so `deploy-v2.js` no longer reuses it and coin addresses come off a new deployer.
+  - The site, the launchbot and the SDK have all been updated. Any other client is broken until it is.
+- **main session** — three separate places predicted a pad-token address from the RAW salt while the factory
+  deploys at `keccak256(abi.encode(cfg, tokenSalt))` (v4) or `keccak256(msg.sender, tokenSalt)` (v3). Each
+  failed far from the cause — `BadTokenSuffix`, or `DeployFailed` three frames deep. If you need a pad token
+  address, go through `predictPadToken` (v4) or the shared miner's `predict` (v3). Never hand-roll it.
 - **main session** — HEADS UP IF YOU ENCODE THE v3 FACTORY ABI. `LaunchParams` briefly gained a
   fifth field (`tokenSalt`), which moved the `launch` selector and broke the SDK, launchbot,
   `pad/assets/config.js` and the published docs ABI. That is REVERTED — the 4-field tuple is

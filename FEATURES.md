@@ -16,42 +16,51 @@ v4-only is NOT in what ships, however finished it is.
 | A2 | Creator's atomic opening buy, **uncapped** | ✅ | inside the launch tx, ahead of everyone |
 | A3 | **Creator picks supply** | ⚠️ **contract only** | `launchWithSupply` built + fork-tested; UI calls old `launch()`, no input, still says "fixed 1B" |
 | A4 | **Creator picks launch valuation** | ⚠️ **contract only** | `startTickMag` + FDV band; same UI gap as A3 |
-| A5 | **Every CA ends in `1ab5`** | ⚠️ **contract only** | `launchWithSalt` / `launchWithSupplyAndSalt` on v3; `PadBrand.requireBrand` on all three v4 factories. No client mines yet — `pad/assets/config.js`, `sdk/robinlabs.mjs`, `launchbot/config.js` still call plain `launch()`. Creators do NOT choose the ending: owner decision, it is a fixed brand |
+| A5 | **Every CA ends in `1ab5`** | ✅ | `PadBrand.requireBrand` on v3 and on all three v4 factories, with no flag and no bypass. v3's salt-less entrypoints revert `SaltRequired`. The site, the Telegram bot and the SDK all run the one shared miner (`launchpad/mine/robin-mine.mjs`, ~2.6s). Creators do NOT choose the ending: owner decision, it is a fixed brand |
 | A6 | Creator picks fee rate 1%–4% per side | ✅ | `TaxParams`; UI exposes it |
 | A7 | No anti-snipe guard | ✅ | zero `GuardConfig`, pinned on a live fork |
-| A8 | Anti-DoS launch (unpredictable token address) | ✅ | but see BRAND — it is what blocks A5 |
+| A8 | Anti-DoS launch (unpredictable token address) | ✅ | superseded by A5: a mined address is predictable BY THE CREATOR, so the unpredictability is replaced by (a) the factory binding `msg.sender` into the salt, so only they can reach it, and (b) `CurvePool.seed()` repairing a squatted pool instead of dying on it |
 
-### BRAND (A5) — the correction
+### BRAND (A5) — done, and what it cost
 
-You want **creators to pick their own address ending, defaulting to `1ab5`**. Neither build does that:
+The ending is a **rule**: every Robin coin address ends in `1ab5`, on v3 and on v4, enforced in the contract
+rather than in the launch tooling. Creators do not pick it and cannot override it. An earlier draft of this
+document asked whether `1ab5` was "a floor or a default" — that question is closed: it is neither, it is fixed.
 
-- `pad-v4` **forces** `1ab5` on every coin. No choice, no override, deliberately no bypass. That is a *brand
-  rule*, not a *creator feature* — and it is v4 anyway, so it does not ship next.
-- `launchpad` v2 has **no suffix logic at all**, and *cannot* have any today: the factory builds the CREATE2
-  salt itself from `block.number`/`block.timestamp`, so it is unmineable by design.
+How it holds:
 
-To get what you actually want, on the pad that ships:
-1. **Do NOT re-add `tokenSalt` to `LaunchParams`.** That was tried and reverted: the fifth struct field moved
-   the `launch` selector and broke the SDK, launchbot, `pad/assets/config.js` and the published ABI. The salt
-   reaches the factory through additive entrypoints instead — `launchWithSalt(p, tokenSalt)` and
+1. **`PadBrand.requireBrand(token)`** runs inside `_launch` right after the token is deployed and before any
+   pool, curve or transfer exists, so an unmined salt wastes gas and can never half-create a pad.
+2. **The salt-less entrypoints revert `SaltRequired`.** `launch(p)` and `launchWithSupply(p, s, m)` used to
+   derive a salt from `block.number`/`block.timestamp` — unmineable by design, so under the brand rule they
+   had no reachable success case. They are kept only so the published ABI still resolves and an old caller
+   gets a named error instead of a missing function. **This broke every existing caller**, which is why it
+   ships with a new factory address and updated clients, not on its own.
+3. **`tokenSalt` is NOT a field of `LaunchParams`.** That was tried and reverted: a fifth struct field moved
+   the `launch` selector and broke the SDK, the launchbot, `pad/assets/config.js` and the published ABI. The
+   salt arrives through additive entrypoints — `launchWithSalt(p, tokenSalt)` and
    `launchWithSupplyAndSalt(p, supply, startTickMag, tokenSalt)`.
-2. **The salt MUST be bound before it reaches CREATE2.** The original plan here claimed a caller-supplied salt
-   was safe "because `LaunchTokenDeployer` already folds `msg.sender` into the salt". That is false and it was
-   a critical: on the launch path `msg.sender` at the deployer is the FACTORY, one constant address for every
-   creator, so the fold separates a direct caller of the public deployer from the factory and separates
-   NOTHING between two creators. `p.dev` is not a `LaunchToken` constructor argument either, so the coin's
-   address did not depend on who was launching it — anyone who saw a salt could take that address with
-   themselves as dev. v3 binds `msg.sender`; the v4 factories bind the whole `LaunchConfig` (the presale vault
-   is the caller there, and its address is not knowable when the creator mines).
-3. The suffix is a RULE, not a choice — every Robin CA ends in `1ab5`. Because nobody picks it, no creator
-   needs to know their address before launching, so the client must RE-MINE on any failed launch rather than
-   retrying the same salt. That is what keeps a squatted pool from being permanent.
+4. **The salt is bound before it reaches CREATE2.** The original plan claimed a caller-supplied salt was safe
+   "because `LaunchTokenDeployer` already folds `msg.sender` in". That is false and it was a critical: on the
+   launch path `msg.sender` at the deployer is the FACTORY, one constant address for every creator, so the
+   fold separates a direct caller of the public deployer from the factory and separates NOTHING between two
+   creators. `p.dev` is not a `LaunchToken` constructor argument either, so the coin's address did not depend
+   on who was launching it — anyone who saw a salt could take that address with themselves as dev. v3 binds
+   `msg.sender`; the v4 factories bind the whole `LaunchConfig` (the presale vault is the caller there, and
+   its address is not knowable when the creator mines).
+5. **One miner, not four.** `launchpad/mine/robin-mine.mjs` is the only implementation of the three-keccak
+   chain; the site and the bot get GENERATED copies (`node scripts/sync-miner.mjs`) because neither can import
+   across directories, and `launchpad/test/miner-sync.test.js` fails if a copy drifts. A stale copy mines
+   addresses the factory never reaches and the only symptom is launches reverting `BadTokenSuffix`.
+6. **The init-code hash comes from the chain.** `LaunchTokenDeployer.tokenInitCodeHash()` — the contract that
+   embeds the coin's creation code, so the hash is by construction the code it will deploy. Bundling that
+   bytecode into the website would let the client drift from what is live with no visible symptom. This is
+   why the v3 relaunch deploys a NEW `LaunchTokenDeployer` rather than reusing the live one.
+7. **Re-mine on failure, never retry the same salt.** Nobody picks the ending, so no creator needs their
+   address in advance; a failed launch should mine again. That is what keeps a squatted pool from being
+   permanent.
 
 See `AUDIT-PRESALE-FEE-AND-SALT.md` and commits 78c174c / 98a61ca before changing any of this.
-
-Decision needed: **is `1ab5` a floor or a default?** If every Robin coin must end in `1ab5` *and* creators may
-extend it (e.g. `…ab1ab5`), impersonation stays visible. If a creator may replace it entirely, the brand signal
-is gone. Those are different products; the code is easy either way.
 
 ## B. After graduation
 
@@ -118,8 +127,11 @@ mechanism to take the 10%, per-customer accounting, and a kill switch. None of t
 
 ## What is actually blocking
 
-1. **A5 brand** — not built anywhere in the form you want. Needs the decision above.
-2. **A3/A4 supply + valuation** — built, unreachable. UI wiring.
+1. ~~**A5 brand**~~ — done. Contract-enforced on v3 and v4, and mined by the site, the bot and the SDK. It
+   ships with a NEW factory AND a new `LaunchTokenDeployer`, and the clients must be repointed at the same
+   time: every one of them reverts against the new factory until it is.
+2. **A3/A4 supply + valuation** — built, unreachable. UI wiring. Note the salted entrypoint is
+   `launchWithSupplyAndSalt` now, not `launchWithSupply`.
 3. **B2 reward vs A4** — pick: lift the FDV band floor so every launch still earns the full 0.5, or show the
    creator their real number.
 4. **C4/C5 dead knobs** — the UI collects a fee allocation that the contract ignores. Either stop collecting it
