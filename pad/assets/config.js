@@ -10,6 +10,17 @@
 // zero / wrong address. See isDeployed().
 // ─────────────────────────────────────────────────────────────────────────────
 
+// WalletConnect project id. PUBLIC by design — it identifies this dapp to the WalletConnect relay and is
+// meant to be shipped inside the browser bundle, exactly like the addresses below. It is not a secret and
+// grants nobody any authority over funds or over this site. The only real abuse is quota: someone who scrapes
+// it can route their own relay traffic through this project, so if the connection rate ever looks wrong, roll
+// it in the WalletConnect dashboard rather than treating it as a breach.
+//
+// NOT WIRED UP YET. Nothing reads this today — the pad connects through injected EIP-6963 wallets only, and
+// mobile is handled by deep-linking into the wallet's own in-app browser (see wallet.js). It is parked here so
+// the id lives with the rest of the public config instead of in a chat message.
+export const WALLETCONNECT_PROJECT_ID = "89d7a1882c0fa9a5bbe0a58accafc100";
+
 export const CHAIN = {
   id: 4663,
   hexId: "0x1237", // 4663
