@@ -2,6 +2,9 @@
 // BLOCKED — plus buy-side anti-snipe caps that auto-expire and never touch sells or ordinary transfers.
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+// [BRAND] launch()/launchWithSupply() now require a mined `1ab5` salt; the wrapper mines and forwards to the
+// salted entrypoints so the launch call sites below stay exactly as they were. See test/helpers/brand.js.
+const { brandedFactory } = require("./helpers/brand");
 
 const ONE = 10n ** 18n;
 const V3_FACTORY = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
@@ -24,8 +27,9 @@ suite("LaunchToken guard — sells never blocked; buy-side anti-snipe only", fun
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress,
       START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH);
     await (await router.setFactory(await factory.getAddress())).wait();
+    const branded = brandedFactory(factory);
     const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const rc = await (await factory.launch({ name: "Guard", symbol: "GRD", dev: dev.address, tax: NOTAX })).wait();
+    const rc = await (await branded.launch({ name: "Guard", symbol: "GRD", dev: dev.address, tax: NOTAX })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token } = ev.args;
     const TOK = await ethers.getContractAt(["function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)", "function transfer(address,uint256) returns (bool)"], token);

@@ -1,5 +1,9 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+// [BRAND] a coin address must end in `1ab5`, so these squats have to target a MINED address like a real
+// launch does. `mineFor` returns the salt and the address together, from the same miner the site and the
+// bot run — the locally transcribed CREATE2 chain that used to live here was a fourth copy of it.
+const { mineFor } = require("./helpers/brand");
 const V3_FACTORY_ART = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
 const V3_POOL_ART = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
 
@@ -51,22 +55,12 @@ describe("[F-1] a squatted pool is repaired, not fatal", function () {
     await (await (await ethers.getContractAt("PadRouter", router)).connect(dep).setFactory(factoryAddr)).wait();
   });
 
-  // Reproduce the exact CREATE2 the factory will use for a given caller + mined salt.
-  async function predictToken(creator, tokenSalt, name, symbol) {
-    const inner = ethers.keccak256(ethers.solidityPacked(["address", "bytes32"], [creator, tokenSalt]));
-    const outer = ethers.keccak256(ethers.solidityPacked(["address", "bytes32"], [factoryAddr, inner]));
-    const guard = { deadSecs: 0, phase1Secs: 0, antiSnipeSecs: 0, maxTxBps1: 0, maxWalletBps1: 0, maxTxBps2: 0, maxWalletBps2: 0, cooldownSecs: 0 };
-    const art = await ethers.getContractFactory("LaunchToken");
-    const init = ethers.concat([art.bytecode, art.interface.encodeDeploy([name, symbol, SUPPLY, factoryAddr, guard])]);
-    return ethers.getCreate2Address(ltd, outer, ethers.keccak256(init));
-  }
-
   const launched = (rc) => rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
     .find((e) => e && e.name === "Launched");
 
   it("an EMPTY squatted pool is walked back to the start price and the launch succeeds", async () => {
-    const salt = ethers.id("mined-victim");
-    const token = await predictToken(dev.address, salt, "Robin Meme", "MEME");
+    const { salt, addr: token } = await mineFor(
+      factory, dev.address, { name: "Robin Meme", symbol: "MEME" }, 0n, "mined-victim");
 
     // ── the squat: create + initialize the victim's pool before the coin exists ──
     expect(await ethers.provider.getCode(token)).to.equal("0x");
@@ -105,8 +99,8 @@ describe("[F-1] a squatted pool is repaired, not fatal", function () {
   });
 
   it("an unsquatted launch emits no repair — the path does not fire spuriously", async () => {
-    const salt = ethers.id("mined-clean");
-    const token = await predictToken(dev.address, salt, "Robin Two", "TWO");
+    const { salt, addr: token } = await mineFor(
+      factory, dev.address, { name: "Robin Two", symbol: "TWO" }, 0n, "mined-clean");
     const rc = await (await factory.connect(dev).launchWithSalt(
       { name: "Robin Two", symbol: "TWO", dev: dev.address, tax: NOTAX() }, salt
     )).wait();

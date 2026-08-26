@@ -92,6 +92,67 @@ contract LaunchTokenDeployer {
         bytes32 s = keccak256(abi.encodePacked(msg.sender, salt));
         return address(new LaunchToken{salt: s}(name, symbol, supply, factory, g));
     }
+
+    /// @notice The `keccak256` of the exact init-code this deployer builds for a factory launch.
+    /// @dev Every coin address must end in `1ab5` (PadBrand), so every launch needs a salt mined off-chain
+    /// against the address the factory will really reach — and mining ~65k candidates cannot be done with
+    /// `eth_call`, so the client reproduces the CREATE2 chain locally and needs this hash.
+    ///
+    /// It lives HERE rather than in a standalone lens on purpose. This contract is the one that embeds
+    /// `type(LaunchToken).creationCode`, so the hash it returns is by construction the code it will deploy.
+    /// A separate helper — or a copy of the bytecode shipped inside the website bundle — could be compiled
+    /// from different source or settings than the deployer that is actually live, and the only symptom would
+    /// be every launch reverting `BadTokenSuffix` with nothing pointing at the cause.
+    ///
+    /// The GuardConfig is hardcoded all-zero because that is what `CurvePadFactory._launch` passes and no
+    /// entrypoint passes anything else — anti-snipe is off permanently. Taking it as a parameter would invite
+    /// a client to predict an address no launch can produce.
+    function tokenInitCodeHash(string calldata name, string calldata symbol, uint256 supply, address factory)
+        public
+        pure
+        returns (bytes32)
+    {
+        LaunchToken.GuardConfig memory g = LaunchToken.GuardConfig({
+            deadSecs: 0,
+            phase1Secs: 0,
+            antiSnipeSecs: 0,
+            maxTxBps1: 0,
+            maxWalletBps1: 0,
+            maxTxBps2: 0,
+            maxWalletBps2: 0,
+            cooldownSecs: 0
+        });
+        return keccak256(abi.encodePacked(type(LaunchToken).creationCode, abi.encode(name, symbol, supply, factory, g)));
+    }
+
+    /// @notice The address `factory.launchWithSalt(p, tokenSalt)` deploys `creator`'s coin to.
+    /// @dev The whole chain in one call, so a client can check its local arithmetic once against the chain
+    /// before it starts looping. This is NOT the mining loop — 65k round-trips is not a thing you do over RPC.
+    ///   inner = keccak256(abi.encodePacked(creator, tokenSalt))   the factory binds the CALLER
+    ///   outer = keccak256(abi.encodePacked(factory, inner))       this deployer binds ITS caller
+    ///   addr  = CREATE2(this, outer, tokenInitCodeHash(...))
+    function predict(
+        address factory,
+        address creator,
+        bytes32 tokenSalt,
+        string calldata name,
+        string calldata symbol,
+        uint256 supply
+    ) external view returns (address) {
+        bytes32 inner = keccak256(abi.encodePacked(creator, tokenSalt));
+        bytes32 outer = keccak256(abi.encodePacked(factory, inner));
+        return address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            bytes1(0xff), address(this), outer, tokenInitCodeHash(name, symbol, supply, factory)
+                        )
+                    )
+                )
+            )
+        );
+    }
 }
 
 contract CurvePoolDeployer {

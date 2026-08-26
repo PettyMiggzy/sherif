@@ -7,6 +7,7 @@ import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {LaunchToken} from "./LaunchToken.sol";
 import {LaunchTokenDeployer, CurvePoolDeployer} from "./deployers/CurveDeployers.sol";
+import {PadBrand} from "./PadBrand.sol";
 import {IUniswapV3Pool, IUniswapV3SwapCallback, IWETH9} from "./interfaces/IUniswapV3.sol";
 import {PoolMath} from "./libraries/PoolMath.sol";
 
@@ -111,6 +112,10 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
 
     error BadValue();
     error MarketCapOutOfRange(uint256 fdvWei);
+    /// @notice Thrown by the salt-less entrypoints. Every coin address must end in `1ab5` (PadBrand), which
+    /// requires a salt the caller mined off-chain — so `launch` and `launchWithSupply` cannot succeed and
+    /// say so up front. Use `launchWithSalt` / `launchWithSupplyAndSalt`.
+    error SaltRequired();
 
     event FdvBandChanged(uint256 minWei, uint256 maxWei);
     event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought);
@@ -179,18 +184,22 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
 
     receive() external payable {} // for WETH.withdraw refunds during a dev buy
 
-    /// @notice One tx: token + real pool + seeded curve + trading on. Send ETH to also make the dev's first
-    /// buy (≤2%) in the same tx, before trading opens to anyone else. DEX + DexScreener day one.
-    /// @dev The original entrypoint, unchanged for every existing caller: the factory's default supply at the
-    /// factory's default launch price. Identical to `launchWithSupply(p, 0, 0)`.
+    /// @notice DEPRECATED — always reverts `SaltRequired`. Use `launchWithSalt`.
+    /// @dev Kept so the published ABI still resolves and old callers get a named error rather than a
+    /// function-not-found. Every coin address must carry the `1ab5` brand (PadBrand), and the only way to
+    /// reach a branded address is a salt the caller mined, so a salt-less launch cannot succeed.
     function launch(LaunchParams calldata p) external payable nonReentrant returns (address token, address curve, address pool) {
         return _launch(p, 0, 0, bytes32(0));
     }
 
-    /// @notice `launch`, with the creator supplying a mined CREATE2 salt so their coin's address ends how they
-    /// chose (the pad defaults to `1ab5`; any ending is allowed — it is an option, not a rule, and nothing here
-    /// enforces one). Separate from `launch` on purpose: `LaunchParams` is a published ABI that bots, the SDK
-    /// and the site all encode, so the branded path is additive rather than a breaking tuple change.
+    /// @notice THE launch entrypoint. `tokenSalt` is a salt the caller mined off-chain so the coin's address
+    /// ends in `1ab5` — the Robin brand. That ending is a RULE, not a creator preference: `PadBrand` enforces
+    /// it on every path and there is no way to opt out, so this is the only way to open a pad.
+    /// @dev It stayed separate from `launch` rather than becoming a fifth `LaunchParams` field because that
+    /// tuple is a published ABI the bots, the SDK and the site all encode; moving the selector would have
+    /// broken every one of them silently.
+    /// @param tokenSalt mined over `keccak256(abi.encodePacked(msg.sender, candidate))` — the fold below binds
+    /// the address to the CALLER, so a salt someone else publishes is worthless to you and yours to them.
     function launchWithSalt(LaunchParams calldata p, bytes32 tokenSalt)
         external
         payable
@@ -200,7 +209,15 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         return _launch(p, 0, 0, tokenSalt);
     }
 
-    /// @notice Creator-chosen supply AND a mined address ending, in one call.
+    /// @notice Creator-chosen SUPPLY and LAUNCH PRICE, with the mandatory mined salt.
+    /// @param supply total token units to mint; 0 = this factory's default (1,000,000,000e18).
+    /// @param startTickMag positive launch-price magnitude in ticks (multiple of 200); 0 = the factory default.
+    ///        A HIGHER magnitude is a CHEAPER token, so raising it while holding supply lowers the valuation.
+    /// @dev Supply is bounded by NOTHING. What is checked is supply x launch price — the implied FDV — against
+    /// [minFdvWei, maxFdvWei], reverting `MarketCapOutOfRange` before a single byte of state is written. That is
+    /// what makes supply cosmetic: at equal FDV a 10,000-token coin and a 1,000,000,000-token coin take the same
+    /// money for the same percentage of the coin. `CURVE_WIDTH` stays factory-wide, so every coin still graduates
+    /// at the same multiple of its own launch price no matter what supply or valuation was chosen.
     function launchWithSupplyAndSalt(LaunchParams calldata p, uint256 supply, int24 startTickMag, bytes32 tokenSalt)
         external
         payable
@@ -210,15 +227,9 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         return _launch(p, supply, startTickMag, tokenSalt);
     }
 
-    /// @notice Same launch, with the creator choosing their own SUPPLY and their own LAUNCH PRICE.
-    /// @param supply total token units to mint; 0 = this factory's default (1,000,000,000e18).
-    /// @param startTickMag positive launch-price magnitude in ticks (multiple of 200); 0 = the factory default.
-    ///        A HIGHER magnitude is a CHEAPER token, so raising it while holding supply lowers the valuation.
-    /// @dev Supply is bounded by NOTHING. What is checked is supply x launch price — the implied FDV — against
-    /// [minFdvWei, maxFdvWei], reverting `MarketCapOutOfRange` before a single byte of state is written. That is
-    /// what makes supply cosmetic: at equal FDV a 10,000-token coin and a 1,000,000,000-token coin take the same
-    /// money for the same percentage of the coin. `CURVE_WIDTH` stays factory-wide, so every coin still graduates
-    /// at the same multiple of its own launch price no matter what supply or valuation was chosen.
+    /// @notice DEPRECATED — always reverts `SaltRequired`. Use `launchWithSupplyAndSalt`, which carries the
+    /// supply/price documentation this function used to hold.
+    /// @dev Kept for ABI compatibility only; see `launch` above for why a salt-less entrypoint cannot work.
     function launchWithSupply(LaunchParams calldata p, uint256 supply, int24 startTickMag)
         external
         payable
@@ -292,12 +303,21 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         // Folding msg.sender in makes the address unreproducible by anyone else: a different caller mining the
         // same target ending gets a different salt and a different address. Mining still works — the client
         // mines over `keccak(msg.sender, candidate)`.
-        bytes32 salt = tokenSalt_ != bytes32(0)
-            ? keccak256(abi.encodePacked(msg.sender, tokenSalt_))
-            : keccak256(
-                abi.encodePacked(address(this), p.dev, p.name, p.symbol, block.number, block.timestamp, allTokens.length)
-            );
+        // [BRAND] A mined salt is now MANDATORY, so the old entropy fallback is gone. It derived the salt
+        // from block.number/block.timestamp, which nobody can mine against ahead of time — under the brand
+        // rule it could only ever produce an unbranded address and revert. Rejecting it here names the real
+        // problem instead of failing later with a suffix error the caller cannot act on.
+        //
+        // This is a BREAKING change to `launch(p)` and `launchWithSupply(p, supply, mag)`: both are now
+        // salt-less entrypoints on a pad that requires a salt, so they always revert. They are kept rather
+        // than deleted so the published ABI still resolves and callers get `SaltRequired` instead of a
+        // function-not-found. Every client must move to `launchWithSalt` / `launchWithSupplyAndSalt`.
+        if (tokenSalt_ == bytes32(0)) revert SaltRequired();
+        bytes32 salt = keccak256(abi.encodePacked(msg.sender, tokenSalt_));
         token = tokenDeployer.deploy(p.name, p.symbol, totalSupply, address(this), g, salt);
+        // [BRAND] Every Robin coin address ends in `1ab5`. Checked here, before the pool, the curve or a
+        // single token transfer exists, so an unmined salt wastes gas and can never half-create a pad.
+        PadBrand.requireBrand(token);
 
         int24 startTick = token < WETH ? -mag : mag;
         curve = curveDeployer.deploy(

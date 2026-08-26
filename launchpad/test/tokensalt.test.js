@@ -1,12 +1,13 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const V3_FACTORY_ART = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
+const { mineFor } = require("./helpers/brand");
 
-// [SALT] Creator-chosen coin ADDRESS on the v3 pad.
+// [SALT] Who a mined coin ADDRESS belongs to.
 //
-// `launch()` builds its own CREATE2 salt from block.number/block.timestamp, so the coin's address is
-// unpredictable and cannot be mined. `launchWithSalt()` lets a creator supply a salt they mined, so the address
-// ends however they chose (the pad defaults to `1ab5`).
+// Every coin address must end in `1ab5` (PadBrand), so `launchWithSalt` is not an option a creator may take —
+// it is the only way to launch, and `launch()` reverts `SaltRequired`. The brand rule itself is pinned in
+// brand-1ab5.test.js. What THIS file pins is the other half: whose address a mined salt produces.
 //
 // The property this file exists to defend is the BINDING. An earlier version of the change passed the creator's
 // salt straight through, on the reasoning that LaunchTokenDeployer already folds msg.sender into the CREATE2
@@ -86,25 +87,24 @@ describe("[SALT] a mined coin address belongs to the creator who mined it", () =
     expect(unbound).to.not.equal(mine); // the bound address is not the one a leaked salt would reach
   });
 
-  it("a creator can mine an ending, and the prediction is exact", async () => {
-    // Mine for a 2-hex ending, cheap enough to do inside a unit test. The real client mines 4 (`1ab5`), which
-    // is the same loop with a longer target.
-    const WANT = "b5";
-    let salt = null, addr = null;
-    for (let i = 0; i < 65536; i++) {
-      const cand = ethers.zeroPadValue(ethers.toBeHex(i), 32);
-      const a = await predict(dev.address, cand, "Robin Meme", "MEME", SUPPLY);
-      if (a.toLowerCase().endsWith(WANT)) { salt = cand; addr = a; break; }
-    }
-    expect(salt, "mining found no salt").to.not.equal(null);
-    expect(addr.toLowerCase().endsWith(WANT)).to.equal(true);
+  it("a creator can mine the brand, and the prediction is exact", async function () {
+    this.timeout(300000); // a full 16-bit suffix is ~65k tries
+    // Mining now targets the mandatory `1ab5`, not a short ending chosen for test speed. `mineFor` runs the
+    // same miner the site and the bot run, so this also pins that miner against this file's own `predict`.
+    const { salt, addr } = await mineFor(
+      factory, dev.address, { name: "Robin Meme", symbol: "MEME" }, SUPPLY, "tokensalt-mine");
+    expect(addr.toLowerCase().endsWith("1ab5")).to.equal(true);
+    expect(await predict(dev.address, salt, "Robin Meme", "MEME", SUPPLY)).to.equal(addr);
 
-    // The SAME mined salt, mined by someone else, does not reach that address — so a creator can safely publish
-    // their coin's address before launching it.
-    expect(await predict(other.address, salt, "Robin Meme", "MEME", SUPPLY)).to.not.equal(addr);
+    // The SAME mined salt, replayed by someone else, does not reach that address — so a creator can safely
+    // publish their coin's address before launching it. Under the brand rule the replay cannot even launch:
+    // the address it does reach is unbranded, so the factory rejects it outright.
+    const theirs = await predict(other.address, salt, "Robin Meme", "MEME", SUPPLY);
+    expect(theirs).to.not.equal(addr);
+    expect(theirs.toLowerCase().endsWith("1ab5")).to.equal(false);
 
-    // ...and the factory really does land there. Without this the two assertions above only prove the helper
-    // is self-consistent: a prediction formula that was wrong in the same way twice would pass them both.
+    // ...and the factory really does land there. Without this the assertions above only prove the helper is
+    // self-consistent: a prediction formula that was wrong in the same way twice would pass them all.
     const [landed] = await factory.connect(dev).launchWithSalt.staticCall(
       { name: "Robin Meme", symbol: "MEME", dev: dev.address,
         tax: { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address } },
@@ -113,15 +113,17 @@ describe("[SALT] a mined coin address belongs to the creator who mined it", () =
     expect(landed).to.equal(addr);
   });
 
-  it("a zero salt is NOT a mined salt — it must fall through to the entropy branch", async () => {
-    // If zero were folded in like any other salt, every creator who left the field default would derive the
-    // same address and only the first could ever launch. The factory branches on `tokenSalt_ != bytes32(0)`,
-    // so what a zero would have produced must not be a reachable launch address.
-    const wouldBe = await predict(dev.address, ethers.ZeroHash, "Robin Meme", "MEME", SUPPLY);
-    const real = await predict(dev.address, ethers.id("anything-nonzero"), "Robin Meme", "MEME", SUPPLY);
-    expect(wouldBe).to.not.equal(real);
-    // The entropy branch mixes block.number and block.timestamp, so it cannot be predicted here at all — which
-    // is the point, and is asserted on-chain in the fork suite.
+  it("a zero salt is refused by name — there is no entropy fallback left", async () => {
+    // A zero salt used to fall through to a block-derived salt. Under the brand rule that branch could only
+    // ever produce an unbranded address, so it is gone: zero now means "you have not mined yet", and the
+    // factory says exactly that instead of failing later on the suffix.
+    await expect(
+      factory.connect(dev).launchWithSalt(
+        { name: "Robin Meme", symbol: "MEME", dev: dev.address,
+          tax: { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address } },
+        ethers.ZeroHash
+      )
+    ).to.be.revertedWithCustomError(factory, "SaltRequired");
   });
 
 });

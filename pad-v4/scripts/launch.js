@@ -19,6 +19,10 @@ const { ethers } = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 const { mineHookSalt, mineTokenSalt, hookInitCode } = require("./mine");
+// The salt the factory hands CREATE2 is keccak256(abi.encode(cfg, tokenSalt)), not tokenSalt itself.
+// bindSaltFast reproduces that fold on the mining hot path; without it every address this script mines is
+// one the factory will never deploy to.
+const { bindSaltFast } = require("../test/helpers/brand");
 
 const SQRT_1_1 = 79228162514264337593543950336n; // launch at price 1:1 (tick 0); override via SQRT_PRICE
 const FEE = 3000; // static lp fee
@@ -68,7 +72,17 @@ async function main() {
     TokenF.bytecode,
     abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, d.padFactory]),
   ]);
-  const { salt: tokenSalt, addr: predictedToken, tries } = mineTokenSalt(d.deterministicDeployer, tokenInit, baseSalt);
+  // [SALT BINDING] PadFactory.launch does NOT pass `tokenSalt` to the deployer — it deploys at
+  // keccak256(abi.encode(cfg, tokenSalt)) so that changing any config field moves the address. Mining
+  // against the raw salt therefore predicts an address the factory never deploys to: the real token lands
+  // somewhere effectively random, `PadBrand.requireBrand` rejects it (~65535/65536 of the time), and the
+  // hook — whose init-code embeds the predicted token — is wrong even in the case that slips through.
+  // `saltWrap` applies the same fold per try, so `predictedToken` is the address the launch will produce.
+  // The factory is passed explicitly rather than inferred: PadFactory's LaunchConfig is a strict subset of
+  // StockPadFactory's, so shape-matching alone can pick the wrong struct.
+  const { salt: tokenSalt, addr: predictedToken, tries } = mineTokenSalt(d.deterministicDeployer, tokenInit, baseSalt, {
+    saltWrap: bindSaltFast(cfg, factory),
+  });
   console.log(`  mined token CA ${predictedToken} (ends …${predictedToken.slice(-4)}, ${tries} tries)`);
   const initCode = hookInitCode(HookF.bytecode, d.poolManager, d.padFactory, d.feeWalletRegistry, predictedToken);
   const { salt: hookSalt } = mineHookSalt(d.deterministicDeployer, initCode);

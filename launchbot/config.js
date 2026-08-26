@@ -24,9 +24,20 @@ export const ADDRESSES = {
 
 // Human-readable ABIs (ethers v6 parses directly).
 export const ABI = {
+  // [BRAND] Every Robin coin address ends in `1ab5`, enforced on-chain, so `launch(p)` reverts SaltRequired
+  // and the bot must mine a salt and call `launchWithSalt`. `tokenDeployer()` and `TOTAL_SUPPLY()` are the two
+  // reads the miner needs; the init-code hash comes from the deployer itself (see ABI.tokenDeployer below), so
+  // nothing about the coin's bytecode is duplicated in this repo.
   factory: [
     'function launch((string name,string symbol,address dev,(uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,address projectWallet) tax) p) payable returns (address token,address curve,address pool)',
+    'function launchWithSalt((string name,string symbol,address dev,(uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,address projectWallet) tax) p, bytes32 tokenSalt) payable returns (address token,address curve,address pool)',
+    'function tokenDeployer() view returns (address)',
+    'function TOTAL_SUPPLY() view returns (uint256)',
     'event Launched(address indexed token,address indexed curve,address indexed pool,address dev,uint256 devBought)',
+  ],
+  tokenDeployer: [
+    'function tokenInitCodeHash(string name,string symbol,uint256 supply,address factory) pure returns (bytes32)',
+    'function predict(address factory,address creator,bytes32 tokenSalt,string name,string symbol,uint256 supply) view returns (address)',
   ],
   router: [
     'function buy(address token,uint256 minOut) payable returns (uint256 tokensOut)',

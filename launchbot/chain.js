@@ -8,6 +8,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { ethers } from 'ethers';
 import { CFG, CHAIN, ADDRESSES, ABI, DEFAULT_TAX } from './config.js';
+// [BRAND] The one `1ab5` miner, shared with the pad site, the SDK and the contract test suite. Imported
+// rather than transcribed: the CREATE2 chain it walks is three keccaks deep and a wrong copy shows up only
+// as a launch reverting BadTokenSuffix, with nothing pointing back at the arithmetic.
+import { mineSalt } from './mine/robin-mine.mjs';
 
 export let provider = new ethers.JsonRpcProvider(CFG.rpc, {
   chainId: CHAIN.id, name: 'robinhood',
@@ -91,6 +95,27 @@ export async function ethBalanceStrict(addr) { return provider.getBalance(addr);
  * Launch a token from `signer`'s wallet. Optional dev buy via `devBuyWei`.
  * Returns { hash, token, curve, pool, devBought }.
  */
+/// The CREATE2 context a `1ab5` mine needs: the deployer, the factory, and the init-code hash of the exact
+/// coin being launched. `tokenDeployer` and `TOTAL_SUPPLY` never change for a given factory, so they are read
+/// once and cached; the init-code hash depends on name/symbol and is read per launch.
+let _mineBase = null;
+async function mineContext(factory, creator, name, symbol) {
+  if (!_mineBase) {
+    const [tokenDeployer, supply] = await Promise.all([factory.tokenDeployer(), factory.TOTAL_SUPPLY()]);
+    _mineBase = { tokenDeployer, supply };
+  }
+  const dep = new ethers.Contract(_mineBase.tokenDeployer, ABI.tokenDeployer, provider);
+  return {
+    tokenDeployer: _mineBase.tokenDeployer,
+    factory: ADDRESSES.factory,
+    creator,
+    // Read from the deployer that will actually build the coin, never from bytecode bundled in this repo —
+    // a bundled copy can drift from what is live and every launch would revert with no way to see why.
+    initCodeHash: await dep.tokenInitCodeHash(name, symbol, _mineBase.supply, ADDRESSES.factory),
+    supply: _mineBase.supply,
+  };
+}
+
 export async function launch(signer, { name, symbol, devBuyWei = 0n }) {
   const factory = factoryWith(signer);
   const params = {
@@ -103,16 +128,23 @@ export async function launch(signer, { name, symbol, devBuyWei = 0n }) {
     },
   };
   const value = BigInt(devBuyWei);
+
+  // [BRAND] Mine the coin's address before spending anything. ~65k keccak tries, a couple of seconds on the
+  // bot host. The salt binds to `params.dev` (the wallet that will send the tx), so it is worthless to anyone
+  // else and mining it for the wrong signer produces a salt the factory rejects.
+  const ctx = await mineContext(factory, params.dev, name, symbol);
+  const { salt } = mineSalt(ethers, ctx, ethers.id(`${symbol}-${name}-${params.dev}`));
+
   // Estimate gas, add 20% headroom, clamp under the 2^24 per-tx cap.
   let gasLimit;
   try {
-    const est = await factory.launch.estimateGas(params, { value });
+    const est = await factory.launchWithSalt.estimateGas(params, salt, { value });
     gasLimit = (est * 12n) / 10n;
   } catch { gasLimit = BigInt(CHAIN.perTxGasCap) - 1n; } // estimate hiccup → give it headroom (unused gas is refunded)
   if (gasLimit >= BigInt(CHAIN.perTxGasCap)) gasLimit = BigInt(CHAIN.perTxGasCap) - 1n;
 
   const ov = await legacyOv({ value, gasLimit });
-  const tx = await factory.launch(params, ov);
+  const tx = await factory.launchWithSalt(params, salt, ov);
   const rc = await waitFor(tx);
 
   // Parse the Launched event for the deterministic addresses.

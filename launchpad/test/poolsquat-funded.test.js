@@ -1,5 +1,7 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+// [BRAND] see poolsquat.test.js — the squat target must be a MINED `1ab5` address, from the shared miner.
+const { mineFor } = require("./helpers/brand");
 const V3F = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
 
 const POOL_FEE = 10000;
@@ -29,14 +31,6 @@ describe("[F-1] an out-of-range WETH-only squat is repaired, not fatal", functio
   this.timeout(300000);
   const NOTAX = (dev) => ({ buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev });
 
-  async function predictToken(ltdAddr, factoryAddr, creator, tokenSalt, name, symbol, supply) {
-    const inner = ethers.keccak256(ethers.solidityPacked(["address", "bytes32"], [creator, tokenSalt]));
-    const outer = ethers.keccak256(ethers.solidityPacked(["address", "bytes32"], [factoryAddr, inner]));
-    const guard = { deadSecs:0, phase1Secs:0, antiSnipeSecs:0, maxTxBps1:0, maxWalletBps1:0, maxTxBps2:0, maxWalletBps2:0, cooldownSecs:0 };
-    const art = await ethers.getContractFactory("LaunchToken");
-    const init = ethers.concat([art.bytecode, art.interface.encodeDeploy([name, symbol, supply, factoryAddr, guard])]);
-    return ethers.getCreate2Address(ltdAddr, outer, ethers.keccak256(init));
-  }
 
   // This started life as the audit agents' repro of a REAL defect: the first version of the repair offered the
   // swap one wei, so a squatter who planted an out-of-range WETH-only position for ONE WEI — before the token
@@ -62,9 +56,9 @@ describe("[F-1] an out-of-range WETH-only squat is repaired, not fatal", functio
     await (await router.setFactory(await factory.getAddress())).wait();
 
     const LIQ = BigInt(process.env.LIQ || "1");
-    const salt = ethers.id("mined-vanity-address");
     const SUPPLY = 1_000_000_000n * 10n ** 18n;
-    const token = await predictToken(await ltd.getAddress(), await factory.getAddress(), dev.address, salt, "Robin Meme", "MEME", SUPPLY);
+    const { salt, addr: token } = await mineFor(
+      factory, dev.address, { name: "Robin Meme", symbol: "MEME" }, SUPPLY, "mined-vanity-address");
     expect(await ethers.provider.getCode(token)).to.equal("0x");   // no code at the mined address yet
 
     const tokenIsToken0 = token.toLowerCase() < WETH.toLowerCase();
