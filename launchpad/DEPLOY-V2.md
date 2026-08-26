@@ -9,14 +9,14 @@ npx hardhat run scripts/deploy-v2.js                       # fork dry-run + gas 
 npx hardhat run scripts/deploy-v2.js --network robinhood   # real — PRIVATE_KEY must be the ROUTER OWNER
 ```
 
-## Why this is only three contracts
+## Why this is only four contracts
 
 | piece | v2 | why |
 |---|---|---|
 | `BondDeployer` | **NEW** | carries the deep wall band into every v2 coin's Bond |
 | `CurvePadFactory` | **NEW** | zero guard, creator-chosen supply, points at the new bond deployer |
 | `PadRouter` | reused | `setFactory` is an **allowlist**, built so one router can serve two factories |
-| `LaunchTokenDeployer` | reused | permissionless, stateless, "reused across factories"; folds `msg.sender` into its CREATE2 salt so two factories can never collide on an address |
+| `LaunchTokenDeployer` | **NEW** | it gained `tokenInitCodeHash()` / `predict()`, which is what lets a client mine the mandatory `1ab5` address against the code that will actually be deployed. It is still permissionless and stateless, and still folds `msg.sender` into its CREATE2 salt so two factories cannot collide — but the live one predates those views, so a client pointed at it cannot mine and every launch reverts `BadTokenSuffix` |
 | `CurvePoolDeployer` | **NEW** | `CurvePool` changed (ETH-side LP fee now 100% platform) and its bytecode is inlined in the deployer, so the live one would still mint the OLD pool |
 | `FeeConfig`, WETH, v3 factory | reused | shared infrastructure |
 
@@ -41,8 +41,25 @@ in the next block, and on FCFS the fastest bot wins deterministically rather tha
 knowingly. Note `seedBlocklist` is permanently unusable on a no-guard coin (it is frozen once the window is past,
 and there is no window).
 
-**3. Creator-chosen supply.** `launchWithSupply(p, supply, startTickMag)`; `launch(p)` is unchanged and equals
-`launchWithSupply(p, 0, 0)`. Supply is unbounded; the implied FDV is what is checked. See `SPEC.md`.
+**3. Creator-chosen supply.** `launchWithSupplyAndSalt(p, supply, startTickMag, tokenSalt)`. Supply is
+unbounded; the implied FDV is what is checked. See `SPEC.md`.
+
+**4. The `1ab5` brand — and this one BREAKS EVERY EXISTING CALLER.** Every v2 coin address ends in `1ab5`,
+enforced in the contract (`PadBrand.requireBrand`, inside `_launch`, before a pool or a transfer exists). There
+is no flag, no bypass and no unbranded path. Reaching a branded address needs a salt mined off-chain, so:
+
+- `launch(p)` and `launchWithSupply(p, s, m)` **always revert `SaltRequired`.** They are kept only so an old
+  caller gets a named error instead of a missing function. The old block-derived salt fallback is gone — it
+  could never have produced a branded address.
+- Every client mines and calls `launchWithSalt` / `launchWithSupplyAndSalt`. The salt binds to `msg.sender`,
+  so a mined address belongs to the wallet that mined it and a published salt is worthless to anyone else.
+- Mining is ~65k tries, about **2.6 seconds** with the shared miner (`launchpad/mine/robin-mine.mjs`). The
+  create page shows a live try count; the bot mines before it estimates gas.
+
+**Deploy the clients with the factory, not after it.** The site, the Telegram bot and the SDK all encode the
+launch call, and all three revert against a v2 factory until they are updated and repointed. The miner ships to
+the bot and the site as generated copies (`node scripts/sync-miner.mjs`); `launchpad/test/miner-sync.test.js`
+fails if one has drifted, because a stale copy mines addresses the factory never reaches.
 
 **4. Dev buy stays uncapped.** Unchanged from v1 — bounded only by the curve ceiling and the ETH sent.
 

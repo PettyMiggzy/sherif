@@ -621,10 +621,20 @@ $('launchBtn').addEventListener('click', async () => {
 
   try {
     if (!Pad.account()) { await Pad.connect(); await refreshConnect(); }
-    setNote(devEth > 0
-      ? `Launching + buying ${devEth} ETH of your coin in one tx, confirm in your wallet…`
-      : 'Launching, confirm in your wallet…');
-    const tx = await Pad.launch({ name, symbol, dev: Pad.account(), devBuyEth: devEth > 0 ? String(devEth) : '0', tax });
+    // [BRAND] Every Robin coin's address ends in `1ab5`, and the contract will not launch one that does not,
+    // so the browser mines the address first. That is a few seconds of real work before the wallet ever
+    // appears — say what is happening and count it, or it reads as a frozen page.
+    setNote('Mining your coin\'s address (every Robin coin ends in 1ab5)…');
+    const mineNote = (tries) => setNote(`Mining your coin's address… ${tries.toLocaleString()} tried`);
+    const tx = await Pad.launch({
+      name, symbol, dev: Pad.account(), devBuyEth: devEth > 0 ? String(devEth) : '0', tax,
+      onMining: mineNote,
+      // Fires once the address is mined, just before the wallet prompt — and hands over the coin's real
+      // address, so the creator sees it before they sign rather than after it is live.
+      onSigning: (addr) => setNote(devEth > 0
+        ? `Your coin: ${addr} — launching + buying ${devEth} ETH of it in one tx, confirm in your wallet…`
+        : `Your coin: ${addr} — launching, confirm in your wallet…`),
+    });
     setNote('Sent, waiting for confirmation…');
     const rc = await tx.wait();
     setNote('Launched ✓ tx ' + rc.hash.slice(0, 10) + '…, your coin is live on Uniswap + DexScreener.', 'ok');

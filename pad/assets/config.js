@@ -137,11 +137,25 @@ export const ABIS = {
   // Our launch entrypoint. Payable: any ETH sent is the dev's OWN opening buy
   // (uncapped; excess is refunded at the ceiling), executed atomically before trading opens. Carries the project's tax.
   padFactory: [
+    // [BRAND] `launch` reverts SaltRequired — every coin address must end in `1ab5` and only a mined salt can
+    // reach one, so the site launches through `launchWithSalt`. It is kept in the ABI so an old cached bundle
+    // gets a named error instead of a missing function. `tokenDeployer`/`TOTAL_SUPPLY` are the two reads the
+    // miner needs.
     "function launch((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax) p) payable returns (address token, address curve, address pool)",
+    "function launchWithSalt((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax) p, bytes32 tokenSalt) payable returns (address token, address curve, address pool)",
+    "function tokenDeployer() view returns (address)",
+    "function TOTAL_SUPPLY() view returns (uint256)",
     "function tokenCount() view returns (uint256)",
     "function allTokens(uint256) view returns (address)",
     "function recordOf(address) view returns (address token, address curve, address dev, uint256 at)",
     "event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought)",
+  ],
+  // The LaunchTokenDeployer the factory points at. It is the contract that embeds the coin's creation code,
+  // so the init-code hash it serves is by construction the code it will deploy — the site never carries a copy
+  // of that bytecode, which could be compiled from different settings than what is actually live.
+  tokenDeployer: [
+    "function tokenInitCodeHash(string name, string symbol, uint256 supply, address factory) pure returns (bytes32)",
+    "function predict(address factory, address creator, bytes32 tokenSalt, string name, string symbol, uint256 supply) view returns (address)",
   ],
   // Our PadRouter. Buys send native ETH (no approval); sells need one exact-amount
   // approval to the router. The tax split happens inside - no side transfers.

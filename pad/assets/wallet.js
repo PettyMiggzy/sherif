@@ -28,6 +28,10 @@
 // dependency, so the whole app is self-contained and auditable offline.
 import { ethers } from "./ethers.min.js";
 import { goPlusToken } from "./safety.js";
+// [BRAND] The `1ab5` salt miner — a GENERATED copy of launchpad/mine/robin-mine.mjs, refreshed by
+// `node scripts/sync-miner.mjs` and pinned byte-for-byte by launchpad/test/miner-sync.test.js. Do not edit it
+// here: a stale copy mines addresses the factory never reaches and every launch reverts BadTokenSuffix.
+import { mineSaltAsync } from "./robin-mine.mjs";
 import {
   CHAIN, CONTRACTS, ABIS, TOTAL_SUPPLY,
   GAS_BUFFER_WEI, isDeployed, API_BASE, hasApi,
@@ -674,7 +678,7 @@ export async function disperse(token, recipients, amounts) {
 // tax: {buyBps, sellBps, walletBps, floorBps, burnBps, projectWallet} - the
 // project's self-set tax (≤4%/side; splits sum to 100%). Omitting it still charges the
 // 1% floor - clampBps enforces a 100 bps minimum, so every coin pays at least 1% buy & sell.
-export async function launch({ name, symbol, dev, devBuyEth = "0", tax }) {
+export async function launch({ name, symbol, dev, devBuyEth = "0", tax, onMining, onSigning }) {
   if (!_signer) await connect();
   if (!isDeployed("padFactory"))
     throw new Error("The launch contract isn't live yet - the Pad is in pre-deploy audit.");
@@ -682,8 +686,38 @@ export async function launch({ name, symbol, dev, devBuyEth = "0", tax }) {
   const factory = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _signer);
   const t = normalizeTax(tax, dev || _account);
   const params = { name, symbol, dev: dev || _account, tax: t };
-  const tx = await guardedSend(factory, "launch", [params], value, "Launch");
+  // [BRAND] Mine the coin's address first. Every Robin coin ends in `1ab5` and the contract enforces it, so
+  // there is no unmined path — `launch(p)` reverts SaltRequired. ~65k tries, a few seconds; `mineSaltAsync`
+  // yields between chunks so the tab stays alive, and `onMining(tries)` drives a progress readout.
+  const { salt, addr } = await mineCoinAddress(factory, params, onMining);
+  // Mining finishes seconds before the wallet prompt appears; without this the caller's last message is still
+  // "mining" while the user is being asked to sign.
+  if (onSigning) onSigning(addr);
+  const tx = await guardedSend(factory, "launchWithSalt", [params, salt], value, "Launch");
   return tx; // await tx.wait() then Pad.launchedTokenOf(receipt) for the new coin address
+}
+
+/// Mine the `1ab5` salt for a specific launch, and return the address it will land on.
+///
+/// Exported so the create page can show the creator their coin's real address BEFORE they sign, and so a
+/// wallet prompt is never the first thing that happens after several seconds of silence.
+export async function mineCoinAddress(factoryOrNull, params, onMining) {
+  const factory = factoryOrNull || new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _signer || _provider);
+  const [tokenDeployer, supply] = await Promise.all([factory.tokenDeployer(), factory.TOTAL_SUPPLY()]);
+  const dep = new ethers.Contract(tokenDeployer, ABIS.tokenDeployer, factory.runner);
+  const ctx = {
+    tokenDeployer,
+    factory: CONTRACTS.padFactory,
+    creator: params.dev,
+    // Read from the deployer that will build the coin, never from bytecode bundled into this site — a bundled
+    // copy can drift from what is live, and the only symptom would be launches failing with nothing to point at.
+    initCodeHash: await dep.tokenInitCodeHash(params.name, params.symbol, supply, CONTRACTS.padFactory),
+  };
+  // The salt binds to `params.dev`, so the address belongs to that wallet: a creator can publish their coin's
+  // address before launching and nobody else can take it.
+  return mineSaltAsync(ethers, ctx, ethers.id(`${params.symbol}-${params.name}-${params.dev}`), {
+    onProgress: onMining,
+  });
 }
 
 /// Pull the new coin's address out of a launch receipt (the factory's Launched event).
@@ -1869,7 +1903,7 @@ export async function stakingClaimAll(pool, who) {
 if (typeof window !== "undefined") {
   window.addEventListener("robinpad:ready", ensureDisconnectUI);
   window.RobinPad = {
-    connect, disconnect, forgetWallet, account, short, linkTelegram, launch, launchedTokenOf, buy, sell, getTax, disperse,
+    connect, disconnect, forgetWallet, account, short, linkTelegram, launch, mineCoinAddress, launchedTokenOf, buy, sell, getTax, disperse,
     setCoinProfile, getCoinProfile, profileMessage,
     estimateDevBuyEth, isDeployed, tokenBalance, tokenBalances, holdings, coinHolders,
     curveInfo, devEscrow, graduate, withdrawDev, burnDev, listCoins, tokenMeta,

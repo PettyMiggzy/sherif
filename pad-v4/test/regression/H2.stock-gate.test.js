@@ -10,7 +10,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
-const { brandedTokenSalt, tokenInitCode } = require("../helpers/brand");
+const { brandedTokenSalt, tokenInitCode, predictPadToken } = require("../helpers/brand");
 
 const FLAGS = 0xccn, MASK = 0x3fffn;
 const SQRT_1_1 = 79228162514264337593543950336n;
@@ -71,9 +71,10 @@ describe("H-2 — a stock pad can no longer be launched against a self-certified
       ethers.id(`h2-${cfg.stock}-${cfg.name}`), // per-pad seed: distinct pads get distinct addresses
       (a) => BigInt(a) > BigInt(cfg.stock)
     );
-    const tokenAddr = ethers.getCreate2Address(
-      depAddr, tokenSalt, ethers.keccak256(tokenInitCode(PadToken.bytecode, cfg, facAddr))
-    );
+    // The factory deploys at keccak256(abi.encode(cfg, tokenSalt)), NOT at tokenSalt — predicting from the raw
+    // salt named an address the factory never reaches, so the hook init-code below embedded the wrong token and
+    // the mined hook salt was valid for nothing. `predictPadToken` is the one place that fold lives.
+    const tokenAddr = predictPadToken(depAddr, facAddr, cfg, tokenSalt, PadToken.bytecode, factory);
     let hookSalt;
     const hookInit = ethers.concat([HookF.bytecode, abi.encode(["address", "address", "address", "address"],
       [await pm.getAddress(), await factory.getAddress(), await reg.getAddress(), tokenAddr])]);

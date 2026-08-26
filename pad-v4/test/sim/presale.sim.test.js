@@ -104,11 +104,18 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
     const tag = "PSL" + (tagN++);
     const cfg = cfgOverride || deepCfg(tag);
     const salts = await prepareSalts(tag, cfg);
-    const now = await time.latest();
+    // `deadlineIn` is a DURATION resolved here, after the salt mine, rather than an absolute stamp a caller
+    // computed before it. Mining a branded salt is CPU work, and hardhat stamps each block from the wall
+    // clock — so under a loaded full-suite run the mine burned more than the caller's margin and the vault
+    // rejected its own deadline as already inside MIN_DURATION. That is how this test failed in the full
+    // suite while passing alone.
     const t = {
-      target: E(3), deadline: BigInt(now) + 2n * 86400n, perWalletCap: E(2),
-      minContribution: E("0.1"), finalizeGrace: 86400n, ...terms,
+      target: E(3), perWalletCap: E(2), minContribution: E("0.1"), finalizeGrace: 86400n, ...terms,
     };
+    if (t.deadline === undefined) {
+      const at = BigInt(await time.latest());
+      t.deadline = at + (t.deadlineIn ?? 2n * 86400n);
+    }
     const vaultAddr = await presaleFactory.createPresale.staticCall(
       cfg, salts.commitment, t.target, t.deadline, t.perWalletCap, t.minContribution, t.finalizeGrace
     );
@@ -288,14 +295,14 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
   });
 
   it("[FEE] a failed presale takes nothing — refunds are the whole deposit", async () => {
-    const now = await time.latest();
     const { vault } = await openPresale({
       target: E(3), perWalletCap: E(1), minContribution: E("0.1"),
-      deadline: BigInt(now) + 3600n + 60n, finalizeGrace: 3600n,
+      deadlineIn: 3600n + 60n, finalizeGrace: 3600n,
     });
     const d = signers[6];
     await vault.connect(d).deposit({ value: E(1) });
-    await time.increaseTo(now + 3600 + 120);
+    // Step past the deadline the vault actually holds, not one derived from a stamp read before the launch.
+    await time.increaseTo(Number(await vault.deadline()) + 60);
     await vault.fail();
 
     expect(await vault.platformFee()).to.equal(0n); // nothing accrued on the failure path

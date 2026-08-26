@@ -5,20 +5,28 @@
  * This is NOT a redeploy. The live factory (deploy.json `padFactory`) keeps running and the coin already
  * launched on it keeps trading, untouched. v2 is a parallel factory that new launches point at.
  *
- * Only THREE contracts are new. Everything else is reused live, which is possible because:
+ * Only FOUR contracts are new. Everything else is reused live, which is possible because:
  *   • PadRouter carries an isFactory ALLOWLIST (`setFactory` is add, not set-once), explicitly so one router can
  *     serve two factories.
- *   • LaunchTokenDeployer and CurvePoolDeployer are permissionless and stateless — "reused across factories" by
- *     their own design note. The token deployer folds msg.sender into its CREATE2 salt, so two factories cannot
- *     collide on an address.
  *   • FeeConfig, WETH and the Uniswap v3 factory are shared infrastructure.
+ *
+ * The LaunchTokenDeployer used to be reused too — it is permissionless and stateless, and folds msg.sender into
+ * its CREATE2 salt so two factories cannot collide. It is NEW here for one reason: the `1ab5` brand. Every coin
+ * address must now carry that suffix, which means every launch needs a salt mined off-chain, which means the
+ * client needs the coin's init-code hash — and the only contract that can serve that hash honestly is the one
+ * embedding the creation code it will deploy. The live deployer predates `tokenInitCodeHash()`, so a client
+ * pointed at it has no way to mine and every launch would revert BadTokenSuffix.
  *
  * What v2 changes, versus what is live today:
  *   1. DEEP BOUNTY WALL — the H-5 fix. The live wall starts 200 ticks (~2%) below spot and is farmable by
  *      holding the price down into it. v2 starts it at 9000 (~59% below), past the measured profitability
  *      crossover. This is why the new BondDeployer exists: the wall band is stamped by the deployer.
  *   2. NO ANTI-SNIPE GUARD — zero GuardConfig, permanently.
- *   3. CREATOR-CHOSEN SUPPLY — `launchWithSupply`, bounded by an FDV band rather than by supply.
+ *   3. CREATOR-CHOSEN SUPPLY — `launchWithSupplyAndSalt`, bounded by an FDV band rather than by supply.
+ *   4. THE `1ab5` BRAND — every coin address ends in `1ab5`, enforced in the contract. `launch(p)` and
+ *      `launchWithSupply(p, s, m)` now revert SaltRequired; callers mine a salt and use the salted
+ *      entrypoints. THIS BREAKS EVERY EXISTING CALLER, which is why it ships with a new factory address:
+ *      the site, the Telegram bot and the SDK must all be repointed and updated together.
  *
  * Usage:
  *   npx hardhat run scripts/deploy-v2.js                        # fork dry-run / gas estimate (FORK_RPC)
@@ -58,7 +66,7 @@ async function main() {
 
   console.log(`network=${network.name}  deployer=${deployer.address}`);
   console.log(`reusing router=${C.padRouter}\n        feeConfig=${C.feeConfig}`);
-  console.log(`        launchTokenDeployer=${C.launchTokenDeployer}   (curve pool deployer is NEW — see below)`);
+  console.log(`        (the launch-token and curve-pool deployers are both NEW — see below)`);
   console.log(`v1 factory (stays live)=${C.padFactory}\n`);
 
   const router = await ethers.getContractAt("PadRouter", C.padRouter);
@@ -90,23 +98,31 @@ async function main() {
     await (await ethers.getContractFactory("CurvePoolDeployer")).deploy()
   );
 
-  // 3) the v2 factory, pointed at BOTH new deployers and the LIVE everything-else
+  // 3) a NEW LaunchTokenDeployer. It gained tokenInitCodeHash()/predict(), which is what lets a client mine
+  //    the mandatory `1ab5` address against the code that will actually be deployed. Reusing the live one
+  //    would leave every client unable to mine, and every launch reverting BadTokenSuffix.
+  const launchTokenDeployer = await track(
+    "LaunchTokenDeployer",
+    await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy()
+  );
+
+  // 4) the v2 factory, pointed at ALL THREE new deployers and the LIVE everything-else
   const factory = await track(
     "CurvePadFactory(v2)",
     await (await ethers.getContractFactory("CurvePadFactory")).deploy(
       WETH, V3_FACTORY, platform, owner, C.padRouter,
-      C.launchTokenDeployer, await curvePoolDeployer.getAddress(), await bondDeployer.getAddress(), C.feeConfig,
+      await launchTokenDeployer.getAddress(), await curvePoolDeployer.getAddress(), await bondDeployer.getAddress(), C.feeConfig,
       START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH
     )
   );
   const factoryAddr = await factory.getAddress();
 
-  // 3) authorize it on the LIVE router (allowlist — v1 stays authorized unless you revoke it below)
+  // 5) authorize it on the LIVE router (allowlist — v1 stays authorized unless you revoke it below)
   await (await router.setFactory(factoryAddr)).wait();
   console.log(`\n  router.setFactory(${factoryAddr}) — authorized`);
   if (!(await router.isFactory(factoryAddr))) throw new Error("router did not authorize the v2 factory");
 
-  // 4) optional valuation-band retune
+  // 6) optional valuation-band retune
   if (MIN_FDV_ETH && MAX_FDV_ETH) {
     await (await factory.setFdvBand(ethers.parseEther(MIN_FDV_ETH), ethers.parseEther(MAX_FDV_ETH))).wait();
     console.log(`  setFdvBand(${MIN_FDV_ETH} .. ${MAX_FDV_ETH} ETH)`);
@@ -126,8 +142,12 @@ async function main() {
       padFactory: factoryAddr,
       bondDeployer: await bondDeployer.getAddress(),
       curvePoolDeployer: await curvePoolDeployer.getAddress(),
+      // The clients read this off the factory (`tokenDeployer()`), but record it here too — it is the contract
+      // that serves the init-code hash every miner needs, so it is the first thing to check if launches start
+      // reverting BadTokenSuffix.
+      launchTokenDeployer: await launchTokenDeployer.getAddress(),
     },
-    reused: { padRouter: C.padRouter, feeConfig: C.feeConfig, launchTokenDeployer: C.launchTokenDeployer },
+    reused: { padRouter: C.padRouter, feeConfig: C.feeConfig },
     v1: { padFactory: C.padFactory, bondDeployer: C.bondDeployer, stillAuthorized: await router.isFactory(C.padFactory) },
   };
   fs.writeFileSync(path.join(__dirname, "..", "deploy.v2.json"), JSON.stringify(out, null, 2));
