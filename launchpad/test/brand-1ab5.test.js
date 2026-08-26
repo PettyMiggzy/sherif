@@ -10,15 +10,15 @@ let RobinMine;
 // tooling convention. `PadBrand.requireBrand` enforces it inside `_launch`, so there is no entrypoint, flag or
 // privileged path that opens a pad at an unbranded address.
 //
-// The rule only holds if THREE things agree: the contract's CREATE2 chain, the on-chain prediction lens, and the
-// off-chain miner every client runs. This file pins all three against each other and against a real launch —
-// checking the miner against the lens alone would pass just as happily if both were wrong the same way.
+// The rule only holds if THREE things agree: the contract's CREATE2 chain, the deployer's on-chain prediction,
+// and the off-chain miner every client runs. This file pins all three against each other and against a real launch —
+// checking the miner against the deployer alone would pass just as happily if both were wrong the same way.
 const START_TICK_MAG = 201600, CURVE_WIDTH = 23000, MIN_GRAD_WIDTH = 22800;
 const SUPPLY = 1_000_000_000n * 10n ** 18n;
 const NAME = "Robin Brand", SYMBOL = "BRAND";
 
 describe("[BRAND] every coin address ends in 1ab5", () => {
-  let dep, platform, dev, other, factory, factoryAddr, ltd, lens, ctx;
+  let dep, platform, dev, other, factory, factoryAddr, ltd, ltdC, ctx;
 
   const paramsFor = (devAddr) => ({
     name: NAME,
@@ -49,29 +49,31 @@ describe("[BRAND] every coin address ends in 1ab5", () => {
     );
     factoryAddr = await factory.getAddress();
     await (await (await ethers.getContractAt("PadRouter", router)).connect(dep).setFactory(factoryAddr)).wait();
-    lens = await (await ethers.getContractFactory("PadAddressLens")).connect(dep).deploy();
+    // The prediction views live ON the LaunchTokenDeployer, not in a separate lens: that is the contract
+    // embedding LaunchToken's creation code, so the hash it serves is by construction the code it deploys.
+    ltdC = await ethers.getContractAt("LaunchTokenDeployer", ltd);
 
     ctx = {
       tokenDeployer: ltd,
       factory: factoryAddr,
       creator: dev.address,
-      initCodeHash: await lens.tokenInitCodeHash(NAME, SYMBOL, SUPPLY, factoryAddr),
+      initCodeHash: await ltdC.tokenInitCodeHash(NAME, SYMBOL, SUPPLY, factoryAddr),
     };
   });
 
-  it("the lens's init-code hash is the one the deployer actually uses", async () => {
-    // The lens exists so a browser never has to carry LaunchToken's bytecode. That is only safe if the hash it
-    // serves is the compiled artifact's — recompute it here from the artifact rather than trusting the lens.
+  it("the deployer's init-code hash is the one it actually deploys", async () => {
+    // The view exists so a browser never has to carry LaunchToken's bytecode. That is only safe if the hash it
+    // serves is the compiled artifact's — recompute it here from the artifact rather than trusting the view.
     const art = await ethers.getContractFactory("LaunchToken");
     const guard = { deadSecs: 0, phase1Secs: 0, antiSnipeSecs: 0, maxTxBps1: 0, maxWalletBps1: 0, maxTxBps2: 0, maxWalletBps2: 0, cooldownSecs: 0 };
     const initCode = ethers.concat([art.bytecode, art.interface.encodeDeploy([NAME, SYMBOL, SUPPLY, factoryAddr, guard])]);
     expect(ctx.initCodeHash).to.equal(ethers.keccak256(initCode));
   });
 
-  it("the off-chain miner and the on-chain lens predict the same address", async () => {
+  it("the off-chain miner and the on-chain predict agree", async () => {
     for (const s of [ethers.id("a"), ethers.id("b"), ethers.id("c")]) {
       expect(RobinMine.predict(ethers, ctx, s)).to.equal(
-        await lens.predict(ltd, factoryAddr, dev.address, s, NAME, SYMBOL, SUPPLY)
+        await ltdC.predict(factoryAddr, dev.address, s, NAME, SYMBOL, SUPPLY)
       );
     }
   });
