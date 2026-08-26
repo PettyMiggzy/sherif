@@ -133,7 +133,12 @@ mechanism to take the 10%, per-customer accounting, and a kill switch. None of t
 2. **A3/A4 supply + valuation** — built, unreachable. UI wiring. Note the salted entrypoint is
    `launchWithSupplyAndSalt` now, not `launchWithSupply`.
 3. **B2 reward vs A4** — pick: lift the FDV band floor so every launch still earns the full 0.5, or show the
-   creator their real number.
+   creator their real number. The numbers, since they were never written down: `reward = min(0.5 ETH,
+   raise/4)`, paid SYMMETRICALLY to creator and platform, so a small launch shortchanges both by the same
+   amount — the platform does not collect 0.5 from everyone. The full 0.5 needs a raise >= 2 ETH, about 48%
+   of the default's ~4.2, while the band floor sits at 1/32 of the default (~0.13 ETH raised, ~0.033 apiece).
+   Note this is a **valuation** question, not a supply one: supply is cosmetic, so a 10,000-token coin at the
+   default valuation raises the same 4.2 and pays the same 0.5 as a 1,000,000,000-token one.
 4. **C4/C5 dead knobs** — the UI collects a fee allocation that the contract ignores. Either stop collecting it
    or restore the legacy path.
 5. **B7 boost** — build it into the graduation runbook or soften the copy.

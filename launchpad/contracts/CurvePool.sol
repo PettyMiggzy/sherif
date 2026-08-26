@@ -376,10 +376,25 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         (uint256 raisedWeth, uint256 leftToken) = tokenIsToken0 ? (c1, c0) : (c0, c1);
         require(raisedWeth > 0, "empty");
 
-        // Graduation reward: a FIXED 0.5 WETH each to creator + platform (a launch incentive on top of the ongoing
-        // fees). Graduation only ever happens at the full ceiling (~4.2 ETH — see ready()), so the creator always
-        // earns their 0.5. Capped at raise/4 apiece so the two payouts can never exceed half the raise (the Bond
-        // floor always keeps >=50%). Reentrancy-safe (nonReentrant + no callback); dev + platform non-zero.
+        // Graduation reward: up to 0.5 WETH each to creator + platform (a launch incentive on top of the ongoing
+        // fees), capped at raise/4 apiece so the two payouts can never exceed half the raise — the Bond floor
+        // always keeps >=50%. Reentrancy-safe (nonReentrant + no callback); dev + platform non-zero.
+        //
+        // NOT always 0.5. This used to read "graduation only ever happens at the full ceiling (~4.2 ETH), so the
+        // creator always earns their 0.5", and that was true while every launch shared one factory-wide
+        // valuation. Creator-chosen valuation broke it: graduation is still ceiling-only, but the ceiling is a
+        // fixed MULTIPLE of the creator's own launch price, so the raise scales with the chosen FDV. The full
+        // 0.5 needs a raise of >= 2 WETH, i.e. roughly 48% of the factory default's ~4.2; at the bottom of a
+        // +/-32x band a launch raises ~0.13 and pays ~0.033 apiece. The cap also bites hardest exactly there —
+        // a low-valuation launch hands HALF its raise to the two rewards and seeds the thinnest floor with what
+        // is left. The symmetry is deliberate and holds throughout: the platform is paid the same number as the
+        // creator, so a small launch shortchanges both identically.
+        //
+        // Whether that is acceptable is a BAND question, not a contract question: `setFdvBand`'s floor decides
+        // the smallest raise that can ever graduate. Raising minFdvWei to ~0.48x the default makes the 0.5
+        // promise true for every launch that can graduate at all; leaving it wide keeps cheap launches and
+        // makes the promise conditional, in which case the client must quote the creator their real number
+        // rather than advertising 0.5.
         uint256 reward = Math.min(GRAD_REWARD, raisedWeth / 4);
         if (reward > 0) {
             raisedWeth -= 2 * reward;
