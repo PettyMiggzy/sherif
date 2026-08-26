@@ -35,24 +35,40 @@ function launchCfgTypes() {
     try {
       const abi = artifacts.readArtifactSync(n).abi;
       const fn = abi.find((e) => e.type === "function" && e.name === "launch");
-      if (fn && fn.inputs && fn.inputs[0] && fn.inputs[0].components) _types.push(fn.inputs[0]);
+      if (fn && fn.inputs && fn.inputs[0] && fn.inputs[0].components) _types.push({ name: n, t: fn.inputs[0] });
     } catch { /* a factory that is not compiled in this project simply has no type to offer */ }
   }
   return _types;
 }
 
-/// Pick the LaunchConfig whose components the given cfg actually satisfies.
+/// Pick the LaunchConfig the given cfg actually IS.
+///
+/// Subset-matching alone is not enough and getting that wrong cost five tests: PadFactory's fourteen fields
+/// are a STRICT SUBSET of StockPadFactory's seventeen, so a stock config satisfies both and a first-match
+/// wins the wrong one — hashing against the wrong tuple, producing an unbranded address, and failing later at
+/// requireBrand with nothing pointing back here. Prefer an exact key-set match; otherwise take the most
+/// specific struct the cfg satisfies, never the first.
 function cfgTypeFor(cfg, factoryOrType) {
   if (factoryOrType) return factoryOrType.interface ? factoryOrType.interface.getFunction("launch").inputs[0] : factoryOrType;
   const keys = new Set(Object.keys(cfg || {}));
-  const hit = launchCfgTypes().find((t) => t.components.every((c) => keys.has(c.name)));
-  if (!hit) {
+  const fits = launchCfgTypes().filter((e) => e.t.components.every((c) => keys.has(c.name)));
+  const exact = fits.find((e) => e.t.components.length === keys.size);
+  const best = exact || fits.sort((a, b) => b.t.components.length - a.t.components.length)[0];
+  if (!best) {
     throw new Error(
       "brand.js: no factory LaunchConfig matches this cfg (keys: " + [...keys].join(",") +
       "). Pass the factory explicitly as the last argument."
     );
   }
-  return hit;
+  return best.t;
+}
+
+/// Which factory's config a cfg resolves to — for tests that want to assert the choice rather than trust it.
+function cfgFactoryName(cfg) {
+  const keys = new Set(Object.keys(cfg || {}));
+  const fits = launchCfgTypes().filter((e) => e.t.components.every((c) => keys.has(c.name)));
+  const exact = fits.find((e) => e.t.components.length === keys.size);
+  return (exact || fits.sort((a, b) => b.t.components.length - a.t.components.length)[0] || {}).name || null;
 }
 
 /// `keccak256(abi.encode(cfg, tokenSalt))` — the preimage every factory hashes before CREATE2.
@@ -127,4 +143,4 @@ function predictPadToken(deployerAddr, factoryAddr, cfg, tokenSalt, TokenBytecod
   return ethers.getCreate2Address(deployerAddr, bindSalt(cfg, tokenSalt, factoryOrType), ethers.keccak256(init));
 }
 
-module.exports = { brandedTokenSalt, tokenInitCode, bindSalt, bindSaltFast, predictPadToken, cfgTypeFor };
+module.exports = { brandedTokenSalt, tokenInitCode, bindSalt, bindSaltFast, predictPadToken, cfgTypeFor, cfgFactoryName };
