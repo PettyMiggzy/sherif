@@ -37,7 +37,7 @@ export function predict(ethers, { tokenDeployer, factory, creator, initCodeHash 
 /// that is hex: `solidityPacked` and `getCreate2Address` each encode and decode strings, so a three-keccak
 /// chain pays for six string conversions per try. Hashing preallocated `Uint8Array`s and mutating only the
 /// bytes that change cuts it to two.
-export function _rig(ethers, { tokenDeployer, factory, creator, initCodeHash }) {
+function _rig(ethers, { tokenDeployer, factory, creator, initCodeHash }) {
   const inner = new Uint8Array(52); // creator(20) ++ candidate(32)
   inner.set(ethers.getBytes(creator), 0);
   const outer = new Uint8Array(52); // factory(20) ++ inner(32)
@@ -54,7 +54,7 @@ export function _rig(ethers, { tokenDeployer, factory, creator, initCodeHash }) 
 /// The last 20 bytes of that hash ARE the address, so its last four hex characters are the address's last
 /// four — the suffix can be tested on the hash directly and the address only built for the one candidate
 /// that wins.
-export function _step(ethers, rig, candidateBytes) {
+function _step(ethers, rig, candidateBytes) {
   rig.inner.set(candidateBytes, 20);
   rig.outer.set(ethers.getBytes(ethers.keccak256(rig.inner)), 20);
   rig.create2.set(ethers.getBytes(ethers.keccak256(rig.outer)), 21);
@@ -109,7 +109,7 @@ export function mineSalt(ethers, ctx, baseSalt, opts = {}) {
 
 /// The async form: yields to the event loop between chunks so a browser tab stays responsive while mining.
 /// Same arithmetic as `mineSalt` — it calls straight into it a chunk at a time rather than re-deriving it.
-async function mineSaltAsync(ethers, ctx, baseSalt, opts = {}) {
+export async function mineSaltAsync(ethers, ctx, baseSalt, opts = {}) {
   const { chunk = 4096, maxTries = 20_000_000, onProgress = null, suffix = SUFFIX } = opts;
   const want = suffix.toLowerCase();
   const rig = _rig(ethers, ctx);

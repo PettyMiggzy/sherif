@@ -28,6 +28,9 @@
 // dependency, so the whole app is self-contained and auditable offline.
 import { ethers } from "./ethers.min.js";
 import { goPlusToken } from "./safety.js";
+// [WC] WalletConnect. The library itself is NOT imported here — walletconnect.js loads its ~2MB bundle
+// lazily, only if someone actually picks it, so a normal page load is unchanged.
+import { wcWalletEntry, isWalletConnect, wcProvider, wcDisconnect, hasStoredSession } from "./walletconnect.js";
 // [BRAND] The `1ab5` salt miner — a GENERATED copy of launchpad/mine/robin-mine.mjs, refreshed by
 // `node scripts/sync-miner.mjs` and pinned byte-for-byte by launchpad/test/miner-sync.test.js. Do not edit it
 // here: a stale copy mines addresses the factory never reaches and every launch reverts BadTokenSuffix.
@@ -128,6 +131,9 @@ const WALLET_KEY = "rl_wallet_rdns";
 // auto-restored every navigation and you can never actually drop it to switch
 // accounts. connect() clears it (an explicit Connect always re-enables restore).
 const DISC_KEY = "rl_wallet_off";
+// [WC] True while the live session is a WalletConnect one, so disconnect() knows to tear down the relay
+// session as well as the local state.
+let _wcActive = false;
 function isDisconnected() { try { return localStorage.getItem(DISC_KEY) === "1"; } catch { return false; } }
 function markDisconnected(on) { try { on ? localStorage.setItem(DISC_KEY, "1") : localStorage.removeItem(DISC_KEY); } catch { /* private mode */ } }
 // Max recipients per disperse tx. The contract allows 600, but this chain's per-tx gas ceiling
@@ -169,26 +175,47 @@ function availableWallets() {
   return list;
 }
 function requestAnnounce() { try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch { /* ignore */ } }
+
+// [WC] Everything we can OFFER, which is not the same as everything INJECTED. WalletConnect needs nothing
+// installed, so it is always on the end of this list — but it must not count towards availableWallets(),
+// whose "exactly one wallet, just use it" shortcut would otherwise never fire again.
+function offeredWallets() {
+  return [...availableWallets(), wcWalletEntry()];
+}
 function rememberedWallet() {
   try {
     const r = localStorage.getItem(WALLET_KEY);
-    return r ? (availableWallets().find((w) => w.info.rdns === r) || null) : null;
+    return r ? (offeredWallets().find((w) => w.info.rdns === r) || null) : null;
   } catch { return null; }
 }
 // Back-compat shim (unused internally now): first available provider or null.
 function injected() { const w = availableWallets(); return w.length ? w[0].provider : null; }
 
-// Desktop picker modal. Resolves to a wallet object, or null if dismissed.
+// The connect picker. Resolves to a wallet object, or null if dismissed.
+//
+// It is shown for EVERY first connect now, not only when several wallets are installed: WalletConnect is
+// always on the list, so "exactly one wallet, just use it" would have meant an extension user could never
+// reach it. The choice is remembered, so the extra click happens once.
 function pickWallet(wallets) {
   return new Promise((resolve) => {
     if (typeof document === "undefined") return resolve(wallets[0] || null);
+    const injectedCount = wallets.filter((w) => !w.lazy).length;
+    // On a phone, a wallet only injects itself inside its OWN in-app browser — so no injected wallet here
+    // means the user is in Safari/Chrome, and reopening inside the wallet app is worth offering alongside
+    // WalletConnect rather than instead of it.
+    const deepLink = injectedCount === 0 && isMobile();
+    const subtitle = injectedCount === 0
+      ? "Scan with your phone wallet, or open Robin Labs inside your wallet's own browser."
+      : injectedCount === 1
+        ? "Connect the wallet in this browser, or scan with a wallet on your phone."
+        : "Pick which wallet to connect. You can also scan with a wallet on your phone.";
     document.getElementById("rl-wallet-modal")?.remove();
     const wrap = document.createElement("div");
     wrap.id = "rl-wallet-modal";
     wrap.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)";
     wrap.innerHTML = `<div style="background:#0c1107;border:1px solid rgba(220,233,5,.3);border-radius:18px;max-width:400px;width:calc(100% - 32px);padding:22px 20px 24px;font-family:system-ui,-apple-system,sans-serif;color:#f4f7ee;box-shadow:0 10px 40px rgba(0,0,0,.5)">
         <div style="font-weight:800;font-size:1.12rem;margin-bottom:4px">Choose your wallet</div>
-        <div style="color:#93a382;font-size:.9rem;line-height:1.45;margin-bottom:16px">You have more than one wallet installed. Pick which one to connect.</div>
+        <div style="color:#93a382;font-size:.9rem;line-height:1.45;margin-bottom:16px">${escHtml(subtitle)}</div>
         <div style="display:flex;flex-direction:column;gap:9px">
           ${wallets.map((w, i) => {
             const ic = safeIcon(w.info.icon);
@@ -197,12 +224,16 @@ function pickWallet(wallets) {
             return `<button data-i="${i}" style="display:flex;align-items:center;gap:12px;text-align:left;background:#121a0b;border:1px solid rgba(255,255,255,.08);color:#f4f7ee;font-weight:700;padding:12px 14px;border-radius:12px;cursor:pointer;font-size:.98rem">${badge}<span>${escHtml(w.info.name)}</span></button>`;
           }).join("")}
         </div>
+        ${deepLink ? `<button id="rl-wallet-deeplink" style="width:100%;margin-top:12px;background:none;border:1px dashed rgba(220,233,5,.35);color:#dce905;padding:11px;border-radius:12px;font-weight:700;cursor:pointer">Open in my wallet app instead</button>` : ""}
         <button id="rl-wallet-cancel" style="width:100%;margin-top:12px;background:none;border:1px solid rgba(255,255,255,.15);color:#93a382;padding:11px;border-radius:12px;font-weight:600;cursor:pointer">Cancel</button>
       </div>`;
     document.body.appendChild(wrap);
     const done = (val) => { wrap.remove(); resolve(val); };
     wrap.addEventListener("click", (e) => { if (e.target === wrap) done(null); });
     wrap.querySelector("#rl-wallet-cancel").addEventListener("click", () => done(null));
+    // The deep link navigates away, so resolve null first — this promise must not be left hanging if the
+    // navigation is blocked or the user comes back.
+    wrap.querySelector("#rl-wallet-deeplink")?.addEventListener("click", () => { done(null); showMobileWalletPrompt(); });
     wrap.querySelectorAll("[data-i]").forEach((b) =>
       b.addEventListener("click", () => done(wallets[Number(b.dataset.i)])));
   });
@@ -287,30 +318,42 @@ export async function connect() {
   markDisconnected(false); // an explicit Connect always re-enables auto-restore
   requestAnnounce();
   await new Promise((r) => setTimeout(r, 60)); // let 6963 wallets announce (event-driven, async)
-  const wallets = availableWallets();
-  if (!wallets.length) {
-    // Mobile browser with no injected wallet → guide them into the wallet app
-    // instead of a dead-end error. Returns null (no throw) so the UI stays calm.
-    if (isMobile()) { showMobileWalletPrompt(); return null; }
-    throw new Error("No wallet found. Install MetaMask, Phantom, or another EVM wallet, then reload.");
-  }
-  // Use the remembered choice if it's still available; else one wallet = use it; else PICK.
+  // [WC] WalletConnect is always offered, so there is no longer a "no wallet found" dead end: a browser with
+  // nothing installed can still drive a phone wallet. The old deep-link prompt is not gone — on a phone with
+  // no injected wallet the picker shows "Open in my wallet app" underneath, because reopening inside the
+  // wallet's own browser is still the smoother route when the wallet is already on that device.
+  const wallets = offeredWallets();
+  // Use the remembered choice if it's still available; otherwise PICK.
+  //
+  // This used to auto-connect when exactly one wallet was present. That shortcut cannot survive a second
+  // connection method: with one extension installed it would pick the extension every time and WalletConnect
+  // would be unreachable. The cost is one extra click, once — the choice is remembered afterwards.
   let wallet = rememberedWallet();
-  if (!wallet) wallet = wallets.length === 1 ? wallets[0] : await pickWallet(wallets);
+  if (!wallet) wallet = await pickWallet(wallets);
   if (!wallet) return null; // user dismissed the picker — no error, UI stays calm
   return connectWith(wallet);
 }
 
 // Connect through a specific chosen wallet and wire up the session.
 async function connectWith(wallet) {
-  const eip = wallet.provider;
-  await eip.request({ method: "eth_requestAccounts" });
+  // [WC] A WalletConnect entry carries no provider until its library is loaded; `lazy` builds one on demand.
+  const eip = wallet.lazy ? await wallet.lazy() : wallet.provider;
+  if (isWalletConnect(wallet)) {
+    // WalletConnect has no ambient "are we authorized" state to probe: until a session exists, an RPC request
+    // has nowhere to go. `connect()` is what opens the QR modal (or hands off to the wallet app on mobile) and
+    // resolves once the user approves. If a session was restored from a previous visit, accounts are already
+    // there and this is skipped, so a returning user is not shown a pointless QR.
+    if (!eip.accounts?.length) await eip.connect();
+  } else {
+    await eip.request({ method: "eth_requestAccounts" });
+  }
   await ensureChain(eip);
 
   _eip = eip;
   _provider = new ethers.BrowserProvider(eip, "any");
   _signer = await _provider.getSigner();
   _account = await _signer.getAddress();
+  _wcActive = isWalletConnect(wallet);
   try { localStorage.setItem(WALLET_KEY, wallet.info.rdns); } catch { /* private mode */ }
 
   // keep UI in sync if the user switches account/chain in their wallet
@@ -332,6 +375,12 @@ export function forgetWallet() { try { localStorage.removeItem(WALLET_KEY); } ca
  * so the next Connect re-prompts and you can pick a different account or wallet.
  */
 export async function disconnect() {
+  // [WC] A WalletConnect session lives on the RELAY, not in this tab, so dropping local state is not enough:
+  // the phone wallet would keep listing the site as connected and the next Connect would silently reuse the
+  // stale session instead of showing a QR. Kill it on both sides first.
+  const wasWc = _wcActive;
+  _wcActive = false;
+  if (wasWc) { try { await wcDisconnect(); } catch { /* relay unreachable; local state is cleared regardless */ } }
   try { await _eip?.request?.({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] }); }
   catch { /* wallet lacks revoke — the flag below still stops auto-reconnect */ }
   try { _eip?.removeAllListeners?.("accountsChanged"); _eip?.removeAllListeners?.("chainChanged"); } catch { /* ignore */ }
@@ -1752,9 +1801,23 @@ async function eagerConnect() {
     // exactly one wallet, use it. When it's ambiguous, don't auto-pick — let them click Connect.
     const wallet = rememberedWallet() || (availableWallets().length === 1 ? availableWallets()[0] : null);
     if (!wallet) return;
-    const eip = wallet.provider;
+
+    // [WC] Restoring a WalletConnect session means loading a ~2MB library, so do it only when there is
+    // actually something to restore. hasStoredSession() is a localStorage key scan — it answers that question
+    // without importing anything, so a user who connected once and left does not pay for the library on every
+    // navigation, and one who never used WalletConnect never pays at all.
+    let eip;
+    if (isWalletConnect(wallet)) {
+      if (!hasStoredSession()) return;
+      eip = await wcProvider();
+      if (!eip.accounts?.length) return; // the stored session did not survive (expired, or killed from the phone)
+    } else {
+      eip = wallet.provider;
+    }
+
     const accts = await eip.request({ method: "eth_accounts" }); // silent: returns [] if not authorized
     if (!accts || !accts.length) return;
+    _wcActive = isWalletConnect(wallet);
     _eip = eip;
     _provider = new ethers.BrowserProvider(eip, "any");
     _signer = await _provider.getSigner();
