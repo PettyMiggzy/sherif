@@ -80,6 +80,24 @@ const tsCache = new Map(); // block -> unix ts, so we don't re-fetch a block rep
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ── sequencer feed (optional, OFF by default) ────────────────────────────────
+// `eth_getLogs` is ~90% of this indexer's RPC compute, and the reason is the timer: one getLogs PER POOL every
+// POLL_MS, whether or not anything happened. On a quiet pad almost every one of those comes back empty and is
+// paid for anyway.
+//
+// The sequencer relay fixes the guessing. It is not an RPC — it carries no logs and cannot replace one — but it
+// broadcasts every transaction as the sequencer accepts it, so it can answer "did anything touch us?" for free.
+// When it is healthy the timer stretches to FEED_IDLE_MS and a real transaction is what wakes the loop; when it
+// is not, everything falls straight back to POLL_MS and behaves exactly as it did before.
+//
+// Set FEED_URL to switch it on, e.g. wss://feed.mainnet.chain.robinhood.com/feed. Unset = unchanged behaviour.
+// Costs about 64 GB/day of INBOUND bandwidth — free on most hosts, but check yours before enabling.
+const FEED_URL = (process.env.FEED_URL || "").trim();
+// The safety net, and it must stay finite: the feed matches addresses by their raw bytes, so an address a
+// contract computes rather than receives would never appear and would be missed entirely. This timer is what
+// makes the indexer correct; the feed only makes it cheap.
+const FEED_IDLE_MS = Number(process.env.FEED_IDLE_MS || 120000);
+
 // Public RPCs rate-limit and occasionally 500 under load. Retry with backoff so
 // a transient hiccup doesn't abort a scan. Kept small — the loop retries anyway.
 async function withRetry(fn, label, tries = 5) {
@@ -612,12 +630,32 @@ async function backfillSwaps() {
   }
 }
 
+/// Everything worth watching on the feed: the factory (launches), the router (routed trades), and every live
+/// pool (trades that bypass the router entirely). Rebuilt each pass so a coin launched a minute ago is visible
+/// to the feed rather than waiting on the safety timer.
+function feedAddresses() {
+  const out = [CFG.factory, CFG.router];
+  try {
+    for (const c of liveCoinsAll.all()) { if (c.pool) out.push(c.pool); if (c.token) out.push(c.token); }
+  } catch { /* db not ready yet — the two above are enough to start */ }
+  return out.filter(Boolean);
+}
+
 export async function runLoop() {
   const startFrom = getCursor();
   console.log(`[indexer] rpc=${CFG.rpcUrl}`);
   console.log(`[indexer] factory=${CFG.factory} router=${CFG.router}`);
   console.log(`[indexer] cursor=${startFrom ?? `(fresh, from block ${CFG.startBlock})`}`);
+
+  let feed = null;
+  if (FEED_URL) {
+    const { startFeed } = await import("./feed.js");
+    feed = startFeed({ url: FEED_URL, addresses: feedAddresses() });
+    console.log(`[indexer] feed on: waking on real activity, safety poll every ${FEED_IDLE_MS}ms (was every ${CFG.pollMs}ms)`);
+  }
+
   try { await backfillSwaps(); } catch (e) { console.error(`[indexer] backfill error: ${e.message || e}`); }
+  let watching = 0;
   for (;;) {
     try {
       // Recover any launch-time-orphaned coin, then backfill its pool history so it isn't missing trades.
@@ -625,9 +663,21 @@ export async function runLoop() {
       if (recovered) { try { await backfillSwaps(); } catch (e) { console.error(`[indexer] post-reconcile backfill error: ${e.message || e}`); } }
       const n = await tick();
       if (n) console.log(`[indexer] cursor=${getCursor()} head=${head} (+${n} logs)`);
+      // Re-arm AFTER the tick, so a coin discovered in this pass is watched from the next one.
+      if (feed) {
+        const now = feed.setAddresses(feedAddresses());
+        if (now !== watching) { console.log(`[feed] watching ${now} addresses`); watching = now; }
+      }
     } catch (e) {
       console.error(`[indexer] tick error: ${e.message || e}`);
     }
-    await new Promise((r) => setTimeout(r, CFG.pollMs));
+
+    if (feed && feed.healthy()) {
+      // Sleep long, and let a real transaction cut it short.
+      await feed.waitForWork(FEED_IDLE_MS);
+    } else {
+      // No feed, or it dropped: the original timer, unchanged. Correctness never depended on the feed.
+      await new Promise((r) => setTimeout(r, CFG.pollMs));
+    }
   }
 }

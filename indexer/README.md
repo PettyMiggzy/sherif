@@ -157,6 +157,31 @@ Other knobs:
   isolated in `src/api.js` / `src/db.js`.
 - **Tune `POLL_MS`** down (e.g. 3000) during launch for faster feed freshness,
   back up afterward to spare the RPC.
+- **`FEED_URL` — the biggest single RPC saving available, and it is off by default.**
+  `eth_getLogs` is ~90% of this indexer's RPC compute, and the reason is the timer: one
+  getLogs *per pool* every `POLL_MS`, whether or not anything happened. On a quiet pad
+  nearly all of those come back empty and are billed anyway.
+
+  Setting `FEED_URL=wss://feed.mainnet.chain.robinhood.com/feed` connects the Arbitrum
+  sequencer relay and turns the timer into a safety net: the loop sleeps `FEED_IDLE_MS`
+  (default 120s) and a transaction that actually mentions one of our addresses is what
+  wakes it. Measured on this chain: wakes land within about a second of real activity.
+
+  Know what it is before you trust it:
+  - It is **not** an RPC. It carries no logs, no receipts and no state — only raw
+    transactions, *before* they execute. Every number this indexer stores still comes
+    from `getLogs`. The feed only decides *when* to ask.
+  - A hit is a maybe. The transaction may revert. That is fine: the cost of a wrong
+    wake is one empty `getLogs`.
+  - A **miss** is the risk, and it is possible — matching is done on the raw bytes of an
+    address, so an address a contract computes rather than receives would never appear.
+    `FEED_IDLE_MS` is what covers that, so keep it finite. The feed makes this cheap;
+    the timer is what keeps it correct.
+  - If the socket drops, health goes false and everything falls back to `POLL_MS`
+    automatically. It reconnects with backoff on its own.
+  - **Bandwidth: ~64 GB/day inbound** (~5.9 Mbit/s; the chain runs ~900 tx/sec). Free on
+    most hosts — check yours, because on a metered one this could cost more than the RPC
+    calls it saves. CPU is negligible: 0.2% of one core.
 - **`CONFIRMATIONS`** trades latency for reorg-safety; 3 is a good default.
 
 ### Deploy on a DigitalOcean droplet (what you have)
