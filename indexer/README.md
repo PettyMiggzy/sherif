@@ -140,10 +140,27 @@ serves **reads** (the browse feed, charts data, search). Three things keep it fa
    coin trades and stored on the row, so listing thousands of live coins is
    **one query, zero per-coin RPC**. The old path did a chain read per card;
    this one doesn't.
-2. **A private RPC for the indexer.** Point `RPC_URL` at Alchemy or QuickNode.
-   The public Blockscout endpoint is rate-limited and will lag under a flood of
-   launch-day events; a private endpoint keeps the indexer caught up and lets
-   you raise `CHUNK` for faster catch-up.
+2. **A private RPC for the indexer — as the BACKSTOP, not the default.** Point
+   `RPC_URL` at Alchemy or QuickNode. Reads then go through `CFG.readOrder`:
+   the free endpoints in `RPC_FREE` first, `RPC_URL` when one of those stalls or
+   errors, and Blockscout last. So the paid endpoint answers the calls a free one
+   couldn't, rather than every call — which matters because `eth_getLogs` is ~90%
+   of this indexer's RPC compute.
+
+   - `RPC_FREE` — comma-separated, tried in order. Defaults to
+     `https://rpc.mainnet.chain.robinhood.com`, which answers in ~120ms.
+     Set `RPC_FREE=""` to go back to paid-first.
+   - Failover is bounded by a 2s stall timeout, because a free endpoint that has
+     begun rate-limiting usually goes slow before it goes wrong. Without that
+     bound, "free first" would just mean "slow first".
+   - **Writes are unaffected.** The poster and the keepers still sign and
+     broadcast on `RPC_URL`. A free endpoint that silently drops a raw
+     transaction is a much worse failure than a slow read.
+   - Blockscout stays last on purpose. It is free, but it rate-limits the
+     per-pool getLogs burst hard, so ahead of the paid endpoint it would 429 every
+     pass and fall through anyway — all of the latency, none of the saving.
+     **As of the last check it was not answering at all** (8s timeout), so treat
+     it as a courtesy entry rather than real cover.
 3. **A CDN in front.** Every API response sends `cache-control: max-age=5`.
    Put Cloudflare (orange-cloud) on the domain and 10k readers are served from
    the edge — only ~1 request per route per 5s reaches the box. This is the

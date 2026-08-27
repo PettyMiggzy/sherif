@@ -222,7 +222,9 @@ function rpcTtl(method) {
 }
 async function rpcForward(payload) {
   // primary → optional backup (RPC_BACKUP, e.g. QuikNode) → last-resort fallback (blockscout). Deduped.
-  const urls = [CFG.rpcUrl, CFG.rpcBackup, CFG.rpcFallback].filter((u, i, a) => u && a.indexOf(u) === i);
+  // Free endpoints first, the paid RPC as the backstop — same order the poller uses, from one place, so the
+  // two can't drift into disagreeing about which endpoint is the expensive one.
+  const urls = CFG.readOrder;
   let lastErr;
   for (const u of urls) {
     try {

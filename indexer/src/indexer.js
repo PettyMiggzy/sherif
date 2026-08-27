@@ -45,33 +45,48 @@ function tickInBand(tick, startTick, gradTick) {
   return tick >= lo - span && tick <= hi + span;
 }
 
-// The primary RPC does all the work. When a DISTINCT backup is configured (RPC_BACKUP), wrap both in a
-// FallbackProvider so a primary outage or stall fails over to the backup instead of stalling the indexer.
-// The backup is priority 2 (quorum 1 = one good answer wins), so it is only touched when the primary
-// errors/stalls. When no backup is set, this returns the exact same single provider as before.
+// Reads go through CFG.readOrder: FREE endpoints first, the paid RPC as the backstop, Blockscout last. Ordering
+// is the whole cost story here — the paid endpoint should be answering the calls a free one could not, not
+// every call.
+//
+// This used to bail out to a single paid provider whenever RPC_BACKUP was unset, which is the default. Keeping
+// that guard would have made the free-first ordering a silent no-op on exactly the configuration it was written
+// for. The only thing that can short-circuit now is genuinely having one endpoint.
 function makeProvider() {
-  const bk = CFG.rpcBackup;
-  if (!bk || bk === CFG.rpcUrl) return new ethers.JsonRpcProvider(CFG.rpcUrl, undefined, { staticNetwork: true });
+  if (CFG.readOrder.length <= 1) {
+    return new ethers.JsonRpcProvider(CFG.readOrder[0] || CFG.rpcUrl, undefined, { staticNetwork: true });
+  }
   try {
     const net = { chainId: CFG.chainId, name: "robinhood" };
-    const primary = new ethers.JsonRpcProvider(CFG.rpcUrl, net, { staticNetwork: true });
-    const backup = new ethers.JsonRpcProvider(bk, net, { staticNetwork: true });
-    return new ethers.FallbackProvider([
-      { provider: primary, priority: 1, weight: 1, stallTimeout: 2000 },
-      { provider: backup, priority: 2, weight: 1, stallTimeout: 2000 },
-    ], net, { quorum: 1 });
+    // CFG.readOrder is free endpoints first, then the paid RPC, then Blockscout. With quorum 1 the
+    // FallbackProvider asks the lowest priority number first and only escalates when that one errors or
+    // stalls — so the paid endpoint is touched when a free one fails, not on every call.
+    //
+    // stallTimeout is what makes "free first" pay rather than just hurt: a free endpoint that has started
+    // rate-limiting usually goes SLOW before it goes wrong, and without a stall bound every read would sit
+    // there waiting instead of escalating. Two seconds is long enough for an honest answer and short enough
+    // that a throttled endpoint doesn't hold up a pass.
+    const cfgs = CFG.readOrder.map((url, i) => ({
+      provider: new ethers.JsonRpcProvider(url, net, { staticNetwork: true }),
+      priority: i + 1, weight: 1, stallTimeout: 2000,
+    }));
+    if (cfgs.length === 1) return cfgs[0].provider;
+    return new ethers.FallbackProvider(cfgs, net, { quorum: 1 });
   } catch { return new ethers.JsonRpcProvider(CFG.rpcUrl, undefined, { staticNetwork: true }); }
 }
 const provider = makeProvider();
 
-// eth_getLogs is ~90% of this indexer's RPC compute. If you have a SECOND, reliable
-// endpoint for it (a self-hosted node, or a PAID Blockscout/alt plan), set LOGS_RPC
-// to route log polling there and keep the primary RPC only as a fallback — cutting
-// the primary's quota. Contract/block reads always use the primary (small volume).
-// DEFAULT is empty = everything on the primary RPC (do NOT point this at the public
-// Blockscout endpoint: it rate-limits the indexer's per-pool getLogs burst, which
-// just forces the fallback and adds latency. To cut cost on one provider, raise
-// POLL_MS instead — that reduces getLogs frequency proportionally.)
+// eth_getLogs is ~90% of this indexer's RPC compute, so this is the call whose routing decides the bill.
+// LOGS_RPC pins log polling to ONE specific endpoint (a self-hosted node, say) instead of the ordered list.
+//
+// Leaving it empty is now the good default rather than the lazy one: log polling inherits the free-first
+// FallbackProvider above, so it already prefers the free endpoints and only reaches the paid one when a free
+// one stalls or errors. Setting LOGS_RPC OPTS OUT of that ordering for logs — which is right for a node you
+// run and wrong for anything metered.
+//
+// Do NOT point this at the public Blockscout endpoint: it rate-limits the per-pool getLogs burst, so every
+// pass would 429 through it and fall through anyway — all of the latency, none of the saving. It sits last in
+// CFG.readOrder for exactly that reason.
 const LOGS_RPC = (process.env.LOGS_RPC || "").trim();
 const logsProvider = (LOGS_RPC && LOGS_RPC !== CFG.rpcUrl)
   ? new ethers.JsonRpcProvider(LOGS_RPC, undefined, { staticNetwork: true })

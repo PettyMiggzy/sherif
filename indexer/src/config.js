@@ -24,6 +24,9 @@ const num = (k, d) => {
   return v === undefined || v === "" ? d : Number(v);
 };
 
+/// Dedupe while preserving order — the same URL configured twice must not become two providers.
+const uniq = (list) => list.filter((u, i, a) => u && a.indexOf(u) === i);
+
 export const CFG = {
   rpcUrl: process.env.RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
   // Upstream fallback for the /rpc read-proxy if the primary (paid) RPC errors.
@@ -34,6 +37,11 @@ export const CFG = {
   // Blank (default) = no change: single primary provider, exactly as before. Reads only; the poster
   // always signs/broadcasts on RPC_URL.
   rpcBackup: (process.env.RPC_BACKUP || "").trim(),
+  // FREE endpoints, tried BEFORE the paid one on every read. This is the whole point: the paid RPC becomes a
+  // backstop for when the free ones stall or error, instead of being the thing that answers every call.
+  // Comma-separated; order is the order they are tried. Set RPC_FREE="" to go back to paid-first.
+  rpcFree: (process.env.RPC_FREE ?? "https://rpc.mainnet.chain.robinhood.com")
+    .split(",").map((u) => u.trim()).filter(Boolean),
   chainId: num("CHAIN_ID", 4663), // Robinhood Chain; used to pin the FallbackProvider network
   rpcProxy: (process.env.RPC_PROXY ?? "1") !== "0",   // expose POST /rpc (read-only JSON-RPC proxy)
   rpcProxyMaxPerSec: num("RPC_PROXY_MAX_PER_SEC", 40), // per-IP/sec cap on upstream calls (a batch counts by its method count)
@@ -125,3 +133,15 @@ export const CFG = {
   lifiRatePerSec: num("LIFI_RATE_PER_SEC", 4),               // per-IP cap on the proxy
   lifiGlobalPerSec: num("LIFI_GLOBAL_PER_SEC", 20),          // total upstream/sec cap (protects our per-key budget)
 };
+
+// ── the read order, used by BOTH the poller and the /rpc proxy ───────────────
+// Free first, the paid RPC as the backstop, Blockscout last.
+//
+// Blockscout is free too, but it is deliberately NOT in the free tier: it rate-limits hard, and this
+// indexer's heaviest call is a burst of one getLogs per pool. Putting it ahead of the paid endpoint would
+// mean 429ing through it on every pass and falling through to the paid one anyway — all of the latency, none
+// of the saving. It stays where it is useful: the last resort when everything else is down.
+//
+// WRITES ARE NOT AFFECTED. The poster and the keepers sign and broadcast on RPC_URL, on purpose — a free
+// endpoint that silently drops a raw transaction is a different and much worse failure than a slow read.
+CFG.readOrder = uniq([...CFG.rpcFree, CFG.rpcUrl, CFG.rpcBackup, CFG.rpcFallback]);
