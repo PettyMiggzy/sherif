@@ -2286,6 +2286,114 @@ export async function tierClaimAll(pool, who) {
   return n;
 }
 
+// ── ART GENERATOR — prompt in, coin artwork out, paid for with prepaid credits ─
+// The image model, the provider and the per-tier cost all live on OUR server and are never named
+// here: the browser asks for a TIER and gets a picture back. What the browser DOES do is prove who
+// is spending, because a spend needs the customer's own EIP-712 signature — the server can only
+// relay one, never mint or spend on its own.
+
+const ART_TYPES = {
+  Spend: [
+    { name: "user", type: "address" },
+    { name: "amount", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+};
+
+function artApi(path) { return `${API_BASE.replace(/\/+$/, "")}${path}`; }
+
+/// Is the generator on, is it charging, and what does each quality level cost? One call, cached by
+/// the caller if it wants — this is static config, not live state.
+export async function artStatus() {
+  if (!hasApi()) return { enabled: false, paid: false, tiers: [] };
+  try {
+    const r = await fetch(artApi("/api/art/enabled"), { headers: { accept: "application/json" } });
+    if (!r.ok) return { enabled: false, paid: false, tiers: [] };
+    return await r.json();
+  } catch { return { enabled: false, paid: false, tiers: [] }; }
+}
+
+/// Spendable credits for `who` — the server subtracts anything already reserved by a generation
+/// still running, so this can be lower than the raw on-chain balance and that is correct.
+export async function artCreditsOf(who) {
+  const addr = who || _account;
+  if (!addr || !hasApi()) return 0;
+  try {
+    const r = await fetch(artApi(`/api/art/credits?user=${addr}`), { headers: { accept: "application/json" } });
+    const j = await r.json();
+    return Number(j.credits || 0);
+  } catch { return 0; }
+}
+
+/// What `n` credits cost, straight from the contract rather than a number hardcoded here — the
+/// owner can retune the price and a stale client must not quote the old one.
+export async function artQuote(n) {
+  if (!isDeployed("artCredits")) return null;
+  const c = new ethers.Contract(CONTRACTS.artCredits, ABIS.artCredits, _read);
+  const [ethCost] = await c.quote(n);
+  const per = await c.weiPerCredit();
+  return { n, ethCost, weiPerCredit: per };
+}
+
+/// Buy `n` credits with ETH. `slippageBps` guards against the price moving between the quote the
+/// user was shown and the block their transaction lands in — the contract requires a ceiling, and
+/// sending today's exact price would make an honest price change look like a failure.
+export async function buyArtCredits(n, slippageBps = 500) {
+  if (!isDeployed("artCredits")) throw new Error("The art generator isn't live yet.");
+  if (!_signer) await connect();
+  await ensureOnChain();
+  const count = BigInt(Math.max(1, Math.floor(Number(n) || 0)));
+  const c = new ethers.Contract(CONTRACTS.artCredits, ABIS.artCredits, _signer);
+  const per = await c.weiPerCredit();
+  const max = per + (per * BigInt(slippageBps)) / 10000n;
+  return guardedSend(c, "buy", [count, max], count * per, "Buy art credits");
+}
+
+/// Generate artwork. Signs a spend authorisation for exactly `credits` and posts it with the
+/// prompt; the server checks it, generates, and only then charges. A failed or blank generation
+/// costs nothing, which is why the signature is single-use and carries a deadline.
+///
+/// Returns { image, spent, tx }. `image` is a data URL ready to drop straight into the pfp field.
+export async function generateArt({ prompt, tier = "medium", credits = 0 }) {
+  if (!hasApi()) throw new Error("The art generator needs the indexer API.");
+  const body = { prompt: String(prompt || "").trim(), tier };
+
+  if (credits > 0) {
+    if (!_signer) await connect();
+    if (!isDeployed("artCredits")) throw new Error("The art generator isn't live yet.");
+    const net = await _read.getNetwork();
+    // An arbitrary nonce rather than a counter, so two generations can be in flight at once without
+    // one of them failing for a reason the user could never understand.
+    const nonce = BigInt(ethers.hexlify(ethers.randomBytes(16)));
+    const deadline = Math.floor(Date.now() / 1000) + 600;
+    const domain = {
+      name: "RobinArtCredits", version: "1",
+      chainId: Number(net.chainId), verifyingContract: CONTRACTS.artCredits,
+    };
+    const value = { user: _account, amount: credits, nonce, deadline };
+    body.user = _account;
+    body.nonce = nonce.toString();
+    body.deadline = deadline;
+    body.signature = await _signer.signTypedData(domain, ART_TYPES, value);
+  }
+
+  const r = await fetch(artApi("/api/art"), {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const err = new Error(j.error || "Art generation failed.");
+    // 402 is the pay-to-continue case; a caller can open the top-up flow instead of showing an error.
+    if (r.status === 402) err.code = "NO_CREDITS";
+    err.need = j.need;
+    throw err;
+  }
+  return j;
+}
+
 // expose a tiny global for the plain-HTML pages (no bundler)
 if (typeof window !== "undefined") {
   window.addEventListener("robinpad:ready", ensureDisconnectUI);

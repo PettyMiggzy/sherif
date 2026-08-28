@@ -127,6 +127,12 @@ export const CONTRACTS = {
   // never touches the factory. DEPLOY: fill in AFTER deploy + verify; isDeployed('disperse')
   // gates the airdrop tool + the dev-buy split until then.
   disperse: "0xBF2904b4e31F751441C85590EDF10D8a592A9a38",
+
+  // ArtCredits — prepaid credits for the in-pad image generator. One credit is one image at the
+  // cheap tier; the better tiers cost more credits. Buying credits buys COMPUTE, not a deposit:
+  // there is no function anywhere that turns a credit back into ETH. DEPLOY: fill in after deploy +
+  // verify; the create page hides the generator until this is set.
+  artCredits: "",
 };
 
 // Robinhood Stock Tokens — the native tokenized equities/ETFs on Robinhood Chain (source of truth is
@@ -370,6 +376,20 @@ export const ABIS = {
     "function isCreator(address) view returns (bool)",
     "function openCreation() view returns (bool)",
     "function createPool(address stakeToken, bool selfBoost) returns (address)",
+  ],
+  // ArtCredits — buy credits, spend them generating art. A spend needs the CUSTOMER'S EIP-712
+  // signature (the server only relays it), so the site signs `Spend` and posts it with the prompt.
+  artCredits: [
+    "function credits(address) view returns (uint256)",
+    "function weiPerCredit() view returns (uint256)",
+    "function quote(uint256 n) view returns (uint256 ethCost, uint256 tokenCost)",
+    "function payToken() view returns (address)",
+    "function tokenPerCredit() view returns (uint256)",
+    "function usedNonce(address,uint256) view returns (bool)",
+    "function buy(uint256 n, uint256 maxWeiPerCredit) payable",
+    "function buyWithToken(uint256 n, uint256 maxTokenPerCredit)",
+    "function spendSelf(uint256 amount)",
+    "function DOMAIN_SEPARATOR() view returns (bytes32)",
   ],
   // StakingFactory — one pool per stake token. poolOf(token) is the canonical pool (0x0 if none yet).
   stakingFactory: [

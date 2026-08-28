@@ -170,6 +170,23 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
           <input id="memeStyle" class="inp" style="max-width:210px;font-size:.8rem;padding:8px 10px" placeholder="optional vibe (e.g. neon fox)" maxlength="60" />
           <span id="memeStatus" style="font-size:.78rem;color:var(--ink-faint)"></span>
         </div>
+
+        <!-- Text-to-art. Hidden until the indexer's generator is switched on (/api/art/enabled), and
+             the credits strip inside it only appears when that generator is actually charging. -->
+        <div id="artRow" style="display:none;margin-top:10px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input id="artPrompt" class="inp" style="flex:1;min-width:220px;font-size:.84rem;padding:9px 11px"
+                   placeholder="Describe your coin — e.g. a hooded wolf holding a gold coin" maxlength="200" />
+            <button type="button" id="artBtn" class="btn btn-ghost" style="font-size:.82rem">Draw it</button>
+          </div>
+          <div id="artTiers" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"></div>
+          <div id="artWallet" style="display:none;margin-top:8px;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-size:.78rem;color:var(--ink-faint)">Credits: <b id="artBal">—</b></span>
+            <button type="button" id="artBuy" class="btn btn-ghost" style="font-size:.76rem;padding:6px 10px">Buy 10</button>
+            <span id="artBuyCost" style="font-size:.74rem;color:var(--ink-faint)"></span>
+          </div>
+          <div id="artStatus" style="font-size:.78rem;color:var(--ink-faint);margin-top:7px"></div>
+        </div>
       </div>
 
       <div class="row2">
@@ -851,6 +868,108 @@ $('launchBtn').addEventListener('click', async () => {
 
 window.addEventListener('robinpad:ready', refreshConnect);
 refreshConnect();
+
+// ── text-to-art: describe the coin, get its artwork, use it as the pfp ──────────────
+// Mirrors the meme flow below — the generated image goes back into the #pfp input so the normal
+// preview + profile-save path picks it up untouched.
+//
+// WHAT THE BROWSER DELIBERATELY DOES NOT KNOW: which model draws each tier, or who the provider is.
+// It asks for a quality level and gets a picture. That is a supplier relationship and a cost, not a
+// product feature, and publishing it invites people to buy the same image direct for a third of the
+// price. So this file names no model anywhere.
+//
+// PAYING is the customer signing a spend authorisation for exactly the credits this tier costs. The
+// server can only relay that signature — it cannot mint credits or spend them unbidden — and it
+// charges only AFTER the image comes back, so a failed or blank generation costs nothing.
+(async function initArt(){
+  const row = $('artRow'), btn = $('artBtn'), promptEl = $('artPrompt'), st = $('artStatus');
+  const tiersEl = $('artTiers'), walletEl = $('artWallet'), balEl = $('artBal'), buyBtn = $('artBuy'), costEl = $('artBuyCost');
+  if (!row || !btn || !API_BASE) return;
+
+  let cfg;
+  try { cfg = await Pad.artStatus(); } catch { return; }
+  if (!cfg || !cfg.enabled) return; // stays hidden until the generator is switched on
+  row.style.display = 'block';
+
+  const tiers = (cfg.tiers && cfg.tiers.length) ? cfg.tiers : [{ tier: 'medium', credits: 0 }];
+  const LABEL = { standard: 'Standard', medium: 'Better', high: 'Best' };
+  let picked = tiers.find((t) => t.tier === 'medium') || tiers[0];
+
+  function paintTiers() {
+    tiersEl.innerHTML = tiers.map((t) => `<button type="button" class="btn btn-ghost" data-tier="${t.tier}"
+      style="font-size:.76rem;padding:6px 11px;${t.tier === picked.tier ? 'border-color:var(--lime);color:var(--lime)' : ''}">
+      ${LABEL[t.tier] || t.tier}${cfg.paid ? ` · ${t.credits}` : ''}</button>`).join('');
+    for (const b of tiersEl.querySelectorAll('[data-tier]')) {
+      b.addEventListener('click', () => { picked = tiers.find((t) => t.tier === b.dataset.tier) || picked; paintTiers(); });
+    }
+  }
+  paintTiers();
+
+  async function refreshBalance() {
+    if (!cfg.paid) return;
+    walletEl.style.display = 'flex';
+    const me = Pad.account();
+    if (!me) { balEl.textContent = 'connect wallet'; return; }
+    try { balEl.textContent = String(await Pad.artCreditsOf(me)); } catch { balEl.textContent = '?'; }
+    // Quote the price from the contract rather than hardcoding it here — the owner can retune it,
+    // and a stale page must not advertise yesterday's number.
+    try {
+      const q = await Pad.artQuote(10);
+      if (q) costEl.textContent = '≈ ' + Number(ethers_formatEth(q.ethCost)).toFixed(5) + ' ETH';
+    } catch { costEl.textContent = ''; }
+  }
+  // Tiny local formatter so this block does not need to import ethers just for one number.
+  function ethers_formatEth(wei) { return Number(wei) / 1e18; }
+
+  if (cfg.paid) {
+    refreshBalance();
+    buyBtn.addEventListener('click', async () => {
+      buyBtn.disabled = true;
+      st.style.color = 'var(--ink-faint)'; st.textContent = 'Buying credits…';
+      try {
+        const tx = await Pad.buyArtCredits(10);
+        if (tx && tx.wait) await tx.wait();
+        st.style.color = 'var(--green)'; st.textContent = 'Credits added.';
+        await refreshBalance();
+      } catch (e) {
+        st.style.color = 'var(--red)'; st.textContent = e?.shortMessage || e?.message || 'Could not buy credits.';
+      } finally { buyBtn.disabled = false; }
+    });
+  }
+
+  async function useAsPfp(dataUrl){
+    const blob = await (await fetch(dataUrl)).blob();
+    const file = new File([blob], 'art.webp', { type: blob.type || 'image/webp' });
+    const dt = new DataTransfer(); dt.items.add(file);
+    $('pfp').files = dt.files;
+    if (typeof prev === 'function') prev($('pfp'), 'pfp');
+  }
+
+  let busy = false;
+  btn.addEventListener('click', async () => {
+    if (busy) return;
+    const want = (promptEl.value || '').trim();
+    if (want.length < 3) { st.style.color = 'var(--red)'; st.textContent = 'Say what you want drawn, in a few words.'; return; }
+    busy = true; btn.disabled = true;
+    st.style.color = 'var(--ink-faint)';
+    st.textContent = cfg.paid ? 'Approve in your wallet, then it draws — about 15 seconds.' : 'Drawing… about 15 seconds.';
+    try {
+      const out = await Pad.generateArt({ prompt: want, tier: picked.tier, credits: cfg.paid ? picked.credits : 0 });
+      await useAsPfp(out.image);
+      st.style.color = 'var(--green)';
+      st.textContent = cfg.paid
+        ? `Done — using it as your coin image. ${out.spent} credit${out.spent === 1 ? '' : 's'} used.`
+        : 'Done — using it as your coin image. Tweak the words and draw again if you want.';
+      await refreshBalance();
+    } catch (e) {
+      st.style.color = 'var(--red)';
+      st.textContent = e?.code === 'NO_CREDITS'
+        ? `${e.message} — hit Buy to top up.`
+        : (e?.message || 'Could not draw that, try different words.');
+      if (e?.code === 'NO_CREDITS') await refreshBalance();
+    } finally { busy = false; btn.disabled = false; }
+  });
+})();
 
 // ── photo-to-meme: turn a snapshot into a meme character and use it as the coin's pfp ──
 // The button only appears if the indexer's generator is configured (probe /api/meme/enabled).
