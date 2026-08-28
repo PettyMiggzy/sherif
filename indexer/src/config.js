@@ -131,9 +131,18 @@ export const CFG = {
   // THREE TIERS, and the client only ever names the tier. Which model serves it is a cost and a
   // supplier relationship, never a product feature — see artproxy.js. Prices below are what the
   // provider charges us per image, measured, not quoted:
-  //   standard  venice-sd35        $0.01   sold at 2 credits
-  //   medium    nano-banana-2 1K   $0.10   sold at 3 credits
-  //   high      nano-banana-pro 2K $0.23   sold at 6 credits
+  //   standard  venice-sd35         $0.01   sold at 2 credits ($0.20)
+  //   medium    nano-banana-2 1K    $0.10   sold at 3 credits ($0.30)
+  //   high      nano-banana-pro 1K  $0.18   sold at 6 credits ($0.60)
+  //
+  // ALL TIERS RENDER AT 1K AND THAT IS NOT A COMPROMISE. Every result is downscaled to
+  // veniceOutPx (512) before it leaves this process, because the output is a coin avatar that
+  // renders as a 40px circle. Buying 2K at $0.23 to then throw four fifths of it away is $0.05 an
+  // image of nothing. Raise veniceOutPx first if that ever stops being true.
+  //
+  // Charging also costs GAS: one spendWithSig per image, ~85.3k gas, paid by the operator. At the
+  // measured 0.057 gwei on this chain that is ~$0.015 per image at $3k ETH — real money against a
+  // $0.20 sale, and it is charged whether or not the generation was any good.
   // nano-banana-2-lite ($0.06) is deliberately NOT used: measured one solid-black result in three,
   // billed in full, which makes it both dearer and less reliable than the $0.01 standard model.
   veniceModelStandard: process.env.VENICE_MODEL_STANDARD || "venice-sd35",
