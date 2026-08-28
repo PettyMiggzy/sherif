@@ -2355,9 +2355,9 @@ export async function buyArtCredits(n, slippageBps = 500) {
 /// costs nothing, which is why the signature is single-use and carries a deadline.
 ///
 /// Returns { image, spent, tx }. `image` is a data URL ready to drop straight into the pfp field.
-export async function generateArt({ prompt, tier = "medium", credits = 0 }) {
+export async function generateArt({ prompt, tier = "medium", style = "sticker", credits = 0 }) {
   if (!hasApi()) throw new Error("The art generator needs the indexer API.");
-  const body = { prompt: String(prompt || "").trim(), tier };
+  const body = { prompt: String(prompt || "").trim(), tier, style };
 
   if (credits > 0) {
     if (!_signer) await connect();

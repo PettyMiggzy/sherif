@@ -3,6 +3,7 @@ node_modules/
 *.log
 .env
 .venice_key
+.groq_key
 
 # large intermediate art (blue-screen raws, regenerable) — keep only processed sprites
 game/art_raw/

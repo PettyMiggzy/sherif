@@ -39,15 +39,62 @@ async function sharp() {
 
 export function enabled() { return !!CFG.veniceApiKey; }
 
-/// What the pad tells Venice, regardless of what the user typed. `extra` is the user's own
-/// description, appended and clipped — Venice's smallest model caps the prompt at 1500 chars
-/// and rejects the request outright above it, so the clip is correctness, not tidiness.
-function buildPrompt(extra) {
-  const base =
-    "A clean, original mascot illustration for a crypto memecoin avatar. Bold flat colors, " +
-    "thick black outlines, expressive and funny. The subject is CENTERED and fills most of " +
-    "the frame, on a simple flat background, with high contrast so it still reads clearly " +
-    "shrunk to a small round profile picture. No text, no lettering, no watermarks, no borders.";
+/// The look. A style is a whole BRIEF, not a phrase appended to one — asking the sticker brief for
+/// "hand drawn" fights itself, because that brief demands flat fills and clean thick outlines, which
+/// is precisely the machine-made look somebody asking for hand-drawn is trying to escape.
+///
+/// These four were sampled before shipping and two more were thrown away: "crayon" and "woodcut"
+/// briefs were simply ignored by the model, which returned ordinary comic art both times. A style
+/// nobody can tell apart from the default is worse than no style, so only what visibly worked is here.
+///
+/// Each carries its own exclusions as well. `ink` has to forbid "vector, clean lines, symmetrical",
+/// or the model tidies the wobble straight back out.
+const STYLES = {
+  sticker: {
+    label: "Sticker",
+    brief:
+      "A clean, original mascot illustration for a crypto memecoin avatar. Bold flat colors, " +
+      "thick black outlines, expressive and funny. The subject is CENTERED and fills most of " +
+      "the frame, on a simple flat background, with high contrast so it still reads clearly " +
+      "shrunk to a small round profile picture.",
+    negative: "photorealistic, photograph, 3d render, painterly, oil painting, muted colors",
+  },
+  ink: {
+    label: "Hand-drawn",
+    // NO PHYSICAL OBJECTS IN THIS BRIEF. An earlier version said "in a sketchbook ... on off-white
+    // paper", and the model obliged literally: it drew a photograph of an open notebook lying on a
+    // desk next to a pen, with the character small in the middle. Naming the surface invites a
+    // SCENE. The look has to be described as qualities of the drawing itself, and the objects that
+    // would imply a scene are pushed into the negatives.
+    brief:
+      "Hand-drawn ink and marker illustration. Visible pen strokes, slightly uneven wobbling " +
+      "linework, cross-hatching for shadow, small imperfections, loose colour washes that spill " +
+      "past the lines. Drawn by a person, not printed. The subject FILLS THE FRAME edge to edge " +
+      "and is centered, on a plain flat off-white background and nothing else.",
+    negative: "vector, clean lines, symmetrical, perfect, digital, flat fill, glossy, airbrushed, " +
+      "sketchbook, notebook, book, page, desk, table, pen, pencil, hand, photograph of paper, " +
+      "mockup, product photo, still life, scene, background objects",
+  },
+  paint: {
+    label: "Painted",
+    brief:
+      "Loose ink and watercolour painting on paper. Wet bleeding washes, streaky uneven colour where " +
+      "the brush overlapped itself, visible stroke ends, pigment pooling at the edges, a few stray " +
+      "splatters. The subject is CENTERED and fills most of the frame on plain paper.",
+    negative: "vector, gradient, glossy, airbrush, symmetrical, perfect lines, digital, flat fill",
+  },
+};
+
+export function styles() {
+  return Object.entries(STYLES).map(([k, v]) => ({ style: k, label: v.label }));
+}
+
+/// What the pad actually sends, regardless of what the user typed. `extra` is the user's own
+/// description, appended and clipped — Venice's smallest model caps the prompt at 1500 chars and
+/// rejects the request outright above it, so the clip is correctness, not tidiness.
+function buildPrompt(style, extra) {
+  const st = STYLES[style] || STYLES.sticker;
+  const base = `${st.brief} No text, no lettering, no watermarks, no borders.`;
   const want = String(extra || "").trim().slice(0, 600);
   return want ? `${base} The subject: ${want}` : base;
 }
@@ -58,14 +105,14 @@ function buildPrompt(extra) {
 /// WATERMARK and happily draws them. Measured on the cheap tier: one sample in four came back with
 /// garbled lettering stamped in a corner, despite hide_watermark being on and the prompt asking for
 /// none. A negative prompt is the channel these models actually respect for exclusions.
-///
-/// The second half is style enforcement rather than safety. Left alone, the cheap model drifts to
-/// painterly and photographic renderings and ignores the flat-cartoon brief, which is exactly the
-/// gap that makes the standard tier feel like a downgrade rather than a bargain.
-const NEGATIVE =
+const NEGATIVE_BASE =
   "text, letters, words, lettering, typography, signature, watermark, logo, caption, subtitles, " +
-  "frame, border, blurry, low quality, deformed, extra limbs, cropped, out of frame, " +
-  "photorealistic, photograph, 3d render, painterly, oil painting, muted colors";
+  "frame, border, blurry, low quality, deformed, extra limbs, cropped, out of frame";
+
+function buildNegative(style) {
+  const st = STYLES[style] || STYLES.sticker;
+  return `${NEGATIVE_BASE}, ${st.negative}`;
+}
 
 /// Venice returns a 1024px PNG — measured at 2.1MB, which is far too heavy for something that
 /// renders as a 40px circle in a coin list and gets embedded in a profile payload. Shrink and
@@ -114,12 +161,13 @@ export function creditsFor(tier) {
 }
 
 /// Generate artwork from a description. Returns { dataUrl, bytes } or throws a friendly Error.
-export async function makeArt({ prompt, tier = "medium", timeout = 180000 }) {
+export async function makeArt({ prompt, tier = "medium", style = "sticker", timeout = 180000 }) {
   if (!enabled()) throw new Error("art generator not configured");
   const want = String(prompt || "").trim();
   if (want.length < 3) throw new Error("describe what you want, in a few words at least");
   const t = TIERS[String(tier).toLowerCase()];
   if (!t) throw new Error("pick a quality level");
+  const look = STYLES[String(style).toLowerCase()] ? String(style).toLowerCase() : "sticker";
   const model = t.model();
 
   let r;
@@ -129,8 +177,8 @@ export async function makeArt({ prompt, tier = "medium", timeout = 180000 }) {
       headers: { authorization: `Bearer ${CFG.veniceApiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
         model,
-        prompt: buildPrompt(want),
-        negative_prompt: NEGATIVE,
+        prompt: buildPrompt(look, want),
+        negative_prompt: buildNegative(look),
         // Both parameter styles are sent because the catalogue is not uniform: the SD-family models
         // take width/height, the newer ones take an aspect ratio and a resolution class. Each ignores
         // the pair it does not use, which is cheaper than keeping a per-model shape table in sync.
@@ -171,8 +219,14 @@ export async function makeArt({ prompt, tier = "medium", timeout = 180000 }) {
   if (await isBlank(raw)) throw new Error("that one came out blank — try again, you were not charged");
 
   let out;
-  try { out = await shrink(raw); }
-  catch { throw new Error("art generation returned something unreadable, try again"); }
+  try {
+    out = await shrink(raw);
+  } catch (e) {
+    // The friendly message stays, but the real cause is logged: this catch once swallowed a
+    // MISSING FUNCTION and reported it as a bad image, which is a bug that looks like weather.
+    console.error("[art] post-processing failed:", e?.message || e);
+    throw new Error("art generation returned something unreadable, try again");
+  }
 
   return { dataUrl: `data:image/webp;base64,${out.toString("base64")}`, bytes: out.length };
 }

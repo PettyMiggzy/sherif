@@ -179,7 +179,8 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
                    placeholder="Describe your coin — e.g. a hooded wolf holding a gold coin" maxlength="200" />
             <button type="button" id="artBtn" class="btn btn-ghost" style="font-size:.82rem">Draw it</button>
           </div>
-          <div id="artTiers" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"></div>
+          <div id="artStyles" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"></div>
+          <div id="artTiers" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"></div>
           <div id="artWallet" style="display:none;margin-top:8px;align-items:center;gap:10px;flex-wrap:wrap">
             <span style="font-size:.78rem;color:var(--ink-faint)">Credits: <b id="artBal">—</b></span>
             <button type="button" id="artBuy" class="btn btn-ghost" style="font-size:.76rem;padding:6px 10px">Buy 10</button>
@@ -895,6 +896,22 @@ refreshConnect();
   const LABEL = { standard: 'Standard', medium: 'Better', high: 'Best' };
   let picked = tiers.find((t) => t.tier === 'medium') || tiers[0];
 
+  // Look is separate from quality: the style is WHAT it draws like, the tier is HOW GOOD the model
+  // is. Conflating them would mean charging more for a different aesthetic, which is not what
+  // costs us more.
+  const stylesList = (cfg.styles && cfg.styles.length) ? cfg.styles : [];
+  let pickedStyle = stylesList.length ? stylesList[0].style : 'sticker';
+  function paintStyles() {
+    if (!stylesList.length) { $('artStyles').style.display = 'none'; return; }
+    $('artStyles').innerHTML = stylesList.map((s) => `<button type="button" class="btn btn-ghost" data-style="${s.style}"
+      style="font-size:.76rem;padding:6px 11px;${s.style === pickedStyle ? 'border-color:var(--lime);color:var(--lime)' : ''}">
+      ${s.label}</button>`).join('');
+    for (const b of $('artStyles').querySelectorAll('[data-style]')) {
+      b.addEventListener('click', () => { pickedStyle = b.dataset.style; paintStyles(); });
+    }
+  }
+  paintStyles();
+
   function paintTiers() {
     tiersEl.innerHTML = tiers.map((t) => `<button type="button" class="btn btn-ghost" data-tier="${t.tier}"
       style="font-size:.76rem;padding:6px 11px;${t.tier === picked.tier ? 'border-color:var(--lime);color:var(--lime)' : ''}">
@@ -954,7 +971,7 @@ refreshConnect();
     st.style.color = 'var(--ink-faint)';
     st.textContent = cfg.paid ? 'Approve in your wallet, then it draws — about 15 seconds.' : 'Drawing… about 15 seconds.';
     try {
-      const out = await Pad.generateArt({ prompt: want, tier: picked.tier, credits: cfg.paid ? picked.credits : 0 });
+      const out = await Pad.generateArt({ prompt: want, tier: picked.tier, style: pickedStyle, credits: cfg.paid ? picked.credits : 0 });
       await useAsPfp(out.image);
       st.style.color = 'var(--green)';
       st.textContent = cfg.paid

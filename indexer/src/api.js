@@ -21,7 +21,7 @@ import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleAppro
 import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes, stats as lifiUsage } from "./lifiproxy.js";
 import { renderCard, coinOgHtml } from "./og.js";
 import { enabled as memeEnabled, makeMeme } from "./memeproxy.js";
-import { enabled as artEnabled, makeArt, tiers as artTiers, creditsFor } from "./artproxy.js";
+import { enabled as artEnabled, makeArt, tiers as artTiers, styles as artStyles, creditsFor } from "./artproxy.js";
 import * as Credits from "./credits.js";
 import { enabled as ordersEnabled, saveOrder, ordersForMaker, cancelOrder, verifyCancelledOnChain, orderExists } from "./orders.js";
 
@@ -736,7 +736,7 @@ export function startApi() {
         }
 
         try {
-          const out = await makeArt({ prompt, tier });
+          const out = await makeArt({ prompt, tier, style: abody.style });
           // Charged only now, and only because it worked. A blank or failed generation releases the
           // reservation without spending — see artproxy's blank guard.
           const txHash = release ? await release(true) : null;
@@ -956,6 +956,7 @@ export function startApi() {
         return send(res, 200, {
           enabled: artEnabled(),
           tiers: artEnabled() ? artTiers() : [],
+          styles: artEnabled() ? artStyles() : [],
           // The client needs to know whether to ask for a signature at all, and where the ledger is.
           // The model behind each tier is still never named.
           paid: Credits.enabled(),
