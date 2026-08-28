@@ -35,11 +35,12 @@ interface IBoostSource {
 ///      the 15% quietly stops applying to exactly the holders it matters most for. In the normal case nothing
 ///      goes to the platform or the owner — there is no path that sends either one to a wallet.
 ///
-///      The single exception is the degenerate one: a penalty collected when there is NOBODY ELSE STAKED. It
-///      cannot go to the stayers because there are none, and parking it for the next staker just hands it
-///      back to the leaver. So it is set aside in `stranded` and swept to `strandedSink`. That is a real
-///      carve-out and it is stated rather than hidden — but it can only ever fire on an otherwise empty pool,
-///      and the alternative is a 15% penalty that refunds itself.
+///      One case needs handling rather than a claim: a penalty collected when there is NOBODY ELSE STAKED. It
+///      cannot go to the stayers because there are none, and parking it for "the next staker" just hands it
+///      back to the leaver, who is the next staker. So it accumulates in `stranded` — a visible pot, readable
+///      by any front end via `strandedAll` — and the only exit it has is `releaseStranded`, which streams it
+///      to stakers. That function takes no address. There is no path, owner-controlled or otherwise, by which
+///      a penalty reaches a wallet.
 ///
 ///   4. THE $ROBIN HOLDER BOOST. Hold at least `boostThreshold` $ROBIN — STAKED, see below — and every
 ///      position you hold in this pool earns a further `boostBps` on top of its tier. It applies across every
@@ -125,13 +126,13 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     mapping(address => mapping(address => uint256)) public rewardsAccrued;
     mapping(address => bool) public isRewarder;
 
-    /// @notice Penalties collected while there was nobody else staked to pay them to. See `_redistribute`.
-    /// Held here rather than in `pending` so the penalised staker cannot stream them back to themselves, and
-    /// swept out by `sweepStranded` — never touched by any other path, so it can never reach a staker's
-    /// principal or an unclaimed reward.
+    /// @notice Penalties collected while there was nobody else staked to pay them to — the pot. See
+    /// `_redistribute`. Held here rather than in `pending` because `pending` streams to whoever stakes next,
+    /// and on an empty pool that is the person who just paid the penalty.
+    ///
+    /// It is deliberately readable (`strandedAll`) so a front end can show the pot growing. There is exactly
+    /// one way out of it — `releaseStranded`, which streams it to stakers — and no way at all to a wallet.
     mapping(address => uint256) public stranded;
-    /// @notice Where `stranded` is swept to. Set at deploy to the owner; the treasury in production.
-    address public strandedSink;
 
     error Zero();
     error BadTier();
@@ -145,6 +146,7 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     error BadBoost();
     error EthTransferFailed();
     error NothingStranded();
+    error NobodyStaked();
 
     event Staked(address indexed user, uint256 indexed positionId, uint256 amount, uint8 tier, uint64 unlockAt);
     event Withdrawn(address indexed user, uint256 indexed positionId, uint256 returned, uint256 tax, bool early);
@@ -155,14 +157,12 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     event BoostChanged(address indexed source, uint256 threshold, uint16 bps);
     event BoostSynced(address indexed user, bool boosted, uint256 weight);
     event Stranded(address indexed asset, uint256 amount);
-    event StrandedSwept(address indexed asset, address indexed to, uint256 amount);
-    event StrandedSinkChanged(address indexed sink);
+    event StrandedReleased(address indexed asset, uint256 amount);
 
     constructor(address stakeToken_, address owner_, address boostSource_) Ownable(owner_) {
         if (stakeToken_ == address(0)) revert Zero();
         stakeToken = IERC20(stakeToken_);
         isRewarder[owner_] = true;
-        strandedSink = owner_;
         // The staked token is listed up front because the early-exit tax is paid IN it — without a stream to
         // pay into, the tax would have nowhere to go.
         _listReward(address(stakeToken_), 7 days);
@@ -227,6 +227,13 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     function earned(address user, address asset) public view returns (uint256) {
         uint256 delta = rewardPerToken(asset) - userRewardPerTokenPaid[asset][user];
         return rewardsAccrued[asset][user] + Math.mulDiv(weightOf[user], delta, ACC);
+    }
+
+    /// @notice The pot, per reward asset, in one call — so a front end can show it without N round trips.
+    function strandedAll() external view returns (address[] memory assets, uint256[] memory amounts) {
+        assets = rewardTokens;
+        amounts = new uint256[](assets.length);
+        for (uint256 i; i < assets.length; ++i) amounts[i] = stranded[assets[i]];
     }
 
     function earnedAll(address user) external view returns (address[] memory assets, uint256[] memory amounts) {
@@ -558,22 +565,28 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         rewardInfo[asset].duration = duration;
     }
 
-    /// @notice Sweep penalties that had nobody to be paid to. Permissionless — it can only ever move funds to
-    /// `strandedSink`, so there is nothing to gain by calling it and nothing to lose by anyone being able to.
-    function sweepStranded(address asset) external nonReentrant returns (uint256 amount) {
+    /// @notice Hand the pot to the stakers, as a normal streamed reward. This is the ONLY exit `stranded` has,
+    /// and it has no address parameter — there is no version of this call that pays a wallet, the owner's
+    /// included. The pot can be released to holders or sit there being counted; those are the two outcomes.
+    ///
+    /// WHY THIS IS OWNER-GATED RATHER THAN PERMISSIONLESS, WHICH IS THE OBVIOUS THING TO WANT. The pot exists
+    /// precisely because the pool was empty, so releasing it while the same lone staker is still the pool
+    /// simply refunds them the penalty this was written to stop. Every cheap on-chain test for "the pool is
+    /// populated now" is sybil-able: a second wallet staking one wei makes `stakerCount >= 2` true while the
+    /// original staker still holds ~100% of the weight and takes ~100% of the release. There is no gas-cheap
+    /// predicate that distinguishes a real pool from that, so the gate is a human looking. The owner's
+    /// discretion is over TIMING only — they cannot change the destination, because there is no destination
+    /// to change.
+    function releaseStranded(address asset) external onlyOwner nonReentrant returns (uint256 amount) {
         amount = stranded[asset];
         if (amount == 0) revert NothingStranded();
+        // Releasing into an empty pool would park it in `pending`, which is the exact hole this pot exists to
+        // plug. Refuse rather than quietly re-strand it.
+        if (totalWeight == 0) revert NobodyStaked();
         stranded[asset] = 0;
-        address to = strandedSink;
-        if (to == address(0)) revert Zero();
-        _payout(asset, to, amount);
-        emit StrandedSwept(asset, to, amount);
-    }
-
-    function setStrandedSink(address sink) external onlyOwner {
-        if (sink == address(0)) revert Zero();
-        strandedSink = sink;
-        emit StrandedSinkChanged(sink);
+        _updateReward(address(0));
+        _applyReward(asset, amount, true);
+        emit StrandedReleased(asset, amount);
     }
 
     function setRewarder(address who, bool allowed) external onlyOwner {

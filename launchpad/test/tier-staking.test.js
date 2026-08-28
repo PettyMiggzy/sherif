@@ -280,25 +280,61 @@ describe("[TIER] locked-tier staking", function () {
     expect(await pool.earned(alice.address, R)).to.equal(0n);
   });
 
-  it("a stranded penalty sweeps to the sink, and only to the sink", async () => {
+  it("the pot is visible, and its only exit is back to the stakers", async () => {
     const R = await robin.getAddress();
     await (await pool.connect(alice).stake(E(1000), TIER.D30)).wait();
     await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
     await (await pool.connect(alice).withdraw(0)).wait();
 
-    await (await pool.connect(owner).setStrandedSink(carol.address)).wait();
-    const before = await robin.balanceOf(carol.address);
-    // Permissionless: it can only move funds to the sink, so anyone may trigger it.
-    await (await pool.connect(bob).sweepStranded(R)).wait();
-    expect(await robin.balanceOf(carol.address) - before).to.equal(E(150));
-    expect(await pool.stranded(R)).to.equal(0n);
-    await expect(pool.connect(bob).sweepStranded(R)).to.be.revertedWithCustomError(pool, "NothingStranded");
+    // A front end can render the whole pot in one call — the point of letting it build up is that people see it.
+    const [assets, amounts] = await pool.strandedAll();
+    expect(amounts[assets.indexOf(R)]).to.equal(E(150));
 
-    // ...and the sweep never eats principal: alice's remaining 1000 is still fully withdrawable.
+    // It cannot be released into an empty pool, because that just re-strands it.
+    await (await pool.connect(alice).withdraw(0)).wait(); // her last position, also early: strands 150 more
+    expect(await pool.stranded(R)).to.equal(E(300));
+    await expect(pool.connect(owner).releaseStranded(R)).to.be.revertedWithCustomError(pool, "NobodyStaked");
+
+    // Released with a real pool present, it streams to the stakers as an ordinary reward.
+    await (await pool.connect(bob).stake(E(1000), TIER.D30)).wait();
+    await (await pool.connect(owner).releaseStranded(R)).wait();
+    expect(await pool.stranded(R)).to.equal(0n);
+    await time.increase(30 * DAY);
+    expect(await pool.earned(bob.address, R)).to.be.closeTo(E(300), E(0.001));
+
+    await expect(pool.connect(owner).releaseStranded(R)).to.be.revertedWithCustomError(pool, "NothingStranded");
+  });
+
+  it("nobody can move the pot to a wallet — there is no such function", async () => {
+    // The whole promise of the pot is that it is not a platform take. Assert the shape of the ABI, not a
+    // behaviour: a payout path that does not exist cannot be misused later.
+    const names = pool.interface.fragments
+      .filter((f) => f.type === "function")
+      .map((f) => f.name);
+    expect(names).to.not.include("sweepStranded");
+    expect(names).to.not.include("setStrandedSink");
+    // ...and the one release path takes no destination.
+    const rel = pool.interface.getFunction("releaseStranded");
+    expect(rel.inputs.map((i) => i.type)).to.deep.equal(["address"]); // the ASSET, not a recipient
+  });
+
+  it("a released pot never eats anyone's principal", async () => {
+    const R = await robin.getAddress();
+    await (await pool.connect(alice).stake(E(1000), TIER.D30)).wait();
+    await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
+    await (await pool.connect(alice).withdraw(0)).wait();          // strands 150
+    await (await pool.connect(bob).stake(E(5000), TIER.D30)).wait();
+    await (await pool.connect(owner).releaseStranded(R)).wait();
     await time.increase(400 * DAY);
-    const bal = await robin.balanceOf(alice.address);
-    await (await pool.connect(alice).withdraw(0)).wait();
-    expect(await robin.balanceOf(alice.address) - bal).to.equal(E(1000));
+
+    // Everyone exits matured, and claims everything. The contract must cover all of it.
+    for (const [w, n] of [[alice, 1000], [bob, 5000]]) {
+      const bal = await robin.balanceOf(w.address);
+      await (await pool.connect(w).withdraw(0)).wait();
+      expect(await robin.balanceOf(w.address) - bal).to.equal(E(n));
+      await (await pool.connect(w).claim(R)).wait();
+    }
+    expect(await robin.balanceOf(await pool.getAddress())).to.be.lt(E(0.001)); // rounding dust only
   });
 
   it("a boost source that burns all the gas cannot trap anyone's money", async () => {
