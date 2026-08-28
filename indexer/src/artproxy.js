@@ -52,6 +52,21 @@ function buildPrompt(extra) {
   return want ? `${base} The subject: ${want}` : base;
 }
 
+/// What the model must NOT draw.
+///
+/// A positive instruction ("no text, no watermarks") is weak — the model sees the words TEXT and
+/// WATERMARK and happily draws them. Measured on the cheap tier: one sample in four came back with
+/// garbled lettering stamped in a corner, despite hide_watermark being on and the prompt asking for
+/// none. A negative prompt is the channel these models actually respect for exclusions.
+///
+/// The second half is style enforcement rather than safety. Left alone, the cheap model drifts to
+/// painterly and photographic renderings and ignores the flat-cartoon brief, which is exactly the
+/// gap that makes the standard tier feel like a downgrade rather than a bargain.
+const NEGATIVE =
+  "text, letters, words, lettering, typography, signature, watermark, logo, caption, subtitles, " +
+  "frame, border, blurry, low quality, deformed, extra limbs, cropped, out of frame, " +
+  "photorealistic, photograph, 3d render, painterly, oil painting, muted colors";
+
 /// Venice returns a 1024px PNG — measured at 2.1MB, which is far too heavy for something that
 /// renders as a 40px circle in a coin list and gets embedded in a profile payload. Shrink and
 /// re-encode before it ever leaves this process.
@@ -115,6 +130,7 @@ export async function makeArt({ prompt, tier = "medium", timeout = 180000 }) {
       body: JSON.stringify({
         model,
         prompt: buildPrompt(want),
+        negative_prompt: NEGATIVE,
         // Both parameter styles are sent because the catalogue is not uniform: the SD-family models
         // take width/height, the newer ones take an aspect ratio and a resolution class. Each ignores
         // the pair it does not use, which is cheaper than keeping a per-model shape table in sync.
