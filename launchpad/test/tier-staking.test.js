@@ -337,6 +337,47 @@ describe("[TIER] locked-tier staking", function () {
     expect(await robin.balanceOf(await pool.getAddress())).to.be.lt(E(0.001)); // rounding dust only
   });
 
+  it("funding an EMPTY pool hands the stream to whoever stakes first — fund AFTER there are stakers", async () => {
+    // Not a contract bug; an operational trap sharp enough to need a test naming it. Rewards that arrive with
+    // nobody staked park in `pending` and begin the instant the FIRST staker appears — at which point that
+    // one account is 100% of the weight and takes 100% of whatever streams until somebody else arrives.
+    // Measured: ONE WEI, alone for a day, took a seventh of a 1,000,000 reward.
+    //
+    // The streaming window is the only thing bounding it, so the two rules are: never fund an empty pool, and
+    // set a long duration before funding a thin one. A bonding block is the most-watched block in a coin's
+    // life, which is exactly when a pool is emptiest.
+    const R = await robin.getAddress();
+    await (await pool.connect(owner).notifyReward(R, E(1_000_000))).wait();
+    expect((await pool.rewardInfo(R)).pending).to.equal(E(1_000_000));
+
+    await (await pool.connect(alice).stake(1n, TIER.FLEX)).wait();
+    await time.increase(DAY);
+    const grabbed = await pool.earned(alice.address, R);
+    expect(grabbed).to.be.gt(E(100_000));
+    console.log(`   1 wei alone for a day took ${ethers.formatEther(grabbed)} of a 1,000,000 stream`);
+  });
+
+  it("claiming first defuses the early-exit reward forfeit — the 15% is the only real penalty", async () => {
+    // Worth pinning because the design's own description oversells it. `claim` never forfeits, so anyone who
+    // knows to press Claim before Withdraw banks their rewards and pays only the 15% on principal. The
+    // forfeit therefore lands exclusively on people who did NOT know to claim first, which is the opposite of
+    // who a penalty should hit. Documented here as fact, not endorsed as design.
+    const R = await robin.getAddress();
+    await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
+    await (await pool.connect(bob).stake(E(1000), TIER.D365)).wait();
+    await (await pool.connect(owner).notifyReward(R, E(600))).wait();
+    await time.increase(30 * DAY);
+
+    const before = await robin.balanceOf(alice.address);
+    await (await pool.connect(alice).claim(R)).wait();
+    await (await pool.connect(alice).withdraw(0)).wait();
+    const net = await robin.balanceOf(alice.address) - before;
+
+    expect(await pool.earned(alice.address, R)).to.equal(0n);
+    expect(net).to.be.gt(E(1000)); // broke a 365-day lock early and still came out ahead
+    console.log(`   claim-then-exit on a 365d lock netted ${ethers.formatEther(net)} on 1000 staked`);
+  });
+
   it("a boost source that burns all the gas cannot trap anyone's money", async () => {
     // `staticcall` stops a boost source writing state. It does NOT stop it BURNING GAS — it takes 63/64 of
     // the frame and leaves too little to finish, so `ok == false` looks handled while the whole transaction
