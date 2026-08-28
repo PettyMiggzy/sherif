@@ -262,4 +262,58 @@ describe("[TIER] locked-tier staking", function () {
   it("an unknown tier is refused", async () => {
     await expect(pool.connect(alice).stake(E(1), 7)).to.be.revertedWithCustomError(pool, "BadTier");
   });
+
+  it("a SOLE staker cannot stream their own exit penalty back to themselves", async () => {
+    // The same exploit as the whale case, hiding one branch deeper. Excluding the leaver from the
+    // redistribution leaves nobody to pay when the leaver IS the pool, and parking the penalty for "the next
+    // staker" hands it straight back to them — measured at 149.999 of 150 before this was closed.
+    const R = await robin.getAddress();
+    await (await pool.connect(alice).stake(E(1000), TIER.D30)).wait();
+    await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait(); // she is still 100% of the pool
+    await (await pool.connect(alice).withdraw(0)).wait();               // 15% of 1000 = 150
+
+    expect((await pool.rewardInfo(R)).pending).to.equal(0n);
+    expect(await pool.stranded(R)).to.equal(E(150));
+
+    await (await pool.connect(alice).stake(E(1), TIER.FLEX)).wait();    // would have kickstarted it
+    await time.increase(30 * DAY);
+    expect(await pool.earned(alice.address, R)).to.equal(0n);
+  });
+
+  it("a stranded penalty sweeps to the sink, and only to the sink", async () => {
+    const R = await robin.getAddress();
+    await (await pool.connect(alice).stake(E(1000), TIER.D30)).wait();
+    await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
+    await (await pool.connect(alice).withdraw(0)).wait();
+
+    await (await pool.connect(owner).setStrandedSink(carol.address)).wait();
+    const before = await robin.balanceOf(carol.address);
+    // Permissionless: it can only move funds to the sink, so anyone may trigger it.
+    await (await pool.connect(bob).sweepStranded(R)).wait();
+    expect(await robin.balanceOf(carol.address) - before).to.equal(E(150));
+    expect(await pool.stranded(R)).to.equal(0n);
+    await expect(pool.connect(bob).sweepStranded(R)).to.be.revertedWithCustomError(pool, "NothingStranded");
+
+    // ...and the sweep never eats principal: alice's remaining 1000 is still fully withdrawable.
+    await time.increase(400 * DAY);
+    const bal = await robin.balanceOf(alice.address);
+    await (await pool.connect(alice).withdraw(0)).wait();
+    expect(await robin.balanceOf(alice.address) - bal).to.equal(E(1000));
+  });
+
+  it("a boost source that burns all the gas cannot trap anyone's money", async () => {
+    // `staticcall` stops a boost source writing state. It does NOT stop it BURNING GAS — it takes 63/64 of
+    // the frame and leaves too little to finish, so `ok == false` looks handled while the whole transaction
+    // dies out of gas. Uncapped, an owner-set address could therefore block every withdrawal in the pool,
+    // which is the one thing this contract promises can never happen.
+    await (await pool.connect(alice).stake(E(1000), TIER.FLEX)).wait();
+    const gas = await (await ethers.getContractFactory("GasBurnerBoost")).deploy();
+    await (await pool.connect(owner).setBoost(await gas.getAddress(), E(10_000_000), 2500)).wait();
+
+    expect(await pool.qualifiesForBoost(alice.address)).to.equal(false);
+    await expect(pool.connect(bob).stake(E(1000), TIER.FLEX, { gasLimit: 1_000_000 })).to.not.be.reverted;
+    const bal = await robin.balanceOf(alice.address);
+    await (await pool.connect(alice).withdraw(0, { gasLimit: 1_000_000 })).wait();
+    expect(await robin.balanceOf(alice.address) - bal).to.equal(E(1000));
+  });
 });

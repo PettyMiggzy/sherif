@@ -32,8 +32,14 @@ interface IBoostSource {
 ///   3. EARLY EXITS PAY THE STAYERS — AND NEVER THEMSELVES. Both the exit tax and the forfeited rewards go to
 ///      whoever is still staked, with the leaver explicitly excluded even when they hold other positions.
 ///      Without that exclusion a staker who is most of the pool receives most of their own penalty back, and
-///      the 15% quietly stops applying to exactly the holders it matters most for. Nothing goes to the
-///      platform, the owner, or anywhere else — there is no function that sends either one to a wallet.
+///      the 15% quietly stops applying to exactly the holders it matters most for. In the normal case nothing
+///      goes to the platform or the owner — there is no path that sends either one to a wallet.
+///
+///      The single exception is the degenerate one: a penalty collected when there is NOBODY ELSE STAKED. It
+///      cannot go to the stayers because there are none, and parking it for the next staker just hands it
+///      back to the leaver. So it is set aside in `stranded` and swept to `strandedSink`. That is a real
+///      carve-out and it is stated rather than hidden — but it can only ever fire on an otherwise empty pool,
+///      and the alternative is a 15% penalty that refunds itself.
 ///
 ///   4. THE $ROBIN HOLDER BOOST. Hold at least `boostThreshold` $ROBIN — STAKED, see below — and every
 ///      position you hold in this pool earns a further `boostBps` on top of its tier. It applies across every
@@ -119,6 +125,14 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     mapping(address => mapping(address => uint256)) public rewardsAccrued;
     mapping(address => bool) public isRewarder;
 
+    /// @notice Penalties collected while there was nobody else staked to pay them to. See `_redistribute`.
+    /// Held here rather than in `pending` so the penalised staker cannot stream them back to themselves, and
+    /// swept out by `sweepStranded` — never touched by any other path, so it can never reach a staker's
+    /// principal or an unclaimed reward.
+    mapping(address => uint256) public stranded;
+    /// @notice Where `stranded` is swept to. Set at deploy to the owner; the treasury in production.
+    address public strandedSink;
+
     error Zero();
     error BadTier();
     error NoPosition();
@@ -130,6 +144,7 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     error BadDuration();
     error BadBoost();
     error EthTransferFailed();
+    error NothingStranded();
 
     event Staked(address indexed user, uint256 indexed positionId, uint256 amount, uint8 tier, uint64 unlockAt);
     event Withdrawn(address indexed user, uint256 indexed positionId, uint256 returned, uint256 tax, bool early);
@@ -139,11 +154,15 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     event RewardListed(address indexed asset, uint32 duration);
     event BoostChanged(address indexed source, uint256 threshold, uint16 bps);
     event BoostSynced(address indexed user, bool boosted, uint256 weight);
+    event Stranded(address indexed asset, uint256 amount);
+    event StrandedSwept(address indexed asset, address indexed to, uint256 amount);
+    event StrandedSinkChanged(address indexed sink);
 
     constructor(address stakeToken_, address owner_, address boostSource_) Ownable(owner_) {
         if (stakeToken_ == address(0)) revert Zero();
         stakeToken = IERC20(stakeToken_);
         isRewarder[owner_] = true;
+        strandedSink = owner_;
         // The staked token is listed up front because the early-exit tax is paid IN it — without a stream to
         // pay into, the tax would have nowhere to go.
         _listReward(address(stakeToken_), 7 days);
@@ -171,13 +190,22 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         return rewardTokens;
     }
 
+    /// @dev Gas handed to the boost source. `staticcall` already blocks it from writing anything, but it does
+    /// NOT stop it from BURNING gas, and that distinction is the whole finding: without a cap, a boost source
+    /// that loops forever consumes 63/64 of the gas in the frame and leaves the caller too little to finish.
+    /// `ok` comes back false and the code looks like it handled it — but `stake` and, far worse, `withdraw`
+    /// both revert out of gas at any sane gas limit. The contract's headline promise is that leaving is always
+    /// possible; an owner-set address that can take that away is not a promise. The cap makes the failure
+    /// local: the call dies, `qualifiesForBoost` returns false, and the withdrawal completes unboosted.
+    uint256 private constant BOOST_GAS = 100_000;
+
     /// @notice Whether `user` currently qualifies for the holder boost, read live from the source.
     function qualifiesForBoost(address user) public view returns (bool) {
         if (address(boostSource) == address(0) || boostBps == 0) return false;
-        // A boost source that reverts or misbehaves must not be able to block staking or withdrawal, so this
-        // is a bounded staticcall rather than a plain external call.
+        // Gas-capped as well as static, so a broken or hostile source can cost a staker their boost but never
+        // their exit. See BOOST_GAS.
         (bool ok, bytes memory ret) =
-            address(boostSource).staticcall(abi.encodeCall(IBoostSource.stakedOf, (user)));
+            address(boostSource).staticcall{gas: BOOST_GAS}(abi.encodeCall(IBoostSource.stakedOf, (user)));
         if (!ok || ret.length < 32) return false;
         return abi.decode(ret, (uint256)) >= boostThreshold;
     }
@@ -287,8 +315,17 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         if (amount == 0) return;
         RewardInfo storage r = rewardInfo[asset];
         uint256 denom = totalWeight - weightOf[excluded];
-        // Nobody else is staked: park it rather than burning it. The next staker streams it.
-        if (denom == 0) { r.pending += amount; return; }
+        // NOBODY ELSE IS STAKED. Parking this in `pending` was the obvious move and it is wrong: `pending`
+        // streams to whoever is staked next, and the person staked next is overwhelmingly the leaver, who
+        // still holds their other positions. Measured, a sole staker closing one of two positions got
+        // 149.999 of their own 150 penalty back — the 15% silently became 0% for exactly the holder it was
+        // written for. With no one to pay, the only choices are refund the leaver, burn it, or bank it; it
+        // goes to the sink, which is the only one of the three that is neither a giveaway nor a loss.
+        if (denom == 0) {
+            unchecked { stranded[asset] += amount; }
+            emit Stranded(asset, amount);
+            return;
+        }
         uint256 bump = Math.mulDiv(amount, ACC, denom);
         r.rewardPerTokenStored += bump;
         // Advance the penalised staker's checkpoint by exactly the bump, so `earned` returns what it did
@@ -392,9 +429,17 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
             // position and a small 7-day one would lose every reward the big position had earned all year by
             // closing the small one a day early. The penalty should be proportional to what is being pulled
             // out, and pro-rata by weight is exactly that — the position's share of what it helped earn.
+            //
+            // Both sides of the ratio are measured UNBOOSTED and summed from the positions themselves, not
+            // read from `weightOf`. The boost scales every position in an account by the same factor, so it
+            // cancels out of a ratio — but only if both sides carry the SAME factor, and they need not. A
+            // `setBoost` that changes `boostBps` leaves `weightOf` on the old rate until somebody calls
+            // `syncBoost`, so boosting the numerator at today's rate against a denominator built at
+            // yesterday's can push the numerator above the denominator and forfeit the whole account.
+            // Summing the raw positions makes the two sides agree by construction.
             uint256 posWeight = Math.mulDiv(p.amount, p.mulBps, BPS);
-            if (boosted[msg.sender]) posWeight += Math.mulDiv(posWeight, boostBps, BPS);
-            uint256 userWeight = weightOf[msg.sender]; // still the pre-resync total, which is what we want
+            uint256 userWeight = posWeight;
+            for (uint256 i; i < ps.length; ++i) userWeight += Math.mulDiv(ps[i].amount, ps[i].mulBps, BPS);
             for (uint256 i; i < len; ++i) {
                 address asset = rewardTokens[i];
                 uint256 owed = rewardsAccrued[asset][msg.sender];
@@ -511,6 +556,24 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         if (!rewardInfo[asset].listed) revert NotListed();
         if (duration < MIN_DURATION || duration > MAX_DURATION) revert BadDuration();
         rewardInfo[asset].duration = duration;
+    }
+
+    /// @notice Sweep penalties that had nobody to be paid to. Permissionless — it can only ever move funds to
+    /// `strandedSink`, so there is nothing to gain by calling it and nothing to lose by anyone being able to.
+    function sweepStranded(address asset) external nonReentrant returns (uint256 amount) {
+        amount = stranded[asset];
+        if (amount == 0) revert NothingStranded();
+        stranded[asset] = 0;
+        address to = strandedSink;
+        if (to == address(0)) revert Zero();
+        _payout(asset, to, amount);
+        emit StrandedSwept(asset, to, amount);
+    }
+
+    function setStrandedSink(address sink) external onlyOwner {
+        if (sink == address(0)) revert Zero();
+        strandedSink = sink;
+        emit StrandedSinkChanged(sink);
     }
 
     function setRewarder(address who, bool allowed) external onlyOwner {
