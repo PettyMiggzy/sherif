@@ -2037,7 +2037,7 @@ export async function stakingClaimAll(pool, who) {
   return n;
 }
 
-// ── TIERED STAKING — locked terms, weighted shares, forfeit-to-stayers ────────
+// ── TIERED STAKING — locked terms, weighted shares, tax-to-stayers ───────────
 // RobinTierStaking is the locked-term successor to the flat pool above. Two differences bite at this layer:
 //   • ETH is address(0) here, NOT the 0xEeee… sentinel. Anything that builds an ERC-20 for a reward asset
 //     must branch on TIER_ETH first, or it calls balanceOf on address zero and reads a silent empty return.
@@ -2191,10 +2191,10 @@ export async function tierStake(pool, amountWei, tier) {
   return guardedSend(s, "stake", [amount, tier], 0n, "Lock stake");
 }
 
-/// Close position `positionId` in full. A matured or flexible position returns everything and KEEPS its
-/// rewards; an immature one costs EARLY_EXIT_BPS of principal plus that position's share of pending rewards,
-/// both of which go to the stakers who stayed. It never reverts for being early — that is the whole design —
-/// so a caller must confirm with the user BEFORE calling, not rely on a revert to stop them.
+/// Close position `positionId` in full. A matured or flexible position returns everything; an immature one
+/// costs EARLY_EXIT_BPS of principal, which goes to the stakers who stayed. Rewards already earned are KEPT
+/// either way. It never reverts for being early — that is the whole design — so a caller must confirm with the
+/// user BEFORE calling, not rely on a revert to stop them.
 export async function tierWithdraw(pool, positionId) {
   requireTierStaking();
   if (!_signer) await connect();
@@ -2202,7 +2202,8 @@ export async function tierWithdraw(pool, positionId) {
   return guardedSend(tierPool(_signer, pool), "withdraw", [positionId], 0n, "Withdraw");
 }
 
-/// Claim ONE reward asset. Claiming is not withdrawing: it never forfeits and never touches a lock.
+/// Claim ONE reward asset. Claiming never touches a lock, and the order no longer matters — an early exit
+/// costs 15% of principal and nothing else, so rewards are safe whether you claim before it or after.
 export async function tierClaim(pool, asset) {
   requireTierStaking();
   if (!_signer) await connect();

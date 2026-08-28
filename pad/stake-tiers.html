@@ -222,7 +222,8 @@
     <!-- ── rewards ────────────────────────────────────────────────────── -->
     <div class="card">
       <h2>Your rewards</h2>
-      <p class="sub" style="font-size:.84rem">These stream in second by second. Claiming never touches your lock.</p>
+      <p class="sub" style="font-size:.84rem">These stream in second by second. Claiming never touches your lock,
+        and it does not matter whether you claim before or after you withdraw &mdash; these are yours either way.</p>
       <div id="rewards" style="margin-top:6px"></div>
       <button id="claimAll" class="ghost sm" style="margin-top:12px">Claim everything</button>
     </div>
@@ -450,7 +451,7 @@ function renderPositions() {
       <div class="row" style="justify-content:space-between">
         <span class="faint" style="font-size:.78rem">${matured
           ? "Full amount back, and you keep every reward it earned."
-          : `Leaving now costs <b class="num" style="color:var(--red)">${fmtUnits(cost, S.decimals)} ${esc(S.symbol)}</b> plus this lock's share of pending rewards`}</span>
+          : `Leaving now costs <b class="num" style="color:var(--red)">${fmtUnits(cost, S.decimals)} ${esc(S.symbol)}</b> &mdash; you keep every reward it earned`}</span>
         <button class="${matured ? "ghost" : "danger"} sm" data-wd="${p.id}">${matured ? "Withdraw" : "Leave early"}</button>
       </div>
     </div>`;
@@ -655,9 +656,9 @@ async function doWithdraw(id) {
     // between a misclick and a 15% haircut. It has to spell out both costs, not just the visible one.
     const ok = confirm(
       `Leave this lock early?\n\n` +
-      `You pay ${fmtUnits(cost, S.decimals)} ${S.symbol} (15% of this lock)\n` +
-      `and you give up this lock's share of your unclaimed rewards.\n\n` +
-      `Both go to the people who stayed staked. This cannot be undone.`);
+      `You pay ${fmtUnits(cost, S.decimals)} ${S.symbol} — 15% of this lock, and nothing else.\n` +
+      `Every reward it has already earned stays yours.\n\n` +
+      `The 15% goes to the people who stayed staked. This cannot be undone.`);
     if (!ok) return;
   }
   await run(() => Pad.tierWithdraw(S.pool, id), "Withdrawing…", matured ? "Withdrawn in full." : "Withdrawn early.");

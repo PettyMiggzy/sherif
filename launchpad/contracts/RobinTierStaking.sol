@@ -24,13 +24,18 @@ interface IBoostSource {
 ///      only hand whales a second advantage on top of the one they already have.
 ///
 ///   2. YOU CAN ALWAYS LEAVE — AT A PRICE. A lock here is a price, never a cage. `withdraw` on an immature
-///      position always succeeds; it costs EARLY_EXIT_BPS of that position's principal, and the share of
-///      pending rewards that position was earning — pro-rata by weight, NOT the whole account. That matters:
-///      a hard lock that can trap someone's money is the single scariest thing a staking contract can do, and
-///      the whole point of the term is to price impatience, not to imprison anyone.
+///      position always succeeds, and it costs EARLY_EXIT_BPS of that position's principal. That is the
+///      entire penalty: rewards already earned stay earned. A hard lock that can trap someone's money is the
+///      single scariest thing a staking contract can do, and the point of a term is to price impatience, not
+///      to imprison anyone.
 ///
-///   3. EARLY EXITS PAY THE STAYERS — AND NEVER THEMSELVES. Both the exit tax and the forfeited rewards go to
-///      whoever is still staked, with the leaver explicitly excluded even when they hold other positions.
+///      An earlier version also forfeited pending rewards, and it was removed rather than fixed. `claim` does
+///      not forfeit, so anyone who knew to claim before withdrawing kept everything and paid only the 15%;
+///      the forfeit landed solely on people who did not know that, which is the opposite of who a penalty
+///      should reach. One penalty, stated plainly, applied identically to everyone who reads it or does not.
+///
+///   3. EARLY EXITS PAY THE STAYERS — AND NEVER THEMSELVES. The exit tax goes to whoever is still staked,
+///      with the leaver explicitly excluded even when they hold other positions.
 ///      Without that exclusion a staker who is most of the pool receives most of their own penalty back, and
 ///      the 15% quietly stops applying to exactly the holders it matters most for. In the normal case nothing
 ///      goes to the platform or the owner — there is no path that sends either one to a wallet.
@@ -154,7 +159,6 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     event Staked(address indexed user, uint256 indexed positionId, uint256 amount, uint8 tier, uint64 unlockAt);
     event Withdrawn(address indexed user, uint256 indexed positionId, uint256 returned, uint256 tax, bool early);
     event Claimed(address indexed user, address indexed asset, uint256 amount);
-    event Forfeited(address indexed user, address indexed asset, uint256 amount);
     event RewardAdded(address indexed asset, uint256 amount, uint64 periodFinish);
     event RewardListed(address indexed asset, uint32 duration);
     event BoostChanged(address indexed source, uint256 threshold, uint16 bps);
@@ -309,7 +313,8 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     }
 
     /// @dev Hand `amount` of `asset` straight to the stakers, with no stream and no delay, by bumping the
-    /// per-weight accumulator — EXCLUDING `excluded`, who is the person being penalised.
+    /// per-weight accumulator — EXCLUDING `excluded`, who is the person being penalised. Today the only
+    /// caller is the early-exit tax.
     ///
     /// The exclusion is the whole point and it is not cosmetic. `_resync` only removes the weight of the
     /// position being closed, so a staker with OTHER positions is still in `totalWeight` when their own
@@ -319,8 +324,8 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     /// quietly not applying to exactly the people it most needs to.
     ///
     /// So the bump is computed over everyone ELSE's weight, and the excluded staker's checkpoint is advanced
-    /// past it so they accrue none of it. Forfeited rewards are handed over rather than re-streamed because
-    /// the pool already earned them — re-streaming would delay money the stayers are owed right now.
+    /// past it so they accrue none of it. The tax is handed over rather than re-streamed because the pool has
+    /// already been made whole — re-streaming would delay money the stayers are owed right now.
     function _redistribute(address asset, uint256 amount, address excluded) internal {
         if (amount == 0) return;
         RewardInfo storage r = rewardInfo[asset];
@@ -401,9 +406,9 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
 
     /// @notice Close position `positionId` in full.
     ///
-    /// Matured (or flexible): principal back, and pending rewards are KEPT — claim them whenever.
-    /// Immature: principal back minus `EARLY_EXIT_BPS`, and every pending reward is forfeited. Both the tax
-    /// and the forfeit go to the stakers who stayed.
+    /// Matured (or flexible): principal back in full.
+    /// Immature: principal back minus `EARLY_EXIT_BPS`, which goes to the stakers who stayed.
+    /// Either way, pending rewards are KEPT — claim them whenever.
     ///
     /// This never reverts for an immature position. Paying to leave early is the whole mechanism; being
     /// unable to leave is not.
@@ -425,56 +430,28 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         stakedOf[msg.sender] -= amount;
         totalStaked -= amount;
 
+        // The early-exit penalty is the 15% on principal and NOTHING ELSE. Rewards already earned stay
+        // earned, matured or not.
+        //
+        // This used to also forfeit the position's share of pending rewards, and that mechanic did not
+        // survive being measured. `claim` never forfeits, so anyone who knew to press Claim before Withdraw
+        // banked their rewards and paid only the 15% — a 365-day lock broken on day 30 still came out ahead.
+        // The forfeit therefore never touched a sophisticated leaver; it landed exclusively on people who did
+        // not know the trick, which is the precise inverse of who a penalty should hit. A rule that only
+        // punishes the uninformed is worse than no rule, and it made the contract's own description false.
+        //
+        // Nothing defensive is lost with it. JIT staking is already dead because every reward STREAMS rather
+        // than dropping as a lump, so a flash staker accrues only the sliver that streams during their stay,
+        // and the 15% on principal still prices impatience — visibly, and identically for everyone.
         uint256 tax;
-        uint256 len = rewardTokens.length;
-        // The forfeited amounts have to be REMEMBERED across the resync below, not just zeroed. Zeroing them
-        // and redistributing only the tax would leave those reward tokens sitting in this contract credited to
-        // nobody — earned by the pool, owed to no one, unreachable forever.
-        uint256[] memory forfeited = new uint256[](len);
-        if (early) {
-            tax = Math.mulDiv(amount, EARLY_EXIT_BPS, BPS);
-            // Forfeit only the share of pending rewards THIS POSITION was earning, not the whole account.
-            //
-            // Zeroing everything was the first version and it is a trap: somebody with a matured 365-day
-            // position and a small 7-day one would lose every reward the big position had earned all year by
-            // closing the small one a day early. The penalty should be proportional to what is being pulled
-            // out, and pro-rata by weight is exactly that — the position's share of what it helped earn.
-            //
-            // Both sides of the ratio are measured UNBOOSTED and summed from the positions themselves, not
-            // read from `weightOf`. The boost scales every position in an account by the same factor, so it
-            // cancels out of a ratio — but only if both sides carry the SAME factor, and they need not. A
-            // `setBoost` that changes `boostBps` leaves `weightOf` on the old rate until somebody calls
-            // `syncBoost`, so boosting the numerator at today's rate against a denominator built at
-            // yesterday's can push the numerator above the denominator and forfeit the whole account.
-            // Summing the raw positions makes the two sides agree by construction.
-            uint256 posWeight = Math.mulDiv(p.amount, p.mulBps, BPS);
-            uint256 userWeight = posWeight;
-            for (uint256 i; i < ps.length; ++i) userWeight += Math.mulDiv(ps[i].amount, ps[i].mulBps, BPS);
-            for (uint256 i; i < len; ++i) {
-                address asset = rewardTokens[i];
-                uint256 owed = rewardsAccrued[asset][msg.sender];
-                if (owed == 0) continue;
-                uint256 lose = userWeight == 0 ? owed : Math.mulDiv(owed, posWeight, userWeight);
-                if (lose > owed) lose = owed; // defensive; posWeight <= userWeight by construction
-                if (lose > 0) {
-                    forfeited[i] = lose;
-                    rewardsAccrued[asset][msg.sender] = owed - lose;
-                    emit Forfeited(msg.sender, asset, lose);
-                }
-            }
-        }
+        if (early) tax = Math.mulDiv(amount, EARLY_EXIT_BPS, BPS);
         returned = amount - tax;
 
         _resync(msg.sender);
 
-        // Redistribute AFTER the resync, so the leaver's weight is already out of the denominator and they
-        // cannot take a share of their own tax or their own forfeited rewards.
-        if (early) {
-            for (uint256 i; i < len; ++i) {
-                if (forfeited[i] > 0) _redistribute(rewardTokens[i], forfeited[i], msg.sender);
-            }
-            _redistribute(address(stakeToken), tax, msg.sender);
-        }
+        // Redistributed AFTER the resync, so the leaver's own weight is already out of the denominator and
+        // they cannot take a share of their own tax.
+        if (tax > 0) _redistribute(address(stakeToken), tax, msg.sender);
 
         if (returned > 0) stakeToken.safeTransfer(msg.sender, returned);
         emit Withdrawn(msg.sender, positionId, returned, tax, early);

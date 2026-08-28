@@ -94,27 +94,22 @@ describe("[TIER] locked-tier staking", function () {
     await (await pool.connect(alice).claim(await robin.getAddress())).wait();
   });
 
-  it("an early exit's tax AND forfeited rewards both reach the stayers", async () => {
-    // The bug this exists to catch: zeroing a leaver's rewards without redistributing them leaves those
-    // tokens in the contract owed to nobody, and nothing else in the system would ever notice.
-    await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
-    await (await pool.connect(bob).stake(E(1000), TIER.D365)).wait();
+  it("an early exit's tax reaches the stayers", async () => {
+    // The 15% on principal is the whole penalty. It is redistributed instantly rather than re-streamed,
+    // because the stayers are owed it now — the pool did not have to earn it.
+    await (await pool.connect(alice).stake(E(1000), TIER.D30)).wait();
+    await (await pool.connect(bob).stake(E(1000), TIER.D30)).wait();
     await (await pool.connect(owner).notifyReward(await robin.getAddress(), E(400))).wait();
-    await time.increase(8 * DAY); // stream finished; both have accrued
+    await time.increase(2 * DAY);
 
-    const aliceForfeits = await pool.earned(alice.address, await robin.getAddress());
-    const bobBefore = await pool.earned(bob.address, await robin.getAddress());
-    expect(aliceForfeits).to.be.gt(0);
-
-    await (await pool.connect(alice).withdraw(0)).wait();
-
-    const bobAfter = await pool.earned(bob.address, await robin.getAddress());
-    const gained = bobAfter - bobBefore;
-    // Bob is the only stayer, so he receives ALL of it: alice's forfeited rewards plus her 150 tax.
-    expect(gained).to.equal(aliceForfeits + E(150));
-    console.log(`   stayer gained ${ethers.formatEther(gained)} = forfeited ${ethers.formatEther(aliceForfeits)} + tax 150.0`);
+    const before = await pool.earned(bob.address, await robin.getAddress());
+    await (await pool.connect(alice).withdraw(0)).wait(); // 15% of 1000 = 150, all to bob
+    const after = await pool.earned(bob.address, await robin.getAddress());
+    expect(after - before).to.be.closeTo(E(150), E(1));
+    console.log(`   stayer gained ${ethers.formatEther(after - before)} — the 150 tax, and only the tax`);
   });
 
+  
   it("a leaver takes no share of their own tax", async () => {
     await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
     await (await pool.connect(bob).stake(E(1000), TIER.D365)).wait();
@@ -184,40 +179,48 @@ describe("[TIER] locked-tier staking", function () {
     expect(await pool.earned(alice.address, await robin.getAddress())).to.be.closeTo(E(100), E(0.001));
   });
 
-  it("closing ONE position early does not forfeit what the others earned", async () => {
-    // The trap this closes: forfeiting the whole account would mean someone with a big matured position and a
-    // small immature one loses a year of rewards by closing the small one a day early.
-    await (await pool.connect(alice).stake(E(1000), TIER.D7)).wait();   // small, will go early
-    await (await pool.connect(alice).stake(E(9000), TIER.D365)).wait(); // big, untouched
-    await (await pool.connect(bob).stake(E(1000), TIER.D7)).wait();     // someone to receive the forfeit
-    await (await pool.connect(owner).notifyReward(await robin.getAddress(), E(500))).wait();
-    await time.increase(8 * DAY);
+  it("closing a position early forfeits NOTHING — the 15% is the only penalty", async () => {
+    // The rule this replaced forfeited a position's share of pending rewards. It was removed because `claim`
+    // never forfeited, so it only ever caught people who did not know to claim first.
+    const R = await robin.getAddress();
+    await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
+    await (await pool.connect(alice).stake(E(1000), TIER.D7)).wait();
+    await (await pool.connect(bob).stake(E(2000), TIER.D365)).wait();
+    await (await pool.connect(owner).notifyReward(R, E(600))).wait();
+    await time.increase(2 * DAY);
 
-    const before = await pool.earned(alice.address, await robin.getAddress());
-    expect(before).to.be.gt(0);
-
-    // Close the 365-day one early (index 1). Its weight share is 9000x5 / (1000x1.1 + 9000x5) ≈ 97.6%.
-    await (await pool.connect(alice).withdraw(1)).wait();
-    const after = await pool.earned(alice.address, await robin.getAddress());
-
-    expect(after).to.be.gt(0); // NOT wiped out — the 7-day position's share survives
-    const kept = Number(after) / Number(before);
-    const expectedKept = 1100 / (1100 + 45000);
-    expect(kept).to.be.closeTo(expectedKept, 0.01);
-    console.log(`   kept ${(kept * 100).toFixed(1)}% of pending — the share the untouched position earned`);
+    const before = await pool.earned(alice.address, R);
+    expect(before).to.be.gt(0n);
+    await (await pool.connect(alice).withdraw(1)).wait(); // the 7-day one, early
+    const after = await pool.earned(alice.address, R);
+    // Not equality: the withdraw tx is itself a block, so a sliver more streams to her remaining position
+    // while it executes. What must hold is that nothing was TAKEN.
+    expect(after).to.be.gte(before);
+    expect(after - before).to.be.lt(E(0.01));
+    console.log(`   kept 100% of ${ethers.formatEther(before)} pending after an early exit`);
   });
 
-  it("closing the ONLY position early still forfeits all of its rewards", async () => {
-    // Pro-rata must not become a loophole: with one position, its share is 100%.
+  
+  it("closing your ONLY position early still keeps every reward it earned", async () => {
+    const R = await robin.getAddress();
     await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
     await (await pool.connect(bob).stake(E(1000), TIER.D365)).wait();
-    await (await pool.connect(owner).notifyReward(await robin.getAddress(), E(400))).wait();
-    await time.increase(8 * DAY);
-    expect(await pool.earned(alice.address, await robin.getAddress())).to.be.gt(0);
-    await (await pool.connect(alice).withdraw(0)).wait();
-    expect(await pool.earned(alice.address, await robin.getAddress())).to.equal(0);
+    await (await pool.connect(owner).notifyReward(R, E(600))).wait();
+    await time.increase(2 * DAY);
+
+    const before = await pool.earned(alice.address, R);
+    expect(before).to.be.gt(0n);
+    await (await pool.connect(alice).withdraw(0)).wait(); // fully out, a year early
+    const after = await pool.earned(alice.address, R);
+    expect(after).to.be.gte(before);           // nothing taken (the withdraw block itself streams a sliver)
+    expect(after - before).to.be.lt(E(0.01));
+    // ...and she can still collect it after leaving. Claiming was never tied to being staked.
+    const bal = await robin.balanceOf(alice.address);
+    await (await pool.connect(alice).claim(R)).wait();
+    expect(await robin.balanceOf(alice.address) - bal).to.equal(after);
   });
 
+  
   it("the contract always holds enough to cover principal AND reward claims", async () => {
     // stakeToken doubles as a reward asset (the exit tax is paid in it), so principal and rewards come out of
     // one balance. If that accounting were off, the shortfall would surface as somebody's withdrawal reverting
@@ -357,27 +360,33 @@ describe("[TIER] locked-tier staking", function () {
     console.log(`   1 wei alone for a day took ${ethers.formatEther(grabbed)} of a 1,000,000 stream`);
   });
 
-  it("claiming first defuses the early-exit reward forfeit — the 15% is the only real penalty", async () => {
-    // Worth pinning because the design's own description oversells it. `claim` never forfeits, so anyone who
-    // knows to press Claim before Withdraw banks their rewards and pays only the 15% on principal. The
-    // forfeit therefore lands exclusively on people who did NOT know to claim first, which is the opposite of
-    // who a penalty should hit. Documented here as fact, not endorsed as design.
+  it("claim order does not matter any more — it used to decide whether you kept your rewards", async () => {
+    // The regression guard for why the forfeit was dropped. Under the old rule these two wallets, doing the
+    // same thing in a different order, walked away with different money. They must now match exactly.
     const R = await robin.getAddress();
     await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
     await (await pool.connect(bob).stake(E(1000), TIER.D365)).wait();
     await (await pool.connect(owner).notifyReward(R, E(600))).wait();
     await time.increase(30 * DAY);
 
-    const before = await robin.balanceOf(alice.address);
-    await (await pool.connect(alice).claim(R)).wait();
+    const aBefore = await robin.balanceOf(alice.address);
+    await (await pool.connect(alice).claim(R)).wait();     // claim, THEN leave
     await (await pool.connect(alice).withdraw(0)).wait();
-    const net = await robin.balanceOf(alice.address) - before;
 
-    expect(await pool.earned(alice.address, R)).to.equal(0n);
-    expect(net).to.be.gt(E(1000)); // broke a 365-day lock early and still came out ahead
-    console.log(`   claim-then-exit on a 365d lock netted ${ethers.formatEther(net)} on 1000 staked`);
+    const bBefore = await robin.balanceOf(bob.address);
+    await (await pool.connect(bob).withdraw(0)).wait();    // leave, THEN claim
+    await (await pool.connect(bob).claim(R)).wait();
+
+    const aNet = await robin.balanceOf(alice.address) - aBefore;
+    const bNet = await robin.balanceOf(bob.address) - bBefore;
+    // Alice's exit taxed 150 into the pool while bob was still staked, so he collects a little more; the
+    // point is that neither LOST rewards for pressing the buttons in the wrong order.
+    expect(bNet).to.be.gte(aNet);
+    expect(bNet - aNet).to.be.lt(E(160));
+    console.log(`   claim-then-exit ${ethers.formatEther(aNet)} vs exit-then-claim ${ethers.formatEther(bNet)}`);
   });
 
+  
   it("a boost source that burns all the gas cannot trap anyone's money", async () => {
     // `staticcall` stops a boost source writing state. It does NOT stop it BURNING GAS — it takes 63/64 of
     // the frame and leaves too little to finish, so `ok == false` looks handled while the whole transaction
