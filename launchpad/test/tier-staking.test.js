@@ -94,25 +94,25 @@ describe("[TIER] locked-tier staking", function () {
     await (await pool.connect(alice).claim(await robin.getAddress())).wait();
   });
 
-  it("an early exit's tax reaches the stayers — through the pot, not in the exit block", async () => {
-    // It used to land instantly. That was two exploits: a flexible staker could sandwich the exit
-    // and take 80% of it risk-free, and a leaver's own second wallet could take it all back. So
-    // nothing is paid at the instant of the exit; the penalty joins the pot and streams out on
-    // release.
+  it("an early exit's tax is really taken, and never comes back to the leaver", async () => {
+    // Handing the pot back to stakers was tried three ways and broken three ways — most recently by
+    // the leaver simply re-staking flexible and collecting it, which cost them 0.0000000000005 against
+    // an advertised 150,000. What survives is the part that always worked: the 15% is taken and does
+    // not return to the person who paid it.
     const R = await robin.getAddress();
     await (await pool.connect(alice).stake(E(1000), TIER.D30)).wait();
     await (await pool.connect(bob).stake(E(1000), TIER.D30)).wait();
 
-    const before = await pool.earned(bob.address, R);
-    await (await pool.connect(alice).withdraw(0)).wait();  // 15% of 1000 = 150
-    expect(await pool.earned(bob.address, R), "nothing may be paid in the exit block")
-      .to.equal(before);
+    const before = await robin.balanceOf(alice.address);
+    await (await pool.connect(alice).withdraw(0)).wait();
+    expect(await robin.balanceOf(alice.address) - before).to.equal(E(850)); // 1000 less the 15%
     expect(await pool.stranded(R)).to.equal(E(150));
 
-    await (await pool.connect(owner).releaseStranded(R)).wait();
+    // Re-staking flexible — the exact move that defeated the previous design — earns her none of it.
+    await (await pool.connect(alice).stake(E(1000), TIER.FLEX)).wait();
     await time.increase(30 * DAY);
-    expect(await pool.earned(bob.address, R) - before).to.be.closeTo(E(150), E(1));
-    console.log(`   stayer received ${ethers.formatEther(await pool.earned(bob.address, R) - before)} once the pot was released`);
+    expect(await pool.earned(alice.address, R)).to.equal(0n);
+    expect(await pool.stranded(R)).to.equal(E(150));
   });
 
   
@@ -177,14 +177,19 @@ describe("[TIER] locked-tier staking", function () {
   });
 
   it("rewards that arrive while nobody is staked are parked, not lost", async () => {
-    await (await pool.connect(owner).notifyReward(await robin.getAddress(), E(100))).wait();
-    expect((await pool.rewardInfo(await robin.getAddress())).pending).to.equal(E(100));
+    const R = await robin.getAddress();
+    await (await pool.connect(owner).notifyReward(R, E(500))).wait();   // nobody staked yet
+    expect((await pool.rewardInfo(R)).pending).to.equal(E(500));
+
     await (await pool.connect(alice).stake(E(1000), TIER.D30)).wait();
+    // Held back for PENDING_DELAY so being first is not decisive — see the empty-pool test below.
+    await time.increase(2 * 3600);
+    await (await pool.releasePending()).wait();
     await time.increase(30 * DAY);
-    // The parked reward streamed to the first staker rather than stranding.
-    expect(await pool.earned(alice.address, await robin.getAddress())).to.be.closeTo(E(100), E(0.001));
+    expect(await pool.earned(alice.address, R)).to.be.closeTo(E(500), E(0.01));
   });
 
+  
   it("closing a position early forfeits NOTHING — the 15% is the only penalty", async () => {
     // The rule this replaced forfeited a position's share of pending rewards. It was removed because `claim`
     // never forfeited, so it only ever caught people who did not know to claim first.
@@ -307,83 +312,70 @@ describe("[TIER] locked-tier staking", function () {
     expect(await pool.earned(alice.address, R)).to.equal(0n);
   });
 
-  it("the pot is visible, and its only exit is back to the stakers", async () => {
+  it("the pot is visible, and leaves only to the sink", async () => {
     const R = await robin.getAddress();
     await (await pool.connect(alice).stake(E(1000), TIER.D30)).wait();
     await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
     await (await pool.connect(alice).withdraw(0)).wait();
 
-    // A front end can render the whole pot in one call — the point of letting it build up is that people see it.
     const [assets, amounts] = await pool.strandedAll();
-    expect(amounts[assets.indexOf(R)]).to.equal(E(150));
+    expect(amounts[assets.indexOf(R)]).to.equal(E(150)); // a front end can show it growing
 
-    // It cannot be released into an empty pool, because that just re-strands it.
-    await (await pool.connect(alice).withdraw(0)).wait(); // her last position, also early: strands 150 more
-    expect(await pool.stranded(R)).to.equal(E(300));
-    await expect(pool.connect(owner).releaseStranded(R)).to.be.revertedWithCustomError(pool, "NobodyStaked");
-
-    // Released with a real pool present, it streams to the stakers as an ordinary reward.
-    await (await pool.connect(bob).stake(E(1000), TIER.D30)).wait();
-    await (await pool.connect(owner).releaseStranded(R)).wait();
+    await (await pool.connect(owner).setStrandedSink(carol.address)).wait();
+    const before = await robin.balanceOf(carol.address);
+    await (await pool.connect(bob).sweepStranded(R)).wait();   // permissionless: only one destination
+    expect(await robin.balanceOf(carol.address) - before).to.equal(E(150));
     expect(await pool.stranded(R)).to.equal(0n);
-    await time.increase(30 * DAY);
-    expect(await pool.earned(bob.address, R)).to.be.closeTo(E(300), E(0.001));
-
-    await expect(pool.connect(owner).releaseStranded(R)).to.be.revertedWithCustomError(pool, "NothingStranded");
+    await expect(pool.connect(bob).sweepStranded(R)).to.be.revertedWithCustomError(pool, "NothingStranded");
   });
 
-  it("nobody can move the pot to a wallet — there is no such function", async () => {
-    // The whole promise of the pot is that it is not a platform take. Assert the shape of the ABI, not a
-    // behaviour: a payout path that does not exist cannot be misused later.
-    const names = pool.interface.fragments
-      .filter((f) => f.type === "function")
-      .map((f) => f.name);
-    expect(names).to.not.include("sweepStranded");
-    expect(names).to.not.include("setStrandedSink");
-    // ...and the one release path takes no destination.
-    const rel = pool.interface.getFunction("releaseStranded");
-    expect(rel.inputs.map((i) => i.type)).to.deep.equal(["address"]); // the ASSET, not a recipient
+  
+  it("the pot has exactly one destination, and it is not a caller's choice", async () => {
+    // `sweepStranded` takes only the ASSET. The destination is storage the owner set, never an
+    // argument, so a permissionless call cannot redirect it.
+    const rel = pool.interface.getFunction("sweepStranded");
+    expect(rel.inputs.map((i) => i.type)).to.deep.equal(["address"]);
+    const names = pool.interface.fragments.filter((f) => f.type === "function").map((f) => f.name);
+    expect(names).to.not.include("releaseStranded"); // the streamed-to-stakers path is gone for good
   });
 
-  it("a released pot never eats anyone's principal", async () => {
+  
+  it("sweeping the pot never eats anyone's principal", async () => {
     const R = await robin.getAddress();
     await (await pool.connect(alice).stake(E(1000), TIER.D30)).wait();
     await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
     await (await pool.connect(alice).withdraw(0)).wait();          // strands 150
     await (await pool.connect(bob).stake(E(5000), TIER.D30)).wait();
-    await (await pool.connect(owner).releaseStranded(R)).wait();
+    await (await pool.connect(owner).setStrandedSink(carol.address)).wait();
+    await (await pool.connect(bob).sweepStranded(R)).wait();
     await time.increase(400 * DAY);
-
-    // Everyone exits matured, and claims everything. The contract must cover all of it.
     for (const [w, n] of [[alice, 1000], [bob, 5000]]) {
       const bal = await robin.balanceOf(w.address);
       await (await pool.connect(w).withdraw(0)).wait();
       expect(await robin.balanceOf(w.address) - bal).to.equal(E(n));
-      await (await pool.connect(w).claim(R)).wait();
     }
-    expect(await robin.balanceOf(await pool.getAddress())).to.be.lt(E(0.001)); // rounding dust only
   });
 
-  it("funding an EMPTY pool hands the stream to whoever stakes first — fund AFTER there are stakers", async () => {
-    // Not a contract bug; an operational trap sharp enough to need a test naming it. Rewards that arrive with
-    // nobody staked park in `pending` and begin the instant the FIRST staker appears — at which point that
-    // one account is 100% of the weight and takes 100% of whatever streams until somebody else arrives.
-    // Measured: ONE WEI, alone for a day, took a seventh of a 1,000,000 reward.
-    //
-    // The streaming window is the only thing bounding it, so the two rules are: never fund an empty pool, and
-    // set a long duration before funding a thin one. A bonding block is the most-watched block in a coin's
-    // life, which is exactly when a pool is emptiest.
+  
+  it("funding an EMPTY pool no longer hands the stream to whoever stakes first", async () => {
+    // Measured before PENDING_DELAY: one wei, alone for a day, took a seventh of a 1,000,000 reward,
+    // and through the real feeder path a sniper netted 9.9997 of 10 ETH seeded into a fresh pool.
     const R = await robin.getAddress();
     await (await pool.connect(owner).notifyReward(R, E(1_000_000))).wait();
     expect((await pool.rewardInfo(R)).pending).to.equal(E(1_000_000));
 
     await (await pool.connect(alice).stake(1n, TIER.FLEX)).wait();
     await time.increase(DAY);
-    const grabbed = await pool.earned(alice.address, R);
-    expect(grabbed).to.be.gt(E(100_000));
-    console.log(`   1 wei alone for a day took ${ethers.formatEther(grabbed)} of a 1,000,000 stream`);
+    expect(await pool.earned(alice.address, R), "one wei must capture nothing").to.equal(0n);
+
+    // It releases once the pool has genuinely held weight, and then it is shared by weight as normal.
+    await (await pool.connect(bob).stake(E(1_000_000), TIER.D30)).wait();
+    await (await pool.releasePending()).wait();
+    await time.increase(30 * DAY);
+    expect(await pool.earned(bob.address, R)).to.be.gt(E(900_000));
   });
 
+  
   it("claim order does not matter any more — it used to decide whether you kept your rewards", async () => {
     // The regression guard for why the forfeit was dropped. Under the old rule these two wallets, doing the
     // same thing in a different order, walked away with different money. They must now match exactly.

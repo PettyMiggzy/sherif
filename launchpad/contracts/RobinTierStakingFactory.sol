@@ -62,6 +62,13 @@ contract RobinTierStakingFactory is Ownable {
     /// the site describes and would let a worthless token mint its own multiplier.
     function createPool(address stakeToken, bool selfBoost) external returns (address pool) {
         if (!openCreation && !isCreator[msg.sender] && msg.sender != owner()) revert NotCreator();
+        // `selfBoost` writes the FACTORY-WIDE boost source, which every pool created afterwards
+        // inherits. A creator slot is meant to be a low-value automation key — the keeper holds one and
+        // uses it on every graduation — so letting it set this would let a stolen keeper key point the
+        // boost oracle at a token it mints for free and hand itself +25% weight in every future pool.
+        // The comment in poolmaker.js promising that key "cannot change the boost" is only true with
+        // this line present.
+        if (selfBoost && msg.sender != owner()) revert NotCreator();
         if (stakeToken == address(0)) revert Zero();
         address existing = poolOf[stakeToken];
         if (existing != address(0)) revert PoolExists(existing);

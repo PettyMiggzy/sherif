@@ -78,12 +78,16 @@ describe("[AUDIT] tiered staking — adversarial", function () {
     let funded = 0n;
     for (let i = 0; i < 3; i++) {
       await (await pool.connect(a).stake(E(1000), T.FLEX)).wait();
+      await time.increase(2 * 3600);                       // clear PENDING_DELAY
+      await (await pool.releasePending()).wait();
       await (await pool.connect(owner).notifyReward(R, E(300))).wait(); funded += E(300);
       await time.increase(2 * DAY);          // partway through a 7-day stream
       await (await pool.connect(a).withdraw(0)).wait();  // pool empties mid-stream
       await time.increase(10 * DAY);         // the un-streamed remainder must NOT decay away
     }
     await (await pool.connect(b).stake(E(1000), T.FLEX)).wait();
+    await time.increase(2 * 3600);
+    await (await pool.releasePending()).wait();
     await time.increase(60 * DAY);
     const earned = await pool.earned(b.address, R);
     const aEarned = await pool.earned(a.address, R);
@@ -150,19 +154,17 @@ describe("[AUDIT] tiered staking — adversarial", function () {
     expect(rc.gasUsed).to.be.lt(1_500_000n);
   });
 
-  it("releasing the pot cannot pay it out twice", async () => {
+  it("sweeping the pot cannot pay it out twice", async () => {
     await (await pool.connect(a).stake(E(1000), T.D30)).wait();
     await (await pool.connect(a).stake(E(1000), T.D365)).wait();
     await (await pool.connect(a).withdraw(0)).wait();          // strands 150
-    const potted = await pool.stranded(R);
-    expect(potted).to.equal(E(150));
-    await (await pool.connect(b).stake(E(1000), T.D30)).wait();
-    await (await pool.connect(owner).releaseStranded(R)).wait();
+    expect(await pool.stranded(R)).to.equal(E(150));
+    await (await pool.connect(owner).setStrandedSink(b.address)).wait();
+    const before = await robin.balanceOf(b.address);
+    await (await pool.connect(owner).sweepStranded(R)).wait();
+    expect(await robin.balanceOf(b.address) - before).to.equal(E(150));
     expect(await pool.stranded(R)).to.equal(0n);
-    await expect(pool.connect(owner).releaseStranded(R)).to.be.revertedWithCustomError(pool, "NothingStranded");
-    await time.increase(30 * DAY);
-    const total = (await pool.earned(a.address, R)) + (await pool.earned(b.address, R));
-    expect(total).to.be.closeTo(potted, E(0.01));   // released exactly once
-    await assertSolvent("post-release");
+    await expect(pool.connect(owner).sweepStranded(R)).to.be.revertedWithCustomError(pool, "NothingStranded");
+    await assertSolvent("post-sweep");
   });
 });

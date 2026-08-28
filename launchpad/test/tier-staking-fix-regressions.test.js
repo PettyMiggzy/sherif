@@ -58,12 +58,15 @@ describe("[FIX-REG] regressions the four fixes could have introduced", function 
     expect(gas, "keep real headroom under the cap").to.be.lt(150000n);
   });
 
-  it("releasing a pot denominated in the STAKE token keeps the pool solvent", async () => {
+  it("sweeping a pot denominated in the STAKE token keeps the pool solvent", async () => {
+    // The pot is in the same token as everyone's principal, so a sweep that took a wei too much would
+    // come straight out of somebody's stake.
     await (await pool.connect(a).stake(E(1000), T.D30)).wait();
     await (await pool.connect(a).stake(E(1000), T.D365)).wait();
-    await (await pool.connect(a).withdraw(0)).wait();      // 150 into the pot, in the stake token
+    await (await pool.connect(a).withdraw(0)).wait();
     await (await pool.connect(b).stake(E(5000), T.D30)).wait();
-    await (await pool.connect(owner).releaseStranded(R)).wait();
+    await (await pool.connect(owner).setStrandedSink(owner.address)).wait();
+    await (await pool.connect(owner).sweepStranded(R)).wait();
     await time.increase(400 * DAY);
     for (const w of [a, b]) {
       while ((await pool.positionCount(w.address)) > 0n) await (await pool.connect(w).withdraw(0)).wait();
