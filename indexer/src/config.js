@@ -128,7 +128,21 @@ export const CFG = {
   // $0.01 tier and the default; the spend ceiling is veniceGlobalPerMin x that price.
   veniceApiKey: process.env.VENICE_API_KEY || "",
   veniceApiBase: (process.env.VENICE_API_BASE || "https://api.venice.ai/api/v1").replace(/\/+$/, ""),
-  veniceModel: process.env.VENICE_MODEL || "venice-sd35",
+  // THREE TIERS, and the client only ever names the tier. Which model serves it is a cost and a
+  // supplier relationship, never a product feature — see artproxy.js. Prices below are what the
+  // provider charges us per image, measured, not quoted:
+  //   standard  venice-sd35        $0.01   sold at 2 credits
+  //   medium    nano-banana-2 1K   $0.10   sold at 3 credits
+  //   high      nano-banana-pro 2K $0.23   sold at 6 credits
+  // nano-banana-2-lite ($0.06) is deliberately NOT used: measured one solid-black result in three,
+  // billed in full, which makes it both dearer and less reliable than the $0.01 standard model.
+  veniceModelStandard: process.env.VENICE_MODEL_STANDARD || "venice-sd35",
+  veniceModelMedium: process.env.VENICE_MODEL_MEDIUM || "nano-banana-2",
+  veniceModelHigh: process.env.VENICE_MODEL_HIGH || "nano-banana-pro",
+  veniceCreditsStandard: num("VENICE_CREDITS_STANDARD", 2),
+  veniceCreditsMedium: num("VENICE_CREDITS_MEDIUM", 3),
+  veniceCreditsHigh: num("VENICE_CREDITS_HIGH", 6),
+  veniceResolution: process.env.VENICE_RESOLUTION || "1K",
   veniceSteps: num("VENICE_STEPS", 25),                  // venice-sd35 caps at 30
   veniceOutPx: num("VENICE_OUT_PX", 512),                // 1024 PNG in (~2.1MB), 512 webp out
   veniceRatePerSec: num("VENICE_RATE_PER_SEC", 1),       // per-IP: generation is slow and costs money

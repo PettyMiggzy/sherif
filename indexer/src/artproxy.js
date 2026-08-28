@@ -16,9 +16,13 @@
 //     page, and Venice hosts uncensored models — a public generator that will draw anything
 //     is a liability with our name on the output. It is not a request field, so no client can
 //     turn it off by sending one.
-//   • The model is chosen server-side from config, never from the request body. Venice's
-//     catalogue runs from $0.01 to $0.29 an image; letting the client name the model lets the
-//     client pick our bill, and the adult-tuned models are in that same list.
+//   • The model is chosen server-side from config, never from the request body. The client picks a
+//     TIER — standard / medium / high — and the tier maps to a model here. The provider and the
+//     model name are never sent to the browser and never appear in a response: they are a supplier
+//     relationship and a cost, not a product feature, and publishing them invites someone to go buy
+//     the same image direct for a third of the price. Venice's catalogue also runs $0.01 to $0.29
+//     an image and includes adult-tuned models, so a client-named model would be a client-named
+//     bill.
 //   • The user's words are APPENDED to a fixed brief, never substituted for it, and truncated.
 //     The brief is what keeps the output usable as a tiny round avatar.
 //
@@ -59,11 +63,49 @@ async function shrink(pngBuf) {
     .toBuffer();
 }
 
+/// A generated image that came back as a single flat colour — usually pure black.
+///
+/// THIS IS NOT THEORETICAL. Measured on nano-banana-2-lite: one generation in three returned a
+/// solid black 1024x1024 PNG, with HTTP 200, a valid image, and a full charge. Without this check
+/// the pad would hand that to a creator as their coin's artwork AND burn one of their credits for
+/// it. Standard deviation is the tell: real art is noisy, a flat fill has none.
+async function isBlank(buf) {
+  try {
+    const S = await sharp();
+    const st = await S(buf).stats();
+    // Alpha is excluded — a fully opaque image has zero variance on that channel by definition and
+    // would make every image look flat.
+    const colour = st.channels.slice(0, 3);
+    return colour.every((c) => c.stdev < 3);
+  } catch {
+    return false; // unreadable is a different failure; let the caller's decode path report it
+  }
+}
+
+/// Which model serves which tier. NEVER sent to a client — see the header. Tunable by env so a bad
+/// model can be swapped out during an incident without a deploy.
+const TIERS = {
+  standard: { model: () => CFG.veniceModelStandard, credits: () => CFG.veniceCreditsStandard },
+  medium: { model: () => CFG.veniceModelMedium, credits: () => CFG.veniceCreditsMedium },
+  high: { model: () => CFG.veniceModelHigh, credits: () => CFG.veniceCreditsHigh },
+};
+
+export function tiers() {
+  return Object.keys(TIERS).map((k) => ({ tier: k, credits: TIERS[k].credits() }));
+}
+export function creditsFor(tier) {
+  const t = TIERS[String(tier || "").toLowerCase()];
+  return t ? t.credits() : null;
+}
+
 /// Generate artwork from a description. Returns { dataUrl, bytes } or throws a friendly Error.
-export async function makeArt({ prompt, timeout = 90000 }) {
+export async function makeArt({ prompt, tier = "medium", timeout = 180000 }) {
   if (!enabled()) throw new Error("art generator not configured");
   const want = String(prompt || "").trim();
   if (want.length < 3) throw new Error("describe what you want, in a few words at least");
+  const t = TIERS[String(tier).toLowerCase()];
+  if (!t) throw new Error("pick a quality level");
+  const model = t.model();
 
   let r;
   try {
@@ -71,10 +113,15 @@ export async function makeArt({ prompt, timeout = 90000 }) {
       method: "POST",
       headers: { authorization: `Bearer ${CFG.veniceApiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
-        model: CFG.veniceModel,
+        model,
         prompt: buildPrompt(want),
+        // Both parameter styles are sent because the catalogue is not uniform: the SD-family models
+        // take width/height, the newer ones take an aspect ratio and a resolution class. Each ignores
+        // the pair it does not use, which is cheaper than keeping a per-model shape table in sync.
         width: 1024,
         height: 1024,
+        aspect_ratio: "1:1",
+        resolution: CFG.veniceResolution,
         steps: CFG.veniceSteps,
         format: "png",
         safe_mode: true,        // see the header — deliberately not a request field
@@ -102,8 +149,13 @@ export async function makeArt({ prompt, timeout = 90000 }) {
     || null;
   if (!b64) throw new Error("art generation returned nothing, try again");
 
+  const raw = Buffer.from(b64, "base64");
+  // Checked BEFORE shrinking and before the caller charges anybody. A blank result is a failed
+  // generation we were nonetheless billed for; the customer must not be billed for it as well.
+  if (await isBlank(raw)) throw new Error("that one came out blank — try again, you were not charged");
+
   let out;
-  try { out = await shrink(Buffer.from(b64, "base64")); }
+  try { out = await shrink(raw); }
   catch { throw new Error("art generation returned something unreadable, try again"); }
 
   return { dataUrl: `data:image/webp;base64,${out.toString("base64")}`, bytes: out.length };

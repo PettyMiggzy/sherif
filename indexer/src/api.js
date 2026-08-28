@@ -21,7 +21,7 @@ import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleAppro
 import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes, stats as lifiUsage } from "./lifiproxy.js";
 import { renderCard, coinOgHtml } from "./og.js";
 import { enabled as memeEnabled, makeMeme } from "./memeproxy.js";
-import { enabled as artEnabled, makeArt } from "./artproxy.js";
+import { enabled as artEnabled, makeArt, tiers as artTiers } from "./artproxy.js";
 import { enabled as ordersEnabled, saveOrder, ordersForMaker, cancelOrder, verifyCancelledOnChain, orderExists } from "./orders.js";
 
 const DAY = 86400;
@@ -709,7 +709,7 @@ export function startApi() {
         catch { return sendUni(res, 400, { error: "bad request" }, aorigin); }
         const prompt = String(abody.prompt || "").slice(0, CFG.veniceMaxPromptChars);
         try {
-          const out = await makeArt({ prompt });
+          const out = await makeArt({ prompt, tier: abody.tier });
           return sendUni(res, 200, { image: out.dataUrl, bytes: out.bytes }, aorigin);
         } catch (e) {
           return sendUni(res, 502, { error: (e && e.message) || "art generation failed" }, aorigin);
@@ -920,7 +920,8 @@ export function startApi() {
 
       // Whether the photo-to-meme generator is configured — the create page shows its button only if so.
       if (path === "/api/meme/enabled") return send(res, 200, { enabled: memeEnabled() }, origin);
-      if (path === "/api/art/enabled") return send(res, 200, { enabled: artEnabled() }, origin);
+      // Tier names and their credit cost only — never the model or the provider behind them.
+      if (path === "/api/art/enabled") return send(res, 200, { enabled: artEnabled(), tiers: artEnabled() ? artTiers() : [] }, origin);
 
       // ── DexScreener logo proxy for migrate-in: GET /api/img?u=<dexscreener image url> ──
       // DexScreener's image CDN sends no CORS header, so the browser can't fetch a migrating coin's
