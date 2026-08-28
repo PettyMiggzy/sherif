@@ -241,7 +241,18 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     /// both revert out of gas at any sane gas limit. The contract's headline promise is that leaving is always
     /// possible; an owner-set address that can take that away is not a promise. The cap makes the failure
     /// local: the call dies, `qualifiesForBoost` returns false, and the withdrawal completes unboosted.
-    uint256 private constant BOOST_GAS = 100_000;
+    ///
+    /// SIZED AGAINST THE REAL WORST CASE, not guessed. The flagship pool answers this call with
+    /// `stakedLockedOf`, which walks the caller's positions — and at MAX_POSITIONS (24) that measured
+    /// 92,395 gas against the old 100,000 cap: 7.6% of headroom. Exceeding it does not revert, it
+    /// silently returns false, so the failure mode was "the boost quietly stops working for exactly
+    /// the biggest stakers" — the ones most likely to have 24 positions and most likely to notice
+    /// they are being shortchanged without being able to say why.
+    ///
+    /// 250k restores real margin while still bounding a hostile source: a withdraw with 24 positions
+    /// costs ~201k in total, so even a boost source that burns every drop of this cannot come close
+    /// to making an exit unaffordable.
+    uint256 private constant BOOST_GAS = 250_000;
 
     /// @notice Whether `user` currently qualifies for the holder boost, read live from the source.
     function qualifiesForBoost(address user) public view returns (bool) {
@@ -505,9 +516,22 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
 
     // ─────────────────────────────────────────────────────────────── claim ──
 
-    /// @notice Claim `asset`. Claiming is NOT withdrawing, so it never forfeits and never touches a lock.
+    /// @notice Claim `asset`. Claiming is NOT withdrawing, so it never touches a lock.
+    ///
+    /// It DOES re-check the boost, and that is not incidental. `weightOf` caches the boost, and since
+    /// the boost reads locked principal it lapses the moment a lock MATURES — an event that arrives on
+    /// a timer, with no transaction from anyone. `syncBoost` is permissionless, but nobody has a
+    /// reason to spend gas correcting a stranger, so without this a staker would keep a boost they
+    /// stopped deserving essentially forever, diluting everybody else. Measured: +25% weight retained
+    /// indefinitely past maturity.
+    ///
+    /// Correcting it here means the lapse is enforced at the moment the holder reaches for the money.
+    /// It does not claw back what already accrued at the stale weight — that would need a checkpoint
+    /// per position — so a boost still over-earns between maturity and the next interaction. It bounds
+    /// the window to "until they touch the pool" instead of "forever".
     function claim(address asset) public nonReentrant returns (uint256 amount) {
         _updateReward(msg.sender);
+        _resync(msg.sender);
         amount = rewardsAccrued[asset][msg.sender];
         if (amount == 0) return 0;
         rewardsAccrued[asset][msg.sender] = 0;
@@ -517,6 +541,8 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
 
     function claimMany(address[] calldata assets) external nonReentrant returns (uint256[] memory amounts) {
         _updateReward(msg.sender);
+        _resync(msg.sender); // same lapsed-boost correction as `claim` — see the note there
+
         amounts = new uint256[](assets.length);
         for (uint256 i; i < assets.length; ++i) {
             address asset = assets[i];
@@ -613,8 +639,11 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
 
     /// @notice Retune the holder boost. The multiplier is capped by `MAX_BOOST_BPS`, which the owner cannot
     /// raise — so this can adjust the boost but can never turn it into a device that starves everyone else.
-    /// Existing stakers keep their current weight until somebody calls `syncBoost` on them; nothing is applied
-    /// retroactively to rewards already earned.
+    ///
+    /// Existing stakers keep their cached weight until they next touch the pool (stake, withdraw or claim
+    /// all resync them) or somebody calls `syncBoost` on them. Nothing is applied retroactively to rewards
+    /// already earned. A staker who never interacts therefore carries a stale weight indefinitely; that is
+    /// the same residual described on `claim`, and the reason `syncBoost` is permissionless.
     function setBoost(address source, uint256 threshold, uint16 bps) external onlyOwner {
         if (bps > MAX_BOOST_BPS) revert BadBoost();
         boostSource = IBoostSource(source);
