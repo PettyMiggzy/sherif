@@ -32,3 +32,9 @@ pad-v4/contracts/test/H5ObsHookMin.sol
 pad-v4/contracts/test/H5TwapGateVault.sol
 pad-v4/contracts/test/JC4Probes.sol
 pad-v4/contracts/test/ArrowLauncherSaltBound.sol
+
+# RobinTierStaking audit harness — an uploaded contract staged for testing only, NOT reviewed/shipped
+# production code. Findings are reported to the build session, not committed. Kept out of the tree so an
+# unshipped contract never compiles into the audit package.
+pad-v4/contracts/audit/
+pad-v4/test/audit/
