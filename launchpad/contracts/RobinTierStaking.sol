@@ -10,7 +10,8 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @notice Where a pool reads a staker's $ROBIN position from, for the holder boost. The flagship $ROBIN pool
 /// points this at itself; every other pool points it at the flagship.
 interface IBoostSource {
-    function stakedOf(address user) external view returns (uint256);
+    /// @notice $ROBIN the user has LOCKED — flexible positions do not count. See `stakedLockedOf`.
+    function stakedLockedOf(address user) external view returns (uint256);
 }
 
 /// @title RobinTierStaking — locked-tier, weighted, forfeit-to-stayers staking
@@ -34,8 +35,16 @@ interface IBoostSource {
 ///      the forfeit landed solely on people who did not know that, which is the opposite of who a penalty
 ///      should reach. One penalty, stated plainly, applied identically to everyone who reads it or does not.
 ///
-///   3. EARLY EXITS PAY THE STAYERS — AND NEVER THEMSELVES. The exit tax goes to whoever is still staked,
-///      with the leaver explicitly excluded even when they hold other positions.
+///   3. EARLY EXITS PAY THE STAYERS — AND NEVER THEMSELVES, INCLUDING NOT VIA A SECOND WALLET. The exit
+///      tax is booked into the pot at the moment of the exit and pays nobody in that block. It reaches
+///      the stayers when the pot is released, streamed over a reward window.
+///
+///      That indirection is not caution, it is two measured exploits. Paying an instant lump to
+///      whoever holds weight in the exit block let a FLEXIBLE staker — no lock, no exit tax — stake in
+///      that block, take 80% of a 150,000 penalty and leave free in the next call. And excluding the
+///      leaver only works per ADDRESS: a leaver who was the whole pool opened a second wallet holding
+///      one wei and collected the entire penalty back, with nothing stranded. Neither survives when
+///      the exit block is worth nothing.
 ///      Without that exclusion a staker who is most of the pool receives most of their own penalty back, and
 ///      the 15% quietly stops applying to exactly the holders it matters most for. In the normal case nothing
 ///      goes to the platform or the owner — there is no path that sends either one to a wallet.
@@ -51,16 +60,23 @@ interface IBoostSource {
 ///      position you hold in this pool earns a further `boostBps` on top of its tier. It applies across every
 ///      pool, because every pool reads the same source.
 ///
-/// WHY THE BOOST COUNTS *STAKED* $ROBIN AND NOT A WALLET BALANCE. A balance check is measured in one instant,
-/// and one instant is buyable: flash-borrow ten million $ROBIN, call the function that snapshots you, repay in
-/// the same transaction. The boost would then cost nothing and mean nothing. Staked $ROBIN cannot be borrowed
-/// for a block — leaving costs the exit tax and the pending rewards — so the boost is earned by the people
-/// actually holding the risk. This is the same reason `syncBoost` is permissionless: anyone may re-check
-/// anyone, so a boost that has stopped being deserved can always be removed by somebody.
+/// WHY THE BOOST COUNTS *LOCKED* $ROBIN AND NOT A WALLET BALANCE, OR EVEN A STAKED ONE. A balance check is
+/// measured in one instant, and one instant is buyable: flash-borrow ten million $ROBIN, call the function
+/// that snapshots you, repay in the same transaction.
 ///
-/// JIT (stake right before a reward lands, grab a slice, leave) is defeated the same way the flexible pool
-/// defeats it: every reward STREAMS linearly over a window rather than dropping as a lump, so a flash staker
-/// accrues only the sliver that streams during their stay, and forfeits even that on an early exit.
+/// Requiring it to be STAKED is not enough on its own, and that was a real hole rather than a theoretical
+/// one: a FLEXIBLE position costs nothing to open and nothing to close, so the whole sequence — borrow,
+/// stake flexible, `syncBoost` a satellite pool which caches the resulting weight, unstake, repay — fits in
+/// one transaction. It was measured doing exactly that, leaving a satellite pool showing a live boost behind
+/// zero staked $ROBIN. So the boost reads `stakedLockedOf`: principal under a LIVE lock. Renting that costs
+/// EARLY_EXIT_BPS to unwind, which is the point — the boost is for people carrying risk, and a lock is what
+/// carrying risk looks like here. `syncBoost` stays permissionless so a boost that has stopped being
+/// deserved can always be removed by somebody.
+///
+/// JIT (stake right before a reward lands, grab a slice, leave) is defeated by streaming: every reward runs
+/// linearly over a window rather than dropping as a lump, so a flash staker accrues only the sliver that
+/// streams during their stay. Exit penalties go through the pot for the same reason — see `_penalise`, and
+/// note that the ONE thing this contract used to pay as an instant lump was the one thing JIT could take.
 ///
 /// Accounting is the Synthetix `rewardPerToken` accumulator, one per reward asset, run over WEIGHT rather than
 /// principal. O(#rewardAssets) per user action and O(#positions) per withdraw, both capped.
@@ -189,6 +205,27 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         return _positions[user].length;
     }
 
+    /// @notice Principal the user has under a LIVE LOCK. This, not the raw balance, is what the
+    /// holder boost reads.
+    ///
+    /// FLEXIBLE POSITIONS ARE EXCLUDED AND THAT IS THE ENTIRE POINT. Counting them made the boost
+    /// buyable for one transaction: flash-borrow 10M $ROBIN, open a flexible position in this pool,
+    /// call `syncBoost` on a satellite pool — which reads this number and CACHES the resulting
+    /// weight — then close the flexible position and repay, all in one call. Measured: the
+    /// satellite still showed boosted = true with zero staked $ROBIN behind it. A flexible position
+    /// costs nothing to open and nothing to close, so anything that trusts it is trusting a number
+    /// that can be rented for a block.
+    ///
+    /// A locked position cannot be rented that way: leaving it early costs EARLY_EXIT_BPS of the
+    /// principal, so borrowing 10M to fake a boost now costs 1.5M. The boost is meant to be earned
+    /// by people carrying risk, and a lock is what carrying risk looks like here.
+    function stakedLockedOf(address user) public view returns (uint256 locked) {
+        Position[] storage ps = _positions[user];
+        for (uint256 i; i < ps.length; ++i) {
+            if (ps[i].unlockAt > block.timestamp) locked += ps[i].amount;
+        }
+    }
+
     function rewardTokensLength() external view returns (uint256) {
         return rewardTokens.length;
     }
@@ -212,7 +249,7 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         // Gas-capped as well as static, so a broken or hostile source can cost a staker their boost but never
         // their exit. See BOOST_GAS.
         (bool ok, bytes memory ret) =
-            address(boostSource).staticcall{gas: BOOST_GAS}(abi.encodeCall(IBoostSource.stakedOf, (user)));
+            address(boostSource).staticcall{gas: BOOST_GAS}(abi.encodeCall(IBoostSource.stakedLockedOf, (user)));
         if (!ok || ret.length < 32) return false;
         return abi.decode(ret, (uint256)) >= boostThreshold;
     }
@@ -230,7 +267,7 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         return r.rewardPerTokenStored + Math.mulDiv((tApp - r.lastUpdateTime) * r.rewardRate, ACC, totalWeight);
     }
 
-    /// @notice Unclaimed reward of `user` in `asset` — what `claim` pays, and what an EARLY withdraw forfeits.
+    /// @notice Unclaimed reward of `user` in `asset` — what `claim` pays. An early withdraw does not touch it.
     function earned(address user, address asset) public view returns (uint256) {
         uint256 delta = rewardPerToken(asset) - userRewardPerTokenPaid[asset][user];
         return rewardsAccrued[asset][user] + Math.mulDiv(weightOf[user], delta, ACC);
@@ -306,46 +343,47 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
             remaining = (r.periodFinish - block.timestamp) * r.rewardRate;
         }
         uint256 total = amount + remaining;
+        // A stream shorter than one wei per second rounds to a rate of ZERO, and then the money
+        // streams to nobody: not credited, not pending, not stranded, and with no way back out.
+        // Park it instead and let it go out with the next deposit. Harmless on an 18-decimal token
+        // (under `duration` wei), but `listReward` accepts any ERC-20 and a 6-decimal reward makes
+        // this a real amount.
+        if (total / r.duration == 0) { r.pending += amount; return; }
         r.rewardRate = total / r.duration;
         r.lastUpdateTime = uint64(block.timestamp);
         r.periodFinish = uint64(block.timestamp + r.duration);
         emit RewardAdded(asset, amount, r.periodFinish);
     }
 
-    /// @dev Hand `amount` of `asset` straight to the stakers, with no stream and no delay, by bumping the
-    /// per-weight accumulator — EXCLUDING `excluded`, who is the person being penalised. Today the only
-    /// caller is the early-exit tax.
+    /// @dev Book an early-exit penalty into the pot.
     ///
-    /// The exclusion is the whole point and it is not cosmetic. `_resync` only removes the weight of the
-    /// position being closed, so a staker with OTHER positions is still in `totalWeight` when their own
-    /// penalty is shared out — and receives a slice of it back, proportional to how much of the pool they
-    /// are. A whale who is most of the pool would get most of their own exit tax refunded, and for a large
-    /// enough holder the 15% penalty tends to nothing. That is not a rounding issue, it is the penalty
-    /// quietly not applying to exactly the people it most needs to.
+    /// THIS USED TO PAY THE STAYERS INSTANTLY, by bumping the per-weight accumulator in the same
+    /// transaction as the exit and advancing the leaver's own checkpoint past the bump so they
+    /// could not take a share of it. That was elegant and it was broken in two ways, both measured:
     ///
-    /// So the bump is computed over everyone ELSE's weight, and the excluded staker's checkpoint is advanced
-    /// past it so they accrue none of it. The tax is handed over rather than re-streamed because the pool has
-    /// already been made whole — re-streaming would delay money the stayers are owed right now.
-    function _redistribute(address asset, uint256 amount, address excluded) internal {
+    ///   • JIT. An instant lump goes to whoever holds weight in THAT BLOCK. A flexible position has
+    ///     no lock and no exit tax, so an attacker could stake 20M in the block of somebody's exit,
+    ///     take 80% of a 150,000 penalty, and leave in the next call for free. The people the
+    ///     penalty was meant to reward — the ones who stayed locked for months — got the remainder.
+    ///
+    ///   • SYBIL. The exclusion is per ADDRESS, and an address is free. A leaver who was the entire
+    ///     pool used to have their penalty stranded, because there was nobody else to pay; opening a
+    ///     SECOND WALLET with one wei made the denominator non-zero, so the strand never fired and
+    ///     that wallet collected the whole 150,000 back. Measured exactly: 150,000 recaptured, 0
+    ///     stranded.
+    ///
+    /// Both come from paying an instant lump to whoever happens to hold weight at one instant. So
+    /// nothing is paid at the instant of the exit. The penalty joins the pot, and the pot has one
+    /// exit — `releaseStranded`, which STREAMS it to stakers over a reward window. A block is worth
+    /// nothing to a JIT attacker, and a sybil would have to genuinely stake for the length of a
+    /// stream to collect a share, which is not an attack, it is staking.
+    ///
+    /// The cost is honesty about timing: stayers are paid when the pot is released, not in the exit
+    /// block. The owner controls only WHEN, never WHERE — `releaseStranded` takes no recipient.
+    function _penalise(address asset, uint256 amount) internal {
         if (amount == 0) return;
-        RewardInfo storage r = rewardInfo[asset];
-        uint256 denom = totalWeight - weightOf[excluded];
-        // NOBODY ELSE IS STAKED. Parking this in `pending` was the obvious move and it is wrong: `pending`
-        // streams to whoever is staked next, and the person staked next is overwhelmingly the leaver, who
-        // still holds their other positions. Measured, a sole staker closing one of two positions got
-        // 149.999 of their own 150 penalty back — the 15% silently became 0% for exactly the holder it was
-        // written for. With no one to pay, the only choices are refund the leaver, burn it, or bank it; it
-        // goes to the sink, which is the only one of the three that is neither a giveaway nor a loss.
-        if (denom == 0) {
-            unchecked { stranded[asset] += amount; }
-            emit Stranded(asset, amount);
-            return;
-        }
-        uint256 bump = Math.mulDiv(amount, ACC, denom);
-        r.rewardPerTokenStored += bump;
-        // Advance the penalised staker's checkpoint by exactly the bump, so `earned` returns what it did
-        // before it — their already-settled balance, and none of their own penalty.
-        userRewardPerTokenPaid[asset][excluded] += bump;
+        unchecked { stranded[asset] += amount; }
+        emit Stranded(asset, amount);
     }
 
     /// @dev Recompute `user`'s weight from their positions and current boost status, and move `totalWeight`
@@ -449,9 +487,9 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
 
         _resync(msg.sender);
 
-        // Redistributed AFTER the resync, so the leaver's own weight is already out of the denominator and
-        // they cannot take a share of their own tax.
-        if (tax > 0) _redistribute(address(stakeToken), tax, msg.sender);
+        // Booked into the pot rather than paid out here — see `_penalise` for the two attacks that
+        // an instant payout enabled.
+        if (tax > 0) _penalise(address(stakeToken), tax);
 
         if (returned > 0) stakeToken.safeTransfer(msg.sender, returned);
         emit Withdrawn(msg.sender, positionId, returned, tax, early);

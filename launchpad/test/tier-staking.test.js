@@ -94,19 +94,25 @@ describe("[TIER] locked-tier staking", function () {
     await (await pool.connect(alice).claim(await robin.getAddress())).wait();
   });
 
-  it("an early exit's tax reaches the stayers", async () => {
-    // The 15% on principal is the whole penalty. It is redistributed instantly rather than re-streamed,
-    // because the stayers are owed it now — the pool did not have to earn it.
+  it("an early exit's tax reaches the stayers — through the pot, not in the exit block", async () => {
+    // It used to land instantly. That was two exploits: a flexible staker could sandwich the exit
+    // and take 80% of it risk-free, and a leaver's own second wallet could take it all back. So
+    // nothing is paid at the instant of the exit; the penalty joins the pot and streams out on
+    // release.
+    const R = await robin.getAddress();
     await (await pool.connect(alice).stake(E(1000), TIER.D30)).wait();
     await (await pool.connect(bob).stake(E(1000), TIER.D30)).wait();
-    await (await pool.connect(owner).notifyReward(await robin.getAddress(), E(400))).wait();
-    await time.increase(2 * DAY);
 
-    const before = await pool.earned(bob.address, await robin.getAddress());
-    await (await pool.connect(alice).withdraw(0)).wait(); // 15% of 1000 = 150, all to bob
-    const after = await pool.earned(bob.address, await robin.getAddress());
-    expect(after - before).to.be.closeTo(E(150), E(1));
-    console.log(`   stayer gained ${ethers.formatEther(after - before)} — the 150 tax, and only the tax`);
+    const before = await pool.earned(bob.address, R);
+    await (await pool.connect(alice).withdraw(0)).wait();  // 15% of 1000 = 150
+    expect(await pool.earned(bob.address, R), "nothing may be paid in the exit block")
+      .to.equal(before);
+    expect(await pool.stranded(R)).to.equal(E(150));
+
+    await (await pool.connect(owner).releaseStranded(R)).wait();
+    await time.increase(30 * DAY);
+    expect(await pool.earned(bob.address, R) - before).to.be.closeTo(E(150), E(1));
+    console.log(`   stayer received ${ethers.formatEther(await pool.earned(bob.address, R) - before)} once the pot was released`);
   });
 
   
@@ -242,26 +248,44 @@ describe("[TIER] locked-tier staking", function () {
   });
 
   it("a whale cannot refund their own exit penalty back to themselves", async () => {
-    // THE EXPLOIT this closes. The penalty is shared among current stakers — and a staker with OTHER
-    // positions is still one of them when their own penalty is handed out. At 99% of the pool they would
-    // receive ~99% of their own tax straight back, so the 15% would effectively stop applying to precisely
-    // the holders it exists to price.
-    await (await pool.connect(alice).stake(E(1_000_000), TIER.D365)).wait(); // the one she closes early
+    // THE ORIGINAL EXPLOIT, and its sybil variant. The penalty used to be shared among whoever held
+    // weight in the exit block, so a staker who was 99% of the pool took back ~99% of their own
+    // penalty — and when they were 100% of it, a one-wei SECOND WALLET collected the entire thing
+    // (measured: 150,000 recaptured, 0 stranded). Nothing is paid in the exit block now, so neither
+    // works: the leaver's weight at that instant buys them nothing at all.
+    const R = await robin.getAddress();
+    await (await pool.connect(alice).stake(E(1_000_000), TIER.D365)).wait(); // closed early
     await (await pool.connect(alice).stake(E(1_000_000), TIER.D365)).wait(); // keeps her ~99% of the pool
-    await (await pool.connect(bob).stake(E(1), TIER.D365)).wait();           // a token minority
+    await (await pool.connect(bob).stake(1n, TIER.FLEX)).wait();             // the sybil's one wei
     await time.increase(DAY);
 
-    const before = await pool.earned(alice.address, await robin.getAddress());
-    await (await pool.connect(alice).withdraw(0)).wait();
-    const after = await pool.earned(alice.address, await robin.getAddress());
+    const aliceBefore = await pool.earned(alice.address, R);
+    const bobBefore = await pool.earned(bob.address, R);
+    await (await pool.connect(alice).withdraw(0)).wait();                    // 150,000 tax
 
-    // She must gain NOTHING from her own 150,000 tax, despite still being nearly the whole pool.
-    expect(after).to.equal(before);
-    // ...and the minority staker receives the entire thing.
-    expect(await pool.earned(bob.address, await robin.getAddress())).to.be.closeTo(E(150_000), E(1));
-    console.log(`   whale kept ${ethers.formatEther(after - before)} of her own 150,000 tax; the 1-token staker got it all`);
+    expect(await pool.earned(alice.address, R)).to.equal(aliceBefore);       // she gains nothing
+    expect(await pool.earned(bob.address, R)).to.equal(bobBefore);           // and neither does a sybil
+    expect(await pool.stranded(R)).to.equal(E(150_000));
+    console.log(`   150,000 tax went to the pot; leaver and 1-wei sybil both received 0`);
   });
 
+  it("a flexible $ROBIN position does not buy the holder boost", async () => {
+    // Flexible costs nothing to open and nothing to close, so a boost that counts it can be rented
+    // for one transaction with borrowed money. Only a live lock counts.
+    await (await pool.connect(owner).setBoost(await pool.getAddress(), E(10_000_000), 2500)).wait();
+    await (await pool.connect(alice).stake(E(20_000_000), TIER.FLEX)).wait();
+    expect(await pool.stakedOf(alice.address)).to.equal(E(20_000_000));
+    expect(await pool.stakedLockedOf(alice.address)).to.equal(0n);
+    expect(await pool.qualifiesForBoost(alice.address)).to.equal(false);
+
+    await (await pool.connect(bob).stake(E(10_000_000), TIER.D30)).wait();
+    expect(await pool.qualifiesForBoost(bob.address)).to.equal(true);
+    // ...and it lapses when the lock matures, because a matured position is free to leave again.
+    await time.increase(31 * DAY);
+    expect(await pool.qualifiesForBoost(bob.address)).to.equal(false);
+  });
+
+  
   it("an unknown tier is refused", async () => {
     await expect(pool.connect(alice).stake(E(1), 7)).to.be.revertedWithCustomError(pool, "BadTier");
   });
