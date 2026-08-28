@@ -36,7 +36,7 @@ describe("[F-1] a squatted pool is repaired, not fatal", function () {
 
   let dep, platform, dev, attacker, weth, v3, ltd, factory, factoryAddr;
 
-  const NOTAX = () => ({ buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address });
+  const NOTAX = () => ({ buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address });
 
   before(async () => {
     [dep, platform, dev, attacker] = (await ethers.getSigners()).slice(-4);

@@ -31,7 +31,7 @@ suite("Graduation battery — graduate at the ceiling, invariants hold every tim
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 196200, 25800, 16400
     );
     await (await router.setFactory(await factory.getAddress())).wait();
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
     const probeAddr = await probe.getAddress();
     const wethW = await ethers.getContractAt(

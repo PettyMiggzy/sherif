@@ -17,7 +17,7 @@ forkSuite("dev-buy FDV", function () {
   this.timeout(180000);
   it("dev buy size -> resulting mcap (find what reaches $10k)", async () => {
     const [dep, platform, dev] = await ethers.getSigners();
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     console.log(`\n      ===== DEV BUY vs RESULTING MCAP  (start ~$1816, grad ~$41k, 750M curve) =====`);
     console.log(`      spent$    ETH      dev tokens     %ofSupply   FDV after`);
     for (const buyUsd of [1400, 2000, 2800, 3500]) {

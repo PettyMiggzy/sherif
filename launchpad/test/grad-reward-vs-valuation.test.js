@@ -30,7 +30,7 @@ describe("[B2] the graduation reward tracks the creator's chosen valuation", fun
 
   let dep, platform, dev, buyer, weth, v3, factory, factoryAddr, probe, wethW;
 
-  const NOTAX = () => ({ buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address });
+  const NOTAX = () => ({ buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address });
 
   before(async () => {
     [dep, platform, dev, buyer] = (await ethers.getSigners()).slice(-4);

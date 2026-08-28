@@ -29,7 +29,7 @@ function getSqrtRatioAtTick(tick) {
 
 describe("[F-1] an out-of-range WETH-only squat is repaired, not fatal", function () {
   this.timeout(300000);
-  const NOTAX = (dev) => ({ buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev });
+  const NOTAX = (dev) => ({ buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev });
 
 
   // This started life as the audit agents' repro of a REAL defect: the first version of the repair offered the

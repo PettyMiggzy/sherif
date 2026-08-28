@@ -265,25 +265,27 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
       </div>
 
       <div class="field">
-        <label>Trading fee <span class="hint">1% default (the house) · raise up to 4% to fund your coin</span></label>
+        <label>Trading fee <span class="hint">1.25% each side · raise up to 4% to fund your coin</span></label>
         <div class="devbuy">
           <div class="row2">
-            <div><div class="hd"><span style="font-weight:700">Buy fee</span><span class="amt" id="btAmt">1%</span></div>
-              <input type="range" id="buyTax" aria-label="Buy fee %" min="1" max="4" step="0.5" value="1" oninput="taxSync()" />
-              <div class="sc"><span>1% default</span><span>4% max</span></div></div>
-            <div><div class="hd"><span style="font-weight:700">Sell fee</span><span class="amt" id="stAmt">1%</span></div>
-              <input type="range" id="sellTax" aria-label="Sell fee %" min="1" max="4" step="0.5" value="1" oninput="taxSync()" />
-              <div class="sc"><span>1% default</span><span>4% max</span></div></div>
+            <div><div class="hd"><span style="font-weight:700">Buy fee</span><span class="amt" id="btAmt">1.25%</span></div>
+              <input type="range" id="buyTax" aria-label="Buy fee %" min="1.25" max="4" step="0.25" value="1.25" oninput="taxSync()" />
+              <div class="sc"><span>1.25% min</span><span>4% max</span></div></div>
+            <div><div class="hd"><span style="font-weight:700">Sell fee</span><span class="amt" id="stAmt">1.25%</span></div>
+              <input type="range" id="sellTax" aria-label="Sell fee %" min="1.25" max="4" step="0.25" value="1.25" oninput="taxSync()" />
+              <div class="sc"><span>1.25% min</span><span>4% max</span></div></div>
           </div>
           <div id="allocWrap" style="display:none;margin-top:14px;border-top:1px solid var(--line-2);padding-top:12px">
-            <div class="hint" style="margin-bottom:4px">Where <b>your 75%</b> of the above-1% fee goes, must total <b class="tax-tot ok" id="allocTot">100%</b></div>
+            <div class="hint" style="margin-bottom:4px">Where <b>your 75%</b> of the above-1.25% fee goes, must total <b class="tax-tot ok" id="allocTot">100%</b></div>
             <div class="alloc-row"><span>Project wallet</span><input type="range" id="aw" min="0" max="100" step="5" value="100" oninput="taxSync()" /><b id="awV">100%</b></div>
             <div class="alloc-row"><span>Deepen the Bond floor</span><input type="range" id="af" min="0" max="100" step="5" value="0" oninput="taxSync()" /><b id="afV">0%</b></div>
             <div class="alloc-row"><span>Auto-burn</span><input type="range" id="ab" min="0" max="100" step="5" value="0" oninput="taxSync()" /><b id="abV">0%</b></div>
             <div class="field" style="margin:10px 0 0"><label for="pw" style="font-size:.8rem">Payout wallet <span class="hint">where your share lands · defaults to your connected wallet</span></label>
               <input class="inp" id="pw" placeholder="0x… (optional)" /></div>
           </div>
-          <p id="taxNote">No tax, your coin trades clean, 0/0. Slide to add a fee; you keep 75% of everything it collects.</p>
+          <p id="taxNote">Every coin pays 1.25% a side. Of the sell, 1% is yours and 0.25% funds your coin's
+            stakers. Of the buy, 1% is the platform's and 0.25% pays $ROBIN stakers. Raise either side to fund
+            your coin further — you keep 75% of everything above 1.25%.</p>
         </div>
       </div>
 
@@ -522,7 +524,9 @@ function taxSync(){
   const st=parseFloat(document.getElementById('sellTax').value);
   document.getElementById('btAmt').textContent=bt+'%';
   document.getElementById('stAmt').textContent=st+'%';
-  const on=bt>1||st>1; // only an above-default portion gets split/allocated
+  // The allocation sliders only matter for what a creator charges ABOVE the 1.25% baseline — the
+  // baseline itself is fixed: 1% to them (sell) or the platform (buy), and 0.25% to staking.
+  const on=bt>1.25||st>1.25;
   document.getElementById('allocWrap').style.display=on?'block':'none';
   const w=+document.getElementById('aw').value,f=+document.getElementById('af').value,b=+document.getElementById('ab').value;
   document.getElementById('awV').textContent=w+'%';
@@ -531,9 +535,9 @@ function taxSync(){
   const tot=w+f+b, tEl=document.getElementById('allocTot');
   tEl.textContent=tot+'%'; tEl.className='tax-tot '+(tot===100?'ok':'bad');
   const note=document.getElementById('taxNote');
-  if(!on){note.textContent='Default 1% each side: the BUY 1% is the platform’s, and the SELL 1% is YOURS (the creator’s), plus you earn 0.5 ETH when your coin graduates. Raise the fee to fund your coin further; 25% of anything above 1% funds the platform buyback, you keep 75%.';return;}
-  const keep=(x)=>(((x-1)*0.75).toFixed(2).replace(/\.?0+$/,''));
-  note.textContent=`Buyers pay ${bt}% buy / sellers pay ${st}% sell. The buy 1% → platform; the sell 1% → you. Of anything above 1%, 25% funds the platform buyback and you keep 75% (≈ ${keep(bt)}% buy / ${keep(st)}% sell) split below.`;
+  if(!on){note.textContent='1.25% each side. SELL: 1% is YOURS, 0.25% funds your coin’s stakers. BUY: 1% is the platform’s, 0.25% pays $ROBIN stakers in ETH. You also earn up to 0.5 ETH when your coin graduates. Raise either side to fund your coin further — you keep 75% of everything above 1.25%.';return;}
+  const keep=(x)=>(((x-1.25)*0.75).toFixed(2).replace(/\.?0+$/,''));
+  note.textContent=`Buyers pay ${bt}% / sellers pay ${st}%. Of the sell, 1% → you and 0.25% → your stakers; of the buy, 1% → platform and 0.25% → $ROBIN stakers. Of anything above 1.25%, 25% funds the platform buyback and you keep 75% (≈ ${keep(bt)}% buy / ${keep(st)}% sell) split below.`;
 }
 taxSync();
 </script>

@@ -31,7 +31,7 @@ suite("Gas cap — launch() and graduate() fit under the 2^24 (16.77M) chain cap
     await ethers.provider.send("hardhat_setBalance", [dev.address, "0x" + (10n ** 25n).toString(16)]);
     return { dep, platform, dev, buyer, factory };
   }
-  const NOTAX = (dev) => ({ buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev });
+  const NOTAX = (dev) => ({ buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev });
   const curveOf = (factory, rc) => {
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     return ev.args;

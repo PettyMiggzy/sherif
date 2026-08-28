@@ -24,7 +24,7 @@ describe("[BRAND] every coin address ends in 1ab5", () => {
     name: NAME,
     symbol: SYMBOL,
     dev: devAddr,
-    tax: { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: devAddr },
+    tax: { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: devAddr },
   });
 
   before(async function () {

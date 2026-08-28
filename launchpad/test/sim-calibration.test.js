@@ -58,7 +58,7 @@ suite("Calibration sim — NEW params (201600 / 23000 / 22800): ~$3.4k start / ~
     expect(Number(mgw)).to.equal(MIN_GRAD_WIDTH);
 
     // ── launch a coin (no dev buy) so we can read the real curve ticks on-chain ──
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const rc = await (await factory.launch({ name: "Cal", symbol: "CAL", dev: dev.address, tax: NOTAX })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
@@ -91,7 +91,7 @@ suite("Calibration sim — NEW params (201600 / 23000 / 22800): ~$3.4k start / ~
     const [dep, platform, dev] = await ethers.getSigners();
     const factory = await deployStack(dep, platform);
 
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const rc = await (await factory.launch(
       { name: "Dev", symbol: "DEV", dev: dev.address, tax: NOTAX },
       { value: ethers.parseEther("0.5") }

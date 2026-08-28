@@ -9,7 +9,7 @@ const MAX_SQRT = 1461446703485210103287273052203988822378723970342n;
 
 describe("[F-1] the repair walks back from either end of the tick range", function () {
   this.timeout(300000);
-  const NOTAX = (dev) => ({ buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev });
+  const NOTAX = (dev) => ({ buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev });
   it("walks from the extreme end of the tick range", async () => {
     const [dep, platform, dev, attacker] = await ethers.getSigners();
     const v3 = await (new ethers.ContractFactory(V3F.abi, V3F.bytecode, dep)).deploy(); await v3.waitForDeployment();

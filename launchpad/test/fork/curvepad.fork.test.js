@@ -25,7 +25,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     // plain default 1% here (the above-default split is covered in padrouter.fork.test.js)
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
     // ===== ONE CALL: token + real pool + seeded curve + trading on =====
     const rc = await (await factory.launch({ name: "Robin Meme", symbol: "MEME", dev: dev.address, tax: NOTAX })).wait();
@@ -115,7 +115,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     // plain default 1% here (the above-default split is covered in padrouter.fork.test.js)
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
     // dev funds a LARGE opening buy in the SAME launch tx — big enough to blow past the old 2% cap
     const spend = ONE / 2n; // 0.5 ETH
@@ -156,7 +156,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 196200, 25800, 16400
     );
     await (await router.setFactory(await factory.getAddress())).wait();
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const probe = await (await ethers.getContractFactory("SwapProbe")).deploy();
     const wethW = await ethers.getContractAt(
       ["function deposit() payable", "function approve(address,uint256) returns (bool)"], WETH);
@@ -194,7 +194,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 196200, 25800, 16400
     );
     await (await router.setFactory(await factory.getAddress())).wait();
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const rc = await (await factory.launch({ name: "Auto", symbol: "AUTO", dev: dev.address, tax: NOTAX })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { curve, pool: poolAddr } = ev.args;
@@ -253,7 +253,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 196200, 25800, 16400
     );
     await (await router.setFactory(await factory.getAddress())).wait();
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
     // dev buy big enough to walk the whole curve to the ceiling in the launch tx (excess ETH is refunded)
     const rc = await (await factory.connect(dev).launch(
@@ -305,7 +305,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 201600, 23000, 22800
     );
     await (await router.setFactory(await factory.getAddress())).wait();
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
     // 100,000x less supply, priced ~100,000x higher per token (ln(1e5)/1e-4 ~ 115,100 ticks, aligned to 200)
     const SMALL_SUPPLY = 10_000n * ONE, SMALL_MAG = 201600 - 115200;
@@ -364,7 +364,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 201600, 23000, 22800
     );
     await (await router.setFactory(await factory.getAddress())).wait();
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const p = { name: "Dust", symbol: "DUST", dev: dev.address, tax: NOTAX };
 
     // 10,000 tokens at the DEFAULT price is a dust valuation: the curve would raise ~nothing and never graduate
@@ -387,7 +387,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress, 207200, 35800, 19800
     );
     await (await router.setFactory(await factory.getAddress())).wait();
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
     const rc = await (await factory.launch({ name: "Manip", symbol: "MNP", dev: dev.address, tax: NOTAX })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");

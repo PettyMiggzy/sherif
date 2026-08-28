@@ -47,7 +47,7 @@ suite("Mass-dump sim — buy a coin up ~2x, then everyone dumps (fork)", functio
     await (await router.setFactory(await factory.getAddress())).wait();
 
     // launch a plain 1% (no project tax) coin
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const rc = await (await factory.launch({ name: "DUMP", symbol: "DUMP", dev: dev.address, tax: NOTAX })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");

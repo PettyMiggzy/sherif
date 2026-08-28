@@ -56,6 +56,14 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     /// @notice Ceiling on the sell-side slice that may be routed to staking. The pad ships 25 (0.25%)
     /// against a 1.25% sell fee, leaving the creator their full 1% base.
     uint16 public constant MAX_STAKING_BPS = 100;
+    /// @notice The floor for a coin registered through `registerWithStaking`: 1.25% a side.
+    ///
+    /// Higher than DEFAULT_FEE_BPS on purpose. The baseline 1% is what the creator (sell) and the
+    /// platform (buy) each keep, and the extra 25 bps is the room the staking slices come out of — so
+    /// requiring it means EVERY coin on the new pad funds its stakers, rather than the funding being
+    /// something a creator switches off by choosing the cheapest fee. `register` keeps the old 1%
+    /// floor, so nothing already launched is affected.
+    uint16 public constant MIN_FEE_BPS_STAKING = 125;
     uint16 public constant PLATFORM_IMMEDIATE_BPS = 90; // of the default 1%: 0.9% to platform now
     uint16 public constant PLATFORM_DEFERRED_BPS = 10; // ...and 0.1% held until graduation
     uint16 public constant EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee -> platform (platform buy-back cut)
@@ -269,7 +277,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     ) external {
         if (!isFactory[msg.sender]) revert OnlyFactory();
         if (_cfg[token].set) revert AlreadySet();
-        if (buyBps < DEFAULT_FEE_BPS || sellBps < DEFAULT_FEE_BPS || buyBps > MAX_TAX_BPS || sellBps > MAX_TAX_BPS) {
+        if (buyBps < MIN_FEE_BPS_STAKING || sellBps < MIN_FEE_BPS_STAKING || buyBps > MAX_TAX_BPS || sellBps > MAX_TAX_BPS) {
             revert BadTax();
         }
         // The creator's 1% base is untouchable: the staking slice may only come out of what the sell

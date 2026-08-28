@@ -45,7 +45,7 @@ forkSuite("Curve tracer — real FDV vs ETH raised, step by step", function () {
       );
       await (await router.setFactory(await factory.getAddress())).wait();
 
-      const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+      const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
       const rc = await (await factory.launch({ name: "Trace", symbol: "TRC", dev: dev.address, tax: NOTAX })).wait();
       const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
         .find((e) => e && e.name === "Launched");

@@ -44,7 +44,7 @@ describe("[FDV] v3 pad — creators choose supply; the factory bounds the valuat
 
   const newFactory = async () => (await ethers.getContractFactory("CurvePadFactory")).connect(dep).deploy(...stack);
 
-  const NOTAX = () => ({ buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address });
+  const NOTAX = () => ({ buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address });
   const params = () => ({ name: "Robin Meme", symbol: "MEME", dev: dev.address, tax: NOTAX() });
 
   it("prices the shipped geometry the way the calibration says it does (~1.76 ETH at 1B supply)", async () => {

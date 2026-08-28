@@ -129,6 +129,7 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     /// requires a salt the caller mined off-chain — so `launch` and `launchWithSupply` cannot succeed and
     /// say so up front. Use `launchWithSalt` / `launchWithSupplyAndSalt`.
     error SaltRequired();
+    error FeeBelowFloor();
 
     event FdvBandChanged(uint256 minWei, uint256 maxWei);
     event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought);
@@ -192,6 +193,11 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     /// written once at registration and the router refuses to overwrite them, so nobody's economics
     /// move after they launch.
     uint16 public constant DEFAULT_FEE_BPS = 100;
+    /// @notice Every coin on this pad pays at least 1.25% a side. The first 1% is the creator's (sell)
+    /// or the platform's (buy); the 25 bps above it is what funds staking. Making it a FLOOR rather
+    /// than a default is the difference between "coins fund their stakers" and "coins fund their
+    /// stakers unless the creator picks the cheap option", which is the same thing as not having it.
+    uint16 public constant MIN_FEE_BPS = 125;
     uint16 public constant MAX_SHARE_BPS = 100; // mirrors the router's own ceiling
     uint16 public stakingBps = 25; // 0.25% of a sell
     uint16 public robinBps = 25;   // 0.25% of a buy
@@ -369,6 +375,11 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
 
         // register the project's tax with the swap desk (router enforces the 4% caps + 100% allocation)
         address projWallet = p.tax.projectWallet == address(0) ? p.dev : p.tax.projectWallet;
+        // Rejected with a NAMED error rather than silently raised. Quietly charging a creator more
+        // than they chose would be worse than refusing, and the site's own minimum is 1.25% so this is
+        // only reachable by a caller going around it.
+        if (p.tax.buyBps < MIN_FEE_BPS || p.tax.sellBps < MIN_FEE_BPS) revert FeeBelowFloor();
+
         // The two staking slices are stamped at registration and are IMMUTABLE for the life of the
         // coin — the router registers once and refuses to be overwritten. A buyer can therefore read
         // what funds the stakers off the chain and know it cannot be changed afterwards, which is the

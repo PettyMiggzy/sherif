@@ -37,7 +37,7 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
       .to.be.reverted;
     // allocation that doesn't sum to 100% -> revert
     await expect(factory.launch({ ...base,
-      tax: { buyBps: 100, sellBps: 100, walletBps: 5000, floorBps: 3000, burnBps: 1000, projectWallet: dev.address } }))
+      tax: { buyBps: 125, sellBps: 125, walletBps: 5000, floorBps: 3000, burnBps: 1000, projectWallet: dev.address } }))
       .to.be.reverted;
   });
 
@@ -118,7 +118,7 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
   it("a full buy-out THROUGH THE ROUTER caps at the graduation price (no overshoot) and graduates cleanly", async () => {
     const [dep, platform, dev, buyer] = await ethers.getSigners();
     const { router, factory } = await stack(dep, platform);
-    const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const tax = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const rc = await (await factory.launch({ name: "Grad", symbol: "GRAD", dev: dev.address, tax })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = ev.args;
@@ -152,7 +152,7 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     const [dep, platform, dev, buyer] = await ethers.getSigners();
     const { router, factory } = await stack(dep, platform);
     // plain 1% coin so the whole fee lands in platform escrow (immediate + deferred) — easy to total
-    const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const tax = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const rc = await (await factory.launch({ name: "Over", symbol: "OVER", dev: dev.address, tax })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token } = ev.args;
@@ -190,7 +190,7 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     // the cheap TEST curve: graduates after a few $ of buys — so little WETH that Sherwood takes ALL the
     // ambush token supply, leaving 0 for the Ambush band. The Bond must post Sherwood+Bounty and skip Ambush.
     const { router, factory } = await stack(dep, platform, 259400, 4000, 2000);
-    const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const tax = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const rc = await (await factory.launch({ name: "Tiny", symbol: "TINY", dev: dev.address, tax })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token, curve } = ev.args;

@@ -107,7 +107,7 @@ describe("[SALT] a mined coin address belongs to the creator who mined it", () =
     // self-consistent: a prediction formula that was wrong in the same way twice would pass them all.
     const [landed] = await factory.connect(dev).launchWithSalt.staticCall(
       { name: "Robin Meme", symbol: "MEME", dev: dev.address,
-        tax: { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address } },
+        tax: { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address } },
       salt
     );
     expect(landed).to.equal(addr);
@@ -120,7 +120,7 @@ describe("[SALT] a mined coin address belongs to the creator who mined it", () =
     await expect(
       factory.connect(dev).launchWithSalt(
         { name: "Robin Meme", symbol: "MEME", dev: dev.address,
-          tax: { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address } },
+          tax: { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address } },
         ethers.ZeroHash
       )
     ).to.be.revertedWithCustomError(factory, "SaltRequired");

@@ -27,7 +27,7 @@ forkSuite("Graduation grief — spot shoved above the ceiling must not block gra
       START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH);
     await (await router.setFactory(await factory.getAddress())).wait();
 
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const rc = await (await factory.launch({ name: "Grief", symbol: "GRF", dev: dev.address, tax: NOTAX })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
@@ -95,7 +95,7 @@ forkSuite("Graduation grief — spot shoved above the ceiling must not block gra
       await ltd.getAddress(), await cpd.getAddress(), await bd.getAddress(), ethers.ZeroAddress,
       START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH);
     await (await router.setFactory(await factory.getAddress())).wait();
-    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     const rc = await (await factory.launch({ name: "Grief2", symbol: "GR2", dev: dev.address, tax: NOTAX })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = ev.args;
