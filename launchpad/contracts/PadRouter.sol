@@ -53,6 +53,9 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
 
     uint16 public constant MAX_TAX_BPS = 400; // 4% hard cap, per side
     uint16 public constant DEFAULT_FEE_BPS = 100; // the baseline 1% every coin pays; also the floor
+    /// @notice Ceiling on the sell-side slice that may be routed to staking. The pad ships 25 (0.25%)
+    /// against a 1.25% sell fee, leaving the creator their full 1% base.
+    uint16 public constant MAX_STAKING_BPS = 100;
     uint16 public constant PLATFORM_IMMEDIATE_BPS = 90; // of the default 1%: 0.9% to platform now
     uint16 public constant PLATFORM_DEFERRED_BPS = 10; // ...and 0.1% held until graduation
     uint16 public constant EXCESS_PLATFORM_BPS = 2500; // 25% of the ABOVE-default fee -> platform (platform buy-back cut)
@@ -76,6 +79,9 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         uint16 walletBps; // split of the PROJECT share (the 75%); the three sum to 10000
         uint16 floorBps;
         uint16 burnBps;
+        /// @dev Carved off the top of the SELL fee and escrowed for this coin's staking pool. Zero for
+        /// every coin registered through the original `register`, so nothing about a live coin changes.
+        uint16 stakingBps;
         bool set;
     }
 
@@ -94,6 +100,16 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     mapping(address => uint256) public devEscrow;
     mapping(address => uint256) public floorEscrow;
     mapping(address => uint256) public burnEscrow;
+    /// @notice The sell-side slice owed to each coin's staking pool, awaiting a flush.
+    ///
+    /// THIS IS THE ANSWER TO "who fuels a coin's staking pool". Asking the creator to top it up is a
+    /// design where almost none of them do, and a pool with nothing in it pays nothing. Taking it off
+    /// the sell fee makes every trade fund the coin's own stakers, forever, with no one having to
+    /// remember anything.
+    mapping(address => uint256) public stakingEscrow;
+    /// @notice Where flushed staking fees go — the StakingFeeder, which can only ever pay pools the
+    /// registry created. Zero until set, and while it is zero the escrow simply accrues.
+    address public stakingSink;
 
     bool private _swapping;
     address private _activePool; // the pool we're mid-swap with (callback authenticity check)
@@ -108,6 +124,10 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     error Dust();
 
     event Registered(address indexed token, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps);
+    event StakingShareSet(address indexed token, uint16 stakingBps);
+    event StakingAccrued(address indexed token, uint256 amount);
+    event StakingFlushed(address indexed token, address indexed sink, uint256 amount);
+    event StakingSinkSet(address indexed sink);
     event RewardVaultSet(address vault);
     event FeeConfigSet(address feeConfig);
     event FloorDonated(address indexed token, uint256 amount);
@@ -204,8 +224,47 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         if (uint256(walletBps) + floorBps + burnBps != 10_000) revert BadAlloc();
         // the project wallet always receives money now (the sell-side 1% base), so it can never be zero
         if (projectWallet == address(0)) revert BadAlloc();
-        _cfg[token] = Cfg(pool, curve, projectWallet, buyBps, sellBps, walletBps, floorBps, burnBps, true);
+        _cfg[token] = Cfg(pool, curve, projectWallet, buyBps, sellBps, walletBps, floorBps, burnBps, 0, true);
         emit Registered(token, buyBps, sellBps, walletBps, floorBps, burnBps);
+    }
+
+    /// @notice Register a coin that routes part of its SELL fee to its own staking pool.
+    ///
+    /// A SEPARATE ENTRYPOINT ON PURPOSE. The original `register` keeps its exact signature and its
+    /// exact behaviour, so the factory already deployed keeps working and every coin already launched
+    /// keeps the economics it launched under. Adding a parameter to `register` instead would have
+    /// quietly re-cut live creators' revenue the moment a new router shipped — the kind of change
+    /// nobody notices until a founder's income drops.
+    ///
+    /// `stakingBps` is carved off the TOP of the sell fee, before the base/excess split. The pad ships
+    /// 1.25% sell with 25 bps here: a quarter percent funds the stakers and the creator still keeps
+    /// the full 1% base. The bound below is what guarantees that second half — the slice can never eat
+    /// into the creator's baseline, only into what they chose to charge above it.
+    function registerWithStaking(
+        address token,
+        address pool,
+        address curve,
+        address projectWallet,
+        uint16 buyBps,
+        uint16 sellBps,
+        uint16 walletBps,
+        uint16 floorBps,
+        uint16 burnBps,
+        uint16 stakingBps
+    ) external {
+        if (!isFactory[msg.sender]) revert OnlyFactory();
+        if (_cfg[token].set) revert AlreadySet();
+        if (buyBps < DEFAULT_FEE_BPS || sellBps < DEFAULT_FEE_BPS || buyBps > MAX_TAX_BPS || sellBps > MAX_TAX_BPS) {
+            revert BadTax();
+        }
+        // The creator's 1% base is untouchable: the staking slice may only come out of what the sell
+        // fee charges ABOVE the default.
+        if (stakingBps > MAX_STAKING_BPS || uint256(stakingBps) + DEFAULT_FEE_BPS > sellBps) revert BadTax();
+        if (uint256(walletBps) + floorBps + burnBps != 10_000) revert BadAlloc();
+        if (projectWallet == address(0)) revert BadAlloc();
+        _cfg[token] = Cfg(pool, curve, projectWallet, buyBps, sellBps, walletBps, floorBps, burnBps, stakingBps, true);
+        emit Registered(token, buyBps, sellBps, walletBps, floorBps, burnBps);
+        emit StakingShareSet(token, stakingBps);
     }
 
     // ─────────────────────────────────────────────────────────── trading ──
@@ -404,7 +463,25 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         // ── legacy default split (feeConfig unset) ──
         // The above-default excess is the "clean" piece; the default-1% base takes the remainder, so the
         // parts sum to `fee` exactly (no dust).
-        uint256 excess = feeBps > DEFAULT_FEE_BPS ? (value * (feeBps - DEFAULT_FEE_BPS)) / 10_000 : 0;
+        // The staking slice comes off the TOP, before anything else is worked out, so the rest of the
+        // split behaves exactly as it always has against a slightly smaller fee. Sell side only: a buy
+        // fee is the platform's and has nothing to give away.
+        uint256 staking;
+        uint256 effBps = feeBps;
+        if (sellSide) {
+            uint256 sBps = _cfg[token].stakingBps;
+            if (sBps > 0) {
+                staking = (value * sBps) / 10_000;
+                if (staking > fee) staking = fee; // defensive; registration bounds make it unreachable
+                fee -= staking;
+                effBps -= sBps;
+                stakingEscrow[token] += staking;
+                emit StakingAccrued(token, staking);
+            }
+        }
+
+        uint256 excess = effBps > DEFAULT_FEE_BPS ? (value * (effBps - DEFAULT_FEE_BPS)) / 10_000 : 0;
+        if (excess > fee) excess = fee; // rounding guard: the base must never underflow
         uint256 base = fee - excess; // the default 1% (absorbs rounding)
 
         uint256 platformImmediate;
@@ -490,6 +567,31 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             IWETH9(WETH).withdraw(left);
             devEscrow[token] += left;
         }
+    }
+
+    /// @notice Send a coin's accrued staking share to the sink, which routes it into that coin's pool.
+    ///
+    /// Permissionless, because it can only ever move funds to ONE address that the owner set — there
+    /// is no recipient argument, so a random caller has nothing to gain and the flush cannot be held
+    /// hostage by whoever is supposed to be running it. A no-op while the sink is unset, which is the
+    /// right behaviour before staking is deployed: the fees simply accrue and are flushed later.
+    function flushStaking(address token) external nonReentrant {
+        address sink = stakingSink;
+        if (sink == address(0)) return;
+        uint256 amt = stakingEscrow[token];
+        if (amt == 0) return;
+        stakingEscrow[token] = 0;
+        (bool ok,) = sink.call{value: amt}("");
+        if (!ok) { stakingEscrow[token] = amt; return; } // put it back rather than burn it
+        emit StakingFlushed(token, sink, amt);
+    }
+
+    /// @notice Point the staking share at the StakingFeeder. It can only pay pools the registry
+    /// created, so this address is a pipe rather than a wallet — but it IS owner-set, so setting it
+    /// to a wallet would redirect the share. That is the one trust assumption here and it is stated.
+    function setStakingSink(address sink) external onlyOwner {
+        stakingSink = sink;
+        emit StakingSinkSet(sink);
     }
 
     /// @notice Push the accrued floor share into the coin's Bond as fresh WETH, then poke it so it becomes
