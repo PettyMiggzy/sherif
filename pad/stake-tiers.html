@@ -716,5 +716,6 @@ setInterval(() => { if (S.positions.length) renderPositions(); }, 30_000);
 
 load().catch((e) => banner("bad", `<div>Could not load the pool: ${esc(e?.message || e)}</div>`));
 </script>
+<script type="module" src="assets/chat.js"></script>
 </body>
 </html>
