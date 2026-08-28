@@ -307,10 +307,21 @@ export async function ask({ messages, scope = "pad", facts = null, timeout = 450
     // per-minute token budget is shared by every visitor, so a busy minute looks like a broken bot
     // unless it is named. Measured on the free tier: ~2.5k tokens a message against an 8k/minute
     // ceiling is roughly THREE messages a minute for the entire site.
-    if (r.status === 429) throw new Error("Robin Labs AI is at capacity right now — try again in a few seconds");
+    if (r.status === 429) {
+      // The provider tells us exactly how long; passing that on beats a vague "in a few seconds".
+      const wait = Number(r.headers.get("retry-after") || 0);
+      const err = new Error(wait > 0
+        ? `Robin Labs AI is at capacity — try again in about ${Math.ceil(wait)}s`
+        : "Robin Labs AI is at capacity right now — try again in a few seconds");
+      err.retryAfter = wait || null;
+      throw err;
+    }
     throw new Error("Robin Labs AI could not answer that, try again");
   }
   const text = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
   if (!text || !String(text).trim()) throw new Error("Robin Labs AI had nothing to say, try rephrasing");
-  return { reply: String(text).trim() };
+  // Usage is returned so throughput can be tuned against measurements instead of guesses — the
+  // per-minute token budget, not the request count, is what actually limits this on a free tier.
+  const u = j.usage || {};
+  return { reply: String(text).trim(), usage: { in: u.prompt_tokens || 0, out: u.completion_tokens || 0 } };
 }

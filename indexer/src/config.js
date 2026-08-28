@@ -164,9 +164,23 @@ export const CFG = {
   // injected server-side so it NEVER reaches the browser — pad/ is a static site served straight off
   // disk, so anything referenced from there is readable in View Source.
   //
-  // The docs are injected WHOLE into every request rather than retrieved: ~5.4k tokens against a
-  // 131k window makes retrieval pure downside, and retrieval is where a support bot starts
-  // inventing — it fetches three paragraphs, misses the fourth, and fills the gap confidently.
+  // RATE LIMITS ARE PER MODEL, NOT PER ACCOUNT. Measured on this key, not read off a page:
+  //
+  //   openai/gpt-oss-120b   8K tokens/min, 200K/day, 1000 req/day
+  //     ~2,300 tokens a message at 3000 chars of context => ~3 msgs/min, ~86 msgs/day.
+  //     Predictable and grounded. THE DEFAULT.
+  //
+  //   groq/compound         70K tokens/min, 250 req/day, no daily token cap
+  //     ~5,900 tokens a message — it is an AGENTIC system that adds its own scaffolding and can
+  //     reach the web — so despite the far larger budget it costs 2.5x per answer. Nets ~11
+  //     msgs/min and ~250 msgs/day, roughly 3x the daily volume. Two catches: it rejects anything
+  //     over ~1500 chars of context with a 413, and because it can search the web it will answer
+  //     from OUTSIDE our docs. Asked how to launch, it invented a "Create New Coin" button we do
+  //     not have. For a support bot whose whole value is being right about OUR product, that is the
+  //     wrong trade — but it is one env var away if volume matters more than precision:
+  //       GROQ_MODEL=groq/compound  CHAT_CONTEXT_MAX_CHARS=1500
+  //
+  // Either way the free tier is soft-launch capacity. There is no code change that fixes that.
   groqApiKey: process.env.GROQ_API_KEY || "",
   groqApiBase: (process.env.GROQ_API_BASE || "https://api.groq.com/openai/v1").replace(/\/+$/, ""),
   groqModel: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
@@ -174,13 +188,12 @@ export const CFG = {
   // does not always sit next to the site — in the container only the web server mounts pad/.
   docsRoot: process.env.DOCS_ROOT || "",
   chatDocsMaxChars: num("CHAT_DOCS_MAX_CHARS", 60000),
-  // How much documentation goes into ONE request. The free provider tier caps the whole org at
-  // 8,000 tokens per minute, so this is a throughput dial, not a quality one: 6000 chars is ~1.5k
-  // tokens, which leaves room for the persona, the history and the reply and allows a handful of
-  // messages a minute site-wide. Raise it toward chatDocsMaxChars on a paid tier — the retrieval
-  // degrades gracefully into "send everything" as the budget grows.
-  chatContextMaxChars: num("CHAT_CONTEXT_MAX_CHARS", 6000),
-  chatContextMaxSections: num("CHAT_CONTEXT_MAX_SECTIONS", 4),
+  // Docs sent per question. Measured against the default model: 6000 chars = 2,968 tokens a message
+  // (67/day), 3000 = 2,306 (86/day), 1500 = 1,848 (108/day). Diminishing, because the persona and
+  // the verified primer are a ~1,000-token floor that does not shrink. 3000 keeps answers deep
+  // enough to be worth asking.
+  chatContextMaxChars: num("CHAT_CONTEXT_MAX_CHARS", 3000),
+  chatContextMaxSections: num("CHAT_CONTEXT_MAX_SECTIONS", 3),
   chatMaxTurns: num("CHAT_MAX_TURNS", 12),              // how much history is forwarded
   chatMaxCharsPerTurn: num("CHAT_MAX_CHARS_PER_TURN", 2000),
   chatMaxReplyTokens: num("CHAT_MAX_REPLY_TOKENS", 600),
