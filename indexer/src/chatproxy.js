@@ -37,6 +37,55 @@ import { CFG } from "./config.js";
 
 export function enabled() { return !!CFG.groqApiKey; }
 
+// ── model pool ───────────────────────────────────────────────────────────────
+//
+// RATE LIMITS ARE PER MODEL, so one model is one budget and several models are several budgets.
+// Rotating across a pool multiplies capacity without paying anyone: four of the 8K-per-minute
+// models together carry 32K a minute, and their daily token allowances differ enormously (one is
+// 2M/day against 200K for its siblings), so spreading load also spreads the daily ceiling.
+//
+// Selection is least-recently-used rather than random, so a burst fans out instead of hammering
+// whichever model a coin flip picked twice. A model that answers 429 is parked until the provider's
+// own retry-after says it is worth asking again, and the next model in the pool takes the request —
+// which is the entire point: a rate limit should cost a few milliseconds, not an error page.
+const _cool = new Map();   // model => epoch ms it becomes usable again
+const _lastUsed = new Map(); // model => epoch ms
+
+function pool() {
+  const list = CFG.groqModels.length ? CFG.groqModels : [CFG.groqModel];
+  return list.filter(Boolean);
+}
+
+/// Models that are not cooling, least-recently-used first.
+function available() {
+  const now = Date.now();
+  return pool()
+    .filter((m) => (_cool.get(m) || 0) <= now)
+    .sort((a, b) => (_lastUsed.get(a) || 0) - (_lastUsed.get(b) || 0));
+}
+
+function park(model, seconds) {
+  // A 429 with no retry-after still means "not now"; a short default beats hammering it again.
+  const wait = Number(seconds) > 0 ? Number(seconds) : 10;
+  _cool.set(model, Date.now() + wait * 1000);
+}
+
+/// How long until SOMETHING in the pool is usable — what a caller should tell the user to wait.
+function soonest() {
+  const now = Date.now();
+  const waits = pool().map((m) => Math.max(0, (_cool.get(m) || 0) - now));
+  return waits.length ? Math.ceil(Math.min(...waits) / 1000) : 0;
+}
+
+export function modelStats() {
+  const now = Date.now();
+  return pool().map((m) => ({
+    model: m,
+    coolingFor: Math.max(0, Math.ceil(((_cool.get(m) || 0) - now) / 1000)),
+    lastUsed: _lastUsed.get(m) || null,
+  }));
+}
+
 // ── the docs, loaded once ────────────────────────────────────────────────────
 let _docs = null;
 let _docsAt = 0;
@@ -246,6 +295,25 @@ ${facts}`;
   return out;
 }
 
+/// Strip a reasoning model's internal monologue.
+///
+/// NOT COSMETIC. qwen3.6-27b returns its chain of thought inline — every answer opened with
+/// "<think> Here's a thinking process: 1. Analyze User Input..." — and on a prompt-injection attempt
+/// that monologue is where the model REASONS ABOUT ITS OWN INSTRUCTIONS, out loud, to the person
+/// trying to extract them. It is also just unusable as a support answer.
+///
+/// A closed block is removed. An UNCLOSED one — which is what a reply truncated at max_tokens looks
+/// like — means the visible answer never arrived and the only thing present is the monologue, so
+/// nothing is returned at all and the caller moves to the next model. Returning the tail of a
+/// half-finished thought would be the exact leak this exists to prevent.
+function stripThinking(raw) {
+  let t = String(raw || "");
+  t = t.replace(/<think>[\s\S]*?<\/think>/gi, " ");
+  t = t.replace(/<\|?(?:channel|analysis|reasoning)\|?>[\s\S]*?<\|?(?:end|message)\|?>/gi, " ");
+  if (/<think>/i.test(t)) return ""; // opened and never closed: refuse the whole thing
+  return t.replace(/\s+/g, " ").trim();
+}
+
 /// Render the coin row into something a model can read without misreading it. Every number is
 /// labelled with its unit, because an unlabelled number is an invitation to restate it as a
 /// different one.
@@ -283,45 +351,97 @@ export async function ask({ messages, scope = "pad", facts = null, timeout = 450
   if (!turns.length || turns[turns.length - 1].role !== "user") throw new Error("say something first");
   const question = turns[turns.length - 1].content;
 
-  let r;
-  try {
-    r = await fetch(`${CFG.groqApiBase}/chat/completions`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${CFG.groqApiKey}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        model: CFG.groqModel,
-        messages: [{ role: "system", content: systemPrompt(scope, facts, question) }, ...turns],
-        temperature: 0.3,          // a support bot should be boring and repeatable
-        max_tokens: CFG.chatMaxReplyTokens,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(timeout),
-    });
-  } catch { throw new Error("Robin Labs AI is busy, try again in a moment"); }
+  const system = systemPrompt(scope, facts, question);
+  const body = (model) => JSON.stringify({
+    model,
+    messages: [{ role: "system", content: system }, ...turns],
+    temperature: 0.3,          // a support bot should be boring and repeatable
+    max_tokens: CFG.chatMaxReplyTokens,
+    stream: false,
+  });
 
-  const j = await r.json().catch(() => null);
-  if (!r.ok || !j) {
-    // Provider errors echo request details; never hand those to a browser.
-    console.error("[chat] upstream error:", r.status, JSON.stringify(j || {}).slice(0, 300));
-    // 429 is the one a user will actually meet, and it is not their fault: the account's whole
-    // per-minute token budget is shared by every visitor, so a busy minute looks like a broken bot
-    // unless it is named. Measured on the free tier: ~2.5k tokens a message against an 8k/minute
-    // ceiling is roughly THREE messages a minute for the entire site.
-    if (r.status === 429) {
-      // The provider tells us exactly how long; passing that on beats a vague "in a few seconds".
-      const wait = Number(r.headers.get("retry-after") || 0);
-      const err = new Error(wait > 0
-        ? `Robin Labs AI is at capacity — try again in about ${Math.ceil(wait)}s`
-        : "Robin Labs AI is at capacity right now — try again in a few seconds");
-      err.retryAfter = wait || null;
-      throw err;
-    }
-    throw new Error("Robin Labs AI could not answer that, try again");
+  const candidates = available();
+  if (!candidates.length) {
+    const wait = soonest();
+    const err = new Error(`Robin Labs AI is at capacity — try again in about ${wait || 10}s`);
+    err.retryAfter = wait || 10;
+    throw err;
   }
-  const text = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-  if (!text || !String(text).trim()) throw new Error("Robin Labs AI had nothing to say, try rephrasing");
+
+  let j = null;
+  let used = null;
+  let lastErr = null;
+  // Walk the pool. A 429 or a 413 on one model is not a failure of the request — it is a reason to
+  // ask a different model, and only running out of models is an error the user should ever see.
+  for (const model of candidates) {
+    _lastUsed.set(model, Date.now());
+    let r;
+    try {
+      r = await fetch(`${CFG.groqApiBase}/chat/completions`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${CFG.groqApiKey}`, "content-type": "application/json" },
+        body: body(model),
+        signal: AbortSignal.timeout(timeout),
+      });
+    } catch (e) {
+      lastErr = e; park(model, 5); continue; // network trouble: skip it briefly, try the next
+    }
+
+    if (r.status === 429) {
+      park(model, r.headers.get("retry-after"));
+      lastErr = new Error("rate limited");
+      continue;
+    }
+    if (r.status === 413) {
+      // This model will not take a request this size and a retry will not change that. Park it for
+      // a while rather than burning a slot on it every single message.
+      console.warn(`[chat] ${model} refused the request size (413) — parking it`);
+      park(model, 300);
+      lastErr = new Error("request too large");
+      continue;
+    }
+
+    const parsed = await r.json().catch(() => null);
+    if (!r.ok || !parsed) {
+      console.error("[chat] upstream error:", model, r.status, JSON.stringify(parsed || {}).slice(0, 240));
+      park(model, 15);
+      lastErr = new Error("upstream error");
+      continue;
+    }
+    const candidateText = stripThinking(
+      parsed.choices && parsed.choices[0] && parsed.choices[0].message && parsed.choices[0].message.content);
+    if (!candidateText) {
+      // Nothing survived the strip — the model returned only reasoning. Try another rather than
+      // handing back an empty bubble.
+      console.warn(`[chat] ${model} returned no usable answer after stripping reasoning`);
+      park(model, 60);
+      lastErr = new Error("no usable answer");
+      continue;
+    }
+    j = parsed; used = model; break;
+  }
+
+  if (!j) {
+    const wait = soonest();
+    const err = new Error(wait > 0
+      ? `Robin Labs AI is at capacity — try again in about ${wait}s`
+      : "Robin Labs AI could not answer that, try again");
+    err.retryAfter = wait || null;
+    if (lastErr) console.error("[chat] every model in the pool failed; last:", lastErr.message);
+    throw err;
+  }
+
+  const raw = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+  const text = stripThinking(raw);
+  if (!text) throw new Error("Robin Labs AI had nothing to say, try rephrasing");
   // Usage is returned so throughput can be tuned against measurements instead of guesses — the
   // per-minute token budget, not the request count, is what actually limits this on a free tier.
   const u = j.usage || {};
-  return { reply: String(text).trim(), usage: { in: u.prompt_tokens || 0, out: u.completion_tokens || 0 } };
+  // `model` is returned for OUR logs and tuning. The API layer must not forward it to the browser —
+  // which model answered is a supplier detail, same as the image models.
+  return {
+    reply: String(text).trim(),
+    model: used,
+    usage: { in: u.prompt_tokens || 0, out: u.completion_tokens || 0 },
+  };
 }

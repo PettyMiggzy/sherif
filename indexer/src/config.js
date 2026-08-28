@@ -184,6 +184,21 @@ export const CFG = {
   groqApiKey: process.env.GROQ_API_KEY || "",
   groqApiBase: (process.env.GROQ_API_BASE || "https://api.groq.com/openai/v1").replace(/\/+$/, ""),
   groqModel: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+  // THE POOL. Rate limits are per model, so several models are several budgets: these four carry
+  // 8K tokens/minute EACH (32K combined) and their daily allowances differ by an order of magnitude,
+  // so rotating spreads both ceilings. Least-recently-used first; a 429 parks that model for exactly
+  // as long as the provider's retry-after says and the next one serves the request.
+  //
+  // groq/compound is NOT in here despite a 70K/min budget: it is agentic, can reach the web, and
+  // answers from outside our docs. Set GROQ_MODELS explicitly if you want it.
+  // qwen3.6-27b is deliberately absent. Vetted individually before shipping, it returned its raw
+  // chain of thought inline on every answer — and on a prompt-injection attempt that monologue is
+  // the model reasoning about its own instructions, out loud, to the person trying to extract them.
+  // stripThinking() defends against it anyway, because the next model to do this will not announce
+  // itself, but a model that needs the defence on every single reply does not belong in the pool.
+  groqModels: (process.env.GROQ_MODELS
+    || "openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b")
+    .split(",").map((s) => s.trim()).filter(Boolean),
   // Where docs.html and SECURITY.md live. Tried before the built-in fallbacks, because the indexer
   // does not always sit next to the site — in the container only the web server mounts pad/.
   docsRoot: process.env.DOCS_ROOT || "",

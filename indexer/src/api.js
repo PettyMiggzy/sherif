@@ -739,9 +739,16 @@ export function startApi() {
 
         try {
           const out = await Chat.ask({ messages: cbody.messages, scope, facts });
-          return sendUni(res, 200, out, corigin);
+          // ONLY the reply crosses to the browser. `ask` also returns which model answered and the
+          // token usage; both are for our logs and tuning. Which model served a request is a
+          // supplier detail exactly like the image models, and the pool is the thing that would be
+          // reverse-engineered from it.
+          return sendUni(res, 200, { reply: out.reply }, corigin);
         } catch (e) {
-          return sendUni(res, 502, { error: (e && e.message) || "Robin Labs AI could not answer" }, corigin);
+          // retryAfter is passed through so the UI can count down instead of guessing.
+          const body = { error: (e && e.message) || "Robin Labs AI could not answer" };
+          if (e && e.retryAfter) body.retryAfter = e.retryAfter;
+          return sendUni(res, e && e.retryAfter ? 429 : 502, body, corigin);
         }
       }
 
