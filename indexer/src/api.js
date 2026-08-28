@@ -21,6 +21,7 @@ import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleAppro
 import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes, stats as lifiUsage } from "./lifiproxy.js";
 import { renderCard, coinOgHtml } from "./og.js";
 import { enabled as memeEnabled, makeMeme } from "./memeproxy.js";
+import { enabled as artEnabled, makeArt } from "./artproxy.js";
 import { enabled as ordersEnabled, saveOrder, ordersForMaker, cancelOrder, verifyCancelledOnChain, orderExists } from "./orders.js";
 
 const DAY = 86400;
@@ -357,6 +358,21 @@ function memeGlobalOk() {
   _memeMin.n += 1;
   return _memeMin.n <= CFG.memeGlobalPerMin;
 }
+const artRateOk = makeRateLimiter(CFG.veniceRatePerSec);    // per-IP/sec cap on the text-to-art generator
+// Per-MINUTE global cap on art generation — its own budget, deliberately NOT shared with the meme
+// generator. They are different endpoints at different per-image prices; one bucket would let the
+// cheap one starve the expensive one, or the expensive one drain the cheap one's headroom.
+const _artMin = { min: 0, n: 0 };
+function artGlobalOk() {
+  const min = Math.floor(Date.now() / 60000);
+  if (_artMin.min !== min) { _artMin.min = min; _artMin.n = 0; }
+  _artMin.n += 1;
+  return _artMin.n <= CFG.veniceGlobalPerMin;
+}
+function artOrigin(req) {
+  const o = String(req.headers["origin"] || "");
+  return CFG.veniceCorsOrigins.includes(o) ? o : (CFG.veniceCorsOrigins[0] || "https://robinlab.io");
+}
 const lifiRateOk = makeRateLimiter(CFG.lifiRatePerSec);     // per-IP cap on the LI.FI bridge proxy
 const lifiGlobalOk = makeRateLimiter(CFG.lifiGlobalPerSec); // total upstream/sec (protects our per-key LI.FI budget)
 // Per-IP cap on GET /api/* reads. The 5s micro-cache keys on url.search, so a client spraying distinct
@@ -678,6 +694,28 @@ export function startApi() {
         } catch { return sendUni(res, 502, { error: "trading upstream error" }, uorigin); }
       }
 
+      // ── Text-to-art proxy: POST /api/art ─────────────────────────────────────
+      // Off unless VENICE_API_KEY is set. Body: { prompt: string }. The key, the model and
+      // safe_mode are all injected server-side; nothing about the request can change what we spend
+      // per image. The body cap is small on purpose — this endpoint takes words, not uploads, so a
+      // large body is abuse rather than a legitimate call.
+      if (path === "/api/art") {
+        const aorigin = artOrigin(req);
+        if (!artEnabled()) return sendUni(res, 503, { error: "art generator is not enabled yet" }, aorigin);
+        if (!artRateOk(clientIp(req))) return sendUni(res, 429, { error: "one at a time — try again in a moment" }, aorigin);
+        if (!artGlobalOk()) return sendUni(res, 429, { error: "the art generator is busy, try again shortly" }, aorigin);
+        let abody;
+        try { abody = JSON.parse((await readBody(req, 8 * 1024)).toString("utf8")); }
+        catch { return sendUni(res, 400, { error: "bad request" }, aorigin); }
+        const prompt = String(abody.prompt || "").slice(0, CFG.veniceMaxPromptChars);
+        try {
+          const out = await makeArt({ prompt });
+          return sendUni(res, 200, { image: out.dataUrl, bytes: out.bytes }, aorigin);
+        } catch (e) {
+          return sendUni(res, 502, { error: (e && e.message) || "art generation failed" }, aorigin);
+        }
+      }
+
       // ── Photo-to-meme proxy: POST /api/meme ──────────────────────────────────
       // Off unless MEME_API_KEY is set. Body: { image: <base64 data URL>, style?: string }. Injects the
       // secret key server-side, per-IP + global-per-minute rate limits (the spend bound), scoped CORS.
@@ -882,6 +920,7 @@ export function startApi() {
 
       // Whether the photo-to-meme generator is configured — the create page shows its button only if so.
       if (path === "/api/meme/enabled") return send(res, 200, { enabled: memeEnabled() }, origin);
+      if (path === "/api/art/enabled") return send(res, 200, { enabled: artEnabled() }, origin);
 
       // ── DexScreener logo proxy for migrate-in: GET /api/img?u=<dexscreener image url> ──
       // DexScreener's image CDN sends no CORS header, so the browser can't fetch a migrating coin's

@@ -118,6 +118,27 @@ export const CFG = {
   memeCorsOrigins: (process.env.MEME_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinlabs.fun,https://www.robinlabs.fun")
     .split(",").map((s) => s.trim()).filter(Boolean),
 
+  // ── Text-to-art proxy (describe a coin, get its artwork) ──
+  // /api/art is OFF unless VENICE_API_KEY is set. The key is a SECRET (gitignored .venice_key /
+  // .env) injected server-side so it NEVER reaches the browser — pad/ is a static site served
+  // straight off disk, so anything referenced from there is readable in View Source.
+  //
+  // THE MODEL IS A PRICE. Venice's image catalogue runs $0.01 to $0.29 per image and includes
+  // adult-tuned models, so it is set here and never read from a request body. venice-sd35 is the
+  // $0.01 tier and the default; the spend ceiling is veniceGlobalPerMin x that price.
+  veniceApiKey: process.env.VENICE_API_KEY || "",
+  veniceApiBase: (process.env.VENICE_API_BASE || "https://api.venice.ai/api/v1").replace(/\/+$/, ""),
+  veniceModel: process.env.VENICE_MODEL || "venice-sd35",
+  veniceSteps: num("VENICE_STEPS", 25),                  // venice-sd35 caps at 30
+  veniceOutPx: num("VENICE_OUT_PX", 512),                // 1024 PNG in (~2.1MB), 512 webp out
+  veniceRatePerSec: num("VENICE_RATE_PER_SEC", 1),       // per-IP: generation is slow and costs money
+  // TOTAL images/min across every IP — the hard spend bound. At the $0.01 default this is 10c/min
+  // worst case; raise it only alongside the model price you are actually paying.
+  veniceGlobalPerMin: num("VENICE_GLOBAL_PER_MIN", 10),
+  veniceMaxPromptChars: num("VENICE_MAX_PROMPT_CHARS", 600),
+  veniceCorsOrigins: (process.env.VENICE_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinlabs.fun,https://www.robinlabs.fun")
+    .split(",").map((s) => s.trim()).filter(Boolean),
+
   // ── LI.FI cross-chain proxy (the bridge) ──
   // /api/lifi/* is OFF unless LIFI_API_KEY is set. The key is a SECRET (gitignored .env), injected
   // server-side into the x-lifi-api-key header so it NEVER reaches the browser, which also moves us off
