@@ -39,3 +39,9 @@ pad-v4/contracts/test/ArrowLauncherSaltBound.sol
 # unshipped contract never compiles into the audit package.
 pad-v4/contracts/audit/
 pad-v4/test/audit/
+
+# Audit-agent scratch. Parallel audit sessions write throwaway PoCs and mocks into launchpad/ under
+# a reserved prefix so their work never collides with the suite or lands in a commit unreviewed.
+# Anything worth keeping is renamed out of this prefix first — that rename IS the review step.
+launchpad/test/zz-*.test.js
+launchpad/contracts/mocks/Zz*.sol
