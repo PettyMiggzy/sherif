@@ -21,6 +21,11 @@ it has already cost an hour.
   custodial wallet key. If it reaches a commit, every wallet is drained — rotating
   afterwards does not undo it. `.gitignore` covers `.env`, `bot/.env`,
   `launchpad/.env` and `.venice_key`; do not add exceptions.
+- **`.venice_key` holds `VENICE_API_KEY`** — the Venice AI inference key used for coin art.
+  It must never be referenced from anything under `pad/`. That directory is a STATIC SITE
+  served straight off disk by Caddy, so a key that reaches it is readable by every visitor
+  in View Source. Generation runs server-side in `indexer/`; the browser calls our endpoint,
+  never Venice directly.
 - **Do not claim what you have not checked.** Several problems in this repo came
   from writing a plausible statement instead of reading the code. Two examples
   worth learning from: the public repo advertised a Pad factory address that
