@@ -159,6 +159,19 @@ export const CFG = {
   // worst case; raise it only alongside the model price you are actually paying.
   veniceGlobalPerMin: num("VENICE_GLOBAL_PER_MIN", 10),
   veniceMaxPromptChars: num("VENICE_MAX_PROMPT_CHARS", 600),
+  // ── Auto pool-maker (every bonded coin gets a staking pool) ──
+  // OFF unless BOTH are set. The keeper creates the pool AFTER graduation, in its own transaction —
+  // never inside graduate(), which is the one function that must never fail because a revert there
+  // strands the coin's whole raise with no rescue path.
+  //
+  // poolMakerKey needs a CREATOR slot on the factory (setCreator(keeper, true)). That slot is
+  // permission to ADD a pool to the registry and nothing else — pools are owned by the factory's
+  // owner — so this key cannot configure rewards, change the boost, or touch anyone's stake. Keep it
+  // funded with gas and treat it as disposable.
+  tierStakingFactory: process.env.TIER_STAKING_FACTORY || "",
+  poolMakerKey: process.env.POOL_MAKER_KEY || "",
+  poolBackfillMs: num("POOL_BACKFILL_MS", 15 * 60 * 1000),
+
   // ── Robin Labs AI (the pad's chat) ──
   // /api/chat is OFF unless GROQ_API_KEY is set. The key is a SECRET (gitignored .groq_key / .env)
   // injected server-side so it NEVER reaches the browser — pad/ is a static site served straight off

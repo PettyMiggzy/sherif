@@ -34,6 +34,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { ethers } from "ethers";
 import { CFG } from "./config.js";
+import * as Pools from "./poolmaker.js";
 import { mc3 } from "./multicall.js";
 import { gradCandidates, liveCurvesAll, recentTradeCurves } from "./db.js";
 
@@ -141,6 +142,13 @@ export async function runGradKeeper() {
   const prune = (cl) => { attempts.delete(cl); parkedUntil.delete(cl); sentAt.delete(cl); };
 
   if (FEE_ENABLED) { console.log(`[grad] LP-fee sweep every ${Math.round(FEE_MS / 1000)}s (min ${ethers.formatEther(FEE_MIN_WETH)} ETH-side)`); feeLoop(); }
+  if (Pools.enabled()) {
+    console.log(`[pools] auto staking pools ON — maker ${Pools.makerAddress()}, factory ${CFG.tierStakingFactory}`);
+    poolLoop();
+  } else {
+    // Said out loud, because the silent version of this is "coins quietly never get staking pools".
+    console.log("[pools] auto staking pools OFF (set TIER_STAKING_FACTORY and POOL_MAKER_KEY to enable)");
+  }
 
   for (;;) {
     try { await tick(); } catch (e) { console.log("[grad] tick error:", (e && e.message) || e); }
@@ -200,7 +208,12 @@ export async function runGradKeeper() {
         const tx = await serializeSend(() => curve.graduate({ type: 0, gasPrice, gasLimit: gas }));
         console.log(`[grad] ${c.symbol || c.token} → graduate() sent ${tx.hash} (attempt ${attempts.get(cl)})`);
         tx.wait(1, WAIT_MS).then((rc) => {
-          if (rc && rc.status === 1) { console.log(`[grad] ✅ GRADUATED ${c.symbol || c.token} — tx ${rc.hash}`); prune(cl); }
+          if (rc && rc.status === 1) {
+            console.log(`[grad] ✅ GRADUATED ${c.symbol || c.token} — tx ${rc.hash}`); prune(cl);
+            // Fire-and-forget: the coin is bonded and that is what mattered. A staking pool is a
+            // convenience, and nothing about it may delay, block or fail the graduation loop.
+            Pools.ensurePoolFor(provider, c.token, c.symbol).catch(() => {});
+          }
           else { sentAt.delete(cl); onFail(cl, "reverted"); }         // mined & reverted → retry immediately
         }).catch((e) => {
           if (isTimeout(e)) { console.log(`[grad] ${cl} wait timed out, may still mine — holding re-fire ${Math.round(WAIT_MS / 1000)}s`); }
@@ -220,6 +233,19 @@ export async function runGradKeeper() {
       console.log(`[grad] parking ${cl} for ${Math.round(PARK_MS / 1000)}s after ${n} attempts (${why})`);
     } else {
       console.log(`[grad] retry ${cl} next poll (${why})`);
+    }
+  }
+
+  // Reconcile every graduated coin against the registry on a slow timer. The live hook above covers
+  // coins that bond from now on; this covers the ones that bonded before this shipped, and anything
+  // the live hook lost to a failed transaction.
+  async function poolLoop() {
+    for (;;) {
+      try {
+        const made = await Pools.backfill(provider);
+        if (made) console.log(`[pools] backfill reconciled ${made} coin(s)`);
+      } catch (e) { console.log("[pools] backfill error:", (e && e.message) || e); }
+      await new Promise((r) => setTimeout(r, CFG.poolBackfillMs));
     }
   }
 
