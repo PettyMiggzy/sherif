@@ -150,6 +150,15 @@ export const CFG = {
   // worst case; raise it only alongside the model price you are actually paying.
   veniceGlobalPerMin: num("VENICE_GLOBAL_PER_MIN", 10),
   veniceMaxPromptChars: num("VENICE_MAX_PROMPT_CHARS", 600),
+  // ── Art credits (the paywall in front of /api/art) ──
+  // Both must be set or the generator stays FREE and rate-limited. artOperatorKey is a SECRET, and
+  // deliberately a low-value one: ArtCredits requires the customer's own signature on every spend,
+  // so this key can only relay an authorisation somebody already gave. It cannot mint credits,
+  // spend them unbidden, move ETH, or reprice anything. Keep it funded with a little gas and
+  // nothing else.
+  artCredits: process.env.ART_CREDITS || "",
+  artOperatorKey: process.env.ART_OPERATOR_KEY || "",
+
   veniceCorsOrigins: (process.env.VENICE_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinlabs.fun,https://www.robinlabs.fun")
     .split(",").map((s) => s.trim()).filter(Boolean),
 

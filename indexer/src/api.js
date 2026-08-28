@@ -21,7 +21,8 @@ import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleAppro
 import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes, stats as lifiUsage } from "./lifiproxy.js";
 import { renderCard, coinOgHtml } from "./og.js";
 import { enabled as memeEnabled, makeMeme } from "./memeproxy.js";
-import { enabled as artEnabled, makeArt, tiers as artTiers } from "./artproxy.js";
+import { enabled as artEnabled, makeArt, tiers as artTiers, creditsFor } from "./artproxy.js";
+import * as Credits from "./credits.js";
 import { enabled as ordersEnabled, saveOrder, ordersForMaker, cancelOrder, verifyCancelledOnChain, orderExists } from "./orders.js";
 
 const DAY = 86400;
@@ -708,10 +709,40 @@ export function startApi() {
         try { abody = JSON.parse((await readBody(req, 8 * 1024)).toString("utf8")); }
         catch { return sendUni(res, 400, { error: "bad request" }, aorigin); }
         const prompt = String(abody.prompt || "").slice(0, CFG.veniceMaxPromptChars);
+        const tier = String(abody.tier || "medium").toLowerCase();
+        const cost = creditsFor(tier);
+        if (cost === null) return sendUni(res, 400, { error: "pick a quality level" }, aorigin);
+
+        // The paywall. When credits are not configured the generator stays free and the rate limits
+        // above are the only bound — which is fine for a closed beta and NOT fine in public, so the
+        // /api/art/enabled probe reports which mode we are in rather than leaving it to be guessed.
+        let release = null;
+        if (Credits.enabled()) {
+          const { user, nonce, deadline, signature } = abody;
+          if (!/^0x[0-9a-fA-F]{40}$/.test(String(user || ""))) {
+            return sendUni(res, 400, { error: "connect your wallet first" }, aorigin);
+          }
+          try {
+            release = await Credits.reserve({
+              user, amount: cost, nonce: String(nonce || "0"),
+              deadline: String(deadline || "0"), signature: String(signature || "0x"),
+            });
+          } catch (e) {
+            // 402 rather than 400: this is "pay to continue", and a client can branch on it to open
+            // the top-up flow instead of showing an error.
+            return sendUni(res, e && e.code === "NO_CREDITS" ? 402 : 400,
+              { error: (e && e.message) || "could not verify your credits", need: cost }, aorigin);
+          }
+        }
+
         try {
-          const out = await makeArt({ prompt, tier: abody.tier });
-          return sendUni(res, 200, { image: out.dataUrl, bytes: out.bytes }, aorigin);
+          const out = await makeArt({ prompt, tier });
+          // Charged only now, and only because it worked. A blank or failed generation releases the
+          // reservation without spending — see artproxy's blank guard.
+          const txHash = release ? await release(true) : null;
+          return sendUni(res, 200, { image: out.dataUrl, bytes: out.bytes, spent: release ? cost : 0, tx: txHash }, aorigin);
         } catch (e) {
+          if (release) await release(false);
           return sendUni(res, 502, { error: (e && e.message) || "art generation failed" }, aorigin);
         }
       }
@@ -921,7 +952,25 @@ export function startApi() {
       // Whether the photo-to-meme generator is configured — the create page shows its button only if so.
       if (path === "/api/meme/enabled") return send(res, 200, { enabled: memeEnabled() }, origin);
       // Tier names and their credit cost only — never the model or the provider behind them.
-      if (path === "/api/art/enabled") return send(res, 200, { enabled: artEnabled(), tiers: artEnabled() ? artTiers() : [] }, origin);
+      if (path === "/api/art/enabled") {
+        return send(res, 200, {
+          enabled: artEnabled(),
+          tiers: artEnabled() ? artTiers() : [],
+          // The client needs to know whether to ask for a signature at all, and where the ledger is.
+          // The model behind each tier is still never named.
+          paid: Credits.enabled(),
+          creditsContract: Credits.enabled() ? CFG.artCredits : null,
+        }, origin);
+      }
+      // How many credits this wallet can actually spend right now — on-chain balance minus anything
+      // already reserved by a generation still running.
+      if (path === "/api/art/credits") {
+        const who = url.searchParams.get("user") || "";
+        if (!Credits.enabled()) return send(res, 200, { paid: false, credits: null }, origin);
+        if (!/^0x[0-9a-fA-F]{40}$/.test(who)) return send(res, 400, { error: "bad user" }, origin);
+        try { return send(res, 200, { paid: true, credits: await Credits.available(who) }, origin); }
+        catch { return send(res, 502, { error: "could not read credits" }, origin); }
+      }
 
       // ── DexScreener logo proxy for migrate-in: GET /api/img?u=<dexscreener image url> ──
       // DexScreener's image CDN sends no CORS header, so the browser can't fetch a migrating coin's
