@@ -24,13 +24,16 @@ interface IBoostSource {
 ///      only hand whales a second advantage on top of the one they already have.
 ///
 ///   2. YOU CAN ALWAYS LEAVE — AT A PRICE. A lock here is a price, never a cage. `withdraw` on an immature
-///      position always succeeds; it costs EARLY_EXIT_BPS of principal and all pending rewards. That matters:
+///      position always succeeds; it costs EARLY_EXIT_BPS of that position's principal, and the share of
+///      pending rewards that position was earning — pro-rata by weight, NOT the whole account. That matters:
 ///      a hard lock that can trap someone's money is the single scariest thing a staking contract can do, and
 ///      the whole point of the term is to price impatience, not to imprison anyone.
 ///
-///   3. EARLY EXITS PAY THE STAYERS. Both the exit tax and the forfeited rewards are redistributed to whoever
-///      is still staked. Nothing goes to the platform, the owner, or anywhere else — there is no function
-///      that sends either one to a wallet.
+///   3. EARLY EXITS PAY THE STAYERS — AND NEVER THEMSELVES. Both the exit tax and the forfeited rewards go to
+///      whoever is still staked, with the leaver explicitly excluded even when they hold other positions.
+///      Without that exclusion a staker who is most of the pool receives most of their own penalty back, and
+///      the 15% quietly stops applying to exactly the holders it matters most for. Nothing goes to the
+///      platform, the owner, or anywhere else — there is no function that sends either one to a wallet.
 ///
 ///   4. THE $ROBIN HOLDER BOOST. Hold at least `boostThreshold` $ROBIN — STAKED, see below — and every
 ///      position you hold in this pool earns a further `boostBps` on top of its tier. It applies across every
@@ -267,14 +270,30 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         emit RewardAdded(asset, amount, r.periodFinish);
     }
 
-    /// @dev Hand `amount` of `asset` straight to the remaining stakers, with no stream and no delay, by
-    /// bumping the per-weight accumulator. Used for forfeited rewards: they were already earned by the pool,
-    /// so re-streaming them would delay money the stayers are owed right now.
-    function _redistribute(address asset, uint256 amount) internal {
+    /// @dev Hand `amount` of `asset` straight to the stakers, with no stream and no delay, by bumping the
+    /// per-weight accumulator — EXCLUDING `excluded`, who is the person being penalised.
+    ///
+    /// The exclusion is the whole point and it is not cosmetic. `_resync` only removes the weight of the
+    /// position being closed, so a staker with OTHER positions is still in `totalWeight` when their own
+    /// penalty is shared out — and receives a slice of it back, proportional to how much of the pool they
+    /// are. A whale who is most of the pool would get most of their own exit tax refunded, and for a large
+    /// enough holder the 15% penalty tends to nothing. That is not a rounding issue, it is the penalty
+    /// quietly not applying to exactly the people it most needs to.
+    ///
+    /// So the bump is computed over everyone ELSE's weight, and the excluded staker's checkpoint is advanced
+    /// past it so they accrue none of it. Forfeited rewards are handed over rather than re-streamed because
+    /// the pool already earned them — re-streaming would delay money the stayers are owed right now.
+    function _redistribute(address asset, uint256 amount, address excluded) internal {
         if (amount == 0) return;
         RewardInfo storage r = rewardInfo[asset];
-        if (totalWeight == 0) { r.pending += amount; return; }
-        r.rewardPerTokenStored += Math.mulDiv(amount, ACC, totalWeight);
+        uint256 denom = totalWeight - weightOf[excluded];
+        // Nobody else is staked: park it rather than burning it. The next staker streams it.
+        if (denom == 0) { r.pending += amount; return; }
+        uint256 bump = Math.mulDiv(amount, ACC, denom);
+        r.rewardPerTokenStored += bump;
+        // Advance the penalised staker's checkpoint by exactly the bump, so `earned` returns what it did
+        // before it — their already-settled balance, and none of their own penalty.
+        userRewardPerTokenPaid[asset][excluded] += bump;
     }
 
     /// @dev Recompute `user`'s weight from their positions and current boost status, and move `totalWeight`
@@ -312,6 +331,10 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         stakeToken.safeTransferFrom(msg.sender, address(this), amount);
         uint256 got = stakeToken.balanceOf(address(this)) - before;
         if (got == 0) revert Zero();
+
+        // An unchecked downcast here would silently truncate a stake above 2^128 and credit the user a
+        // fraction of what they paid in. No real token gets near it, but "no real token" is not a check.
+        if (got > type(uint128).max) revert Zero();
 
         uint32 term = TIER_TERM[tier];
         positionId = ps.length;
@@ -363,13 +386,25 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         uint256[] memory forfeited = new uint256[](len);
         if (early) {
             tax = Math.mulDiv(amount, EARLY_EXIT_BPS, BPS);
+            // Forfeit only the share of pending rewards THIS POSITION was earning, not the whole account.
+            //
+            // Zeroing everything was the first version and it is a trap: somebody with a matured 365-day
+            // position and a small 7-day one would lose every reward the big position had earned all year by
+            // closing the small one a day early. The penalty should be proportional to what is being pulled
+            // out, and pro-rata by weight is exactly that — the position's share of what it helped earn.
+            uint256 posWeight = Math.mulDiv(p.amount, p.mulBps, BPS);
+            if (boosted[msg.sender]) posWeight += Math.mulDiv(posWeight, boostBps, BPS);
+            uint256 userWeight = weightOf[msg.sender]; // still the pre-resync total, which is what we want
             for (uint256 i; i < len; ++i) {
                 address asset = rewardTokens[i];
                 uint256 owed = rewardsAccrued[asset][msg.sender];
-                if (owed > 0) {
-                    forfeited[i] = owed;
-                    rewardsAccrued[asset][msg.sender] = 0;
-                    emit Forfeited(msg.sender, asset, owed);
+                if (owed == 0) continue;
+                uint256 lose = userWeight == 0 ? owed : Math.mulDiv(owed, posWeight, userWeight);
+                if (lose > owed) lose = owed; // defensive; posWeight <= userWeight by construction
+                if (lose > 0) {
+                    forfeited[i] = lose;
+                    rewardsAccrued[asset][msg.sender] = owed - lose;
+                    emit Forfeited(msg.sender, asset, lose);
                 }
             }
         }
@@ -381,9 +416,9 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         // cannot take a share of their own tax or their own forfeited rewards.
         if (early) {
             for (uint256 i; i < len; ++i) {
-                if (forfeited[i] > 0) _redistribute(rewardTokens[i], forfeited[i]);
+                if (forfeited[i] > 0) _redistribute(rewardTokens[i], forfeited[i], msg.sender);
             }
-            _redistribute(address(stakeToken), tax);
+            _redistribute(address(stakeToken), tax, msg.sender);
         }
 
         if (returned > 0) stakeToken.safeTransfer(msg.sender, returned);

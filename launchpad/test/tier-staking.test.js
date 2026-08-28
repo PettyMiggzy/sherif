@@ -184,6 +184,81 @@ describe("[TIER] locked-tier staking", function () {
     expect(await pool.earned(alice.address, await robin.getAddress())).to.be.closeTo(E(100), E(0.001));
   });
 
+  it("closing ONE position early does not forfeit what the others earned", async () => {
+    // The trap this closes: forfeiting the whole account would mean someone with a big matured position and a
+    // small immature one loses a year of rewards by closing the small one a day early.
+    await (await pool.connect(alice).stake(E(1000), TIER.D7)).wait();   // small, will go early
+    await (await pool.connect(alice).stake(E(9000), TIER.D365)).wait(); // big, untouched
+    await (await pool.connect(bob).stake(E(1000), TIER.D7)).wait();     // someone to receive the forfeit
+    await (await pool.connect(owner).notifyReward(await robin.getAddress(), E(500))).wait();
+    await time.increase(8 * DAY);
+
+    const before = await pool.earned(alice.address, await robin.getAddress());
+    expect(before).to.be.gt(0);
+
+    // Close the 365-day one early (index 1). Its weight share is 9000x5 / (1000x1.1 + 9000x5) ≈ 97.6%.
+    await (await pool.connect(alice).withdraw(1)).wait();
+    const after = await pool.earned(alice.address, await robin.getAddress());
+
+    expect(after).to.be.gt(0); // NOT wiped out — the 7-day position's share survives
+    const kept = Number(after) / Number(before);
+    const expectedKept = 1100 / (1100 + 45000);
+    expect(kept).to.be.closeTo(expectedKept, 0.01);
+    console.log(`   kept ${(kept * 100).toFixed(1)}% of pending — the share the untouched position earned`);
+  });
+
+  it("closing the ONLY position early still forfeits all of its rewards", async () => {
+    // Pro-rata must not become a loophole: with one position, its share is 100%.
+    await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
+    await (await pool.connect(bob).stake(E(1000), TIER.D365)).wait();
+    await (await pool.connect(owner).notifyReward(await robin.getAddress(), E(400))).wait();
+    await time.increase(8 * DAY);
+    expect(await pool.earned(alice.address, await robin.getAddress())).to.be.gt(0);
+    await (await pool.connect(alice).withdraw(0)).wait();
+    expect(await pool.earned(alice.address, await robin.getAddress())).to.equal(0);
+  });
+
+  it("the contract always holds enough to cover principal AND reward claims", async () => {
+    // stakeToken doubles as a reward asset (the exit tax is paid in it), so principal and rewards come out of
+    // one balance. If that accounting were off, the shortfall would surface as somebody's withdrawal reverting
+    // long after the cause.
+    await (await pool.connect(alice).stake(E(1000), TIER.D365)).wait();
+    await (await pool.connect(bob).stake(E(2000), TIER.D30)).wait();
+    await (await pool.connect(owner).notifyReward(await robin.getAddress(), E(300))).wait();
+    await time.increase(10 * DAY);
+    await (await pool.connect(alice).withdraw(0)).wait();  // early: pays tax, forfeits
+    await time.increase(30 * DAY);
+    await (await pool.connect(bob).claim(await robin.getAddress())).wait();
+    await (await pool.connect(bob).withdraw(0)).wait();    // matured: full principal
+
+    const dust = await robin.balanceOf(await pool.getAddress());
+    expect(await pool.totalStaked()).to.equal(0);
+    expect(await pool.totalWeight()).to.equal(0);
+    // Everyone got out; whatever remains is unclaimed/rounding, never negative — the balance covered it all.
+    console.log(`   both exited, ${ethers.formatEther(dust)} left in the contract (unclaimed + rounding)`);
+  });
+
+  it("a whale cannot refund their own exit penalty back to themselves", async () => {
+    // THE EXPLOIT this closes. The penalty is shared among current stakers — and a staker with OTHER
+    // positions is still one of them when their own penalty is handed out. At 99% of the pool they would
+    // receive ~99% of their own tax straight back, so the 15% would effectively stop applying to precisely
+    // the holders it exists to price.
+    await (await pool.connect(alice).stake(E(1_000_000), TIER.D365)).wait(); // the one she closes early
+    await (await pool.connect(alice).stake(E(1_000_000), TIER.D365)).wait(); // keeps her ~99% of the pool
+    await (await pool.connect(bob).stake(E(1), TIER.D365)).wait();           // a token minority
+    await time.increase(DAY);
+
+    const before = await pool.earned(alice.address, await robin.getAddress());
+    await (await pool.connect(alice).withdraw(0)).wait();
+    const after = await pool.earned(alice.address, await robin.getAddress());
+
+    // She must gain NOTHING from her own 150,000 tax, despite still being nearly the whole pool.
+    expect(after).to.equal(before);
+    // ...and the minority staker receives the entire thing.
+    expect(await pool.earned(bob.address, await robin.getAddress())).to.be.closeTo(E(150_000), E(1));
+    console.log(`   whale kept ${ethers.formatEther(after - before)} of her own 150,000 tax; the 1-token staker got it all`);
+  });
+
   it("an unknown tier is refused", async () => {
     await expect(pool.connect(alice).stake(E(1), 7)).to.be.revertedWithCustomError(pool, "BadTier");
   });
