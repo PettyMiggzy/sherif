@@ -82,6 +82,9 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         /// @dev Carved off the top of the SELL fee and escrowed for this coin's staking pool. Zero for
         /// every coin registered through the original `register`, so nothing about a live coin changes.
         uint16 stakingBps;
+        /// @dev Carved off the top of the BUY fee and escrowed for the flagship $ROBIN pool. This is
+        /// the platform's own share being shared with $ROBIN stakers, not the creator's.
+        uint16 robinBps;
         bool set;
     }
 
@@ -110,6 +113,14 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     /// @notice Where flushed staking fees go — the StakingFeeder, which can only ever pay pools the
     /// registry created. Zero until set, and while it is zero the escrow simply accrues.
     address public stakingSink;
+    /// @notice The buy-side slice owed to $ROBIN stakers, pooled across EVERY coin on the pad.
+    ///
+    /// One number rather than one per coin, because it all has one destination: the flagship $ROBIN
+    /// pool. That is the whole shape of the thing — stake $ROBIN, earn ETH from every buy anywhere on
+    /// the pad, whether or not you ever held the coin being bought.
+    uint256 public robinEscrow;
+    /// @notice Where flushed $ROBIN-holder fees go — the StakingFeeder, or the $ROBIN pool directly.
+    address public robinSink;
 
     bool private _swapping;
     address private _activePool; // the pool we're mid-swap with (callback authenticity check)
@@ -124,10 +135,13 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     error Dust();
 
     event Registered(address indexed token, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps);
-    event StakingShareSet(address indexed token, uint16 stakingBps);
+    event StakingShareSet(address indexed token, uint16 stakingBps, uint16 robinBps);
     event StakingAccrued(address indexed token, uint256 amount);
     event StakingFlushed(address indexed token, address indexed sink, uint256 amount);
     event StakingSinkSet(address indexed sink);
+    event RobinAccrued(address indexed token, uint256 amount);
+    event RobinFlushed(address indexed sink, uint256 amount);
+    event RobinSinkSet(address indexed sink);
     event RewardVaultSet(address vault);
     event FeeConfigSet(address feeConfig);
     event FloorDonated(address indexed token, uint256 amount);
@@ -224,7 +238,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         if (uint256(walletBps) + floorBps + burnBps != 10_000) revert BadAlloc();
         // the project wallet always receives money now (the sell-side 1% base), so it can never be zero
         if (projectWallet == address(0)) revert BadAlloc();
-        _cfg[token] = Cfg(pool, curve, projectWallet, buyBps, sellBps, walletBps, floorBps, burnBps, 0, true);
+        _cfg[token] = Cfg(pool, curve, projectWallet, buyBps, sellBps, walletBps, floorBps, burnBps, 0, 0, true);
         emit Registered(token, buyBps, sellBps, walletBps, floorBps, burnBps);
     }
 
@@ -250,7 +264,8 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         uint16 walletBps,
         uint16 floorBps,
         uint16 burnBps,
-        uint16 stakingBps
+        uint16 stakingBps,
+        uint16 robinBps
     ) external {
         if (!isFactory[msg.sender]) revert OnlyFactory();
         if (_cfg[token].set) revert AlreadySet();
@@ -260,11 +275,15 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         // The creator's 1% base is untouchable: the staking slice may only come out of what the sell
         // fee charges ABOVE the default.
         if (stakingBps > MAX_STAKING_BPS || uint256(stakingBps) + DEFAULT_FEE_BPS > sellBps) revert BadTax();
+        // The buy-side slice comes out of the PLATFORM's share, not a creator's, but it is bounded the
+        // same way so the platform's own 1% baseline survives too — a fee split that can starve either
+        // side of its floor is a fee split that will eventually be set wrong.
+        if (robinBps > MAX_STAKING_BPS || uint256(robinBps) + DEFAULT_FEE_BPS > buyBps) revert BadTax();
         if (uint256(walletBps) + floorBps + burnBps != 10_000) revert BadAlloc();
         if (projectWallet == address(0)) revert BadAlloc();
-        _cfg[token] = Cfg(pool, curve, projectWallet, buyBps, sellBps, walletBps, floorBps, burnBps, stakingBps, true);
+        _cfg[token] = Cfg(pool, curve, projectWallet, buyBps, sellBps, walletBps, floorBps, burnBps, stakingBps, robinBps, true);
         emit Registered(token, buyBps, sellBps, walletBps, floorBps, burnBps);
-        emit StakingShareSet(token, stakingBps);
+        emit StakingShareSet(token, stakingBps, robinBps);
     }
 
     // ─────────────────────────────────────────────────────────── trading ──
@@ -466,17 +485,25 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         // The staking slice comes off the TOP, before anything else is worked out, so the rest of the
         // split behaves exactly as it always has against a slightly smaller fee. Sell side only: a buy
         // fee is the platform's and has nothing to give away.
-        uint256 staking;
         uint256 effBps = feeBps;
-        if (sellSide) {
-            uint256 sBps = _cfg[token].stakingBps;
-            if (sBps > 0) {
-                staking = (value * sBps) / 10_000;
-                if (staking > fee) staking = fee; // defensive; registration bounds make it unreachable
-                fee -= staking;
-                effBps -= sBps;
-                stakingEscrow[token] += staking;
-                emit StakingAccrued(token, staking);
+        {
+            Cfg storage cs = _cfg[token];
+            // SELL -> this coin's own stakers. BUY -> $ROBIN stakers, pad-wide. Both come off the TOP,
+            // before the base/excess split, so everything downstream behaves exactly as it always has
+            // against a slightly smaller fee.
+            uint256 sliceBps = sellSide ? cs.stakingBps : cs.robinBps;
+            if (sliceBps > 0) {
+                uint256 slice = (value * sliceBps) / 10_000;
+                if (slice > fee) slice = fee; // defensive; registration bounds make it unreachable
+                fee -= slice;
+                effBps -= sliceBps;
+                if (sellSide) {
+                    stakingEscrow[token] += slice;
+                    emit StakingAccrued(token, slice);
+                } else {
+                    robinEscrow += slice;
+                    emit RobinAccrued(token, slice);
+                }
             }
         }
 
@@ -584,6 +611,25 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         (bool ok,) = sink.call{value: amt}("");
         if (!ok) { stakingEscrow[token] = amt; return; } // put it back rather than burn it
         emit StakingFlushed(token, sink, amt);
+    }
+
+    /// @notice Send the pooled $ROBIN-holder share to its sink. Permissionless for the same reason
+    /// `flushStaking` is: there is no recipient argument, so a caller can only move funds to the one
+    /// address the owner set.
+    function flushRobin() external nonReentrant {
+        address sink = robinSink;
+        if (sink == address(0)) return;
+        uint256 amt = robinEscrow;
+        if (amt == 0) return;
+        robinEscrow = 0;
+        (bool ok,) = sink.call{value: amt}("");
+        if (!ok) { robinEscrow = amt; return; } // put it back rather than burn it
+        emit RobinFlushed(sink, amt);
+    }
+
+    function setRobinSink(address sink) external onlyOwner {
+        robinSink = sink;
+        emit RobinSinkSet(sink);
     }
 
     /// @notice Point the staking share at the StakingFeeder. It can only pay pools the registry

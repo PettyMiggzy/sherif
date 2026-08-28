@@ -28,6 +28,19 @@ interface IPadRouter {
         uint16 floorBps,
         uint16 burnBps
     ) external;
+    function registerWithStaking(
+        address token,
+        address pool,
+        address curve,
+        address projectWallet,
+        uint16 buyBps,
+        uint16 sellBps,
+        uint16 walletBps,
+        uint16 floorBps,
+        uint16 burnBps,
+        uint16 stakingBps,
+        uint16 robinBps
+    ) external;
 }
 
 /// @title CurvePadFactory — DEX-day-one launchpad (the NOXA-style model, plus the Bond)
@@ -169,6 +182,29 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
 
     /// @notice Retune the launch valuation band. Owner-only, takes effect on FUTURE launches only (a live pad's
     /// geometry is immutable). Denominated in wei — this chain has no USD oracle, so the band has to move as ETH does.
+    /// @notice The two slices of every trade that fund staking, stamped into each coin at launch.
+    ///
+    ///   stakingBps — off the SELL fee, to that coin's own pool. Its own holders, its own stakers.
+    ///   robinBps   — off the BUY fee, to the flagship $ROBIN pool, pooled across every coin.
+    ///
+    /// Both come out of the ABOVE-BASELINE part of their side, so neither the creator's 1% nor the
+    /// platform's 1% can be touched. Changing these affects FUTURE launches only: a coin's slices are
+    /// written once at registration and the router refuses to overwrite them, so nobody's economics
+    /// move after they launch.
+    uint16 public constant DEFAULT_FEE_BPS = 100;
+    uint16 public constant MAX_SHARE_BPS = 100; // mirrors the router's own ceiling
+    uint16 public stakingBps = 25; // 0.25% of a sell
+    uint16 public robinBps = 25;   // 0.25% of a buy
+
+    event StakingSharesSet(uint16 stakingBps, uint16 robinBps);
+
+    function setStakingShares(uint16 stakingBps_, uint16 robinBps_) external onlyOwner {
+        if (stakingBps_ > MAX_SHARE_BPS || robinBps_ > MAX_SHARE_BPS) revert BadValue();
+        stakingBps = stakingBps_;
+        robinBps = robinBps_;
+        emit StakingSharesSet(stakingBps_, robinBps_);
+    }
+
     function setFdvBand(uint256 minWei, uint256 maxWei) external onlyOwner {
         if (minWei == 0 || maxWei < minWei || maxWei > HARD_MAX_FDV_WEI) revert BadValue();
         minFdvWei = minWei;
@@ -333,8 +369,14 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
 
         // register the project's tax with the swap desk (router enforces the 4% caps + 100% allocation)
         address projWallet = p.tax.projectWallet == address(0) ? p.dev : p.tax.projectWallet;
-        IPadRouter(router).register(
-            token, pool, curve, projWallet, p.tax.buyBps, p.tax.sellBps, p.tax.walletBps, p.tax.floorBps, p.tax.burnBps
+        // The two staking slices are stamped at registration and are IMMUTABLE for the life of the
+        // coin — the router registers once and refuses to be overwritten. A buyer can therefore read
+        // what funds the stakers off the chain and know it cannot be changed afterwards, which is the
+        // whole reason it is set here rather than governed later.
+        IPadRouter(router).registerWithStaking(
+            token, pool, curve, projWallet, p.tax.buyBps, p.tax.sellBps,
+            p.tax.walletBps, p.tax.floorBps, p.tax.burnBps,
+            _bounded(stakingBps, p.tax.sellBps), _bounded(robinBps, p.tax.buyBps)
         );
 
         // optional dev buy (uncapped by supply), atomic and ahead of the field
@@ -344,6 +386,20 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         recordOf[token] = Record(token, curve, p.dev, block.timestamp);
         allTokens.push(token);
         emit Launched(token, curve, pool, p.dev, devBought);
+    }
+
+    /// @dev Clamp a configured slice to what a coin's own fee can actually give up.
+    ///
+    /// A creator may set their sell fee to the 1% floor, which leaves NOTHING above the baseline —
+    /// and the router rejects a slice that would eat into it. Without this, a launch at the minimum
+    /// fee would revert at `register` with a tax error, which is a baffling failure for someone who
+    /// simply chose the cheapest option. Clamping degrades the funding instead of the launch: a coin
+    /// at the floor funds its stakers nothing, and one above the floor funds them the configured
+    /// slice. Nobody is ever blocked from launching by a platform-level setting.
+    function _bounded(uint16 want, uint16 sideBps) internal pure returns (uint16) {
+        if (sideBps <= DEFAULT_FEE_BPS) return 0;
+        uint16 room = sideBps - DEFAULT_FEE_BPS;
+        return want > room ? room : want;
     }
 
     function _devBuy(address token, address pool, int24 startTick, address dev) internal returns (uint256 bought) {

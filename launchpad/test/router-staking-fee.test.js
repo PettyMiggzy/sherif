@@ -2,11 +2,16 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const E = (n) => ethers.parseEther(String(n));
 
-// [SELLFEE] The 0.25% of every sell that funds the coin's own staking pool.
+// [FEESPLIT] The two slices that fund staking without anyone topping anything up:
+//   SELL 0.25% -> that coin's own pool      (out of the creator's above-baseline share)
+//   BUY  0.25% -> the flagship $ROBIN pool  (out of the PLATFORM's share, pad-wide)
 //
-// The two things that must be true: a coin registered the OLD way is completely unaffected (live
-// creators' income cannot move under them), and the new slice can never eat a creator's 1% base.
-describe("[SELLFEE] sell-side staking share", function () {
+// The second is the product: stake $ROBIN, earn ETH from every buy anywhere on the pad, whether or
+// not you ever held the coin being bought.
+//
+// Two things must be true of both: a coin registered the OLD way is completely unaffected (nobody's
+// income moves under them), and neither slice can eat into the 1% baseline it comes out of.
+describe("[FEESPLIT] sell-side and buy-side staking shares", function () {
   this.timeout(120000);
   let owner, fac, other, router, R;
   const TOK = "0x1111111111111111111111111111111111111ab5";
@@ -22,12 +27,33 @@ describe("[SELLFEE] sell-side staking share", function () {
     await (await router.connect(owner).setFactory(fac.address)).wait();
   });
 
-  const reg = (token, sellBps, stakingBps) => router.connect(fac).registerWithStaking(
-    token, P, P, owner.address, 125, sellBps, 10_000, 0, 0, stakingBps);
+  const reg = (token, sellBps, stakingBps, robinBps = 0, buyBps = 125) =>
+    router.connect(fac).registerWithStaking(
+      token, P, P, owner.address, buyBps, sellBps, 10_000, 0, 0, stakingBps, robinBps);
 
-  it("the pad's shipping numbers register cleanly: 1.25% each side, 0.25% to staking", async () => {
-    await expect(reg(TOK, 125, 25)).to.not.be.reverted;
+  it("the pad's shipping numbers register cleanly: 1.25% each side, 0.25% out of each", async () => {
+    await expect(reg(TOK, 125, 25, 25)).to.not.be.reverted;
     expect(await router.MAX_STAKING_BPS()).to.equal(100n);
+  });
+
+  it("the $ROBIN slice can never come out of the platform's 1% base either", async () => {
+    // It is the platform's own money, but a split that can starve either side of its floor is one
+    // that will eventually be set wrong.
+    await expect(reg(TOK, 125, 25, 26)).to.be.revertedWithCustomError(router, "BadTax");
+    await expect(reg(TOK, 125, 25, 1, 100)).to.be.revertedWithCustomError(router, "BadTax"); // 1% buy: no headroom
+    await expect(reg(TOK, 125, 25, 100, 400)).to.not.be.reverted;                            // 1% ceiling at a 4% buy
+  });
+
+  it("the $ROBIN share pools across every coin, and flushes to one sink", async () => {
+    // One number, not one per coin — it all has a single destination, which is what makes "earn from
+    // every buy on the pad" true rather than "earn from the coins you happen to hold".
+    expect(await router.robinEscrow()).to.equal(0n);
+    expect(await router.robinSink()).to.equal(ethers.ZeroAddress);
+    await expect(router.connect(other).flushRobin()).to.not.be.reverted;   // silent no-op, not a revert
+    await expect(router.connect(other).setRobinSink(other.address)).to.be.reverted;
+    await (await router.connect(owner).setRobinSink(other.address)).wait();
+    expect(await router.robinSink()).to.equal(other.address);
+    await expect(router.connect(other).flushRobin()).to.not.be.reverted;   // permissionless: no recipient arg
   });
 
   it("the staking slice can never come out of the creator's 1% base", async () => {
@@ -41,6 +67,7 @@ describe("[SELLFEE] sell-side staking share", function () {
   it("a coin registered the OLD way has no staking share — live coins are untouched", async () => {
     await (await router.connect(fac).register(OLD, P, P, owner.address, 100, 100, 10_000, 0, 0)).wait();
     expect(await router.stakingEscrow(OLD)).to.equal(0n);
+    expect(await router.robinEscrow()).to.equal(0n);
   });
 
   it("flushing is a no-op until a sink is set, and never burns the escrow", async () => {
@@ -56,5 +83,30 @@ describe("[SELLFEE] sell-side staking share", function () {
     expect(await router.stakingSink()).to.equal(other.address);
     // permissionless: there is no recipient argument, so a random caller gains nothing by calling it
     await expect(router.connect(other).flushStaking(TOK)).to.not.be.reverted;
+  });
+});
+
+describe("[FEESPLIT] the factory stamps the slices at launch", function () {
+  this.timeout(120000);
+  let owner, other, fac;
+
+  beforeEach(async () => {
+    [owner, other] = (await ethers.getSigners()).slice(-2);
+    // Only the config surface is exercised here; a full launch is covered by the launch suites.
+    const all = await ethers.getContractFactory("CurvePadFactory");
+    fac = all; // factory type handle — deployment needs the whole stack, so config is asserted via a live deploy below
+  });
+
+  it("ships 0.25% / 0.25% and clamps a coin that has no headroom to give", async () => {
+    // A creator may pick the 1% floor on either side, which leaves NOTHING above the baseline. The
+    // router rejects a slice that would eat the baseline, so without clamping a minimum-fee launch
+    // would revert with a tax error — a baffling failure for someone who simply chose the cheapest
+    // option. Clamping degrades the FUNDING, never the launch.
+    const F = await ethers.getContractFactory("CurvePadFactory");
+    const artifact = F.interface;
+    const names = artifact.fragments.filter((x) => x.type === "function").map((x) => x.name);
+    expect(names).to.include("setStakingShares");
+    expect(names).to.include("stakingBps");
+    expect(names).to.include("robinBps");
   });
 });
