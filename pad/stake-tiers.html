@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lock &amp; earn — tiered staking — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<meta name="description" content="Lock $ROBIN or any launched coin for 7 to 365 days. The longer you lock, the bigger your share of every reward. Leave early and your 15% goes to the people who stayed." />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<style>
+  :root{
+    --bg:#060803; --panel:#0c1108; --panel2:#0a0d06; --sunk:#070a04;
+    --ink:#f4f7ee; --dim:#93a382; --faint:#6f7d5a;
+    --lime:#dce905; --lime-deep:#8a9c00;
+    --green:#5fd16a; --red:#ff5a52; --amber:#ffc24a;
+    --line:rgba(220,233,5,.16); --line-strong:rgba(220,233,5,.42);
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;padding:18px 16px 60px}
+  .wrap{max-width:960px;margin:0 auto}
+  a{color:var(--lime);text-decoration:none}
+  a:hover{text-decoration:underline}
+  h1{font-size:1.7rem;margin:0 0 6px;letter-spacing:-.02em;text-wrap:balance}
+  h2{font-size:1rem;margin:0 0 3px;letter-spacing:-.01em}
+  .eyebrow{font-size:.68rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+  .sub{color:var(--dim);font-size:.9rem;max-width:70ch;margin:0}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .dim{color:var(--dim)} .faint{color:var(--faint)}
+
+  .topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .stack{display:flex;flex-direction:column;gap:14px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+  button{background:var(--lime);color:#0a0e05;border:none;border-radius:10px;padding:11px 16px;
+    font-family:var(--sans);font-weight:800;cursor:pointer;font-size:.9rem}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  button.ghost:hover:not(:disabled){border-color:var(--line-strong)}
+  button.danger{background:transparent;color:var(--red);border:1px solid rgba(255,90,82,.45)}
+  button.sm{padding:7px 12px;font-size:.8rem;border-radius:8px}
+  input[type=text]{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);
+    background:var(--sunk);color:var(--ink);font-family:var(--mono);font-size:.95rem}
+  input[type=text]:focus,select:focus{outline:2px solid var(--line-strong);outline-offset:1px}
+  select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--sunk);
+    color:var(--ink);font-family:var(--sans);font-size:.9rem}
+  @media(max-width:720px){#fundCard [style*="grid-template-columns:1fr 1fr auto"]{grid-template-columns:1fr!important}}
+
+  /* ── banner ─────────────────────────────────────────────────────────── */
+  .banner{border-radius:12px;padding:11px 14px;font-size:.85rem;display:flex;gap:10px;align-items:flex-start}
+  .banner.preview{background:rgba(255,194,74,.09);border:1px solid rgba(255,194,74,.4);color:#ffdb9a}
+  .banner.bad{background:rgba(255,90,82,.1);border:1px solid rgba(255,90,82,.4);color:#ffb9b4}
+  .banner.ok{background:rgba(95,209,106,.1);border:1px solid rgba(95,209,106,.4);color:#b6ecbc}
+
+  /* ── stat tiles ─────────────────────────────────────────────────────── */
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 15px}
+  .tile .k{font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+  .tile .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.5rem;font-weight:700;
+    letter-spacing:-.02em;margin-top:5px;line-height:1.1}
+  .tile .u{font-size:.75rem;color:var(--dim);margin-top:3px}
+  .tile.pot{border-color:rgba(255,194,74,.32)}
+  .tile.pot .v{color:var(--amber)}
+
+  /* ── the tier ladder: the whole point of the page ───────────────────── */
+  .ladder{display:flex;flex-direction:column;gap:7px;margin-top:14px}
+  .tier{display:grid;grid-template-columns:112px 1fr 72px;gap:12px;align-items:center;
+    background:var(--sunk);border:1px solid transparent;border-radius:11px;padding:9px 12px;cursor:pointer;
+    transition:border-color .13s,background .13s}
+  .tier:hover{border-color:var(--line)}
+  .tier[aria-selected="true"]{border-color:var(--line-strong);background:var(--panel2)}
+  .tier .term{font-weight:800;font-size:.9rem}
+  .tier .term small{display:block;font-weight:600;font-size:.66rem;color:var(--faint);letter-spacing:.03em;white-space:nowrap}
+  .track{height:15px;border-radius:8px;background:rgba(255,255,255,.045);overflow:hidden;position:relative}
+  .fill{height:100%;border-radius:8px;transition:width .35s cubic-bezier(.4,0,.2,1)}
+  .tier .mult{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:800;font-size:1rem;
+    text-align:right;letter-spacing:-.02em}
+  @media(prefers-reduced-motion:reduce){.fill{transition:none}}
+
+  /* ── positions ──────────────────────────────────────────────────────── */
+  .pos{background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin-top:10px}
+  .pos.matured{border-color:rgba(95,209,106,.34)}
+  .lockbar{height:7px;border-radius:5px;background:rgba(255,255,255,.06);overflow:hidden;margin:10px 0 8px}
+  .lockbar > i{display:block;height:100%;border-radius:5px}
+  .badge{display:inline-block;font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:999px;
+    border:1px solid var(--line);color:var(--dim);letter-spacing:.03em}
+  .badge.green{color:var(--green);border-color:rgba(95,209,106,.45)}
+  .badge.red{color:var(--red);border-color:rgba(255,90,82,.45)}
+
+  /* ── donut + boost ──────────────────────────────────────────────────── */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .donutwrap{display:flex;gap:16px;align-items:center;margin-top:12px}
+  .legend{display:flex;flex-direction:column;gap:5px;font-size:.78rem;flex:1;min-width:0}
+  .legend div{display:flex;align-items:center;gap:7px}
+  .swatch{width:9px;height:9px;border-radius:2px;flex:none}
+  .meter{height:11px;border-radius:6px;background:rgba(255,255,255,.06);overflow:hidden;margin:11px 0 7px}
+  .meter > i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--lime-deep),var(--lime))}
+
+  .rw{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;
+    border-top:1px solid rgba(255,255,255,.055)}
+  .rw:first-of-type{border-top:none}
+
+  .poolrow{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+  .chip{flex:none;background:var(--sunk);border:1px solid transparent;border-radius:11px;padding:9px 13px;
+    cursor:pointer;text-align:left;color:var(--ink);font-family:var(--sans);font-weight:700;font-size:.86rem}
+  .chip:hover{border-color:var(--line)}
+  .chip[aria-pressed="true"]{border-color:var(--line-strong);background:var(--panel2)}
+  .chip small{display:block;font-weight:600;font-size:.7rem;color:var(--faint);
+    font-family:var(--mono);font-variant-numeric:tabular-nums;margin-top:2px}
+  .scrollx{overflow-x:auto}
+  @media(max-width:720px){
+    .tiles{grid-template-columns:1fr}
+    .two{grid-template-columns:1fr}
+    .tier{grid-template-columns:96px 1fr 60px;gap:8px}
+    .donutwrap{flex-direction:column;align-items:stretch}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <a href="index.html" class="dim">&larr; Robin Labs</a>
+    <div class="row">
+      <button id="connect" class="ghost sm">Connect wallet</button>
+      <span class="num dim" id="acct" style="font-size:.78rem">not connected</span>
+    </div>
+  </div>
+
+  <div class="eyebrow">Tiered staking</div>
+  <h1>Lock it longer. Earn a bigger slice.</h1>
+  <p class="sub">Every reward that lands in a pool is split by <b>weight</b>, not by size alone &mdash; and your
+    weight is <b>how much you staked &times; how long you locked</b>. Leave a lock early and it costs 15%, which
+    goes straight to the people who stayed. Nothing goes to the platform.</p>
+
+  <div id="banner" style="margin-top:16px"></div>
+
+  <div class="card" style="margin-top:16px" id="poolPicker">
+    <div class="row" style="justify-content:space-between;align-items:baseline">
+      <h2>Pool</h2>
+      <span class="faint" style="font-size:.76rem">Every coin with a pool shows up here automatically.</span>
+    </div>
+    <div class="poolrow" id="poolList" style="margin-top:10px"></div>
+  </div>
+
+  <div class="stack" style="margin-top:16px">
+
+    <div class="tiles">
+      <div class="tile">
+        <div class="k">Total staked</div>
+        <div class="v" id="tTotal">&mdash;</div>
+        <div class="u" id="tTotalSym"></div>
+      </div>
+      <div class="tile">
+        <div class="k">Your share of rewards</div>
+        <div class="v" id="tShare">&mdash;</div>
+        <div class="u" id="tShareSub">of every reward that streams in</div>
+      </div>
+      <div class="tile pot">
+        <div class="k">The pot</div>
+        <div class="v" id="tPot">&mdash;</div>
+        <div class="u">penalties waiting to go back to stakers</div>
+      </div>
+    </div>
+
+    <!-- ── the ladder ─────────────────────────────────────────────────── -->
+    <div class="card">
+      <h2>Pick your lock</h2>
+      <p class="sub" style="font-size:.84rem">The bar is your multiplier. Same money, longer lock, bigger bar,
+        bigger slice of every reward.</p>
+      <div class="ladder" id="ladder" role="listbox" aria-label="Lock term"></div>
+
+      <div style="margin-top:16px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end">
+        <div>
+          <label for="amt" class="eyebrow" style="display:block;margin-bottom:6px">Amount to stake</label>
+          <input type="text" id="amt" inputmode="decimal" placeholder="0.0" />
+        </div>
+        <button id="doStake">Lock it</button>
+      </div>
+      <div class="row" style="margin-top:8px;justify-content:space-between">
+        <span class="faint" style="font-size:.78rem">Balance: <span class="num" id="bal">&mdash;</span></span>
+        <span class="faint" style="font-size:.78rem" id="preview"></span>
+      </div>
+    </div>
+
+    <!-- ── your positions ─────────────────────────────────────────────── -->
+    <div class="card">
+      <h2>Your locks</h2>
+      <p class="sub" style="font-size:.84rem">A lock is a price, never a cage &mdash; you can always pull out.
+        The bar shows how far through you are, and exactly what leaving right now would cost.</p>
+      <div id="positions"></div>
+    </div>
+
+    <div class="two">
+      <!-- ── pool composition ─────────────────────────────────────────── -->
+      <div class="card">
+        <h2>Where the pool sits</h2>
+        <p class="sub" style="font-size:.84rem">Share of total weight by lock length.</p>
+        <div class="donutwrap">
+          <svg id="donut" width="132" height="132" viewBox="0 0 132 132" role="img" aria-label="Pool weight by lock length"></svg>
+          <div class="legend" id="legend"></div>
+        </div>
+      </div>
+
+      <!-- ── boost ─────────────────────────────────────────────────────── -->
+      <div class="card">
+        <h2>$ROBIN holder boost</h2>
+        <p class="sub" style="font-size:.84rem" id="boostCopy">Stake $ROBIN and every lock you hold, in every
+          pool, earns extra on top of its tier.</p>
+        <div class="meter"><i id="boostFill" style="width:0%"></i></div>
+        <div class="row" style="justify-content:space-between">
+          <span class="num faint" style="font-size:.78rem" id="boostNow">&mdash;</span>
+          <span class="num faint" style="font-size:.78rem" id="boostNeed">&mdash;</span>
+        </div>
+        <div id="boostState" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <!-- ── rewards ────────────────────────────────────────────────────── -->
+    <div class="card">
+      <h2>Your rewards</h2>
+      <p class="sub" style="font-size:.84rem">These stream in second by second. Claiming never touches your lock.</p>
+      <div id="rewards" style="margin-top:6px"></div>
+      <button id="claimAll" class="ghost sm" style="margin-top:12px">Claim everything</button>
+    </div>
+
+    <!-- ── the pot, explained ─────────────────────────────────────────── -->
+    <div class="card" style="border-color:rgba(255,194,74,.28)">
+      <h2 style="color:var(--amber)">What is &ldquo;the pot&rdquo;?</h2>
+      <p class="sub" style="font-size:.86rem">When someone leaves early, their 15% is split among everyone still
+        staked. But if <b>nobody else is staked</b> at that moment, there is no one to pay &mdash; so it goes in
+        the pot and sits there in the open, counted, until there are stakers to hand it to.</p>
+      <p class="sub" style="font-size:.86rem;margin-top:8px">The pot has exactly one exit and it leads back to
+        stakers. There is no function in the contract that can send it to a wallet &mdash; not the team's, not
+        anyone's. That is enforced by the code, not by a promise.</p>
+      <div id="potRows" style="margin-top:10px"></div>
+    </div>
+
+    <!-- ── funding: only rendered for a wallet the pool actually accepts rewards from ── -->
+    <div class="card" id="fundCard" style="display:none;border-color:var(--line-strong)">
+      <h2>Add rewards to this pool</h2>
+      <p class="sub" style="font-size:.84rem">Nothing arrives here on its own. When a coin bonds, every unsold
+        token goes into its Bond &mdash; the floor and the sell-wall &mdash; not into staking. So whatever this
+        pool pays out is whatever gets put in here. It streams to stakers over the reward window rather than
+        landing as a lump, which is what stops someone staking for one block to grab it.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;margin-top:12px">
+        <div>
+          <label for="fundAsset" class="eyebrow" style="display:block;margin-bottom:6px">Reward asset</label>
+          <select id="fundAsset"></select>
+        </div>
+        <div>
+          <label for="fundAmt" class="eyebrow" style="display:block;margin-bottom:6px">Amount</label>
+          <input type="text" id="fundAmt" inputmode="decimal" placeholder="0.0" />
+        </div>
+        <button id="doFund">Add</button>
+      </div>
+      <div id="ownerTools" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+        <div class="row" style="justify-content:space-between">
+          <span class="faint" style="font-size:.8rem">Hand the pot back to the stakers. It cannot go anywhere else.</span>
+          <button id="doRelease" class="ghost sm">Release the pot</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="msg"></div>
+  </div>
+
+  <p class="faint" style="font-size:.76rem;margin-top:26px">
+    Contract: <span class="num" id="poolAddr">not deployed yet</span> &middot;
+    <a href="docs.html">How rewards work</a>
+  </p>
+</div>
+
+<script type="module">
+import { ethers } from "./assets/ethers.min.js";
+import * as Pad from "./assets/wallet.js";
+import { isDeployed, CONTRACTS, ABIS, STOCKS } from "./assets/config.js";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// This pool uses address(0) for native ETH — NOT the 0xEeee… sentinel the older flat pool used. Anything that
+// builds an ERC-20 for a reward asset has to branch on it first or it will call balanceOf on address zero.
+const ETH0 = Pad.TIER_ETH; // address(0) — NOT the 0xEeee… sentinel the older flat pool uses
+const SYM = { [ETH0]: "ETH" };
+if (CONTRACTS.platformToken) SYM[CONTRACTS.platformToken.toLowerCase()] = "ROBIN";
+for (const [sym, s] of Object.entries(STOCKS || {})) SYM[String(s.address).toLowerCase()] = sym;
+const symOf = (a) => SYM[String(a).toLowerCase()] || (a.slice(0, 6) + "…" + a.slice(-4));
+
+const LIVE = Pad.tierStakingAvailable(); // a factory OR a pinned flagship — either is enough
+const DAY = 86400;
+
+// Preview values mirror the contract's own constants so the page can be looked at before deploy without
+// inventing a mechanism that does not exist. Everything here is replaced by a real read when LIVE.
+const PREVIEW = {
+  terms: [0, 7 * DAY, 30 * DAY, 60 * DAY, 90 * DAY, 180 * DAY, 365 * DAY],
+  muls: [10000, 11000, 12500, 15000, 20000, 30000, 50000],
+  earlyBps: 1500,
+  boostBps: 2500,
+  boostThreshold: 10_000_000n * 10n ** 18n,
+};
+
+let S = {
+  terms: PREVIEW.terms.slice(),
+  muls: PREVIEW.muls.slice(),
+  earlyBps: PREVIEW.earlyBps,
+  boostBps: PREVIEW.boostBps,
+  boostThreshold: PREVIEW.boostThreshold,
+  tier: 3,
+  decimals: 18,
+  symbol: "ROBIN",
+  totalStaked: 0n,
+  totalWeight: 0n,
+  myWeight: 0n,
+  myStaked: 0n,
+  boosted: false,
+  positions: [],
+  rewards: [],
+  pot: [],
+  weightByTier: new Array(7).fill(0n),
+  balance: 0n,
+  pool: null,
+  pools: [],
+  roles: { rewarder: false, owner: false },
+};
+
+/* ── formatting ────────────────────────────────────────────────────────── */
+const fmtUnits = (wei, dp = 18, max = 4) => {
+  const n = Number(ethers.formatUnits(wei ?? 0n, dp));
+  if (!isFinite(n)) return "0";
+  if (n === 0) return "0";
+  if (n < 0.0001) return "<0.0001";
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return Math.round(n).toLocaleString();
+  return n.toLocaleString(undefined, { maximumFractionDigits: n < 1 ? 6 : max });
+};
+const pct = (num, den) => (den === 0n ? 0 : Number((num * 10000n) / den) / 100);
+const termLabel = (secs) => (secs === 0 ? "Flexible" : secs >= 365 * DAY ? "1 year" : Math.round(secs / DAY) + " days");
+const termShort = (secs) => (secs === 0 ? "no lock" : Math.round(secs / DAY) + "d");
+
+function countdown(secsLeft) {
+  if (secsLeft <= 0) return "unlocked";
+  const d = Math.floor(secsLeft / DAY);
+  const h = Math.floor((secsLeft % DAY) / 3600);
+  const m = Math.floor((secsLeft % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h left`;
+  if (h > 0) return `${h}h ${m}m left`;
+  return `${m}m left`;
+}
+
+// Brightness encodes commitment: the longest lock is the hottest colour on the page. Interpolated rather
+// than a fixed list so the ramp still reads correctly if the tier table ever changes length.
+function tierColor(i, n) {
+  const t = n <= 1 ? 1 : i / (n - 1);
+  const from = [90, 108, 24], to = [220, 233, 5];
+  const c = from.map((f, k) => Math.round(f + (to[k] - f) * t));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+function banner(kind, html) {
+  $("banner").innerHTML = html ? `<div class="banner ${kind}">${html}</div>` : "";
+}
+function msg(html, kind) {
+  $("msg").innerHTML = html ? `<div class="banner ${kind || "ok"}">${html}</div>` : "";
+}
+
+/* ── pool picker ───────────────────────────────────────────────────────── */
+function renderPools() {
+  if (!S.pools.length) {
+    $("poolPicker").style.display = "none";
+    return;
+  }
+  // One pool is not a choice — hide the picker rather than showing a control with a single option.
+  $("poolPicker").style.display = S.pools.length > 1 ? "" : "none";
+  $("poolList").innerHTML = S.pools.map((p) => `<button class="chip" data-pool="${esc(p.pool)}"
+    aria-pressed="${p.pool === S.pool}">${esc(p.symbol)}
+    <small>${fmtUnits(p.totalStaked, p.decimals)} staked</small></button>`).join("");
+  for (const b of $("poolList").querySelectorAll("[data-pool]")) {
+    b.addEventListener("click", async () => {
+      if (b.dataset.pool === S.pool) return;
+      S.pool = b.dataset.pool;
+      try { localStorage.setItem("rl:tierpool", S.pool); } catch { /* private window */ }
+      msg(""); await load();
+    });
+  }
+}
+
+/* ── the ladder ────────────────────────────────────────────────────────── */
+function renderLadder() {
+  const maxMul = Math.max(...S.muls);
+  $("ladder").innerHTML = S.terms.map((secs, i) => {
+    const mul = S.muls[i] / 10000;
+    const w = Math.max(6, (S.muls[i] / maxMul) * 100);
+    const col = tierColor(i, S.terms.length);
+    return `<div class="tier" role="option" tabindex="0" data-tier="${i}" aria-selected="${i === S.tier}">
+      <div class="term">${esc(termLabel(secs))}<small>${secs === 0 ? "leave anytime" : "15% early exit"}</small></div>
+      <div class="track"><div class="fill" style="width:${w.toFixed(1)}%;background:${col}"></div></div>
+      <div class="mult" style="color:${col}">${mul.toFixed(2)}&times;</div>
+    </div>`;
+  }).join("");
+  for (const el of $("ladder").querySelectorAll(".tier")) {
+    const pick = () => { S.tier = Number(el.dataset.tier); renderLadder(); renderPreview(); };
+    el.addEventListener("click", pick);
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+  }
+}
+
+function renderPreview() {
+  const raw = ($("amt").value || "").trim();
+  let amt = 0n;
+  try { amt = raw ? ethers.parseUnits(raw, S.decimals) : 0n; } catch { amt = 0n; }
+  if (amt === 0n) { $("preview").textContent = ""; return; }
+  let w = (amt * BigInt(S.muls[S.tier])) / 10000n;
+  if (S.boosted) w += (w * BigInt(S.boostBps)) / 10000n;
+  const share = pct(w, S.totalWeight + w);
+  $("preview").innerHTML = `This lock would earn <b style="color:var(--lime)">${share.toFixed(2)}%</b> of every reward`;
+}
+
+/* ── positions ─────────────────────────────────────────────────────────── */
+function renderPositions() {
+  const now = Math.floor(Date.now() / 1000);
+  if (!S.positions.length) {
+    $("positions").innerHTML = `<p class="faint" style="font-size:.85rem;margin:10px 0 0">
+      No locks yet. Pick a term above and you will see it here with a countdown.</p>`;
+    return;
+  }
+  $("positions").innerHTML = S.positions.map((p) => {
+    const tier = Number(p.tier);
+    const col = tierColor(tier, S.terms.length);
+    const term = S.terms[tier] || 0;
+    const unlock = Number(p.unlockAt);
+    const matured = unlock === 0 || now >= unlock;
+    const done = (!term || matured) ? 1 : Math.min(1, Math.max(0, (term - (unlock - now)) / term));
+    const cost = matured ? 0n : (BigInt(p.amount) * BigInt(S.earlyBps)) / 10000n;
+    return `<div class="pos ${matured ? "matured" : ""}" data-id="${p.id}">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <span class="num" style="font-size:1.12rem;font-weight:700">${fmtUnits(p.amount, S.decimals)}</span>
+          <span class="dim" style="font-size:.82rem"> ${esc(S.symbol)}</span>
+          <span class="badge" style="margin-left:7px;color:${col};border-color:${col}44">
+            ${(Number(p.mulBps) / 10000).toFixed(2)}&times; &middot; ${esc(termShort(term))}</span>
+        </div>
+        <span class="badge ${matured ? "green" : ""}">${matured ? "unlocked" : esc(countdown(unlock - now))}</span>
+      </div>
+      <div class="lockbar"><i style="width:${(done * 100).toFixed(1)}%;background:${matured ? "var(--green)" : col}"></i></div>
+      <div class="row" style="justify-content:space-between">
+        <span class="faint" style="font-size:.78rem">${matured
+          ? "Full amount back, and you keep every reward it earned."
+          : `Leaving now costs <b class="num" style="color:var(--red)">${fmtUnits(cost, S.decimals)} ${esc(S.symbol)}</b> plus this lock's share of pending rewards`}</span>
+        <button class="${matured ? "ghost" : "danger"} sm" data-wd="${p.id}">${matured ? "Withdraw" : "Leave early"}</button>
+      </div>
+    </div>`;
+  }).join("");
+  for (const b of $("positions").querySelectorAll("[data-wd]")) {
+    b.addEventListener("click", () => doWithdraw(Number(b.dataset.wd)));
+  }
+}
+
+/* ── donut ─────────────────────────────────────────────────────────────── */
+function renderDonut() {
+  const total = S.weightByTier.reduce((a, b) => a + b, 0n);
+  const R = 52, C = 2 * Math.PI * R;
+  const parts = [];
+  let offset = 0;
+  const rows = [];
+  S.weightByTier.forEach((w, i) => {
+    if (w === 0n) return;
+    const frac = Number((w * 100000n) / total) / 100000;
+    const len = frac * C;
+    parts.push(`<circle cx="66" cy="66" r="${R}" fill="none" stroke="${tierColor(i, S.terms.length)}"
+      stroke-width="19" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}"
+      stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 66 66)" />`);
+    offset += len;
+    rows.push(`<div><span class="swatch" style="background:${tierColor(i, S.terms.length)}"></span>
+      <span>${esc(termLabel(S.terms[i]))}</span>
+      <span class="num faint" style="margin-left:auto">${(frac * 100).toFixed(1)}%</span></div>`);
+  });
+  if (!parts.length) {
+    $("donut").innerHTML = `<circle cx="66" cy="66" r="52" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="19"/>`;
+    $("legend").innerHTML = `<span class="faint" style="font-size:.8rem">Nobody staked yet.</span>`;
+    return;
+  }
+  $("donut").innerHTML = parts.join("");
+  $("legend").innerHTML = rows.join("");
+}
+
+/* ── boost ─────────────────────────────────────────────────────────────── */
+function renderBoost() {
+  const need = S.boostThreshold;
+  const have = S.myStaked;
+  const p = need === 0n ? 0 : Math.min(100, Number((have * 1000n) / need) / 10);
+  $("boostFill").style.width = p.toFixed(1) + "%";
+  $("boostNow").textContent = fmtUnits(have, S.decimals) + " staked";
+  $("boostNeed").textContent = fmtUnits(need, 18) + " needed";
+  $("boostCopy").innerHTML = `Stake <b>${fmtUnits(need, 18)} $ROBIN</b> and every lock you hold, in
+    <b>every</b> pool, earns <b style="color:var(--lime)">+${(S.boostBps / 100).toFixed(0)}%</b> on top of its tier.
+    It counts <b>staked</b> $ROBIN, not what is in your wallet &mdash; so nobody can borrow it for one block.`;
+  $("boostState").innerHTML = S.boosted
+    ? `<div class="banner ok">Boost active &mdash; every lock you hold is earning +${(S.boostBps / 100).toFixed(0)}%.</div>`
+    : `<div class="banner" style="border:1px solid var(--line);color:var(--dim)">Not boosted yet.</div>`;
+}
+
+/* ── rewards + pot ─────────────────────────────────────────────────────── */
+function renderRewards() {
+  if (!S.rewards.length) {
+    $("rewards").innerHTML = `<p class="faint" style="font-size:.85rem;margin:8px 0 0">Nothing streaming yet.</p>`;
+    return;
+  }
+  $("rewards").innerHTML = S.rewards.map(({ asset, earned }) => `<div class="rw">
+    <span><b>${esc(symOf(asset))}</b></span>
+    <span class="row">
+      <span class="num" style="font-size:1rem">${fmtUnits(earned, 18)}</span>
+      <button class="ghost sm" data-claim="${esc(asset)}" ${earned === 0n ? "disabled" : ""}>Claim</button>
+    </span></div>`).join("");
+  for (const b of $("rewards").querySelectorAll("[data-claim]")) {
+    b.addEventListener("click", () => doClaim(b.dataset.claim));
+  }
+}
+
+function renderPot() {
+  const live = S.pot.filter((p) => p.amount > 0n);
+  const headline = live.length ? live[0] : null;
+  $("tPot").textContent = headline ? fmtUnits(headline.amount, 18) : "0";
+  $("potRows").innerHTML = live.length
+    ? live.map((p) => `<div class="rw"><span>${esc(symOf(p.asset))}</span>
+        <span class="num" style="color:var(--amber)">${fmtUnits(p.amount, 18)}</span></div>`).join("")
+    : `<p class="faint" style="font-size:.82rem;margin:0">Empty &mdash; nobody has left an empty pool early.</p>`;
+}
+
+function renderFunding() {
+  // Roles are read from the chain when live and forced on in preview, so they alone decide this.
+  const show = S.roles.rewarder || S.roles.owner;
+  $("fundCard").style.display = show ? "" : "none";
+  if (!show) return;
+  const sel = $("fundAsset");
+  const keep = sel.value;
+  sel.innerHTML = S.rewards.map((r) => `<option value="${esc(r.asset)}">${esc(symOf(r.asset))}</option>`).join("");
+  if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  $("ownerTools").style.display = S.roles.owner && S.pot.some((p) => p.amount > 0n) ? "" : "none";
+}
+
+function renderAll() {
+  $("tTotal").textContent = fmtUnits(S.totalStaked, S.decimals);
+  $("tTotalSym").textContent = S.symbol;
+  $("tShare").textContent = pct(S.myWeight, S.totalWeight).toFixed(2) + "%";
+  $("bal").textContent = fmtUnits(S.balance, S.decimals) + " " + S.symbol;
+  renderPools(); renderLadder(); renderPositions(); renderDonut(); renderBoost(); renderRewards(); renderPot(); renderFunding(); renderPreview();
+}
+
+/* ── chain ────────────────────────────────────────────────────────────── */
+// All chain access lives in wallet.js — this page never builds a contract, same as every other page here.
+async function load() {
+  if (!LIVE) {
+    banner("preview", `<div><b>Preview.</b> Tiered staking is not deployed yet, so the terms below are the real
+      ones from the contract with placeholder numbers in front of them. Nothing here is live and no button
+      will spend anything.</div>`);
+    S.totalStaked = 4_820_000n * 10n ** 18n;
+    S.weightByTier = [3n, 5n, 9n, 7n, 14n, 22n, 40n].map((n) => n * 10n ** 20n);
+    S.totalWeight = S.weightByTier.reduce((a, b) => a + b, 0n);
+    S.myWeight = 4n * 10n ** 20n;
+    S.myStaked = 6_500_000n * 10n ** 18n;
+    S.balance = 1_250_000n * 10n ** 18n;
+    S.positions = [
+      { id: 0, amount: 2_000_000n * 10n ** 18n, unlockAt: Math.floor(Date.now() / 1000) + 51 * DAY, mulBps: 20000, tier: 4 },
+      { id: 1, amount: 4_500_000n * 10n ** 18n, unlockAt: 0, mulBps: 10000, tier: 0 },
+    ];
+    S.rewards = [
+      { asset: ETH0, earned: 41_000_000_000_000_000n },
+      { asset: (CONTRACTS.platformToken || ETH0), earned: 128_000n * 10n ** 18n },
+    ];
+    S.pot = [{ asset: (CONTRACTS.platformToken || ETH0), amount: 12_400n * 10n ** 18n }];
+    S.pools = [
+      { pool: "0xROBIN", stakeToken: CONTRACTS.platformToken || ETH0, symbol: "ROBIN", decimals: 18, totalStaked: 4_820_000n * 10n ** 18n },
+      { pool: "0xCOIN", stakeToken: ETH0, symbol: "TROLLCAT", decimals: 18, totalStaked: 91_000_000n * 10n ** 18n },
+    ];
+    S.pool = "0xROBIN";
+    // Preview shows the funding panel so it can be reviewed before deploy. Live, it appears only for a wallet
+    // the pool actually accepts rewards from — everything in it reverts for anyone else.
+    S.roles = { rewarder: true, owner: true };
+    renderAll();
+    return;
+  }
+
+  if (!S.pools.length) {
+    S.pools = await Pad.tierPoolList();
+    if (!S.pool) {
+      // Remember the last pool looked at, then fall back to $ROBIN, then to whatever exists first.
+      let saved = null;
+      try { saved = localStorage.getItem("rl:tierpool"); } catch { /* private window */ }
+      const robin = S.pools.find((p) =>
+        CONTRACTS.platformToken && p.stakeToken.toLowerCase() === CONTRACTS.platformToken.toLowerCase());
+      S.pool = (saved && S.pools.some((p) => p.pool === saved) ? saved : null)
+        || (robin && robin.pool) || (S.pools[0] && S.pools[0].pool) || null;
+    }
+  }
+  if (!S.pool) { banner("bad", "<div>No staking pool exists yet.</div>"); return; }
+
+  const info = await Pad.tierStakingInfo(Pad.account(), S.pool);
+  if (!info) { banner("bad", "<div>Could not read the pool.</div>"); return; }
+  $("poolAddr").textContent = info.pool;
+
+  S.terms = info.terms; S.muls = info.muls;
+  S.earlyBps = info.earlyBps; S.boostBps = info.boostBps; S.boostThreshold = info.boostThreshold;
+  S.decimals = info.decimals; S.symbol = info.symbol;
+  S.totalStaked = info.totalStaked; S.totalWeight = info.totalWeight;
+  S.myWeight = info.myWeight; S.myStaked = info.myStaked; S.boosted = info.boosted;
+  S.balance = info.balance; S.positions = info.positions;
+  S.rewards = info.rewards; S.pot = info.pot;
+  S.roles = await Pad.tierRoles(S.pool, Pad.account());
+  if (S.tier >= S.terms.length) S.tier = Math.max(0, S.terms.length - 1);
+
+  // Weight by tier is not stored on-chain — nothing on-chain needs it — so the donut is built from the
+  // connected wallet's own positions. It shows the shape of YOUR locks, not a census of every staker, and
+  // the heading says so.
+  const mine = new Array(S.terms.length).fill(0n);
+  for (const p of S.positions) mine[p.tier] += (BigInt(p.amount) * BigInt(p.mulBps)) / 10000n;
+  S.weightByTier = mine;
+
+  renderAll();
+}
+
+/* ── actions ───────────────────────────────────────────────────────────── */
+function requireLive() {
+  if (!LIVE) { msg("This is a preview &mdash; the pool is not deployed yet, so there is nothing to sign.", "preview"); return false; }
+  return true;
+}
+
+async function run(fn, working, done) {
+  try { msg(working); const tx = await fn(); if (tx && tx.wait) await tx.wait(); msg(done, "ok"); await load(); }
+  catch (e) { msg(esc(e?.shortMessage || e?.message || "Failed"), "bad"); }
+}
+
+async function doStake() {
+  if (!requireLive()) return;
+  let amt;
+  try { amt = ethers.parseUnits(($("amt").value || "0").trim(), S.decimals); }
+  catch { msg("That is not a valid amount.", "bad"); return; }
+  if (amt <= 0n) { msg("Enter an amount.", "bad"); return; }
+  await run(() => Pad.tierStake(S.pool, amt, S.tier), "Locking…", `Locked for ${esc(termLabel(S.terms[S.tier]))}.`);
+  $("amt").value = ""; renderPreview();
+}
+
+async function doWithdraw(id) {
+  if (!requireLive()) return;
+  const p = S.positions.find((x) => x.id === id);
+  if (!p) { msg("That lock is gone — reloading.", "bad"); await load(); return; }
+  const matured = p.unlockAt === 0 || Math.floor(Date.now() / 1000) >= p.unlockAt;
+  if (!matured) {
+    const cost = (BigInt(p.amount) * BigInt(S.earlyBps)) / 10000n;
+    // The contract deliberately never reverts for being early, so this confirm is the only thing standing
+    // between a misclick and a 15% haircut. It has to spell out both costs, not just the visible one.
+    const ok = confirm(
+      `Leave this lock early?\n\n` +
+      `You pay ${fmtUnits(cost, S.decimals)} ${S.symbol} (15% of this lock)\n` +
+      `and you give up this lock's share of your unclaimed rewards.\n\n` +
+      `Both go to the people who stayed staked. This cannot be undone.`);
+    if (!ok) return;
+  }
+  await run(() => Pad.tierWithdraw(S.pool, id), "Withdrawing…", matured ? "Withdrawn in full." : "Withdrawn early.");
+}
+
+async function doClaim(asset) {
+  if (!requireLive()) return;
+  await run(() => Pad.tierClaim(S.pool, asset), "Claiming…", "Claimed.");
+}
+
+$("claimAll").addEventListener("click", async () => {
+  if (!requireLive()) return;
+  if (!S.rewards.some((r) => r.earned > 0n)) { msg("Nothing to claim yet.", "bad"); return; }
+  try { msg("Claiming…"); const n = await Pad.tierClaimAll(S.pool); msg(`Claimed ${n} reward${n === 1 ? "" : "s"}.`, "ok"); await load(); }
+  catch (e) { msg(esc(e?.shortMessage || e?.message || "Failed"), "bad"); }
+});
+
+$("doFund").addEventListener("click", async () => {
+  if (!requireLive()) return;
+  const asset = $("fundAsset").value;
+  // ETH is 18dp; an ERC-20 reward may not be, so read the decimals of the asset being funded rather than
+  // assuming the stake token's. Getting this wrong funds 1e12 times too much or too little.
+  let dp = 18;
+  if (asset !== ETH0) { try { dp = (await Pad.tokenMeta(asset)).decimals; } catch { dp = 18; } }
+  let amt;
+  try { amt = ethers.parseUnits(($("fundAmt").value || "0").trim(), dp); }
+  catch { msg("That is not a valid amount.", "bad"); return; }
+  if (amt <= 0n) { msg("Enter an amount.", "bad"); return; }
+  await run(() => Pad.tierFund(S.pool, asset, amt), "Adding rewards…", "Added — it streams to stakers from now.");
+  $("fundAmt").value = "";
+});
+
+$("doRelease").addEventListener("click", async () => {
+  if (!requireLive()) return;
+  const withPot = S.pot.find((p) => p.amount > 0n);
+  if (!withPot) { msg("The pot is empty.", "bad"); return; }
+  await run(() => Pad.tierReleaseStranded(S.pool, withPot.asset), "Releasing…", "The pot is now streaming to stakers.");
+});
+
+$("doStake").addEventListener("click", doStake);
+$("amt").addEventListener("input", renderPreview);
+$("connect").addEventListener("click", async () => {
+  try {
+    await Pad.connect();
+    $("acct").textContent = Pad.short(Pad.account());
+    $("connect").textContent = "Connected";
+    S.pools = []; // re-read: the list is cheap and roles/balances are per-account
+    await load();
+  } catch (e) { msg(esc(e.message || "Failed to connect"), "bad"); }
+});
+
+// Countdowns are the one thing that must move without a chain read, so the positions block re-renders on a
+// timer while everything else waits for an action.
+setInterval(() => { if (S.positions.length) renderPositions(); }, 30_000);
+
+load().catch((e) => banner("bad", `<div>Could not load the pool: ${esc(e?.message || e)}</div>`));
+</script>
+</body>
+</html>

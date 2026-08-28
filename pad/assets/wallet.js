@@ -2037,6 +2037,254 @@ export async function stakingClaimAll(pool, who) {
   return n;
 }
 
+// ── TIERED STAKING — locked terms, weighted shares, forfeit-to-stayers ────────
+// RobinTierStaking is the locked-term successor to the flat pool above. Two differences bite at this layer:
+//   • ETH is address(0) here, NOT the 0xEeee… sentinel. Anything that builds an ERC-20 for a reward asset
+//     must branch on TIER_ETH first, or it calls balanceOf on address zero and reads a silent empty return.
+//   • A staker holds POSITIONS, not one balance. `withdraw` takes a position id, and swap-and-pop MEANS THE
+//     LAST POSITION'S ID MOVES on every withdraw — so a caller must re-read `positions` after any write
+//     rather than reusing an index it captured earlier.
+export const TIER_ETH = "0x0000000000000000000000000000000000000000";
+
+/// True when there is any way at all to reach a tiered pool — a factory to look one up in, or a flagship
+/// address pinned in config. Pages gate on this rather than on one address, so the site keeps working the day
+/// the factory ships and stops being a single constant.
+export function tierStakingAvailable() {
+  return isDeployed("tierStakingFactory") || isDeployed("robinTierStaking");
+}
+
+function requireTierStaking() {
+  if (!tierStakingAvailable())
+    throw new Error("Tiered staking goes live once the pool is deployed (pre-deploy audit).");
+}
+
+function tierPool(runner, pool) {
+  const addr = pool || CONTRACTS.robinTierStaking;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(addr || "")) throw new Error("No staking pool for that token yet.");
+  return new ethers.Contract(addr, ABIS.robinTierStaking, runner);
+}
+
+/// Resolve the tiered pool for a stake token. Prefers the factory — that is the whole point of it — and falls
+/// back to the pinned flagship only for $ROBIN, so a config with just the flagship still works. Null if none.
+export async function tierPoolOf(stakeToken) {
+  if (isDeployed("tierStakingFactory")) {
+    try {
+      const f = new ethers.Contract(CONTRACTS.tierStakingFactory, ABIS.tierStakingFactory, _read);
+      const pool = await f.poolOf(stakeToken);
+      if (!/^0x0{40}$/i.test(pool)) return pool;
+    } catch { /* fall through to the pinned flagship */ }
+  }
+  if (isDeployed("robinTierStaking") && CONTRACTS.platformToken &&
+      String(stakeToken).toLowerCase() === CONTRACTS.platformToken.toLowerCase()) {
+    return CONTRACTS.robinTierStaking;
+  }
+  return null;
+}
+
+/// Every tiered pool that exists, with just enough about each to render a picker: address, stake token, its
+/// symbol, and how much is staked. This is what lets new coins appear on the staking page automatically —
+/// nothing here is hardcoded, so a pool created after this file shipped still shows up.
+export async function tierPoolList() {
+  let addrs = [];
+  if (isDeployed("tierStakingFactory")) {
+    try {
+      const f = new ethers.Contract(CONTRACTS.tierStakingFactory, ABIS.tierStakingFactory, _read);
+      addrs = await f.pools();
+    } catch { addrs = []; }
+  }
+  if (!addrs.length && isDeployed("robinTierStaking")) addrs = [CONTRACTS.robinTierStaking];
+
+  return (await Promise.all(addrs.map(async (pool) => {
+    try {
+      const s = new ethers.Contract(pool, ABIS.robinTierStaking, _read);
+      const stakeToken = await s.stakeToken();
+      const erc = new ethers.Contract(stakeToken, ABIS.erc20, _read);
+      const [symbol, totalStaked, decimals] = await Promise.all([
+        erc.symbol().catch(() => "TOKEN"), s.totalStaked(), erc.decimals().catch(() => 18),
+      ]);
+      // A pool whose token reverts on symbol()/decimals() still lists — it is a real pool with real money in
+      // it, and hiding it because its metadata is awkward would strand whoever staked there.
+      return { pool, stakeToken, symbol, decimals: Number(decimals), totalStaked };
+    } catch { return null; }
+  }))).filter(Boolean);
+}
+
+/// Everything the staking page renders, in one call. Read-only; safe before connect (`who` may be null).
+/// The tier table is READ rather than assumed — it is fixed at deploy, but a caller that hardcodes it will
+/// quietly misprice every lock the day a pool ships with a different schedule.
+export async function tierStakingInfo(who, pool) {
+  const target = pool || CONTRACTS.robinTierStaking;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(target || "")) return null;
+  const addr = who || _account || ethers.ZeroAddress;
+  const s = tierPool(_read, target);
+
+  const [stakeToken, totalStaked, totalWeight, earlyBps, boostBps, boostThreshold, rewardTokens] =
+    await Promise.all([
+      s.stakeToken(), s.totalStaked(), s.totalWeight(), s.EARLY_EXIT_BPS(),
+      s.boostBps(), s.boostThreshold(), s.getRewardTokens(),
+    ]);
+
+  // The tier arrays are fixed-length on-chain but read defensively: a reverting index ends the table rather
+  // than throwing away the whole page.
+  const terms = [], muls = [];
+  for (let i = 0; i < 16; i++) {
+    try {
+      const [t, m] = await Promise.all([s.TIER_TERM(i), s.TIER_MUL_BPS(i)]);
+      terms.push(Number(t)); muls.push(Number(m));
+    } catch { break; }
+  }
+
+  const erc = new ethers.Contract(stakeToken, ABIS.erc20, _read);
+  const [decimals, symbol] = await Promise.all([
+    erc.decimals().catch(() => 18), erc.symbol().catch(() => "TOKEN"),
+  ]);
+
+  const connected = addr !== ethers.ZeroAddress;
+  const [rawPositions, myWeight, myStaked, boosted, earnedAll, balance, potAll] = await Promise.all([
+    connected ? s.positionsOf(addr) : Promise.resolve([]),
+    connected ? s.weightOf(addr) : Promise.resolve(0n),
+    connected ? s.stakedOf(addr) : Promise.resolve(0n),
+    connected ? s.boosted(addr) : Promise.resolve(false),
+    connected ? s.earnedAll(addr) : Promise.resolve([rewardTokens, rewardTokens.map(() => 0n)]),
+    connected ? erc.balanceOf(addr).catch(() => 0n) : Promise.resolve(0n),
+    s.strandedAll(),
+  ]);
+
+  const positions = rawPositions.map((p, id) => ({
+    id, // valid ONLY until the next write — see the swap-and-pop note above
+    amount: p.amount,
+    unlockAt: Number(p.unlockAt),
+    mulBps: Number(p.mulBps),
+    tier: Number(p.tier),
+  }));
+
+  return {
+    pool: target,
+    stakeToken, decimals: Number(decimals), symbol,
+    totalStaked, totalWeight, myWeight, myStaked, boosted, balance,
+    earlyBps: Number(earlyBps), boostBps: Number(boostBps), boostThreshold,
+    terms, muls, positions,
+    rewards: earnedAll[0].map((asset, i) => ({ asset, isEth: asset === TIER_ETH, earned: earnedAll[1][i] })),
+    pot: potAll[0].map((asset, i) => ({ asset, isEth: asset === TIER_ETH, amount: potAll[1][i] })),
+  };
+}
+
+/// Open a lock of `amountWei` at `tier` (0 = flexible). Handles the ERC-20 approve (USDT-safe reset).
+export async function tierStake(pool, amountWei, tier) {
+  requireTierStaking();
+  if (!_signer) await connect();
+  await ensureOnChain();
+  const amount = BigInt(amountWei);
+  if (amount <= 0n) throw new Error("Enter an amount to stake.");
+  const s = tierPool(_signer, pool);
+  const target = await s.getAddress();
+  const stakeToken = await s.stakeToken();
+  const erc = new ethers.Contract(stakeToken, ABIS.erc20, _signer);
+  const bal = await erc.balanceOf(_account);
+  if (bal < amount) throw new Error("You don't have that many tokens to stake.");
+  let cur = null;
+  try { cur = await erc.allowance(_account, target); } catch { cur = null; }
+  if (cur === null || cur < amount) {
+    if (cur === null || cur > 0n) { const z = await guardedApprove(erc, target, 0n, "reset allowance"); await z.wait(); }
+    const a = await guardedApprove(erc, target, amount, "approve stake"); await a.wait();
+  }
+  return guardedSend(s, "stake", [amount, tier], 0n, "Lock stake");
+}
+
+/// Close position `positionId` in full. A matured or flexible position returns everything and KEEPS its
+/// rewards; an immature one costs EARLY_EXIT_BPS of principal plus that position's share of pending rewards,
+/// both of which go to the stakers who stayed. It never reverts for being early — that is the whole design —
+/// so a caller must confirm with the user BEFORE calling, not rely on a revert to stop them.
+export async function tierWithdraw(pool, positionId) {
+  requireTierStaking();
+  if (!_signer) await connect();
+  await ensureOnChain();
+  return guardedSend(tierPool(_signer, pool), "withdraw", [positionId], 0n, "Withdraw");
+}
+
+/// Claim ONE reward asset. Claiming is not withdrawing: it never forfeits and never touches a lock.
+export async function tierClaim(pool, asset) {
+  requireTierStaking();
+  if (!_signer) await connect();
+  await ensureOnChain();
+  return guardedSend(tierPool(_signer, pool), "claim", [asset], 0n, "Claim reward");
+}
+
+/// Whether `who` may fund `pool` with rewards, and whether they own it. The staking page uses this to decide
+/// whether to show the funding panel at all — the calls below revert for anyone else, but a button that always
+/// fails is worse than no button.
+export async function tierRoles(pool, who) {
+  const addr = who || _account;
+  if (!addr) return { rewarder: false, owner: false };
+  try {
+    const s = tierPool(_read, pool);
+    const [rewarder, o] = await Promise.all([s.isRewarder(addr), s.owner()]);
+    return { rewarder, owner: String(o).toLowerCase() === addr.toLowerCase() };
+  } catch { return { rewarder: false, owner: false }; }
+}
+
+/// Put rewards INTO a pool. This is not an optional extra: graduation routes every unsold token to the Bond
+/// (CurvePool.graduate), so no pool is ever funded by a launch bonding. Everything a pool pays out got there
+/// because somebody sent it.
+///
+/// `asset` is TIER_ETH for native ETH — which takes a completely different path (payable, no approve), so it
+/// is branched here rather than left for each caller to remember.
+export async function tierFund(pool, asset, amountWei) {
+  requireTierStaking();
+  if (!_signer) await connect();
+  await ensureOnChain();
+  const amount = BigInt(amountWei);
+  if (amount <= 0n) throw new Error("Enter an amount to add.");
+  const s = tierPool(_signer, pool);
+  const target = await s.getAddress();
+
+  if (!asset || asset === TIER_ETH) {
+    return guardedSend(s, "notifyRewardETH", [], amount, "Add ETH rewards");
+  }
+  const erc = new ethers.Contract(asset, ABIS.erc20, _signer);
+  const bal = await erc.balanceOf(_account);
+  if (bal < amount) throw new Error("You don't have that many tokens to add.");
+  let cur = null;
+  try { cur = await erc.allowance(_account, target); } catch { cur = null; }
+  if (cur === null || cur < amount) {
+    if (cur === null || cur > 0n) { const z = await guardedApprove(erc, target, 0n, "reset allowance"); await z.wait(); }
+    const a = await guardedApprove(erc, target, amount, "approve rewards"); await a.wait();
+  }
+  return guardedSend(s, "notifyReward", [asset, amount], 0n, "Add rewards");
+}
+
+/// List a new reward asset on a pool so it can be funded at all. Owner-only on-chain. `duration` is how long
+/// each deposit streams over, in seconds — the contract bounds it to [1 hour, 365 days].
+export async function tierListReward(pool, asset, durationSecs) {
+  requireTierStaking();
+  if (!_signer) await connect();
+  await ensureOnChain();
+  return guardedSend(tierPool(_signer, pool), "listReward", [asset, durationSecs], 0n, "List reward asset");
+}
+
+/// Hand the stranded pot back to the stakers. Owner-only, and it takes no recipient — there is no version of
+/// this call that pays a wallet.
+export async function tierReleaseStranded(pool, asset) {
+  requireTierStaking();
+  if (!_signer) await connect();
+  await ensureOnChain();
+  return guardedSend(tierPool(_signer, pool), "releaseStranded", [asset], 0n, "Release pot to stakers");
+}
+
+/// Claim every reward asset with a non-zero balance, one at a time so a single paused or blocked token
+/// cannot strand the rest. Returns how many were claimed.
+export async function tierClaimAll(pool, who) {
+  requireTierStaking();
+  const info = await tierStakingInfo(who || _account, pool);
+  let n = 0;
+  for (const r of info.rewards) {
+    if (r.earned > 0n) {
+      try { const tx = await tierClaim(pool, r.asset); if (tx && tx.wait) await tx.wait(); n++; } catch { /* skip paused/blocked asset */ }
+    }
+  }
+  return n;
+}
+
 // expose a tiny global for the plain-HTML pages (no bundler)
 if (typeof window !== "undefined") {
   window.addEventListener("robinpad:ready", ensureDisconnectUI);

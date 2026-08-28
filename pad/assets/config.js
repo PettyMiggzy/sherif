@@ -106,6 +106,18 @@ export const CONTRACTS = {
   robinStaking: "", // the canonical $ROBIN pool (also discoverable via stakingFactory.poolOf(platformToken))
   rewardConverter: "",
 
+  // Tiered staking (RobinTierStaking) — the locked-term successor to robinStaking above. Same streaming
+  // reward basket, but a stake picks a term (flexible/7/30/60/90/180/365d) that multiplies its share, an
+  // early exit costs 15% to the stakers who stayed, and 10M STAKED $ROBIN adds a further boost across every
+  // pool.
+  //
+  // tierStakingFactory is the one that matters as coins keep launching: it holds poolOf(token) and the full
+  // pool list, so stake-tiers.html renders every pool that exists WITHOUT this file being edited again. Once
+  // it is set, robinTierStaking below is only a fallback for the flagship $ROBIN pool — the site prefers the
+  // factory. DEPLOY: fill in after deploy + verify; the page renders a clearly-labelled preview until then.
+  tierStakingFactory: "",
+  robinTierStaking: "", // flagship $ROBIN pool; also discoverable via tierStakingFactory.poolOf(platformToken)
+
   // Multicall3 - the canonical read-batcher (same address on nearly every EVM chain;
   // verified deployed on Robinhood Chain). Used to collapse many independent view reads
   // (e.g. a portfolio's balanceOf fan-out) into ONE eth_call, cutting RPC load. Reads only.
@@ -306,6 +318,58 @@ export const ABIS = {
     "function claim(address asset) returns (uint256)",
     "function claimMany(address[] assets) returns (uint256[])",
     "function ETH() view returns (address)",
+  ],
+  // RobinTierStaking — locked-term staking. NOTE the ETH sentinel differs from robinStaking above: this
+  // contract uses address(0), not 0xEeee…EEeE, and address(0) appears verbatim in getRewardTokens(). Branch
+  // on it before constructing an ERC-20 for a reward asset. stake() needs a prior approve(pool, amount).
+  robinTierStaking: [
+    "function stakeToken() view returns (address)",
+    "function ETH() view returns (address)",
+    "function totalStaked() view returns (uint256)",
+    "function totalWeight() view returns (uint256)",
+    "function stakedOf(address) view returns (uint256)",
+    "function weightOf(address) view returns (uint256)",
+    "function boosted(address) view returns (bool)",
+    "function positionsOf(address user) view returns ((uint128 amount,uint64 unlockAt,uint16 mulBps,uint8 tier)[])",
+    "function positionCount(address user) view returns (uint256)",
+    "function TIER_TERM(uint256) view returns (uint32)",
+    "function TIER_MUL_BPS(uint256) view returns (uint16)",
+    "function EARLY_EXIT_BPS() view returns (uint16)",
+    "function qualifiesForBoost(address user) view returns (bool)",
+    "function boostThreshold() view returns (uint256)",
+    "function boostBps() view returns (uint16)",
+    "function getRewardTokens() view returns (address[])",
+    "function earned(address user, address asset) view returns (uint256)",
+    "function earnedAll(address user) view returns (address[] assets, uint256[] amounts)",
+    "function strandedAll() view returns (address[] assets, uint256[] amounts)",
+    "function stranded(address) view returns (uint256)",
+    "function rewardInfo(address) view returns (bool listed, uint32 duration, uint64 periodFinish, uint64 lastUpdateTime, uint256 rewardRate, uint256 rewardPerTokenStored, uint256 pending)",
+    "function stake(uint256 amount, uint8 tier) returns (uint256)",
+    "function withdraw(uint256 positionId) returns (uint256)",
+    "function claim(address asset) returns (uint256)",
+    "function claimMany(address[] assets) returns (uint256[])",
+    "function syncBoost(address user)",
+    // Funding + governance. Nothing at graduation routes into a staking pool — the curve sends every unsold
+    // token to the Bond (CurvePool.graduate) — so rewards get here by someone PUTTING them here. These are
+    // the calls that do it. All are gated on-chain (isRewarder / onlyOwner), so exposing them is safe.
+    "function owner() view returns (address)",
+    "function isRewarder(address) view returns (bool)",
+    "function notifyReward(address asset, uint256 amount)",
+    "function notifyRewardETH() payable",
+    "function listReward(address asset, uint32 duration)",
+    "function releaseStranded(address asset) returns (uint256)",
+  ],
+  // RobinTierStakingFactory — the registry that makes the staking page a list rather than a constant.
+  // `pools()` returns every pool in one read; `poolOf(token)` resolves a specific coin's pool (0x0 if none).
+  tierStakingFactory: [
+    "function poolOf(address stakeToken) view returns (address)",
+    "function pools() view returns (address[])",
+    "function allPools(uint256) view returns (address)",
+    "function allPoolsLength() view returns (uint256)",
+    "function boostSource() view returns (address)",
+    "function isCreator(address) view returns (bool)",
+    "function openCreation() view returns (bool)",
+    "function createPool(address stakeToken, bool selfBoost) returns (address)",
   ],
   // StakingFactory — one pool per stake token. poolOf(token) is the canonical pool (0x0 if none yet).
   stakingFactory: [

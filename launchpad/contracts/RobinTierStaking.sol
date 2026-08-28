@@ -64,7 +64,10 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
 
     uint256 private constant ACC = 1e30; // accumulator fixed-point scale
     uint16 private constant BPS = 10_000;
-    address internal constant ETH = address(0); // native ETH as a reward asset
+    /// @notice Native ETH as a reward asset. Public because it appears verbatim in `getRewardTokens()`, and a
+    /// front end or keeper that treats every listed asset as an ERC-20 will call `balanceOf` on address zero
+    /// and get a silent empty return rather than a revert. Exposing the sentinel lets callers branch on it.
+    address public constant ETH = address(0);
 
     uint256 public constant MAX_REWARD_TOKENS = 16;
     /// @dev Cap on open positions per user. `withdraw` and the weight recompute walk this list, so it must be
