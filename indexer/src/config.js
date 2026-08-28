@@ -159,6 +159,36 @@ export const CFG = {
   // worst case; raise it only alongside the model price you are actually paying.
   veniceGlobalPerMin: num("VENICE_GLOBAL_PER_MIN", 10),
   veniceMaxPromptChars: num("VENICE_MAX_PROMPT_CHARS", 600),
+  // ── Robin Labs AI (the pad's chat) ──
+  // /api/chat is OFF unless GROQ_API_KEY is set. The key is a SECRET (gitignored .groq_key / .env)
+  // injected server-side so it NEVER reaches the browser — pad/ is a static site served straight off
+  // disk, so anything referenced from there is readable in View Source.
+  //
+  // The docs are injected WHOLE into every request rather than retrieved: ~5.4k tokens against a
+  // 131k window makes retrieval pure downside, and retrieval is where a support bot starts
+  // inventing — it fetches three paragraphs, misses the fourth, and fills the gap confidently.
+  groqApiKey: process.env.GROQ_API_KEY || "",
+  groqApiBase: (process.env.GROQ_API_BASE || "https://api.groq.com/openai/v1").replace(/\/+$/, ""),
+  groqModel: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+  // Where docs.html and SECURITY.md live. Tried before the built-in fallbacks, because the indexer
+  // does not always sit next to the site — in the container only the web server mounts pad/.
+  docsRoot: process.env.DOCS_ROOT || "",
+  chatDocsMaxChars: num("CHAT_DOCS_MAX_CHARS", 60000),
+  // How much documentation goes into ONE request. The free provider tier caps the whole org at
+  // 8,000 tokens per minute, so this is a throughput dial, not a quality one: 6000 chars is ~1.5k
+  // tokens, which leaves room for the persona, the history and the reply and allows a handful of
+  // messages a minute site-wide. Raise it toward chatDocsMaxChars on a paid tier — the retrieval
+  // degrades gracefully into "send everything" as the budget grows.
+  chatContextMaxChars: num("CHAT_CONTEXT_MAX_CHARS", 6000),
+  chatContextMaxSections: num("CHAT_CONTEXT_MAX_SECTIONS", 4),
+  chatMaxTurns: num("CHAT_MAX_TURNS", 12),              // how much history is forwarded
+  chatMaxCharsPerTurn: num("CHAT_MAX_CHARS_PER_TURN", 2000),
+  chatMaxReplyTokens: num("CHAT_MAX_REPLY_TOKENS", 600),
+  chatRatePerSec: num("CHAT_RATE_PER_SEC", 1),
+  chatGlobalPerMin: num("CHAT_GLOBAL_PER_MIN", 60),
+  chatCorsOrigins: (process.env.CHAT_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinlabs.fun,https://www.robinlabs.fun")
+    .split(",").map((s) => s.trim()).filter(Boolean),
+
   // ── Art credits (the paywall in front of /api/art) ──
   // Both must be set or the generator stays FREE and rate-limited. artOperatorKey is a SECRET, and
   // deliberately a low-value one: ArtCredits requires the customer's own signature on every spend,

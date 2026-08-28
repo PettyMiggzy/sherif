@@ -23,6 +23,7 @@ import { renderCard, coinOgHtml } from "./og.js";
 import { enabled as memeEnabled, makeMeme } from "./memeproxy.js";
 import { enabled as artEnabled, makeArt, tiers as artTiers, styles as artStyles, creditsFor } from "./artproxy.js";
 import * as Credits from "./credits.js";
+import * as Chat from "./chatproxy.js";
 import { enabled as ordersEnabled, saveOrder, ordersForMaker, cancelOrder, verifyCancelledOnChain, orderExists } from "./orders.js";
 
 const DAY = 86400;
@@ -374,6 +375,18 @@ function artOrigin(req) {
   const o = String(req.headers["origin"] || "");
   return CFG.veniceCorsOrigins.includes(o) ? o : (CFG.veniceCorsOrigins[0] || "https://robinlab.io");
 }
+const chatRateOk = makeRateLimiter(CFG.chatRatePerSec);     // per-IP/sec cap on Robin Labs AI
+const _chatMin = { min: 0, n: 0 };
+function chatGlobalOk() {
+  const min = Math.floor(Date.now() / 60000);
+  if (_chatMin.min !== min) { _chatMin.min = min; _chatMin.n = 0; }
+  _chatMin.n += 1;
+  return _chatMin.n <= CFG.chatGlobalPerMin;
+}
+function chatOrigin(req) {
+  const o = String(req.headers["origin"] || "");
+  return CFG.chatCorsOrigins.includes(o) ? o : (CFG.chatCorsOrigins[0] || "https://robinlab.io");
+}
 const lifiRateOk = makeRateLimiter(CFG.lifiRatePerSec);     // per-IP cap on the LI.FI bridge proxy
 const lifiGlobalOk = makeRateLimiter(CFG.lifiGlobalPerSec); // total upstream/sec (protects our per-key LI.FI budget)
 // Per-IP cap on GET /api/* reads. The 5s micro-cache keys on url.search, so a client spraying distinct
@@ -695,6 +708,43 @@ export function startApi() {
         } catch { return sendUni(res, 502, { error: "trading upstream error" }, uorigin); }
       }
 
+      // ── Robin Labs AI: POST /api/chat ────────────────────────────────────────
+      // Body: { messages: [{role,content}], scope?: "pad"|"coin", token?: "0x…" }.
+      // The SYSTEM PROMPT IS NOT ACCEPTED FROM THE CLIENT and never will be — it carries the rules
+      // that stop a launchpad's chat box giving financial advice, and a client-supplied persona is
+      // no persona at all. Any system message in `messages` is dropped by chatproxy's filter.
+      if (path === "/api/chat") {
+        const corigin = chatOrigin(req);
+        if (!Chat.enabled()) return sendUni(res, 503, { error: "Robin Labs AI is not switched on yet" }, corigin);
+        if (!chatRateOk(clientIp(req))) return sendUni(res, 429, { error: "one message at a time — give it a second" }, corigin);
+        if (!chatGlobalOk()) return sendUni(res, 429, { error: "Robin Labs AI is busy, try again shortly" }, corigin);
+        let cbody;
+        try { cbody = JSON.parse((await readBody(req, 64 * 1024)).toString("utf8")); }
+        catch { return sendUni(res, 400, { error: "bad request" }, corigin); }
+
+        // For a coin question, look the coin up HERE and hand the model the row. The alternative —
+        // letting the client post the facts — means the page tells the model what is true about the
+        // coin it is selling, which is exactly backwards.
+        let facts = null;
+        const scope = cbody.scope === "coin" ? "coin" : "pad";
+        if (scope === "coin") {
+          const tok = String(cbody.token || "").toLowerCase();
+          if (!/^0x[0-9a-f]{40}$/.test(tok)) return sendUni(res, 400, { error: "bad token" }, corigin);
+          try {
+            const row = db.prepare("SELECT * FROM coins WHERE token = ?").get(tok);
+            facts = Chat.coinFacts(row);
+          } catch { facts = null; }
+          if (!facts) return sendUni(res, 404, { error: "I do not know that coin yet" }, corigin);
+        }
+
+        try {
+          const out = await Chat.ask({ messages: cbody.messages, scope, facts });
+          return sendUni(res, 200, out, corigin);
+        } catch (e) {
+          return sendUni(res, 502, { error: (e && e.message) || "Robin Labs AI could not answer" }, corigin);
+        }
+      }
+
       // ── Text-to-art proxy: POST /api/art ─────────────────────────────────────
       // Off unless VENICE_API_KEY is set. Body: { prompt: string }. The key, the model and
       // safe_mode are all injected server-side; nothing about the request can change what we spend
@@ -952,6 +1002,7 @@ export function startApi() {
       // Whether the photo-to-meme generator is configured — the create page shows its button only if so.
       if (path === "/api/meme/enabled") return send(res, 200, { enabled: memeEnabled() }, origin);
       // Tier names and their credit cost only — never the model or the provider behind them.
+      if (path === "/api/chat/enabled") return send(res, 200, { enabled: Chat.enabled(), docs: Chat.enabled() ? Chat.docsLoaded() : false }, origin);
       if (path === "/api/art/enabled") {
         return send(res, 200, {
           enabled: artEnabled(),
