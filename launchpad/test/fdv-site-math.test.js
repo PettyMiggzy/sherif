@@ -79,6 +79,40 @@ describe("[FDV] the create page's supply/value maths agrees with the factory", f
     expect(quoted).to.be.lt((min * 103n) / 100n); // ...and only just, i.e. it really is the floor
   });
 
+  // [PINNED BAND] Every launch is meant to target the same ~4.2 ETH raise no matter what token count the
+  // creator picks. The raise is a fixed multiple of the launch PRICE, and price x supply is the FDV, so
+  // pinning every launch to one FDV pins every launch to one raise — supply becomes purely cosmetic.
+  //
+  // The catch is that the factory only accepts tick magnitudes in steps of 200, about 2.02% of price apart,
+  // so no supply can hit an exact FDV. This proves a band that tight is still reachable from any supply
+  // anyone would plausibly type, using the site's own rounding, checked against the factory's own quote.
+  it("a band pinned to one target is reachable from every supply, so supply stops changing the raise", async () => {
+    const TARGET = (await factory.quoteFdvWei(1_000_000_000n * ONE, START)); // today's default launch
+    const lo = TARGET * 98n / 100n, hi = TARGET * 103n / 100n;
+    // The factory is shared across this file, so put the wide band back before leaving or every later test
+    // launches against a band it was not written for.
+    const [wasLo, wasHi] = [await factory.minFdvWei(), await factory.maxFdvWei()];
+    await (await factory.connect(dep).setFdvBand(lo, hi)).wait();
+
+    const supplies = [1_000n, 10_000n, 100_000n, 1_000_000n, 10_000_000n, 100_000_000n, 1_000_000_000n,
+                      10_000_000_000n, 100_000_000_000n, 1_000_000_000_000n, 3_700_000n, 123_456_789n];
+    let worst = 0;
+    for (const st of supplies) {
+      const supplyWei = st * ONE;
+      const mag = fdv.tickMagFor(supplyWei, TARGET);
+      expect(fdv.magInRange(mag, WIDTH), `no usable tick for ${st}`).to.equal(true);
+      const quoted = await factory.quoteFdvWei(supplyWei, mag);
+      // Inside the band means the factory will actually accept this launch.
+      expect(quoted, `${st} below band`).to.be.gte(lo);
+      expect(quoted, `${st} above band`).to.be.lte(hi);
+      const driftBps = Number((quoted - TARGET) * 10_000n / TARGET);
+      worst = Math.max(worst, Math.abs(driftBps));
+    }
+    await (await factory.connect(dep).setFdvBand(wasLo, wasHi)).wait();
+    console.log(`   every supply from 1e3 to 1e12 lands within ${(worst / 100).toFixed(2)}% of the same starting value`);
+    expect(worst).to.be.lte(300); // 3%, so the raise varies by 3% at most rather than 32x
+  });
+
   it("refuses the combinations the factory would refuse, instead of letting them revert", async () => {
     for (const [supply, value, why] of [
       [1_000n * ONE, ethers.parseEther("5000"), "a token worth more than an ETH each"],
@@ -93,7 +127,9 @@ describe("[FDV] the create page's supply/value maths agrees with the factory", f
   it("a value the site accepts really launches, and the coin opens where it said", async () => {
     // The end of the chain. Everything above compares numbers; this spends gas on them.
     const supplyTokens = 10_000n * ONE; // a deliberately tiny token count — the case that used to be broken
-    const want = ethers.parseEther("2");
+    // The band is pinned to one starting valuation now, so this asks for the pad's target rather than an
+    // arbitrary number: the whole point is that ten thousand tokens opens exactly where a billion does.
+    const want = await factory.quoteFdvWei(1_000_000_000n * ONE, START);
     const mag = fdv.tickMagFor(supplyTokens, want);
     expect(fdv.magInRange(mag, WIDTH)).to.equal(true);
 

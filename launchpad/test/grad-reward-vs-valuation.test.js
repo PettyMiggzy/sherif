@@ -101,23 +101,30 @@ describe("[B2] the graduation reward tracks the creator's chosen valuation", fun
     expect(normal.toPlatform).to.be.gte(ethers.parseEther("0.5")); // platform also sweeps WETH dust
   });
 
-  it("the cheapest launch the band allows pays a FRACTION of it — to both sides equally", async () => {
-    cheap = await launchAndGraduate("Robin Cheap", "CHEAP", CHEAP_MAG, "b2-cheap");
-    console.log(`   CHEAP fdv ${ethers.formatEther(cheap.fdvWei)} ETH  ->  creator ${ethers.formatEther(cheap.toDev)} / platform ${ethers.formatEther(cheap.toPlatform)}`);
+  // THIS USED TO BE THE FINDING, AND IT IS NOW THE FIX. Under the old +/-32x band the cheapest legal launch
+  // raised ~0.13 ETH, so the reward cap of raise/4 paid the creator AND the platform about 0.033 against an
+  // advertised 0.5, and seeded the Bond floor with roughly six hundredths of an ETH — a floor the first sell
+  // goes straight through. The band is pinned now, so that launch cannot exist: the factory refuses it.
+  it("the launch that used to shortchange both sides is now refused outright", async () => {
+    await expect(launchAndGraduate("Robin Cheap", "CHEAP", CHEAP_MAG, "b2-cheap"))
+      .to.be.revertedWithCustomError(factory, "MarketCapOutOfRange");
+  });
 
-    // In band, and far cheaper than the default — this is a launch the factory accepts today.
-    expect(cheap.fdvWei).to.be.gte(await factory.minFdvWei());
-    expect(cheap.fdvWei).to.be.lt(normal.fdvWei / 20n);
+  it("the cheapest launch the band still allows pays the FULL 0.5 to both sides", async () => {
+    // The bottom of the pinned band — the worst case that can now reach graduation at all.
+    const target = await factory.quoteFdvWei(1_000_000_000n * ONE, START);
+    const floorFdv = await factory.minFdvWei();
+    expect(floorFdv).to.be.gte((target * 97n) / 100n);
 
-    // THE FINDING: nowhere near the advertised 0.5.
-    expect(cheap.toDev).to.be.lt(ethers.parseEther("0.5"));
-    console.log(`   creator gets ${(Number(cheap.toDev) / Number(ethers.parseEther("0.5")) * 100).toFixed(1)}% of the advertised 0.5 ETH`);
-
-    // ...and the cap is what pays it: min(0.5, raise/4). Graduated reports the raise NET of both rewards,
-    // so gross = net + 2*reward, and reward == gross/4 exactly when the cap is not binding.
+    cheap = await launchAndGraduate("Robin Floor", "FLOOR", START + 200, "b2-floor");
     const gross = cheap.netRaise + 2n * cheap.toDev;
-    expect(cheap.toDev).to.equal(gross / 4n);
-    console.log(`   CHEAP gross raise ${ethers.formatEther(gross)} ETH (vs the ~4.2 the calibration targets)`);
+    console.log(`   FLOOR fdv ${ethers.formatEther(cheap.fdvWei)} ETH · gross raise ${ethers.formatEther(gross)} ETH`);
+    console.log(`   creator ${ethers.formatEther(cheap.toDev)} / platform ${ethers.formatEther(cheap.toPlatform)} · floor seeded with ${ethers.formatEther(cheap.netRaise)} ETH`);
+
+    expect(cheap.fdvWei).to.be.gte(floorFdv);
+    expect(cheap.toDev).to.equal(ethers.parseEther("0.5"));  // the full advertised reward, not a fraction
+    expect(gross).to.be.gt(ethers.parseEther("2"));          // the raise the full 0.5 needs
+    expect(cheap.netRaise).to.be.gt(ethers.parseEther("1")); // and a floor worth the name
   });
 
   it("the platform is NOT insulated — it is paid the same reward as the creator", async () => {

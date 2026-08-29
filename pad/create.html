@@ -296,20 +296,29 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
       <details class="field" id="supplyPanel" style="border:1px solid var(--line-2,rgba(220,233,5,.14));border-radius:12px;padding:12px 14px;margin-bottom:14px;background:rgba(220,233,5,.03)">
         <summary style="cursor:pointer;font-weight:800;list-style:none;display:flex;align-items:center;gap:8px">Supply &amp; starting value <span class="hint" style="font-weight:500">optional — defaults are fine</span></summary>
         <div style="margin-top:12px">
-          <p class="hint" style="margin:0 0 10px">Most coins launch with <b>1,000,000,000</b> tokens. The token count is cosmetic: what decides how much your coin costs is the <b>starting value</b> below. Two coins opening at the same value take the same money for the same share of the coin, whether there are ten thousand tokens or a billion.</p>
+          <p class="hint" style="margin:0 0 10px">Most coins launch with <b>1,000,000,000</b> tokens. The token count is cosmetic &mdash; it changes the price per token and nothing else. Ten thousand tokens and a billion tokens open at the same value, take the same money to graduate, and end up with the same floor underneath them.</p>
           <div class="row2">
             <div class="field"><label for="supplyIn">Total tokens</label>
               <input class="inp" id="supplyIn" inputmode="numeric" placeholder="1,000,000,000" oninput="fdvSync()" />
               <div class="hint" id="supplyPresets" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
                 <button type="button" class="preset" data-supply="1000000000">1B</button>
                 <button type="button" class="preset" data-supply="100000000">100M</button>
+                <button type="button" class="preset" data-supply="10000000">10M</button>
                 <button type="button" class="preset" data-supply="1000000">1M</button>
+                <button type="button" class="preset" data-supply="100000">100K</button>
                 <button type="button" class="preset" data-supply="10000">10K</button>
               </div>
             </div>
-            <div class="field"><label for="fdvIn">Starting value (ETH)</label>
+            <div class="field" id="fdvField"><label for="fdvIn">Starting value (ETH)</label>
               <input class="inp" id="fdvIn" inputmode="decimal" placeholder="1.76" oninput="fdvSync()" />
               <div class="hint" style="margin-top:6px">What the whole coin is worth at launch, before anyone buys.</div>
+            </div>
+            <!-- Shown instead of the input when the pad pins every launch to one starting value. Then there
+                 is nothing to choose, and an input a creator can only get wrong is worse than no input. -->
+            <div class="field" id="fdvFixed" style="display:none"><label>Starting value</label>
+              <div class="inp" style="display:flex;align-items:center;opacity:.8" id="fdvFixedVal">&mdash;</div>
+              <div class="hint" style="margin-top:6px">The same for every coin on this pad, so every coin needs
+                the same buying to graduate &mdash; about <b>4.2 ETH</b>.</div>
             </div>
           </div>
           <p class="hint" id="fdvNote" style="margin:10px 0 0">Leave both blank for the standard launch.</p>
@@ -598,10 +607,13 @@ async function fdvSync() {
     return;
   }
   // One without the other cannot be quoted — and guessing the missing half is exactly how a creator ends up
-  // with a coin priced somewhere they never chose.
-  if (!raw || !val) {
+  // with a coin priced somewhere they never chose. Unless the pad PINS the starting value, in which case
+  // there is only one answer, nothing was guessed, and asking for it would just be a field to get wrong.
+  if (!raw || (!val && !fdvPinned)) {
     window.__fdvChoice = undefined;
-    window.__fdvError = 'Fill in both the token count and the starting value, or clear both.';
+    window.__fdvError = fdvPinned
+      ? 'Enter how many tokens you want.'
+      : 'Fill in both the token count and the starting value, or clear both.';
     if (noteEl) { noteEl.textContent = window.__fdvError; noteEl.style.color = 'var(--red)'; }
     return;
   }
@@ -627,8 +639,12 @@ async function fdvSync() {
     // should see the number their coin actually opens at.
     const eth = Number(q.fdvWei) / 1e18;
     if (noteEl) {
-      noteEl.textContent = `${fmtInt(raw)} tokens opening at ${eth.toLocaleString('en-US', { maximumSignificantDigits: 4 })} ETH `
-        + `(about $${Math.round(eth * ETH_USD).toLocaleString('en-US')}) — that is the whole coin, before anyone buys.`;
+      const opensAt = `${eth.toLocaleString('en-US', { maximumSignificantDigits: 4 })} ETH `
+        + `(about $${Math.round(eth * ETH_USD).toLocaleString('en-US')})`;
+      noteEl.textContent = fdvPinned
+        ? `${fmtInt(raw)} tokens, opening at ${opensAt} for the whole coin — the same as every coin here. `
+          + `It graduates on about 4.2 ETH of buying, whatever the token count.`
+        : `${fmtInt(raw)} tokens opening at ${opensAt} — that is the whole coin, before anyone buys.`;
       noteEl.style.color = 'var(--green)';
     }
   } catch (e) {
@@ -641,6 +657,23 @@ async function fdvSync() {
   }
 }
 window.fdvSync = fdvSync;
+
+// Whether this pad lets a creator choose the starting value at all. Read from the chain rather than assumed,
+// so widening the band with `setFdvBand` brings the input back with no redeploy of this page.
+let fdvPinned = false;
+(async () => {
+  try {
+    const q = await Pad.quoteLaunch('1000000000', '0');
+    fdvPinned = !!q.pinned;
+    if (!fdvPinned) return;
+    const mid = Number(q.minWei + q.maxWei) / 2e18;
+    $('fdvField').style.display = 'none';
+    $('fdvFixed').style.display = '';
+    $('fdvFixedVal').textContent = `${mid.toLocaleString('en-US', { maximumSignificantDigits: 4 })} ETH`;
+    const note = $('fdvNote');
+    if (note) note.textContent = 'Leave the token count blank for the standard 1,000,000,000.';
+  } catch { /* leave the chooser up; a launch is still checked against the band on-chain */ }
+})();
 
 $('supplyPresets')?.addEventListener('click', (e) => {
   const b = e.target.closest('[data-supply]');

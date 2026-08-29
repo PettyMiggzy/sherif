@@ -113,8 +113,9 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     // fully-diluted value at launch. So the band below is the only thing checked, and supply is unbounded.
     //
     // WEI, not USD: this chain has no USD oracle, so the owner retunes the band as ETH moves and a launch client
-    // must READ it. It is seeded in the constructor to +/-32x of whatever THIS factory's own default geometry
-    // implies, so a fresh deploy is immediately sane without a second governance step.
+    // must READ it. It is seeded in the constructor PINNED to whatever THIS factory's own default geometry
+    // implies — one starting valuation for every coin, so every coin targets the same raise regardless of the
+    // token count its creator picked. See the constructor for why that is a default rather than a range.
     uint256 public minFdvWei;
     uint256 public maxFdvWei;
     // A constant rail above the owner-tunable ceiling. This is a FAT-FINGER GUARD, not a policy: at ~10,000x
@@ -173,11 +174,31 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         START_TICK_MAG = startTickMag_;
         CURVE_WIDTH = curveWidth_;
         MIN_GRAD_WIDTH = minGradWidth_;
-        // seed the valuation band around this factory's OWN default launch, so the default `launch()` is always
-        // in band by construction and a creator gets a 32x window either side of it before governance touches it
+        // Seed the band PINNED to this factory's own default launch, not a wide window around it.
+        //
+        // The raise a coin needs to graduate is a fixed multiple of its launch PRICE, and price x supply is
+        // the FDV this band checks — so one FDV means one raise, for every coin, whatever token count the
+        // creator picked. That is the point: supply becomes cosmetic, as the create page already tells
+        // people, and every launch targets the same ~4.2 ETH.
+        //
+        // A wide band did not just allow variety, it allowed BROKEN coins. At the bottom of the old +/-32x
+        // window a launch raised ~0.13 ETH; the graduation rewards are capped at a quarter of the raise
+        // each, so both the creator and the platform were paid ~0.033 instead of the advertised 0.5, and
+        // the Bond floor was seeded with about six hundredths of an ETH. That coin graduates and the first
+        // sell goes straight through the floor. Pinned, the smallest possible raise is ~4.12 ETH: the full
+        // 0.5 each is always payable and the floor never starts under ~3.1 ETH.
+        //
+        // The +/-2-3% is not slack, it is the tick grid. The factory only accepts magnitudes in steps of
+        // 200, about 2.02% of price apart, so an exact FDV is unreachable for most supplies and a band
+        // narrower than one step would make whole token counts unlaunchable. Measured against this
+        // contract's own `quoteFdvWei` in fdv-site-math.test.js: every supply from 1e3 to 1e12 lands within
+        // 1.74% of the target, always on the dear side, because the site rounds the magnitude down.
+        //
+        // `setFdvBand` still opens it back up if the pad ever wants tiers of launch size. This is a default,
+        // not a rail — the rail is HARD_MAX_FDV_WEI.
         uint256 f = PoolMath.fdvWei(TOTAL_SUPPLY, startTickMag_);
-        minFdvWei = f / 32;
-        maxFdvWei = f * 32;
+        minFdvWei = (f * 98) / 100;
+        maxFdvWei = (f * 103) / 100;
         emit FdvBandChanged(minFdvWei, maxFdvWei);
     }
 

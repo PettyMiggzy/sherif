@@ -784,11 +784,17 @@ export async function launch({ name, symbol, dev, devBuyEth = "0", tax, supply, 
 export async function quoteLaunch(supplyTokens, fdvEth) {
   const factory = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _read);
   const supplyWei = ethers.parseUnits(String(supplyTokens || 0), 18);
-  const wantWei = ethers.parseEther(String(fdvEth || 0));
-  const mag = supplyWei > 0n && wantWei > 0n ? tickMagFor(supplyWei, wantWei) : 0;
   const [minWei, maxWei, curveWidth] = await Promise.all([
     factory.minFdvWei(), factory.maxFdvWei(), factory.CURVE_WIDTH(),
   ]);
+  // A PINNED band means the pad has one starting valuation for every coin, so every coin needs the same
+  // raise to graduate no matter how many tokens its creator minted. There is then nothing for a creator to
+  // choose and nothing to ask them: aim at the middle of the band on their behalf. `fdvEth` is still
+  // honoured when the band is wide, so this does not hard-code a policy the owner can change with
+  // `setFdvBand` — the page follows the chain rather than its own copy of it.
+  const pinned = minWei > 0n && maxWei * 100n < minWei * 110n;
+  const wantWei = pinned ? (minWei + maxWei) / 2n : ethers.parseEther(String(fdvEth || 0));
+  const mag = supplyWei > 0n && wantWei > 0n ? tickMagFor(supplyWei, wantWei) : 0;
   // The contract's own bounds on the magnitude, mirrored so the page can say WHY instead of letting the
   // launch revert BadValue: positive, a multiple of 200, and leaving the derived ceiling inside Uniswap's
   // usable tick range.
@@ -796,7 +802,7 @@ export async function quoteLaunch(supplyTokens, fdvEth) {
   const fdvWei = magOk ? await factory.quoteFdvWei(supplyWei, mag) : 0n;
   const ok = magOk && fdvWei >= minWei && fdvWei <= maxWei;
   return {
-    supplyWei, startTickMag: mag, fdvWei, minWei, maxWei, ok,
+    supplyWei, startTickMag: mag, fdvWei, minWei, maxWei, ok, pinned,
     reason: !magOk ? "That combination doesn't make a launchable price — try more tokens, or a lower value."
       : fdvWei < minWei ? `Too cheap. The lowest this pad allows is ${ethers.formatEther(minWei)} ETH.`
       : fdvWei > maxWei ? `Too expensive. The highest this pad allows is ${ethers.formatEther(maxWei)} ETH.`

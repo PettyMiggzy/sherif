@@ -55,11 +55,17 @@ describe("[FDV] v3 pad — creators choose supply; the factory bounds the valuat
     expect(Number(ethers.formatEther(fdv))).to.be.closeTo(1.758, 0.01);
   });
 
-  it("seeds the band around this factory's OWN default launch, so launch() is in band by construction", async () => {
+  it("seeds the band PINNED to its own default launch, so every coin targets the same raise", async () => {
     const fdv = await factory.quoteFdvWei(DEFAULT_SUPPLY, START_TICK_MAG);
-    expect(await factory.minFdvWei()).to.equal(fdv / 32n);
-    expect(await factory.maxFdvWei()).to.equal(fdv * 32n);
+    expect(await factory.minFdvWei()).to.equal((fdv * 98n) / 100n);
+    expect(await factory.maxFdvWei()).to.equal((fdv * 103n) / 100n);
     expect(fdv).to.be.gte(await factory.minFdvWei()).and.to.be.lte(await factory.maxFdvWei());
+
+    // The band is only as wide as the tick grid demands. Anything wider lets a coin graduate on a raise too
+    // small to seed a floor; anything narrower makes whole token counts unlaunchable. Measured either side.
+    const span = Number((await factory.maxFdvWei()) * 10_000n / (await factory.minFdvWei())) / 10_000;
+    expect(span).to.be.gte(1.0202); // one 200-tick step, or some supplies have no rung to land on
+    expect(span).to.be.lte(1.10);
   });
 
   it("a 10,000-token supply priced into the band CLEARS the valuation check", async () => {
