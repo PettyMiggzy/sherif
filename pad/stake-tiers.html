@@ -240,10 +240,15 @@
         pot goes to the fuel line at <code id="sinkAddr">&mdash;</code>, a contract whose only outputs are staking
         pools &mdash; there is no function on it that pays a person, not for us, not for anyone. From there
         <b>anyone</b> can push it back into this pool, so it does not depend on us being around to do it.</p>
-      <p class="sub" style="font-size:.86rem;margin-top:8px">It streams in over the reward window rather than
+      <p class="sub" style="font-size:.86rem;margin-top:8px">It streams in over about a week rather than
         landing as a lump. That is deliberate: handing it out all at once let someone stake for a single block,
-        grab a share and leave. Streaming means you only earn it for time you were actually locked, so the
-        person who paid it cannot simply re-stake and take it straight back.</p>
+        grab a share and leave. You earn it for the time you were actually staked while it was streaming.</p>
+      <p class="sub" style="font-size:.86rem;margin-top:8px"><b>Be clear about how it is split:</b> the tax is
+        shared out by weight, exactly like every other reward in this pool. It is not a bonus reserved for
+        long-term holders. Somebody who parks a large amount with no lock will take a large share of it &mdash;
+        what your lock buys you is a <b>much better rate per token</b>, not exclusivity. A 365-day lock earns
+        <b>5&times; per token</b> what an unlocked stake earns, so a small locker beats a whale who did not
+        commit only up to that 5&times;, not beyond it.</p>
       <div id="potRows" style="margin-top:10px"></div>
     </div>
 

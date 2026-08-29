@@ -98,19 +98,38 @@ describe("[TAX] the early-exit tax goes home to the pool, not to a wallet", func
     expect(got).to.be.lt(E("0.0001"));
   });
 
-  it("HOLE #3 a whale cannot front-run the return with weight it never risked", async () => {
+  // MEASURED, not asserted. The first version of this test read `earned` in the same block and called
+  // the hole closed. That only ever proved the whale cannot take the tax ATOMICALLY. Holding the
+  // position through the stream — which costs the whale nothing but time — is the actual attack, and
+  // it works: streaming does not stop a flexible whale, it only makes it wait.
+  it("a flexible whale DOES take most of the tax by holding the stream out", async () => {
     const { alice, bob, whale, coin, feeder, pool, p } = await setup();
     await (await p.connect(bob).stake(E(1000), TIER.D365)).wait();
     await (await p.connect(alice).stake(E(1000), TIER.D365)).wait();
     await (await p.connect(alice).withdraw(0)).wait();
     await (await p.connect(alice).sweepStranded(await coin.getAddress())).wait();
 
-    // The whale sees returnTax in the mempool and front-runs it with flexible weight it can abandon.
     await (await p.connect(whale).stake(E(50_000), TIER.FLEX)).wait();
     await (await feeder.connect(whale).returnTax(pool)).wait();
-    const grabbed = await p.earned(whale.address, await coin.getAddress()); // same block, no time passed
-    console.log(`   front-runner grabbed ${ethers.formatEther(grabbed)} of 150 instantly`);
-    expect(grabbed).to.equal(0n);
+
+    const instant = await p.earned(whale.address, await coin.getAddress());
+    expect(instant).to.equal(0n); // atomic capture is genuinely dead
+
+    await time.increase(7 * 24 * 3600); // hold the window it started
+    const held = await p.earned(whale.address, await coin.getAddress());
+    const stayer = await p.earned(bob.address, await coin.getAddress());
+    console.log(`   whale: 0 instantly, ${ethers.formatEther(held)} of 150 after holding 7 days (${(Number(held) / 1.5e20 * 100).toFixed(1)}%)`);
+    console.log(`   the locked stayer got ${ethers.formatEther(stayer)}`);
+
+    // This is the honest number and it is why the page must not promise the tax to "the stayers".
+    // The tax is shared by weight like every other reward, so more capital takes more of it.
+    expect(held).to.be.gt(E(100));
+    // What DOES hold: per token staked, a 365-day lock earns far more than flexible capital. Bob is
+    // outnumbered 50:1 in principal and still takes ~9%, which is the 5x lock multiplier working.
+    const perTokenWhale = held / 50_000n;
+    const perTokenBob = stayer / 1_000n;
+    expect(perTokenBob).to.be.gt(perTokenWhale * 4n);
+    console.log(`   per token staked, the 365-day locker earned ${(Number(perTokenBob) / Number(perTokenWhale)).toFixed(1)}x the flexible whale`);
   });
 
   // The honest residual, measured rather than assumed. This is the case that broke every previous
@@ -166,5 +185,80 @@ describe("[TAX] the early-exit tax goes home to the pool, not to a wallet", func
     const rogue = await rogueFactory.poolOf(await coin.getAddress());
     await (await coin.transfer(await feeder.getAddress(), E(150))).wait();
     await expect(feeder.returnTax(rogue)).to.be.revertedWithCustomError(feeder, "NotAPool");
+  });
+});
+
+// The auditor's LOW: every funding call resets periodFinish, and returnTax is open to anyone, so a
+// griefer donating dust could hold the finish line a full window away forever and thin the tail.
+describe("[TAX] a dust top-up cannot restart the stream clock", function () {
+  this.timeout(180000);
+
+  it("five daily 1-wei pokes do not push the finish line out", async () => {
+    const [owner, bob] = await ethers.getSigners();
+    const T = await ethers.getContractFactory("MockERC20");
+    const coin = await T.deploy(E(100_000_000));
+    const F = await ethers.getContractFactory("RobinTierStakingFactory");
+    const factory = await F.deploy(owner.address);
+    const FE = await ethers.getContractFactory("StakingFeeder");
+    const feeder = await FE.deploy(owner.address, await factory.getAddress());
+    await (await factory.setFeeder(await feeder.getAddress())).wait();
+    await (await factory.createPool(await coin.getAddress(), true)).wait();
+    const pool = await factory.poolOf(await coin.getAddress());
+    const p = await ethers.getContractAt("RobinTierStaking", pool);
+
+    await (await coin.transfer(bob.address, E(10_000))).wait();
+    await (await coin.connect(bob).approve(pool, ethers.MaxUint256)).wait();
+    await (await p.connect(bob).stake(E(1000), TIER.D365)).wait();
+
+    await (await coin.transfer(await feeder.getAddress(), E(150))).wait();
+    await (await feeder.returnTax(pool)).wait();
+    const started = await p.rewardInfo(await coin.getAddress());
+    const rate0 = started.rewardRate;
+
+    for (let i = 0; i < 5; i++) {
+      await time.increase(24 * 3600);
+      await (await coin.transfer(await feeder.getAddress(), 1n)).wait(); // one wei
+      await (await feeder.returnTax(pool)).wait();
+    }
+    const after = await p.rewardInfo(await coin.getAddress());
+    const daysLeft = (Number(after.periodFinish) - (await time.latest())) / 86400;
+    console.log(`   after 5 daily 1-wei pokes: ${daysLeft.toFixed(2)} days left (was 7), rate ${(Number(after.rewardRate) / Number(rate0) * 100).toFixed(0)}% of the original`);
+
+    expect(daysLeft).to.be.lt(2.5);                    // the clock kept running; it was not reset
+    expect(after.rewardRate).to.be.gte(rate0);         // and the tail was not thinned
+
+    // The money is still all there — folded into the running window, not lost.
+    await time.increase(7 * 24 * 3600);
+    const earned = await p.earned(bob.address, await coin.getAddress());
+    expect(earned).to.be.gt(E(149));
+    console.log(`   sole locked staker still receives ${ethers.formatEther(earned)} of the 150`);
+  });
+
+  it("a real deposit still extends the window normally", async () => {
+    const [owner, bob] = await ethers.getSigners();
+    const T = await ethers.getContractFactory("MockERC20");
+    const coin = await T.deploy(E(100_000_000));
+    const F = await ethers.getContractFactory("RobinTierStakingFactory");
+    const factory = await F.deploy(owner.address);
+    const FE = await ethers.getContractFactory("StakingFeeder");
+    const feeder = await FE.deploy(owner.address, await factory.getAddress());
+    await (await factory.setFeeder(await feeder.getAddress())).wait();
+    await (await factory.createPool(await coin.getAddress(), true)).wait();
+    const pool = await factory.poolOf(await coin.getAddress());
+    const p = await ethers.getContractAt("RobinTierStaking", pool);
+    await (await coin.transfer(bob.address, E(10_000))).wait();
+    await (await coin.connect(bob).approve(pool, ethers.MaxUint256)).wait();
+    await (await p.connect(bob).stake(E(1000), TIER.D365)).wait();
+
+    await (await coin.transfer(await feeder.getAddress(), E(150))).wait();
+    await (await feeder.returnTax(pool)).wait();
+    await time.increase(3 * 24 * 3600);
+    await (await coin.transfer(await feeder.getAddress(), E(150))).wait(); // a real second tax, 100%
+    await (await feeder.returnTax(pool)).wait();
+
+    const after = await p.rewardInfo(await coin.getAddress());
+    const daysLeft = (Number(after.periodFinish) - (await time.latest())) / 86400;
+    console.log(`   a full-size deposit reset the window to ${daysLeft.toFixed(2)} days, as it should`);
+    expect(daysLeft).to.be.gt(6.9);
   });
 });

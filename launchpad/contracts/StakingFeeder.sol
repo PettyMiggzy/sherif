@@ -116,6 +116,18 @@ contract StakingFeeder is Ownable, ReentrancyGuard {
     /// A coin arrives in this contract from exactly one place — its own pool's `sweepStranded` — so
     /// "the balance of that coin" and "that pool's tax" are the same number. Anyone donating more of it
     /// is donating to that coin's stakers, which is the same thing this call does.
+    ///
+    /// OPERATIONAL NOTE, because this call sweeps the WHOLE balance of that coin: never park a pool's own
+    /// stake token in this contract as inventory meant for somewhere else — for instance staging coin X
+    /// here to `feedToken` it into a different pool that cross-lists X as a bonus reward. Anyone could
+    /// call this first and send it to X's own pool instead. Nothing is lost and no wallet is involved,
+    /// but it lands somewhere you did not choose. The keeper never does this; a human might.
+    ///
+    /// AND BE HONEST ABOUT WHERE IT LANDS: this hands the tax to the pool's normal by-weight stream, so
+    /// it is split among everyone staked at the time, not reserved for the people who kept their locks. A
+    /// large unlocked position takes a large share — measured at 90.9% for a whale 50x the size of the
+    /// only locked staker. Lock tiers mean a locker earns 5x per token, which is the whole of the
+    /// advantage; it is not exclusivity. Do not describe this as "the tax pays the stayers".
     function returnTax(address pool) external nonReentrant returns (address asset, uint256 amount) {
         _requirePool(pool);
         asset = ITierPool(pool).stakeToken();

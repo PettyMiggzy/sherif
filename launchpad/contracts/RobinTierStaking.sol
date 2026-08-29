@@ -346,6 +346,10 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     /// An hour is not a magic number. It is long enough that being first stops being decisive and
     /// anyone watching can join before the money starts moving.
     uint32 public constant PENDING_DELAY = 1 hours;
+
+    /// @notice A top-up smaller than 1/this of the un-streamed remainder joins the running window rather
+    ///         than restarting it. See `_applyReward` for why that matters when anyone can trigger a deposit.
+    uint256 private constant DUST_TOPUP_RATIO = 100;
     /// @notice When the pool last went from empty to holding weight. Zero while it is empty.
     uint64 public weightSince;
 
@@ -374,6 +378,29 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         uint256 remaining;
         if (extend && block.timestamp < r.periodFinish) {
             remaining = (r.periodFinish - block.timestamp) * r.rewardRate;
+
+            // A TOP-UP MUST NOT BE ABLE TO RESTART THE CLOCK FOR FREE. Every funding call below resets
+            // `periodFinish` to now + duration and re-spreads whatever has not streamed yet. Funding is
+            // gated, but `returnTax` on the feeder is deliberately open to anyone, and anyone may also
+            // donate a token — so without this, a griefer sending one wei a day could hold `periodFinish`
+            // permanently a full window away and thin the tail forever. Measured before this guard: five
+            // daily pokes roughly halved the rate with the finish still 7.00 days out.
+            //
+            // So a top-up worth less than 1% of what is still owed is folded into the window ALREADY
+            // running instead of starting a new one. Nothing is lost — the money is added to the same
+            // rate over the same remaining time — the deposit simply does not buy the right to move the
+            // finish line. Anything larger is a real deposit and extends normally.
+            if (amount < remaining / DUST_TOPUP_RATIO) {
+                uint256 left = r.periodFinish - block.timestamp;
+                uint256 tot = amount + remaining;
+                uint256 rate = tot / left;
+                if (rate == 0) { r.pending += amount; return; }
+                r.rewardRate = rate;
+                unchecked { r.pending += tot - rate * left; }
+                r.lastUpdateTime = uint64(block.timestamp);
+                emit RewardAdded(asset, amount, r.periodFinish);
+                return;
+            }
         }
         uint256 total = amount + remaining;
         // A stream shorter than one wei per second rounds to a rate of ZERO, and then the money
