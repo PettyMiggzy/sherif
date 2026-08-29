@@ -118,12 +118,14 @@ describe("[TAX] the early-exit tax goes home to the pool, not to a wallet", func
     await time.increase(7 * 24 * 3600); // hold the window it started
     const held = await p.earned(whale.address, await coin.getAddress());
     const stayer = await p.earned(bob.address, await coin.getAddress());
-    console.log(`   whale: 0 instantly, ${ethers.formatEther(held)} of 150 after holding 7 days (${(Number(held) / 1.5e20 * 100).toFixed(1)}%)`);
+    console.log(`   whale: 0 instantly, ${ethers.formatEther(held)} of 150 after holding 7 days (${(Number(held) / 1.5e20 * 100).toFixed(1)}%, was 90.9% before the cap)`);
     console.log(`   the locked stayer got ${ethers.formatEther(stayer)}`);
 
     // This is the honest number and it is why the page must not promise the tax to "the stayers".
-    // The tax is shared by weight like every other reward, so more capital takes more of it.
-    expect(held).to.be.gt(E(100));
+    // The tax is shared by weight like every other reward, so more capital takes more of it — bounded
+    // now by the whale cap, which is the only reason this reads 66.7% instead of the 90.9% it did before.
+    expect(held).to.be.gt(E(90));
+    expect(held).to.be.lt(E(105));
     // What DOES hold: per token staked, a 365-day lock earns far more than flexible capital. Bob is
     // outnumbered 50:1 in principal and still takes ~9%, which is the 5x lock multiplier working.
     const perTokenWhale = held / 50_000n;

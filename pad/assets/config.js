@@ -335,6 +335,7 @@ export const ABIS = {
     "function totalWeight() view returns (uint256)",
     "function stakedOf(address) view returns (uint256)",
     "function weightOf(address) view returns (uint256)",
+    "function capOf(address user) view returns (uint256)",
     "function boosted(address) view returns (bool)",
     "function positionsOf(address user) view returns ((uint128 amount,uint64 unlockAt,uint16 mulBps,uint8 tier)[])",
     "function positionCount(address user) view returns (uint256)",

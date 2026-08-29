@@ -427,10 +427,27 @@ function renderPreview() {
   let amt = 0n;
   try { amt = raw ? ethers.parseUnits(raw, S.decimals) : 0n; } catch { amt = 0n; }
   if (amt === 0n) { $("preview").textContent = ""; return; }
-  let w = (amt * BigInt(S.muls[S.tier])) / 10000n;
+  // The whale cap is on PRINCIPAL, so it is applied to the amount before the tier multiplier and the
+  // boost — the same order the contract uses. Anything above the ceiling still belongs to you and still
+  // withdraws in full; it just does not earn, and you should be told that before you send it, not after.
+  const held = S.myStaked || 0n;
+  const cap = S.cap === undefined ? null : S.cap;
+  const noCap = cap === null || cap >= (1n << 255n);
+  const counted = noCap ? amt : (held + amt > cap ? (cap > held ? cap - held : 0n) : amt);
+
+  let w = (counted * BigInt(S.muls[S.tier])) / 10000n;
   if (S.boosted) w += (w * BigInt(S.boostBps)) / 10000n;
   const share = pct(w, S.totalWeight + w);
-  $("preview").innerHTML = `This lock would earn <b style="color:var(--lime)">${share.toFixed(2)}%</b> of every reward`;
+
+  let html = `This lock would earn <b style="color:var(--lime)">${share.toFixed(2)}%</b> of every reward`;
+  if (!noCap && counted < amt) {
+    const over = amt - counted;
+    html += `<br><span style="color:var(--amber);font-size:.84rem">Heads up &mdash; ${fmtUnits(over, S.decimals)}
+      ${esc(S.symbol)} of this would sit above your earning ceiling and earn nothing. You can still withdraw
+      every token of it whenever you like. The ceiling stops any one account taking the whole pool; it rises
+      as other people stake, and it rises for you if you lock $ROBIN.</span>`;
+  }
+  $("preview").innerHTML = html;
 }
 
 /* ── positions ─────────────────────────────────────────────────────────── */
@@ -591,6 +608,7 @@ async function load() {
     ];
     S.pot = [{ asset: (CONTRACTS.platformToken || ETH0), amount: 12_400n * 10n ** 18n }];
     S.strandedSink = CONTRACTS.treasury || "0x0000000000000000000000000000000000000000";
+    S.cap = 2_000_000n * 10n ** 18n; // preview: a visible ceiling, so the warning copy can be reviewed
     S.pools = [
       { pool: "0xROBIN", stakeToken: CONTRACTS.platformToken || ETH0, symbol: "ROBIN", decimals: 18, totalStaked: 4_820_000n * 10n ** 18n },
       { pool: "0xCOIN", stakeToken: ETH0, symbol: "TROLLCAT", decimals: 18, totalStaked: 91_000_000n * 10n ** 18n },
@@ -627,7 +645,7 @@ async function load() {
   S.totalStaked = info.totalStaked; S.totalWeight = info.totalWeight;
   S.myWeight = info.myWeight; S.myStaked = info.myStaked; S.boosted = info.boosted;
   S.balance = info.balance; S.positions = info.positions;
-  S.rewards = info.rewards; S.pot = info.pot; S.strandedSink = info.strandedSink;
+  S.rewards = info.rewards; S.pot = info.pot; S.strandedSink = info.strandedSink; S.cap = info.cap;
   S.roles = await Pad.tierRoles(S.pool, Pad.account());
   if (S.tier >= S.terms.length) S.tier = Math.max(0, S.terms.length - 1);
 

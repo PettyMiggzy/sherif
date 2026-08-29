@@ -2154,6 +2154,12 @@ export async function tierStakingInfo(who, pool) {
   // checkable against the chain rather than taken on trust. An older pool that predates the setter can
   // return nothing, so a failure here degrades to a dash instead of blanking the whole page.
   const strandedSink = await s.strandedSink().catch(() => ethers.ZeroAddress);
+  // The whale cap: the most PRINCIPAL this account can currently earn on. MaxUint256 means no ceiling —
+  // an empty pool, or the cap switched off — and the page treats that as "no limit" rather than printing
+  // an absurd number. An older pool with no `capOf` degrades the same way.
+  const cap = connected
+    ? await s.capOf(addr).catch(() => ethers.MaxUint256)
+    : ethers.MaxUint256;
 
   const positions = rawPositions.map((p, id) => ({
     id, // valid ONLY until the next write — see the swap-and-pop note above
@@ -2171,7 +2177,7 @@ export async function tierStakingInfo(who, pool) {
     terms, muls, positions,
     rewards: earnedAll[0].map((asset, i) => ({ asset, isEth: asset === TIER_ETH, earned: earnedAll[1][i] })),
     pot: potAll[0].map((asset, i) => ({ asset, isEth: asset === TIER_ETH, amount: potAll[1][i] })),
-    strandedSink,
+    strandedSink, cap,
   };
 }
 

@@ -116,6 +116,45 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     IBoostSource public boostSource; // where a staker's $ROBIN position is read from
     uint256 public boostThreshold = 10_000_000 ether; // 10M $ROBIN
     uint16 public boostBps = 2_500; // +25% on top of the tier multiplier
+
+    // ──────────────────────────────────────────────────────── the whale cap ──
+    //
+    // WHY THIS EXISTS. Rewards are split by weight, so more capital takes more — which is how staking is
+    // supposed to work, until one account takes the pool. Measured before this cap: a whale staking 50x the
+    // only locked staker, with no lock at all, took 90.9% of a reward. The locked staker who had committed
+    // for a year got 9.1%. Nothing was stolen and nothing was broken; it was simply not a pool anyone else
+    // had a reason to join.
+    //
+    // So one account's PRINCIPAL is capped relative to everyone else's. Principal, not weight, and the
+    // distinction is the whole design. Capping weight looked equivalent and was not: weight already carries
+    // the tier multiplier and the holder boost, so a weight cap silently ate them. A staker who locked for
+    // 365 days is supposed to earn 5x what an unlocked one earns on the same money, and under a weight cap
+    // that collapsed to 2x — the cap could not tell "5x because I committed for a year" from "5x because I
+    // brought five times the money", and punished the first to reach the second. Capping the money and
+    // letting the multipliers run on top keeps every promise the pool makes and still bounds size.
+    //
+    // Relative rather than a fixed number of tokens, because a fixed number cannot be right for both a pool
+    // holding 0.1% of a supply and one holding 20% of it, and the thin pool is exactly where a whale does
+    // the most damage. It is computed against OTHER people's principal — `totalStaked - stakedOf[user]` —
+    // which is what keeps it from being circular: your cap never depends on your own capped figure.
+    //
+    // WHAT IT DOES NOT DO. It does not stop a whale who splits across wallets. Nothing on-chain can: an
+    // address costs nothing, and every per-account limit ever written has the same hole. What it does is
+    // make domination cost either real work (fund, stake, claim and manage N wallets on every pool, forever)
+    // or real $ROBIN. The second path is deliberately the cheap one — see `capStepBps`.
+    // The number errs loose on purpose. Bringing three times what everyone else brought is not whaling, it
+    // is being the biggest holder, and it should pay three times — so the ceiling sits far above ordinary
+    // variance and only bites genuine domination. At 10x, every normal case measured here is untouched and
+    // the whale that caused all this — 50x the only other staker — drops from 90.9% of a reward to 66.7%.
+    uint32 public capBps = 100_000; // your principal may reach 10x everyone else's combined; 0 disables it
+
+    /// @notice $ROBIN locked per step of extra cap. Locking this much raises your ceiling by `capStepBps`.
+    uint256 public capStep = 10_000_000e18;
+    /// @notice How much each step adds, in bps of `capBps`. Default +50% of the base allowance per step.
+    uint32 public capStepBps = 5_000;
+    /// @notice The most the steps can add. Default +400%, so a fully-stacked holder reaches 5x the base
+    ///         allowance — enough to be the clear majority of a pool, but only by holding $ROBIN to do it.
+    uint32 public capMaxBps = 40_000;
     /// @dev A ceiling the owner cannot raise. Governance may tune the boost, but it can never become so large
     /// that boosted stakers effectively own the whole stream and everyone else earns nothing.
     uint16 public constant MAX_BOOST_BPS = 10_000; // +100%
@@ -175,6 +214,7 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     error BadBoost();
     error EthTransferFailed();
     error NothingStranded();
+    error BadCap();
     error StreamRunning(uint64 until);
 
     event Staked(address indexed user, uint256 indexed positionId, uint256 amount, uint8 tier, uint64 unlockAt);
@@ -183,6 +223,7 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     event RewardAdded(address indexed asset, uint256 amount, uint64 periodFinish);
     event RewardListed(address indexed asset, uint32 duration);
     event BoostChanged(address indexed source, uint256 threshold, uint16 bps);
+    event CapSet(uint32 capBps, uint256 capStep, uint32 capStepBps, uint32 capMaxBps);
     event BoostSynced(address indexed user, bool boosted, uint256 weight);
     event Stranded(address indexed asset, uint256 amount);
     event StrandedSwept(address indexed asset, address indexed to, uint256 amount);
@@ -261,15 +302,25 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     /// to making an exit unaffordable.
     uint256 private constant BOOST_GAS = 250_000;
 
+    /// @dev How much $ROBIN `user` has LOCKED, read live from the boost source. Both the holder boost and
+    /// the whale cap are priced off this one number, so it is read once and shared — a second staticcall
+    /// would double the cost of every stake for no new information.
+    ///
+    /// Gas-capped as well as static, so a broken or hostile source can cost a staker their boost and their
+    /// raised cap, but never their exit. See BOOST_GAS. A failed read is treated as zero rather than a
+    /// revert for the same reason: nothing about an outside contract may be able to trap a withdrawal.
+    function _lockedRobin(address user) internal view returns (uint256) {
+        if (address(boostSource) == address(0)) return 0;
+        (bool ok, bytes memory ret) =
+            address(boostSource).staticcall{gas: BOOST_GAS}(abi.encodeCall(IBoostSource.stakedLockedOf, (user)));
+        if (!ok || ret.length < 32) return 0;
+        return abi.decode(ret, (uint256));
+    }
+
     /// @notice Whether `user` currently qualifies for the holder boost, read live from the source.
     function qualifiesForBoost(address user) public view returns (bool) {
         if (address(boostSource) == address(0) || boostBps == 0) return false;
-        // Gas-capped as well as static, so a broken or hostile source can cost a staker their boost but never
-        // their exit. See BOOST_GAS.
-        (bool ok, bytes memory ret) =
-            address(boostSource).staticcall{gas: BOOST_GAS}(abi.encodeCall(IBoostSource.stakedLockedOf, (user)));
-        if (!ok || ret.length < 32) return false;
-        return abi.decode(ret, (uint256)) >= boostThreshold;
+        return _lockedRobin(user) >= boostThreshold;
     }
 
     function _lastTimeApplicable(address asset) internal view returns (uint256) {
@@ -448,19 +499,61 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         emit Stranded(asset, amount);
     }
 
+    /// @dev The ceiling on `user`'s earning weight. Measured against what everybody ELSE holds, so it scales
+    /// with the pool instead of needing a number that suits every coin, and so it can never depend on the
+    /// value it is about to bound.
+    ///
+    /// An empty pool has no ceiling — with nobody else staked there is no one to take a share from, and a
+    /// cap of zero would mean the first staker earns nothing and the pool could never start.
+    function _capFor(address user, uint256 robin) internal view returns (uint256) {
+        if (capBps == 0) return type(uint256).max; // disabled
+        uint256 others = totalStaked - stakedOf[user];
+        if (others == 0) return type(uint256).max;
+
+        uint256 bps = capBps;
+        if (capStep != 0 && robin != 0) {
+            uint256 add = (robin / capStep) * capStepBps;
+            if (add > capMaxBps) add = capMaxBps;
+            bps += add;
+        }
+        return Math.mulDiv(others, bps, BPS);
+    }
+
+    /// @notice The most PRINCIPAL `user` may currently earn on. Anything staked above it still belongs to
+    /// them and still withdraws in full, it simply does not earn. Rendered on the stake page so somebody
+    /// about to stake past their ceiling is told before they do it, not after.
+    function capOf(address user) external view returns (uint256) {
+        return _capFor(user, _lockedRobin(user));
+    }
+
     /// @dev Recompute `user`'s weight from their positions and current boost status, and move `totalWeight`
     /// with it. The caller MUST have settled rewards for `user` first, or the change is applied retroactively
     /// to rewards already earned at the old weight.
     function _resync(address user) internal {
         Position[] storage ps = _positions[user];
-        bool boost = qualifiesForBoost(user);
+        uint256 robin = _lockedRobin(user); // one read, shared by the boost and the cap
+        bool boost = boostBps != 0 && address(boostSource) != address(0) && robin >= boostThreshold;
         uint256 w;
         for (uint256 i; i < ps.length; ++i) {
             // The multiplier frozen ON THE POSITION, never the current tier table — a position is priced by
             // the deal it was opened under.
             w += Math.mulDiv(ps[i].amount, ps[i].mulBps, BPS);
         }
+
+        // The cap applies to PRINCIPAL and BEFORE the multipliers, so a capped staker keeps the full tier
+        // and boost rate on the part that does count — see the note on `capBps` for why capping the weight
+        // instead quietly cancelled the tiers. Scaling the whole weight by cap/principal rather than
+        // trimming positions keeps the mix of tiers intact: an account over its ceiling has every position
+        // counted at the same fraction, so which one it opened first does not change what it earns.
+        //
+        // Principal is untouched by any of this. It lives in the positions and withdraws in full — an
+        // account above its ceiling is earning less, never stuck.
+        uint256 principal = stakedOf[user];
+        uint256 cap = _capFor(user, robin);
+        if (principal > cap && principal != 0) w = Math.mulDiv(w, cap, principal);
+
         if (boost) w += Math.mulDiv(w, boostBps, BPS);
+
         uint256 prevTotal = totalWeight;
         totalWeight = totalWeight - weightOf[user] + w;
         weightOf[user] = w;
@@ -738,6 +831,24 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         boostThreshold = threshold;
         boostBps = bps;
         emit BoostChanged(source, threshold, bps);
+    }
+
+    /// @notice Tune the whale cap. `bps_` of 0 removes it entirely.
+    ///
+    /// Lowering it below what a big staker already holds does not touch their principal — it lowers what
+    /// their next `_resync` will count, so they earn less from that point on and withdraw in full whenever
+    /// they like. It cannot be used to trap anyone.
+    function setCap(uint32 bps_, uint256 step_, uint32 stepBps_, uint32 maxBps_) external onlyOwner {
+        // Anything under 100% of everyone else's weight starts clipping ordinary stakers rather than
+        // whales, and the natural response to that is to split your own stake across wallets — the exact
+        // behaviour this is meant to discourage. Guarded so a future owner cannot make the pool hostile,
+        // by accident or otherwise.
+        if (bps_ != 0 && bps_ < 10_000) revert BadCap();
+        capBps = bps_;
+        capStep = step_;
+        capStepBps = stepBps_;
+        capMaxBps = maxBps_;
+        emit CapSet(bps_, step_, stepBps_, maxBps_);
     }
 
     receive() external payable {
