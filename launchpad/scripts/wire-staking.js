@@ -134,6 +134,9 @@ async function main() {
   const checks = [
     ["$ROBIN pool is its own boost source", eq(await p.boostSource(), robinPool)],
     ["$ROBIN pool is owned by you", eq(await p.owner(), me.address)],
+    // A pool whose exit-tax sink still points at the factory sends its tax somewhere nothing can leave.
+    // The factory re-points it at creation, so this is here to prove that actually happened on THIS chain.
+    ["exit-tax pot goes to you, not the factory", eq(await p.strandedSink(), me.address)],
     ["you can fund the $ROBIN pool", await p.isRewarder(me.address)],
     ["factory points at the feeder", eq(await factory.feeder(), feederAddr)],
     ["keeper can create pools", await factory.isCreator(keeper)],

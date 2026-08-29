@@ -14,7 +14,7 @@ interface IBoostSource {
     function stakedLockedOf(address user) external view returns (uint256);
 }
 
-/// @title RobinTierStaking — locked-tier, weighted, forfeit-to-stayers staking
+/// @title RobinTierStaking — locked-tier, weighted staking with an early-exit tax
 /// @notice Stake one token (the flagship $ROBIN, or any coin launched on the pad) and earn a basket of reward
 /// assets — native ETH and/or ERC-20s. This is the tiered successor to `RobinStaking`, and the differences are
 /// deliberate rather than incidental:
@@ -150,14 +150,16 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     mapping(address => mapping(address => uint256)) public rewardsAccrued;
     mapping(address => bool) public isRewarder;
 
-    /// @notice Penalties collected while there was nobody else staked to pay them to — the pot. See
-    /// `_redistribute`. Held here rather than in `pending` because `pending` streams to whoever stakes next,
-    /// and on an empty pool that is the person who just paid the penalty.
+    /// @notice Every early-exit tax collected — the pot. It is held here rather than in `pending` because
+    /// `pending` streams to whoever stakes next, and on an empty pool that is the person who just paid the
+    /// tax. See `sweepStranded` for why it goes to a sink instead of back to the stayers.
     ///
     /// It is deliberately readable (`strandedAll`) so a front end can show the pot growing, and it leaves
     /// only through `sweepStranded`. See that function for why it no longer goes back to stakers.
     mapping(address => uint256) public stranded;
-    /// @notice The only destination the pot has. Set to the deployer at construction; point it at a
+    /// @notice The only destination the pot has. Set to the deployer at construction — which for a pool
+    /// built by `RobinTierStakingFactory` is the FACTORY, so the factory re-points it at the real owner in
+    /// the same transaction. Point it at a
     /// treasury or at the burn address. `sweepStranded` takes no recipient argument.
     address public strandedSink;
 

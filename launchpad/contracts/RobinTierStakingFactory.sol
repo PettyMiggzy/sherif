@@ -106,6 +106,13 @@ contract RobinTierStakingFactory is Ownable {
         // Authorised here, while this factory still owns the pool — afterwards only `o` could do it.
         if (feeder != address(0)) p.setRewarder(feeder, true);
         p.setRewarder(address(this), false);
+
+        // The pool's constructor aims `strandedSink` at whoever it is constructed for, and above that is
+        // THIS FACTORY — which has no token-exit path of any kind. Left unset, every pool this factory ever
+        // makes would ship with its early-exit tax pointed into a contract nothing can leave. `sweepStranded`
+        // is deliberately permissionless, so it would not even take a mistake by the owner: any passer-by
+        // could push the pot in there, permanently. Re-pointed here, while this factory still owns the pool.
+        p.setStrandedSink(o);
         p.transferOwnership(o);
 
         poolOf[stakeToken] = pool;
