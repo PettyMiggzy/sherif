@@ -88,6 +88,12 @@ describe("[B2] the graduation reward tracks the creator's chosen valuation", fun
       netRaise: gev.args.raisedWeth,
       toDev: (await wethW.balanceOf(dev.address)) - devBefore,
       toPlatform: (await wethW.balanceOf(platform.address)) - platBefore,
+      leftToken: gev.args.leftoverToken,
+      bond: gev.args.bond,
+      // Where the 25% reserve ended up: what the Bond still HOLDS is the Ambush sell-wall; what left it went
+      // into the Sherwood LP inside the pool.
+      bondHolds: await (await ethers.getContractAt("LaunchToken", token)).balanceOf(gev.args.bond),
+      inPool: await (await ethers.getContractAt("LaunchToken", token)).balanceOf(poolAddr),
       token, curve,
     };
   }
@@ -125,6 +131,20 @@ describe("[B2] the graduation reward tracks the creator's chosen valuation", fun
     expect(cheap.toDev).to.equal(ethers.parseEther("0.5"));  // the full advertised reward, not a fraction
     expect(gross).to.be.gt(ethers.parseEther("2"));          // the raise the full 0.5 needs
     expect(cheap.netRaise).to.be.gt(ethers.parseEther("1")); // and a floor worth the name
+  });
+
+  // WRITTEN DOWN BECAUSE IT KEEPS BEING MISREMEMBERED. There is no pile of unsold tokens at graduation to
+  // spend on anything. The curve is a single-sided position spanning launch price to ceiling, and the ONLY
+  // graduation trigger is price reaching that ceiling — which is the same thing as the last curve token being
+  // bought. `graduate()` still rolls `leftToken` into the Bond rather than assuming zero, because assuming is
+  // how a contract strands money, but the number is zero on every coin that can actually bond.
+  it("a graduated coin has ZERO unsold curve tokens — there is no pile to allocate", async () => {
+    for (const r of [normal, cheap]) {
+      console.log(`   ${r.symbol.padEnd(5)} unsold curve tokens at graduation: ${ethers.formatEther(r.leftToken)}`);
+      expect(r.leftToken, `${r.symbol}: unsold tokens`).to.equal(0n);
+      const M = 10n ** 24n; // millions of tokens
+      console.log(`   ${r.symbol.padEnd(5)} of the 250M reserve: ${r.bondHolds / M}M is the Ambush wall, ${r.inPool / M}M went into the Sherwood LP`);
+    }
   });
 
   it("the platform is NOT insulated — it is paid the same reward as the creator", async () => {
