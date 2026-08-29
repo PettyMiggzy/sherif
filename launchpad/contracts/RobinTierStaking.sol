@@ -149,12 +149,25 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     uint32 public capBps = 100_000; // your principal may reach 10x everyone else's combined; 0 disables it
 
     /// @notice $ROBIN locked per step of extra cap. Locking this much raises your ceiling by `capStepBps`.
+    /// @notice The base allowance for an account when NOBODY ELSE has committed principal — see `_capFor`.
+    ///         Absolute and fixed at construction, at 0.001% of the stake token's supply, because a relative
+    ///         ceiling is meaningless with nothing to be relative to and "no ceiling" is how the cap was
+    ///         defeated. Deliberately small: it has to bind on a whale that stakes first into a fresh pool.
+    uint256 public immutable capFloor;
+
     uint256 public capStep = 10_000_000e18;
     /// @notice How much each step adds, in bps of `capBps`. Default +50% of the base allowance per step.
     uint32 public capStepBps = 5_000;
-    /// @notice The most the steps can add. Default +400%, so a fully-stacked holder reaches 5x the base
-    ///         allowance — enough to be the clear majority of a pool, but only by holding $ROBIN to do it.
+    /// @notice The most the steps can add, in bps of everyone else's committed principal. Default +400%,
+    ///         which on top of the 1000% base is a ceiling of 14x — NOT 50x. An earlier version of this
+    ///         comment said "5x the base allowance", read the 400% as a multiplier rather than an addend and
+    ///         overstated the $ROBIN incentive by a factor of ten. The code was always the restrictive one.
     uint32 public capMaxBps = 40_000;
+
+    /// @notice A rail on `capBps + capMaxBps`, mirroring what MAX_BOOST_BPS does for the boost. Without it
+    ///         nothing stopped a future owner from "correcting the docs" by multiplying the parameters and
+    ///         moving the ceiling to 50x, which is the same as having no cap on any pool that matters.
+    uint32 public constant MAX_CAP_TOTAL_BPS = 200_000; // 20x everyone else, all sources combined
     /// @dev A ceiling the owner cannot raise. Governance may tune the boost, but it can never become so large
     /// that boosted stakers effectively own the whole stream and everyone else earns nothing.
     uint16 public constant MAX_BOOST_BPS = 10_000; // +100%
@@ -171,6 +184,25 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     mapping(address => uint256) public weightOf; // amount x tier x boost — what actually earns
     mapping(address => bool) public boosted; // whether weightOf currently includes the boost
     uint256 public totalStaked;
+
+    /// @notice Principal held in positions that PICKED A TERM — every tier except flexible. Maintained on
+    /// stake and withdraw only, so unlike "currently locked" it needs no clock and can never go stale.
+    ///
+    /// This is the whale cap's denominator, and it is not `totalStaked` for the same reason the holder boost
+    /// reads `stakedLockedOf` instead of `stakedOf`: flexible principal is FLASH-RENTABLE. It can be borrowed,
+    /// staked, counted, and withdrawn inside one transaction at no cost, so any limit measured against it can
+    /// be manufactured away on demand. Measured on the version this replaces: a dummy flash-staking 60M
+    /// flexible, then calling the permissionless `syncBoost(whale)` while the denominator was inflated,
+    /// recomputed an honestly-capped whale at 500x its ceiling and left it there — turning the function that
+    /// exists to collapse a stale whale into the tool that uncaps one. It then took 99.9% of the stream, and
+    /// could redo it every reward window for a one-block flash fee.
+    ///
+    /// A term position cannot be rented the same way: closing one early costs 15% of the principal, so the
+    /// attack above would cost 9M tokens instead of a flash fee. Maturity is deliberately NOT checked — a
+    /// matured term position still counts. Checking it would put a clock back in the denominator, and a
+    /// denominator that changes with no transaction to observe it is exactly the staleness this is fixing.
+    uint256 public totalCommitted;
+    mapping(address => uint256) public committedOf;
     uint256 public totalWeight; // the accumulator's denominator
 
     struct RewardInfo {
@@ -234,6 +266,14 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         stakeToken = IERC20(stakeToken_);
         isRewarder[owner_] = true;
         strandedSink = owner_;
+
+        // The fallback ceiling for a pool nobody has committed to yet. 1% of supply, read once and frozen.
+        // try/catch because `listReward` accepts any ERC-20 and a stake token that does not answer
+        // `totalSupply` must not make the pool undeployable; a zero floor simply means the relative ceiling
+        // is the only one, which is the behaviour this replaces rather than something worse.
+        uint256 sup;
+        try IERC20(stakeToken_).totalSupply() returns (uint256 t) { sup = t; } catch { sup = 0; }
+        capFloor = sup / 100_000;
         // The staked token is listed up front because the early-exit tax is paid IN it — without a stream to
         // pay into, the tax would have nowhere to go.
         _listReward(address(stakeToken_), 7 days);
@@ -507,15 +547,56 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
     /// cap of zero would mean the first staker earns nothing and the pool could never start.
     function _capFor(address user, uint256 robin) internal view returns (uint256) {
         if (capBps == 0) return type(uint256).max; // disabled
-        uint256 others = totalStaked - stakedOf[user];
-        if (others == 0) return type(uint256).max;
 
-        uint256 bps = capBps;
+        uint256 robinAdd;
         if (capStep != 0 && robin != 0) {
-            uint256 add = (robin / capStep) * capStepBps;
-            if (add > capMaxBps) add = capMaxBps;
-            bps += add;
+            // Clamp the STEP COUNT before multiplying, not the product after. A boostSource is an outside
+            // contract; one returning an absurd number with a small `capStep` would overflow the multiply and
+            // revert `_resync`, which is on the path of every stake, claim and withdraw. Clamping first means
+            // the worst a hostile source can do is hand somebody the maximum ceiling.
+            uint256 steps = robin / capStep;
+            uint256 maxSteps = capStepBps == 0 ? 0 : uint256(capMaxBps) / capStepBps;
+            robinAdd = (steps > maxSteps ? maxSteps : steps) * capStepBps;
         }
+
+        // Everyone ELSE's committed principal. Flexible principal is excluded on both sides — see
+        // `totalCommitted` for the flash-rental attack that reading `totalStaked` here allowed.
+        uint256 others = totalCommitted - committedOf[user];
+
+        // NOBODY ELSE COMMITTED YET. This used to return NO CEILING, and it was the cheapest way through the
+        // whole mechanism: stake first into a fresh pool, stay uncapped forever because a ceiling is only
+        // recomputed when that account itself touches the pool again, and take 90.9% of everything once the
+        // honest lockers arrived. Every coin that graduates creates an empty pool, so this was not luck, it
+        // was a queue to stand in.
+        //
+        // A small absolute allowance instead. Small because it has to BIND on the whale that stands in that
+        // queue, and a generous number would not — at 1% of supply it was larger than any realistic stake and
+        // capped nobody. The cost is that a genuinely large first staker earns on this much until somebody
+        // else commits, after which their real ceiling applies from their next touch (or anyone's
+        // `syncBoost`). That is a poke for one honest account against a permanent bypass for every whale, and
+        // it errs in the safe direction — staleness here can only ever RAISE a ceiling, never lower one.
+        if (others == 0) {
+            // NOBODY ELSE HAS COMMITTED. Whether that deserves a ceiling depends on what THIS account did.
+            //
+            // If it committed to a term, no ceiling. It is the only staker, so a ceiling protects nobody, and
+            // capping it would punish the one person willing to be first — measured at a 100x throttle on an
+            // honest opener, which is a worse problem than the one being solved. Getting out of that
+            // commitment early still costs 15%, so this is not free to abuse.
+            //
+            // If it did not, the small absolute allowance. This is the case that used to return NO CEILING
+            // and was the cheapest way through the whole mechanism: park flexible money in a fresh pool, stay
+            // uncapped forever because a ceiling is only recomputed when its own account touches the pool
+            // again, and take 90.9% once the honest lockers arrived. Every graduation creates an empty pool,
+            // so it was not luck, it was a queue to stand in.
+            //
+            // The floor is the allowance itself, not a base for `capBps` to multiply — scaling it by 10x made
+            // it too large to bind the very account it exists for. The $ROBIN step-up still applies, because
+            // that is the one way a ceiling is meant to be raised.
+            if (committedOf[user] != 0) return type(uint256).max;
+            return capFloor + Math.mulDiv(capFloor, robinAdd, BPS);
+        }
+
+        uint256 bps = capBps + robinAdd;
         return Math.mulDiv(others, bps, BPS);
     }
 
@@ -596,6 +677,7 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         }));
         stakedOf[msg.sender] += got;
         totalStaked += got;
+        if (tier != 0) { committedOf[msg.sender] += got; totalCommitted += got; }
 
         _resync(msg.sender);
         _kickstartPending();
@@ -627,6 +709,7 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         uint256 amount = p.amount;
         stakedOf[msg.sender] -= amount;
         totalStaked -= amount;
+        if (p.tier != 0) { committedOf[msg.sender] -= amount; totalCommitted -= amount; }
 
         // The early-exit penalty is the 15% on principal and NOTHING ELSE. Rewards already earned stay
         // earned, matured or not.
@@ -844,6 +927,7 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         // behaviour this is meant to discourage. Guarded so a future owner cannot make the pool hostile,
         // by accident or otherwise.
         if (bps_ != 0 && bps_ < 10_000) revert BadCap();
+        if (uint256(bps_) + uint256(maxBps_) > MAX_CAP_TOTAL_BPS) revert BadCap();
         capBps = bps_;
         capStep = step_;
         capStepBps = stepBps_;

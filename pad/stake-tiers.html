@@ -443,9 +443,9 @@ function renderPreview() {
   if (!noCap && counted < amt) {
     const over = amt - counted;
     html += `<br><span style="color:var(--amber);font-size:.84rem">Heads up &mdash; ${fmtUnits(over, S.decimals)}
-      ${esc(S.symbol)} of this would sit above your earning ceiling and earn nothing. You can still withdraw
-      every token of it whenever you like. The ceiling stops any one account taking the whole pool; it rises
-      as other people stake, and it rises for you if you lock $ROBIN.</span>`;
+      ${esc(S.symbol)} of this would sit above your earning ceiling right now and earn nothing. You can still
+      withdraw every token of it whenever you like. The ceiling rises as other people lock, and it rises for
+      you if you lock $ROBIN &mdash; so this is usually a reason to lock rather than to stake less.</span>`;
   }
   $("preview").innerHTML = html;
 }
