@@ -159,6 +159,24 @@ export const CFG = {
   // worst case; raise it only alongside the model price you are actually paying.
   veniceGlobalPerMin: num("VENICE_GLOBAL_PER_MIN", 10),
   veniceMaxPromptChars: num("VENICE_MAX_PROMPT_CHARS", 600),
+  // ── Fee keeper (walks fees from the router into stakers' hands) ──
+  // Money does NOT flow on its own: a trade accrues it in the router and stops there. Three calls
+  // have to happen afterwards — flushStaking / flushRobin, feedEth, releasePending — and nothing in
+  // the system makes any of them until this keeper runs. OFF unless all four are set.
+  //
+  // feedKeeperKey is a low-value hot key: it can only move fees along a path whose destinations are
+  // fixed in the contracts (the router's sinks are owner-set, the feeder can only pay registry
+  // pools), so it chooses TIMING, never destination.
+  feedKeeperKey: process.env.FEED_KEEPER_KEY || "",
+  // Reuses the router already configured above; the flagship $ROBIN token is where the buy-side
+  // slice lands, so it has to be known to resolve that pool.
+  platformToken: (process.env.PLATFORM_TOKEN || "0x6696fe29288b586017e6f264c0091dba6c5ebeaf").toLowerCase(),
+  stakingFeeder: process.env.STAKING_FEEDER || "",
+  feedIntervalMs: num("FEED_INTERVAL_MS", 30 * 60 * 1000),
+  // Below this an accrued slice is left to keep accruing — gas on a flush plus a feed is worth more
+  // than a few thousand wei of reward.
+  feedMinWei: BigInt(process.env.FEED_MIN_WEI || "1000000000000000"), // 0.001 ETH
+
   // ── Auto pool-maker (every bonded coin gets a staking pool) ──
   // OFF unless BOTH are set. The keeper creates the pool AFTER graduation, in its own transaction —
   // never inside graduate(), which is the one function that must never fail because a revert there

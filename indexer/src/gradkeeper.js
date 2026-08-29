@@ -35,6 +35,7 @@
 import { ethers } from "ethers";
 import { CFG } from "./config.js";
 import * as Pools from "./poolmaker.js";
+import * as Feed from "./feedkeeper.js";
 import { mc3 } from "./multicall.js";
 import { gradCandidates, liveCurvesAll, recentTradeCurves } from "./db.js";
 
@@ -149,6 +150,9 @@ export async function runGradKeeper() {
     // Said out loud, because the silent version of this is "coins quietly never get staking pools".
     console.log("[pools] auto staking pools OFF (set TIER_STAKING_FACTORY and POOL_MAKER_KEY to enable)");
   }
+  // Runs alongside: creating a pool and FILLING it are separate jobs, and a pool nobody funds pays
+  // nothing. Its own loop so a slow sweep can never delay a graduation.
+  Feed.runFeedKeeper(provider);
 
   for (;;) {
     try { await tick(); } catch (e) { console.log("[grad] tick error:", (e && e.message) || e); }

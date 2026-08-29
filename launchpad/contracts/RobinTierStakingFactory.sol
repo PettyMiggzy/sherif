@@ -26,6 +26,14 @@ import {RobinTierStaking} from "./RobinTierStaking.sol";
 contract RobinTierStakingFactory is Ownable {
     /// @notice The $ROBIN pool every other pool reads staked balances from for the holder boost.
     address public boostSource;
+    /// @notice The StakingFeeder, authorised as a rewarder on every pool this factory creates.
+    ///
+    /// WITHOUT THIS, NOTHING EVER REACHES A POOL. The feeder funds a pool by calling `notifyReward`,
+    /// which only a rewarder may do — so a pool created without it is a pool the fee pipeline cannot
+    /// pay, and the failure is silent: fees accrue, the keeper's call reverts, and the stakers simply
+    /// never see anything. Wiring it at creation is what makes "every coin's pool fills itself" true
+    /// rather than a per-pool chore somebody has to remember.
+    address public feeder;
 
     mapping(address => address) public poolOf; // stake token => pool (0 if none)
     address[] public allPools;
@@ -38,6 +46,7 @@ contract RobinTierStakingFactory is Ownable {
 
     event PoolCreated(address indexed stakeToken, address indexed pool, uint256 index);
     event BoostSourceChanged(address indexed source);
+    event FeederSet(address indexed feeder);
     event CreatorSet(address indexed who, bool allowed);
     event OpenCreationSet(bool open);
 
@@ -94,12 +103,21 @@ contract RobinTierStakingFactory is Ownable {
         // factory could fund pools forever while the actual owner could not fund any of them — the exact
         // inverse of the intent. Hand the role over and drop our own.
         p.setRewarder(o, true);
+        // Authorised here, while this factory still owns the pool — afterwards only `o` could do it.
+        if (feeder != address(0)) p.setRewarder(feeder, true);
         p.setRewarder(address(this), false);
         p.transferOwnership(o);
 
         poolOf[stakeToken] = pool;
         allPools.push(pool);
         emit PoolCreated(stakeToken, pool, allPools.length - 1);
+    }
+
+    /// @notice Point at the StakingFeeder. Applies to pools created AFTER this — existing pools need
+    /// their owner to call `setRewarder(feeder, true)` directly, since the factory no longer owns them.
+    function setFeeder(address feeder_) external onlyOwner {
+        feeder = feeder_;
+        emit FeederSet(feeder_);
     }
 
     function setBoostSource(address source) external onlyOwner {

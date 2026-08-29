@@ -108,3 +108,47 @@ describe("[FEEDER] staking fuel line", function () {
       .to.be.revertedWithCustomError(feeder, "Insufficient");
   });
 });
+
+describe("[FEEDER] the factory authorises it, so a pool can be funded the moment it exists", function () {
+  this.timeout(120000);
+  let owner, keeper, robin, coin, fac, feeder;
+
+  beforeEach(async () => {
+    [owner, keeper] = (await ethers.getSigners()).slice(-2);
+    const M = await ethers.getContractFactory("MockERC20");
+    robin = await M.connect(owner).deploy(E(1_000_000_000));
+    coin = await M.connect(owner).deploy(E(1_000_000_000));
+    fac = await (await ethers.getContractFactory("RobinTierStakingFactory")).connect(owner).deploy(owner.address);
+    feeder = await (await ethers.getContractFactory("StakingFeeder"))
+      .connect(owner).deploy(owner.address, await fac.getAddress());
+  });
+
+  it("a pool created after setFeeder can be funded with no extra step", async () => {
+    // The silent failure this prevents: without the rewarder grant, fees accrue, the keeper's call
+    // reverts, and the stakers simply never see anything.
+    await (await fac.connect(owner).setFeeder(await feeder.getAddress())).wait();
+    await (await fac.createPool(await coin.getAddress(), false)).wait();
+    const pool = await ethers.getContractAt("RobinTierStaking", await fac.poolOf(await coin.getAddress()));
+    expect(await pool.isRewarder(await feeder.getAddress())).to.equal(true);
+
+    await (await coin.connect(owner).approve(await pool.getAddress(), ethers.MaxUint256)).wait();
+    await (await pool.connect(owner).stake(E(1000), 2)).wait();
+    await owner.sendTransaction({ to: await feeder.getAddress(), value: E(1) });
+    await (await feeder.connect(owner).feedEth(await pool.getAddress(), E(1))).wait();
+    expect(await ethers.provider.getBalance(await pool.getAddress())).to.equal(E(1));
+  });
+
+  it("a pool created BEFORE setFeeder is not authorised, and says so rather than failing oddly", async () => {
+    await (await fac.createPool(await coin.getAddress(), false)).wait();
+    const pool = await ethers.getContractAt("RobinTierStaking", await fac.poolOf(await coin.getAddress()));
+    expect(await pool.isRewarder(await feeder.getAddress())).to.equal(false);
+    await owner.sendTransaction({ to: await feeder.getAddress(), value: E(1) });
+    await expect(feeder.connect(owner).feedEth(await pool.getAddress(), E(1)))
+      .to.be.revertedWithCustomError(feeder, "NotARewarder");
+    // ...and the pool's owner can repair it, since the factory no longer owns the pool.
+    await (await pool.connect(owner).setRewarder(await feeder.getAddress(), true)).wait();
+    await (await coin.connect(owner).approve(await pool.getAddress(), ethers.MaxUint256)).wait();
+    await (await pool.connect(owner).stake(E(1000), 2)).wait();
+    await expect(feeder.connect(owner).feedEth(await pool.getAddress(), E(1))).to.not.be.reverted;
+  });
+});
