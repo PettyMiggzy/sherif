@@ -97,6 +97,34 @@ contract StakingFeeder is Ownable, ReentrancyGuard {
     /// @notice Push `amount` of an ERC-20 into `pool`. The asset must already be listed there.
     function feedToken(address pool, address asset, uint256 amount) public nonReentrant {
         if (!isOperator[msg.sender]) revert NotOperator();
+        _feedToken(pool, asset, amount);
+    }
+
+    /// @notice Return a pool's early-exit tax to the stakers of THAT pool. Anyone may call it.
+    ///
+    /// When someone breaks a lock early they pay 15%, denominated in the staked token, and that tax is
+    /// swept here. This sends it home. It is permissionless on purpose — the tax belongs to that pool's
+    /// stakers, so it must not need our keeper to be alive to reach them.
+    ///
+    /// Permissionless is only safe because the destination is not a parameter and the asset is not one
+    /// either: both are read off the pool. The asset is `pool.stakeToken()`, so a caller can only ever
+    /// move a coin to the single pool that coin belongs to. That matters — the fee revenue this contract
+    /// holds is ETH, pooled across every coin on the pad, and an open call that could move ETH would let
+    /// a stranger dump the whole pad's fees into one pool of their choosing. ETH is therefore not
+    /// reachable from here at all; it goes out only through the operator-gated `feedEth`.
+    ///
+    /// A coin arrives in this contract from exactly one place — its own pool's `sweepStranded` — so
+    /// "the balance of that coin" and "that pool's tax" are the same number. Anyone donating more of it
+    /// is donating to that coin's stakers, which is the same thing this call does.
+    function returnTax(address pool) external nonReentrant returns (address asset, uint256 amount) {
+        _requirePool(pool);
+        asset = ITierPool(pool).stakeToken();
+        amount = IERC20(asset).balanceOf(address(this));
+        if (amount == 0) revert Zero();
+        _feedToken(pool, asset, amount);
+    }
+
+    function _feedToken(address pool, address asset, uint256 amount) internal {
         if (amount == 0 || asset == address(0)) revert Zero();
         _requirePool(pool);
         IERC20 t = IERC20(asset);

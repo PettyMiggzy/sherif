@@ -366,6 +366,12 @@ export const ABIS = {
     "function sweepStranded(address asset) returns (uint256)",
     "function strandedSink() view returns (address)",
   ],
+  // StakingFeeder — the fuel line. Every pool's early-exit tax is swept here and pushed back into the pool
+  // it came from. Only `returnTax` is exposed: it is the one call on the contract that anyone may make, and
+  // it takes no asset and no recipient, so the page cannot misdirect it even if it wanted to.
+  stakingFeeder: [
+    "function returnTax(address pool) returns (address asset, uint256 amount)",
+  ],
   // RobinTierStakingFactory — the registry that makes the staking page a list rather than a constant.
   // `pools()` returns every pool in one read; `poolOf(token)` resolves a specific coin's pool (0x0 if none).
   tierStakingFactory: [

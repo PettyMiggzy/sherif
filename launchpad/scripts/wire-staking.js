@@ -134,9 +134,10 @@ async function main() {
   const checks = [
     ["$ROBIN pool is its own boost source", eq(await p.boostSource(), robinPool)],
     ["$ROBIN pool is owned by you", eq(await p.owner(), me.address)],
-    // A pool whose exit-tax sink still points at the factory sends its tax somewhere nothing can leave.
-    // The factory re-points it at creation, so this is here to prove that actually happened on THIS chain.
-    ["exit-tax pot goes to you, not the factory", eq(await p.strandedSink(), me.address)],
+    // The early-exit tax must land in the FEEDER, which sends it back to the stakers of the pool it came
+    // from and has no path to any wallet. Pointed anywhere else it becomes platform revenue, which is not
+    // what the stake page tells people. Read back here because a wrong sink is silent, not an error.
+    ["exit tax returns to stakers, not a wallet", eq(await p.strandedSink(), feederAddr)],
     ["you can fund the $ROBIN pool", await p.isRewarder(me.address)],
     ["factory points at the feeder", eq(await factory.feeder(), feederAddr)],
     ["keeper can create pools", await factory.isCreator(keeper)],
@@ -145,6 +146,13 @@ async function main() {
   ];
   let bad = 0;
   for (const [label, good] of checks) { console.log(`  ${good ? "OK  " : "FAIL"}  ${label}`); if (!good) bad++; }
+
+  // The flagship pool may predate setFeeder, in which case its tax sink is still the owner. Re-point it,
+  // which only this owner can now do — the factory handed the pool over and cannot fix it any more.
+  if (!eq(await p.strandedSink(), feederAddr)) {
+    await (await p.setStrandedSink(feederAddr, ov)).wait();
+    console.log("  OK    exit tax re-pointed at the feeder (the pool predated setFeeder)");
+  }
 
   // The flagship pool predates setFeeder, so it needs the grant directly — the factory no longer owns it.
   if (!(await p.isRewarder(feederAddr))) {

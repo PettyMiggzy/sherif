@@ -2269,15 +2269,27 @@ export async function tierListReward(pool, asset, durationSecs) {
   return guardedSend(tierPool(_signer, pool), "listReward", [asset, durationSecs], 0n, "List reward asset");
 }
 
-/// Push the early-exit tax pot to the pool's `strandedSink` — the Robin Labs treasury. Anyone may call it,
-/// and it takes no recipient: the destination is set on the pool, so the caller cannot redirect it. Note this
-/// does NOT pay stakers; paying the pot out by weight was exploitable three separate ways and was removed.
-/// Stakers are funded by the fee stream instead. The stake page says so in the pot card.
-export async function tierSweepStranded(pool, asset) {
+/// Send a pool's early-exit tax back to that pool's stakers. Anyone may do this — it is deliberately not
+/// gated, so the tax reaches the people it belongs to whether or not our keeper is running.
+///
+/// It is two hops, and neither of them takes a recipient from the caller. `sweepStranded` moves the pot to
+/// the pool's own `strandedSink` (the StakingFeeder), and `returnTax` moves it from there into the pool the
+/// coin belongs to, which the feeder looks up itself. So there is no argument on this path that could point
+/// the money at a wallet, including ours.
+///
+/// The second hop is attempted even when the first was already done by someone else, and vice versa, since
+/// either can legitimately be a no-op by the time this runs.
+export async function tierReturnTax(pool, asset) {
   requireTierStaking();
   if (!_signer) await connect();
   await ensureOnChain();
-  return guardedSend(tierPool(_signer, pool), "sweepStranded", [asset], 0n, "Sweep pot to treasury");
+  const p = tierPool(_signer, pool);
+  const sink = await p.strandedSink();
+  if (await p.stranded(asset) > 0n) {
+    await guardedSend(p, "sweepStranded", [asset], 0n, "Collect the pot");
+  }
+  const feeder = new ethers.Contract(sink, ABIS.stakingFeeder, _signer);
+  return guardedSend(feeder, "returnTax", [pool], 0n, "Return it to stakers");
 }
 
 /// Claim every reward asset with a non-zero balance, one at a time so a single paused or blocked token

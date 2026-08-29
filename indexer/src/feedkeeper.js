@@ -33,11 +33,15 @@ const ROUTER_ABI = [
 ];
 const FEEDER_ABI = [
   "function feedEth(address pool, uint256 amount)",
+  "function returnTax(address pool) returns (address asset, uint256 amount)",
   "function registry() view returns (address)",
 ];
 const FACTORY_ABI = ["function poolOf(address stakeToken) view returns (address)"];
+const ERC20_ABI = ["function balanceOf(address) view returns (uint256)"];
 const POOL_ABI = [
   "function releasePending()",
+  "function stranded(address) view returns (uint256)",
+  "function sweepStranded(address asset) returns (uint256)",
   "function rewardInfo(address) view returns (bool listed, uint32 duration, uint64 periodFinish, uint64 lastUpdateTime, uint256 rewardRate, uint256 rewardPerTokenStored, uint256 pending)",
   "function totalWeight() view returns (uint256)",
   "function weightSince() view returns (uint64)",
@@ -98,7 +102,7 @@ export async function sweepOnce(provider) {
     return null;
   }
 
-  let fedCoins = 0, fedWei = 0n, released = 0;
+  let fedCoins = 0, fedWei = 0n, released = 0, taxed = 0;
 
   // ── per-coin sell-side slices ────────────────────────────────────────────
   let rows = [];
@@ -139,6 +143,33 @@ export async function sweepOnce(provider) {
     console.warn("[feed] robin slice:", (e && e.shortMessage) || (e && e.message) || e);
   }
 
+  // ── early-exit tax, sent home ────────────────────────────────────────────
+  // Breaking a lock costs 15%, paid in the staked coin, and that 15% belongs to the people still staked
+  // in that same pool. It gets there in two hops — pool.sweepStranded moves it to the feeder, then
+  // feeder.returnTax pushes it back in — and NEITHER hop is ours to gate: both are permissionless, and
+  // the stake page has a button for them. The keeper does it anyway so nobody has to notice and nobody
+  // waits on a stranger. Neither call can send the money anywhere but back into the pool it came from.
+  for (const r of rows) {
+    let pool;
+    try { pool = await factory.poolOf(r.token); } catch { continue; }
+    if (!pool || /^0x0{40}$/i.test(pool)) continue;
+    try {
+      const p = new ethers.Contract(pool, POOL_ABI, _wallet);
+      const pot = await p.stranded(r.token);
+      if (pot > 0n) await send(provider, p, "sweepStranded", [r.token]);
+      // Read the feeder's balance rather than trusting `pot`: someone else may have swept it already,
+      // in which case the coin is sitting in the feeder waiting and there is still work to do here.
+      const coin = new ethers.Contract(r.token, ERC20_ABI, _wallet);
+      const held = await coin.balanceOf(CFG.stakingFeeder);
+      if (held === 0n) continue;
+      await send(provider, feeder, "returnTax", [pool]);
+      taxed++;
+      console.log(`[feed] ${r.symbol || r.token} → sent ${fmt(held)} of early-exit tax back to its stakers`);
+    } catch (e) {
+      console.warn(`[feed] tax return ${r.symbol || r.token}:`, (e && e.shortMessage) || (e && e.message) || e);
+    }
+  }
+
   // ── parked rewards whose delay has elapsed ───────────────────────────────
   // A pool funded while empty holds its rewards back for PENDING_DELAY so the first staker cannot
   // take the lot. Nothing releases them on its own unless somebody stakes, so the keeper does it.
@@ -161,7 +192,7 @@ export async function sweepOnce(provider) {
     } catch { /* a pool that will not release is retried next pass */ }
   }
 
-  return { fedCoins, fedWei, released };
+  return { fedCoins, fedWei, released, taxed };
 }
 
 export async function runFeedKeeper(provider) {
@@ -173,8 +204,8 @@ export async function runFeedKeeper(provider) {
   for (;;) {
     try {
       const r = await sweepOnce(provider);
-      if (r && (r.fedCoins || r.released)) {
-        console.log(`[feed] pass done: ${r.fedCoins} pool(s) funded with ${fmt(r.fedWei)} ETH, ${r.released} release(s)`);
+      if (r && (r.fedCoins || r.released || r.taxed)) {
+        console.log(`[feed] pass done: ${r.fedCoins} pool(s) funded with ${fmt(r.fedWei)} ETH, ${r.released} release(s), ${r.taxed} tax return(s)`);
       }
     } catch (e) { console.log("[feed] pass error:", (e && e.message) || e); }
     await new Promise((r) => setTimeout(r, CFG.feedIntervalMs));

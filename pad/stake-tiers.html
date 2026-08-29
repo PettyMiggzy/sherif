@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Lock &amp; earn — tiered staking — Robin Labs</title>
 <meta name="robots" content="noindex, nofollow" />
-<meta name="description" content="Lock $ROBIN or any launched coin for 7 to 365 days. The longer you lock, the bigger your share of every reward. Leave early and it costs 15%." />
+<meta name="description" content="Lock $ROBIN or any launched coin for 7 to 365 days. The longer you lock, the bigger your share of every reward. Leave early and your 15% goes back into the pool for everyone still in it." />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <style>
   :root{
@@ -134,8 +134,9 @@
   <h1>Lock it longer. Earn a bigger slice.</h1>
   <p class="sub">Every reward that lands in a pool is split by <b>weight</b>, not by size alone &mdash; and your
     weight is <b>how much you staked &times; how long you locked</b>. Leave a lock early and it costs 15% of what
-    you put in &mdash; that 15% goes to the Robin Labs treasury, not to the other stakers. What pays stakers is
-    the fee stream: 0.25% of every sell on this coin, and 0.25% of every buy on the pad for $ROBIN.</p>
+    you put in &mdash; and that 15% goes straight back into this pool, streamed to everyone still staked.
+    <b>Nothing goes to the platform.</b> On top of that you earn the fee stream: 0.25% of every sell on this
+    coin, and 0.25% of every buy on the pad if you hold $ROBIN.</p>
 
   <div id="banner" style="margin-top:16px"></div>
 
@@ -163,7 +164,7 @@
       <div class="tile pot">
         <div class="k">The pot</div>
         <div class="v" id="tPot">&mdash;</div>
-        <div class="u">early-exit tax collected so far</div>
+        <div class="u">waiting to stream back to stakers</div>
       </div>
     </div>
 
@@ -232,17 +233,17 @@
     <!-- ── the pot, explained ─────────────────────────────────────────── -->
     <div class="card" style="border-color:rgba(255,194,74,.28)">
       <h2 style="color:var(--amber)">What is &ldquo;the pot&rdquo;?</h2>
-      <p class="sub" style="font-size:.86rem">When someone breaks a lock early, they pay 15% of what they staked.
-        That 15% collects here in the open, counted, where anyone can watch it grow &mdash; and it leaves to the
-        Robin Labs treasury. <b>It does not get handed out to the other stakers.</b></p>
-      <p class="sub" style="font-size:.86rem;margin-top:8px">We tried paying it to the stayers three times and it
-        was exploitable every time: anything shared out by current weight can be taken by weight that costs
-        nothing to acquire and nothing to abandon. The person who paid the tax could re-stake with no lock and
-        collect it straight back. So the tax now goes somewhere nobody can race for, and stakers are paid by the
-        fee stream instead &mdash; which is continuous, much larger, and has nothing to game.</p>
-      <p class="sub" style="font-size:.86rem;margin-top:8px">Where it goes is a single address you can check
-        yourself: <code id="sinkAddr">&mdash;</code>. Anyone may send the pot there; nobody can send it anywhere
-        else.</p>
+      <p class="sub" style="font-size:.86rem">When someone breaks a lock early they pay 15% of what they
+        staked. It collects here in the open, counted, where anyone can watch it grow &mdash; and then it goes
+        <b>back into this pool</b> and streams to everyone still staked. It is not ours and we cannot take it.</p>
+      <p class="sub" style="font-size:.86rem;margin-top:8px">It gets home by a route with no wallet on it. The
+        pot goes to the fuel line at <code id="sinkAddr">&mdash;</code>, a contract whose only outputs are staking
+        pools &mdash; there is no function on it that pays a person, not for us, not for anyone. From there
+        <b>anyone</b> can push it back into this pool, so it does not depend on us being around to do it.</p>
+      <p class="sub" style="font-size:.86rem;margin-top:8px">It streams in over the reward window rather than
+        landing as a lump. That is deliberate: handing it out all at once let someone stake for a single block,
+        grab a share and leave. Streaming means you only earn it for time you were actually locked, so the
+        person who paid it cannot simply re-stake and take it straight back.</p>
       <div id="potRows" style="margin-top:10px"></div>
     </div>
 
@@ -267,7 +268,7 @@
       <div id="ownerTools" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
         <div class="row" style="justify-content:space-between">
           <span class="faint" style="font-size:.8rem">Hand the pot back to the stakers. It cannot go anywhere else.</span>
-          <button id="doRelease" class="ghost sm">Sweep the pot</button>
+          <button id="doRelease" class="ghost sm">Send the pot back to stakers</button>
         </div>
       </div>
     </div>
@@ -669,7 +670,7 @@ async function doWithdraw(id) {
       `Leave this lock early?\n\n` +
       `You pay ${fmtUnits(cost, S.decimals)} ${S.symbol} — 15% of this lock, and nothing else.\n` +
       `Every reward it has already earned stays yours.\n\n` +
-      `The 15% goes to the Robin Labs treasury, not to other stakers. This cannot be undone.`);
+      `The 15% goes back into this pool for everyone still staked. This cannot be undone.`);
     if (!ok) return;
   }
   await run(() => Pad.tierWithdraw(S.pool, id), "Withdrawing…", matured ? "Withdrawn in full." : "Withdrawn early.");
@@ -706,7 +707,7 @@ $("doRelease").addEventListener("click", async () => {
   if (!requireLive()) return;
   const withPot = S.pot.find((p) => p.amount > 0n);
   if (!withPot) { msg("The pot is empty.", "bad"); return; }
-  await run(() => Pad.tierSweepStranded(S.pool, withPot.asset), "Sweeping…", "The pot has gone to the treasury.");
+  await run(() => Pad.tierReturnTax(S.pool, withPot.asset), "Sending it back…", "Done — it is streaming to stakers now.");
 });
 
 $("doStake").addEventListener("click", doStake);

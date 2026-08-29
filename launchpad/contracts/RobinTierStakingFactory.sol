@@ -107,12 +107,17 @@ contract RobinTierStakingFactory is Ownable {
         if (feeder != address(0)) p.setRewarder(feeder, true);
         p.setRewarder(address(this), false);
 
-        // The pool's constructor aims `strandedSink` at whoever it is constructed for, and above that is
-        // THIS FACTORY — which has no token-exit path of any kind. Left unset, every pool this factory ever
-        // makes would ship with its early-exit tax pointed into a contract nothing can leave. `sweepStranded`
-        // is deliberately permissionless, so it would not even take a mistake by the owner: any passer-by
-        // could push the pot in there, permanently. Re-pointed here, while this factory still owns the pool.
-        p.setStrandedSink(o);
+        // Where the early-exit tax goes. The pool's constructor aims `strandedSink` at whoever it is
+        // constructed for, and above that is THIS FACTORY — which has no token-exit path of any kind, so
+        // left alone every pool would ship with its tax pointed into a contract nothing can leave, and
+        // `sweepStranded` is permissionless enough that any passer-by could push it in there permanently.
+        //
+        // It is aimed at the FEEDER, which sends it straight back to the stakers of the pool it came from
+        // via `returnTax`. The tax is not platform revenue and must not be able to become platform revenue:
+        // the feeder has no path to a wallet — not for an operator, not for us — so this is enforced by the
+        // code rather than by our intent. The owner fallback exists only for a pool created before
+        // `setFeeder`; `wire-staking.js` re-points those and checks every pool's sink on the way out.
+        p.setStrandedSink(feeder != address(0) ? feeder : o);
         p.transferOwnership(o);
 
         poolOf[stakeToken] = pool;
