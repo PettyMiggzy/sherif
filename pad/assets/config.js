@@ -363,7 +363,8 @@ export const ABIS = {
     "function notifyReward(address asset, uint256 amount)",
     "function notifyRewardETH() payable",
     "function listReward(address asset, uint32 duration)",
-    "function releaseStranded(address asset) returns (uint256)",
+    "function sweepStranded(address asset) returns (uint256)",
+    "function strandedSink() view returns (address)",
   ],
   // RobinTierStakingFactory — the registry that makes the staking page a list rather than a constant.
   // `pools()` returns every pool in one read; `poolOf(token)` resolves a specific coin's pool (0x0 if none).

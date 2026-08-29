@@ -2150,6 +2150,11 @@ export async function tierStakingInfo(who, pool) {
     s.strandedAll(),
   ]);
 
+  // Where the early-exit tax actually goes. The stake page prints it so the claim in the pot card is
+  // checkable against the chain rather than taken on trust. An older pool that predates the setter can
+  // return nothing, so a failure here degrades to a dash instead of blanking the whole page.
+  const strandedSink = await s.strandedSink().catch(() => ethers.ZeroAddress);
+
   const positions = rawPositions.map((p, id) => ({
     id, // valid ONLY until the next write — see the swap-and-pop note above
     amount: p.amount,
@@ -2166,6 +2171,7 @@ export async function tierStakingInfo(who, pool) {
     terms, muls, positions,
     rewards: earnedAll[0].map((asset, i) => ({ asset, isEth: asset === TIER_ETH, earned: earnedAll[1][i] })),
     pot: potAll[0].map((asset, i) => ({ asset, isEth: asset === TIER_ETH, amount: potAll[1][i] })),
+    strandedSink,
   };
 }
 
@@ -2263,13 +2269,15 @@ export async function tierListReward(pool, asset, durationSecs) {
   return guardedSend(tierPool(_signer, pool), "listReward", [asset, durationSecs], 0n, "List reward asset");
 }
 
-/// Hand the stranded pot back to the stakers. Owner-only, and it takes no recipient — there is no version of
-/// this call that pays a wallet.
-export async function tierReleaseStranded(pool, asset) {
+/// Push the early-exit tax pot to the pool's `strandedSink` — the Robin Labs treasury. Anyone may call it,
+/// and it takes no recipient: the destination is set on the pool, so the caller cannot redirect it. Note this
+/// does NOT pay stakers; paying the pot out by weight was exploitable three separate ways and was removed.
+/// Stakers are funded by the fee stream instead. The stake page says so in the pot card.
+export async function tierSweepStranded(pool, asset) {
   requireTierStaking();
   if (!_signer) await connect();
   await ensureOnChain();
-  return guardedSend(tierPool(_signer, pool), "releaseStranded", [asset], 0n, "Release pot to stakers");
+  return guardedSend(tierPool(_signer, pool), "sweepStranded", [asset], 0n, "Sweep pot to treasury");
 }
 
 /// Claim every reward asset with a non-zero balance, one at a time so a single paused or blocked token
