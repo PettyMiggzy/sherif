@@ -6,6 +6,37 @@ retunable with a setter — no redeploy). v2.1 adds the fix so a coin graduating
 window exempts the Bond it posts, keeping `Bond.poke()` and Bond trading unblocked. Cost ~$3.93.
 OWNER = the cold wallet. Factory deploy block: **17752965**. Deployed: 2026-07-24.
 
+## ⚠️ READ FIRST — the v2 pad is live, and the hot deployer key is GONE
+
+Two things this file predates.
+
+**1. There is a SECOND, newer stack.** The v2 pad was deployed alongside v2.1 and runs the site today; the
+v2.1 contracts below stay live and keep serving every coin launched before it. Two factories, two routers,
+no crossover — each router authorizes only its own factory (verified on-chain). Addresses for the v2 stack
+live in `launchpad/deploy.v2.json`, reconstructed by reading them back off the live factory.
+
+**DO NOT take the deployer addresses in the table below as current.** They are v2.1's. The live v2 factory
+uses different ones — `LaunchTokenDeployer` is `0x8E1eC483…`, not `0xb3748cB6…` — and calling
+`tokenInitCodeHash` on the old one reverts with no data, which is a confusing way to lose an afternoon. The
+website is immune (it reads `tokenDeployer()` off the factory at run time); scripts are not.
+
+**2. The hot deployer key `0x2aA74C8d…` is lost.** Searched the server and the workstation; it is not
+recoverable. What that actually costs, established by reading every contract's `owner()` on-chain:
+
+| | |
+|---|---|
+| Contracts on the cold wallet | **10 of 11** — both routers, the v1 factory, rewardVault, floorCoopFactory, splitter, feeConfig, robinLimit, tierStakingFactory, robinTierStaking |
+| Still on the lost key | **CurvePadFactory v2 `0xD41479DE…`** — and nothing else |
+| Money at risk | **none.** That factory's `platform()` already points at the cold wallet, so every fee it routes lands where it should. |
+| What is actually lost | three setters on that one factory, permanently: `setFdvBand`, `setStakingShares`, `setPlatform` |
+
+So the v2 factory's economics are now **immutable**: the FDV band is welded at 1.723–1.811 ETH and the
+staking split at 25/25 bps. Changing either means deploying a fresh `CurvePadFactory` and repointing the
+site — there is no path that edits the live one. Budget ~12M gas for that if it ever comes up.
+
+The v1 router's handover completed on the cold wallet's own signature: the lost key had already nominated
+it, so `acceptOwnership()` finished the job. No other contract has a pending nomination.
+
 ## Live contract addresses (v2.1)
 | Contract | Address | Verified on Blockscout |
 |---|---|---|
@@ -23,7 +54,8 @@ OWNER = the cold wallet. Factory deploy block: **17752965**. Deployed: 2026-07-2
 | Uniswap v3 Factory (chain infra) | `0x1f7d7550b1b028f7571e69a784071f0205fd2efa` | n/a |
 
 - **OWNER / platform / poster / guardian / floor-treasury:** `0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf` (cold)
-- **Deployer (hot):** `0x2aA74C8d97d89a7Cac1243262479687e5Db30eF8`
+- **Deployer (hot):** `0x2aA74C8d97d89a7Cac1243262479687e5Db30eF8` — **KEY LOST, see the section above.**
+  Still owns `CurvePadFactory v2` and nothing else. Do not plan any operation that needs it to sign.
 - Explorer: https://robinhoodchain.blockscout.com/address/0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074
 
 ## Fee model (v2 — all owner-tunable via FeeConfig, no redeploy)
