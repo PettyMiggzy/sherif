@@ -1,9 +1,12 @@
 {
   "network": "robinhood",
   "chainId": 4663,
-  "note": "v2 pad — deployed ALONGSIDE v1, which stays live. See DEPLOY-V2.md. RECONSTRUCTED FROM CHAIN: the deploy ran on the server, so the script's own deploy.v2.json never reached this repo. Every address below was read back off the live factory, not copied from a log.",
+  "deployedAt": "2026-08-30T13:32:07.852Z",
+  "note": "v2 pad \u2014 deployed ALONGSIDE v1, which stays live. See DEPLOY-V2.md. Merged from two sources: the deploy script's own manifest, which existed only as an untracked file on the droplet, plus the geometry block read back off the live factory. Every address agreed between the two.",
   "owner": "0x2aA74C8d97d89a7Cac1243262479687e5Db30eF8",
   "platform": "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf",
+  "bountyNear": 9000,
+  "bountyFar": 15600,
   "contracts": {
     "padFactory": "0xD41479DE442366e0358Fd74Bf4a5911eBbF3055A",
     "bondDeployer": "0x32371DC90F1FE4e7c350f35d010F130ed1CAb536",
@@ -33,6 +36,7 @@
   },
   "v1": {
     "padFactory": "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074",
-    "stillAuthorized": false
+    "stillAuthorized": false,
+    "bondDeployer": "0x8B04d9e55C904d6D371eA6e81ecb2a0911843AD3"
   }
 }
