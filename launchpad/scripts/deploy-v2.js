@@ -93,8 +93,12 @@ async function main() {
   //
   // Nothing about the live router is touched. It is not upgraded, not re-owned, not revoked — a coin
   // trading today trades exactly the same way tomorrow.
+  // Deployed owned by the DEPLOYER, then handed to `owner` at the end. Constructing it owned by `owner`
+  // directly looked tidier and was a dead end: `setFactory` below is onlyOwner, so unless the deploying key
+  // IS the treasury key the script deploys five contracts and then cannot authorize the factory — the exact
+  // half-deployed state the owner check was written to avoid. Deploy, wire, then hand over.
   console.log("deploying the v2 router (the live one stays untouched and keeps its coins):");
-  const routerC = await track("PadRouter(v2)", await (await ethers.getContractFactory("PadRouter")).deploy(WETH, owner));
+  const routerC = await track("PadRouter(v2)", await (await ethers.getContractFactory("PadRouter")).deploy(WETH, deployer.address));
   const routerAddr = await routerC.getAddress();
   const router = routerC;
 
@@ -133,16 +137,19 @@ async function main() {
   const factoryAddr = await factory.getAddress();
 
   // 5) authorize it on the LIVE router (allowlist — v1 stays authorized unless you revoke it below)
-  // The new router is constructed owned by `owner`. If that is not the deploying key, this call cannot be
-  // made from here — fail loudly rather than leaving a factory on chain that no router will accept.
-  if ((await router.owner()).toLowerCase() !== deployer.address.toLowerCase()) {
-    throw new Error(`the v2 router is owned by ${await router.owner()}, not the deployer — run setFactory(${factoryAddr}) from that key`);
-  }
   await (await router.setFactory(factoryAddr)).wait();
   console.log(`\n  router.setFactory(${factoryAddr}) — authorized`);
   if (!(await router.isFactory(factoryAddr))) throw new Error("router did not authorize the v2 factory");
 
-  // 6) optional valuation-band retune
+  // 6) hand the router to its real owner. Ownable2Step, so this only NOMINATES — the treasury key must
+  //    call acceptOwnership() to finish. Deliberate: a two-step handover cannot strand the router on an
+  //    address nobody controls, which a one-step transfer to a mistyped key would.
+  if (owner.toLowerCase() !== deployer.address.toLowerCase()) {
+    await (await router.transferOwnership(owner)).wait();
+    console.log(`  router.transferOwnership(${owner}) — PENDING, call acceptOwnership() from that key`);
+  }
+
+  // 7) optional valuation-band retune
   if (MIN_FDV_ETH && MAX_FDV_ETH) {
     await (await factory.setFdvBand(ethers.parseEther(MIN_FDV_ETH), ethers.parseEther(MAX_FDV_ETH))).wait();
     console.log(`  setFdvBand(${MIN_FDV_ETH} .. ${MAX_FDV_ETH} ETH)`);

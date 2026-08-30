@@ -129,8 +129,24 @@ async function main() {
   }
 
   // ── 3. prove it, do not assume it ────────────────────────────────────────
-  console.log("\nverifying (reading everything back off the chain):");
+  // ── repair FIRST, then verify ────────────────────────────────────────────
+  // These two used to run after the checks, which made the script fail a check it then fixed one line
+  // later and abort with "the pipeline is NOT complete" on a pipeline that was complete. Verification has
+  // to be the last thing that happens, or it is not verification — it is a snapshot of a half-done job.
   const p = await ethers.getContractAt("RobinTierStaking", robinPool);
+
+  // A pool created before `setFeeder` still has its tax sink pointed at the owner. Only this owner can move
+  // it now — the factory handed the pool over and cannot reach it any more.
+  if (!eq(await p.strandedSink(), feederAddr)) {
+    await (await p.setStrandedSink(feederAddr, ov)).wait();
+    console.log("  repaired: exit tax re-pointed at the feeder (the pool predated setFeeder)");
+  }
+  if (!(await p.isRewarder(feederAddr))) {
+    await (await p.setRewarder(feederAddr, true, ov)).wait();
+    console.log("  repaired: feeder authorised on the $ROBIN pool (it predated setFeeder)");
+  }
+
+  console.log("\nverifying (reading everything back off the chain):");
   const checks = [
     ["$ROBIN pool is its own boost source", eq(await p.boostSource(), robinPool)],
     ["$ROBIN pool is owned by you", eq(await p.owner(), me.address)],
@@ -143,24 +159,10 @@ async function main() {
     ["keeper can create pools", await factory.isCreator(keeper)],
     ["keeper can move fees", await feeder.isOperator(keeper)],
     ["feeder trusts this factory", eq(await feeder.registry(), factoryAddr)],
+    ["feeder may fund the $ROBIN pool", await p.isRewarder(feederAddr)],
   ];
   let bad = 0;
   for (const [label, good] of checks) { console.log(`  ${good ? "OK  " : "FAIL"}  ${label}`); if (!good) bad++; }
-
-  // The flagship pool may predate setFeeder, in which case its tax sink is still the owner. Re-point it,
-  // which only this owner can now do — the factory handed the pool over and cannot fix it any more.
-  if (!eq(await p.strandedSink(), feederAddr)) {
-    await (await p.setStrandedSink(feederAddr, ov)).wait();
-    console.log("  OK    exit tax re-pointed at the feeder (the pool predated setFeeder)");
-  }
-
-  // The flagship pool predates setFeeder, so it needs the grant directly — the factory no longer owns it.
-  if (!(await p.isRewarder(feederAddr))) {
-    await (await p.setRewarder(feederAddr, true, ov)).wait();
-    console.log("  OK    feeder authorised on the $ROBIN pool (it predated setFeeder)");
-  } else {
-    console.log("  OK    feeder authorised on the $ROBIN pool");
-  }
 
   console.log("\nPaste into indexer/.env:");
   console.log(`  TIER_STAKING_FACTORY=${factoryAddr}`);
