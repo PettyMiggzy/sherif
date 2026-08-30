@@ -23,3 +23,4 @@ _audit/
 
 # Scratch probe scripts written by verification agents — written, run against a live RPC, abandoned.
 _audit/
+hh-audit.config.js
