@@ -245,10 +245,13 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
         </div>
       </div>
 
-      <!-- Split the dev buy: after launch, auto-send shares of the just-bought tokens to up to 6 wallets.
-           Runs as its own step right after the launch tx (one approval + one send via the Disperse helper). -->
+      <!-- The launch-time airdrop: after launch, auto-send shares of the just-bought tokens to up to 600
+           wallets. Runs as its own step right after the launch tx (one approval + one send via the Disperse
+           helper). Called "Loot Drop" here and in the nav, but the hint always carries the word AIRDROP —
+           this was built and shipped as "Split your dev buy", which meant the word a creator actually scans
+           the page for appeared on it zero times, and people concluded the pad had no airdrop. -->
       <div class="field" id="splitCard" style="display:none">
-        <label>Split your dev buy <span class="hint">auto-send shares to up to 600 wallets, right after launch</span></label>
+        <label>Loot Drop <span class="hint">airdrop shares of your dev buy to up to 600 wallets, right after launch</span></label>
         <div class="devbuy">
           <div id="splitRows"></div>
           <div class="sc" style="margin-top:10px">
