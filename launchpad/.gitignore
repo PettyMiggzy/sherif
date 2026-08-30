@@ -16,3 +16,10 @@ scripts/.auto-verify-state.json
 # deletes them again — and a half-written one breaks `npx hardhat test` for everyone. Anything worth
 # keeping gets promoted to a real name (see test/poolsquat-*.test.js, which began this way).
 test/zz*.test.js
+
+# Scratch probe scripts written by audit/verification agents. Throwaway by nature — they are
+# written, run against a live RPC, and abandoned. Never part of the repo.
+_audit/
+
+# Scratch probe scripts written by verification agents — written, run against a live RPC, abandoned.
+_audit/
