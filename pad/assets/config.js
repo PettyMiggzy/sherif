@@ -56,7 +56,7 @@ export const CONTRACTS = {
   // site now calls both, so launching against it fails. The site and the factory ship together; see
   // launchpad/DEPLOY-V2.md. `assertModernFactory()` in wallet.js turns the mismatch into a plain message
   // rather than an unreadable RPC error if the two ever get out of step.
-  padFactory: "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074",
+  padFactory: "0xD41479DE442366e0358Fd74Bf4a5911eBbF3055A",
 
   // Our PadRouter - the swap desk + project fee. Robinhood Chain has no canonical
   // Uniswap periphery, so THIS is the router every trade goes through - LIVE.
@@ -67,7 +67,7 @@ export const CONTRACTS = {
   // would simply stop those coins trading. So the old one keeps its coins forever, the new one takes every
   // coin from here on, and `routerFor()` asks the chain which is which rather than guessing.
   // Empty until deployed — while empty, every coin resolves to the legacy router and nothing changes.
-  padRouterV2: "",
+  padRouterV2: "0x7e3BbfddFd8B18b789710a6E419B12Dee1E9B9b1",
 
   // Our FeeConfig - the single owner-governed fee dial (LP creator split + swap platform/creator/floor split).
   // Curves + router read it on-chain; the owner retunes it with a setter (no redeploy). LIVE.
@@ -122,8 +122,8 @@ export const CONTRACTS = {
   // pool list, so stake-tiers.html renders every pool that exists WITHOUT this file being edited again. Once
   // it is set, robinTierStaking below is only a fallback for the flagship $ROBIN pool — the site prefers the
   // factory. DEPLOY: fill in after deploy + verify; the page renders a clearly-labelled preview until then.
-  tierStakingFactory: "",
-  robinTierStaking: "", // flagship $ROBIN pool; also discoverable via tierStakingFactory.poolOf(platformToken)
+  tierStakingFactory: "0x237901667ff38CF4ec6009676E480ba71ac1c6AE",
+  robinTierStaking: "0x713F0F1a2ACB98E7d2E5d6Ff706A1413aa814C10", // flagship $ROBIN pool; also discoverable via tierStakingFactory.poolOf(platformToken)
 
   // Multicall3 - the canonical read-batcher (same address on nearly every EVM chain;
   // verified deployed on Robinhood Chain). Used to collapse many independent view reads
