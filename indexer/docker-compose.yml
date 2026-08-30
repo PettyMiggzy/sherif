@@ -68,9 +68,6 @@ services:
       - "443:443"
     environment:
       SITE_DOMAIN: ${SITE_DOMAIN:-:80}
-      # Coin websites. Leave BOTH unset and the wildcard block never activates, so a box without DNS or
-      # an API key starts clean instead of retrying a certificate it can never get.
-      PAD_WILDCARD: ${PAD_WILDCARD:-*.invalid.localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../pad:/srv/pad:ro          # the static site

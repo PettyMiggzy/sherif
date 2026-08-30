@@ -43,9 +43,16 @@
 # `/api/site/<slug>` which coin it is and which style to wear. That is deliberate: a coin launching does
 # not need a deploy, a config edit, or a Caddy reload to have a website. It needs a row in the database.
 #
-# PAD_WILDCARD is unset by default so a box that has not been given the DNS and the API key simply does
-# not serve this block, rather than starting up and failing to get a certificate on every boot.
-{$PAD_WILDCARD:*.invalid.localhost} {
+# There is no switch to turn this block off, and it does not need one: nothing is served and no certificate
+# is ever requested until `PAD_SITE_ROOT` is set on the indexer, because the gate below refuses every
+# hostname until it knows which apex is ours. An unconfigured box answers nothing here and asks for nothing.
+# A CATCH-ALL, and it must stay a catch-all. Writing the hostname here as `*.robinlab.io` reads to Caddy
+# as "obtain a WILDCARD certificate for this", which needs a DNS-01 challenge it has no provider for —
+# and the failed attempt took TLS down for every site in this file, including the API the pad runs on.
+# On-demand certificates are for hostnames that are NOT named in the config; naming one defeats them.
+# `https://` matches any host that no more specific block claims, so `{$SITE_DOMAIN}` above still wins
+# for itself and nothing here is ever added to automatic certificate management.
+https:// {
 	encode zstd gzip
 
 	# A certificate PER SUBDOMAIN, issued the first time somebody visits one, rather than one wildcard.
