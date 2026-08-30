@@ -345,7 +345,7 @@ main{padding:34px 0 70px}
 <script type="module">
 import * as Pad from './assets/wallet.js';
 import * as Safety from './assets/safety.js';
-import { CHAIN, UNI_TOKENS, UNI_NATIVE, UNI_FEE_BPS, isUniToken, UNI_STOCK_TOKENS, isStockToken, feeBpsFor } from './assets/config.js';
+import { CHAIN, UNI_TOKENS, UNI_NATIVE, UNI_FEE_BPS, isUniToken, UNI_STOCK_TOKENS, isStockToken, feeBpsFor, stockLogo } from './assets/config.js';
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
 const ETH_USD = 1920; // display-only, matches the rest of the pad
@@ -440,7 +440,9 @@ async function loadMeta(){
       const vol = (p.volume && p.volume.h24) || 0, cur = best.get(a);
       if (!cur || vol > cur._vol) best.set(a, {
         addr: p.baseToken.address, symbol: p.baseToken.symbol, name: p.baseToken.name,
-        image: (p.info && p.info.imageUrl) || null, priceUsd: +(p.priceUsd || 0) || 0,
+        // Our own art wins for stocks. DexScreener indexes these as ordinary ERC-20s, so its image is the
+        // token's, not the company's — which is why the tab was showing the wrong faces.
+        image: stockLogo(p.baseToken && p.baseToken.address) || (p.info && p.info.imageUrl) || null, priceUsd: +(p.priceUsd || 0) || 0,
         volUsd: vol, liqUsd: (p.liquidity && p.liquidity.usd) || 0, decimals: 18, _vol: vol,
       });
     }
@@ -450,7 +452,7 @@ async function loadMeta(){
 // ensure real name/symbol/decimals (chain is the source of truth for decimals)
 async function ensureMeta(addr){
   const a = addr.toLowerCase();
-  let m = META.get(a) || { addr, symbol: '?', name: 'Token', decimals: 18, image: null, priceUsd: 0, volUsd: 0, liqUsd: 0 };
+  let m = META.get(a) || { addr, symbol: '?', name: 'Token', decimals: 18, image: stockLogo(addr), priceUsd: 0, volUsd: 0, liqUsd: 0 };
   try { const cm = await Pad.tokenMeta(addr); m = { ...m, symbol: cm.symbol || m.symbol, name: cm.name || m.name, decimals: cm.decimals ?? 18 }; } catch {}
   META.set(a, m); return m;
 }

@@ -142,12 +142,12 @@ export const CONTRACTS = {
 // that actually holds liquidity (verified on-chain), used by RewardConverter to auto-convert fee ETH into
 // the reward; `wethFee: 0` means no liquid WETH pool yet (e.g. SGOV) → stream it pre-funded, no swap.
 export const STOCKS = {
-  SGOV: { address: "0x92FD66527192E3e61d4DDd13322Aa222DE86F9B5", name: "iShares 0-3M T-Bill", wethFee: 0 },
-  AAPL: { address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9", name: "Apple", wethFee: 500 },
-  NVDA: { address: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC", name: "NVIDIA", wethFee: 3000 },
-  TSLA: { address: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d", name: "Tesla", wethFee: 3000 },
-  SPCX: { address: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa", name: "SpaceX", wethFee: 0 },
-  SPY: { address: "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C", name: "SPDR S&P 500", wethFee: 500 },
+  SGOV: { address: "0x92FD66527192E3e61d4DDd13322Aa222DE86F9B5", name: "iShares 0-3M T-Bill", wethFee: 0, logo: "/assets/stocks/SGOV.png" },
+  AAPL: { address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9", name: "Apple", wethFee: 500, logo: "/assets/stocks/AAPL.png" },
+  NVDA: { address: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC", name: "NVIDIA", wethFee: 3000, logo: "/assets/stocks/NVDA.png" },
+  TSLA: { address: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d", name: "Tesla", wethFee: 3000, logo: "/assets/stocks/TSLA.png" },
+  SPCX: { address: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa", name: "SpaceX", wethFee: 0, logo: "/assets/stocks/SPCX.png" },
+  SPY: { address: "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C", name: "SPDR S&P 500", wethFee: 500, logo: "/assets/stocks/SPY.png" },
 };
 
 // 1% pool tier - the fee is collected as Uniswap LP fees IN-PROTOCOL. There is
@@ -541,5 +541,14 @@ export const UNI_FEE_BPS = 125; // our 1.25%/side integrator fee (matches the se
 // these pairs and refuses any upstream quote or calldata that comes back carrying one.
 export const UNI_STOCK_TOKENS = Object.values(STOCKS).map((s) => s.address.toLowerCase());
 export const isStockToken = (a) => UNI_STOCK_TOKENS.includes(String(a || "").toLowerCase());
+/// The stock's real logo, served by us. DexScreener's token images for these are wrong or missing -- it
+/// indexes them as ordinary ERC-20s, not as the companies they track -- so anything reading an image off a
+/// price feed must prefer this. Held locally rather than hotlinked: a logo host that rate-limits or
+/// disappears would leave the whole tab looking broken, and hotlinking leaks every visitor to a third party.
+export const stockLogo = (a) => {
+  const k = String(a || "").toLowerCase();
+  for (const s of Object.values(STOCKS)) if (s.address.toLowerCase() === k) return s.logo || null;
+  return null;
+};
 export const feeBpsFor = (a, b) => (isStockToken(a) || isStockToken(b) ? 0 : UNI_FEE_BPS);
 export const isUniToken = (a) => UNI_TOKENS.includes(String(a || "").toLowerCase()) || isStockToken(a);
