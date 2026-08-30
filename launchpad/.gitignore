@@ -30,3 +30,5 @@ _*.js
 _audit*/
 **/_audit_tmp/
 hh-audit.config.js
+_ffprobe/
+_*/
