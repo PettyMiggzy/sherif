@@ -126,10 +126,12 @@ try { ({ STOCKS } = await import("./assets/config.js")); } catch { /* standalone
 // The marquee three — Apple, SpaceX, Tesla. These used to be the ticker LETTERS in a ring, which read as a
 // placeholder, because it was one. Real logo art now, served by us from /assets/stocks. The letters remain
 // as the fallback so a missing file degrades to what was here before rather than to an empty circle.
+// `fit` is the share of the emblem the art may occupy. A glyph (Apple, the Tesla T) reads at 62%; a
+// wordmark is wide and short, so contain shrinks it to a thread at the same number -- those get more room.
 const FEATURED = [
-  { key: "AAPL", name: "Apple",  accent: "#b9c0c6", ring: "rgba(185,192,198,.5)", addr: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9" },
-  { key: "SPCX", name: "SpaceX", accent: "#4a9bd8", ring: "rgba(74,155,216,.5)", addr: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa" },
-  { key: "TSLA", name: "Tesla",  accent: "#e6484d", ring: "rgba(230,72,77,.5)", addr: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d" },
+  { key: "AAPL", name: "Apple",  fit: 62, accent: "#b9c0c6", ring: "rgba(185,192,198,.5)", addr: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9" },
+  { key: "SPCX", name: "SpaceX", fit: 84, accent: "#4a9bd8", ring: "rgba(74,155,216,.5)", addr: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa" },
+  { key: "TSLA", name: "Tesla",  fit: 62, accent: "#e6484d", ring: "rgba(230,72,77,.5)", addr: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d" },
 ];
 const short = (a) => a.slice(0, 6) + "…" + a.slice(-4);
 
@@ -142,7 +144,7 @@ document.getElementById("trio").innerHTML = FEATURED.map((f) => {
     <div class="badge">Live</div>
     <div class="emblem" style="border-color:${f.ring};box-shadow:inset 0 0 22px ${f.ring},inset 0 0 0 3px rgba(0,0,0,.35)">
       ${s.logo
-        ? `<img src="${s.logo}" alt="${f.name}" loading="lazy" style="width:62%;height:62%;object-fit:contain"
+        ? `<img src="${s.logo}" alt="${f.name}" loading="lazy" style="width:${f.fit}%;height:${f.fit}%;object-fit:contain"
              onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${f.key}',style:'color:${f.accent}'}))" />`
         : `<span style="color:${f.accent}">${f.key}</span>`}
     </div>

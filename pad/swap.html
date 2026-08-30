@@ -124,6 +124,9 @@ main{padding:34px 0 70px}
 .tokbtn.fixed:hover{border-color:var(--line-2)}
 .ic{width:26px;height:26px;border-radius:50%;overflow:hidden;display:grid;place-items:center;font-weight:800;font-size:.72rem;color:#0a0e05;flex:none}
 .ic img{width:100%;height:100%;object-fit:cover}
+/* Our stock art is a transparent mark on a square canvas, not a pfp. `cover` would crop a wordmark's
+   ends against the round icon, so those get contain plus a hair of inset. */
+.ic img.stk{object-fit:contain;transform:scale(.84)}
 .tokbtn .sy{font-weight:800;font-size:.95rem;white-space:nowrap}
 .tokbtn .cv{width:14px;height:14px;color:var(--dim);flex:none}
 .box .sub{font-size:.76rem;color:var(--faint);margin-top:6px;min-height:1em}
@@ -345,7 +348,7 @@ main{padding:34px 0 70px}
 <script type="module">
 import * as Pad from './assets/wallet.js';
 import * as Safety from './assets/safety.js';
-import { CHAIN, UNI_TOKENS, UNI_NATIVE, UNI_FEE_BPS, isUniToken, UNI_STOCK_TOKENS, isStockToken, feeBpsFor, stockLogo } from './assets/config.js';
+import { CHAIN, UNI_TOKENS, UNI_NATIVE, UNI_FEE_BPS, isUniToken, UNI_STOCK_TOKENS, isStockToken, feeBpsFor, stockLogo, stockMeta } from './assets/config.js';
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
 const ETH_USD = 1920; // display-only, matches the rest of the pad
@@ -452,7 +455,7 @@ async function loadMeta(){
 // ensure real name/symbol/decimals (chain is the source of truth for decimals)
 async function ensureMeta(addr){
   const a = addr.toLowerCase();
-  let m = META.get(a) || { addr, symbol: '?', name: 'Token', decimals: 18, image: stockLogo(addr), priceUsd: 0, volUsd: 0, liqUsd: 0 };
+  let m = META.get(a) || { addr, symbol: '?', name: 'Token', decimals: 18, image: null, priceUsd: 0, volUsd: 0, liqUsd: 0, ...(stockMeta(addr) || {}) };
   try { const cm = await Pad.tokenMeta(addr); m = { ...m, symbol: cm.symbol || m.symbol, name: cm.name || m.name, decimals: cm.decimals ?? 18 }; } catch {}
   META.set(a, m); return m;
 }
@@ -468,7 +471,7 @@ function paintIc(el, t){
 }
 function icHtml(t, cls){
   if (t.native) return `<span class="${cls}" style="background:linear-gradient(135deg,#6c7cff,#455bd6)">${ETH_MARK}</span>`;
-  if (t.image) return `<span class="${cls}"><img src="${esc(t.image)}" alt="" onerror="this.parentNode.textContent='${esc((t.symbol||'?').slice(0,2))}'"/></span>`;
+  if (t.image) return `<span class="${cls}"><img class="${isStockToken(t.addr) ? 'stk' : ''}" src="${esc(t.image)}" alt="" onerror="this.parentNode.textContent='${esc((t.symbol||'?').slice(0,2))}'"/></span>`;
   return `<span class="${cls}" style="${avaStyle(t.addr)}">${esc((t.symbol||'?').replace(/[^\w]/g,'').slice(0,2) || '?')}</span>`;
 }
 
@@ -705,7 +708,7 @@ function openPicker(){ renderPicker(''); $('tokSearch').value = ''; $('modal').c
 function closePicker(){ $('modal').classList.remove('open'); }
 function renderPicker(filter){
   const f = filter.trim().toLowerCase();
-  const rows = [...UNI_TOKENS, ...UNI_STOCK_TOKENS].map((a) => META.get(a) || { addr: a, symbol: '?', name: 'Token', decimals: 18, image: null, priceUsd: 0, volUsd: 0 })
+  const rows = [...UNI_TOKENS, ...UNI_STOCK_TOKENS].map((a) => META.get(a) || { addr: a, symbol: '?', name: 'Token', decimals: 18, image: null, priceUsd: 0, volUsd: 0, ...(stockMeta(a) || {}) })
     .filter((m) => !f || (m.symbol||'').toLowerCase().includes(f) || (m.name||'').toLowerCase().includes(f) || m.addr.toLowerCase().includes(f))
     .sort((x, y) => (y.volUsd||0) - (x.volUsd||0));
   $('toklist').innerHTML = rows.map((m) => {

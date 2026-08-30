@@ -573,5 +573,15 @@ export const stockLogo = (a) => {
   for (const s of Object.values(STOCKS)) if (s.address.toLowerCase() === k) return s.logo || null;
   return null;
 };
+/// Symbol/name/logo for a stock we list, straight off STOCKS. The price feed only knows the ones it has
+/// indexed a pair for, so a thinly traded stock comes back as "? / Token" with no art -- which is exactly
+/// the row that looked broken. We already know all three; use them whenever the feed is silent.
+export const stockMeta = (a) => {
+  const k = String(a || "").toLowerCase();
+  for (const [symbol, s] of Object.entries(STOCKS)) {
+    if (s.address.toLowerCase() === k) return { symbol, name: s.name, image: s.logo || null };
+  }
+  return null;
+};
 export const feeBpsFor = (a, b) => (isStockToken(a) || isStockToken(b) ? 0 : UNI_FEE_BPS);
 export const isUniToken = (a) => UNI_TOKENS.includes(String(a || "").toLowerCase()) || isStockToken(a);
