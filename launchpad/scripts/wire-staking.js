@@ -29,6 +29,16 @@ async function main() {
 
   let gasPrice = (await ethers.provider.getFeeData()).gasPrice;
   if (gasPrice == null) gasPrice = BigInt(await ethers.provider.send("eth_gasPrice", []));
+  // DOUBLED, and the reason is a race rather than a preference. The price is read once here and then
+  // reused for every transaction this script sends, so a base fee that ticks up in between rejects the
+  // send outright: observed on a real run as "max fee per gas less than block base fee, maxFeePerGas
+  // 153308000, baseFee 153336000" — a miss by 28 wei, mid-way through wiring, after the first contract
+  // was already deployed and paid for.
+  //
+  // Doubling is not a cost decision. This is a legacy type-0 transaction, so `gasPrice` is what is BID,
+  // not what is charged: the chain takes the base fee and the rest is simply not spent. The headroom is
+  // free, and it buys the whole run against normal base-fee drift.
+  gasPrice = (gasPrice * 2n) || 1n;
   const ov = { type: 0, gasPrice }; // legacy: Orbit L2, no EIP-1559
 
   const keeper = (process.env.KEEPER || "").trim();
