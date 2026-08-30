@@ -38,6 +38,7 @@ import * as Pools from "./poolmaker.js";
 import * as Feed from "./feedkeeper.js";
 import { mc3 } from "./multicall.js";
 import { gradCandidates, liveCurvesAll, recentTradeCurves } from "./db.js";
+import { beat } from "./heartbeat.js";
 
 const KEY = process.env.GRAD_KEEPER_KEY || process.env.KEEPER_KEY || "";
 const ENABLED = KEY && process.env.GRAD_KEEPER !== "0";
@@ -105,7 +106,13 @@ function pickCurves(nowMs) {
 const isTimeout = (e) => !!e && (e.code === "TIMEOUT" || /timeout/i.test((e && e.message) || "")) && !(e && e.receipt);
 
 export async function runGradKeeper() {
-  if (!ENABLED) { console.log("[grad] disabled (set GRAD_KEEPER_KEY or KEEPER_KEY, GRAD_KEEPER!=0 to run)"); return; }
+  if (!ENABLED) {
+    console.log("[grad] disabled (set GRAD_KEEPER_KEY or KEEPER_KEY, GRAD_KEEPER!=0 to run)");
+    // Beat anyway, flagged off. Otherwise /health cannot tell "deliberately disabled" from "container
+    // dead", and those need very different reactions.
+    beat({ grad: false, pools: Pools.enabled(), reason: "no key, or GRAD_KEEPER=0" });
+    return;
+  }
 
   // Startup with retry/backoff so a transient provider hiccup doesn't leave the keeper silently dead for the
   // life of the process (a plain-wallet getAddress is local, so this almost never trips — but it's cheap insurance).
@@ -156,6 +163,16 @@ export async function runGradKeeper() {
 
   for (;;) {
     try { await tick(); } catch (e) { console.log("[grad] tick error:", (e && e.message) || e); }
+    // Liveness for /health, written from THIS container. The enabled-flags ride along because the
+    // expensive failure here is not a crash -- it is a keeper running happily with `pools` switched off,
+    // graduating coins that then silently never get a staking pool. Surfacing the switch is the point.
+    beat({
+      keeper: address,
+      pollMs: POLL_MS,
+      grad: true,
+      pools: Pools.enabled(),
+      feed: Feed.enabled(),
+    });
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
 

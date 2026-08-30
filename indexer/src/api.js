@@ -5,6 +5,7 @@
 import http from "node:http";
 import { ethers } from "ethers";
 import { db } from "./db.js";
+import * as Heartbeat from "./heartbeat.js";
 import { CFG } from "./config.js";
 import { getHead } from "./indexer.js";
 import { getRewardRoot, claimsForEpoch, claimsForUser, getRewardClaim } from "./db.js";
@@ -1026,7 +1027,17 @@ export function startApi() {
         const cur = db.prepare("SELECT v FROM meta WHERE k='cursor'").get();
         // `img` proves this build has the image-conversion toolchain loaded (HEIC etc.) —
         // a quick way to confirm a redeploy actually took and the deps installed.
-        return send(res, 200, { ok: true, head: getHead(), cursor: cur ? Number(cur.v) : null, coins: c, trades: t, img: !!(_sharp && _heic) }, origin);
+        // Keeper liveness comes from the OTHER container via the shared data volume. Reported here because
+        // an indexer that is perfectly healthy tells you nothing about whether coins are still graduating,
+        // and that is the half of the stack whose failure is silent. `stale` is the real signal: a heartbeat
+        // older than a few poll intervals means the keeper is wedged or gone, file or no file.
+        const hb = Heartbeat.read();
+        const keeper = hb
+          ? { alive: hb.ageSecs < 120, stale: hb.ageSecs >= 120, ageSecs: hb.ageSecs,
+              grad: hb.grad === true, pools: hb.pools === true, feed: hb.feed === true,
+              address: hb.keeper || null, ...(hb.reason ? { reason: hb.reason } : {}) }
+          : { alive: false, stale: true, ageSecs: null, note: "no heartbeat — keeper container has never run" };
+        return send(res, 200, { ok: true, head: getHead(), cursor: cur ? Number(cur.v) : null, coins: c, trades: t, img: !!(_sharp && _heic), keeper }, origin);
       }
 
       // Whether the photo-to-meme generator is configured — the create page shows its button only if so.
