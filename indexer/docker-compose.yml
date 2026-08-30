@@ -59,11 +59,7 @@ services:
       - indexer
 
   caddy:
-    # A custom build: stock Caddy cannot answer a DNS-01 challenge, and a wildcard certificate for the
-    # coin sites needs one. See Dockerfile.caddy for why this beats moving nameservers.
-    build:
-      context: .
-      dockerfile: Dockerfile.caddy
+    image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
       - indexer
@@ -75,7 +71,6 @@ services:
       # Coin websites. Leave BOTH unset and the wildcard block never activates, so a box without DNS or
       # an API key starts clean instead of retrying a certificate it can never get.
       PAD_WILDCARD: ${PAD_WILDCARD:-*.invalid.localhost}
-      GODADDY_API_TOKEN: ${GODADDY_API_TOKEN:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../pad:/srv/pad:ro          # the static site

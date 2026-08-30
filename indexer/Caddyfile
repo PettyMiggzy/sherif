@@ -2,6 +2,16 @@
 # SITE_DOMAIN comes from the environment (docker-compose passes it from .env).
 # If unset it falls back to :80 (plain HTTP, e.g. for local testing).
 
+# On-demand certificates are gated: Caddy asks the indexer whether a hostname is a real coin site before
+# it requests anything. Without this, a stranger requesting random subdomains would burn the domain's
+# whole weekly certificate allowance and lock out the real coins. Global block — it applies to the
+# on-demand issuance below, wherever it happens.
+{
+	on_demand_tls {
+		ask http://indexer:8787/api/site-allowed
+	}
+}
+
 {$SITE_DOMAIN} {
 	encode zstd gzip
 
@@ -38,11 +48,19 @@
 {$PAD_WILDCARD:*.invalid.localhost} {
 	encode zstd gzip
 
-	# The wildcard certificate comes from a DNS-01 challenge — Caddy writes the `_acme-challenge` TXT
-	# record through GoDaddy's API and deletes it again. This is the only reason the image is a custom
-	# build; see Dockerfile.caddy. The token is `KEY:SECRET` from the GoDaddy developer portal.
+	# A certificate PER SUBDOMAIN, issued the first time somebody visits one, rather than one wildcard.
+	#
+	# A wildcard would have been better and is not available: it can only be issued through a DNS-01
+	# challenge, and GoDaddy's newer personal access tokens authenticate as `Bearer` while the Caddy
+	# GoDaddy module sends `sso-key` — verified against the live API, `sso-key` returns 401 with a
+	# gd_pat_ token. Moving the domain's nameservers to a provider Caddy can drive is the real upgrade,
+	# and it is not worth doing while Microsoft 365 mail depends on seven records at the current host.
+	#
+	# The trade is a rate limit rather than a risk: certificate authorities allow roughly 50 new
+	# certificates per registered domain per week, so this comfortably carries early launches and would
+	# need revisiting past ~50 NEW coin sites in a week. Renewals do not count against it.
 	tls {
-		dns godaddy {env.GODADDY_API_TOKEN}
+		on_demand
 	}
 
 	# Same API as the main site, same origin, so a coin site needs no CORS and no second hostname.

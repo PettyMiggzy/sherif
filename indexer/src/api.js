@@ -998,6 +998,29 @@ export function startApi() {
     }
 
     try {
+      // ── Caddy's on-demand TLS gate ─────────────────────────────────────────
+      // Coin sites get a certificate the first time somebody visits them, rather than one wildcard
+      // covering everything. That means an open door: without this check anyone could request ten
+      // thousand random subdomains, and Caddy would dutifully ask a certificate authority for ten
+      // thousand certificates until the rate limit locked the whole domain out — including the real
+      // coins. So Caddy asks HERE before it issues anything, and only a slug that is actually a coin
+      // with a site gets a yes.
+      //
+      // Answer 200 to allow and anything else to refuse. Deliberately strict: an unknown slug, a taken
+      // down site, or a hostname that is not one of ours all refuse, and the visitor gets a TLS error
+      // rather than a certificate we did not mean to buy.
+      if (path === "/api/site-allowed") {
+        const host = String(url.searchParams.get("domain") || "").toLowerCase().trim();
+        const root = String(process.env.PAD_SITE_ROOT || "").toLowerCase().trim();
+        if (!root || !host.endsWith("." + root)) return send(res, 404, { error: "not ours" }, origin);
+        const slug = normalizeSlug(host.slice(0, -(root.length + 1)));
+        if (!slug || slug.includes(".")) return send(res, 404, { error: "no site here" }, origin);
+        if (isTakenDown(slug)) return send(res, 404, { error: "removed" }, origin);
+        const row = getSiteBySlug.get(slug);
+        if (!row || !row.site_style) return send(res, 404, { error: "no site here" }, origin);
+        return send(res, 200, { ok: true, slug }, origin);
+      }
+
       if (path === "/" || path === "/health") {
         const { coins: c, trades: t } = healthCounts();   // cached ~5s so a health-check burst can't scan-per-request
         const cur = db.prepare("SELECT v FROM meta WHERE k='cursor'").get();
