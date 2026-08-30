@@ -123,3 +123,65 @@ describe("[FEESPLIT] the factory stamps the slices at launch", function () {
     expect(names).to.include("robinBps");
   });
 });
+
+// The MEDIUM the external audit found: every test above exercises registration and flushing, and none of
+// them ever ran a swap through the split — so the branch that silently stopped funding stakers was never
+// executed. These run the split itself, in BOTH modes.
+describe("[FEESPLIT] the staking slices survive setFeeConfig", function () {
+  this.timeout(120000);
+  let owner, fac, probe, P2;
+  const TOK = "0x1111111111111111111111111111111111111ab5";
+  const P = "0x3333333333333333333333333333333333333333";
+  const V = ethers.parseEther("100"); // 100 ETH of swap volume
+
+  beforeEach(async () => {
+    [owner, fac] = (await ethers.getSigners()).slice(-2);
+    const weth = await (await ethers.getContractFactory("MockWETH9")).deploy();
+    probe = await (await ethers.getContractFactory("RouterFeeProbe"))
+      .connect(owner).deploy(await weth.getAddress(), owner.address);
+    P2 = await probe.getAddress();
+    await (await probe.connect(owner).setFactory(fac.address)).wait();
+    await (await probe.connect(fac).registerWithStaking(
+      TOK, P, P, owner.address, 125, 125, 10_000, 0, 0, 25, 25)).wait();
+  });
+
+  it("with feeConfig UNSET, a sell funds the coin's stakers and a buy funds $ROBIN", async () => {
+    await (await probe.distribute(TOK, V, 125, true)).wait();
+    await (await probe.distribute(TOK, V, 125, false)).wait();
+    expect(await probe.stakingEscrow(TOK)).to.equal(V * 25n / 10_000n); // 0.25% of volume
+    expect(await probe.robinEscrow()).to.equal(V * 25n / 10_000n);
+  });
+
+  it("with feeConfig SET, they still do — this is the bug", async () => {
+    // A perfectly ordinary governance action: retune platform/creator/floor. It used to return past the
+    // staking slice entirely, so the 0.25% funding every coin's stakers silently stopped accruing, with no
+    // revert and no event, and the ETH folded into the other three shares instead.
+    const fc = await (await ethers.getContractFactory("MockSwapSplit")).deploy(5_000, 3_000, 2_000);
+    await (await probe.connect(owner).setFeeConfig(await fc.getAddress())).wait();
+
+    await (await probe.distribute(TOK, V, 125, true)).wait();
+    await (await probe.distribute(TOK, V, 125, false)).wait();
+    expect(await probe.stakingEscrow(TOK)).to.equal(V * 25n / 10_000n);
+    expect(await probe.robinEscrow()).to.equal(V * 25n / 10_000n);
+  });
+
+  it("and when the config is INVALID, the all-to-platform fallback still honours them", async () => {
+    // That fallback is another `return` that used to skip the slices — a config whose shares do not add up
+    // sends everything to the platform, and used to take the stakers' 0.25% with it.
+    const bad = await (await ethers.getContractFactory("MockSwapSplit")).deploy(5_000, 5_000, 5_000);
+    await (await probe.connect(owner).setFeeConfig(await bad.getAddress())).wait();
+    await (await probe.distribute(TOK, V, 125, true)).wait();
+    expect(await probe.stakingEscrow(TOK)).to.equal(V * 25n / 10_000n);
+    expect(await probe.platformEscrow()).to.equal(V * 100n / 10_000n); // the remaining 1%
+  });
+
+  it("ETH is still conserved across the whole split, in both modes", async () => {
+    const fc = await (await ethers.getContractFactory("MockSwapSplit")).deploy(5_000, 3_000, 2_000);
+    await (await probe.connect(owner).setFeeConfig(await fc.getAddress())).wait();
+    await (await probe.distribute(TOK, V, 125, true)).wait();
+
+    const total = (await probe.stakingEscrow(TOK)) + (await probe.robinEscrow())
+      + (await probe.platformEscrow()) + (await probe.devEscrow(TOK)) + (await probe.floorEscrow(TOK));
+    expect(total).to.equal(V * 125n / 10_000n); // every wei of the 1.25% is somewhere, none invented
+  });
+});

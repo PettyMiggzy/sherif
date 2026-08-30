@@ -162,9 +162,19 @@ describe("[CREDITS] art credits", function () {
     await expect(c.connect(alice).buyWithToken(1, E(100))).to.be.revertedWithCustomError(c, "PayTokenOff");
   });
 
-  it("plain ETH sent to the address buys credits instead of vanishing", async () => {
-    await (await alice.sendTransaction({ to: addr, value: PRICE * 3n })).wait();
+  it("plain ETH sent to the address is REFUSED, not minted at whatever the price happens to be", async () => {
+    // It used to mint at the live price, skipping the very ceiling `buy` exists to enforce — so a setPrice
+    // landing first turned a plain send into one credit for one ETH, unrefundable by design. Reverting
+    // costs the sender nothing; the ETH never leaves their wallet.
+    await expect(alice.sendTransaction({ to: addr, value: PRICE * 3n }))
+      .to.be.revertedWithCustomError(c, "UseBuy");
+    expect(await c.credits(alice.address)).to.equal(0n);
+
+    // And the priced path still works, with the ceiling doing its job.
+    await (await c.connect(alice).buy(3, PRICE, { value: PRICE * 3n })).wait();
     expect(await c.credits(alice.address)).to.equal(3n);
+    await expect(c.connect(alice).buy(1, PRICE - 1n, { value: PRICE }))
+      .to.be.revertedWithCustomError(c, "PriceMoved");
   });
 
   it("a smart-contract wallet can authorise a spend", async () => {

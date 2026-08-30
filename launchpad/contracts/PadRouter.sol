@@ -460,6 +460,37 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         uint256 fee = (value * feeBps) / 10_000;
         if (fee == 0) return;
 
+        // ── the staking slices, taken off the TOP of everything ──────────────────────────────────────
+        // BEFORE the feeConfig branch below, and that ordering is the whole point. These lines used to sit
+        // inside the legacy split, which the feeConfig branch RETURNS past — so the moment the owner called
+        // `setFeeConfig`, a perfectly ordinary governance action for retuning the platform/creator/floor
+        // shares, the 0.25% funding every coin's stakers and the pad-wide $ROBIN pool stopped accruing
+        // entirely. No revert, no event, no way to notice: the ETH just folded into the other three shares.
+        // That is a launch-stamped promise ("every coin funds its stakers forever") quietly becoming false
+        // because of an unrelated setting. The slices are stamped per-coin at registration and bounded there,
+        // so they belong above both split modes rather than inside one of them.
+        //
+        // SELL -> this coin's own stakers. BUY -> $ROBIN stakers, pad-wide.
+        uint256 effBps = feeBps;
+        {
+            Cfg storage cs = _cfg[token];
+            uint256 sliceBps = sellSide ? cs.stakingBps : cs.robinBps;
+            if (sliceBps > 0) {
+                uint256 slice = (value * sliceBps) / 10_000;
+                if (slice > fee) slice = fee; // defensive; registration bounds make it unreachable
+                fee -= slice;
+                effBps -= sliceBps;
+                if (sellSide) {
+                    stakingEscrow[token] += slice;
+                    emit StakingAccrued(token, slice);
+                } else {
+                    robinEscrow += slice;
+                    emit RobinAccrued(token, slice);
+                }
+            }
+            if (fee == 0) return; // the slice was the whole fee; nothing left to split
+        }
+
         // ── v2: configurable split (platform / creator / floor), read live from the owner-governed FeeConfig ──
         // Same split on both sides. Defensive: a missing/broken/over-100% config can NEVER revert a trade — it
         // falls through to all-platform (the safe default). Enabled only once the owner wires setFeeConfig.
@@ -493,28 +524,6 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         // The staking slice comes off the TOP, before anything else is worked out, so the rest of the
         // split behaves exactly as it always has against a slightly smaller fee. Sell side only: a buy
         // fee is the platform's and has nothing to give away.
-        uint256 effBps = feeBps;
-        {
-            Cfg storage cs = _cfg[token];
-            // SELL -> this coin's own stakers. BUY -> $ROBIN stakers, pad-wide. Both come off the TOP,
-            // before the base/excess split, so everything downstream behaves exactly as it always has
-            // against a slightly smaller fee.
-            uint256 sliceBps = sellSide ? cs.stakingBps : cs.robinBps;
-            if (sliceBps > 0) {
-                uint256 slice = (value * sliceBps) / 10_000;
-                if (slice > fee) slice = fee; // defensive; registration bounds make it unreachable
-                fee -= slice;
-                effBps -= sliceBps;
-                if (sellSide) {
-                    stakingEscrow[token] += slice;
-                    emit StakingAccrued(token, slice);
-                } else {
-                    robinEscrow += slice;
-                    emit RobinAccrued(token, slice);
-                }
-            }
-        }
-
         uint256 excess = effBps > DEFAULT_FEE_BPS ? (value * (effBps - DEFAULT_FEE_BPS)) / 10_000 : 0;
         if (excess > fee) excess = fee; // rounding guard: the base must never underflow
         uint256 base = fee - excess; // the default 1% (absorbs rounding)

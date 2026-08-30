@@ -559,45 +559,45 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
             robinAdd = (steps > maxSteps ? maxSteps : steps) * capStepBps;
         }
 
-        // Everyone ELSE's committed principal. Flexible principal is excluded on both sides — see
-        // `totalCommitted` for the flash-rental attack that reading `totalStaked` here allowed.
-        uint256 others = totalCommitted - committedOf[user];
-
-        // NOBODY ELSE COMMITTED YET. This used to return NO CEILING, and it was the cheapest way through the
-        // whole mechanism: stake first into a fresh pool, stay uncapped forever because a ceiling is only
-        // recomputed when that account itself touches the pool again, and take 90.9% of everything once the
-        // honest lockers arrived. Every coin that graduates creates an empty pool, so this was not luck, it
-        // was a queue to stand in.
+        // THE DENOMINATOR IS THE POOL'S COMMITTED PRINCIPAL, INCLUDING THIS ACCOUNT'S OWN.
         //
-        // A small absolute allowance instead. Small because it has to BIND on the whale that stands in that
-        // queue, and a generous number would not — at 1% of supply it was larger than any realistic stake and
-        // capped nobody. The cost is that a genuinely large first staker earns on this much until somebody
-        // else commits, after which their real ceiling applies from their next touch (or anyone's
-        // `syncBoost`). That is a poke for one honest account against a permanent bypass for every whale, and
-        // it errs in the safe direction — staleness here can only ever RAISE a ceiling, never lower one.
-        if (others == 0) {
-            // NOBODY ELSE HAS COMMITTED. Whether that deserves a ceiling depends on what THIS account did.
-            //
-            // If it committed to a term, no ceiling. It is the only staker, so a ceiling protects nobody, and
-            // capping it would punish the one person willing to be first — measured at a 100x throttle on an
-            // honest opener, which is a worse problem than the one being solved. Getting out of that
-            // commitment early still costs 15%, so this is not free to abuse.
-            //
-            // If it did not, the small absolute allowance. This is the case that used to return NO CEILING
-            // and was the cheapest way through the whole mechanism: park flexible money in a fresh pool, stay
-            // uncapped forever because a ceiling is only recomputed when its own account touches the pool
-            // again, and take 90.9% once the honest lockers arrived. Every graduation creates an empty pool,
-            // so it was not luck, it was a queue to stand in.
-            //
-            // The floor is the allowance itself, not a base for `capBps` to multiply — scaling it by 10x made
-            // it too large to bind the very account it exists for. The $ROBIN step-up still applies, because
-            // that is the one way a ceiling is meant to be raised.
-            if (committedOf[user] != 0) return type(uint256).max;
-            return capFloor + Math.mulDiv(capFloor, robinAdd, BPS);
-        }
+        // It used to subtract the caller's own share — "everyone ELSE's committed principal" — and that one
+        // subtraction was worth two HIGHs, both priced at ONE WEI:
+        //
+        //   • A lone committed account had `others == 0` and so no ceiling at all. An attacker committed 1 wei
+        //     as a term position, paying 0.15 wei of exit tax, and then flooded unlimited FLEXIBLE principal
+        //     that rode uncapped. Measured: 10,000,000 flexible taking 98.04% of the stream, against 100,000
+        //     for the same attacker without the dust. A 100x uncap for a wei.
+        //
+        //   • Worse, it let an attacker CRUSH an honest staker. A sole committed incumbent sat uncapped; the
+        //     moment an attacker committed 1 wei, the incumbent's `others` became 1 wei and their ceiling
+        //     became 10 wei. Measured: a 1,000,000-token year-locked staker collapsed from 5,000,000e18 of
+        //     weight to 50 wei by a permissionless `syncBoost`, taking 0% while the attacker took everything,
+        //     and unable to heal it — raising their own stake does not change everyone-else's total.
+        //
+        // Counting the account's own commitment removes both, because the ceiling stops depending on anything
+        // an attacker can move cheaply. It also states a rule worth stating: COMMITTED PRINCIPAL IS NEVER
+        // CAPPED — your own commitment is in your own denominator, so `cap >= capBps x yours` always — and
+        // flexible principal may earn on up to `capBps` of whatever the pool has actually locked up. Lock and
+        // there is no ceiling; stay liquid and you ride on other people's commitment.
+        //
+        // Raising the ceiling this way is not free: it needs real committed principal, and leaving a term
+        // early costs 15%. Buying a 10x ceiling means committing a tenth of it and paying 1.5% of the target
+        // to unwind — versus a wei.
+        uint256 committed = totalCommitted;
 
-        uint256 bps = capBps + robinAdd;
-        return Math.mulDiv(others, bps, BPS);
+        // The floor carries a pool nobody has committed to at all — otherwise the ceiling would be zero and
+        // an all-flexible pool would earn nothing. It is small on purpose: it has to BIND on a whale that
+        // parks flexible money in a fresh pool, which a generous number would not.
+        uint256 cap = Math.mulDiv(committed, uint256(capBps) + robinAdd, BPS);
+        uint256 floorCap = capFloor + Math.mulDiv(capFloor, robinAdd, BPS);
+        if (cap < floorCap) cap = floorCap;
+
+        // A stake token that does not answer `totalSupply` leaves `capFloor` at zero, and a zero ceiling on a
+        // pool with nothing committed would mean nobody earns at all. Treat that as no ceiling rather than as
+        // a dead pool: the cap is a fairness device and must never be the reason a pool pays nothing.
+        if (cap == 0) return type(uint256).max;
+        return cap;
     }
 
     /// @notice The most PRINCIPAL `user` may currently earn on. Anything staked above it still belongs to

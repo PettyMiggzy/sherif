@@ -118,10 +118,12 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     // token count its creator picked. See the constructor for why that is a default rather than a range.
     uint256 public minFdvWei;
     uint256 public maxFdvWei;
-    // A constant rail above the owner-tunable ceiling. This is a FAT-FINGER GUARD, not a policy: at ~10,000x
-    // the band this factory seeds itself with it never binds a real retune, it only stops maxFdvWei being set
-    // to something absurd. Deliberately loose, because the band is WEI on a chain with no USD oracle and the
-    // owner has to stay free to move it a long way in either direction as ETH moves.
+    // A constant rail above the owner-tunable ceiling. This is a FAT-FINGER GUARD, not a policy: it never
+    // binds a real retune, it only stops maxFdvWei being set to something absurd. Deliberately loose, because
+    // the band is WEI on a chain with no USD oracle and the owner has to stay free to move it a long way in
+    // either direction as ETH moves. (The multiple this sits at moved with the band: it was ~10,000x the
+    // +/-32x window this shipped with, and against the pinned band it is ~552,000x. Still a rail, still not
+    // a policy — but it is not the near-limit the old number made it sound.)
     uint256 public constant HARD_MAX_FDV_WEI = 1_000_000 ether;
 
     error BadValue();

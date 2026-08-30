@@ -66,10 +66,11 @@ describe("[CAP] one account cannot take the whole pool", function () {
     const raised = await p.capOf(whale.address);
 
     console.log(`   base ceiling ${ethers.formatEther(plain)} · after locking 30M $ROBIN ${ethers.formatEther(raised)}`);
-    // Base is 1000% of everyone else's PRINCIPAL, +50% per 10M $ROBIN locked. 30M is three steps, so 1150%.
-    const others = (await p.totalStaked()) - (await p.stakedOf(whale.address));
-    expect(raised).to.equal(others * 115_000n / 10_000n);
-    expect(raised).to.be.gt(others * 100_000n / 10_000n); // strictly more than an account holding none
+    // 1000% of the pool's COMMITTED principal — including the account's own, which is what stops a one-wei
+    // commitment from moving anybody's ceiling — plus 50% per 10M $ROBIN locked. 30M is three steps: 1150%.
+    const committed = await p.totalCommitted();
+    expect(raised).to.equal(committed * 115_000n / 10_000n);
+    expect(raised).to.be.gt(committed * 100_000n / 10_000n); // strictly more than an account holding none
   });
 
   it("does not bind on a normal pool where nobody is dominant", async () => {
@@ -244,5 +245,83 @@ describe("[CAP] the three ways the first version was defeated", function () {
     await (await p.connect(whale).stake(E(50_000), TIER.D30)).wait();
     await (await p.connect(whale).withdraw(0)).wait(); // must not revert on the multiply
     expect(await p.stakedOf(whale.address)).to.equal(0n);
+  });
+});
+
+// The two HIGHs the audit found in the FIRST cap rework, both priced at one wei. Written the way they ran
+// them so a green here is their attack, not my paraphrase.
+describe("[CAP] a one-wei commitment must buy nothing", function () {
+  this.timeout(180000);
+
+  async function setup() {
+    const [owner, bob, attacker] = await ethers.getSigners();
+    const T = await ethers.getContractFactory("MockERC20");
+    const coin = await T.deploy(E(1_000_000_000));
+    const F = await ethers.getContractFactory("RobinTierStakingFactory");
+    const factory = await F.deploy(owner.address);
+    await (await factory.createPool(await coin.getAddress(), true)).wait();
+    const pool = await factory.poolOf(await coin.getAddress());
+    const p = await ethers.getContractAt("RobinTierStaking", pool);
+    for (const w of [bob, attacker]) {
+      await (await coin.transfer(w.address, E(60_000_000))).wait();
+      await (await coin.connect(w).approve(pool, ethers.MaxUint256)).wait();
+    }
+    await (await coin.approve(pool, ethers.MaxUint256)).wait();
+    const fund = async (amt) => { await (await p.notifyReward(await coin.getAddress(), amt)).wait(); };
+    return { owner, bob, attacker, coin, p, pool, fund };
+  }
+
+  it("HIGH-1 — 1 wei committed does not uncap an unlimited flexible flood", async () => {
+    const { bob, attacker, coin, p, fund } = await setup();
+    await (await p.connect(bob).stake(E(1000), TIER.FLEX)).wait();   // other stakers exist, none committed
+    await (await p.connect(attacker).stake(1n, TIER.D7)).wait();     // the dust commit
+    await (await p.connect(attacker).stake(E(10_000_000), TIER.FLEX)).wait();
+
+    const w = await p.weightOf(attacker.address);
+    console.log(`   attacker weight after 1 wei + 10M flexible: ${ethers.formatEther(w)} (uncapped would be 10,000,000)`);
+    expect(w).to.be.lt(E(1_000_000)); // the audit measured a full 10M ride, taking 98.04%
+
+    await fund(E(150));
+    await time.increase(7 * 24 * 3600);
+    const share = Number(await p.earned(attacker.address, await coin.getAddress())) / Number(E(150)) * 100;
+    console.log(`   attacker takes ${share.toFixed(1)}% (the audit measured 98.0%)`);
+    expect(share).to.be.lt(95);
+  });
+
+  it("HIGH-2 — 1 wei committed cannot crush an honest year-locked staker", async () => {
+    const { bob, attacker, coin, p, fund } = await setup();
+    await (await p.connect(bob).stake(E(1_000_000), TIER.D365)).wait();
+    const before = await p.weightOf(bob.address);
+
+    // The takeover: commit a single wei, then poke Bob so his ceiling is recomputed against it.
+    await (await p.connect(attacker).stake(1n, TIER.D7)).wait();
+    await (await p.syncBoost(bob.address)).wait();
+    const after = await p.weightOf(bob.address);
+    console.log(`   bob's weight before ${ethers.formatEther(before)} · after the 1-wei poke ${ethers.formatEther(after)}`);
+    expect(after).to.equal(before); // the audit measured 5,000,000e18 collapsing to 50 wei
+
+    await fund(E(150));
+    await time.increase(7 * 24 * 3600);
+    const bobShare = Number(await p.earned(bob.address, await coin.getAddress())) / Number(E(150)) * 100;
+    console.log(`   bob still earns ${bobShare.toFixed(1)}% (the audit measured 0%)`);
+    expect(bobShare).to.be.gt(95);
+  });
+
+  it("committed principal is never capped — your own commitment is in your own denominator", async () => {
+    const { bob, p } = await setup();
+    await (await p.connect(bob).stake(E(5_000_000), TIER.D365)).wait();
+    expect(await p.capOf(bob.address)).to.be.gte(E(5_000_000));
+    expect(await p.weightOf(bob.address)).to.equal(E(5_000_000) * 5n); // full 365-day multiplier, unclipped
+  });
+
+  it("buying a bigger ceiling costs real committed money, not a wei", async () => {
+    const { attacker, coin, p } = await setup();
+    const before = await coin.balanceOf(attacker.address);
+    await (await p.connect(attacker).stake(E(1_000_000), TIER.D7)).wait(); // commit 1M to reach a 10M ceiling
+    expect(await p.capOf(attacker.address)).to.be.gte(E(10_000_000));
+    await (await p.connect(attacker).withdraw(0)).wait();                  // and pay to walk it back
+    const paid = before - (await coin.balanceOf(attacker.address));
+    console.log(`   a 10,000,000 ceiling cost ${ethers.formatEther(paid)} tokens to rent for one block`);
+    expect(paid).to.equal(E(150_000)); // 15% of the 1M commitment
   });
 });

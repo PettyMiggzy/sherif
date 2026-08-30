@@ -380,21 +380,19 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         // fees), capped at raise/4 apiece so the two payouts can never exceed half the raise — the Bond floor
         // always keeps >=50%. Reentrancy-safe (nonReentrant + no callback); dev + platform non-zero.
         //
-        // NOT always 0.5. This used to read "graduation only ever happens at the full ceiling (~4.2 ETH), so the
-        // creator always earns their 0.5", and that was true while every launch shared one factory-wide
-        // valuation. Creator-chosen valuation broke it: graduation is still ceiling-only, but the ceiling is a
-        // fixed MULTIPLE of the creator's own launch price, so the raise scales with the chosen FDV. The full
-        // 0.5 needs a raise of >= 2 WETH, i.e. roughly 48% of the factory default's ~4.2; at the bottom of a
-        // +/-32x band a launch raises ~0.13 and pays ~0.033 apiece. The cap also bites hardest exactly there —
-        // a low-valuation launch hands HALF its raise to the two rewards and seeds the thinnest floor with what
-        // is left. The symmetry is deliberate and holds throughout: the platform is paid the same number as the
-        // creator, so a small launch shortchanges both identically.
-        //
-        // Whether that is acceptable is a BAND question, not a contract question: `setFdvBand`'s floor decides
-        // the smallest raise that can ever graduate. Raising minFdvWei to ~0.48x the default makes the 0.5
-        // promise true for every launch that can graduate at all; leaving it wide keeps cheap launches and
-        // makes the promise conditional, in which case the client must quote the creator their real number
+        // 0.5 IS NOT GUARANTEED BY THIS CONTRACT — it is guaranteed by the factory's band, and it is worth
+        // being exact about which. Graduation is ceiling-only, but the ceiling is a fixed MULTIPLE of the
+        // creator's own launch price, so the raise scales with the chosen valuation. The full 0.5 needs a
+        // raise of >= 2 WETH. Under the wide band this shipped with, the cheapest legal launch raised ~0.13
+        // and paid ~0.033 apiece, seeding a floor of about six hundredths of an ETH — the cap bites hardest
+        // exactly where the floor can least afford it. CurvePadFactory now PINS the band to one valuation, so
+        // the smallest raise that can reach graduation is ~4.08 WETH and the full 0.5 each is always payable
+        // (measured in grad-reward-vs-valuation.test.js). If a future owner widens the band with
+        // `setFdvBand`, that guarantee goes with it and the client must quote the creator their real number
         // rather than advertising 0.5.
+        //
+        // The symmetry is deliberate and holds either way: the platform is paid the same number as the
+        // creator, so a small launch shortchanges both identically.
         uint256 reward = Math.min(GRAD_REWARD, raisedWeth / 4);
         if (reward > 0) {
             raisedWeth -= 2 * reward;

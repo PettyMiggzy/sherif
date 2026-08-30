@@ -69,6 +69,8 @@ contract ArtCredits is Ownable, ReentrancyGuard {
     uint256 public totalSpent;
 
     error Zero();
+    /// @notice A plain ETH send cannot name a price ceiling, so it is refused — see `receive`.
+    error UseBuy();
     error BadPrice();
     error NotOperator();
     error PriceMoved(uint256 actual, uint256 max);
@@ -280,12 +282,17 @@ contract ArtCredits is Ownable, ReentrancyGuard {
     /// @dev A plain send is treated as a purchase at the current price rather than refused, because a wallet
     /// that "sends ETH to the address" is a thing people do and silently keeping it would be theft. Dust
     /// below one credit adds nothing and is kept, same as an overpayment on `buy`.
+    /// @notice A plain ETH send is REFUSED. Buy through `buy(n, maxWeiPerCredit)`.
+    ///
+    /// This used to mint at whatever `weiPerCredit` happened to be at that instant — which is exactly the
+    /// race `buy`'s `maxWeiPerCredit` exists to stop, skipped on the one path that cannot carry the argument.
+    /// A `setPrice` landing first turned a plain send into one credit for one ETH, with no refund, on a
+    /// contract whose credits are explicitly non-refundable.
+    ///
+    /// Reverting costs the sender nothing: the ETH never leaves their wallet. Minting at a raced price would
+    /// have. There is no path that needs a bare transfer here — the site calls `buy` with a ceiling — so the
+    /// convenience was worth strictly less than the exposure.
     receive() external payable {
-        uint256 n = msg.value / weiPerCredit;
-        if (n > 0) {
-            credits[msg.sender] += n;
-            totalSold += n;
-            emit Bought(msg.sender, n, msg.value, address(0));
-        }
+        revert UseBuy();
     }
 }
