@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Give your coin a website - Robin Labs</title>
 <meta name="robots" content="noindex, nofollow" />
-<meta name="description" content="Pick a style, claim a subdomain, and your coin gets its own website at <ticker>.robinlabs.fun." />
+<meta name="description" content="Pick a style, claim a subdomain, and your coin gets its own website at <ticker>.robinlab.io." />
 <link rel="canonical" href="https://robinlab.io/website.html" />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <style>
@@ -62,7 +62,7 @@
 <div class="wrap">
   <h1>Give your coin a website</h1>
   <p class="sub">Pick a style, claim a subdomain, and your coin gets its own live website at
-    <b>&lt;yourname&gt;.robinlabs.fun</b> — rendering your coin's real on-chain data. Only the coin's
+    <b>&lt;yourname&gt;.robinlab.io</b> — rendering your coin's real on-chain data. Only the coin's
     creator wallet can set this. It's free and takes one signature (no gas).</p>
 
   <div class="card">
@@ -92,7 +92,7 @@
     <label for="slug">Subdomain</label>
     <div class="slugrow">
       <input type="text" id="slug" placeholder="yourname" autocomplete="off" spellcheck="false" maxlength="32" />
-      <span class="suffix">.robinlabs.fun</span>
+      <span class="suffix">.robinlab.io</span>
     </div>
     <div class="hint dim" id="slugHint">2–32 chars, letters, numbers and hyphens.</div>
   </div>
@@ -118,7 +118,10 @@
 import { ethers } from "./assets/ethers.min.js";
 
 const API_BASE = "https://api.robinlab.io";
-const SITE_DOMAIN = "robinlabs.fun";
+// Must match PAD_SITE_ROOT on the indexer. That value is what the certificate gate checks a hostname
+// against before Caddy will fetch a certificate for it, so a slug promised on any other domain gets a TLS
+// error rather than a website. These two strings are the same setting written in two places.
+const SITE_DOMAIN = "robinlab.io";
 const CHAIN_HEX = "0x1237";
 const STYLES = [
   { key: "neonvault", name: "Neon Vault", c1: "#c6ff3f", c2: "#0d0f12" },
