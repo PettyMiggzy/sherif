@@ -183,12 +183,23 @@ async function main() {
 
   console.log(`\ntotal gas ${totalGas}`);
   console.log(`\nwritten to deploy.v2.json`);
-  console.log(`\nNEXT, and none of it is optional:`);
-  console.log(`  1. Verify both contracts on Blockscout.`);
-  console.log(`  2. Point the UI's padFactory at ${factoryAddr} (pad/assets/config.js).`);
-  console.log(`  3. DECIDE on v1: it is still authorized, so a coin can still launch on it and get the`);
-  console.log(`     SHALLOW, farmable wall. To close that: router.removeFactory(${C.padFactory}).`);
-  console.log(`     That cannot disturb any live coin — register is once-only and already done for them.`);
+  console.log(`\nNEXT, in this order:`);
+  console.log(`  1. wire-staking.js, with ROUTER set to the new router — it makes all five connections`);
+  console.log(`     and reads every one back:`);
+  console.log(`       KEEPER=<keeper address> ROUTER=${routerAddr} \\`);
+  console.log(`         npx hardhat run scripts/wire-staking.js --network robinhood`);
+  console.log(`  2. pad/assets/config.js — BOTH of these, and padRouter stays exactly as it is:`);
+  console.log(`       padFactory:   "${factoryAddr}",`);
+  console.log(`       padRouterV2:  "${routerAddr}",`);
+  console.log(`  3. acceptOwnership() on the new router, from ${owner}. Until that happens the router is`);
+  console.log(`     still owned by the deploying key — launches work either way, but governance does not.`);
+  console.log(`  4. Verify on Blockscout:  node scripts/verify-sourcify.cjs`);
+  console.log(`\nWhat you do NOT need to do:`);
+  console.log(`  • Nothing on the legacy router (${C.padRouter}). It is untouched and keeps every coin`);
+  console.log(`    launched before now — a coin's fee config is register-once, so those can never move.`);
+  console.log(`    The site asks the chain which router owns a coin, so both keep working side by side.`);
+  console.log(`  • No removeFactory. The v1 factory was never authorized on THIS router — it is on the`);
+  console.log(`    legacy one, where it has to stay for those coins to keep trading.`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
