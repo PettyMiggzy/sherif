@@ -65,16 +65,10 @@ async function main() {
   const platform = process.env.PLATFORM || live.platform;
 
   console.log(`network=${network.name}  deployer=${deployer.address}`);
-  console.log(`reusing router=${C.padRouter}\n        feeConfig=${C.feeConfig}`);
+  console.log(`legacy router=${C.padRouter} (untouched — keeps every coin launched before now)`);
+  console.log(`      feeConfig=${C.feeConfig} (reused)`);
   console.log(`        (the launch-token and curve-pool deployers are both NEW — see below)`);
   console.log(`v1 factory (stays live)=${C.padFactory}\n`);
-
-  const router = await ethers.getContractAt("PadRouter", C.padRouter);
-  const routerOwner = await router.owner();
-  if (routerOwner.toLowerCase() !== deployer.address.toLowerCase()) {
-    // Fail HERE, not after two contracts are already on chain and unusable.
-    throw new Error(`deployer is not the PadRouter owner (${routerOwner}) — it cannot authorize the new factory`);
-  }
 
   let totalGas = 0n;
   const track = async (name, c) => {
@@ -83,6 +77,27 @@ async function main() {
     console.log(`  ${name.padEnd(20)} ${await c.getAddress()}   gas ${rc.gasUsed}`);
     return c;
   };
+
+  // ── the router: a NEW one, deployed here, NOT the live one ────────────────────────────────────
+  //
+  // This script used to reuse the live router and only allowlist the new factory on it. That path is now
+  // dead: CurvePadFactory calls `registerWithStaking`, which carries the per-coin staking and $ROBIN slices,
+  // and the live router predates it — verified on chain, `stakingSink()` and `robinSink()` both revert
+  // there. Pointed at the live router, EVERY LAUNCH WOULD REVERT on the register call.
+  //
+  // And the live router cannot simply be replaced. A coin's fee config is register-once per router (the
+  // contract reverts `AlreadySet`), so every coin already trading is bound to the old one and can never be
+  // moved. Two routers is therefore the shape of the thing, not a migration step: the old one keeps its
+  // coins for good, this one takes every coin from here on, and the client asks the chain which is which
+  // via `configOf(token).set` rather than guessing from a launch date.
+  //
+  // Nothing about the live router is touched. It is not upgraded, not re-owned, not revoked — a coin
+  // trading today trades exactly the same way tomorrow.
+  console.log("deploying the v2 router (the live one stays untouched and keeps its coins):");
+  const routerC = await track("PadRouter(v2)", await (await ethers.getContractFactory("PadRouter")).deploy(WETH, owner));
+  const routerAddr = await routerC.getAddress();
+  const router = routerC;
+
 
   // 1) the new BondDeployer — this is what carries the deep wall into every v2 coin's Bond
   console.log(`deploying (wall ${BOUNTY_NEAR} -> ${BOUNTY_FAR} ticks below spot):`);
@@ -110,7 +125,7 @@ async function main() {
   const factory = await track(
     "CurvePadFactory(v2)",
     await (await ethers.getContractFactory("CurvePadFactory")).deploy(
-      WETH, V3_FACTORY, platform, owner, C.padRouter,
+      WETH, V3_FACTORY, platform, owner, routerAddr,
       await launchTokenDeployer.getAddress(), await curvePoolDeployer.getAddress(), await bondDeployer.getAddress(), C.feeConfig,
       START_TICK_MAG, CURVE_WIDTH, MIN_GRAD_WIDTH
     )
@@ -118,6 +133,11 @@ async function main() {
   const factoryAddr = await factory.getAddress();
 
   // 5) authorize it on the LIVE router (allowlist — v1 stays authorized unless you revoke it below)
+  // The new router is constructed owned by `owner`. If that is not the deploying key, this call cannot be
+  // made from here — fail loudly rather than leaving a factory on chain that no router will accept.
+  if ((await router.owner()).toLowerCase() !== deployer.address.toLowerCase()) {
+    throw new Error(`the v2 router is owned by ${await router.owner()}, not the deployer — run setFactory(${factoryAddr}) from that key`);
+  }
   await (await router.setFactory(factoryAddr)).wait();
   console.log(`\n  router.setFactory(${factoryAddr}) — authorized`);
   if (!(await router.isFactory(factoryAddr))) throw new Error("router did not authorize the v2 factory");
@@ -146,8 +166,10 @@ async function main() {
       // that serves the init-code hash every miner needs, so it is the first thing to check if launches start
       // reverting BadTokenSuffix.
       launchTokenDeployer: await launchTokenDeployer.getAddress(),
+      padRouter: routerAddr, // the v2 router — put this in pad/assets/config.js as `padRouterV2`
     },
-    reused: { padRouter: C.padRouter, feeConfig: C.feeConfig },
+    legacy: { padRouter: C.padRouter, note: "still live, still owns every coin launched before this deploy" },
+    reused: { feeConfig: C.feeConfig },
     v1: { padFactory: C.padFactory, bondDeployer: C.bondDeployer, stillAuthorized: await router.isFactory(C.padFactory) },
   };
   fs.writeFileSync(path.join(__dirname, "..", "deploy.v2.json"), JSON.stringify(out, null, 2));

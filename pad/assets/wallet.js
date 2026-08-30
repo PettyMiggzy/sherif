@@ -874,11 +874,50 @@ function normalizeTax(tax, devAddr) {
 // every coin pays at least the default 1% (100 bps); the contract enforces the same floor
 const clampBps = (v) => Math.max(100, Math.min(400, Math.round(+v || 100)));
 
-function routerRead() { return new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _read); }
+// ── which router owns a coin ─────────────────────────────────────────────────────────────────────
+//
+// There are two, and there will stay two. A coin's fee config is register-once per router — the contract
+// reverts `AlreadySet` — so every coin already trading is bound to the legacy router and cannot be moved to
+// the new one. Pointing the whole site at the new router would stop those coins trading entirely, and
+// re-registering them is not possible. So the legacy router keeps its coins for good, the new one takes
+// everything launched from here, and this asks the CHAIN which is which.
+//
+// Asking beats inferring. A launch-date cutoff or a version column would be a second source of truth that
+// can drift from the registration that actually decides whether a trade works; `configOf().set` IS that
+// registration. Resolved once per coin and cached — the answer cannot change, because a config that exists
+// can never be unset.
+const _routerOf = new Map();
+async function resolveRouter(token) {
+  const key = String(token || "").toLowerCase();
+  if (_routerOf.has(key)) return _routerOf.get(key);
+
+  let pick = { addr: CONTRACTS.padRouter, abi: ABIS.padRouter, v2: false };
+  const v2 = CONTRACTS.padRouterV2;
+  if (v2 && /^0x[0-9a-fA-F]{40}$/.test(v2)) {
+    try {
+      const c = await new ethers.Contract(v2, ABIS.padRouterV2, _read).configOf(token);
+      if (c && c.set) pick = { addr: v2, abi: ABIS.padRouterV2, v2: true };
+    } catch { /* not there, or an older deploy — fall through to legacy */ }
+  }
+  _routerOf.set(key, pick);
+  return pick;
+}
+
+/// The router a given coin actually trades through, as a connected contract. `signer` for writes.
+export async function routerFor(token, signer = false) {
+  const { addr, abi } = await resolveRouter(token);
+  if (signer && !_signer) await connect();
+  return new ethers.Contract(addr, abi, signer ? _signer : _read);
+}
+
+/// Just the address — for approvals, which must target the same router the sell will go through.
+export async function routerAddrFor(token) {
+  return (await resolveRouter(token)).addr;
+}
 
 /// Read a coin's on-chain tax so the UI can show it before trading.
 export async function getTax(token) {
-  const c = await routerRead().configOf(token);
+  const c = await (await routerFor(token)).configOf(token);
   return {
     pool: c.pool, curve: c.curve, projectWallet: c.projectWallet, set: c.set,
     buyBps: Number(c.buyBps), sellBps: Number(c.sellBps),
@@ -911,7 +950,7 @@ export async function buy({ token, ethAmount, slippagePct = 8 }) {
   // harmless when legs are off (only makes minOut 0.25% more lenient, dwarfed by the slippage haircut).
   const net = (value * BigInt(10000 - c.buyBps - REWARD_LEG_BPS)) / 10000n; // what actually hits the pool
   const minOut = await quoteMinOut({ pool: c.pool, tokenIn: CONTRACTS.weth, tokenOut: token, amountIn: net, slippagePct });
-  const router = new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _signer);
+  const router = await routerFor(token, true);
   return guardedSend(router, "buy", [token, minOut], value, "Buy");
 }
 
@@ -994,16 +1033,17 @@ export async function sell({ token, tokenAmount, slippagePct = 8 }) {
   const erc = new ethers.Contract(token, ABIS.erc20, _signer);
   const amountIn = ethers.parseUnits(plainAmount(tokenAmount), 18);
 
-  const allowance = await erc.allowance(_account, CONTRACTS.padRouter);
+  const routerAddr = await routerAddrFor(token);
+  const allowance = await erc.allowance(_account, routerAddr);
   if (allowance < amountIn) {
-    const atx = await guardedApprove(erc, CONTRACTS.padRouter, amountIn, "approve sell"); // exact amount, our router
+    const atx = await guardedApprove(erc, routerAddr, amountIn, "approve sell"); // exact amount, and the SAME router the sell will use
     await atx.wait();
   }
 
   const c = await getTax(token);
   const gross = await quoteMinOut({ pool: c.pool, tokenIn: token, tokenOut: CONTRACTS.weth, amountIn, slippagePct });
   const minOutEth = (gross * BigInt(10000 - c.sellBps - REWARD_LEG_BPS)) / 10000n; // guard on the post-tax + post-leg ETH
-  const router = new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _signer);
+  const router = await routerFor(token, true);
   return guardedSend(router, "sell", [token, amountIn, minOutEth], 0n, "Sell");
 }
 
@@ -1123,7 +1163,7 @@ export async function curveInfo(curve, token) {
 
 /// A dev's uncollected sell-fee escrow (native ETH), for the "collect / burn" panel.
 export async function devEscrow(token) {
-  return new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _read).devEscrow(token);
+  return (await routerFor(token)).devEscrow(token);
 }
 
 // ── graduate() - the permissionless "graduate" button (anyone can fire it) ─────
@@ -1136,11 +1176,11 @@ export async function graduate(curve) {
 // ── creator fee controls - collect to the wallet, or buy+burn ─────────────────
 export async function withdrawDev(token) {
   if (!_signer) await connect();
-  return guardedSend(new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _signer), "withdrawDev", [token], 0n, "Collect fees");
+  return guardedSend(await routerFor(token, true), "withdrawDev", [token], 0n, "Collect fees");
 }
 export async function burnDev(token) {
   if (!_signer) await connect();
-  return guardedSend(new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _signer), "burnDev", [token], 0n, "Burn fees");
+  return guardedSend(await routerFor(token, true), "burnDev", [token], 0n, "Burn fees");
 }
 
 /// Newest-first list of every coin launched on the pad, straight from the chain.
@@ -1289,12 +1329,15 @@ async function _tsOf(bn) {
 async function _routerLogs(topics, { lookback = 400000, chunk = 50000 } = {}) {
   const head = await _read.getBlockNumber();
   const start = Math.max(0, head - lookback);
-  try { return await _read.getLogs({ address: CONTRACTS.padRouter, fromBlock: start, toBlock: head, topics }); }
+  // BOTH routers: a coin emits its events from whichever one it is registered on, so reading one address
+  // silently returns half the pad's history — and which half depends on when a coin launched.
+  const addrs = [CONTRACTS.padRouter, CONTRACTS.padRouterV2].filter((a) => /^0x[0-9a-fA-F]{40}$/.test(a || ""));
+  try { return await _read.getLogs({ address: addrs, fromBlock: start, toBlock: head, topics }); }
   catch {}
   const out = [];
   for (let lo = start; lo <= head; lo += chunk) {
     const hi = Math.min(lo + chunk - 1, head);
-    try { out.push(...await _read.getLogs({ address: CONTRACTS.padRouter, fromBlock: lo, toBlock: hi, topics })); } catch {}
+    try { out.push(...await _read.getLogs({ address: addrs, fromBlock: lo, toBlock: hi, topics })); } catch {}
   }
   return out;
 }

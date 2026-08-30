@@ -61,6 +61,13 @@ export const CONTRACTS = {
   // Our PadRouter - the swap desk + project fee. Robinhood Chain has no canonical
   // Uniswap periphery, so THIS is the router every trade goes through - LIVE.
   padRouter: "0xA6BaAB820809C7fC8350311776627298f91F07eC",
+  // The SECOND router, for coins launched after the staking fee split existed. Two routers on purpose,
+  // not a migration: a coin's fee config is register-once per router (`AlreadySet`), so every coin already
+  // trading is registered on the one above and can never be moved. Pointing the whole site at a new router
+  // would simply stop those coins trading. So the old one keeps its coins forever, the new one takes every
+  // coin from here on, and `routerFor()` asks the chain which is which rather than guessing.
+  // Empty until deployed — while empty, every coin resolves to the legacy router and nothing changes.
+  padRouterV2: "",
 
   // Our FeeConfig - the single owner-governed fee dial (LP creator split + swap platform/creator/floor split).
   // Curves + router read it on-chain; the owner retunes it with a setter (no redeploy). LIVE.
@@ -214,6 +221,22 @@ export const ABIS = {
     "function bondOf(address) view returns (address)",
     "function withdrawDev(address token)",
     "function burnDev(address token)",
+  ],
+  // PadRouter v2. Same surface plus the staking slices — and a WIDER `Cfg`: it carries stakingBps and
+  // robinBps, so the tuple above cannot decode this one. That is exactly why the two routers need separate
+  // ABI entries rather than a shared one.
+  padRouterV2: [
+    "function buy(address token, uint256 minOut) payable returns (uint256 tokensOut)",
+    "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256 ethOut)",
+    "function configOf(address token) view returns ((address pool, address curve, address projectWallet, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, uint16 stakingBps, uint16 robinBps, bool set))",
+    "function devEscrow(address) view returns (uint256)",
+    "function bondOf(address) view returns (address)",
+    "function withdrawDev(address token)",
+    "function burnDev(address token)",
+    "function stakingEscrow(address) view returns (uint256)",
+    "function robinEscrow() view returns (uint256)",
+    "function flushStaking(address token)",
+    "function flushRobin()",
   ],
   // Our RewardVault - capped, Merkle-proven claims for the 0.25% trader/holder legs.
   // The claim is a pure verify + capped ETH transfer; the indexer serves the proof.
