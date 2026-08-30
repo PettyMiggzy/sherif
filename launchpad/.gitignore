@@ -21,6 +21,12 @@ test/zz*.test.js
 # written, run against a live RPC, and abandoned. Never part of the repo.
 _audit/
 
-# Scratch probe scripts written by verification agents — written, run against a live RPC, abandoned.
-_audit/
+# Scratch written by verification agents: throwaway probe scripts, staged contract copies, and the
+# hardhat config they generate to fork mainnet. All of it is written, run once against a live RPC or a
+# fork, and abandoned — none of it is ever part of the repo. Patterns rather than names because each
+# audit round invents new ones.
+_*.cjs
+_*.js
+_audit*/
+**/_audit_tmp/
 hh-audit.config.js
