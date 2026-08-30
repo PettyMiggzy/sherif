@@ -345,7 +345,7 @@ main{padding:34px 0 70px}
 <script type="module">
 import * as Pad from './assets/wallet.js';
 import * as Safety from './assets/safety.js';
-import { CHAIN, UNI_TOKENS, UNI_NATIVE, UNI_FEE_BPS, isUniToken } from './assets/config.js';
+import { CHAIN, UNI_TOKENS, UNI_NATIVE, UNI_FEE_BPS, isUniToken, UNI_STOCK_TOKENS, isStockToken, feeBpsFor } from './assets/config.js';
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
 const ETH_USD = 1920; // display-only, matches the rest of the pad
@@ -431,7 +431,7 @@ function setGuard(on){
 // ── token metadata: DexScreener (logo/price/liq) ──────────────────────────────
 async function loadMeta(){
   try {
-    const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + UNI_TOKENS.join(','));
+    const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + [...UNI_TOKENS, ...UNI_STOCK_TOKENS].join(','));
     const j = await r.json();
     const best = new Map();
     for (const p of (j.pairs || [])){
@@ -633,7 +633,10 @@ function paintQuote(resp){
   const impact = readImpact(resp), iEl = $('dImpact');
   if (impact == null){ iEl.textContent = '-'; iEl.className = 'v'; }
   else { iEl.textContent = impact.toFixed(2) + '%'; iEl.className = 'v' + (Math.abs(impact) >= 5 ? ' warn' : ''); }
-  $('dFee').textContent = (UNI_FEE_BPS / 100) + '% · included';
+  // Stocks pay nothing, and the page has to say so plainly rather than quietly showing a smaller number:
+  // "no fee" is the whole reason they are listed, and a user comparing venues should see it.
+  const _bps = feeBpsFor(TOKEN && TOKEN.addr, UNI_NATIVE);
+  $('dFee').textContent = _bps === 0 ? 'none · we take nothing on stocks' : (_bps / 100) + '% · included';
   $('det').classList.add('show');
 }
 
@@ -700,7 +703,7 @@ function openPicker(){ renderPicker(''); $('tokSearch').value = ''; $('modal').c
 function closePicker(){ $('modal').classList.remove('open'); }
 function renderPicker(filter){
   const f = filter.trim().toLowerCase();
-  const rows = UNI_TOKENS.map((a) => META.get(a) || { addr: a, symbol: '?', name: 'Token', decimals: 18, image: null, priceUsd: 0, volUsd: 0 })
+  const rows = [...UNI_TOKENS, ...UNI_STOCK_TOKENS].map((a) => META.get(a) || { addr: a, symbol: '?', name: 'Token', decimals: 18, image: null, priceUsd: 0, volUsd: 0 })
     .filter((m) => !f || (m.symbol||'').toLowerCase().includes(f) || (m.name||'').toLowerCase().includes(f) || m.addr.toLowerCase().includes(f))
     .sort((x, y) => (y.volUsd||0) - (x.volUsd||0));
   $('toklist').innerHTML = rows.map((m) => {

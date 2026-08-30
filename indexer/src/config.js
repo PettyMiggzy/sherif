@@ -97,6 +97,24 @@ export const CFG = {
   uniFeeBips: num("UNISWAP_FEE_BIPS", 125),
   // Curated, live-verified tradeable token allowlist (lowercased). Only these + native ETH can be routed.
   uniTokens: (process.env.UNISWAP_TOKENS || "").split(",").map((s) => s.trim().toLowerCase()).filter((s) => /^0x[0-9a-f]{40}$/.test(s)),
+  // Tokenized stocks, which trade through the same proxy but must NEVER carry our integrator fee.
+  //
+  // Not a preference — a structural rule. Taking a cut of somebody's trade in a tokenized security is what
+  // turns a front end into a fee-taking venue for securities, which is the thing RobinStockSwap's own header
+  // warns about at length. Listing them costs nothing and earns nothing: the fee is simply not requested on
+  // these pairs, and `uniproxy` refuses any upstream answer that came back carrying one.
+  //
+  // Defaults to the six in pad/assets/config.js STOCKS. Override with UNISWAP_STOCK_TOKENS to add more.
+  uniStockTokens: (process.env.UNISWAP_STOCK_TOKENS ||
+    [
+      "0x92FD66527192E3e61d4DDd13322Aa222DE86F9B5", // SGOV
+      "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9", // AAPL
+      "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC", // NVDA
+      "0x322F0929c4625eD5bAd873c95208D54E1c003b2d", // TSLA
+      "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa", // SPCX
+      "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C", // SPY
+    ].join(",")
+  ).split(",").map((s) => s.trim().toLowerCase()).filter((s) => /^0x[0-9a-f]{40}$/.test(s)),
   uniRatePerSec: num("UNISWAP_RATE_PER_SEC", 2),       // per-IP cap on the proxy
   uniGlobalPerSec: num("UNISWAP_GLOBAL_PER_SEC", 6),   // total upstream/sec cap (shared key budget)
   uniCorsOrigins: (process.env.UNISWAP_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinlabs.fun,https://www.robinlabs.fun")

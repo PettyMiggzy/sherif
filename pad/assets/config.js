@@ -534,4 +534,12 @@ export const UNI_TOKENS = [
   "0x6696fe29288b586017e6f264c0091dba6c5ebeaf", // $ROBIN — also needs to be in the indexer's UNISWAP_TOKENS env or the proxy rejects the swap
 ];
 export const UNI_FEE_BPS = 125; // our 1.25%/side integrator fee (matches the server); shown to the user, taken in-swap
-export const isUniToken = (a) => UNI_TOKENS.includes(String(a || "").toLowerCase());
+
+// Tokenized stocks are swappable through the same page and pay us NOTHING. Not a promotion — taking a cut
+// of a trade in a tokenized security is what turns a front end into a fee-taking venue for securities, and
+// the pad is not one. The indexer enforces it rather than trusting this list: it never requests a fee on
+// these pairs and refuses any upstream quote or calldata that comes back carrying one.
+export const UNI_STOCK_TOKENS = Object.values(STOCKS).map((s) => s.address.toLowerCase());
+export const isStockToken = (a) => UNI_STOCK_TOKENS.includes(String(a || "").toLowerCase());
+export const feeBpsFor = (a, b) => (isStockToken(a) || isStockToken(b) ? 0 : UNI_FEE_BPS);
+export const isUniToken = (a) => UNI_TOKENS.includes(String(a || "").toLowerCase()) || isStockToken(a);

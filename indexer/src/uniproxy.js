@@ -23,13 +23,24 @@ const isAddr = (x) => typeof x === "string" && /^0x[0-9a-fA-F]{40}$/.test(x);
 const isPosIntStr = (x) => typeof x === "string" && /^[0-9]{1,40}$/.test(x) && (() => { try { return BigInt(x) > 0n; } catch { return false; } })();
 
 // native ETH + the curated allowlist, all lowercased. Only these can be a swap leg.
-function allowedSet() { return new Set([NATIVE, ...CFG.uniTokens]); }
+function allowedSet() { return new Set([NATIVE, ...CFG.uniTokens, ...CFG.uniStockTokens]); }
+
+/// Is either leg a tokenized stock? Those trade fee-free — see `uniStockTokens` in config for why.
+function isStockPair(tokenIn, tokenOut) {
+  const S = new Set(CFG.uniStockTokens);
+  return S.has(lc(tokenIn)) || S.has(lc(tokenOut));
+}
 
 // The fee entry the RESPONSE must contain. NOTE the field asymmetry Uniswap uses:
 //   REQUEST integratorFees uses `bips`; RESPONSE aggregatedOutputs uses `bps`. Assert on `bps`.
-function feeApplied(quoteObj) {
+function feeApplied(quoteObj, stockPair) {
   const outs = quoteObj && quoteObj.aggregatedOutputs;
   if (!Array.isArray(outs)) return false;
+  // A STOCK PAIR MUST COME BACK WITH NO INTEGRATOR FEE AT ALL. Checked rather than assumed: we do not
+  // request one, but the answer comes from an upstream API and this is the one property that decides
+  // whether the venue takes a cut of a securities trade. If a fee ever appears here — a cached quote, an
+  // upstream default, a mistake of ours — the trade is refused rather than served fee-bearing.
+  if (stockPair) return !outs.some((o) => o && o.fee === "INTEGRATOR");
   return outs.some((o) => o && lc(o.recipient) === CFG.uniFeeRecipient && Number(o.bps) === CFG.uniFeeBips && o.fee === "INTEGRATOR");
 }
 
@@ -44,8 +55,12 @@ function buildQuoteUpstream(b) {
     tokenIn: lc(b.tokenIn),
     tokenOut: lc(b.tokenOut),
     swapper: lc(b.swapper),
-    integratorFees: [{ recipient: CFG.uniFeeRecipient, bips: CFG.uniFeeBips }], // SERVER-injected; never trust the client's
   };
+  // SERVER-injected; the client's is ignored. Omitted entirely on a stock pair rather than sent as zero —
+  // a fee of zero is still a fee entry, and the point is that none is ever asked for.
+  if (!isStockPair(b.tokenIn, b.tokenOut)) {
+    body.integratorFees = [{ recipient: CFG.uniFeeRecipient, bips: CFG.uniFeeBips }];
+  }
   const slip = Number(b.slippageTolerance);
   if (Number.isFinite(slip) && slip >= 0.1 && slip <= 15) body.slippageTolerance = slip;
   return body;
@@ -75,7 +90,10 @@ function validateSwapQuote(q) {
   const A = allowedSet();
   if (!A.has(tin) || !A.has(tout)) return "quote token not allowlisted";
   if ([tin, tout].filter((t) => t === NATIVE).length !== 1) return "quote must have exactly one native leg";
-  if (!feeApplied(q)) return "fee not present on quote";
+  // Both directions matter: our fee must be present on an ordinary pair, and ABSENT on a stock pair.
+  if (!feeApplied(q, isStockPair(tin, tout))) {
+    return isStockPair(tin, tout) ? "stock trades must not carry a fee" : "fee not present on quote";
+  }
   return null;
 }
 
@@ -108,6 +126,18 @@ function feeInCalldata(data, tokenIn, tokenOut) {
   let commands, inputs;
   try { commands = ethers.getBytes(parsed.args.commands); inputs = parsed.args.inputs; } catch { return false; }
   if (!inputs || commands.length !== inputs.length) return false;
+
+  // A STOCK PAIR INVERTS THIS CHECK. Everywhere else the job is "prove our fee really is being paid"; on a
+  // tokenized security it is "prove NOTHING is being paid to us". The summary the API returns is cosmetic —
+  // the same reason this function exists to decode the real commands rather than trust it — so the absence
+  // of a fee has to be read out of the calldata too, not inferred from what we asked for.
+  if (isStockPair(tokenIn, tokenOut)) {
+    for (let i = 0; i < commands.length; i++) {
+      const ct = commands[i] & COMMAND_TYPE_MASK;
+      if (ct === PAY_PORTION || ct === FEE_TAKE) return false; // any fee command at all disqualifies it
+    }
+    return true;
+  }
   // The fee is legitimately taken on ONE specific leg, by direction:
   //   native-in BUY  -> the OUTPUT token only (fee taken on what the user receives, AFTER the swap).
   //   native-out SELL -> WETH (or the input token) before the unwrap.
@@ -159,8 +189,12 @@ export async function handleQuote(clientBody) {
   if (err) return { status: 400, json: { error: err } };
   const { status, json } = await forward("/v1/quote", buildQuoteUpstream(clientBody));
   if (status < 200 || status >= 300 || !json) return { status: status || 502, json: json || { error: "upstream error" } };
-  // Never hand back a quote that isn't actually taking our fee (would mean a fee-less trade).
-  if (!feeApplied(json.quote)) return { status: 502, json: { error: "fee not applied; trading temporarily unavailable" } };
+  // Never hand back a quote whose fee is wrong in EITHER direction: a missing fee on an ordinary pair is
+  // a free trade, and a present fee on a stock pair is us taking a cut of a securities trade. Both refuse.
+  const stock = isStockPair(clientBody.tokenIn, clientBody.tokenOut);
+  if (!feeApplied(json.quote, stock)) {
+    return { status: 502, json: { error: stock ? "stock quote came back fee-bearing; refused" : "fee not applied; trading temporarily unavailable" } };
+  }
   return { status: 200, json };
 }
 
