@@ -25,3 +25,40 @@
 		header @static Cache-Control "public, max-age=3600"
 	}
 }
+
+# ── coin websites: <slug>.robinlabs.fun ──────────────────────────────────────
+#
+# One block serves every coin site that will ever exist. The slug is not routed here at all — Caddy hands
+# the same `site.html` to every subdomain and the page reads its own hostname and asks the indexer
+# `/api/site/<slug>` which coin it is and which style to wear. That is deliberate: a coin launching does
+# not need a deploy, a config edit, or a Caddy reload to have a website. It needs a row in the database.
+#
+# PAD_WILDCARD is unset by default so a box that has not been given the DNS and the API key simply does
+# not serve this block, rather than starting up and failing to get a certificate on every boot.
+{$PAD_WILDCARD:*.invalid.localhost} {
+	encode zstd gzip
+
+	# The wildcard certificate comes from a DNS-01 challenge — Caddy writes the `_acme-challenge` TXT
+	# record through GoDaddy's API and deletes it again. This is the only reason the image is a custom
+	# build; see Dockerfile.caddy. The token is `KEY:SECRET` from the GoDaddy developer portal.
+	tls {
+		dns godaddy {env.GODADDY_API_TOKEN}
+	}
+
+	# Same API as the main site, same origin, so a coin site needs no CORS and no second hostname.
+	@api path /api/* /media/* /og/* /rpc /health
+	handle @api {
+		reverse_proxy indexer:8787
+	}
+
+	# Everything else is the one page. `site.html` resolves the coin from the hostname, so an unknown
+	# slug renders the page's own "no site here" state instead of a 404 nobody can read.
+	handle {
+		root * /srv/pad
+		try_files {path} /site.html
+		file_server
+
+		@static path *.js *.css *.png *.jpg *.svg *.woff2
+		header @static Cache-Control "public, max-age=3600"
+	}
+}
