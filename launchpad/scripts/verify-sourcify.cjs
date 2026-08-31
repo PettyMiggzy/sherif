@@ -19,15 +19,31 @@ const CHAIN = "4663";
 const ARTIFACTS = path.resolve(__dirname, "..", "artifacts");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// THE LIVE STACK, as read back off the chain -- not copied from a deploy log.
+//
+// This list was stale and it is the kind of stale that wastes an afternoon: it pointed at an EARLIER
+// generation of the pad whose addresses still hold code, so every call succeeded and verified contracts
+// nobody uses. If you are adding to it, take the address from `deploy.v2.json` or from `pad/assets/config.js`
+// (which is what the live site actually calls), never from memory.
+//
+// The v1 entries below are already exact_match on Sourcify and are kept so a re-run is a no-op that proves
+// it, rather than a gap somebody has to re-derive. The v2 + staking entries are the ones that were missing.
 const TARGETS = [
-  { key: "padRouter",           addr: "0x7d0c7122E26a75A9f0bd753e84c6115CAfE3Fd9F", sol: "contracts/PadRouter.sol",                 name: "PadRouter" },
-  { key: "padFactory",          addr: "0x7E9E3BC24013e6f607e89c52E619B6FD77334DC2", sol: "contracts/CurvePadFactory.sol",           name: "CurvePadFactory" },
-  { key: "rewardVault",         addr: "0x0F07dC315e332084129c1D00bEbADAb05edf79Dc", sol: "contracts/RewardVault.sol",               name: "RewardVault" },
-  { key: "floorCoopFactory",    addr: "0x26aBF8443C30AA2913b9f94B89787d38146C825b", sol: "contracts/FloorCoopFactory.sol",          name: "FloorCoopFactory" },
-  { key: "platformSplitter",    addr: "0xAc918cd2BF3affFEc81A4f55238539d7eBFd156f", sol: "contracts/PlatformFeeSplitter.sol",       name: "PlatformFeeSplitter" },
-  { key: "launchTokenDeployer", addr: "0xAcaeB153312CFf7B82C33a5a43604c566dbbe8c3", sol: "contracts/deployers/CurveDeployers.sol",  name: "LaunchTokenDeployer" },
-  { key: "curvePoolDeployer",   addr: "0x441bA3270B9EF2f15C603D384609D1a6Ef98e428", sol: "contracts/deployers/CurveDeployers.sol",  name: "CurvePoolDeployer" },
-  { key: "bondDeployer",        addr: "0x5049f2CCa88E62990515155c745e814a53cfb862", sol: "contracts/deployers/CurveDeployers.sol",  name: "BondDeployer" },
+  // ── v2 pad (what the site launches through today) ──────────────────────────────────────────────
+  { key: "padFactoryV2",        addr: "0xD41479DE442366e0358Fd74Bf4a5911eBbF3055A", sol: "contracts/CurvePadFactory.sol",          name: "CurvePadFactory" },
+  { key: "padRouterV2",         addr: "0x7e3BbfddFd8B18b789710a6E419B12Dee1E9B9b1", sol: "contracts/PadRouter.sol",                name: "PadRouter" },
+  { key: "launchTokenDeployer", addr: "0x8E1eC483a782E2f1E9Ec8cB32ad7703ccDE3a165", sol: "contracts/deployers/CurveDeployers.sol", name: "LaunchTokenDeployer" },
+  { key: "curvePoolDeployer",   addr: "0xe465B69119E1586E484ac50351722Bac30a48d61", sol: "contracts/deployers/CurveDeployers.sol", name: "CurvePoolDeployer" },
+  { key: "bondDeployer",        addr: "0x32371DC90F1FE4e7c350f35d010F130ed1CAb536", sol: "contracts/deployers/CurveDeployers.sol", name: "BondDeployer" },
+  // ── staking ───────────────────────────────────────────────────────────────────────────────────
+  { key: "tierStakingFactory",  addr: "0x237901667ff38CF4ec6009676E480ba71ac1c6AE", sol: "contracts/RobinTierStakingFactory.sol",  name: "RobinTierStakingFactory" },
+  { key: "robinTierStaking",    addr: "0x713F0F1a2ACB98E7d2E5d6Ff706A1413aa814C10", sol: "contracts/RobinTierStaking.sol",         name: "RobinTierStaking" },
+  // ── v1 pad (still live, still serves every coin launched before the v2 deploy) ─────────────────
+  { key: "padRouter",           addr: "0xA6BaAB820809C7fC8350311776627298f91F07eC", sol: "contracts/PadRouter.sol",                name: "PadRouter" },
+  { key: "padFactory",          addr: "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074", sol: "contracts/CurvePadFactory.sol",          name: "CurvePadFactory" },
+  { key: "rewardVault",         addr: "0x03d5d26E492B288e62D897E7dde91af3CceB4347", sol: "contracts/RewardVault.sol",              name: "RewardVault" },
+  { key: "floorCoopFactory",    addr: "0x564EDF561Bed46C972d5D44D84f5FAc9C5118668", sol: "contracts/FloorCoopFactory.sol",         name: "FloorCoopFactory" },
+  { key: "platformSplitter",    addr: "0xca0EfD87B983CdeF56459051ecBE91aA5C87E17a", sol: "contracts/PlatformFeeSplitter.sol",      name: "PlatformFeeSplitter" },
 ];
 
 function loadInput(t) {
