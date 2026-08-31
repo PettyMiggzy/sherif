@@ -267,7 +267,9 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         isRewarder[owner_] = true;
         strandedSink = owner_;
 
-        // The fallback ceiling for a pool nobody has committed to yet. 1% of supply, read once and frozen.
+        // The fallback ceiling for a pool nobody has committed to yet. 0.001% of supply (sup / 100_000),
+        // read once and frozen. The comment here used to say "1% of supply", which was wrong by a factor of
+        // a thousand -- a stale number on a security constant is how somebody re-tunes it blind later.
         // try/catch because `listReward` accepts any ERC-20 and a stake token that does not answer
         // `totalSupply` must not make the pool undeployable; a zero floor simply means the relative ceiling
         // is the only one, which is the behaviour this replaces rather than something worse.
@@ -586,9 +588,37 @@ contract RobinTierStaking is Ownable, ReentrancyGuard {
         // to unwind — versus a wei.
         uint256 committed = totalCommitted;
 
-        // The floor carries a pool nobody has committed to at all — otherwise the ceiling would be zero and
-        // an all-flexible pool would earn nothing. It is small on purpose: it has to BIND on a whale that
-        // parks flexible money in a fresh pool, which a generous number would not.
+        // THE FLOOR, AND THE ONE THING IT TRADES. Deliberately sized; do not change it without re-reading
+        // this. It is NOT what stops a pool being dead -- the `cap == 0` guard below does that. Its actual
+        // job is to impose SOME ceiling on a pool with no committed depth, and its size is the point at
+        // which extra size stops earning more.
+        //
+        //   • Above the floor, every flexible staker is levelled: a whale with 10,000,000 and an honest
+        //     staker holding exactly `capFloor` both earn on `capFloor`. That is the cap working.
+        //   • The floor only governs while `10 x totalCommitted < capFloor`. Once the pool has real locked
+        //     depth the relative bound takes over and this term is never read again.
+        //   • So the only account the floor can disadvantage is a COMMITTED staker small enough that the
+        //     floor, not their own commitment, is setting the whale's ceiling. The boundary is exact:
+        //     the floor governs while `10 x C < capFloor`, i.e. while a commitment is under
+        //     `capFloor / 10` = 0.0001% of supply.
+        //
+        // What that costs, measured against a whale flooding flexible principal past any ceiling:
+        //
+        //     C = 0.0001% of supply or more   ->  committed staker takes a FLAT 33.3%, whatever C is
+        //     C = half that                   ->  20.0%
+        //     C = a tenth of it               ->  4.8%
+        //     C -> 0                          ->  -> 0%
+        //
+        // The 33.3% is the designed outcome and follows from capBps (flexible may ride 10x the pool's
+        // committed depth, and a 365-day lock multiplies 5x). The floor cannot improve on it; it can only
+        // dilute a commitment too small to set the ceiling itself.
+        //
+        // The boundary is a fraction of SUPPLY, so it does not get worse on a larger-supply coin -- an audit
+        // measuring ~90% whale capture on a 10B coin was comparing against a 1,000-token commitment, which
+        // is 0.00001% of supply and a tenth of the boundary. Lowering this constant pulls the boundary down
+        // and levels flexible stakers sooner; raising it does the reverse and widens the diluted band.
+        // 0.001% is the chosen point: small enough that any serious commitment clears the boundary by an
+        // order of magnitude, large enough that stake size still means something in a pool with no locks.
         uint256 cap = Math.mulDiv(committed, uint256(capBps) + robinAdd, BPS);
         uint256 floorCap = capFloor + Math.mulDiv(capFloor, robinAdd, BPS);
         if (cap < floorCap) cap = floorCap;

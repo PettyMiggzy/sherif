@@ -186,6 +186,14 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
             <button type="button" id="artBuy" class="btn btn-ghost" style="font-size:.76rem;padding:6px 10px">Buy 10</button>
             <span id="artBuyCost" style="font-size:.74rem;color:var(--ink-faint)"></span>
           </div>
+          <!-- Said BEFORE the buy, not after. An audit's read of ArtCredits was that the contract's own
+               behaviour is honest -- there is no function anywhere that turns a credit back into ETH -- but
+               that a buyer could reasonably read "credits" as money they still own. That is a disclosure
+               gap, not a contract bug, so it is fixed here, at the only place the money actually moves. -->
+          <div id="artWalletNote" style="display:none;font-size:.72rem;color:var(--ink-faint);margin-top:6px;line-height:1.45">
+            Credits are a <b>prepayment for image generation, not a deposit</b> — they buy pictures, and there
+            is no way to turn them back into ETH.
+          </div>
           <div id="artStatus" style="font-size:.78rem;color:var(--ink-faint);margin-top:7px"></div>
         </div>
       </div>
@@ -979,6 +987,9 @@ refreshConnect();
   function ethers_formatEth(wei) { return Number(wei) / 1e18; }
 
   if (cfg.paid) {
+    // Only shown when credits are actually being charged for — the same condition that reveals the buy
+    // button, so the disclosure can never be missing from a screen that can take money.
+    const note = $('artWalletNote'); if (note) note.style.display = 'block';
     refreshBalance();
     buyBtn.addEventListener('click', async () => {
       buyBtn.disabled = true;
