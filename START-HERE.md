@@ -53,6 +53,21 @@ Root docs: `LIVE_DEPLOYMENT.md` (live addresses), `HANDOFF.md` (v3 brief), `CLAU
 - **Contracts (mainnet, chainId 4663):** addresses + Blockscout links in `LIVE_DEPLOYMENT.md` (v2.1,
   deployed 2026-07-24). Owner = cold wallet `0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf`.
 - **Site:** Vercel auto-deploys `pad/` to **www.robinlab.io / www.robinlabs.fun** on every push to this repo.
+  Note there is ALSO a `pad-v4/pad/` — a separate, older/staging copy with a different (smaller) page set.
+  It is NOT what deploys; confirmed by diffing `pad/index.html` byte-for-byte against the live HTML. If a
+  page you expect isn't live, check you edited `pad/`, not `pad-v4/pad/`.
+- **`pad/services.html`** (added 2026-09-01): sells the paid growth products — DEX Trending, DEX Volume,
+  Advertise, and the free Buy Bot — the same products documented in `tr-bot`'s `scripts/lib/servicecopy.js`
+  and sold through `@robinlabsbot`. Keep the copy in sync with that file if the products, rates or fee %
+  change there; this page does not read it, it was written to match it once. Linked from `index.html`'s
+  Tools menu, mobile menu, and footer Explore column — those are the only three places, so a future rename
+  needs all three updated too.
+  The "Trending gets you N tx/hour" figures are **computed client-side at page load**, not hardcoded — gas on
+  this chain moved 12.9x in five days (measured with `tr-bot/scripts/gas-history.js`), so a typed-in number
+  goes stale within hours. It fetches `eth_gasPrice` from `rpc.mainnet.chain.robinhood.com` (CORS-open,
+  verified) and ETH/USD from CoinGecko, using `GAS_PER_BUY = 138000` — **this must match
+  `gas-history.js`'s own `GAS_PER_BUY` constant in the tr-bot repo**, which is the source of truth for that
+  figure. If either fetch fails it shows "ask the desk — moves with gas", never a stale or guessed number.
 - **Coin sites:** each launched coin can claim **`<slug>.robinlabs.fun`** (creator connects wallet at
   `robinlab.io/website.html?c=<coin>`, picks a style + slug, signs once). One wildcard covers all — see
   `pad/templates/coin-site/README.md`. **Open item:** confirm the `*.robinlabs.fun` wildcard domain is added in
