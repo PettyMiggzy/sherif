@@ -230,16 +230,71 @@
   <section class="rates">
     <h2>Pick a rate</h2>
     <p class="sub2">The same shape for Trending and Volume: pick a rate, deposit whatever you like, we take a cut off the top, and every cent of the rest is spent on your pair at that rate until it runs out.</p>
-    <div class="rtable"><table>
-      <tr><th>Rate</th><th>Trending gets you</th><th>Volume runs on</th></tr>
-      <tr><td class="rate">$5 / hour</td><td>about 25 transactions an hour</td><td>light, ongoing chart activity</td></tr>
-      <tr><td class="rate">$10 / hour</td><td>about 50 transactions an hour</td><td>steady two-sided volume</td></tr>
-      <tr><td class="rate">$20 / hour</td><td>about 100 transactions an hour</td><td>a visible pickup on the chart</td></tr>
-      <tr><td class="rate">$40 / hour</td><td>about 200 transactions an hour</td><td>a busy pair, most of the day</td></tr>
-      <tr><td class="rate">$100 / hour</td><td>about 500 transactions an hour</td><td>as active as this chain gets</td></tr>
+    <!--
+      The "Trending gets you" column is NOT a fixed number: gas on this chain
+      moves fast enough to make one stale within hours. Measured with
+      scripts/gas-history.js (tr-bot repo) on 2026-08-31/09-01: base fee rose
+      12.9x in five days, and the same $20/hour went from ~1,689 tx/hour to
+      ~130. A number typed into this file would have been wrong by 09-01
+      afternoon and nothing would have caught it.
+
+      So this fetches gas price straight from the chain's own public RPC
+      (CORS-open, verified) and ETH/USD from CoinGecko, and computes the count
+      at page load. GAS_PER_BUY below must match gas-history.js's own
+      GAS_PER_BUY constant -- that script is the source of truth for this
+      figure; if it changes there, change it here too.
+    -->
+    <div class="rtable"><table id="rateTable">
+      <tr><th>Rate</th><th>Trending gets you <span id="liveTag" style="font-weight:600;color:var(--lime);text-transform:none;letter-spacing:0;font-size:.9em">· live</span></th><th>Volume runs on</th></tr>
+      <tr><td class="rate">$5 / hour</td><td class="txcell" data-rate="5">…</td><td>light, ongoing chart activity</td></tr>
+      <tr><td class="rate">$10 / hour</td><td class="txcell" data-rate="10">…</td><td>steady two-sided volume</td></tr>
+      <tr><td class="rate">$20 / hour</td><td class="txcell" data-rate="20">…</td><td>a visible pickup on the chart</td></tr>
+      <tr><td class="rate">$40 / hour</td><td class="txcell" data-rate="40">…</td><td>a busy pair, most of the day</td></tr>
+      <tr><td class="rate">$100 / hour</td><td class="txcell" data-rate="100">…</td><td>as active as this chain gets</td></tr>
     </table></div>
-    <p class="fee-note">We take <b>10%</b> of the deposit up front. A $100 deposit at the $10/hour rate runs for <b>about 9 hours</b>. Counts move with gas price right now — the <b>rate</b> is what you're buying, the count is what it currently gets you.</p>
+    <p class="fee-note" id="feeNote">We take <b>10%</b> of the deposit up front. A $100 deposit at the $10/hour rate runs for <b>about 9 hours</b>. Counts move with gas price right now — the <b>rate</b> is what you're buying, the count is what it currently gets you.</p>
   </section>
+  <script>
+  (function () {
+    // Keep in sync with scripts/gas-history.js (tr-bot repo) -- see the
+    // comment above the table. Both price the same product; only one lives
+    // on a server that can be redeployed on its own schedule.
+    var GAS_PER_BUY = 138000;
+    var RPC = 'https://rpc.mainnet.chain.robinhood.com';
+    var cells = Array.prototype.slice.call(document.querySelectorAll('.txcell'));
+    var tag = document.getElementById('liveTag');
+
+    function fmt(n) {
+      return Math.round(n).toLocaleString('en-US');
+    }
+    function fallback() {
+      // Never show a number that could not be computed just now -- a wrong
+      // guess is worse than admitting the page does not have one.
+      cells.forEach(function (c) { c.textContent = 'ask the desk — moves with gas'; });
+      if (tag) tag.remove();
+    }
+
+    Promise.all([
+      fetch(RPC, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_gasPrice', params: [] }),
+      }).then(function (r) { return r.json(); }),
+      fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd')
+        .then(function (r) { return r.json(); }),
+    ]).then(function (res) {
+      var gasPriceWei = parseInt(res[0] && res[0].result, 16);
+      var ethUsd = res[1] && res[1].ethereum && res[1].ethereum.usd;
+      if (!(gasPriceWei > 0) || !(ethUsd > 0)) { fallback(); return; }
+      var costPerTx = (GAS_PER_BUY * gasPriceWei / 1e18) * ethUsd;
+      if (!(costPerTx > 0)) { fallback(); return; }
+      cells.forEach(function (c) {
+        var rate = Number(c.getAttribute('data-rate'));
+        c.textContent = 'about ' + fmt(rate / costPerTx) + ' transactions an hour';
+      });
+    }).catch(fallback);
+  })();
+  </script>
 
   <!-- HOW IT WORKS -->
   <section class="how">
