@@ -1037,13 +1037,21 @@ export function startApi() {
         // an indexer that is perfectly healthy tells you nothing about whether coins are still graduating,
         // and that is the half of the stack whose failure is silent. `stale` is the real signal: a heartbeat
         // older than a few poll intervals means the keeper is wedged or gone, file or no file.
+        // The addresses this indexer is WATCHING, not the ones it should be. Twice now a single-address
+        // config quietly excluded half the pad -- a coin launched on the unwatched factory never existed to
+        // the site, and pad trades through the unwatched router were credited to a contract. Neither threw.
+        // Publishing them makes "is it looking at the right things" answerable from outside the box.
+        const watching = {
+          factories: (CFG.factories && CFG.factories.length ? CFG.factories : [CFG.factory]).filter(Boolean),
+          routers: (CFG.routers && CFG.routers.length ? CFG.routers : [CFG.router]).filter(Boolean),
+        };
         const hb = Heartbeat.read();
         const keeper = hb
           ? { alive: hb.ageSecs < 120, stale: hb.ageSecs >= 120, ageSecs: hb.ageSecs,
               grad: hb.grad === true, pools: hb.pools === true, feed: hb.feed === true,
               address: hb.keeper || null, ...(hb.reason ? { reason: hb.reason } : {}) }
           : { alive: false, stale: true, ageSecs: null, note: "no heartbeat — keeper container has never run" };
-        return send(res, 200, { ok: true, head: getHead(), cursor: cur ? Number(cur.v) : null, coins: c, trades: t, img: !!(_sharp && _heic), keeper }, origin);
+        return send(res, 200, { ok: true, head: getHead(), cursor: cur ? Number(cur.v) : null, coins: c, trades: t, img: !!(_sharp && _heic), watching, keeper }, origin);
       }
 
       // Whether the photo-to-meme generator is configured — the create page shows its button only if so.
