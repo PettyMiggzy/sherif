@@ -52,6 +52,21 @@ export const CFG = {
   // Defaults match the LIVE pad on Robinhood Chain (pad/assets/config.js padFactory/padRouter), so a
   // fresh deploy indexes the right factory even before .env is filled in. Override via env as needed.
   factory: (process.env.FACTORY || "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074").toLowerCase(),
+  // TWO FACTORIES ARE LIVE, exactly as with the routers. v1 launched every coin up to the v2 deploy; the
+  // site launches through v2 now. Anything that reads factory state or events has to know both:
+  //   * `Launched` is emitted by the factory that did it -- watch one and coins from the other NEVER APPEAR.
+  //   * `recordOf(token)` only answers on the factory that launched that token, so a single-factory lookup
+  //     returns a zero dev for half the pad and silently fails the creator gate.
+  //   * the factory address must be excluded from reward scoring; missing one lets a contract earn.
+  // FACTORIES overrides outright; otherwise it is the union of `factory` and the v2 address, so a
+  // deployment that names one factory is still obeyed rather than losing to a hardcoded pair.
+  factories: [...new Set(
+    (process.env.FACTORIES
+      ? process.env.FACTORIES.split(",")
+      : [process.env.FACTORY || "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074",
+         process.env.FACTORY_V2 || "0xD41479DE442366e0358Fd74Bf4a5911eBbF3055A"]
+    ).map((s) => s.trim().toLowerCase()).filter(Boolean),
+  )],
   router: (process.env.ROUTER || "0xA6BaAB820809C7fC8350311776627298f91F07eC").toLowerCase(),
   // TWO ROUTERS ARE LIVE AT ONCE. A coin is bound to the router it launched under and never moves, so v1
   // keeps serving every coin launched before the v2 deploy while v2 serves everything since. Anything that

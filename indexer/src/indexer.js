@@ -167,7 +167,10 @@ async function nameSymbol(token) {
 async function getLogsRange(from, to) {
   // Sequential (not parallel) — Blockscout 500s if you fan out too many getLogs
   // at once. Each call is retried independently.
-  const launched = await getLogs({ fromBlock: from, toBlock: to, address: CFG.factory, topics: [TOPICS.Launched] }, "getLogs.launched");
+  // BOTH factories in one union filter. Watching only the primary meant a coin launched on the other
+  // never produced a row and simply did not exist to the site.
+  const _factories = (CFG.factories && CFG.factories.length ? CFG.factories : [CFG.factory]).filter(Boolean);
+  const launched = await getLogs({ fromBlock: from, toBlock: to, address: _factories, topics: [TOPICS.Launched] }, "getLogs.launched");
   // Graduated is curve-emitted with no indexed token, so we query by topic0 across
   // any address and match back by log.address.
   const grads = await getLogs({ fromBlock: from, toBlock: to, topics: [TOPICS.Graduated] }, "getLogs.grads");
@@ -655,7 +658,8 @@ async function backfillSwaps() {
 /// pool (trades that bypass the router entirely). Rebuilt each pass so a coin launched a minute ago is visible
 /// to the feed rather than waiting on the safety timer.
 function feedAddresses() {
-  const out = [CFG.factory, ...(CFG.routers && CFG.routers.length ? CFG.routers : [CFG.router])];
+  const out = [...(CFG.factories && CFG.factories.length ? CFG.factories : [CFG.factory]),
+               ...(CFG.routers && CFG.routers.length ? CFG.routers : [CFG.router])];
   try {
     for (const c of liveCoinsAll.all()) { if (c.pool) out.push(c.pool); if (c.token) out.push(c.token); }
   } catch { /* db not ready yet — the two above are enough to start */ }
@@ -665,7 +669,7 @@ function feedAddresses() {
 export async function runLoop() {
   const startFrom = getCursor();
   console.log(`[indexer] rpc=${CFG.rpcUrl}`);
-  console.log(`[indexer] factory=${CFG.factory} routers=${(CFG.routers || [CFG.router]).join(",")}`);
+  console.log(`[indexer] factories=${(CFG.factories || [CFG.factory]).join(",")} routers=${(CFG.routers || [CFG.router]).join(",")}`);
   console.log(`[indexer] cursor=${startFrom ?? `(fresh, from block ${CFG.startBlock})`}`);
 
   let feed = null;

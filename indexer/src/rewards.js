@@ -72,7 +72,9 @@ const _coinAddrs = db.prepare("SELECT curve, pool, bond FROM coins WHERE token =
 // and the zero/dead burn sinks. filter(Boolean) tolerates any unset global.
 function excludedFor(coin) {
   const s = new Set([
-    coin, CFG.router, CFG.rewardVault, CFG.factory, CFG.tokenVestingLock,
+    coin, CFG.rewardVault, CFG.tokenVestingLock,
+    ...(CFG.routers && CFG.routers.length ? CFG.routers : [CFG.router]),
+    ...(CFG.factories && CFG.factories.length ? CFG.factories : [CFG.factory]),
     "0x0000000000000000000000000000000000000000",
     "0x000000000000000000000000000000000000dead",
   ].filter(Boolean).map((a) => String(a).toLowerCase()));

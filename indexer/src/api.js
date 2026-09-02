@@ -251,13 +251,19 @@ const _factoryIface = new ethers.Interface([
   "function recordOf(address) view returns (address token, address curve, address dev, uint256 at)",
 ]);
 async function chainDevOf(token) {
-  try {
-    const data = _factoryIface.encodeFunctionData("recordOf", [token]);
-    const resp = await rpcForward({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: CFG.factory, data }, "latest"] });
-    if (!resp || !resp.result || resp.result === "0x") return null;
-    const dev = String(_factoryIface.decodeFunctionResult("recordOf", resp.result).dev || "").toLowerCase();
-    return /^0x0+$/.test(dev) ? null : dev;
-  } catch { return null; }
+  // A coin's record lives ONLY on the factory that launched it, so asking one factory returns a zero dev
+  // for every coin from the other and silently fails the creator gate. Ask each; first real answer wins.
+  const data = _factoryIface.encodeFunctionData("recordOf", [token]);
+  for (const factory of (CFG.factories && CFG.factories.length ? CFG.factories : [CFG.factory])) {
+    if (!factory) continue;
+    try {
+      const resp = await rpcForward({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: factory, data }, "latest"] });
+      if (!resp || !resp.result || resp.result === "0x") continue;
+      const dev = String(_factoryIface.decodeFunctionResult("recordOf", resp.result).dev || "").toLowerCase();
+      if (!/^0x0+$/.test(dev)) return dev;
+    } catch { /* try the next factory */ }
+  }
+  return null;
 }
 async function rpcHandle(payload) {
   const arr = Array.isArray(payload) ? payload : [payload];
