@@ -50,7 +50,7 @@ const POOL_ABI = [
 ];
 
 export function enabled() {
-  return !!(CFG.feedKeeperKey && CFG.router && CFG.stakingFeeder && CFG.tierStakingFactory);
+  return !!(CFG.feedKeeperKey && (CFG.stakingRouter || CFG.router) && CFG.stakingFeeder && CFG.tierStakingFactory);
 }
 
 let _wallet = null;
@@ -89,7 +89,7 @@ const fmt = (wei) => Number(ethers.formatEther(wei)).toFixed(6);
 export async function sweepOnce(provider) {
   if (!enabled()) return null;
   if (!_wallet) _wallet = new ethers.Wallet(CFG.feedKeeperKey, provider);
-  const router = new ethers.Contract(CFG.router, ROUTER_ABI, _wallet);
+  const router = new ethers.Contract(CFG.stakingRouter || CFG.router, ROUTER_ABI, _wallet);
   const feeder = new ethers.Contract(CFG.stakingFeeder, FEEDER_ABI, _wallet);
   const factory = new ethers.Contract(CFG.tierStakingFactory, FACTORY_ABI, provider);
 
@@ -213,5 +213,5 @@ export async function runFeedKeeper(provider) {
 }
 
 export function stats() {
-  return { enabled: enabled(), keeper: keeperAddress(), router: CFG.router || null, feeder: CFG.stakingFeeder || null };
+  return { enabled: enabled(), keeper: keeperAddress(), router: CFG.stakingRouter || CFG.router || null, feeder: CFG.stakingFeeder || null };
 }

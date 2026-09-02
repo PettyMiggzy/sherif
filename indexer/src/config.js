@@ -53,6 +53,25 @@ export const CFG = {
   // fresh deploy indexes the right factory even before .env is filled in. Override via env as needed.
   factory: (process.env.FACTORY || "0x8aa92d5297fEC45cbC7F16A32F4aed5D3AC58074").toLowerCase(),
   router: (process.env.ROUTER || "0xA6BaAB820809C7fC8350311776627298f91F07eC").toLowerCase(),
+  // TWO ROUTERS ARE LIVE AT ONCE. A coin is bound to the router it launched under and never moves, so v1
+  // keeps serving every coin launched before the v2 deploy while v2 serves everything since. Anything that
+  // reads router EVENTS has to watch both or it silently mis-attributes half the pad: a pad-routed trade
+  // arrives at the pool with the ROUTER as recipient, and the actor is only corrected back to the real
+  // wallet for a router this list knows. Miss one and those trades are credited to a contract address.
+  // ROUTERS overrides the list outright. Otherwise it is the union of `router` and `stakingRouter`, so
+  // setting ROUTER alone still governs -- a config that names one router must never be silently ignored
+  // in favour of a hardcoded pair.
+  routers: [...new Set(
+    (process.env.ROUTERS
+      ? process.env.ROUTERS.split(",")
+      : [process.env.ROUTER || "0xA6BaAB820809C7fC8350311776627298f91F07eC",
+         process.env.STAKING_ROUTER || "0x7e3BbfddFd8B18b789710a6E419B12Dee1E9B9b1"]
+    ).map((s) => s.trim().toLowerCase()).filter(Boolean),
+  )],
+  // The router that carries the staking/$ROBIN sinks. ONLY v2 has them -- v1 predates the feature and
+  // reverts on `stakingSink()`, which is not a misconfiguration to route around, it is the older contract
+  // being older. The fee sweeper must talk to this one, never to `router` above.
+  stakingRouter: (process.env.STAKING_ROUTER || "0x7e3BbfddFd8B18b789710a6E419B12Dee1E9B9b1").toLowerCase(),
   startBlock: num("START_BLOCK", 17752965),
   port: num("PORT", 8787),
   pollMs: num("POLL_MS", 6000),

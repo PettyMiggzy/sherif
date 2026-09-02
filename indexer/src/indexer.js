@@ -197,9 +197,12 @@ async function getLogsRange(from, to) {
 // DEX/bot/aggregator volume is still captured exactly once (see abi.js).
 async function routerActorMap(from, to) {
   const map = new Map();
-  if (!CFG.router) return map;
+  const routers = (CFG.routers && CFG.routers.length ? CFG.routers : [CFG.router]).filter(Boolean);
+  if (!routers.length) return map;
+  // Both live routers in ONE getLogs -- an address array is a union filter, so this stays a single
+  // request per pass rather than one per router.
   const logs = await getLogs(
-    { fromBlock: from, toBlock: to, address: CFG.router, topics: [[TOPICS.Bought, TOPICS.Sold]] },
+    { fromBlock: from, toBlock: to, address: routers, topics: [[TOPICS.Bought, TOPICS.Sold]] },
     "getLogs.routerTrades");
   for (const log of logs) {
     let parsed; try { parsed = iface.parseLog(log); } catch { continue; }
@@ -218,7 +221,10 @@ async function routerActorMap(from, to) {
 // buyback, which must NOT score as a user trade. Exported for regression testing.
 export function correctRouterActor(row, routerActor) {
   if (!row) return row;
-  if (row.actor === CFG.router) {
+  // Membership, not equality: a v2-launched coin's pad trades arrive with the V2 router as recipient, and
+  // comparing against one hardcoded router left those credited to the router's own address.
+  const routers = (CFG.routers && CFG.routers.length ? CFG.routers : [CFG.router]).filter(Boolean);
+  if (routers.includes(row.actor)) {
     const real = routerActor.get(`${row.tx}:${String(row.token).toLowerCase()}:${row.side}`);
     if (real) return { ...row, actor: real };
   }
@@ -649,7 +655,7 @@ async function backfillSwaps() {
 /// pool (trades that bypass the router entirely). Rebuilt each pass so a coin launched a minute ago is visible
 /// to the feed rather than waiting on the safety timer.
 function feedAddresses() {
-  const out = [CFG.factory, CFG.router];
+  const out = [CFG.factory, ...(CFG.routers && CFG.routers.length ? CFG.routers : [CFG.router])];
   try {
     for (const c of liveCoinsAll.all()) { if (c.pool) out.push(c.pool); if (c.token) out.push(c.token); }
   } catch { /* db not ready yet — the two above are enough to start */ }
@@ -659,7 +665,7 @@ function feedAddresses() {
 export async function runLoop() {
   const startFrom = getCursor();
   console.log(`[indexer] rpc=${CFG.rpcUrl}`);
-  console.log(`[indexer] factory=${CFG.factory} router=${CFG.router}`);
+  console.log(`[indexer] factory=${CFG.factory} routers=${(CFG.routers || [CFG.router]).join(",")}`);
   console.log(`[indexer] cursor=${startFrom ?? `(fresh, from block ${CFG.startBlock})`}`);
 
   let feed = null;
