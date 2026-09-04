@@ -11,14 +11,14 @@ This doc is the locked reference — build to it.
 - Free launches (single-sided, self-seeded) — no one has to seed ETH.
 
 ## Locked economic model
-Every trade pays **1% LP fee** (pool) + **1% directional trade tax** (hook). (v2 — refined economics.)
+Every trade pays **1% LP fee** (pool) + **1.25% directional trade tax** (hook). (v2 — refined economics.)
 
 | Flow | → Destination |
 |---|---|
 | **Buy** LP fee | **80% → platform** now · **20% → held in the curve → floor at graduation** (governed `buyLpFloorShareBps`, default 2000) |
 | **Buy** trade tax | **Platform** |
 | **Sell** LP fee (token side) | **Staking pool** — holders earn the token, **no reserve injection needed** |
-| **Sell** trade tax (1%) | **Creator 0.8% + Floor 0.2%** |
+| **Sell** trade tax (1.25%) | **Creator 1.00% + Floor 0.25%** |
 | **Graduation @ ceiling (~4.2 ETH raised)** | **0.5 ETH → platform + 0.5 ETH → creator** (`GRAD_REWARD`, capped raise/4 each); graduate() **gas reimbursed from the curve ETH**; rest → **locked LP** (paired with the ambush reserve) + **floor** |
 | Staking reward claim | **5% → platform** |
 

@@ -872,14 +872,26 @@ $('launchBtn').addEventListener('click', async () => {
           const amt = (bal * BigInt(Math.floor(r.pct * 100))) / 10000n; // pct -> bps of the balance (floor: never overshoots)
           if (amt > 0n) { recs.push(r.addr); amts.push(amt.toString()); }
         }
+        // BATCHED, for the same reason the Disperse tool is: one transaction cannot carry more than
+        // ~300 fresh recipients before it exceeds this chain's per-tx gas ceiling and reverts. This panel
+        // offers up to 600 wallets, so without batching every split over 300 failed AFTER the coin was
+        // already live -- the worst moment to lose a transaction.
         if (recs.length) {
-          const dtx = await Pad.disperse(token, recs, amts);
-          await dtx.wait();
-          setNote('Launched ✓ and dev buy split to ' + recs.length + ' wallet(s).', 'ok');
+          const MAXR = Pad.DISPERSE_MAX_PER_TX || 300;
+          const nB = Math.ceil(recs.length / MAXR);
+          let sent = 0;
+          for (let b = 0; b < nB; b++) {
+            const from = b * MAXR, to = Math.min(from + MAXR, recs.length);
+            if (nB > 1) setNote(`Launched ✓, splitting — batch ${b + 1}/${nB} (${sent}/${recs.length} wallets done)…`, 'ok');
+            const dtx = await Pad.disperse(token, recs.slice(from, to), amts.slice(from, to));
+            await dtx.wait();
+            sent = to;
+          }
+          setNote('Launched ✓ and dev buy split to ' + sent + ' wallet(s).', 'ok');
         }
       } catch (e) {
         // Coin is live; the creator can finish the split from the Disperse tool anytime.
-        setNote('Launched ✓. The split didn’t finish (' + (e.message || e) + ') — send anytime from the Disperse tool.', 'ok');
+        setNote('Launched ✓. The split didn’t finish (' + (e.message || e) + ') — finish it from the Disperse tool. Check which wallets already received tokens before resending, or they get paid twice.', 'ok');
       }
     }
 
