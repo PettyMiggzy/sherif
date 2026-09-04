@@ -31,15 +31,19 @@ const PERMIT2 = process.env.PERMIT2 || "0x000000000022D473030F116dDEE9F6B43aC78B
 // reserve → start ~$3.4k, graduate ~$34k on ~4.2 ETH). Magnitudes are tick-spacing-aligned for ts=100
 // (201600/100, 23000/100, 22800/100 are integers) — launches must pass tickSpacing=100.
 const DEFAULTS = {
-  buyTaxBps: Number(process.env.BUY_TAX_BPS || 100), // 1% buy tax (ETH, fee-on-input) → 0.2% buffer / 0.2% referrer / rest platform
-  sellTaxBps: Number(process.env.SELL_TAX_BPS || 100), // 1% sell trade tax → 0.8% creator / 0.2% floor
-  sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 2000), // 20% of the sell tax (=0.2% of trade) → floor
+  // [fee-model] 1.25% per side, owner-decided. The BUY side is platform-bound in full: the buffer share is
+  // parked in the curve and swept to the platform at graduation, and the referral share is carved out of the
+  // platform's own cut only when a ref link is used. So this is 1.25% to the platform, not 1% + 0.25% elsewhere
+  // -- the hook has no third destination on the buy leg. See BUY-SIDE STAKING SLICE in ROBIN-V4-CURVE-ECON.md.
+  buyTaxBps: Number(process.env.BUY_TAX_BPS || 125), // 1.25% buy tax (ETH, fee-on-input) → 0.25% buffer / referrer share / rest platform
+  sellTaxBps: Number(process.env.SELL_TAX_BPS || 125), // 1.25% sell trade tax → 1.00% creator / 0.25% floor (with sellFloorShareBps 2000)
+  sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 2000), // 20% of the sell tax (=0.25% of trade at 125) → floor
   // [fee-model] BUY-side ETH LP fee → 100% platform (0% held for the floor). The platform keeps all ETH LP fees; the
   // deep RobinFloorVault is funded from ELSEWHERE — the ongoing sell-tax floor slice (sellFloorShareBps) + the ambush
   // vault's forwarded ETH LP fees — never the buy-LP carve. Set >0 only if you deliberately want to re-fund the floor
   // from the buy-LP leg (splits it platform/floor at graduation).
   buyLpFloorShareBps: Number(process.env.BUY_LP_FLOOR_SHARE_BPS || 0),
-  buyBufferShareBps: Number(process.env.BUY_BUFFER_SHARE_BPS || 2000), // 20% of the buy tax (=0.2% of trade) → curve buffer
+  buyBufferShareBps: Number(process.env.BUY_BUFFER_SHARE_BPS || 2000), // 20% of the buy tax (=0.25% of trade at 125) → curve buffer, ends at platform
   referralShareBps: Number(process.env.REFERRAL_SHARE_BPS || 2500), // 25% of the platform buy cut (=0.2% of trade) → referrer
   platformGradBps: Number(process.env.PLATFORM_GRAD_BPS || 1000), // 10% of the raise → platform at graduation
   creatorGradBps: Number(process.env.CREATOR_GRAD_BPS || 1000), // 10% of the raise → creator at graduation
