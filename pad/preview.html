@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Build preview — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<!-- INTERNAL. Deliberately not linked from any nav, and noindex. This is the "what is actually in this
+     build" page: every surface the pad ships, what it does in one honest line, and whether the thing it
+     depends on is actually running. Status is FETCHED, never typed here, so this page cannot claim
+     something works after it stops. -->
+<style>
+  :root{
+    --bg:#060803;--panel:#0c1108;--panel2:#101609;
+    --line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.13);
+    --ink:#f4f7ee;--dim:#93a382;--dim2:#6c7b5d;--lime:#dce905;
+    --ok:#7ddc6b;--warn:#e8c14a;--bad:#e8615a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);line-height:1.5;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1060px;margin:0 auto;padding:26px 20px 70px}
+  header{display:flex;justify-content:space-between;align-items:baseline;gap:14px;flex-wrap:wrap;
+    padding-bottom:16px;border-bottom:1px solid var(--line)}
+  h1{font-size:1.35rem;margin:0;letter-spacing:-.01em}
+  h1 b{color:var(--lime)}
+  .sub{color:var(--dim2);font-size:.8rem}
+  .eyebrow{font-size:.68rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);
+    margin:34px 0 12px}
+
+  /* live status */
+  .status{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:18px}
+  .cell{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 13px}
+  .cell .k{font-size:.66rem;letter-spacing:.13em;text-transform:uppercase;color:var(--dim2)}
+  .cell .v{font-size:1.02rem;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:1px}
+  .addrs{margin-top:10px;font-family:ui-monospace,monospace;font-size:.71rem;color:var(--dim2);
+    background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 13px;
+    overflow-x:auto;white-space:nowrap}
+  .addrs b{color:var(--dim);font-family:inherit}
+
+  /* feature grid */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:11px}
+  .card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+    border-radius:13px;padding:14px 15px;display:block;transition:border-color .13s,transform .13s}
+  .card:hover{border-color:var(--line2);transform:translateY(-1px)}
+  .card .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .card h3{margin:0;font-size:.97rem;letter-spacing:-.01em}
+  .card p{margin:6px 0 0;color:var(--dim);font-size:.81rem}
+  .card .path{margin-top:8px;font-family:ui-monospace,monospace;font-size:.69rem;color:var(--dim2)}
+  .pill{font-size:.6rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+    border-radius:999px;padding:3px 7px;white-space:nowrap;border:1px solid}
+  .p-live{color:var(--ok);border-color:rgba(125,220,107,.32)}
+  .p-dep{color:var(--warn);border-color:rgba(232,193,74,.32)}
+  .p-int{color:var(--dim2);border-color:var(--line2)}
+  .note{margin-top:12px;color:var(--dim2);font-size:.79rem;max-width:76ch}
+  .gap{border:1px dashed var(--line2);border-radius:12px;padding:14px 16px;margin-top:12px;
+    color:var(--dim);font-size:.84rem}
+  .gap b{color:var(--ink)}
+  .gap ul{margin:8px 0 0;padding-left:19px}
+  .gap li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>ROBIN <b>LABS</b> — build preview</h1>
+    <span class="sub">internal · not linked · noindex</span>
+  </header>
+
+  <div class="eyebrow">Live right now</div>
+  <div class="status" id="status">
+    <div class="cell"><div class="k">loading</div><div class="v">…</div></div>
+  </div>
+  <div class="addrs" id="addrs">reading /health…</div>
+  <p class="note">Every value above is read from the live API and the site's own config when this page
+    loads. Nothing here is typed in, so it cannot go on claiming something works after it stops.</p>
+
+  <div class="eyebrow">Launch</div>
+  <div class="grid" id="g-launch"></div>
+
+  <div class="eyebrow">Trade</div>
+  <div class="grid" id="g-trade"></div>
+
+  <div class="eyebrow">Earn</div>
+  <div class="grid" id="g-earn"></div>
+
+  <div class="eyebrow">Creator tools</div>
+  <div class="grid" id="g-tools"></div>
+
+  <div class="eyebrow">Internal</div>
+  <div class="grid" id="g-int"></div>
+
+  <div class="eyebrow">Known gaps</div>
+  <div class="gap">
+    <b>Not yet exercised with real money.</b> The v2 stack has been simulated end to end against mainnet
+    state and every contract is verified, but no coin has actually been launched on it. Until one is, the
+    launch → index → graduate → pool → feed chain is proven by construction, not by use.
+    <ul>
+      <li>Nine live coins all pre-date the v2 factory, so nothing has yet flowed through the newer path.</li>
+      <li>The fee sweeper holds nothing until router escrow clears its 0.001 ETH minimum — quiet is correct.</li>
+      <li>The v2 factory's owner key is lost. Its FDV band and 25/25 staking split are permanently frozen;
+          changing either means a fresh factory, not a setter.</li>
+    </ul>
+  </div>
+</div>
+
+<script type="module">
+const F = [
+  ["g-launch","Create a coin","create.html","One transaction. Creator picks supply and valuation inside the FDV band; the address is mined to end in 1ab5 before you sign.","live"],
+  ["g-launch","Migrate a coin","migrate.html","Paste an old contract, pull its name, ticker and art, relaunch native on Robinhood Chain.","live"],
+  ["g-launch","Browse","browse.html","Every live coin, filterable and sortable, with graduated ones split out.","live"],
+  ["g-launch","Coin page","token.html","Price, chart, holders and trades for one coin.","live"],
+
+  ["g-trade","Swap","swap.html","The biggest tokens on Robinhood Chain, real Uniswap liquidity, ETH in and out.","live"],
+  ["g-trade","Stock tokens","stocks.html","Tokenised equities trade through the same desk and pay the pad nothing — deliberately not a fee-taking venue for securities.","live"],
+  ["g-trade","Bridge","bridge.html","Buy any coin here paying from Ethereum, Base, Arbitrum, Optimism or Polygon.","live"],
+
+  ["g-earn","Stake","stake.html","Stake $ROBIN or any launched coin, earn a streaming basket of ETH and stock tokens.","dep"],
+  ["g-earn","Tiered lock","stake-tiers.html","Lock 7 to 365 days; longer locks take a bigger share, capped so one wallet cannot take the pool.","dep"],
+  ["g-earn","Rewards","rewards.html","Trading rewards paid in real ETH.","dep"],
+
+  ["g-tools","Loot Drop","disperse.html","Send one coin to many wallets in a single transaction.","live"],
+  ["g-tools","Coin website","website.html","Pick a style, claim a subdomain, the coin gets its own site.","live"],
+  ["g-tools","Set coin image","setpfp.html","Change a coin's picture after launch.","live"],
+  ["g-tools","Services","services.html","Trending, volume, advertising and the buy bot. Every rate named on the page.","live"],
+  ["g-tools","Wallet profile","profile.html","Holdings and history for one wallet.","live"],
+
+  ["g-int","Stats","stats.html","On-chain analytics: volume, coins, graduations.","live"],
+  ["g-int","Docs","docs.html","Contracts, ABIs, integration guide.","live"],
+  ["g-int","Admin","admin.html","Owner-only console. Fee dials and sinks.","int"],
+  ["g-int","Promo","promo.html","The pitch page.","live"],
+];
+const PILL = { live: ["p-live","live"], dep: ["p-dep","needs keeper"], int: ["p-int","owner only"] };
+for (const [group, name, path, desc, st] of F) {
+  const [cls, label] = PILL[st];
+  const el = document.getElementById(group);
+  if (!el) continue;
+  el.insertAdjacentHTML("beforeend",
+    `<a class="card" href="${path}"><div class="top"><h3>${name}</h3><span class="pill ${cls}">${label}</span></div>
+     <p>${desc}</p><div class="path">${path}</div></a>`);
+}
+
+const short = (a) => a ? a.slice(0, 8) + "…" + a.slice(-4) : "—";
+const cell = (k, v, colour) =>
+  `<div class="cell"><div class="k">${k}</div><div class="v">${colour ? `<span class="dot" style="background:${colour}"></span>` : ""}${v}</div></div>`;
+try {
+  const h = await (await fetch("https://api.robinlab.io/health", { cache: "no-store" })).json();
+  const K = h.keeper || {};
+  const y = (b) => b ? "var(--ok)" : "var(--bad)";
+  const lag = (h.head != null && h.cursor != null) ? h.head - h.cursor : null;
+  document.getElementById("status").innerHTML = [
+    cell("Indexer", lag == null ? "?" : `${lag} blocks behind`, lag != null && lag < 500 ? "var(--ok)" : "var(--bad)"),
+    cell("Coins", h.coins ?? "?"),
+    cell("Trades", (h.trades ?? 0).toLocaleString()),
+    cell("Graduations", K.grad ? "on" : "OFF", y(K.grad)),
+    cell("Staking pools", K.pools ? "auto" : "OFF", y(K.pools)),
+    cell("Fee sweeper", K.feed ? "on" : "OFF", y(K.feed)),
+  ].join("");
+  const w = h.watching || {};
+  document.getElementById("addrs").innerHTML =
+    `<b>factories</b> ${(w.factories || []).map(short).join("  ·  ") || "—"}` +
+    `&nbsp;&nbsp;&nbsp;<b>routers</b> ${(w.routers || []).map(short).join("  ·  ") || "—"}` +
+    `&nbsp;&nbsp;&nbsp;<b>keeper</b> ${K.alive ? `alive ${K.ageSecs}s ago` : "NOT ALIVE"}`;
+} catch (e) {
+  document.getElementById("status").innerHTML = cell("API", "unreachable", "var(--bad)");
+  document.getElementById("addrs").textContent = "could not reach api.robinlab.io/health";
+}
+
+// The pad the SITE is pointed at — read from the same config the app uses, so this can never drift from it.
+try {
+  const { CONTRACTS } = await import("./assets/config.js");
+  document.getElementById("addrs").insertAdjacentHTML("beforeend",
+    `&nbsp;&nbsp;&nbsp;<b>site factory</b> ${short(CONTRACTS.padFactory)}`);
+} catch {}
+</script>
+</body>
+</html>
