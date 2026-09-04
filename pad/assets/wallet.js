@@ -141,7 +141,12 @@ function markDisconnected(on) { try { on ? localStorage.setItem(DISC_KEY, "1") :
 // Max recipients per disperse tx. The contract allows 600, but this chain's per-tx gas ceiling
 // (~16.7M) can't fit ~500+ fresh-recipient transfers, so cap the UI well under that. Exported so
 // the airdrop page enforces the SAME number instead of the contract's un-reachable 600.
-export const DISPERSE_MAX_PER_TX = 600; // matches the Disperse contract's MAX_RECIPIENTS
+// 300, NOT the contract's 600. Every comment around this said 300 and the constant said 600, which is a
+// bug that shipped: 600 fresh recipients costs ~19.2M gas, guardedSend clamps the limit to TX_GAS_CAP
+// (16M, under the chain's 2^24 per-tx ceiling), so a 301-600 airdrop was ACCEPTED by the UI, clamped,
+// and then ran out of gas on-chain -- reverting with the sender's gas spent. The contract's 600 is a
+// backstop, not a reachable number on this chain. Larger airdrops are BATCHED by the caller.
+export const DISPERSE_MAX_PER_TX = 300;
 if (typeof window !== "undefined") {
   window.addEventListener("eip6963:announceProvider", (e) => {
     const d = e.detail;
