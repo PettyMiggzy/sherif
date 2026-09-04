@@ -12,7 +12,7 @@ const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
 const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
-const FLAGS = 0xccn, MASK = 0x3fffn;
+const FLAGS = 0x20ccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(dep, h) {
@@ -39,7 +39,7 @@ describe("SIM — fee conservation over many buys & sells", () => {
 
     const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: addr };
     const poolId = idOf(key);
-    await pm.initialize(key, SQRT_1_1);
+    await pm.connect(factory).initialize(key, SQRT_1_1);
     await hook.connect(factory).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address, floorRecipient: floor.address,
       guardAdapter: ZERO, buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,
@@ -126,12 +126,12 @@ describe("SIM — the floor only ever grows and absorbs dumps", () => {
     for (let i = 0n; ; i++) {
       const sl = ethers.zeroPadValue(ethers.toBeHex(i), 32);
       const a = ethers.getCreate2Address(await dep.getAddress(), sl, ethers.keccak256(hookInit));
-      if ((BigInt(a) & 0x3fffn) === 0xccn) { hookSalt = sl; hookAddr = a; break; }
+      if ((BigInt(a) & 0x3fffn) === 0x20ccn) { hookSalt = sl; hookAddr = a; break; }
     }
     await dep.deploy(hookSalt, hookInit);
     const hook = HookF.attach(hookAddr);
     const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: hookAddr };
-    await pm.initialize(key, SQRT_1_1);
+    await pm.connect(factory).initialize(key, SQRT_1_1);
     const poolIdE = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
       ["tuple(address,address,uint24,int24,address)"], [[key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks]]));
     await hook.connect(owner).registerPool(poolIdE, {

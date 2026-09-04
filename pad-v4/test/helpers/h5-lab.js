@@ -15,7 +15,7 @@ const poolIdOf = (k) =>
 const E = (x) => ethers.parseEther(String(x));
 const f = (x, d = 4) => Number(ethers.formatEther(x)).toFixed(d);
 
-const FLAGS = 0xccn, MASK = 0x3fffn;
+const FLAGS = 0x20ccn, MASK = 0x3fffn;
 function mineHookSalt(dep, h) {
   for (let i = 0n; ; i++) {
     const s = ethers.zeroPadValue(ethers.toBeHex(i), 32);
@@ -60,7 +60,7 @@ async function buildLab(cfg) {
 
   const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: hookAddr };
   const poolId = poolIdOf(key);
-  await pm.initialize(key, SQRT_1_1); // tick 0 == launch
+  await pm.connect(factorySigner).initialize(key, SQRT_1_1); // tick 0 == launch
 
   if (hook) {
     await hook.connect(factorySigner).registerPool(poolId, {

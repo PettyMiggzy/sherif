@@ -10,7 +10,7 @@ const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
 const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
-const FLAGS = 0xccn, MASK = 0x3fffn;
+const FLAGS = 0x20ccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(dep, initCodeHash) {
@@ -59,7 +59,7 @@ describe("RobinFeeHook — adversarial", () => {
 
   async function seedPool(hook, token) {
     const key = { currency0: ZERO, currency1: await token.getAddress(), fee: 3000, tickSpacing: 60, hooks: await hook.getAddress() };
-    await pm.initialize(key, SQRT_1_1);
+    await pm.connect(factorySigner).initialize(key, SQRT_1_1);
     await token.connect(owner).transfer(lp.address, 10n ** 24n);
     await token.connect(lp).approve(await mod.getAddress(), ethers.MaxUint256);
     await mod.connect(lp).modifyLiquidity(
@@ -96,7 +96,7 @@ describe("RobinFeeHook — adversarial", () => {
 
     const key = { currency0: blkAddr, currency1: tokAddr, fee: 3000, tickSpacing: 60, hooks: await hook.getAddress() };
     const poolId = poolIdOf(key);
-    await pm.initialize(key, SQRT_1_1);
+    await pm.connect(factorySigner).initialize(key, SQRT_1_1);
     // seed 2-sided ERC20/ERC20 liquidity (no ETH; both legs settle via transferFrom)
     await blk.connect(owner).transfer(lp.address, 10n ** 24n);
     await tok.connect(owner).transfer(lp.address, 10n ** 24n);

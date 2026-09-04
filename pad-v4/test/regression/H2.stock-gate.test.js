@@ -12,7 +12,7 @@ const { expect } = require("chai");
 const { takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
 const { brandedTokenSalt, tokenInitCode, predictPadToken } = require("../helpers/brand");
 
-const FLAGS = 0xccn, MASK = 0x3fffn;
+const FLAGS = 0x20ccn, MASK = 0x3fffn;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const E = (x) => ethers.parseEther(String(x));
 

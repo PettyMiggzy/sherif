@@ -22,12 +22,23 @@ import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/Pool
 /// the flagged ones (beforeSwap / afterSwap). An unflagged callback is never
 /// invoked by the PoolManager, so the revert is a belt-and-suspenders guard.
 abstract contract BaseHook is IHooks {
-    /// @notice The one-and-only mining target: BEFORE_SWAP(0x80) | AFTER_SWAP(0x40) |
-    /// BEFORE_SWAP_RETURNS_DELTA(0x08) | AFTER_SWAP_RETURNS_DELTA(0x04) == 0x00CC. The two RETURNS_DELTA flags
-    /// are both required: the buy fee is settled via a beforeSwap specified delta, the sell fee via afterSwap.
+    /// @notice The one-and-only mining target: BEFORE_INITIALIZE(0x2000) | BEFORE_SWAP(0x80) |
+    /// AFTER_SWAP(0x40) | BEFORE_SWAP_RETURNS_DELTA(0x08) | AFTER_SWAP_RETURNS_DELTA(0x04) == 0x20CC. The two
+    /// RETURNS_DELTA flags are both required: the buy fee is settled via a beforeSwap specified delta, the sell
+    /// fee via afterSwap.
     /// Public so the factory can require(hook.REQUIRED_FLAGS() == expected) and so the
     /// address miner and the ctor self-assert all read the same source of truth.
-    uint160 public constant REQUIRED_FLAGS = 0x00CC;
+    ///
+    /// BEFORE_INITIALIZE IS LOAD-BEARING, and it was missing. Without it the PoolManager never calls
+    /// beforeInitialize, so ANYONE could initialize a SECOND pool with the same two currencies and THIS hook
+    /// at a different fee or tickSpacing. A v4 PoolId is keccak(currency0, currency1, fee, tickSpacing, hooks),
+    /// so that sibling has a different id, `config[id].registered` is false, and RobinFeeHook.beforeSwap falls
+    /// straight through with ZERO_DELTA: no buy tax, no sell tax, no creator share, no floor carve, and the
+    /// exact-output rejection disabled too (it is gated on the same flag). The pad's own spec sells the tax as
+    /// "unbypassable ... so DexScreener / aggregator / raw-pool trades all pay", which was untrue while a
+    /// sibling pool carrying this very hook traded untaxed -- and looked genuine to any indexer keying on the
+    /// hook address. Found as L-25 and deferred; closed here.
+    uint160 public constant REQUIRED_FLAGS = 0x20CC;
     /// @dev Low 14 bits are the hook-permission field the PoolManager reads from the address.
     uint160 internal constant ALL_HOOK_MASK = 0x3FFF;
 

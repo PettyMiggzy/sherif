@@ -40,8 +40,10 @@ import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin} from "../int
 ///   [D2] Both fees are minted as ERC-6909 claims, so neither collection can be made to fail by draining the
 ///        singleton or by a blocklisted/paused currency; every claim-time `take` is retriable, so a paused stock
 ///        defers that one claim rather than bricking trading or waiving the fee [H-1].
-///   [G1] REQUIRED_FLAGS == 0x00CC, self-asserted in the ctor and cross-checked by the factory.
-///   [G2] No beforeInitialize; config is bound by `registerPool` in the same launch tx.
+///   [G1] REQUIRED_FLAGS == 0x20CC, self-asserted in the ctor and cross-checked by the factory.
+///   [G2] beforeInitialize is FACTORY-ONLY, and config is bound by `registerPool` in the same launch tx.
+///        The `registerPool` binding alone was not enough: it makes the pad's OWN pool taxed, but it does
+///        nothing about a second pool. Only the factory may now stand one up behind this hook.
 contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     using BalanceDeltaLibrary for BalanceDelta;
     using CurrencyLibrary for Currency;
@@ -164,6 +166,24 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     // --------------------------------------------------------------------- //
 
     /// @notice Bind a pool's immutable fee config. Factory-only, once per pool, in the launch tx. [G2]
+    /// @notice Only the factory may initialize a pool that carries this hook. [L-25]
+    /// @dev This hook is mined per-pad and its address is unique, so "a pool with this hook" means "a pool for
+    /// THIS pad" -- and exactly one of those is legitimate: the one the factory opens and then registers in the
+    /// same transaction. Anyone else calling poolManager.initialize with these currencies, this hook and a
+    /// different fee or tickSpacing was previously creating a VALID, UNREGISTERED, UNTAXED sibling pool. It
+    /// looked like a Robin pad to anything keying on the hook address while paying no creator sell tax, no
+    /// floor carve and no platform buy tax.
+    ///
+    /// Gating on `sender` rather than on the key is deliberate: the three factories each build their own key
+    /// (fee, tickSpacing and currencies all vary by pad type), so validating the key here would duplicate that
+    /// logic and drift from it. `factory` is immutable and set in the constructor, so this cannot be widened
+    /// later. It is checked BEFORE the pool exists, which is the only moment a sibling can be stopped.
+    function beforeInitialize(address sender, PoolKey calldata, uint160) external view override returns (bytes4) {
+        if (msg.sender != address(poolManager)) revert NotPoolManager();
+        if (sender != factory) revert NotFactory();
+        return IHooks.beforeInitialize.selector;
+    }
+
     function registerPool(PoolId id, PoolFeeConfig calldata cfg) external override {
         if (msg.sender != factory) revert NotFactory();
         if (config[id].registered) revert AlreadyRegistered();

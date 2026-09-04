@@ -13,7 +13,7 @@ const POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
 const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
-const FLAGS = 0xccn;
+const FLAGS = 0x20ccn;
 const MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
@@ -54,7 +54,7 @@ describe("A3 fork — exact-input skim closes clean against live 0x8366", functi
 
     const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: addr };
     const poolId = poolIdOf(key);
-    await pm.initialize(key, SQRT_1_1);
+    await pm.connect(factory).initialize(key, SQRT_1_1);
     await hook.connect(factory).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address,
       floorRecipient: ZERO, guardAdapter: ZERO, buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000,

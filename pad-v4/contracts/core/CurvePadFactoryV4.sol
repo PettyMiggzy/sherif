@@ -47,7 +47,7 @@ contract CurvePadFactoryV4 {
     address public immutable feeRegistry;
     LockVault public immutable lockVault;
 
-    uint160 internal constant HOOK_FLAGS = 0x00CC;
+    uint160 internal constant HOOK_FLAGS = 0x20CC;
     // [L-1] SAFETY FLOOR (not a product minimum): the minimum ETH the curve integral must yield for cfg.curveSupply
     // over [gradTick, startTick]. A too-high startTickMag lets the raise truncate toward 0 wei, so graduate() would
     // revert EmptyRaise permanently. Set to 1e12 (0.000001 ETH) so it catches only a genuinely degenerate/dust curve
@@ -145,7 +145,7 @@ contract CurvePadFactoryV4 {
     }
 
     /// @notice Launch a free single-sided curve pad. `tokenSalt` is any CREATE2 salt (token only needs to sort
-    /// above native(0), always true). `hookSalt` is mined off-chain so the hook carries flags 0x00CC.
+    /// above native(0), always true). `hookSalt` is mined off-chain so the hook carries flags 0x20CC.
     function launch(LaunchConfig calldata cfg, bytes32 tokenSalt, bytes32 hookSalt, bytes32 curveSalt)
         external
         returns (address token, address hook, address curve, PoolId poolId)

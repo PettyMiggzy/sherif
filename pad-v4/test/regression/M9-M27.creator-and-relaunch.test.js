@@ -13,7 +13,7 @@ const { bindSalt, brandedTokenSalt, predictPadToken } = require("../helpers/bran
 
 const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
-const FLAGS = 0xccn, MASK = 0x3fffn;
+const FLAGS = 0x20ccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 const E = (x) => ethers.parseEther(String(x));
 const poolIdOf = (k) => ethers.keccak256(
@@ -61,7 +61,7 @@ describe("M-9 — one repoint governs both creator books", () => {
 
     const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: addr };
     poolId = poolIdOf(key);
-    await pm.initialize(key, await th.sqrt(START));
+    await pm.connect(factorySigner).initialize(key, await th.sqrt(START));
     await hook.connect(factorySigner).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: A.address, floorRecipient: platform.address,
       guardAdapter: ZERO, buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyBufferShareBps: 2000,

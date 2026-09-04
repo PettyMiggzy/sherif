@@ -16,7 +16,7 @@ const POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
 const POSITION_MANAGER = "0x174c1130aD96Ff0BB5492dD2BF81ccd549572EFA";
 const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 const SQRT_1_1 = 79228162514264337593543950336n;
-const FLAG_MASK = 0x3fffn, HOOK_FLAGS = 0xccn;
+const FLAG_MASK = 0x3fffn, HOOK_FLAGS = 0x20ccn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)", function () {

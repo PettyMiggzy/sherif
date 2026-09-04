@@ -14,7 +14,7 @@ const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
-const FLAGS = 0xccn, MASK = 0x3fffn;
+const FLAGS = 0x20ccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 const E = (x) => ethers.parseEther(String(x));
 const TOKEN = 0;
@@ -117,7 +117,7 @@ describe("H-3 — a short-returning guardAdapter no longer bricks every swap of 
 
     key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: addr };
     poolId = poolIdOf(key);
-    await pm.initialize(key, SQRT_1_1);
+    await pm.connect(factory).initialize(key, SQRT_1_1);
 
     // the pad is registered with a guard adapter that succeeds and returns nothing. guardAdapter is written
     // ONCE here and there is no setter anywhere in the hook — this configuration is permanent.
@@ -170,7 +170,7 @@ describe("H-3 — a short-returning guardAdapter no longer bricks every swap of 
 
     const key2 = { ...key, fee: 500 };
     const id2 = poolIdOf(key2);
-    await pm.initialize(key2, SQRT_1_1);
+    await pm.connect(factory).initialize(key2, SQRT_1_1);
     await hook.connect(factory).registerPool(id2, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address, floorRecipient: floor.address,
       guardAdapter: await adapter.getAddress(), buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000,

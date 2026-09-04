@@ -1,6 +1,6 @@
 const { ethers } = require("hardhat");
 
-const HOOK_FLAGS = 0xccn; // BEFORE_SWAP | AFTER_SWAP | BEFORE_SWAP_RETURNS_DELTA | AFTER_SWAP_RETURNS_DELTA
+const HOOK_FLAGS = 0x20ccn; // BEFORE_SWAP | AFTER_SWAP | BEFORE_SWAP_RETURNS_DELTA | AFTER_SWAP_RETURNS_DELTA
 const FLAG_MASK = 0x3fffn;
 
 // Brand suffix: every Robin pad token address ends in `1ab5`, so a Robin coin is recognizable (and
@@ -10,7 +10,7 @@ const CA_SUFFIX = 0x1ab5n;
 const CA_SUFFIX_MASK = 0xffffn; // low 16 bits == the last 4 hex characters of the address
 
 /// Mine a CREATE2 salt so the hook deployed by `deployerAddr` lands on an address whose low 14
-/// bits equal 0x00CC (the flags the PoolManager reads). Sub-second — ~2^14 expected tries.
+/// bits equal 0x20CC (the flags the PoolManager reads). Sub-second — ~2^14 expected tries.
 function mineHookSalt(deployerAddr, initCode, maxTries = 5_000_000) {
   const initCodeHash = ethers.keccak256(initCode);
   for (let i = 0n; i < BigInt(maxTries); i++) {

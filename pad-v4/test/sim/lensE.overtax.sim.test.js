@@ -8,7 +8,7 @@ const { expect } = require("chai");
 
 const ZERO = ethers.ZeroAddress;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
-const FLAGS = 0xccn, MASK = 0x3fffn;
+const FLAGS = 0x20ccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(dep, h) {
@@ -40,7 +40,7 @@ describe("LENS E — partial-fill buy over-tax at a price boundary", () => {
     const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: addr };
     const poolId = idOf(key);
     const startSqrt = await th.sqrt(START);
-    await pm.initialize(key, startSqrt);
+    await pm.connect(factory).initialize(key, startSqrt);
     await hook.connect(factory).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address, floorRecipient: ZERO,
       guardAdapter: ZERO, buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,

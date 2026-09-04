@@ -5,7 +5,7 @@ const { mineTokenSalt, mineHookSalt, hookInitCode, CA_SUFFIX, CA_SUFFIX_MASK } =
 // Brand suffix: every pad token launched through the Robin tooling lands on a CREATE2 address ending in
 // `1ab5`, so a Robin coin is recognizable from its contract address alone. This pins the miner: the suffix
 // actually lands, distinct pads never collide on a salt, and mining the token does not disturb the hook's
-// flag mining (the hook address must still carry 0x00CC in its low 14 bits, or the PoolManager rejects it).
+// flag mining (the hook address must still carry 0x20CC in its low 14 bits, or the PoolManager rejects it).
 describe("vanity CA — pad tokens end in 1ab5", () => {
   let deployer, deployerAddr, TokenF, HookF, abi;
 
@@ -51,13 +51,13 @@ describe("vanity CA — pad tokens end in 1ab5", () => {
     for (const r of [a, b]) expect(r.addr.toLowerCase().endsWith("1ab5")).to.equal(true);
   });
 
-  it("token mining does NOT disturb the hook's 0x00CC flag mining", async () => {
+  it("token mining does NOT disturb the hook's 0x20CC flag mining", async () => {
     const init = tokenInitFor("Both Mines", "BOTH", 10n ** 24n, deployerAddr);
     const { addr: predictedToken } = mineTokenSalt(deployerAddr, init, ethers.id("BOTH"));
     // the hook init-code embeds the mined token, exactly as launch.js orders it
     const hookInit = hookInitCode(HookF.bytecode, deployerAddr, deployerAddr, deployerAddr, predictedToken);
     const { addr: hookAddr } = mineHookSalt(deployerAddr, hookInit);
-    expect(BigInt(hookAddr) & 0x3fffn).to.equal(0xccn); // hook flags survive
+    expect(BigInt(hookAddr) & 0x3fffn).to.equal(0x20ccn); // hook flags survive
     expect(predictedToken.toLowerCase().endsWith("1ab5")).to.equal(true); // token suffix survives
   });
 });

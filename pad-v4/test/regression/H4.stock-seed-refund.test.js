@@ -10,7 +10,7 @@ const { expect } = require("chai");
 const { takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
 const { bindSalt, brandedTokenSalt, tokenInitCode } = require("../helpers/brand");
 
-const FLAGS = 0xccn, MASK = 0x3fffn;
+const FLAGS = 0x20ccn, MASK = 0x3fffn;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const E = (x) => ethers.parseEther(String(x));
 
@@ -62,7 +62,7 @@ describe("H-4 — the stock seed's remainder goes back to whoever paid it", () =
   });
 
   // mine tokenSalt so the pad token carries the `1ab5` brand suffix AND sorts ABOVE the stock,
-  // and hookSalt for the 0x00CC flags (hook init-code embeds the predicted token, so token mining runs first)
+  // and hookSalt for the 0x20CC flags (hook init-code embeds the predicted token, so token mining runs first)
   async function mineSalts(cfg) {
     const depAddr = await dep.getAddress();
     const factoryAddr = await factory.getAddress();

@@ -52,7 +52,7 @@ contract StockPadFactory {
     LockVault public immutable lockVault;
 
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
-    uint160 internal constant HOOK_FLAGS = 0x00CC;
+    uint160 internal constant HOOK_FLAGS = 0x20CC;
     uint48 internal constant MAX_UINT48 = type(uint48).max;
     /// [H-2] A corporate-action window is hours, not years. `guardWindow` was an unbounded uint32 stamped
     /// immutably into the hook, so a single call could cover ~136 years of frozen trading.

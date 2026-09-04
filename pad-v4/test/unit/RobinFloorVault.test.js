@@ -43,7 +43,7 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
       abi.encode(["address", "address", "address", "address"],
         [await pm.getAddress(), owner.address /* factory */, await reg.getAddress(), await tok.getAddress()]),
     ]);
-    const FLAGS = 0xccn, MASK = 0x3fffn;
+    const FLAGS = 0x20ccn, MASK = 0x3fffn;
     let hookSalt, hookAddr;
     for (let i = 0n; ; i++) {
       const sl = ethers.zeroPadValue(ethers.toBeHex(i), 32);
@@ -55,7 +55,7 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
 
     key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: hookAddr };
     poolId = poolIdOf(key);
-    await pm.initialize(key, SQRT_1_1); // tick 0
+    await pm.connect(owner).initialize(key, SQRT_1_1); // tick 0
     await hook.connect(owner).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: owner.address, floorRecipient: ZERO,
       guardAdapter: ZERO, buyTaxBps: 1, sellTaxBps: 0, sellFloorShareBps: 0,

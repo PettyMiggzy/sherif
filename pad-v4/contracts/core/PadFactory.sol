@@ -42,7 +42,7 @@ contract PadFactory {
     LockVault public immutable lockVault;
 
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
-    uint160 internal constant HOOK_FLAGS = 0x00CC;
+    uint160 internal constant HOOK_FLAGS = 0x20CC;
     // [M-3] Governed ceilings — the same policy the curve path (RobinV4FeeConfig) enforces, so a PadFactory launcher
     // cannot carry a heavier tax than a governed pad. The hook's own MAX_TAX_BPS is looser (3%/side) and does NOT cap
     // the floor share; these bind here. floor/staking RECIPIENTS stay launcher-chosen (a creator's own pools) — that
@@ -116,7 +116,7 @@ contract PadFactory {
     /// @notice Launch an ETH-quoted pad. `msg.value` is the native ETH seed liquidity.
     /// @param cfg launch parameters
     /// @param tokenSalt CREATE2 salt for the token (address only needs to sort > native(0), always true)
-    /// @param hookSalt CREATE2 salt mined so the hook address carries flags 0x00CC
+    /// @param hookSalt CREATE2 salt mined so the hook address carries flags 0x20CC
     function launch(LaunchConfig calldata cfg, bytes32 tokenSalt, bytes32 hookSalt)
         external
         payable

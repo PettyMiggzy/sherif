@@ -15,7 +15,7 @@ const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
 const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
-const FLAGS = 0xccn, MASK = 0x3fffn;
+const FLAGS = 0x20ccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(deployerAddr, initCodeHash) {
@@ -59,7 +59,7 @@ describe("RobinFeeHook — directional tax (ETH-native) closes clean (local real
 
     key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: addr };
     poolId = poolIdOf(key);
-    await pm.initialize(key, SQRT_1_1);
+    await pm.connect(factory).initialize(key, SQRT_1_1);
     await hook.connect(factory).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address,
       floorRecipient: floor.address, guardAdapter: ZERO,
