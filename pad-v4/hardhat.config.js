@@ -78,5 +78,5 @@ module.exports = {
   // [R3] Raised from 180s: the 1ab5 brand mining (test/helpers/brand.js) adds a real keccak loop per launch,
   // and the H-5 attack lab drives multi-hour simulated runs. Individual files pass comfortably; the margin is
   // for late-in-suite slowdown on a long serial run, not for any single slow assertion.
-  mocha: { timeout: 600000 },
+  mocha: { timeout: Number(process.env.MOCHA_TIMEOUT || 600000) },
 };
