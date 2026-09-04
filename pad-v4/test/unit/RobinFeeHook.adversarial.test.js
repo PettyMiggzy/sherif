@@ -59,7 +59,7 @@ describe("RobinFeeHook — adversarial", () => {
 
   async function seedPool(hook, token) {
     const key = { currency0: ZERO, currency1: await token.getAddress(), fee: 3000, tickSpacing: 60, hooks: await hook.getAddress() };
-    await pm.connect(factorySigner).initialize(key, SQRT_1_1);
+    await pm.connect(factory).initialize(key, SQRT_1_1);
     await token.connect(owner).transfer(lp.address, 10n ** 24n);
     await token.connect(lp).approve(await mod.getAddress(), ethers.MaxUint256);
     await mod.connect(lp).modifyLiquidity(
@@ -96,7 +96,7 @@ describe("RobinFeeHook — adversarial", () => {
 
     const key = { currency0: blkAddr, currency1: tokAddr, fee: 3000, tickSpacing: 60, hooks: await hook.getAddress() };
     const poolId = poolIdOf(key);
-    await pm.connect(factorySigner).initialize(key, SQRT_1_1);
+    await pm.connect(factory).initialize(key, SQRT_1_1);
     // seed 2-sided ERC20/ERC20 liquidity (no ETH; both legs settle via transferFrom)
     await blk.connect(owner).transfer(lp.address, 10n ** 24n);
     await tok.connect(owner).transfer(lp.address, 10n ** 24n);
