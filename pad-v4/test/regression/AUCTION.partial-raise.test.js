@@ -182,7 +182,12 @@ describe("[AUCTION regression] partial raises launch, the fee tracks deployed ca
       // and it really pays out — the LAST claimer must not revert for want of a wei
       for (const w of [a, b, c]) await vault.connect(w).claim();
       await vault.withdrawPlatformFee();
-      expect(await ethers.provider.getBalance(await vault.getAddress())).to.equal(0n);
+      // Bounded, NOT exact. _payout floors each contributor's share, so up to one wei per depositor can be left
+      // behind; asserting an exact zero here would pass or fail on whether the deposits happened to divide
+      // evenly, which is luck rather than a property. The real invariant is that the residue is bounded by the
+      // depositor count and that no claim ever reverts for want of a wei — both are asserted.
+      const dust = await ethers.provider.getBalance(await vault.getAddress());
+      expect(dust).to.be.lte(await vault.depositorCount());
     });
   });
 
@@ -237,6 +242,7 @@ describe("[AUCTION regression] partial raises launch, the fee tracks deployed ca
       expect(owed).to.equal(await ethers.provider.getBalance(await vault.getAddress()));
       await vault.connect(a).claim();
       await vault.withdrawPlatformFee();
+      // Exact here, and legitimately so: one depositor means _payout's mulDiv has nothing to floor away.
       expect(await ethers.provider.getBalance(await vault.getAddress())).to.equal(0n);
     });
 

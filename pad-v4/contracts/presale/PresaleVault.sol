@@ -48,7 +48,11 @@ interface IRobinCurveGraduation {
 /// can land the committed launch. finalize() is fail-safe against that: a sniped launch marks the presale Failed(3)
 /// so 100% refunds open immediately — never a brick, a lock, or a theft. A caller who reveals the correct salts into
 /// a premature `TargetNotMet` still burns the commitment (replay-resistance is a presale-terms decision, see M-22/
-/// L-20) — so do NOT call `finalize` before the target is met. A FINALIZE_GRACE escape hatch converts to Failed if
+/// L-20) — so do NOT call `finalize` before it can actually succeed. [AUCTION] That rule is now WIDER than
+/// "before the target is met": splitting minRaise out of target added a second premature-call path, because a
+/// raise between minRaise and the cap reverts `BeforeDeadline` until the deadline passes. Both reverts spend a
+/// correct preimage if one was supplied. The operating rule for a preimage-holder is therefore: finalize only
+/// when totalRaised >= minRaise AND (the cap is full OR the deadline has passed). A FINALIZE_GRACE escape hatch converts to Failed if
 /// finalize is never called. ETH can never be permanently trapped or stolen. Nothing in the audited
 /// curve/hook/factory is modified.
 contract PresaleVault is IUnlockCallback, ReentrancyGuard {

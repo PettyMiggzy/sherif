@@ -180,3 +180,90 @@ With refunds gone the reserve price is the only bidder protection left, and **no
 says how a creator picks it.** `scripts/valuation.js` already computes FDV → USD. Wire the reserve to
 it, bound it just above `minFdvWei`, and show the bidder the implied market cap before they commit.
 A day of work, worth more than the entire ladder.
+
+---
+
+# Round 2 — review of the shipped PresaleVault + LP-1 changes
+
+13 agents, 4 surfaces, 2-lens verify, completeness critic. **4 confirmed, 0 refuted, 7 unverified**
+(verify capacity is 4 findings deep on a 2-slot container; unverified is not "wrong").
+
+## CRITICAL — a 1-wei rounding disagreement bricked the whole vault
+
+Found independently by three of the four surfaces. **Introduced by my own commit `ef1a8c0`.**
+
+`finalize` reserves the platform's cut rounding **down** (`totalRaised * 1000 / 10000`) and then
+reconstructs it rounding **up** out of the spend (`pooledEthSpent * 1000 / 9000`). Below curve
+capacity the buy consumes the entire budget, so the two meet exactly — and on one residue class they
+disagree by a wei:
+
+```
+totalRaised % 10 = 0..8   →  leftover 0
+totalRaised % 10 = 9      →  leftover −1     ← underflow
+```
+
+`_payout`'s `totalRaised - pooledEthSpent - platformFee` then underflows. `finalized` is already true
+so `fail()` is unreachable, which means **every claim, every preview and the platform withdrawal
+revert forever, with 100% of contributor ETH and tokens inside.** One raise in ten, total loss.
+
+Fixed by clamping `platformFee` to `totalRaised - pooledEthSpent`, making
+`platformFee + pooledEthSpent <= totalRaised` structural rather than arithmetical. Costs the platform
+at most one wei. Pinned by a residue sweep over 0, 8 and 9.
+
+The reviewer's diagnosis of *why* it had no slack is the part worth keeping: below capacity the buy
+spends the whole budget, so the ETH-back pool is exactly zero across that entire regime — there was
+nothing anywhere to absorb a rounding excursion.
+
+## HIGH — an under-gassed launch was burned as a front-run
+
+If `finalize` runs out of gas inside a CREATE2, the 63/64 rule leaves the outer frame alive, CREATE2
+yields the zero address, and `DeterministicDeployer.sol:37` reverts with the **typed**
+`DeployFailed()`. L-12's empty-revert check therefore misses it, and a merely under-gassed call
+irreversibly destroyed a funded raise as `Failed(3)`.
+
+`DeployFailed` is now bubbled too. Even where a collision could produce it, bubbling is the safer
+classification: it is retriable, and an unwinnable launch still reaches 100% refunds through the
+reason-2 grace hatch. Misclassifying a snipe costs a wait; misclassifying an out-of-gas costs the
+entire raise.
+
+**Where I disagreed:** the review wanted `MIN_FINALIZE_GAS` raised from 2M to the measured ~8M. No
+value works. A correctly estimated call arrives with roughly what it needs, so any floor high enough
+to guarantee completion also rejects the honest caller whose estimator returned the true cost. It
+stays at 2M, documented as ergonomics rather than protection, with the revert classification named as
+the actual guard.
+
+## What the review could NOT break
+
+Recorded because each was a real attack surface that the code already closes:
+
+- **Re-entrancy through graduation.** Nothing in `graduate()`'s call graph can re-enter the vault.
+  `finalize` is `nonReentrant` (OZ's guard arms correctly in an EIP-1167 clone), `receive()` reverts
+  unless `_gradInFlight`, and `unlockCallback` requires `_expectingUnlock`, which is false by then.
+- **`_gradInFlight` cannot be left set** — both calls are try/caught, anything uncatchable rolls back.
+- **The measured balance delta really is only the bounty** — `graduate()` books its other payouts
+  rather than sending them. Measured 255,056,998,984,077 wei, conservation exact.
+- **Keeping the bounty out of `platformFee` is right**, for the reason the code states.
+- **The 16.7M gas cap is not a problem** — measured 7,978,067 for launch + buy + graduation.
+- **The LP-1 gate does not block graduation's own permanent-LP mint**, and `liquidityDelta == 0` fee
+  pokes route to `beforeRemoveLiquidity`, which is unflagged in `0x28CC`, so they are never gated.
+
+## Also fixed from this round
+
+- `scripts/check-wiring.js` read the hook config with a 15-field ABI against the new 16-field struct —
+  every field after `quoteIsStock` was shifted by one word.
+- `staging/config.js` still mined `HOOK_FLAGS = 0xcc`.
+- `scripts/mine.js`'s flag comment enumerated four flags for a value of `0x28cc`.
+- Inline graduation now emits `GraduationSkipped` instead of being swallowed by the catch.
+- The M-22 operating rule was widened: the `minRaise` split added a second premature-call path
+  (`BeforeDeadline` on a partial raise), and both reverts spend a correct preimage.
+- The conservation test asserted an exact zero balance that only held when deposits happened to
+  divide evenly. It now asserts the real property — residue bounded by depositor count — and keeps the
+  exact assertion only for the single-depositor case, where it is genuinely exact.
+
+## Still open
+
+- **`floorRecipient` is admitted for any tick range** (LOW). It is a one-shot, platform-set contract,
+  so this is a trust question rather than an exposure, but the gate does grant it more than the floor
+  band.
+- **Pro-rata dust has no sweep** (LOW). Bounded by depositor count; documented rather than swept,
+  since there is no point at which "everyone has claimed" is knowable on-chain.
