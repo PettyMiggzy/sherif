@@ -5,6 +5,16 @@ split **10% platform / 90% into the curve**, **4.2 ETH auto-graduation**, gradua
 pools** (ROBIN 40% + a creator-chosen WETH / ETH / stock leg 60%), creator-picked supply, airdrop at
 creation, v4 buy/sell taxes, and **unsold supply into the coin's own staking pool**.
 
+> **⚠ SUPERSEDED IN PART — read [`AUCTION-REVIEW-FINDINGS.md`](AUCTION-REVIEW-FINDINGS.md) first.**
+> An 8-surface adversarial review withdrew §2.2's hook window gate (it does not gate
+> `modifyLiquidity`, so the window is not exclusive; it bricks `restoreCeiling`; and it is a halt
+> switch on a deliberately write-once hook config). It also found that §2.1's brand-salt collision was
+> solving a requirement that does not exist — the pooled buy moves spot, so the curve already opens at
+> the clearing price. The dominant mechanism is the shipped `PresaleVault` with two fields changed.
+> Separately it surfaced a **mainnet-blocking** issue unrelated to the auction: the hook has no
+> liquidity permissions, so `modifyLiquidity` is an untaxed exit and a way to starve graduation.
+
+
 Competitive grounding for all of this is in [`../AUCTION-PAD-RESEARCH.md`](../AUCTION-PAD-RESEARCH.md).
 This document is the design.
 
@@ -140,7 +150,7 @@ Worse, it introduces a brick. If the curve is to open at the auction's final cle
 has to pass `PadValuation`'s FDV band at `launch()`. A clearing price that lands outside the band
 reverts the launch — and with no refund path, the ETH has nowhere to go.
 
-### 2.2 The architecture that removes the question
+### 2.2 The architecture that removes the question — WITHDRAWN, see AUCTION-REVIEW-FINDINGS.md
 
 The curve is **not a custom AMM**. It is a real Uniswap v4 pool seeded as a single token-only range
 `[gradTick, startTick]`, initialized at `startTick`; buyers swap ETH in and walk the tick down
