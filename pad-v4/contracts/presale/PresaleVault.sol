@@ -134,6 +134,13 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     uint256 public platformFee;
     /// @notice Whether that cut has been pulled yet. Separate from the amount for exactly the reason above.
     bool public platformFeePaid;
+    /// @notice [AUCTION] The graduation keeper bounty the curve paid this vault during inline graduation.
+    /// Platform-bound like `platformFee`, but kept in a SEPARATE book because `_payout` SUBTRACTS `platformFee`
+    /// from the contributors' ETH-back pool. This money was never contributor money — it arrived from the curve
+    /// after the raise was already accounted — so subtracting it would shrink every contributor's refund by the
+    /// bounty AND still leave the bounty itself stranded, because the pool it was deducted from is not where it
+    /// physically sits. Booked separately, the vault's outflows sum to its holdings exactly.
+    uint256 public platformBounty;
 
     mapping(address => uint256) public contribution;
     mapping(address => bool) public claimed;
@@ -358,15 +365,11 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         // The most this buy should ever REQUEST: the curve's capacity plus the dust that carries it onto the
         // ceiling. Everything past this is raise the curve cannot take, and it goes back whole.
         uint256 reach = capacity == 0 ? 0 : capacity + CEILING_REACH;
-        uint256 usable = reach >= type(uint256).max / BPS
-            ? totalRaised
-            : Math.mulDiv(reach, BPS, BPS - PLATFORM_FEE_BPS);
-        if (usable > totalRaised) usable = totalRaised;
-        platformFee = (usable * PLATFORM_FEE_BPS) / BPS;
-        uint256 amtIn = usable - platformFee;
-        // The gross-up floors, so this can land a wei above `reach`; clamp rather than request more than the
-        // curve could conceivably take.
-        if (amtIn > reach) amtIn = reach;
+        // ...bounded by what the raise can afford once the platform's cut is reserved. Reserving the MAXIMUM
+        // possible cut here (10% of the whole raise) rather than the eventual one keeps this a pure upper bound:
+        // the real cut is measured after the swap, and is never larger than this.
+        uint256 budget = totalRaised - (totalRaised * PLATFORM_FEE_BPS) / BPS;
+        uint256 amtIn = reach < budget ? reach : budget;
         if (amtIn == 0) revert ZeroBought();
 
         // pooled buy, atomic with the launch
@@ -377,6 +380,15 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
 
         totalTokensBought = IERC20(tok).balanceOf(address(this)) - balBefore; // measured, hook-net
         if (totalTokensBought == 0) revert ZeroBought();
+
+        // [AUCTION] The platform's cut is MEASURED on what the curve actually took, after the fact — never
+        // forecast. `_absorbableIn` is a gross-up estimate and the swap can stop short of it at the price limit,
+        // so charging 10% of an estimate would tax capital that was requested but never deployed, which is the
+        // same defect one layer down. `pooledEthSpent` is the exact figure, so the cut is exactly a ninth of it:
+        // 10% of (deployed + cut). Everything the curve did not take goes back to contributors WHOLE.
+        // Bounded by construction: pooledEthSpent <= amtIn <= totalRaised - 10% of totalRaised, so
+        // platformFee + pooledEthSpent <= totalRaised and _payout's subtraction can never underflow.
+        platformFee = (pooledEthSpent * PLATFORM_FEE_BPS) / (BPS - PLATFORM_FEE_BPS);
 
         // [AUCTION] If the pooled buy filled the curve outright, GRADUATE in this same transaction. A raise big
         // enough to absorb the whole curve has already done all the price discovery there is, and leaving the
@@ -398,10 +410,10 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
             _gradInFlight = false;
             // The curve pays its graduation keeper bounty to whoever triggered it — us. Book it to the platform
             // rather than letting it sit: contributor payouts are computed from fixed accounting, never from this
-            // balance, so an unbooked wei here would be stranded for the life of the vault. Folding it into
-            // `platformFee` keeps the vault's outflows summing exactly to its holdings.
-            uint256 bounty = address(this).balance - balBeforeGrad;
-            if (bounty > 0) platformFee += bounty;
+            // balance, so an unbooked wei here would be stranded for the life of the vault.
+            // Book it SEPARATELY from platformFee — see platformBounty. Folding it into platformFee would
+            // deduct it from the contributors' ETH-back pool, which is not where it came from.
+            platformBounty = address(this).balance - balBeforeGrad;
         }
 
         emit Finalized(tok, curve, poolId, pooledEthSpent, totalTokensBought);
@@ -483,7 +495,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     /// Pull rather than push because a wallet that reverts on receive would otherwise revert `finalize` and
     /// convert a fully-funded raise into a Failed presale.
     function withdrawPlatformFee() external nonReentrant {
-        uint256 amt = platformFee;
+        uint256 amt = platformFee + platformBounty; // [AUCTION] the cut plus any inline-graduation bounty
         if (amt == 0 || platformFeePaid) return;
         platformFeePaid = true; // CEI — the FLAG is what guards the re-entry, not the amount
         address to = IFeeWalletRegistry(curvePadFactory.feeRegistry()).platformFeeWallet();

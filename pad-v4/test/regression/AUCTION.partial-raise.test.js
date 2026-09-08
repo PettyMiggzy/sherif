@@ -163,8 +163,10 @@ describe("[AUCTION regression] partial raises launch, the fee tracks deployed ca
       const fee = await vault.platformFee();
       expect(spent).to.be.lt(TARGET);                       // the defect's precondition: capacity < raise
       expect(fee).to.be.lt((TARGET * PLATFORM_FEE_BPS) / BPS); // strictly less than the old charge
-      // and it is 1/9 of what was deployed, i.e. 10% of (deployed + fee) — the slice actually put to work
-      expect(fee).to.be.closeTo((spent * PLATFORM_FEE_BPS) / (BPS - PLATFORM_FEE_BPS), 10n ** 12n);
+      // and it is EXACTLY a ninth of what was deployed, i.e. 10% of (deployed + fee) — the slice actually put
+      // to work. Exact, not approximate, because the cut is measured from pooledEthSpent after the swap rather
+      // than forecast from _absorbableIn's gross-up estimate.
+      expect(fee).to.equal((spent * PLATFORM_FEE_BPS) / (BPS - PLATFORM_FEE_BPS));
     });
 
     it("CONSERVATION: every wei the vault holds after the buy is owed to a contributor or the platform", async () => {
@@ -173,7 +175,7 @@ describe("[AUCTION regression] partial raises launch, the fee tracks deployed ca
       for (const w of [a, b, c]) await vault.connect(w).deposit({ value: TARGET / 3n });
       await fin(vault, salts);
 
-      let owed = await vault.platformFee();
+      let owed = (await vault.platformFee()) + (await vault.platformBounty());
       for (const w of [a, b, c]) owed += (await vault.previewClaim(w.address)).ethBack;
       expect(owed).to.equal(await ethers.provider.getBalance(await vault.getAddress()));
 
@@ -200,7 +202,9 @@ describe("[AUCTION regression] partial raises launch, the fee tracks deployed ca
       await vault.connect(a).deposit({ value: E(3) });
       await fin(vault, salts);
       // conservation must still hold with the bounty folded in — this is the whole reason it is folded
-      const owed = (await vault.platformFee()) + (await vault.previewClaim(a.address)).ethBack;
+      expect(await vault.platformBounty()).to.be.gt(0n); // the curve really did pay a bounty to graduate
+      const owed = (await vault.platformFee()) + (await vault.platformBounty())
+        + (await vault.previewClaim(a.address)).ethBack;
       expect(owed).to.equal(await ethers.provider.getBalance(await vault.getAddress()));
       await vault.connect(a).claim();
       await vault.withdrawPlatformFee();

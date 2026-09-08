@@ -111,16 +111,22 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
     const poolId = ev.args.poolId;
     const hookAddr = ethers.getCreate2Address(depAddr, salts.hookSalt,
       ethers.keccak256(hookInitCode(hookF.bytecode, pmAddr, factoryAddr, regAddr, salts.predictedToken)));
-    return { vault, hook: hookF.attach(hookAddr), poolId, target };
+    // [AUCTION] The buy tax must be read from the BuyTaxed EVENT, not from the hook's books. finalize now
+    // graduates inline when the pooled buy fills the curve, and graduate() calls claimBuffer(), which ZEROES
+    // bufferOwed — so reading hook state after the fact sees only the platform's 80% and misses the 20% buffer
+    // leg. The event is emitted at skim time and is immune to any later sweep.
+    const hook = hookF.attach(hookAddr);
+    const buyTax = rc.logs.map((l) => { try { return hook.interface.parseLog(l); } catch { return null; } })
+      .filter((e) => e && e.name === "BuyTaxed")
+      .reduce((acc, e) => acc + e.args.platformCut + e.args.bufferCut, 0n);
+    return { vault, hook, poolId, target, buyTax };
   }
 
   it("the buy tax now tracks what actually swapped, not the whole raise", async () => {
     const TARGET = E(3);
-    const { vault, hook, poolId } = await runPresale(TARGET);
+    const { vault, buyTax: taxed } = await runPresale(TARGET);
 
     const spent = await vault.pooledEthSpent();
-    // referralShareBps is 0, so platform + buffer IS the entire buy tax the hook booked
-    const taxed = (await hook.platformOwed(poolId, 0)) + (await hook.bufferOwed(poolId));
 
     const asPctOfTarget = Number((taxed * 1000000n) / TARGET) / 10000;
     console.log(`   raised ${ethers.formatEther(TARGET)} ETH; curve absorbed ${ethers.formatEther(spent)}; ` +
@@ -149,7 +155,7 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
     // returned WHOLE, which makes the fee strictly less than the old 10%-of-target and the surplus larger.
     const fee = await vault.platformFee();
     expect(fee).to.be.lt((TARGET * 1000n) / 10000n);
-    expect(fee).to.be.closeTo((spent * 1000n) / 9000n, 10n ** 12n); // 10% of the slice actually put to work
+    expect(fee).to.equal((spent * 1000n) / 9000n); // exactly 10% of the slice actually put to work
     const surplus = TARGET - spent - fee;
     expect(surplus).to.be.gt(0n);
 
