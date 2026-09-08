@@ -69,6 +69,12 @@ async function buildLab(cfg) {
       buyBufferShareBps: 2000, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,
     });
     await hook.connect(factorySigner).setBufferRecipient(poolId, owner.address);
+    // [LP-1] This lab models a LIVE, GRADUATED pad: the floor vault builds its wall out of sell-tax carve that
+    // only exists after the curve has been traded and graduated, and the ambient depth minted below stands in
+    // for a real market, not for the curve's own seed. So lift the curve-phase liquidity lock, exactly as
+    // RobinCurveV4.graduate() does, before any third-party liquidity is minted — otherwise beforeAddLiquidity
+    // (correctly) rejects the lab's generic PoolModifyLiquidityTest router with LiquidityLocked.
+    await hook.connect(owner).onGraduated(poolId);
   }
 
   const mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());
