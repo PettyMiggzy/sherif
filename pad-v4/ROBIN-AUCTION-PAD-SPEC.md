@@ -292,3 +292,71 @@ Still open:
 - **Does a route that hops both graduated pools pay the tax twice, or is the second hop exempt?**
 - **Does the auction fill itself pay the 1.25% buy tax**, on top of the 10% platform cut of the raise?
   Charging both takes the same money twice, straight out of what seeds the curve.
+
+---
+
+## 7. What actually shipped
+
+Two changes to `PresaleVault`, no new contracts, following the review's recommended build order.
+
+### 7.1 `minRaise` split out of `target`
+
+`target` used to be both the deposit cap and the amount a raise had to reach to launch — all or nothing.
+It is now the cap only, and `minRaise` is the floor. `minRaise == target` reproduces the original
+contract exactly; the owner's setting is `minRaise == MIN_TARGET` (0.01 ETH) — **there is no failed
+launch**.
+
+One guard came with it: **a partial raise may only finalize after the deadline.** Without it, whoever
+holds the salt preimage could finalize the instant `minRaise` was crossed and settle the raise on top
+of every contributor still arriving. A full raise still finalizes immediately, as before.
+
+`_finalizeAnchor()` returns `filledAt` if the raise ever filled, otherwise `deadline`. Both
+`finalize`'s [L-20] upper bound and `fail`'s [L-13] reason-2 escape hatch read it, so exactly one of
+the two is live at any moment — a partial raise never stamps `filledAt`, and anchoring at 0 would have
+put the whole window in the past, making `finalize` permanently unreachable while `fail` refunded a
+raise that was entitled to launch.
+
+`fail` reason 1 now triggers below `minRaise` rather than below `target`. At `minRaise == MIN_TARGET`
+that branch is all but unreachable — which is the point — but it is deliberately kept, because it is
+the path that makes the "contributor ETH is never trapped" invariant true.
+
+### 7.2 The platform's cut is charged on deployed capital
+
+`[M-1]` already stopped the over-capacity part of a raise being taxed inside the swap. But the
+platform's 10% was still taken on `totalRaised`, so ETH that never reached the curve — and came
+straight back through the pro-rata `ethBack` path — was charged a launch fee on its way out.
+
+```
+capacity = _absorbableIn(...)                                  // unchanged
+usable   = min(totalRaised, capacity * BPS / (BPS - PLATFORM_FEE_BPS))
+platformFee = usable * PLATFORM_FEE_BPS / BPS
+amtIn = usable - platformFee, clamped down to capacity
+```
+
+Everything beyond what the curve can absorb now goes back whole. When capacity comfortably exceeds the
+raise this reduces to exactly the old arithmetic — 10% of the raise — so a presale that fits inside its
+curve is unaffected.
+
+### 7.3 Inline graduation
+
+A pooled buy sized to the curve's full capacity lands spot at the graduation ceiling, so a large raise
+finishes its price discovery inside `finalize`. The vault now calls `curve.graduate()` in that same
+transaction when `ready()`, behind a code check and try/catch — a graduation failure must never undo a
+raise that already succeeded, and `graduate()` stays permissionless for anyone to land afterwards.
+
+This matters more than it looks: on the live v3 stack the production graduation path **has never
+fired** (`LIVE_DEPLOYMENT.md` — 9 coins, 46k trades, ~115 ETH, 0 graduated), because it needs an
+operator daemon nobody is incentivised to run.
+
+The curve pays its graduation keeper bounty to `msg.sender` — the vault. The vault had no `receive()`,
+so that send would have failed and the bounty would have been booked to `gasBountyOwed[vault]` on the
+curve and stranded there forever, since nothing in the vault can call `claimGasBounty`. A `receive()`
+gated to a single call frame (`_gradInFlight`) accepts it and nothing else, and the amount is measured
+as a balance delta and folded into `platformFee` — contributor payouts are computed from fixed
+accounting rather than from this balance, so an unbooked wei here would be stranded.
+
+### 7.4 Still not built
+
+The dual-pool ROBIN leg, the stock-paired variant, and the tranche ladder are all **cut** per the
+review. The ROBIN tokenomic is available today without touching `graduate()`: a keeper spending the
+platform's existing graduation cut into ROBIN's own pool buys the same thing.

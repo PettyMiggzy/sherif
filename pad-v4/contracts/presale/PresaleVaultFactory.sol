@@ -35,6 +35,7 @@ contract PresaleVaultFactory {
         LaunchConfig calldata cfg,
         bytes32 saltCommitment,
         uint256 target,
+        uint256 minRaise,
         uint64 deadline,
         uint256 perWalletCap,
         uint256 minContribution,
@@ -52,8 +53,8 @@ contract PresaleVaultFactory {
                 || cfg.tickSpacing <= 0 // [re-audit] launch's 6th unconditional pure-cfg reject (CurvePadFactoryV4 `ts <= 0`)
         ) revert BadParams();
         vault = Clones.clone(implementation);
-        PresaleVault(vault).initialize(
-            curvePadFactory, cfg, saltCommitment, target, deadline, perWalletCap, minContribution, finalizeGrace
+        PresaleVault(payable(vault)).initialize(
+            curvePadFactory, cfg, saltCommitment, target, minRaise, deadline, perWalletCap, minContribution, finalizeGrace
         );
         presales.push(vault);
         isPresale[vault] = true;

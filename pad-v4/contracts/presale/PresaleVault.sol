@@ -22,6 +22,11 @@ import {RobinV4FeeConfig} from "../core/RobinV4FeeConfig.sol";
 import {PadValuation} from "../core/PadValuation.sol";
 import {IFeeWalletRegistry} from "../interfaces/IRobinInterfaces.sol";
 
+interface IRobinCurveGraduation {
+    function ready() external view returns (bool);
+    function graduate() external;
+}
+
 /// @title PresaleVault — a trustless, refundable ETH presale for a not-yet-launched Robin V4 curve
 /// @notice One instance PER presale (EIP-1167 clone, initialize()-d atomically by the factory). A creator opens a
 /// presale with a TARGET + DEADLINE + per-wallet cap; anyone deposits ETH and can REFUND in full any time the
@@ -70,7 +75,14 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     IPoolManager public poolManager;
     LaunchConfig internal cfg; // exposed via launchConfig() (explicit getter → returns string members cleanly)
     bytes32 public saltCommitment; // keccak256(abi.encode(tokenSalt, hookSalt, curveSalt))
-    uint256 public target; // == hardCap
+    /// @notice The DEPOSIT CEILING. Deposits are trimmed to it and it can never be exceeded.
+    uint256 public target; // the hard cap
+    /// @notice [AUCTION] The FINALIZE FLOOR — the least a raise may be and still launch. Split out of `target`,
+    /// which used to be both cap and floor, so a raise that does not fill still becomes a live coin instead of a
+    /// refund. Set it equal to `target` to reproduce the original all-or-nothing presale exactly.
+    /// A partial raise may only finalize AFTER the deadline (see finalize), so splitting these does not hand the
+    /// preimage-holder an option to close the raise early on the contributors who are still arriving.
+    uint256 public minRaise;
     uint64 public deadline;
     uint64 public finalizeGrace;
     uint256 public perWalletCap;
@@ -91,6 +103,13 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     bool public finalized;
     bool public failed;
     bool private _expectingUnlock; // gates unlockCallback to a finalize the vault itself initiated
+    /// @dev [AUCTION] Open ONLY across the inline `graduate()` call in finalize. The curve pays its graduation
+    /// keeper bounty to `msg.sender` — this vault — and the vault otherwise has no `receive()`, so without this
+    /// the send would fail and the bounty would be booked to `gasBountyOwed[vault]` on the curve and stranded
+    /// there forever (nothing here can call `claimGasBounty`). Kept to a single call frame so accepting the
+    /// bounty does not open a general donation surface: ETH that arrives at any other time still reverts, and no
+    /// new way to strand value in this vault is created.
+    bool private _gradInFlight;
 
     uint256 public totalRaised;
     uint64 public filledAt; // [L-13] block.timestamp the raise first reached target (0 until then); anchors the grace window
@@ -146,6 +165,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         LaunchConfig calldata cfg_,
         bytes32 saltCommitment_,
         uint256 target_,
+        uint256 minRaise_,
         uint64 deadline_,
         uint256 perWalletCap_,
         uint256 minContribution_,
@@ -154,6 +174,9 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         if (initialized) revert AlreadyInitialized();
         if (
             curvePadFactory_ == address(0) || saltCommitment_ == bytes32(0) || target_ < MIN_TARGET
+                // [AUCTION] the floor is a real raise and can never exceed the cap; minRaise_ == target_ is the
+                // original all-or-nothing presale, minRaise_ == MIN_TARGET is the no-failed-launch auction.
+                || minRaise_ < MIN_TARGET || minRaise_ > target_
                 || perWalletCap_ == 0 || minContribution_ == 0 || minContribution_ > target_
                 || minContribution_ > perWalletCap_ // [L-21] else every deposit reverts (below floor → BelowMin, at/above → CapExceeded)
                 || deadline_ < block.timestamp + MIN_DURATION || deadline_ > block.timestamp + MAX_DURATION
@@ -177,6 +200,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         if (fdv0 < d0.minFdvWei || fdv0 > d0.maxFdvWei) revert BadParams();
         saltCommitment = saltCommitment_;
         target = target_;
+        minRaise = minRaise_;
         deadline = deadline_;
         perWalletCap = perWalletCap_;
         minContribution = minContribution_;
@@ -228,11 +252,19 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         // needs replay-resistance, a presale-terms decision left for the operator; see M-22 / L-20 in the ledger.)
         if (keccak256(abi.encode(tokenSalt, hookSalt, curveSalt)) != saltCommitment) revert BadReveal();
         if (finalized || failed) revert NotOpen();
-        if (totalRaised < target) revert TargetNotMet();
-        // [L-20] The preimage-holder's launch option EXPIRES at the end of the grace window (anchored to filledAt,
-        // like fail()'s reason-2 hatch below), so finalize and the Failed(2) escape hatch are never both live: past
-        // this point only fail() reason 2 (100% refunds) is reachable, giving L-13's contributor lock a hard ceiling.
-        if (block.timestamp > uint256(filledAt) + finalizeGrace) revert AfterDeadline();
+        if (totalRaised < minRaise) revert TargetNotMet();
+        // [AUCTION] A raise that has NOT filled the cap may only launch once the deadline has passed. Without this
+        // the preimage-holder could finalize the instant `minRaise` was crossed and settle the raise on top of every
+        // contributor still arriving — the split between floor and cap must not become an early-close option.
+        // A FULL raise still finalizes immediately, exactly as before.
+        if (totalRaised < target && block.timestamp < deadline) revert BeforeDeadline();
+        // [L-20] The preimage-holder's launch option EXPIRES at the end of the grace window, so finalize and the
+        // Failed(2) escape hatch are never both live: past this point only fail() reason 2 (100% refunds) is
+        // reachable, giving L-13's contributor lock a hard ceiling.
+        // [AUCTION] Anchored to filledAt when the raise FILLED, else to the deadline — a partial raise never
+        // stamps filledAt, and anchoring it at 0 would put the whole window in the past and make finalize
+        // permanently unreachable while fail() reason 2 refunded a raise that was entitled to launch.
+        if (block.timestamp > _finalizeAnchor() + finalizeGrace) revert AfterDeadline();
         // [L-12] Guarantee enough gas for launch + the pooled buy BEFORE flipping state, so an under-gassed call can
         // never let the EIP-150 63/64 rule brick the atomic launch and silently convert a funded presale to Failed(3).
         if (gasleft() < MIN_FINALIZE_GAS) revert InsufficientGas();
@@ -304,12 +336,22 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         // fail() leaves platformFee at zero and every deposit comes back whole. `totalRaised` is left
         // untouched because it is the pro-rata denominator every contributor is measured against — the fee is
         // subtracted from what the buy may spend, and again from the ETH-back pool in _claim.
-        platformFee = (totalRaised * PLATFORM_FEE_BPS) / BPS;
-        uint256 buyBudget = totalRaised - platformFee;
-
-        uint256 amtIn =
+        // [AUCTION] The cut is taken on the slice of the raise that is actually DEPLOYED, not on the whole raise.
+        // [M-1] already stopped the over-CAPACITY part of a raise from being taxed inside the swap, but the
+        // platform's 10% was still charged on `totalRaised` — so ETH that never reached the curve, and came
+        // straight back to the contributor through the pro-rata ETH-back path, was charged a launch fee anyway.
+        // Gross the curve's capacity back up through the fee that comes off the top to get the slice of the raise
+        // that can actually be put to work; everything beyond it is returned WHOLE.
+        uint256 capacity =
             _absorbableIn(TickMath.getSqrtPriceAtTick(startTick), gradSqrt, c.curveSupply, d.lpFee, d.buyTaxBps);
-        if (amtIn > buyBudget) amtIn = buyBudget;
+        uint256 usable = capacity >= type(uint256).max / BPS
+            ? totalRaised
+            : Math.mulDiv(capacity, BPS, BPS - PLATFORM_FEE_BPS);
+        if (usable > totalRaised) usable = totalRaised;
+        platformFee = (usable * PLATFORM_FEE_BPS) / BPS;
+        uint256 amtIn = usable - platformFee;
+        // Both steps floor, so the gross-up can land at most a wei above capacity; clamp rather than over-request.
+        if (amtIn > capacity) amtIn = capacity;
         if (amtIn == 0) revert ZeroBought();
 
         // pooled buy, atomic with the launch
@@ -320,7 +362,48 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
 
         totalTokensBought = IERC20(tok).balanceOf(address(this)) - balBefore; // measured, hook-net
         if (totalTokensBought == 0) revert ZeroBought();
+
+        // [AUCTION] If the pooled buy filled the curve outright, GRADUATE in this same transaction. A raise big
+        // enough to absorb the whole curve has already done all the price discovery there is, and leaving the
+        // coin sitting on a sold-out curve waiting for a keeper is the state the live v3 stack has never gotten
+        // out of (LIVE_DEPLOYMENT.md: 9 coins, 0 graduated, graduation keeper mandatory).
+        // Non-bricking on purpose: graduation is a large external call into the curve, the LockVault and the
+        // PositionManager, and none of it may be allowed to undo a raise that has already succeeded. If it
+        // reverts the presale is still finalized, claims still work, and `graduate()` stays permissionless for
+        // anyone to land afterwards. Guarded by a code check first because a codeless address would revert the
+        // typed call UNCAUGHT by try/catch.
+        if (curve.code.length > 0) {
+            uint256 balBeforeGrad = address(this).balance;
+            _gradInFlight = true;
+            try IRobinCurveGraduation(curve).ready() returns (bool r) {
+                if (r) {
+                    try IRobinCurveGraduation(curve).graduate() {} catch {}
+                }
+            } catch {}
+            _gradInFlight = false;
+            // The curve pays its graduation keeper bounty to whoever triggered it — us. Book it to the platform
+            // rather than letting it sit: contributor payouts are computed from fixed accounting, never from this
+            // balance, so an unbooked wei here would be stranded for the life of the vault. Folding it into
+            // `platformFee` keeps the vault's outflows summing exactly to its holdings.
+            uint256 bounty = address(this).balance - balBeforeGrad;
+            if (bounty > 0) platformFee += bounty;
+        }
+
         emit Finalized(tok, curve, poolId, pooledEthSpent, totalTokensBought);
+    }
+
+    /// @dev [AUCTION] The instant the finalize window starts counting: when the raise FILLED the cap if it ever
+    /// did, otherwise the deadline. `fail()` reads the same helper, so the launch option and the Failed(2)
+    /// escape hatch open and close on exactly the same boundary and are never both live.
+    function _finalizeAnchor() internal view returns (uint256) {
+        return filledAt != 0 ? uint256(filledAt) : uint256(deadline);
+    }
+
+    /// @notice ETH is accepted ONLY across the inline graduation call in finalize, where the curve pays this
+    /// vault the graduation keeper bounty. Every other send reverts, so this does not become a way for anyone to
+    /// strand value here — contributor payouts are driven by fixed accounting, not by this contract's balance.
+    receive() external payable {
+        if (!_gradInFlight) revert EthSendFailed();
     }
 
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {
@@ -428,8 +511,11 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     /// aren't locked until a far-off deadline. Permissionless.
     function fail() external nonReentrant {
         if (finalized || failed) revert NotOpen();
-        if (totalRaised < target) {
-            // under target: can only fail once the deadline lapses (deposits may still fill it until then)
+        if (totalRaised < minRaise) {
+            // [AUCTION] Below the FLOOR the raise can never launch, so it fails at the deadline exactly as
+            // before. With minRaise == MIN_TARGET this branch is all but unreachable, which is the point of the
+            // no-failed-launch setting — but it is deliberately kept, because it is the path that makes the
+            // "contributor ETH is never trapped" invariant true, and deleting it would make that claim false.
             if (block.timestamp <= deadline) revert BeforeDeadline();
             failed = true;
             emit Failed(1);
@@ -438,7 +524,7 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
             // deadline, so an EARLY-filled raise isn't locked until a far-off deadline+grace. filledAt is guaranteed
             // set here (target is reachable only via deposit(), which stamps it) and is always <= deadline (deposits
             // revert past the deadline). Matches finalize()'s [L-20] upper bound: exactly one of the two is ever live.
-            if (block.timestamp > uint256(filledAt) + finalizeGrace) {
+            if (block.timestamp > _finalizeAnchor() + finalizeGrace) {
                 failed = true;
                 emit Failed(2);
             } else {

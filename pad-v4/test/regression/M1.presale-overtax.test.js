@@ -94,7 +94,7 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
     const salts = await prepareSalts(tag, cfg);
     const now = await time.latest();
     const minC = target / 10n; // three roughly-equal deposits must each clear it
-    const args = [cfg, salts.commitment, target, BigInt(now) + 2n * 86400n, target, minC, 86400n];
+    const args = [cfg, salts.commitment, target, target, BigInt(now) + 2n * 86400n, target, minC, 86400n];
     const vaultAddr = await presaleFactory.createPresale.staticCall(...args);
     await (await presaleFactory.createPresale(...args)).wait();
     const vault = await ethers.getContractAt("PresaleVault", vaultAddr);
@@ -137,10 +137,15 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
     const TARGET = E(3);
     const { vault } = await runPresale(TARGET);
     const spent = await vault.pooledEthSpent();
-    // The platform's 10% is taken off the top of a successful raise, so it is neither swapped nor returned —
+    // The platform's cut is taken off the top of a successful raise, so it is neither swapped nor returned —
     // the surplus a contributor gets back is what is left after BOTH the buy and the fee.
+    // [AUCTION] That cut is now charged on DEPLOYED capital, not on the whole raise. M-1 stopped the
+    // over-capacity part of a raise being taxed inside the SWAP, but the platform's 10% was still taken on
+    // totalRaised — so the surplus this test is about was charged a launch fee on its way back out. It is now
+    // returned WHOLE, which makes the fee strictly less than the old 10%-of-target and the surplus larger.
     const fee = await vault.platformFee();
-    expect(fee).to.equal((TARGET * 1000n) / 10000n);
+    expect(fee).to.be.lt((TARGET * 1000n) / 10000n);
+    expect(fee).to.be.closeTo((spent * 1000n) / 9000n, 10n ** 12n); // 10% of the slice actually put to work
     const surplus = TARGET - spent - fee;
     expect(surplus).to.be.gt(0n);
 

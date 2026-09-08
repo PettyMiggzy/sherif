@@ -117,10 +117,10 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
       t.deadline = at + (t.deadlineIn ?? 2n * 86400n);
     }
     const vaultAddr = await presaleFactory.createPresale.staticCall(
-      cfg, salts.commitment, t.target, t.deadline, t.perWalletCap, t.minContribution, t.finalizeGrace
+      cfg, salts.commitment, t.target, t.minRaise ?? t.target, t.deadline, t.perWalletCap, t.minContribution, t.finalizeGrace
     );
     await (await presaleFactory.createPresale(
-      cfg, salts.commitment, t.target, t.deadline, t.perWalletCap, t.minContribution, t.finalizeGrace
+      cfg, salts.commitment, t.target, t.minRaise ?? t.target, t.deadline, t.perWalletCap, t.minContribution, t.finalizeGrace
     )).wait();
     const vault = await ethers.getContractAt("PresaleVault", vaultAddr);
     return { vault, vaultAddr, cfg, salts, terms: t };
@@ -144,9 +144,9 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
 
     const before = await presaleFactory.presaleCount();
     const predicted = await presaleFactory.createPresale.staticCall(
-      cfg, salts.commitment, target, deadline, E(2), E("0.1"), 86400n
+      cfg, salts.commitment, target, target, deadline, E(2), E("0.1"), 86400n
     );
-    await expect(presaleFactory.createPresale(cfg, salts.commitment, target, deadline, E(2), E("0.1"), 86400n))
+    await expect(presaleFactory.createPresale(cfg, salts.commitment, target, target, deadline, E(2), E("0.1"), 86400n))
       .to.emit(presaleFactory, "PresaleCreated").withArgs(predicted, creator.address, target, deadline);
 
     expect(await presaleFactory.isPresale(predicted)).to.equal(true);
@@ -173,29 +173,29 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
 
     // target below MIN_TARGET (0.01 ether)
     await expect(
-      presaleFactory.createPresale(cfg, salts.commitment, E("0.005"), okDeadline, E(2), E("0.001"), 86400n)
+      presaleFactory.createPresale(cfg, salts.commitment, E("0.005"), E("0.005"), okDeadline, E(2), E("0.001"), 86400n)
     ).to.be.revertedWithCustomError(impl, "BadParams");
 
     // deadline too soon (< now + MIN_DURATION 1h)
     await expect(
-      presaleFactory.createPresale(cfg, salts.commitment, E(3), BigInt(now) + 1800n, E(2), E("0.1"), 86400n)
+      presaleFactory.createPresale(cfg, salts.commitment, E(3), E(3), BigInt(now) + 1800n, E(2), E("0.1"), 86400n)
     ).to.be.revertedWithCustomError(impl, "BadParams");
 
     // minContribution > target
     await expect(
-      presaleFactory.createPresale(cfg, salts.commitment, E(3), okDeadline, E(2), E(4), 86400n)
+      presaleFactory.createPresale(cfg, salts.commitment, E(3), E(3), okDeadline, E(2), E(4), 86400n)
     ).to.be.revertedWithCustomError(impl, "BadParams");
 
     // finalizeGrace below GRACE_MIN (1h)
     await expect(
-      presaleFactory.createPresale(cfg, salts.commitment, E(3), okDeadline, E(2), E("0.1"), 60n)
+      presaleFactory.createPresale(cfg, salts.commitment, E(3), E(3), okDeadline, E(2), E("0.1"), 60n)
     ).to.be.revertedWithCustomError(impl, "BadParams");
 
     // [L-21 / re-audit] a pure-cfg config launch rejects UNCONDITIONALLY (tickSpacing <= 0) must not reach a live
     // presale (else contributor ETH is locked until finalize inevitably reverts BadGeometry). createPresale rejects it.
     const badTs = { ...cfg, tickSpacing: 0 };
     await expect(
-      presaleFactory.createPresale(badTs, salts.commitment, E(3), okDeadline, E(2), E("0.1"), 86400n)
+      presaleFactory.createPresale(badTs, salts.commitment, E(3), E(3), okDeadline, E(2), E("0.1"), 86400n)
     ).to.be.revertedWithCustomError(presaleFactory, "BadParams");
   });
 

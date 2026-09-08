@@ -216,7 +216,7 @@ describe("[FDV] creators choose their own supply; the FACTORY bounds the valuati
     );
     const now = (await ethers.provider.getBlock("latest")).timestamp;
     const deadline = BigInt(now) + 7n * 86400n;
-    const open = (cfg) => pf.createPresale(cfg, ethers.id("commit"), ethers.parseEther("3"), deadline, ethers.parseEther("2"), ethers.parseEther("0.1"), 86400n);
+    const open = (cfg) => pf.createPresale(cfg, ethers.id("commit"), ethers.parseEther("3"), ethers.parseEther("3"), deadline, ethers.parseEther("2"), ethers.parseEther("0.1"), 86400n);
 
     // dust valuation: without the open-time check this presale takes deposits for a week, then finalize's
     // try/catch swallows MarketCapOutOfRange and burns the raise to Failed(3) "sniped"
