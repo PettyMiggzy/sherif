@@ -54,7 +54,7 @@ describe("RobinAmbushVault — two-sided ETH-seeded ambush band", () => {
     return (await ethers.getContractFactory("RobinAmbushVault")).deploy(
       // [L-17] stakingRecipient must be non-zero; default to a code-bearing stub for tests that don't exercise staking
       await pm.getAddress(), await stateView.getAddress(), floorRecipient, stakingRecipient ?? (await stakingStub.getAddress()),
-      await curve.getAddress(), ZERO, await tok.getAddress(), FEE, TS, ZERO, 0 /* gap */, 10 /* width spacings */
+      await curve.getAddress(), ZERO, await tok.getAddress(), FEE, TS, ZERO, 0 /* gap */, 10 /* width spacings */, 0 /* sell gap */, 10 /* sell width */
     );
   }
 
@@ -160,7 +160,7 @@ describe("RobinAmbushVault — two-sided ETH-seeded ambush band", () => {
       .deploy(0, ZERO, await tok.getAddress(), FEE, TS, ZERO);
     await expect(
       F.deploy(await pm.getAddress(), await stateView.getAddress(), floorSink.address, floorSink.address,
-        await curve.getAddress(), ZERO, await tok.getAddress(), FEE, TS, ZERO, 0, 0) // width 0 → BadBand (staking non-zero so ZeroAddress isn't hit first)
+        await curve.getAddress(), ZERO, await tok.getAddress(), FEE, TS, ZERO, 0, 0, 0, 10) // buy-band width 0 → BadBand (staking non-zero so ZeroAddress isn't hit first)
     ).to.be.revertedWithCustomError(F, "BadBand");
   });
 
@@ -174,7 +174,62 @@ describe("RobinAmbushVault — two-sided ETH-seeded ambush band", () => {
     const WRONG_FEE = 500;
     await expect(
       F.deploy(await pm.getAddress(), await stateView.getAddress(), floorSink.address, floorSink.address,
-        await curve.getAddress(), ZERO, await tok.getAddress(), WRONG_FEE, TS, ZERO, 0, 10) // fee != curve.fee()
+        await curve.getAddress(), ZERO, await tok.getAddress(), WRONG_FEE, TS, ZERO, 0, 10, 0, 10) // fee != curve.fee()
     ).to.be.revertedWithCustomError(F, "PoolKeyMismatch");
+  });
+
+  // ── [SELL] the mirror band: unsold supply as passive sell-into-strength liquidity ──────────────────
+  describe("[SELL] the unsold-supply band", () => {
+    const impersonate = async (addr) => {
+      await ethers.provider.send("hardhat_impersonateAccount", [addr]);
+      await ethers.provider.send("hardhat_setBalance", [addr, "0x" + (10n ** 20n).toString(16)]);
+      return await ethers.getSigner(addr);
+    };
+
+    it("anchors BELOW gradTick — the token-expensive side, so it can never be an overhead wall at launch", async () => {
+      const v = await deployVault(0, floorSink.address);
+      const lo = await v.sellTickLower(), hi = await v.sellTickUpper();
+      expect(hi).to.be.lt(0n); // strictly below gradTick(0)
+      expect(lo).to.be.lt(hi);
+      // and it is the mirror of the buy band, which sits ABOVE gradTick
+      expect(await v.ambushTickLower()).to.be.gt(0n);
+    });
+
+    it("only THIS pad's curve can book principal — a stranger cannot reclassify staking's fee tokens", async () => {
+      const v = await deployVault(0, floorSink.address);
+      await tok.connect(owner).transfer(await v.getAddress(), 10n ** 21n);
+      await expect(v.connect(trader).fundUnsold(10n ** 21n)).to.be.revertedWithCustomError(v, "NotCurve");
+      expect(await v.sellPrincipal()).to.equal(0n);
+    });
+
+    it("books at most what actually arrived, so a mis-stated amount cannot over-credit", async () => {
+      const v = await deployVault(0, floorSink.address);
+      const curve = await impersonate(await v.curve());
+      await tok.connect(owner).transfer(await v.getAddress(), 1000n);
+      await v.connect(curve).fundUnsold(10n ** 21n); // claims far more than it sent
+      expect(await v.sellPrincipal()).to.equal(1000n); // clamped to the real balance
+    });
+
+    it("THE TRAP: booked principal survives a staking sweep — without this the band is silently deleted", async () => {
+      const v = await deployVault(0, floorSink.address);
+      const curve = await impersonate(await v.curve());
+      await tok.connect(owner).transfer(await v.getAddress(), 1000n);
+      await v.connect(curve).fundUnsold(1000n);
+      // flushFees() forwards fee tokens to staking; it must NOT touch principal awaiting placement
+      await v.flushFees();
+      expect(await v.sellPrincipal()).to.equal(1000n);
+      expect(await tok.balanceOf(await v.getAddress())).to.equal(1000n);
+    });
+
+    it("a fee token that arrives ON TOP of principal still reaches staking", async () => {
+      const v = await deployVault(0, floorSink.address);
+      const curve = await impersonate(await v.curve());
+      await tok.connect(owner).transfer(await v.getAddress(), 1000n);
+      await v.connect(curve).fundUnsold(1000n);
+      await tok.connect(owner).transfer(await v.getAddress(), 7n); // stands in for an accrued fee
+      await v.flushFees();
+      expect(await v.sellPrincipal()).to.equal(1000n); // principal untouched
+      expect(await tok.balanceOf(await v.getAddress())).to.equal(1000n); // only the 7 left
+    });
   });
 });

@@ -52,9 +52,14 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
     using BalanceDeltaLibrary for BalanceDelta;
     using SafeERC20 for IERC20;
 
+    event UnsoldBooked(uint256 amount, uint256 principal); // [SELL]
+    event SellParked(int24 tick, uint256 amount); // [SELL]
+    event SellSeeded(uint256 amount, uint128 liquidityAdded, uint256 totalLiquidity); // [SELL]
+
     enum Op {
         ADD,
-        COLLECT
+        COLLECT,
+        ADD_SELL
     }
 
     IPoolManager public immutable poolManager;
@@ -71,9 +76,17 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
     int24 public immutable ambushTickLower; // band strictly ABOVE gradTick (below grad price); single-sided ETH
     int24 public immutable ambushTickUpper;
 
+    int24 public immutable sellTickLower; // [SELL] mirror band, token-expensive side of graduation (0 => disabled)
+    int24 public immutable sellTickUpper;
     uint128 public ambushLiquidity; // total liquidity permanently locked in the band (only grows)
+    // [SELL] the mirror band, on the token-EXPENSIVE side of graduation. Holds unsold pad supply as pure
+    // currency1 and converts it to ETH as price RISES into it — passive "sell into strength", no keeper.
+    uint128 public sellLiquidity; // liquidity permanently locked in the sell band (only grows)
+    uint256 public sellPrincipal; // unsold TOKEN booked as principal, awaiting placement (EXCLUDED from staking sweeps)
+    uint256 public parkedToken; // principal received while spot sat inside/below the sell band
     uint256 public parkedEth; // seed ETH received while spot is inside/above the band (added on recovery)
     uint256 public pendingFloorEth; // ETH LP-fees that failed to forward to the floor (EXCLUDED from the seed)
+    address public immutable curve; // [SELL] the only address allowed to book unsold supply as principal
 
     event AmbushSeeded(uint256 ethUsed, uint128 liquidityAdded, uint128 totalLiquidity);
     event AmbushParked(int24 currentTick, uint256 parked);
@@ -83,6 +96,7 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
     error ZeroAddress();
     error BadBand();
     error PoolKeyMismatch();
+    error NotCurve(); // [SELL] only this pad's curve may book unsold supply as principal
 
     constructor(
         address poolManager_,
@@ -96,7 +110,9 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         int24 tickSpacing_,
         IHooks hooks_,
         uint24 gapSpacings, // spacings ABOVE gradTick before the band starts (0 => engages on the first dip)
-        uint24 bandWidthSpacings // band width in tickSpacings (>=1)
+        uint24 bandWidthSpacings, // band width in tickSpacings (>=1)
+        uint24 sellGapSpacings, // [SELL] spacings BELOW gradTick before the sell band starts
+        uint24 sellWidthSpacings // [SELL] sell-band width in tickSpacings (0 => no sell band on this pad)
     ) {
         // [L-17] stakingRecipient is required non-zero: this vault is add-only with no owner/withdraw/setter, so a
         // 0 sink would strand every token-side band fee permanently idle-in-vault. It is deployed after graduation,
@@ -143,6 +159,58 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         ) revert BadBand();
         ambushTickLower = lower;
         ambushTickUpper = upper;
+        curve = curve_;
+
+        // [SELL] The mirror band. currency0 is the money side, so a HIGHER tick means a CHEAPER token: the buy
+        // band above sits at higher ticks (token cheap) and holds pure ETH, and this one sits at LOWER ticks
+        // (token expensive) and holds pure TOKEN. A position is 100% currency1 while spot is at or above its
+        // upper tick, so at spot == gradTick this seeds entirely in token, and it converts to ETH only as buying
+        // pushes the tick DOWN into it. Set back from gradTick by sellGapSpacings so it is never an overhead
+        // wall on the freshly graduated price, and it is INERT at or below graduation — it cannot cap the chart.
+        // sellWidthSpacings == 0 disables the band entirely, which keeps every existing pad's geometry unchanged.
+        if (sellWidthSpacings != 0) {
+            int24 sUpper = _alignDown(anchorTick - 1, tickSpacing_)
+                - int24(int256(uint256(sellGapSpacings))) * tickSpacing_;
+            int24 sLower = sUpper - int24(int256(uint256(sellWidthSpacings))) * tickSpacing_;
+            // sLower>=sUpper also catches an int24 wrap from an absurd gap/width (>=2^23 spacings)
+            if (
+                sLower >= sUpper || sUpper >= anchorTick || sLower < TickMath.minUsableTick(tickSpacing_)
+                    || sUpper > TickMath.maxUsableTick(tickSpacing_)
+            ) revert BadBand();
+            sellTickLower = sLower;
+            sellTickUpper = sUpper;
+        }
+    }
+
+    /// @notice [SELL] Book pad supply the curve did not sell as sell-band PRINCIPAL. Callable only by this pad's
+    /// own curve, so nobody can reclassify accrued fee tokens — which belong to staking — as band principal.
+    /// Credits at most what actually arrived, so a mis-stated amount can never book more than the vault holds.
+    function fundUnsold(uint256 amount) external nonReentrant returns (uint256 booked) {
+        if (msg.sender != curve) revert NotCurve();
+        if (sellTickUpper == 0 && sellTickLower == 0) return 0; // no sell band on this pad; leave it to staking
+        uint256 bal = IERC20(Currency.unwrap(currency1)).balanceOf(address(this));
+        booked = amount;
+        uint256 room = bal > sellPrincipal ? bal - sellPrincipal : 0;
+        if (booked > room) booked = room;
+        if (booked == 0) return 0;
+        sellPrincipal += booked;
+        emit UnsoldBooked(booked, sellPrincipal);
+    }
+
+    /// @notice [SELL] Place booked principal into the permanent sell band. Permissionless, add-only, and it
+    /// mirrors seedAmbush exactly: if spot sits inside or below the band a clean single-sided TOKEN add is not
+    /// possible, so the principal PARKS and any later call places it once spot is back above the band.
+    function seedSellBand() external nonReentrant returns (uint128 added) {
+        uint256 amt = sellPrincipal;
+        if (amt == 0) return 0;
+        (, int24 tick,,) = stateView.getSlot0(_poolId());
+        // pure currency1 requires the whole range to sit at or below spot
+        if (tick < sellTickUpper) {
+            parkedToken = amt;
+            emit SellParked(tick, amt);
+            return 0;
+        }
+        added = abi.decode(poolManager.unlock(abi.encode(Op.ADD_SELL, amt)), (uint128));
     }
 
     /// @notice Seed all on-hand seed ETH (never the parked fee ETH) into the permanent band. Permissionless. If
@@ -204,6 +272,10 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         if (s == address(0)) return 0;
         address tok = Currency.unwrap(currency1);
         uint256 tb = IERC20(tok).balanceOf(address(this));
+        // [SELL] Principal booked for the sell band is NOT a fee. Without this the first flushFees() would hand
+        // every unsold token to staking before it was ever placed, silently deleting the sell band.
+        uint256 reserved = sellPrincipal;
+        tb = tb > reserved ? tb - reserved : 0;
         if (tb == 0) return 0;
         IERC20(tok).safeTransfer(s, tb);
         try IStakingFund(s).fundTokenPushed(uint8(0), tok) {} catch {}
@@ -214,6 +286,7 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
         (Op op, uint256 amt) = abi.decode(data, (Op, uint256));
         if (op == Op.ADD) return abi.encode(_add(amt));
+        if (op == Op.ADD_SELL) return abi.encode(_addSell(amt));
         (uint256 e, uint256 t) = _collect();
         return abi.encode(e, t);
     }
@@ -229,7 +302,7 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         // Guard on ambushLiquidity > 0: a zero-liquidity poke on a never-added position reverts
         // CannotUpdateEmptyPosition, and an empty band has no accrued fees anyway, so the FIRST seed skips it.
         if (ambushLiquidity > 0) {
-            (uint256 ethFee,) = _collect();
+            (uint256 ethFee,) = _collectRange(ambushTickLower, ambushTickUpper);
             if (ethFee > 0) pendingFloorEth += ethFee;
         }
 
@@ -254,10 +327,57 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
         emit AmbushSeeded(amt, L, ambushLiquidity);
     }
 
-    function _collect() internal returns (uint256 e, uint256 t) {
+    /// @dev [SELL] Mirror of `_add` for the token side. Realizes the sell band's own accrued fees FIRST and
+    /// routes them exactly as the collect path does — ETH parked to pendingFloorEth for the floor, token left
+    /// idle-in-vault for staking — so the positive add below carries PURE PRINCIPAL and a fee cannot be folded
+    /// into the band. `amt` is `sellPrincipal`, which only this pad's curve can credit, so a token donation can
+    /// never become principal. Guarded on sellLiquidity > 0 because a zero-liquidity poke on a never-added
+    /// position reverts CannotUpdateEmptyPosition.
+    function _addSell(uint256 amt) internal returns (uint128 L) {
+        if (sellLiquidity > 0) {
+            (uint256 ethFee,) = _collectRange(sellTickLower, sellTickUpper);
+            if (ethFee > 0) pendingFloorEth += ethFee;
+        }
+        uint160 sLower = TickMath.getSqrtPriceAtTick(sellTickLower);
+        uint160 sUpper = TickMath.getSqrtPriceAtTick(sellTickUpper);
+        L = LiquidityAmounts.getLiquidityForAmount1(sLower, sUpper, amt);
+        if (L == 0) return 0;
         (BalanceDelta delta,) = poolManager.modifyLiquidity(
             _poolKey(),
-            ModifyLiquidityParams({tickLower: ambushTickLower, tickUpper: ambushTickUpper, liquidityDelta: 0, salt: bytes32(0)}),
+            ModifyLiquidityParams({
+                tickLower: sellTickLower,
+                tickUpper: sellTickUpper,
+                liquidityDelta: int256(uint256(L)), // ALWAYS positive — no remove path exists
+                salt: bytes32(0)
+            }),
+            ""
+        );
+        // What the position actually consumed is the token debt the pool just charged us — exact, and it needs
+        // no separate estimate that could drift from the pool's own rounding.
+        int128 owed1 = delta.amount1();
+        _resolve(currency0, delta.amount0());
+        _resolve(currency1, owed1);
+        sellLiquidity += L;
+        // Only the placed principal is consumed; a rounding remainder stays booked for the next seed.
+        uint256 placed = owed1 < 0 ? uint256(uint128(-owed1)) : 0;
+        sellPrincipal = placed >= sellPrincipal ? 0 : sellPrincipal - placed;
+        parkedToken = 0;
+        emit SellSeeded(amt, L, sellLiquidity);
+    }
+
+    function _collect() internal returns (uint256 e, uint256 t) {
+        (e, t) = _collectRange(ambushTickLower, ambushTickUpper);
+        if (sellLiquidity > 0) {
+            (uint256 e2, uint256 t2) = _collectRange(sellTickLower, sellTickUpper);
+            e += e2;
+            t += t2;
+        }
+    }
+
+    function _collectRange(int24 tl, int24 tu) internal returns (uint256 e, uint256 t) {
+        (BalanceDelta delta,) = poolManager.modifyLiquidity(
+            _poolKey(),
+            ModifyLiquidityParams({tickLower: tl, tickUpper: tu, liquidityDelta: 0, salt: bytes32(0)}),
             ""
         );
         int128 a0 = delta.amount0();
@@ -291,6 +411,12 @@ contract RobinAmbushVault is IUnlockCallback, ReentrancyGuard {
     function _alignUp(int24 tick, int24 spacing) internal pure returns (int24) {
         int24 rounded = (tick / spacing) * spacing;
         if (rounded < tick) rounded += spacing; // ceil for positive remainder
+        return rounded;
+    }
+
+    function _alignDown(int24 tick, int24 spacing) internal pure returns (int24) {
+        int24 rounded = (tick / spacing) * spacing;
+        if (rounded > tick) rounded -= spacing; // floor for negative remainder
         return rounded;
     }
 

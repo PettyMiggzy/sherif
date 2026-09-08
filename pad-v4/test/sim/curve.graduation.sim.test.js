@@ -68,7 +68,7 @@ describe("SIM — graduation value conservation (nothing stranded, every sink fu
     // Anchor is read from the curve's gradTick() on-chain; floor sink = the floor vault, staking sink = DualStaking.
     const ambush = await (await ethers.getContractFactory("RobinAmbushVault")).deploy(
       await pm.getAddress(), await stateView.getAddress(), await floor.getAddress(), await ds.getAddress(),
-      curveAddr, ZERO, tokAddr, FEE, SPACING, ZERO, 0 /* gap */, 10 /* width spacings */
+      curveAddr, ZERO, tokAddr, FEE, SPACING, ZERO, 0 /* gap */, 10 /* width spacings */, 0 /* sell gap */, 10 /* sell width */
     );
     await curve.connect(platform).setAmbush(await ambush.getAddress());
 

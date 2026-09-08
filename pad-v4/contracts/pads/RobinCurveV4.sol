@@ -57,6 +57,10 @@ interface IRobinFeeHookBuffer {
 /// @dev [M-9] The pad hook's current creator slot. The hook's creator is repointable via a 2-step flow; this
 /// contract's was a launch-time immutable with no repoint and no alternate exit, so one pad had two creator
 /// addresses that could permanently diverge. `currentCreator()` follows this one.
+interface IAmbushUnsold {
+    function fundUnsold(uint256 amount) external returns (uint256);
+}
+
 interface IRobinFeeHookGrad {
     function onGraduated(PoolId id) external;
 }
@@ -106,6 +110,15 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     // keeper needs a subsidy and no one has to babysit the launch. A flat bps (not tx.gasprice-based) can't be gamed
     // by a caller inflating gasprice; the absolute cap bounds it on large raises. On a cheap Orbit L2 this comfortably
     // covers the graduation tx and leaves a small tip.
+    // [SELL] Split of the supply the curve did not sell, decided with the owner: a quarter to the pad's staking
+    // pool as holder rewards, the remainder to the ambush vault's SELL BAND, where it sits as passive liquidity
+    // on the token-expensive side and converts to ETH only as buying pushes price up into it. The ETH it earns
+    // is forwarded to the FLOOR by the vault's existing routing, so unsold supply ends up as permanent floor
+    // depth rather than as overhang. A pad whose ambush vault has no sell band is unaffected: fundUnsold books
+    // nothing, and the vault's own staking sweep forwards the tokens on.
+    // NOT governed today — a constant so this ships without touching the fee-config struct, the factory and every
+    // fixture. It belongs in RobinV4FeeConfig with the other shares before it is tuned in production.
+    uint256 internal constant UNSOLD_STAKING_BPS = 2500; // 25% to staking, 75% to the sell band
     uint256 internal constant GRAD_BOUNTY_BPS = 20; // 0.2% of the raise to the graduation trigger
     uint256 internal constant GRAD_BOUNTY_MAX_WEI = 0.02 ether; // absolute ceiling (raise ≳ 10 ETH)
 
@@ -176,6 +189,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     event StakingFunded(uint256 amount);
     event FloorFunded(uint256 amount);
     event AmbushFunded(uint256 amount);
+    event UnsoldFunded(address indexed ambush, uint256 amount); // [SELL] unsold supply → sell band principal
     event GradBountyPaid(address indexed keeper, uint256 amount, bool booked);
     event GradBountyClaimed(address indexed to, uint256 amount);
     event PlatformSwept(uint256 eth);
@@ -443,9 +457,12 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         creatorEthOwed += creatReward;
         ambushEthOwed += ambushReward;
 
-        // 7) stream the leftover reserve tokens → staking (non-bricking; flushStaking() finishes if unwired)
+        // 7) split the leftover reserve tokens: a quarter to staking as holder rewards, the rest to the ambush
+        //    vault's sell band (non-bricking on both legs; flushStaking() / seedSellBand() finish later)
         uint256 leftoverToken = IERC20(token).balanceOf(address(this));
-        _fundStaking(leftoverToken);
+        uint256 toStaking = (leftoverToken * UNSOLD_STAKING_BPS) / BPS;
+        _fundStaking(toStaking);
+        _fundUnsold(leftoverToken - toStaking);
 
         // 8) sweep the held buy-LP carve → the permanent floor (non-bricking; flushFloor() finishes if unwired)
         _fundFloor();
@@ -807,6 +824,23 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         // final; the tokens are already in the pool and a later flushStaking() credits them (balanceOf-accounted).
         try IStakingFund(s).fundTokenPushed(uint8(0), token) {
             emit StakingFunded(amount);
+        } catch {}
+    }
+
+    /// @dev [SELL] Hand the remainder of the unsold supply to the ambush vault as sell-band principal. Mirrors
+    /// _fundStaking's posture exactly: transfer, then a try/caught book-keeping call, so an unwired or reverting
+    /// vault can never brick graduation. If the vault has no sell band it books nothing and its own staking sweep
+    /// forwards the tokens on, so the supply always reaches a holder either way.
+    function _fundUnsold(uint256 amount) internal {
+        address v = ambush;
+        if (v == address(0) || amount == 0) {
+            // no vault yet: leave it on the curve for flushStaking() rather than stranding it
+            if (amount != 0) _fundStaking(amount);
+            return;
+        }
+        IERC20(token).safeTransfer(v, amount);
+        try IAmbushUnsold(v).fundUnsold(amount) {
+            emit UnsoldFunded(v, amount);
         } catch {}
     }
 
