@@ -252,11 +252,29 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
 
         // ── L2 · EPISODE BOOKKEEPING. Done BEFORE any early return so the snapshot is always taken at the
         //    earliest poke of the episode, never at a later one the attacker chose.
+        //
+        //    [R3-H5 P4] The snapshot and the inflow derivation are taken over the FULL BOOKED CARVE — this
+        //    vault's on-hand balance PLUS the carve still sitting unclaimed in the hook's `floorOwed` book.
+        //    Without that second term the episode allowance is NOT timing-immune and P2 does not bind:
+        //    `claimFloor` is permissionless, so an attacker who pokes at the episode's first block (snapshotting
+        //    a near-empty vault) and only THEN pulls weeks of banked carve converts the entire bank into "inflow
+        //    this episode". At the shipped `EPISODE_BASE_WEI = 0` that inflow term is the ENTIRE allowance, so
+        //    the bound meant to cap the episode becomes attacker-set instead — reviving the sustained-hold
+        //    force-fill P2 exists to stop, in full, with no keeper required and nothing else to compromise.
+        //
+        //    Folding `floorOwed` in makes WHERE the carve currently sits irrelevant: it is counted from the
+        //    moment a sell BOOKS it, not from the moment someone chooses to MOVE it. Genuinely new carve (sells
+        //    after the snapshot) still expands the allowance exactly as designed — only the release timing of
+        //    already-booked carve stops mattering. Unreadable ⇒ PARK, the same posture as the L1 gate read:
+        //    accounting we cannot trust must never authorise a commit.
+        (bool oOk, uint256 owed) = _hookOwed(id);
+        if (!oOk) return _park(amt, 0, R_ORACLE);
+        uint256 booked = amt + owed; // the full carve, wherever it happens to sit right now
         if (aboveLowerTs != episodeAnchor) {
             episodeAnchor = aboveLowerTs;
-            episodeStartQuote = amt;
+            episodeStartQuote = booked;
             episodeStartBand = bandQuoteWei;
-            emit FloorEpisodeReset(aboveLowerTs, amt, bandQuoteWei);
+            emit FloorEpisodeReset(aboveLowerTs, booked, bandQuoteWei);
         }
 
         // ── L3 · LIVE SPOT — DEMOTED from "the gate" to a SETTLEMENT PRECONDITION [external auditor (a)].
@@ -289,7 +307,7 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
 
         // ── L7 · SIZE — the episode allowance. Every term is a CEILING, so the composed policy is never more
         //    permissive than the shipped MAX_COMMIT_BPS.
-        uint256 allow = _episodeAllowance(amt);
+        uint256 allow = _episodeAllowance(booked); // [R3-H5 P4] measured over the booked carve, not the on-hand slice
         uint256 slice = (amt * MAX_COMMIT_BPS) / BPS;
         if (slice == 0 && amt <= allow) slice = amt; // too small to slice goes in whole — but never above allowance
         if (slice > allow) slice = allow;
@@ -327,15 +345,30 @@ contract RobinFloorVault is IUnlockCallback, ReentrancyGuard {
     }
 
     /// @dev Within one episode, cumulative band growth never exceeds the base + a share of the band at episode
-    /// start + every wei that arrived during the episode. Cumulative inflow is DERIVABLE, never tracked:
-    /// currency0 leaves this vault ONLY as a commit into the band (currency0 LP fees go straight to the platform
-    /// inside _collect and never enter this balance; currency1 is an ERC20), so
-    /// `cumInflow == balance + bandQuoteWei` and inflow this episode collapses to `amt - episodeStartQuote`.
-    function _episodeAllowance(uint256 amt) internal view returns (uint256) {
+    /// start + every wei BOOKED during the episode. Cumulative inflow is DERIVABLE, never tracked: currency0
+    /// leaves the system ONLY as a commit into the band (currency0 LP fees go straight to the platform inside
+    /// _collect and never enter this balance; currency1 is an ERC20), so the carve is conserved across the pair
+    /// (hook `floorOwed`, vault balance) and inflow this episode collapses to `booked - episodeStartQuote`.
+    /// [R3-H5 P4] `booked` MUST be balance + unclaimed hook carve, never the balance alone — see addFloor L2.
+    /// A commit lowers `booked` without lowering the hook book, so the second branch still measures exactly the
+    /// slice of the cap this episode has already spent.
+    function _episodeAllowance(uint256 booked) internal view returns (uint256) {
         uint256 cap = EPISODE_BASE_WEI + (episodeStartBand * EPISODE_BAND_BPS) / BPS;
-        if (amt >= episodeStartQuote) return cap + (amt - episodeStartQuote);
-        uint256 spent = episodeStartQuote - amt; // cap already consumed this episode
+        if (booked >= episodeStartQuote) return cap + (booked - episodeStartQuote);
+        uint256 spent = episodeStartQuote - booked; // cap already consumed this episode
         return spent >= cap ? 0 : cap - spent;
+    }
+
+    /// @dev Read the hook's outstanding floor carve for this pool (money side) as ONE flat word. Same infallible
+    /// posture as `_gateState`: low-level staticcall, length check, raw single-word load — never `abi.decode` of
+    /// a return whose cleanliness check would run in OUR frame ([H-3]). Any failure ⇒ (false, 0) ⇒ caller parks.
+    function _hookOwed(PoolId id) private view returns (bool ok, uint256 owed) {
+        (bool s, bytes memory d) = address(hooks).staticcall(
+            abi.encodeWithSignature("floorOwed(bytes32,uint256)", PoolId.unwrap(id), uint256(0))
+        );
+        if (!s || d.length < 32) return (false, 0);
+        assembly ("memory-safe") { owed := mload(add(d, 32)) }
+        ok = true;
     }
 
     /// @notice Arm this pad's gate in the hook, one-shot, by the platform. MUST be part of the launch runbook:
