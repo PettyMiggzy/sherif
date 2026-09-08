@@ -70,6 +70,11 @@ price climbs through the day. But it climbs because **demand cleared supply**, n
 passed, so there is no advantage whatsoever to being milliseconds earlier. Early conviction is still
 paid: an early bidder's budget is exposed to more cheap rungs, so their average price is lower.
 
+> **Superseded in implementation, not in reasoning.** §2.2 shows the curve's own tick range already
+> *is* this ladder, so none of it needs building as a separate mechanism. The argument above still
+> decides the question it answers — the price must climb with demand, never with the clock — and a
+> bonding curve satisfies that by construction.
+
 *Alternative worth knowing:* STONKZ dampens whales with **per-capita** fills plus a logarithmic size
 bonus — at their 10% setting, 1,000× the capital gets 2.59× the fill instead of 1,000×. It is more
 "fair launch" and it is a real differentiator, but it is also more complex and easier to sybil. Plain
@@ -93,14 +98,19 @@ minimum FDV. So: the creator declares a **floor price**, validated against the e
 (`PadValuation` / the `PoolMath.fdvWei` check), and rung 0 **is** that floor. A lone bidder pays
 floor × tokens taken, and takes only what they actually paid for.
 
-### 1.5 A minimum raise, or everyone gets their money back
+### 1.5 There is no failed auction — decided
 
-Not specified in the proposal, and both competitors on this chain have it. `PresaleVault` already
-implements the whole path. The creator declares a minimum raise; below it at close, **full refunds**
-and the launch either aborts or falls back to a plain curve launch with 100% of supply.
+The owner's call: *"no failed auction if no one bids that day it goes back to the curve or staking or
+what ever"*. So there is **no minimum raise and no refund path**. The launch always happens.
 
-Without this, an auction that raises 0.05 ETH still hands 30% of supply to whoever showed up and
-still leaves the curve needing 4.2 ETH.
+This deliberately drops the safety property both competitors ship (pools.trade refunds below $10k
+FDV; STONKZ gates on a raise threshold). Worth stating what that costs: a bidder can no longer get
+their ETH back, so **the reserve price is now the only thing standing between a bidder and a bad
+fill**. It has to bind hard against the FDV band, and the ladder must not be able to climb out of
+that band either — see §2.
+
+In exchange the design gets simpler and the UX gets better: nobody ever waits three days to be told
+the launch is off. For a memecoin pad that is the right trade.
 
 ### 1.6 Settlement timing
 
@@ -110,22 +120,75 @@ clearing price per rung, tokens claimable at close.
 
 ---
 
-## 2. Auction → curve → graduation
+## 2. Where unbid supply goes — and the architecture that answers it
 
-**The curve's starting price must be the auction's final clearing rung.** Not a fixed FDV, not the
-creator's choice. If the curve opens *below* the clearing price, every auction winner dumps into it
-on the first block and the launch is dead on arrival. If it opens *above*, the auction winners are
-handed a free mark-up paid by curve buyers. Anchoring to the discovered price is what CCA does
-("proceeds automatically create a Uniswap v4 pool at the discovered price") and it is the only
-setting that is neutral between the two cohorts.
+The open question was whether unbid supply reverts to the curve or to staking. Answering it required
+checking when the launch is actually configured, and that check changed the design.
 
-**Instant graduation is fine and should be expected.** 10% goes to the platform, 90% into the curve;
-if that clears 4.2 ETH the token graduates at auction close having never traded on the curve. That is
-not a bug — the auction *was* the price discovery, which is the whole point. It does mean a
-successful auction makes the curve vestigial, and the curve then matters only for launches that
-raised between the minimum and 4.2 ETH.
+### 2.1 The launch config is frozen before the auction runs
 
----
+`PresaleVault.initialize()` stores the whole `LaunchConfig` (`cfg = cfg_`, `PresaleVault.sol:165`) and
+commits to the salts. `supply`, **`curveSupply`**, `reserveSupply` and `startTickMag` are all fixed at
+creation, and `[M-12]` additionally snapshots the governed geometry (`snapStartTickMag`) so an
+in-flight `setDefaults` retune cannot move it.
+
+So a separate auction vault **cannot** size the curve from the auction result. "Unbid supply goes back
+to the curve" is not a no-op under that architecture — it needs `curveSupply` deferred out of the
+committed config, which drags in the FDV band check and the commit-reveal snipe model.
+
+Worse, it introduces a brick. If the curve is to open at the auction's final clearing rung, that tick
+has to pass `PadValuation`'s FDV band at `launch()`. A clearing price that lands outside the band
+reverts the launch — and with no refund path, the ETH has nowhere to go.
+
+### 2.2 The architecture that removes the question
+
+The curve is **not a custom AMM**. It is a real Uniswap v4 pool seeded as a single token-only range
+`[gradTick, startTick]`, initialized at `startTick`; buyers swap ETH in and walk the tick down
+(`RobinCurveV4.sol:65-68`). There is no `buy()` — trades go through the PoolManager, gated by the hook.
+
+That means the auction does not need its own price ladder at all. **The curve's tick range already is
+the ladder.**
+
+Build the auction as *batched buying into the curve* rather than as a separate sale:
+
+- The curve is deployed up front with its normal geometry and its full `curveSupply`.
+- For the auction window the hook's `beforeSwap` admits **only the auction vault** — everyone else is
+  locked out for 1–3 days.
+- Bidders deposit ETH into the vault. At each tranche boundary the vault executes **one pooled buy**
+  into the curve with that tranche's ETH, and distributes the tokens **pro-rata by contribution**.
+  `PresaleVault` already does exactly this once at `finalize()`; the auction runs it N times.
+- When the window closes the hook gate lifts and the curve trades normally.
+
+Every open question collapses:
+
+| Question | Answer under this architecture |
+|---|---|
+| Where does unbid supply go? | **Nowhere — it never left the curve.** Literally the owner's answer, at zero cost. |
+| Reserve price? | `startTick`, already FDV-band-checked at launch. No new band logic. |
+| Can the clearing price brick the launch? | No. The curve is launched before the auction, so there is nothing left to validate. |
+| Does the curve open at the clearing price? | Yes, by construction — the auction *is* the curve moving. |
+| Can day-1 winners dump on day-3 bidders? | No — the hook gate locks everyone but the vault out. |
+| "First buy cheapest, grows through the day"? | That is just what a bonding curve does. |
+| Failed auction? | Cannot happen. The window ends and normal trading begins. |
+| 10% platform cut? | `PLATFORM_FEE_BPS = 1000`, already in the vault. |
+
+The work reduces to two changes: a `beforeSwap` window gate in the hook, and a tranche schedule with
+per-tranche pro-rata accounting in the vault. Neither touches graduation, the FDV band, the
+commit-reveal, or the floor vault.
+
+**Status: recommended, not yet validated.** The `beforeSwap` gate needs checking against what `sender`
+actually is for a vault-initiated swap, and the tranche-buy loop needs gas modelling against this
+chain's 16M clamp. Both are cheap to test and I have not tested them yet.
+
+### 2.3 So: curve, not staking
+
+Unbid auction supply stays in the curve. Tokens the **curve** has not sold at graduation still go to
+staking, which is the existing v4 behaviour. One rule each, no special cases, no routing code.
+
+### 2.4 Graduation still auto-fires
+
+10% of the raise to the platform, 90% into the curve. If that clears 4.2 ETH the token graduates at
+window close having never traded openly — which is fine, the auction *was* the price discovery.
 
 ## 3. Dual-pool graduation — ROBIN 40% / creator's pick 60%
 
@@ -189,25 +252,33 @@ transactions, not within one.
 
 ## 5. Build order
 
-| | Work | Depends on |
+| | Work | Notes |
 |---|---|---|
-| 1 | Close the H-5 residual (done — episode allowance is now timing-immune) | — |
-| 2 | Auction: tranche schedule + rung ladder + reserve price on a `PresaleVault` fork | reserve price validated against the FDV band |
-| 3 | Curve start price anchored to the final clearing rung | 2 |
-| 4 | Unsold → staking, with the capture guard | 2 |
-| 5 | Dual-pool graduation + ROBIN leg + depth cap | must be built through the L25 `beforeInitialize` gate |
-| 6 | Stock-paired variant | 5, plus the halt/restriction handling in `../STOCK-DATA-FEEDS.md` |
+| 1 | H-5 residual — episode allowance made timing-immune | done, compiles clean |
+| 2 | Validate the §2.2 architecture: `beforeSwap` window gate + tranche-buy gas | cheap; blocks everything below |
+| 3 | Hook: admit only the auction vault during the window | small `beforeSwap` branch |
+| 4 | Vault: tranche schedule + N pooled buys + per-tranche pro-rata | the existing `finalize()` buy, run N times |
+| 5 | Per-wallet / per-tranche caps | the only whale control left once refunds are gone |
+| 6 | Dual-pool graduation + ROBIN leg + depth cap | must be built through the L25 `beforeInitialize` gate |
+| 7 | Stock-paired variant | 6, plus the halt/restriction handling in `../STOCK-DATA-FEEDS.md` |
 
-Steps 2–4 are a shippable product on their own.
-
----
+Steps 2–5 are a shippable product. Nothing in them touches graduation, the FDV band, the floor vault
+or the commit-reveal, which is the whole reason this shape is worth preferring.
 
 ## 6. Open decisions
 
-- **Pro-rata or per-capita fills?** Pro-rata is what was asked for and is simpler. Per-capita with a
-  log size bonus is more whale-resistant and is a real marketing differentiator — but more sybil-exposed.
-- **Minimum raise: creator-set or protocol floor?** Competitors use a protocol floor ($10k FDV).
-- **Does a failed auction abort, or fall back to a plain 100%-supply curve launch?**
+Settled by the owner:
+
+- **No failed auction, no refunds.** The launch always happens.
+- **Unbid supply goes back to the curve** — and under §2.2 it never leaves it.
+
+Still open:
+
+- **Pro-rata or per-capita fills?** Pro-rata is what was asked for and is far simpler. STONKZ's
+  per-capita with a log size bonus is more whale-resistant but more sybil-exposed. With refunds gone,
+  a **per-wallet cap** is now the main whale control either way and should be set deliberately.
 - **Is the ROBIN leg fixed at 40%, or a band the creator picks within?** 40% is a lot of depth to move
   off the main pair.
-- **Second hop taxed twice, or exempted?**
+- **Does a route that hops both graduated pools pay the tax twice, or is the second hop exempt?**
+- **Does the auction fill itself pay the 1.25% buy tax**, on top of the 10% platform cut of the raise?
+  Charging both takes the same money twice, straight out of what seeds the curve.
