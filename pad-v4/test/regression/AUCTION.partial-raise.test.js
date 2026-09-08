@@ -186,6 +186,35 @@ describe("[AUCTION regression] partial raises launch, the fee tracks deployed ca
     });
   });
 
+  describe("(2b) the wei-residue brick that a 1-wei rounding disagreement opened", () => {
+    // finalize reserves the platform's cut by rounding DOWN (totalRaised * 1000 / 10000) and then reconstructs
+    // it by rounding UP out of the spend (pooledEthSpent * 1000 / 9000). Below curve capacity the buy consumes
+    // the WHOLE budget, so those two meet exactly — and on one residue class, totalRaised % 10 == 9, they
+    // disagree by a wei and _payout's subtraction underflows. Because `finalized` is already true, fail() is
+    // unreachable, so every claim, preview and platform withdrawal reverts FOREVER and the contributors' ETH
+    // and tokens are lost. One raise in ten, total loss. Found by review, fixed by clamping platformFee.
+    for (const r of [0n, 8n, 9n]) {
+      it(`totalRaised ending in ${r} settles and pays out`, async () => {
+        const { vault, salts, deadline } = await open({ target: E(3), minRaise: E("0.01") });
+        await vault.connect(a).deposit({ value: E(1) + r });
+        expect((await vault.totalRaised()) % 10n).to.equal(r); // the residue really is under test
+        await time.increaseTo(deadline + 1n);
+        await fin(vault, salts);
+
+        // the invariant the clamp makes structural
+        const spent = await vault.pooledEthSpent();
+        const fee = await vault.platformFee();
+        expect(spent + fee).to.be.lte(await vault.totalRaised());
+
+        // and it is not merely non-reverting: the money is really reachable
+        await expect(vault.previewClaim(a.address)).to.not.be.reverted;
+        await expect(vault.connect(a).claim()).to.emit(vault, "Claimed");
+        await vault.withdrawPlatformFee();
+        expect(await ethers.provider.getBalance(await vault.getAddress())).to.equal(0n);
+      });
+    }
+  });
+
   describe("(3) inline graduation", () => {
     it("a buy that fills the curve graduates in the SAME transaction as finalize", async () => {
       const { vault, salts } = await open({ target: E(3), minRaise: E("0.01"), deep: false });

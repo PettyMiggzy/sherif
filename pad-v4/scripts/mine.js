@@ -1,6 +1,6 @@
 const { ethers } = require("hardhat");
 
-const HOOK_FLAGS = 0x28ccn; // BEFORE_SWAP | AFTER_SWAP | BEFORE_SWAP_RETURNS_DELTA | AFTER_SWAP_RETURNS_DELTA
+const HOOK_FLAGS = 0x28ccn; // BEFORE_INITIALIZE | BEFORE_ADD_LIQUIDITY | BEFORE_SWAP | AFTER_SWAP | both SWAP_RETURNS_DELTA
 const FLAG_MASK = 0x3fffn;
 
 // Brand suffix: every Robin pad token address ends in `1ab5`, so a Robin coin is recognizable (and

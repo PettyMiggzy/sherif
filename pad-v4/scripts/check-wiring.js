@@ -43,7 +43,7 @@ const CURVE_ABI = [
   "function token() view returns (address)",
 ];
 const HOOK_ABI = [
-  "function config(bytes32) view returns (bool registered, bool quoteIsStock, uint16 buyTaxBps, uint16 sellTaxBps, uint16 sellFloorShareBps, uint16 buyBufferShareBps, uint16 referralShareBps, uint32 guardWindow, address currency0, address currency1, address creator, address pendingCreator, address floorRecipient, address bufferRecipient, address guardAdapter)",
+  "function config(bytes32) view returns (bool registered, bool quoteIsStock, bool graduated, uint16 buyTaxBps, uint16 sellTaxBps, uint16 sellFloorShareBps, uint16 buyBufferShareBps, uint16 referralShareBps, uint32 guardWindow, address currency0, address currency1, address creator, address pendingCreator, address floorRecipient, address bufferRecipient, address guardAdapter)",
 ];
 const LOCK_ABI = [
   "function locks(uint256) view returns (bool registered, address currency0, address currency1, address stakingRecipient)",

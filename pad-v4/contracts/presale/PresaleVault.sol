@@ -66,9 +66,18 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     uint64 public constant GRACE_MAX = 7 days;
     uint256 internal constant BPS = 10_000; // the hook's buy-tax denominator
     uint256 internal constant PIPS = 1_000_000; // the pool's lpFee denominator
-    // [L-12] Conservative gas floor for finalize()'s launch + pooled-buy. Guards against the EIP-150 63/64 rule
-    // silently converting a fully-funded presale to an irreversible Failed(3) when finalize is called under-gassed.
+    // [L-12] Gas floor for finalize()'s launch + pooled-buy, to reject a grossly under-gassed poke before any
+    // state is touched.
+    // HONEST SCOPE — this floor CANNOT be the real guard, and raising it does not make it one. Measured end to
+    // end on the local v4 stack: 7,377,322 gas for launch + pooled buy, 7,978,067 with inline graduation. A
+    // correctly estimated call therefore arrives with roughly the amount it needs, so any floor high enough to
+    // guarantee completion also rejects the honest caller whose estimator returned the true cost. There is no
+    // value that is both passable and sufficient.
+    // What actually protects a funded raise from an out-of-gas finalize is the revert CLASSIFICATION below: an
+    // OOG is bubbled and retriable rather than being mistaken for a front-run and burned to Failed(3). This
+    // constant is ergonomics — a clear early error instead of a wasted transaction.
     uint256 internal constant MIN_FINALIZE_GAS = 2_000_000;
+    bytes4 internal constant DEPLOY_FAILED_SELECTOR = 0xb4f54111;
     /// @notice [AUCTION] Dust added to the pooled buy REQUEST so it actually touches the graduation ceiling.
     /// `_absorbableIn` floors at every step, so it returns a LOWER bound and the buy stops a few wei of input
     /// short of `gradSqrt` — measured at exactly 3 wei on the reference geometry. Those few wei are the
@@ -153,6 +162,10 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     event PlatformFeePaid(address indexed to, uint256 amount);
     event Failed(uint8 reason); // 1 = under target at deadline, 2 = grace escape hatch, 3 = committed launch sniped
     event Refunded(address indexed user, uint256 amount);
+    /// @notice [AUCTION] The pooled buy filled the curve but the inline graduate() call did not land. The presale
+    /// is still finalized and claims are open; graduate() stays permissionless for anyone to call. Emitted so a
+    /// skipped graduation is observable instead of being swallowed silently by the catch.
+    event GraduationSkipped(address indexed curve);
 
     error NotOpen();
     error AfterDeadline();
@@ -321,6 +334,19 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
             // irreversibly burning a funded presale to Failed(3). The MIN_FINALIZE_GAS floor above already excludes
             // the common under-gas cause; this guards the deep-call 1/64 residue.
             if (reason.length == 0) revert LaunchReverted();
+            // [CRITICAL] ...and bubble `DeployFailed()` for the same reason, even though it IS typed. The
+            // out-of-gas signature is not always an EMPTY revert: if the launch runs out of gas inside a CREATE2,
+            // the 63/64 rule leaves the outer frame alive, CREATE2 yields the zero address, and
+            // DeterministicDeployer reverts with the TYPED `DeployFailed()` (DeterministicDeployer.sol:37). The
+            // empty-revert check above therefore misses it, and a merely under-gassed call would be classified
+            // as a front-run and IRREVERSIBLY burn a fully funded raise to Failed(3).
+            // A genuine snipe is not ambiguous here — it surfaces as AlreadyRegistered / PoolAlreadyInitialized /
+            // the drained factory's transfer failure — but even where DeployFailed could be produced by a
+            // collision, bubbling is strictly the safer classification: it is RETRIABLE, and if the launch really
+            // is unwinnable the presale still reaches 100% refunds through fail()'s reason-2 grace hatch. The
+            // asymmetry decides it — misclassifying a snipe costs contributors a wait, misclassifying an
+            // out-of-gas costs them the entire raise.
+            if (reason.length >= 4 && bytes4(reason) == DEPLOY_FAILED_SELECTOR) revert LaunchReverted();
             finalized = false;
             failed = true;
             emit Failed(3); // 3 = committed launch sniped / front-run
@@ -389,6 +415,21 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         // Bounded by construction: pooledEthSpent <= amtIn <= totalRaised - 10% of totalRaised, so
         // platformFee + pooledEthSpent <= totalRaised and _payout's subtraction can never underflow.
         platformFee = (pooledEthSpent * PLATFORM_FEE_BPS) / (BPS - PLATFORM_FEE_BPS);
+        // [CRITICAL] CLAMP, and never remove this. `budget` above reserves the cut by rounding DOWN
+        // (`totalRaised * 1000 / 10000`) while this line reconstructs it by rounding UP out of the spend
+        // (`pooledEthSpent * 1000 / 9000`). Whenever the buy consumes the whole budget — the ordinary
+        // below-capacity raise the minRaise split exists to enable — those two disagree by exactly one wei on
+        // one residue class: `totalRaised % 10 == 9`. Without this clamp `_payout`'s
+        // `totalRaised - pooledEthSpent - platformFee` underflows, and because `finalized` is already true and
+        // `fail()` is therefore unreachable, EVERY claim, preview and platform withdrawal reverts forever and
+        // the contributors' ETH and tokens are lost. One raise in ten, total loss.
+        // The clamp costs the platform at most that one wei and makes the invariant structural rather than
+        // arithmetical: `platformFee + pooledEthSpent <= totalRaised` now holds by construction, for any
+        // rounding behaviour either side of it might grow later. Worth noting WHY it had no slack to absorb
+        // the excursion: below capacity the buy spends the entire budget, so the ETH-back pool is exactly 0 and
+        // the platform takes exactly its 10% — there is no spare wei anywhere in that regime.
+        uint256 feeRoom = totalRaised - pooledEthSpent; // cannot underflow: pooledEthSpent <= amtIn <= budget <= totalRaised
+        if (platformFee > feeRoom) platformFee = feeRoom;
 
         // [AUCTION] If the pooled buy filled the curve outright, GRADUATE in this same transaction. A raise big
         // enough to absorb the whole curve has already done all the price discovery there is, and leaving the
@@ -404,9 +445,14 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
             _gradInFlight = true;
             try IRobinCurveGraduation(curve).ready() returns (bool r) {
                 if (r) {
-                    try IRobinCurveGraduation(curve).graduate() {} catch {}
+                    try IRobinCurveGraduation(curve).graduate() {}
+                    catch {
+                        emit GraduationSkipped(curve);
+                    }
                 }
-            } catch {}
+            } catch {
+                emit GraduationSkipped(curve);
+            }
             _gradInFlight = false;
             // The curve pays its graduation keeper bounty to whoever triggered it — us. Book it to the platform
             // rather than letting it sit: contributor payouts are computed from fixed accounting, never from this
