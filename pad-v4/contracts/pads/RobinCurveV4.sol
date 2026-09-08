@@ -57,6 +57,10 @@ interface IRobinFeeHookBuffer {
 /// @dev [M-9] The pad hook's current creator slot. The hook's creator is repointable via a 2-step flow; this
 /// contract's was a launch-time immutable with no repoint and no alternate exit, so one pad had two creator
 /// addresses that could permanently diverge. `currentCreator()` follows this one.
+interface IRobinFeeHookGrad {
+    function onGraduated(PoolId id) external;
+}
+
 interface IRobinFeeHookCreator {
     function creatorOf(PoolId id) external view returns (address);
 }
@@ -416,6 +420,16 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         uint256 ambushReward = (distributable * ambushGradBps) / BPS;
         uint256 lpEth = distributable - platReward - creatReward - ambushReward;
         if (lpEth == 0) revert EmptyRaise();
+
+        // 3b) [LP-1] Lift the hook's curve-phase liquidity lock BEFORE step 4. The permanent LP is minted through
+        //    the PositionManager, which the lock deliberately does NOT admit (it is the route every third party
+        //    would use), so the gate has to be open by the time step 4 runs. Ordering is safe: the curve's own
+        //    position was already unwound in step 1, and this is all one transaction. Guarded by a code check —
+        //    a codeless hook (a hookless test pool) would revert the typed call UNCAUGHT — then try/caught, so a
+        //    pad whose bufferRecipient was never wired is not gated in the first place and must not brick here.
+        if (address(hooks).code.length > 0) {
+            try IRobinFeeHookGrad(address(hooks)).onGraduated(_poolId()) {} catch {}
+        }
 
         // 4) seed the PERMANENT LOCKED full-range 2-sided LP (NFT → LockVault). The reserve is sized so the ETH
         //    leg binds; the surplus reserve tokens stay here for staking.

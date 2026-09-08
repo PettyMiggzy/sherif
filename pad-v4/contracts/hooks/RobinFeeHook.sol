@@ -8,7 +8,7 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
-import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {BaseHook} from "./BaseHook.sol";
@@ -40,7 +40,7 @@ import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin} from "../int
 ///   [D2] Both fees are minted as ERC-6909 claims, so neither collection can be made to fail by draining the
 ///        singleton or by a blocklisted/paused currency; every claim-time `take` is retriable, so a paused stock
 ///        defers that one claim rather than bricking trading or waiving the fee [H-1].
-///   [G1] REQUIRED_FLAGS == 0x20CC, self-asserted in the ctor and cross-checked by the factory.
+///   [G1] REQUIRED_FLAGS == 0x28CC, self-asserted in the ctor and cross-checked by the factory.
 ///   [G2] beforeInitialize is FACTORY-ONLY, and config is bound by `registerPool` in the same launch tx.
 ///        The `registerPool` binding alone was not enough: it makes the pad's OWN pool taxed, but it does
 ///        nothing about a second pool. Only the factory may now stand one up behind this hook.
@@ -65,6 +65,10 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     struct PoolConfig {
         bool registered;
         bool quoteIsStock;
+        // [LP-1] Curve-phase liquidity lock. False from registration until the pad's curve calls onGraduated();
+        // while false AND a curve is wired (bufferRecipient != 0), beforeAddLiquidity admits ONLY the pad's own
+        // contracts. Flipping it hands the pool back to the world as an ordinary v4 pool.
+        bool graduated;
         uint16 buyTaxBps;
         uint16 sellTaxBps;
         uint16 sellFloorShareBps; // share of the sell tax carved to the floor
@@ -132,6 +136,8 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     event CreatorRepointStarted(PoolId indexed id, address pending);
     event CreatorRepointed(PoolId indexed id, address creator);
 
+    event PoolGraduated(PoolId indexed id); // [LP-1] curve-phase liquidity lock lifted
+
     error NotFactory();
     error AlreadyRegistered();
     error NotRegistered();
@@ -150,6 +156,8 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     error PayoutFailed();
     error CorporateActionCurb();
     error ExactOutputNotSupported();
+    error LiquidityLocked(); // [LP-1] third-party LP during the curve phase
+    error NotCurve(); // [LP-1] onGraduated caller is not this pool's wired curve
 
     event FloorRecipientSet(PoolId indexed id, address recipient);
     event BufferRecipientSet(PoolId indexed id, address recipient);
@@ -184,6 +192,55 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         return IHooks.beforeInitialize.selector;
     }
 
+    /// @notice [LP-1] Lock third-party liquidity for the duration of the CURVE PHASE.
+    ///
+    /// Without this the hook carried no liquidity permission at all, so `poolManager.modifyLiquidity` on a pad
+    /// pool was entirely ungated, and two things followed. Removing liquidity is NOT a swap, so a holder could
+    /// mint a token-only range, let buyers walk down through it and withdraw the money side having paid ZERO
+    /// sell tax and ZERO floor carve. And liquidity planted in the curve's own [gradTick, startTick] range
+    /// split every incoming buy pro-rata by L, so the curve never sold out, `ready()` never flipped, the
+    /// permanent locked LP was never minted and staking was never funded. See BaseHook.REQUIRED_FLAGS.
+    ///
+    /// The gate is deliberately narrow — it binds ONLY while a curve is wired and unfinished:
+    ///   • Not registered, or no curve (`bufferRecipient == 0`, e.g. an instant-LP pad from PadFactory /
+    ///     StockPadFactory) ⇒ never gated. Those pads mint their LP through the PositionManager at launch and
+    ///     have no curve phase to protect.
+    ///   • Graduated ⇒ never gated. The pool becomes an ordinary Uniswap v4 pool that anyone may provide to,
+    ///     which is what depth, routing and aggregator support need. HONEST SCOPE: the LP-through route above is
+    ///     therefore still open POST-graduation, at the cost of the position not filling. Closing it there would
+    ///     mean permanently banning third-party liquidity, which is a worse trade than the tax it protects.
+    ///   • Curve phase ⇒ only the pad's own contracts. The curve seeds, nudges, collects and unwinds its own
+    ///     position; the floor vault is admitted so a carve commit PARKS on its own terms rather than reverting
+    ///     here. The PositionManager is deliberately NOT admitted — it is the route every third party would use,
+    ///     and the one legitimate PositionManager mint (the permanent LP) happens after `onGraduated` has already
+    ///     opened the gate inside the same graduation transaction.
+    function beforeAddLiquidity(address sender, PoolKey calldata key, ModifyLiquidityParams calldata, bytes calldata)
+        external
+        view
+        override
+        returns (bytes4)
+    {
+        if (msg.sender != address(poolManager)) revert NotPoolManager();
+        PoolConfig storage c = config[key.toId()];
+        if (c.registered && !c.graduated && c.bufferRecipient != address(0)) {
+            if (sender != c.bufferRecipient && sender != c.floorRecipient) revert LiquidityLocked();
+        }
+        return IHooks.beforeAddLiquidity.selector;
+    }
+
+    /// @notice [LP-1] Called by the pad's own curve inside graduate(), before it mints the permanent LP, to lift
+    /// the curve-phase liquidity lock. One-shot and callable only by the wired curve — `bufferRecipient` is set
+    /// exactly once by the factory in the launch tx and is frozen thereafter, so no other address can reach it.
+    /// Idempotent rather than reverting on a repeat, so a retried graduation can never brick on this call.
+    function onGraduated(PoolId id) external {
+        PoolConfig storage c = config[id];
+        if (c.bufferRecipient == address(0) || msg.sender != c.bufferRecipient) revert NotCurve();
+        if (!c.graduated) {
+            c.graduated = true;
+            emit PoolGraduated(id);
+        }
+    }
+
     function registerPool(PoolId id, PoolFeeConfig calldata cfg) external override {
         if (msg.sender != factory) revert NotFactory();
         if (config[id].registered) revert AlreadyRegistered();
@@ -202,6 +259,7 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         config[id] = PoolConfig({
             registered: true,
             quoteIsStock: cfg.quoteIsStock,
+            graduated: false, // [LP-1] curve phase begins locked; the pad's curve lifts it at graduation
             buyTaxBps: cfg.buyTaxBps,
             sellTaxBps: cfg.sellTaxBps,
             sellFloorShareBps: cfg.sellFloorShareBps,

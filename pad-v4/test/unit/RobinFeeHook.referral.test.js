@@ -9,7 +9,7 @@ const { expect } = require("chai");
 const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
-const FLAGS = 0x20ccn, MASK = 0x3fffn;
+const FLAGS = 0x28ccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(deployerAddr, initCodeHash) {

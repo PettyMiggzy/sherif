@@ -19,13 +19,13 @@ import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/Pool
 ///      re-entry-during-send safe) used on the state-bearing entry points.
 ///
 /// All IHooks callbacks are stubbed to revert here; RobinFeeHook overrides only
-/// the flagged ones (beforeSwap / afterSwap). An unflagged callback is never
-/// invoked by the PoolManager, so the revert is a belt-and-suspenders guard.
+/// the flagged ones (beforeInitialize / beforeAddLiquidity / beforeSwap / afterSwap). An unflagged callback is
+/// never invoked by the PoolManager, so the revert is a belt-and-suspenders guard.
 abstract contract BaseHook is IHooks {
-    /// @notice The one-and-only mining target: BEFORE_INITIALIZE(0x2000) | BEFORE_SWAP(0x80) |
-    /// AFTER_SWAP(0x40) | BEFORE_SWAP_RETURNS_DELTA(0x08) | AFTER_SWAP_RETURNS_DELTA(0x04) == 0x20CC. The two
-    /// RETURNS_DELTA flags are both required: the buy fee is settled via a beforeSwap specified delta, the sell
-    /// fee via afterSwap.
+    /// @notice The one-and-only mining target: BEFORE_INITIALIZE(0x2000) | BEFORE_ADD_LIQUIDITY(0x800) |
+    /// BEFORE_SWAP(0x80) | AFTER_SWAP(0x40) | BEFORE_SWAP_RETURNS_DELTA(0x08) | AFTER_SWAP_RETURNS_DELTA(0x04)
+    /// == 0x28CC. The two RETURNS_DELTA flags are both required: the buy fee is settled via a beforeSwap
+    /// specified delta, the sell fee via afterSwap.
     /// Public so the factory can require(hook.REQUIRED_FLAGS() == expected) and so the
     /// address miner and the ctor self-assert all read the same source of truth.
     ///
@@ -38,7 +38,23 @@ abstract contract BaseHook is IHooks {
     /// "unbypassable ... so DexScreener / aggregator / raw-pool trades all pay", which was untrue while a
     /// sibling pool carrying this very hook traded untaxed -- and looked genuine to any indexer keying on the
     /// hook address. Found as L-25 and deferred; closed here.
-    uint160 public constant REQUIRED_FLAGS = 0x20CC;
+    ///
+    /// BEFORE_ADD_LIQUIDITY IS ALSO LOAD-BEARING, and it was missing too. L-25 closed the tax-free venue in a
+    /// SIBLING pool and left one open INSIDE THE PAD'S OWN POOL. With no liquidity flag the PoolManager never
+    /// asks this hook about `modifyLiquidity`, and `PadToken` is a plain ERC-20 with no transfer hook, so:
+    ///   (a) LP-THROUGH IS A TAX-FREE EXIT. The sell tax fires only in afterSwap on a oneForZero swap. Mint a
+    ///       token-only range, let buyers walk down through it, then REMOVE the position -- now holding the
+    ///       money side. Removing liquidity is not a swap, so it pays no sell tax and no floor carve. The
+    ///       creator's sell stream and the permanent floor's funding were both avoidable by any patient holder.
+    ///   (b) BUY-FLOW INTERCEPTION STARVES GRADUATION. Plant liquidity in [gradTick, startTick] -- the same
+    ///       shape as the curve's own position -- and every buy splits pro-rata by L between the curve and the
+    ///       interloper. The curve never sells out, RobinCurveV4.ready() never flips, the permanent locked LP is
+    ///       never minted and staking is never funded. The repo already knew about planted liquidity, but only
+    ///       in the below-the-ceiling OVERSHOOT variant that `restoreCeiling` answers; in-range interception was
+    ///       neither tested nor handled.
+    /// Hook permissions live in the hook's ADDRESS, so this is a pre-mainnet decision or never: every pad
+    /// launched against a hook mined without this bit keeps the hole for the life of the pool.
+    uint160 public constant REQUIRED_FLAGS = 0x28CC;
     /// @dev Low 14 bits are the hook-permission field the PoolManager reads from the address.
     uint160 internal constant ALL_HOOK_MASK = 0x3FFF;
 

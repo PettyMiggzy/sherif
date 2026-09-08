@@ -16,7 +16,7 @@ const { expect } = require("chai");
 
 const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
-const FLAGS = 0x20ccn, MASK = 0x3fffn;
+const FLAGS = 0x28ccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(dep, h) {
@@ -51,8 +51,8 @@ describe("[L-25 regression] a sibling pool behind this hook cannot exist", () =>
   });
 
   it("the flag word carries BEFORE_INITIALIZE — without it the PoolManager never asks the hook", async () => {
-    expect(await hook.REQUIRED_FLAGS()).to.equal(0x20ccn);
-    expect(BigInt(hookAddr) & MASK).to.equal(0x20ccn); // and the mined ADDRESS advertises it
+    expect(await hook.REQUIRED_FLAGS()).to.equal(0x28ccn);
+    expect(BigInt(hookAddr) & MASK).to.equal(0x28ccn); // and the mined ADDRESS advertises it
     expect((await hook.REQUIRED_FLAGS()) & 0x2000n).to.equal(0x2000n);
   });
 

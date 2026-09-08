@@ -13,7 +13,7 @@ const POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
 const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
-const FLAGS = 0x20ccn;
+const FLAGS = 0x28ccn;
 const MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 

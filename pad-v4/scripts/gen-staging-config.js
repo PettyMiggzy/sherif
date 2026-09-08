@@ -45,7 +45,7 @@ const cfg = {
     factory: A(DEP.contracts.curveFactory, "0x0311038b613148bD161cf5442E372f668F04bf9B"),
     swapRouter: A((DEP.testnetPad || {}).swapRouter || process.env.SWAP_ROUTER, "0x2C95a18aa24C6d8b08070C04439D5A924D7430F5"), // PoolSwapTest (testnet swap router)
   },
-  HOOK_FLAGS: "0xcc",
+  HOOK_FLAGS: "0x28cc",
   FLAG_MASK: "0x3fff",
   BYTECODE: {
     padToken: padToken.bytecode,

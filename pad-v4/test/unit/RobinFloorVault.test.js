@@ -43,7 +43,7 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
       abi.encode(["address", "address", "address", "address"],
         [await pm.getAddress(), owner.address /* factory */, await reg.getAddress(), await tok.getAddress()]),
     ]);
-    const FLAGS = 0x20ccn, MASK = 0x3fffn;
+    const FLAGS = 0x28ccn, MASK = 0x3fffn;
     let hookSalt, hookAddr;
     for (let i = 0n; ; i++) {
       const sl = ethers.zeroPadValue(ethers.toBeHex(i), 32);

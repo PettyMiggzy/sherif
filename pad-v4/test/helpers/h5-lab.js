@@ -15,7 +15,7 @@ const poolIdOf = (k) =>
 const E = (x) => ethers.parseEther(String(x));
 const f = (x, d = 4) => Number(ethers.formatEther(x)).toFixed(d);
 
-const FLAGS = 0x20ccn, MASK = 0x3fffn;
+const FLAGS = 0x28ccn, MASK = 0x3fffn;
 function mineHookSalt(dep, h) {
   for (let i = 0n; ; i++) {
     const s = ethers.zeroPadValue(ethers.toBeHex(i), 32);

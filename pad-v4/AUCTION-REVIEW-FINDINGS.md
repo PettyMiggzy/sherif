@@ -51,9 +51,10 @@ without ever selling, without moving the visible price, and the pad never gradua
 has no v4 pads. So this costs one constant and one branch today, and becomes permanently unfixable
 for every pad launched after the first mainnet launch.
 
-Decision required before mainnet: either add `BEFORE_ADD_LIQUIDITY` to `REQUIRED_FLAGS` and admit only
-the curve / floor / ambush / LockVault pre-graduation, **or** write into the audit brief that the sell
-tax and floor carve are avoidable by any LP.
+**CLOSED.** `REQUIRED_FLAGS` is now `0x28CC` — `BEFORE_ADD_LIQUIDITY` (0x800) added — and
+`RobinFeeHook.beforeAddLiquidity` gates third-party liquidity for the curve phase. See
+[`LP-GATE.md`](LP-GATE.md) for the design and its honest scope; pinned by
+`test/regression/LP1.liquidity-gate.test.js` (10 tests).
 
 ---
 

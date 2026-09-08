@@ -12,7 +12,7 @@ const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
 const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
-const FLAGS = 0x20ccn, MASK = 0x3fffn;
+const FLAGS = 0x28ccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(dep, h) {
@@ -126,7 +126,7 @@ describe("SIM — the floor only ever grows and absorbs dumps", () => {
     for (let i = 0n; ; i++) {
       const sl = ethers.zeroPadValue(ethers.toBeHex(i), 32);
       const a = ethers.getCreate2Address(await dep.getAddress(), sl, ethers.keccak256(hookInit));
-      if ((BigInt(a) & 0x3fffn) === 0x20ccn) { hookSalt = sl; hookAddr = a; break; }
+      if ((BigInt(a) & 0x3fffn) === 0x28ccn) { hookSalt = sl; hookAddr = a; break; }
     }
     await dep.deploy(hookSalt, hookInit);
     const hook = HookF.attach(hookAddr);
