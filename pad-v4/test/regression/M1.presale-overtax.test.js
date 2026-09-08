@@ -128,8 +128,12 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
 
     expect(spent).to.be.lt(TARGET); // the curve genuinely could not absorb the raise — the defect's precondition
     expect(taxed).to.be.gt(0n);
-    // THE NUMBER THAT MOVED: the tax is 1% of what swapped, not 1% of the target
-    expect(taxed).to.equal((spent * BUY_TAX_BPS) / 10000n);
+    // THE NUMBER THAT MOVED: the tax is 1% of what swapped, not 1% of the target.
+    // [AUCTION] The request now carries PresaleVault.CEILING_REACH (64 wei) of dust so the buy actually TOUCHES
+    // the graduation ceiling and can graduate inline — without it the floored capacity estimate stops 3 wei
+    // short and ready() never flips. The hook taxes the requested input, so the tax can read up to one wei above
+    // 1% of what swapped. That is the entire drift, and it is bounded by CEILING_REACH * MAX_TAX_BPS / BPS.
+    expect(taxed).to.be.closeTo((spent * BUY_TAX_BPS) / 10000n, 1n);
     expect(taxed).to.be.lt((TARGET * BUY_TAX_BPS) / 10000n); // strictly less than the old charge
   });
 

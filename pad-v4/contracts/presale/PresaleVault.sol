@@ -69,6 +69,17 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
     // [L-12] Conservative gas floor for finalize()'s launch + pooled-buy. Guards against the EIP-150 63/64 rule
     // silently converting a fully-funded presale to an irreversible Failed(3) when finalize is called under-gassed.
     uint256 internal constant MIN_FINALIZE_GAS = 2_000_000;
+    /// @notice [AUCTION] Dust added to the pooled buy REQUEST so it actually touches the graduation ceiling.
+    /// `_absorbableIn` floors at every step, so it returns a LOWER bound and the buy stops a few wei of input
+    /// short of `gradSqrt` — measured at exactly 3 wei on the reference geometry. Those few wei are the
+    /// difference between a curve that graduates inside finalize and one that sits sold out waiting for a keeper
+    /// that has never run in production (LIVE_DEPLOYMENT.md: 9 coins, 0 graduated).
+    /// This CANNOT overshoot the ceiling: the swap is hard-limited at `gradSqrt`, so the pool stops there and
+    /// `pooledEthSpent` measures what actually moved; the remainder stays in the vault and leaves through the
+    /// same pro-rata ETH-back path as any other surplus. The only cost is [M-1]'s fee-on-requested-input applied
+    /// to the unspent dust — at most `CEILING_REACH * buyTaxBps / BPS`, which is 0 wei at the shipped 1% rate
+    /// and 1 wei at MAX_TAX_BPS (200 = 2%), the highest tax RobinV4FeeConfig permits.
+    uint256 internal constant CEILING_REACH = 64;
 
     // ── immutable-after-initialize config ──
     ICurvePadFactoryV4 public curvePadFactory;
@@ -344,14 +355,18 @@ contract PresaleVault is IUnlockCallback, ReentrancyGuard {
         // that can actually be put to work; everything beyond it is returned WHOLE.
         uint256 capacity =
             _absorbableIn(TickMath.getSqrtPriceAtTick(startTick), gradSqrt, c.curveSupply, d.lpFee, d.buyTaxBps);
-        uint256 usable = capacity >= type(uint256).max / BPS
+        // The most this buy should ever REQUEST: the curve's capacity plus the dust that carries it onto the
+        // ceiling. Everything past this is raise the curve cannot take, and it goes back whole.
+        uint256 reach = capacity == 0 ? 0 : capacity + CEILING_REACH;
+        uint256 usable = reach >= type(uint256).max / BPS
             ? totalRaised
-            : Math.mulDiv(capacity, BPS, BPS - PLATFORM_FEE_BPS);
+            : Math.mulDiv(reach, BPS, BPS - PLATFORM_FEE_BPS);
         if (usable > totalRaised) usable = totalRaised;
         platformFee = (usable * PLATFORM_FEE_BPS) / BPS;
         uint256 amtIn = usable - platformFee;
-        // Both steps floor, so the gross-up can land at most a wei above capacity; clamp rather than over-request.
-        if (amtIn > capacity) amtIn = capacity;
+        // The gross-up floors, so this can land a wei above `reach`; clamp rather than request more than the
+        // curve could conceivably take.
+        if (amtIn > reach) amtIn = reach;
         if (amtIn == 0) revert ZeroBought();
 
         // pooled buy, atomic with the launch
