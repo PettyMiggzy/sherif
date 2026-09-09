@@ -35,8 +35,16 @@ const DEFAULTS = {
   // parked in the curve and swept to the platform at graduation, and the referral share is carved out of the
   // platform's own cut only when a ref link is used. So this is 1.25% to the platform, not 1% + 0.25% elsewhere
   // -- the hook has no third destination on the buy leg. See BUY-SIDE STAKING SLICE in ROBIN-V4-CURVE-ECON.md.
-  buyTaxBps: Number(process.env.BUY_TAX_BPS || 125), // 1.25% buy tax (ETH, fee-on-input) → 0.25% buffer / referrer share / rest platform
-  sellTaxBps: Number(process.env.SELL_TAX_BPS || 125), // 1.25% sell trade tax → 1.00% creator / 0.25% floor (with sellFloorShareBps 2000)
+  // [OWNER] 1% per side, back down from the 1.25% that was staged earlier.
+  //   BUY  1.00% of the ETH in (fee-on-input, skimmed in beforeSwap):
+  //          0.20% curve buffer (buyBufferShareBps 2000) -> the platform at graduation
+  //          0.20% referrer     (referralShareBps 2500 of the remaining 0.80%)
+  //          0.60% platform
+  //   SELL 1.00% of the ETH out:
+  //          0.80% creator
+  //          0.20% floor vault  (sellFloorShareBps 2000)
+  buyTaxBps: Number(process.env.BUY_TAX_BPS || 100),
+  sellTaxBps: Number(process.env.SELL_TAX_BPS || 100),
   sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 2000), // 20% of the sell tax (=0.25% of trade at 125) → floor
   // [fee-model] BUY-side ETH LP fee → 100% platform (0% held for the floor). The platform keeps all ETH LP fees; the
   // deep RobinFloorVault is funded from ELSEWHERE — the ongoing sell-tax floor slice (sellFloorShareBps) + the ambush

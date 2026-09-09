@@ -15,6 +15,7 @@ import { CFG } from "./config.js";
 import { openOrders, cancelOrder, setFilled, bumpAttempts } from "./orders.js";
 import { runGradKeeper } from "./gradkeeper.js";
 import { runBuybackKeeper } from "./buybackkeeper.js";
+import { runSupportKeeper } from "./supportkeeper.js";
 
 const ABI = [
   "function execute((address maker,address sellToken,address buyToken,uint256 sliceIn,uint256 minOut,uint256 slices,uint256 interval,uint256 expiry,uint256 salt) o, bytes signature) returns (uint256)",
@@ -107,6 +108,8 @@ export async function runKeeper() {
   runGradKeeper().catch((e) => console.log("[grad] fatal:", (e && e.message) || e));
   // Self-disables unless BUYBACK_KEEPER_KEY + BUYBACK_TOKEN are set, so this is inert until configured.
   runBuybackKeeper().catch((e) => console.log("[buyback] fatal:", (e && e.message) || e));
+  // Keeps each v4 pad's floor + market-maker vaults placed and swept. Self-disables until configured.
+  runSupportKeeper().catch((e) => console.log("[support] fatal:", (e && e.message) || e));
 
   if (!KEY || !/^0x[0-9a-f]{40}$/.test(CFG.robinLimit)) {
     console.log("[keeper] disabled (set KEEPER_KEY and ROBIN_LIMIT to run)");
