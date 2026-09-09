@@ -372,7 +372,7 @@ against, and a second pool has to be opened through the factory-gated `beforeIni
 an untaxed venue for the same token.
 
 `indexer/src/buybackkeeper.js` buys the same tokenomic without the second pool: spend platform ETH
-buying ROBIN on the curve it already trades on, through the live `FeeRouter.buyExactInETH`. That is
+buying ROBIN on the curve it already trades on, through the live PadRouter's `buy(token, minOut)`. That is
 recurring demand that scales with launch volume **and** it walks ROBIN toward its own graduation — after
 which the paired-pool design becomes possible for real. The keeper is the unblocker, not the substitute.
 
@@ -398,6 +398,28 @@ exact behaviour it exists to prevent, so orientation is resolved from `pool.toke
 The keeper keeps its **own** EMA of observed spot across polls rather than reading a pool TWAP, because
 these pads seed with observation cardinality 1. The mean updates on every poll, including polls it does
 not buy on — otherwise a quiet period leaves it stale and the guard meaningless.
+
+### Verified against mainnet, not against the repo
+
+Three bugs came out of pointing it at chain 4663 rather than trusting the source tree, and all three
+would have been silent:
+
+- **Wrong ABI.** It was written against `launchpad/contracts/FeeRouter.sol`
+  (`buyExactInETH(token, minOut, deadline)`), which is **not what is deployed**. The live routers are
+  PadRouter / PadRouterV2 with `buy(token, minOut)`. Every call would have reverted.
+- **Hardcoded router.** ROBIN is bound to router **v1**; `configOf` on v2 returns `set=false` and a buy
+  there reverts. A coin never moves between routers, so the binding — router, pool and curve — is now
+  discovered from `configOf(token)` instead of configured. That also means the operator supplies only the
+  token address.
+- **Permanently idle on a cold RPC.** The binding was resolved once at startup and the keeper returned
+  if it failed. On a provider that had not settled yet, every `configOf` threw, the token read as "not
+  configured on any router", and the keeper parked itself for the life of the process while the chain was
+  fine. Binding is now lazy and retried each poll.
+
+Live confirmation on ROBIN: token0 is WETH and token1 is ROBIN (so the deviation guard takes the
+"lower tick means a more expensive token" branch), fee tier 10000, pool
+`0x9fe8261512Ef00B520F97d709EcB31A8A83B731f`, curve `0x614F39632c28B86b87E679e512AFDD5518BF5569`, and a
+simulated 0.0005 ETH buy returns ~187,419 ROBIN.
 
 ### Honest scope
 

@@ -37,6 +37,10 @@
 // them. The blast radius is bounded by what the wallet is funded with — fund it per-period, not with a
 // treasury. The on-chain version of this belongs in a contract like MilestoneVault if it ever holds size.
 //
+// The router, pool and curve are DISCOVERED from `configOf(token)` rather than configured: a coin is bound
+// to the router it launched under and never moves, and ROBIN is bound to v1 while the v2 router reverts on
+// it — so a hardcoded router would be silently wrong for half the pad.
+//
 // OFF unless BUYBACK_KEEPER_KEY (or KEEPER_KEY) and BUYBACK_TOKEN are set and BUYBACK_KEEPER != 0.
 // ─────────────────────────────────────────────────────────────────────────────
 import { ethers } from "ethers";
@@ -66,10 +70,17 @@ const GAS_CAP = (() => {
   catch { return 3_000_000n; }
 })();
 
-const ROUTER_ABI = [
-  "function buyExactInETH(address token, uint256 amountOutMin, uint256 deadline) payable returns (uint256 tokenOut)",
+// The LIVE routers are PadRouter / PadRouterV2, whose buy is `buy(token, minOut)` — NOT the
+// `buyExactInETH(token, minOut, deadline)` in launchpad/contracts/FeeRouter.sol, which is a newer contract
+// that is not what is deployed. Verified against mainnet: a v1 buy of 0.0005 ETH returns ~187k ROBIN.
+const ROUTER_ABI = ["function buy(address token, uint256 minOut) payable returns (uint256 tokensOut)"];
+// configOf's tuple WIDENED between the two routers (v2 carries stakingBps + robinBps), so one shared ABI
+// cannot decode both — that is exactly why the pad ships two ABI entries. Try each shape.
+const CONFIG_ABIS = [
+  ["function configOf(address) view returns ((address pool, address curve, address projectWallet, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, bool set))"],
+  ["function configOf(address) view returns ((address pool, address curve, address projectWallet, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, uint16 stakingBps, uint16 robinBps, bool set))"],
 ];
-const CURVE_ABI = ["function ready() view returns (bool)", "function pool() view returns (address)"];
+const CURVE_ABI = ["function ready() view returns (bool)"];
 const POOL_ABI = [
   "function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 obsIdx, uint16 obsCard, uint16 obsCardNext, uint8 feeProtocol, bool unlocked)",
   "function token0() view returns (address)",
@@ -98,22 +109,53 @@ export function tooExpensive(tick, _mean, _isToken0) {
   return richer > MAX_TICK_DEV;
 }
 
+/// Resolve which router the token is actually bound to, and take its pool and curve from the chain rather
+/// than from config. A coin is bound to the router it launched under and never moves, so hardcoding one
+/// would silently break for every coin on the other — ROBIN is bound to v1, and the v2 router reverts on it.
+async function resolveBinding(p, token) {
+  for (const r of CFG.routers) {
+    for (const abi of CONFIG_ABIS) {
+      try {
+        const c = await new ethers.Contract(r, abi, p).configOf(token);
+        if (c.set) return { router: r, pool: c.pool, curve: c.curve };
+      } catch { /* wrong tuple shape for this router — try the other */ }
+    }
+  }
+  return null;
+}
+
 export async function runBuybackKeeper(provider) {
   if (!ENABLED) {
     console.log("[buyback] disabled (needs BUYBACK_KEEPER_KEY + BUYBACK_TOKEN, and BUYBACK_KEEPER != 0)");
     return;
   }
-  const p = provider || new ethers.JsonRpcProvider(CFG.rpc);
+  const p = provider || new ethers.JsonRpcProvider(CFG.rpcUrl);
   const signer = new ethers.Wallet(KEY, p); // plain wallet: a failed send consumes no nonce
-  const router = new ethers.Contract(CFG.router, ROUTER_ABI, signer);
-  console.log(`[buyback] armed — wallet ${signer.address} buying ${TOKEN} via router ${CFG.router}`);
 
-  const curveAddr = process.env.BUYBACK_CURVE || "";
-  const curve = curveAddr ? new ethers.Contract(curveAddr, CURVE_ABI, p) : null;
-  let pool = null;
+  // Resolve the binding LAZILY and keep retrying. A first attempt that fails because the RPC has not
+  // settled yet must not park the keeper for the life of the process — which is exactly what an
+  // up-front resolve-or-return did: every configOf threw on a cold provider, the binding read as
+  // "not configured on any router", and the keeper went idle permanently while the chain was fine.
+  let router = null, curve = null, pool = null;
+  console.log(`[buyback] armed — wallet ${signer.address} buying ${TOKEN}`);
+  const ensureBound = async () => {
+    if (router) return true;
+    const bind = await resolveBinding(p, TOKEN);
+    if (!bind) return false;
+    router = new ethers.Contract(bind.router, ROUTER_ABI, signer);
+    curve = bind.curve && bind.curve !== ethers.ZeroAddress
+      ? new ethers.Contract(bind.curve, CURVE_ABI, p) : null;
+    pool = bind.pool && bind.pool !== ethers.ZeroAddress
+      ? new ethers.Contract(bind.pool, POOL_ABI, p) : null;
+    console.log(`[buyback] bound — router ${bind.router} pool ${bind.pool} curve ${bind.curve}`);
+    return true;
+  };
 
   for (;;) {
-    try { await tick(p, signer, router, curve, () => pool, (v) => { pool = v; }); }
+    try {
+      if (!(await ensureBound())) skip("unbound");
+      else await tick(p, signer, router, curve, () => pool, (v) => { pool = v; });
+    }
     catch (e) { console.log(`[buyback] poll error: ${(e && e.shortMessage) || (e && e.message) || e}`); }
     beat("buyback");
     await new Promise((r) => setTimeout(r, jitter(POLL_MS)));
@@ -126,9 +168,6 @@ async function tick(p, signer, router, curve, getPool, setPool) {
   // 1) Stop once ROBIN graduates — from there it has a real pool and this strategy is the wrong one.
   if (curve) {
     try { if (await curve.ready()) return skip("graduated"); } catch {}
-    if (!getPool()) {
-      try { setPool(new ethers.Contract(await curve.pool(), POOL_ABI, p)); } catch {}
-    }
   }
 
   // 2) Track spot and keep the rolling mean current EVERY poll, including polls we do not buy on —
@@ -159,10 +198,9 @@ async function tick(p, signer, router, curve, getPool, setPool) {
 
   // 5) Dry-run for a quote in the same state we are about to broadcast into, then derive the ON-CHAIN
   //    slippage floor from it. This is the only guard an attacker cannot step around.
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
   let quote;
   try {
-    quote = await router.buyExactInETH.staticCall(TOKEN, 0n, deadline, { value: amount });
+    quote = await router.buy.staticCall(TOKEN, 0n, { value: amount });
   } catch (e) {
     return skip(`dry-run:${(e && e.shortMessage) || "revert"}`);
   }
@@ -174,13 +212,11 @@ async function tick(p, signer, router, curve, getPool, setPool) {
   const gasPrice = BigInt(Math.floor(Number(fee.gasPrice || 0n) * GAS_MULT)) || fee.gasPrice || 0n;
   let gas = GAS_CAP;
   try {
-    gas = (await router.buyExactInETH.estimateGas(TOKEN, minOut, deadline, { value: amount })) * 125n / 100n;
+    gas = (await router.buy.estimateGas(TOKEN, minOut, { value: amount })) * 125n / 100n;
   } catch {}
   if (gas > GAS_CAP) gas = GAS_CAP;
 
-  const tx = await router.buyExactInETH(TOKEN, minOut, deadline, {
-    value: amount, type: 0, gasPrice, gasLimit: gas,
-  });
+  const tx = await router.buy(TOKEN, minOut, { value: amount, type: 0, gasPrice, gasLimit: gas });
   lastBuyAt = Date.now();
   stats.buys++;
   stats.spentWei += amount;
