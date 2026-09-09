@@ -360,3 +360,49 @@ accounting rather than from this balance, so an unbooked wei here would be stran
 The dual-pool ROBIN leg, the stock-paired variant, and the tranche ladder are all **cut** per the
 review. The ROBIN tokenomic is available today without touching `graduate()`: a keeper spending the
 platform's existing graduation cut into ROBIN's own pool buys the same thing.
+
+---
+
+## 8. The ROBIN keeper — what shipped instead of the paired pool
+
+The 40%-then-20% ROBIN LP leg stayed blocked for one reason that no amount of tuning fixes: **ROBIN is
+itself still on a bonding curve**, ~49% of the way to its 4.2 ETH ceiling with `ready()` false. Pairing
+every graduating coin against a token with no graduated market gives that leg nothing real to price
+against, and a second pool has to be opened through the factory-gated `beforeInitialize` or it becomes
+an untaxed venue for the same token.
+
+`indexer/src/buybackkeeper.js` buys the same tokenomic without the second pool: spend platform ETH
+buying ROBIN on the curve it already trades on, through the live `FeeRouter.buyExactInETH`. That is
+recurring demand that scales with launch volume **and** it walks ROBIN toward its own graduation — after
+which the paired-pool design becomes possible for real. The keeper is the unblocker, not the substitute.
+
+### The guard that matters
+
+A keeper that buys on a fixed schedule with no price limit is free money: push the curve up, let the
+keeper buy the pump, sell into it. `MilestoneVault.buyback` already solved this shape on-chain, and its
+four guards are the ones applied here:
+
+| Guard | Why |
+|---|---|
+| **Cooldown** | one buy per window, never a burst |
+| **Size cap** | a fixed ceiling AND a share of spendable balance, so one buy cannot move price much |
+| **Deviation** | refuse to buy when spot has run UP away from the keeper's own rolling mean. Buying a dip is fine; buying a spike is the attack |
+| **`amountOutMin`** | derived from a same-block `staticCall` quote — the only guard enforced **on-chain** |
+| **Jitter** | size and cadence randomised inside their bounds, so the schedule is not a clock an attacker can set their watch by |
+
+The deviation guard depends on the pool's token sort — with the pad token as token1, a *higher* tick
+means a *cheaper* token. Read backwards it inverts into "refuse dips, buy only pumps", which is the
+exact behaviour it exists to prevent, so orientation is resolved from `pool.token0()` and pinned by
+`indexer/test/buyback-guards.test.mjs`.
+
+The keeper keeps its **own** EMA of observed spot across polls rather than reading a pool TWAP, because
+these pads seed with observation cardinality 1. The mean updates on every poll, including polls it does
+not buy on — otherwise a quiet period leaves it stale and the guard meaningless.
+
+### Honest scope
+
+Every guard except `amountOutMin` is **client-side**. A compromised keeper key can ignore them; the
+blast radius is bounded by what the wallet holds, so fund it per period rather than pointing it at a
+treasury. If it ever runs at size the guards belong on-chain, in a contract shaped like
+`MilestoneVault`. It is **off** unless `BUYBACK_KEEPER_KEY` and `BUYBACK_TOKEN` are set, and it stops
+itself entirely once ROBIN graduates, because from there the strategy is the paired pool, not the curve.
