@@ -84,3 +84,61 @@ callback, BalanceDelta). currency0 = native ETH (address 0); currency1 = the pad
 Unit: FeeConfig caps, curve seed/buy/collect/graduation-waterfall/bounty/grief-recovery/capped-grad, hook skim/buffer split, lock-staking drip/lock/penalty/anti-drain, ambush geometry/seed/park/dip-rip/non-bricking, presale bounds/deposit/finalize/claim/refund/escape-hatch/refundTo.
 Sims: full lifecycle no-bot-protection + no-crazy-slippage + graduation conservation + fee conservation + RWA-staking; lock-staking fed by graduation; presale launch+pooled-buy; **production-geometry calibration** (start ~$3.4k / grad ~$34k / 4.2 ETH / 10×).
 Fork (needs FORK_RPC): launch → sellout → graduate against the live v4 PoolManager + PositionManager.
+
+---
+
+## The auction pad, end to end
+
+The flow the owner specified, and where each leg actually lives in the code.
+
+```
+   bidders ──► AUCTION (PresaleVault)
+                  │
+                  ├─ 10%  ─────────────────────────────► PLATFORM   (PLATFORM_FEE_BPS, taken at settlement)
+                  │
+                  └─ 90%  ─► pooled buy into the CURVE ─► becomes the curve's RAISE
+                                                             │
+                                            at graduation, the waterfall carves:
+                                            ├─ 0.2% (max 0.02) ─► keeper bounty
+                                            ├─ 10%  ────────────► PLATFORM   (platformGradBps)
+                                            ├─ 10%  ────────────► CREATOR    (creatorGradBps)
+                                            ├─ 15%  ────────────► MARKET MAKER (ambushGradBps)
+                                            └─ 65%  ────────────► permanently LOCKED LP
+```
+
+**"Some of the auction goes to the market maker" is `ambushGradBps`.** The auction's ETH *becomes* the
+curve's raise, so a carve taken from the raise at graduation is the same money from the same source as a
+carve taken at settlement — only the booking moment differs. It is funded by the project's own raise and
+never by the platform.
+
+Raised from 5% to **15%**. On a 4.67 ETH auction:
+
+| | 5% (before) | 15% (now) |
+|---|---|---|
+| Market-maker seed | 0.210 ETH | **0.629 ETH** |
+| Locked LP | 3.145 ETH | 2.726 ETH |
+
+5% was too thin to defend anything. The trade is against the locked LP, and concentrated support near the
+floor is worth more per ETH on a memecoin than thin full-range depth. Hard cap is
+`MAX_GRAD_SHARE_BPS = 2500`.
+
+### The platform's real take is 19%, not 10%
+
+Worth stating plainly rather than leaving it to be discovered: the platform is paid **twice** — 10% of the
+raise at auction settlement, and another 10% of the raise at graduation. On a 4.67 ETH auction that is
+0.467 + 0.419 = **0.886 ETH, 19.0% of everything bidders put in.** Both legs are deliberate and both are
+disclosed on-chain, but anyone modelling this as "the pad takes 10%" is modelling it wrong.
+
+### Support runs for the life of the project, not just at graduation
+
+The 15% is a *seed*, not the whole story. After graduation the support keeps growing from trading:
+
+- **20% of every sell tax** → the floor vault, forever (`sellFloorShareBps`)
+- **20% of buy LP fees** → the floor vault (`buyLpFloorShareBps`)
+- the market-maker band forwards **all its ETH earnings** → the floor, and its token earnings → staking
+- **75% of unsold supply** → the sell band, whose ETH proceeds also land in the floor
+
+During the curve phase no support is needed and none is deployed: the curve seeds exactly one range
+`[gradTick, startTick]` with the pool opening at `startTick`, and there is **no liquidity below the launch
+price**, so price cannot fall under it. The LP-1 gate makes that structural rather than incidental — before
+it, a third party could plant liquidity below the curve and break the property.

@@ -47,7 +47,14 @@ const DEFAULTS = {
   referralShareBps: Number(process.env.REFERRAL_SHARE_BPS || 2500), // 25% of the platform buy cut (=0.2% of trade) → referrer
   platformGradBps: Number(process.env.PLATFORM_GRAD_BPS || 1000), // 10% of the raise → platform at graduation
   creatorGradBps: Number(process.env.CREATOR_GRAD_BPS || 1000), // 10% of the raise → creator at graduation
-  ambushGradBps: Number(process.env.AMBUSH_GRAD_BPS || 500), // 5% of the raise → two-sided ambush (LP = 75% remainder)
+  // [MM] 15% of the raise → the two-sided market-maker band (LP = 65% remainder). RAISED FROM 5%.
+  // This is the "some of the auction goes to the market maker" leg: the auction's ETH becomes the curve's
+  // raise, and this carve is taken out of it at graduation, so it is funded by the project's own raise and
+  // never by the platform. 5% seeded ~0.21 ETH of support on a 4.2 ETH graduation, which is too thin to
+  // defend anything; 15% seeds ~0.63 ETH. It trades against the locked LP's share, and concentrated support
+  // near the floor is worth more per ETH on a memecoin than thin full-range depth. Cap is
+  // MAX_GRAD_SHARE_BPS = 2500.
+  ambushGradBps: Number(process.env.AMBUSH_GRAD_BPS || 1500),
   lpFee: Number(process.env.LP_FEE || 10000), // 1% static pool LP fee
   startTickMag: Number(process.env.START_TICK_MAG || 201600), // curve top (launch price magnitude) — V3 parity
   curveWidth: Number(process.env.CURVE_WIDTH || 23000), // start → graduation ceiling span (~10x chart)
