@@ -57,6 +57,10 @@ interface IRobinFeeHookBuffer {
 /// @dev [M-9] The pad hook's current creator slot. The hook's creator is repointable via a 2-step flow; this
 /// contract's was a launch-time immutable with no repoint and no alternate exit, so one pad had two creator
 /// addresses that could permanently diverge. `currentCreator()` follows this one.
+interface IStakingFundEth {
+    function fundETH(uint8 side) external payable;
+}
+
 interface IAmbushUnsold {
     function fundUnsold(uint256 amount) external returns (uint256);
 }
@@ -163,6 +167,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint256 public floorEthOwed; // the buyLpFloorShareBps carve of buy fees, swept to the floor at graduation
     uint256 public creatorEthOwed; // the creator-side graduation reward (claimCreator)
     uint256 public ambushEthOwed; // the ambushGradBps share of the raise, swept to the ambush vault at graduation
+    uint256 public stakingEthOwed; // [COMMUNITY] the buy-tax buffer, streamed to the pad's staking pool as ETH
     mapping(address => uint256) public gasBountyOwed; // graduation keeper bounty booked here iff its inline send failed
     uint256 public totalGasBountyOwed; // running sum of gasBountyOwed, so sweepToPlatform never mis-books a pending bounty
     // [L-8] ETH the anti-grief nudge pulled out of THIRD-PARTY planted liquidity below the ceiling during
@@ -189,6 +194,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     event StakingFunded(uint256 amount);
     event FloorFunded(uint256 amount);
     event AmbushFunded(uint256 amount);
+    event StakingEthFunded(uint256 amount); // [COMMUNITY] buy-tax buffer → staking, as ETH
     event UnsoldFunded(address indexed ambush, uint256 amount); // [SELL] unsold supply → sell band principal
     event GradBountyPaid(address indexed keeper, uint256 amount, bool booked);
     event GradBountyClaimed(address indexed to, uint256 amount);
@@ -398,6 +404,14 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         // it never perturbs the raise/LP accounting. Guarded by a code check (a codeless hook — e.g. a hookless test
         // pool — would revert the typed call UNCAUGHT by try/catch), then try/caught + outside the PoolManager lock
         // ⇒ a reverting/unwired hook can never brick graduation.
+        // [COMMUNITY] MEASURE what the buffer actually delivers and book it to STAKING instead of letting it
+        // fall through to the platform sweep. This is the community's share of the BUY tax — the hook's buy-side
+        // sinks are buffer / referrer / platform and none of them is a holder, so redirecting the buffer at
+        // graduation is the only way to pay holders out of buys without adding a new sink to the hook, whose
+        // permissions are already frozen in its mined address. Paid in ETH, not in the pad token: holders already
+        // hold the token, so more of it is circular, while DualStaking lists ETH as a default reward on the token
+        // side and takes it through fundETH.
+        uint256 bufferBefore = address(this).balance;
         if (address(hooks).code.length > 0) {
             try IRobinFeeHookBuffer(address(hooks)).claimBuffer(_poolId()) {} catch {}
         }
@@ -406,7 +420,10 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         // pull, so it is never counted as raise. Deriving the raise from raw balance let a donor inflate lpEth
         // past the reserve's pairing capacity and brick the LP mint (InsufficientReserve) permanently. Instead we
         // measure the NET new unbooked ETH the pull delivers; the donation falls through to the step-10 sweep.
-        uint256 donatedBefore = address(this).balance - platformEthOwed - floorEthOwed; // creatorEthOwed == 0 pre-grad
+        // The delta is exactly the buffer: nothing else moves ETH across that call.
+        stakingEthOwed = address(this).balance - bufferBefore;
+
+        uint256 donatedBefore = address(this).balance - platformEthOwed - floorEthOwed - stakingEthOwed; // creatorEthOwed == 0 pre-grad
 
         // 1) pull the raise out of the curve. The unlock FIRST nudges spot back up to the exact ceiling if a buy
         //    (or a griefer's planted liquidity) overshot below it, so the permanent LP always seeds at gradTick —
@@ -417,7 +434,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         //    donation, AND [L-8] the anti-grief nudge's ETH (swap proceeds from third-party planted liquidity below
         //    the ceiling — never legitimate raise; it falls through to the step-9 platform sweep). A fully-sold curve
         //    yields ~0 token, so the LP token leg is the held-back RESERVE (all on-hand token → LP then staking).
-        uint256 raisedEth = (address(this).balance - platformEthOwed - floorEthOwed) - donatedBefore - _nudgeEthExcluded;
+        uint256 raisedEth =
+            (address(this).balance - platformEthOwed - floorEthOwed - stakingEthOwed) - donatedBefore - _nudgeEthExcluded;
         uint256 tokenReserve = IERC20(token).balanceOf(address(this));
         if (raisedEth == 0) revert EmptyRaise();
         if (tokenReserve == 0) revert NoReserve(); // [CRITICAL-1] must have a held-back reserve to pair the LP
@@ -463,6 +481,9 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         uint256 toStaking = (leftoverToken * UNSOLD_STAKING_BPS) / BPS;
         _fundStaking(toStaking);
         _fundUnsold(leftoverToken - toStaking);
+
+        // 7b) stream the buy-tax buffer → staking as an ETH reward for holders (non-bricking; flushStakingEth())
+        _fundStakingEth();
 
         // 8) sweep the held buy-LP carve → the permanent floor (non-bricking; flushFloor() finishes if unwired)
         _fundFloor();
@@ -842,6 +863,26 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         try IAmbushUnsold(v).fundUnsold(amount) {
             emit UnsoldFunded(v, amount);
         } catch {}
+    }
+
+    /// @dev [COMMUNITY] Stream the booked buy-tax buffer into the pad's staking pool as a native-ETH reward.
+    /// Non-bricking in the same shape as every other sink here: an unwired or reverting pool re-parks the book
+    /// and `flushStakingEth()` completes it later, so graduation can never be held up by the staking pool.
+    function _fundStakingEth() internal {
+        address st = staking;
+        uint256 amt = stakingEthOwed;
+        if (st == address(0) || amt == 0) return; // parks in the book; flushStakingEth() completes later
+        stakingEthOwed = 0;
+        try IStakingFundEth(st).fundETH{value: amt}(uint8(0)) {
+            emit StakingEthFunded(amt);
+        } catch {
+            stakingEthOwed = amt; // re-park → retriable
+        }
+    }
+
+    /// @notice Permissionless retry of the buy-tax buffer → staking stream.
+    function flushStakingEth() external nonReentrant {
+        _fundStakingEth();
     }
 
     /// @dev Sweep the held buy-LP carve (floorEthOwed) into the permanent floor vault. Non-bricking: if the floor

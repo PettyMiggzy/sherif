@@ -45,14 +45,21 @@ const DEFAULTS = {
   //          0.20% floor vault  (sellFloorShareBps 2000)
   buyTaxBps: Number(process.env.BUY_TAX_BPS || 100),
   sellTaxBps: Number(process.env.SELL_TAX_BPS || 100),
-  sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 2000), // 20% of the sell tax (=0.25% of trade at 125) → floor
+  // [OWNER] 0 -> the creator takes the ENTIRE 1% sell tax. The floor is not starved by this: it is seeded
+  // by the market-maker band (15% of the raise) and the unsold-supply sell band, and it keeps GROWING for the
+  // life of the pad because the ambush band forwards all of its ETH LP earnings to the floor.
+  sellFloorShareBps: Number(process.env.SELL_FLOOR_SHARE_BPS || 0),
   // [fee-model] BUY-side ETH LP fee → 100% platform (0% held for the floor). The platform keeps all ETH LP fees; the
   // deep RobinFloorVault is funded from ELSEWHERE — the ongoing sell-tax floor slice (sellFloorShareBps) + the ambush
   // vault's forwarded ETH LP fees — never the buy-LP carve. Set >0 only if you deliberately want to re-fund the floor
   // from the buy-LP leg (splits it platform/floor at graduation).
   buyLpFloorShareBps: Number(process.env.BUY_LP_FLOOR_SHARE_BPS || 0),
-  buyBufferShareBps: Number(process.env.BUY_BUFFER_SHARE_BPS || 2000), // 20% of the buy tax (=0.25% of trade at 125) → curve buffer, ends at platform
-  referralShareBps: Number(process.env.REFERRAL_SHARE_BPS || 2500), // 25% of the platform buy cut (=0.2% of trade) → referrer
+  // [COMMUNITY] 20% of the buy tax = 0.20% of every buy. It parks in the curve as ETH through the curve
+  // phase and at graduation is streamed to the pad's STAKING pool as a native-ETH reward -- it used to fall
+  // through to the platform. This is the holders' cut of the swap fee, paid in ETH rather than in the token
+  // they already hold.
+  buyBufferShareBps: Number(process.env.BUY_BUFFER_SHARE_BPS || 2000),
+  referralShareBps: Number(process.env.REFERRAL_SHARE_BPS || 2500), // 25% of the platform buy cut = 0.20% of every buy → referrer
   platformGradBps: Number(process.env.PLATFORM_GRAD_BPS || 1000), // 10% of the raise → platform at graduation
   creatorGradBps: Number(process.env.CREATOR_GRAD_BPS || 1000), // 10% of the raise → creator at graduation
   // [MM] 15% of the raise → the two-sided market-maker band (LP = 65% remainder). RAISED FROM 5%.
