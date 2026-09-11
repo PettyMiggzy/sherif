@@ -156,8 +156,31 @@ Ideas on the table so far, beyond the mechanics above:
   emitted. Gives people social credit for backing a project publicly.
 - **Lead with structural rug-immunity as the pitch, not a footnote.** Because there's no
   real pool to drain, this pad can honestly claim something most of the ~200
-  competitors can't. Combine with the trust score above for the actual headline: "the
+  competitors can't. Combine with the launch history above for the actual headline: "the
   coin can't be rugged, and the creator's history follows them."
+- **No public mempool is a real, already-true superpower — we just haven't said it out
+  loud.** Robinhood Chain has no public mempool, meaning there's no waiting room where a
+  bot can see a pending trade and jump in front of it or sandwich it — that's how most
+  front-running/sniping works on chains that do have one. Stack it with "no pool to
+  rug" and "creator allocation is vested" and it's a three-layer pitch nobody can copy
+  without changing chains: can't be front-run, can't be rugged, can't be instantly
+  dumped. Nothing to build here — it's already true, just needs to be said.
+- **"Skin in the game" locks instead of paid hype.** Paid shills hype a coin then dump
+  it — hard to tell a real believer from a paid one. Let ANYONE (not just the creator)
+  publicly lock some of their own tokens for a chosen period, shown next to their name
+  wherever the community talks. A costly, on-chain, unfakeable statement of conviction —
+  reuses the same lock/vesting tech already being built for the creator's allocation,
+  just opened up to anyone who wants to publicly back their own opinion.
+- **Pad-wide live transparency page.** Since the whole pitch is "backed by real money,
+  not a pool," show it directly — total ETH sitting across every curve, total ever
+  donated through the sacrifice page, total the support keepers have deployed. Pad-wide,
+  not per-token. Most of this space is a black box; showing the receipts is itself a
+  differentiator.
+- **Court the bots instead of fighting them.** Bots bring volume, volume is the
+  business. Most pads build anti-bot walls; publish a clean, simple, identical
+  interface for trading bots to plug into any token here instead. Since there's no
+  mempool to snipe from anyway, embracing bots doesn't carry the usual downside other
+  chains have.
 
 ## Open / unresolved
 
