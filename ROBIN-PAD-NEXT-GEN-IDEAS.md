@@ -1,0 +1,140 @@
+# Robin Pad — "No Pool" Next-Gen Concept (Brainstorm)
+
+Status: **conversation capture only.** Nothing in this doc is built, wired, or committed
+to any contract. Written down purely so nothing from the discussion gets lost — this is
+a running notes file, expected to be tweaked, trimmed, and added to as the idea firms up.
+
+---
+
+## Core pivot
+
+- Question raised: does the pad need a real Uniswap liquidity pool at all?
+- Direction being explored: **no.** The bonding curve becomes the permanent market —
+  buy = mint from curve, sell = redeem into curve, forever. No "graduation" into a real
+  pool, ever. Removes graduation risk, the LP-1-style pool attack surface, and most of
+  the ambush/floor-vault complexity as currently built for the pool-graduation model.
+- Trade-off: no real pool means no DexScreener/DexTools listing by default — that's the
+  main discovery channel today. **Not yet confirmed:** does DexScreener even index
+  Robinhood Chain at all, pool or no pool.
+
+## Visibility without making the curve a real pool
+
+- Build our own DexScreener-style page just for the pad — chart, trade history, volume,
+  trending/new tabs. Price data comes straight off the curve's own trade log. Same look
+  and feel as a real chart, no pool required.
+- Separately: seed a thin, real, ETH-paired LP pool purely so outside aggregators can see
+  and index the token. Funded from a slice of the curve's own treasury (same carve-out
+  pattern as the existing ambush/floor vault funding), not new money.
+  - This pool is **not** the real market — the curve is. This pool's only job is visibility.
+
+## Keeping the visibility pool safe
+
+- Dangerous direction: buy cheap on the visibility pool → sell into the curve for more →
+  drains real treasury ETH. Must be prevented.
+- Safe direction: buy cheap from the curve → sell into the visibility pool for more →
+  grows treasury, harmless.
+- Design: visibility pool is public **sell-only** (buy side restricted) — closes off the
+  dangerous arb path since the public can't buy real size out of it. Only we, via a
+  keeper bot (same pattern as the existing floor/ambush/support keepers), buy back
+  whatever piles up in the pool on a schedule — refilling ETH, clearing the pile-up.
+  Left alone, a sell-only pool would drain its ETH and look like a dying chart.
+- Why big buyers still prefer the curve over the pool: the visibility pool is
+  deliberately thin, so any real size there slips badly. No trick needed — just math
+  naturally routes size to the curve.
+
+## Revenue model (no real pool = no real LP-fee income)
+
+- Already built and tested tonight: 1% buy tax / 1% sell tax on curve trades — this is
+  now the main revenue engine.
+- Agreed split as of tonight (263/263 pad-v4 tests passing):
+  - Buy 1%: 0.20 → holders (ETH, via staking) / 0.20 → referrer / 0.60 → platform
+  - Sell 1%: 100% → creator
+  - LP fees: ETH side → platform, token side → staking (existing invariant: platform
+    never holds pad tokens)
+- **Open, unresolved:** total platform take across auction settlement (10%) + graduation
+  (10%) = ~19% historically flagged as high vs. competitors (pools.trade 0.25%, Pons 1%).
+  No decision made yet, and this whole framing needs to be re-derived against the
+  no-pool model anyway (see "milestone payout" below).
+
+## Auction / launch mechanics
+
+- Public still goes through the existing 1–4 day auction (already built: PresaleVault,
+  minRaise/target window, no-fail design — always launches once minRaise clears, no
+  refund/fail path once the floor is hit).
+- Creator gets a **separate guaranteed allocation** at creation: 10% of supply for $100
+  flat, instant — no competing with the public auction for their own coin.
+- That 10% vests/unlocks gradually (~2–4 weeks, exact length TBD) instead of all at once
+  — stops an instant dump without relying on an unenforceable "ban the ruggers" list
+  (trivially bypassed with a new wallet; an on-chain lock is real).
+- Milestone payout: when the raise crosses ~4 ETH, platform + creator get a payout —
+  replaces the old fixed "0.5 ETH each at graduation" idea (which assumed seeding a real
+  pool). Paid straight out of treasury at that point instead. Exact payout size TBD.
+
+## Migration feature
+
+- Let an existing project's community move to Robin with zero action from holders:
+  snapshot real on-chain balances on the source chain, deploy the new token here, batch
+  airdrop to everyone from that snapshot. Holders just wake up holding it — no claim, no
+  bridge step.
+- Creator pays a flat fee to trigger it — $200 (bumped up from an initial $100 idea) to
+  cover real gas/API cost with margin.
+- Batch-sending at real scale needs real tooling — repo already has some
+  Disperse-related contract-verification artifacts sitting around; worth checking if
+  reusable before building new batch-send logic.
+- Possible sweetener: bundle a free week of front-page/trending placement with the fee.
+
+## Rewards — moving past plain staking
+
+- Baseline: an open reward pool anyone holding/staking draws from, pro-rata, guaranteed
+  — nobody excluded.
+- Optional boost: burning your own tokens increases *your* share of that same pool. Not
+  a separate lottery, not winner-take-all — burning just buys a bigger slice of the same
+  guaranteed pool.
+- **Confirmed technical point:** a plain ERC-20 burn does *not* move price on our curve
+  design — our pricing comes off the pool/curve's own reserves and ticks, not off total
+  token supply. This differs from some other projects (e.g. a friend's project "NOMO"
+  on Robinhood Chain, reportedly ~$70k mcap) whose curve may price directly off total
+  supply, where burning could legitimately pump price. Need NOMO's contract address to
+  verify exactly how it's wired instead of guessing — flagged as a to-do.
+- The real price-pump lever is **buy-then-burn**, not burn alone: protocol-funded
+  buybacks (reusing the buyback keeper already built tonight) purchase tokens off the
+  curve — the buy is what moves price — then burn them instead of holding, so the gain
+  can't later be reversed by a resale.
+- Community "Sacrifice" page (name TBD — avoid "burn," it over-promises a pump it won't
+  deliver): user sells tokens in, but instead of taking the ETH payout, it's donated
+  straight into the pool as permanent extra backing. Optionally also burn the tokens
+  taken in, making it a user-funded version of the same buy-and-burn mechanic. Framed
+  honestly to users: this raises the floor going forward, it is not an instant pump.
+  - **Open question raised, recommendation attached:** should the dev/creator retain
+    access to reclaim these donated/burned tokens later "in case they need them"?
+    **Recommendation: no.** Reversibility breaks the entire premise — it stops actually
+    raising the floor durably, and if the community ever learns the dev can pull back
+    what was marketed as permanently sacrificed, that reads as a rug vector regardless
+    of intent. If the team needs working capital, that should come from their own
+    already-agreed revenue (sell tax, milestone payout) — not from the community-facing
+    sacrifice pool.
+- Trader rebate: trade $X volume, get X% back. Separate from the above — explicitly
+  meant to also attract bots/automated volume, since trading fees are the platform's
+  main revenue driver. Guardrail (not yet built, just noted): the rebate rate must
+  always stay below the tax rate paid, or wash-trading bots farm it for free and drain
+  the pool with zero real value created.
+
+## Open / unresolved
+
+- Confirm DexScreener actually indexes Robinhood Chain at all.
+- `services.html` is owned by a different Claude session (trending-bot branch, per
+  `COORDINATION.md`) — coordinate before adding a market-maker-support listing there,
+  don't edit solo.
+- Stock-token LP pairing (users wanting to create LPs paired against "stock" tokens, not
+  just ETH) — real observed demand, no design yet, separate problem to revisit.
+- Exact vesting length for the creator's 10% allocation.
+- Exact milestone-payout size at the ~4 ETH raise mark.
+- Final call on visibility-pool openness (fully sell-only vs. something more open).
+- The ~19%-total-platform-take number from earlier tonight — still unresolved, not yet
+  reconciled with this new no-pool model.
+- NOMO's contract address, to verify the burn-pump mechanism precisely.
+- Naming for the "Sacrifice" page.
+
+---
+*Brainstorm capture only — nothing above is implemented, committed to a contract, or
+final. This file exists purely so a long conversation doesn't lose ideas.*
