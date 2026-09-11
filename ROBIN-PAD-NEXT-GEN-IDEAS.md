@@ -56,6 +56,17 @@ proactively, not held back until asked.
   the pool at all. Framing: it's not a leak, it's a small, capped finder's fee to
   whoever keeps the visibility pool stocked and priced right — same as arbitrageurs get
   paid everywhere in finance for keeping markets in line.
+- **Confirmed: the keeper's buyback job has a real, ongoing cost — not a rug, but not
+  free either.** When someone sells into the pool, the ETH they receive is gone for
+  good — it's theirs. When the keeper later buys those tokens back to refill the pool,
+  that's separate, fresh treasury money. So over time we're effectively paying twice for
+  the same batch of tokens' liquidity: once when a seller cashes out, again when we buy
+  it back. This is just the normal cost of always being the one who shows up to buy
+  when everyone else wants to sell — same category of expense as the floor/ambush
+  vault support spend elsewhere in the system. Two things keep it bounded rather than
+  scary: (1) the pool is deliberately kept thin, capping the maximum exposure at any
+  moment; (2) the 1.5%/1.5% tax bump exists specifically to fund jobs like this — it's
+  a budgeted, recurring line item, not a surprise leak.
 
 ## Revenue model (no real pool = no real LP-fee income)
 
