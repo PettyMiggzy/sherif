@@ -4,6 +4,10 @@ Status: **conversation capture only.** Nothing in this doc is built, wired, or c
 to any contract. Written down purely so nothing from the discussion gets lost — this is
 a running notes file, expected to be tweaked, trimmed, and added to as the idea firms up.
 
+**Standing process note:** from here on, everything discussed in this thread gets logged
+here automatically, without asking first — and any new idea worth surfacing gets raised
+proactively, not held back until asked.
+
 ---
 
 ## Core pivot
@@ -181,6 +185,20 @@ Ideas on the table so far, beyond the mechanics above:
   interface for trading bots to plug into any token here instead. Since there's no
   mempool to snipe from anyway, embracing bots doesn't carry the usual downside other
   chains have.
+- **A "good" version of a mempool — sealed/private pending orders.** A normal mempool is
+  bad because everyone can see what's pending and jump in front of it. Build our own
+  pending-order queue (limit orders, scheduled trades) where the order's contents are
+  sealed/committed and only revealed at the moment they execute — same commit-reveal
+  technique already used in the presale auction, just applied to ongoing trading. Lets
+  us honestly say "we built our own mempool" as a real, bullish, differentiating claim,
+  while it's actually the version that can't be sniped. Not a trick — genuinely better
+  engineering, marketed honestly.
+  - **Hard safety requirement, non-negotiable:** submitting a sealed order must lock
+    real funds immediately, not just register an intent. If canceling before execution
+    were free, people would spam many sealed orders and only let the ones that turned
+    out favorable actually execute — a risk-free, zero-downside option at the pad's
+    expense. Cancellation (if allowed at all) must cost something. Same standing rule as
+    everything else on this pad: nobody gets upside with zero downside.
 
 ## Open / unresolved
 
