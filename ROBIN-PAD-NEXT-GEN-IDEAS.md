@@ -45,6 +45,17 @@ proactively, not held back until asked.
 - Why big buyers still prefer the curve over the pool: the visibility pool is
   deliberately thin, so any real size there slips badly. No trick needed — just math
   naturally routes size to the curve.
+- **Confirmed: the public genuinely can still profit off this, on purpose, one
+  direction only.** Since the public can only sell into the pool (never buy from it),
+  the only arbitrage path left open to them is buy-cheap-from-curve /
+  sell-into-pool — real, risk-bounded profit, and people will take it. That's fine: their
+  ETH lands in our treasury, the tokens they sell just sit in the pool until our keeper
+  buys them back with that same treasury money later. Nothing ever leaves us. The
+  direction that would cost us — buy cheap on the pool, cash out on the curve — has no
+  door to walk through regardless of the price gap, because the public can't buy from
+  the pool at all. Framing: it's not a leak, it's a small, capped finder's fee to
+  whoever keeps the visibility pool stocked and priced right — same as arbitrageurs get
+  paid everywhere in finance for keeping markets in line.
 
 ## Revenue model (no real pool = no real LP-fee income)
 
