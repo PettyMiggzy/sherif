@@ -67,6 +67,15 @@ proactively, not held back until asked.
   scary: (1) the pool is deliberately kept thin, capping the maximum exposure at any
   moment; (2) the 1.5%/1.5% tax bump exists specifically to fund jobs like this — it's
   a budgeted, recurring line item, not a surprise leak.
+- **Caught: the visibility pool must charge the same sell tax as the curve, or people
+  just route sells through the cheaper one.** If selling on the DEX/LP side were
+  untaxed (or taxed less) than selling on the curve, rational sellers would prefer the
+  DEX purely to dodge the tax, quietly gutting sell-tax revenue. Fix: the visibility
+  pool is built on the same hook system already taxing the curve — apply the identical
+  sell tax there too, so it costs the same either way and there's no cheaper route to
+  shop for. Not new tech, just the same hook pointed at a second venue. (Taxed pools
+  already trade fine on DexScreener today elsewhere in the industry — no compatibility
+  concern.)
 
 ## Revenue model (no real pool = no real LP-fee income)
 
