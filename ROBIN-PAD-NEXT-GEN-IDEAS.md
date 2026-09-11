@@ -44,17 +44,31 @@ a running notes file, expected to be tweaked, trimmed, and added to as the idea 
 
 ## Revenue model (no real pool = no real LP-fee income)
 
-- Already built and tested tonight: 1% buy tax / 1% sell tax on curve trades — this is
-  now the main revenue engine.
-- Agreed split as of tonight (263/263 pad-v4 tests passing):
-  - Buy 1%: 0.20 → holders (ETH, via staking) / 0.20 → referrer / 0.60 → platform
-  - Sell 1%: 100% → creator
-  - LP fees: ETH side → platform, token side → staking (existing invariant: platform
-    never holds pad tokens)
-- **Open, unresolved:** total platform take across auction settlement (10%) + graduation
-  (10%) = ~19% historically flagged as high vs. competitors (pools.trade 0.25%, Pons 1%).
-  No decision made yet, and this whole framing needs to be re-derived against the
-  no-pool model anyway (see "milestone payout" below).
+- Shipped baseline (263/263 pad-v4 tests passing) was 1% buy / 1% sell. **Superseded
+  below** — with no real pool, there's no LP-fee income to lean on, so tax carries the
+  whole load now.
+- **Current proposal (agreed in conversation, not yet built): 1.5% buy / 1.5% sell,**
+  with the entire incremental 0.5% on each side earmarked for the new programs rather
+  than just padding platform's cut:
+  - Buy 1.5%: 0.20 → holders (unchanged) / 0.20 → referrer (unchanged) / 0.60 → platform
+    (unchanged) / **0.50 → trader rebate pool (new)**
+  - Sell 1.5%: 1.00 → creator (unchanged, protects the creator pitch) / **0.50 → holder
+    reward pool (new)**
+  - LP fees on the thin visibility pool: ETH side → platform, token side → staking
+    (same invariant as before — platform never holds pad tokens). Expected to be minor
+    given the pool is deliberately thin.
+  - Rationale for going from 1%→1.5% instead of just reshuffling the existing 1%: in the
+    old pool-graduation model, every trade would've *also* paid a real pool fee to
+    somebody (that's just how pools work) — we just weren't the one collecting all of
+    it. Removing the pool doesn't make that cost disappear for free, it just goes
+    uncollected unless it's rolled into our own tax.
+  - Known trade-off, said out loud on purpose: 1.5%+1.5% = 3% round-trip, higher than
+    some named competitors' headline numbers (pools.trade 0.25%, Pons 1%) — the honest
+    counter is those numbers usually exclude a separate pool fee layered on top that the
+    trader pays anyway; ours is presented as the real all-in cost.
+- **Still open:** total platform take across auction settlement (10%) + milestone payout
+  (~10% at the 4 ETH mark) — flagged earlier as ~19%, not yet reconciled against this
+  updated tax model.
 
 ## Auction / launch mechanics
 
@@ -118,6 +132,28 @@ a running notes file, expected to be tweaked, trimmed, and added to as the idea 
   main revenue driver. Guardrail (not yet built, just noted): the rebate rate must
   always stay below the tax rate paid, or wash-trading bots farm it for free and drain
   the pool with zero real value created.
+
+## Standing differentiator brief
+
+Explicit direction from the user: don't build a cookie-cutter pad — there are ~200
+competing launchpads, we need to actually stand out, not just match features. Any
+genuinely new idea should be raised proactively, not held back until asked.
+
+Ideas on the table so far, beyond the mechanics above:
+
+- **Public, on-chain creator trust score.** Every token page shows whether the
+  creator's allocation is still vesting on schedule, whether this wallet has launched
+  here before, whether a prior launch of theirs rugged, time since their last big sell.
+  Not a ban list (those are trivially bypassed with a new wallet) — permanent,
+  unforgeable history the market can price in itself. Cheap to build: it's mostly
+  reading events we already emit.
+- **Sacrifice-page leaderboard.** Public ranking of top donors to the sacrifice/backing
+  pool. Near-free once the sacrifice page exists — just surfaces events already being
+  emitted. Gives people social credit for backing a project publicly.
+- **Lead with structural rug-immunity as the pitch, not a footnote.** Because there's no
+  real pool to drain, this pad can honestly claim something most of the ~200
+  competitors can't. Combine with the trust score above for the actual headline: "the
+  coin can't be rugged, and the creator's history follows them."
 
 ## Open / unresolved
 
