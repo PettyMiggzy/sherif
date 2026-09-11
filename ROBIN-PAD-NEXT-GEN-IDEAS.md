@@ -141,12 +141,16 @@ genuinely new idea should be raised proactively, not held back until asked.
 
 Ideas on the table so far, beyond the mechanics above:
 
-- **Public, on-chain creator trust score.** Every token page shows whether the
-  creator's allocation is still vesting on schedule, whether this wallet has launched
-  here before, whether a prior launch of theirs rugged, time since their last big sell.
-  Not a ban list (those are trivially bypassed with a new wallet) — permanent,
-  unforgeable history the market can price in itself. Cheap to build: it's mostly
-  reading events we already emit.
+- **Public, on-chain creator launch history — facts only, no score.** Originally
+  pitched as a "trust score," revised after a real concern: a score or rating implies
+  WE vouched for the creator, so if they rug anyway, that reads as our fault, not
+  theirs — false confidence we'd own the blame for. Fix: show plain, neutral facts with
+  zero verdict attached — "launched 2 tokens here before, both still trading normally,"
+  or "sold full allocation 3 days after launch." No grade, no color, no safe/risky
+  label. A wallet with no history isn't flagged as risky either, just "no prior
+  launches" — so first-time creators aren't scared off by looking worse than anyone
+  else. We're a mirror, not a judge. Cheap to build: mostly reading events already
+  emitted.
 - **Sacrifice-page leaderboard.** Public ranking of top donors to the sacrifice/backing
   pool. Near-free once the sacrifice page exists — just surfaces events already being
   emitted. Gives people social credit for backing a project publicly.
