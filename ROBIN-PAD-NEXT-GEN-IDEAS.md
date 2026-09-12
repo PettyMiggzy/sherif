@@ -75,7 +75,13 @@ Anything without a checkbox is still notes-only.
   `position:sticky` with its own bounded height + `overflow-y:auto` +
   `overscroll-behavior:contain` so scrolling past one column's end doesn't bleed into
   the page scroll. Collapses back to normal single-page scroll on narrow/mobile widths
-  where the columns stack.
+  where the columns stack. **Fix:** CSS `overflow-y:auto` alone only isolates scroll
+  once a column's content actually overflows its bounded height — the left and center
+  columns are short enough (fewer panels) that the wheel event just fell through to the
+  page scroll, so only the taller right column (Trade + locks + rewards + burn) visibly
+  scrolled on its own. Added a small wheel-event handler per column that always takes
+  over scrolling above the 1080px breakpoint, so all three are isolated regardless of
+  how much content each one holds.
 - [x] Migration (zero holder action) → `no-pool-migrate-preview.html`
 - [x] Pad-wide transparency page → `no-pool-transparency-preview.html`
 - [ ] Everything else below is still concept-only — no page yet.

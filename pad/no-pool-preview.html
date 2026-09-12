@@ -425,6 +425,20 @@
   wireToggle('.swaptabs', '.swaptab', 'on', 'off');
   wireToggle('.txtabs', '.txtab', 'on', null);
   wireToggle('.chart-tf', 'span', 'on', null);
+
+  // Each column scrolls independently, even the ones whose content is shorter than
+  // the viewport (CSS overflow alone only isolates scroll once a column actually
+  // overflows — the left/center columns are short enough that the wheel event was
+  // just falling through to the page instead of staying put). Below the breakpoint
+  // where columns stack into one page, let the page scroll normally.
+  var stackedLayout = window.matchMedia('(max-width: 1080px)');
+  document.querySelectorAll('.col-left, .col-center, .col-right').forEach(function (col) {
+    col.addEventListener('wheel', function (e) {
+      if (stackedLayout.matches) return;
+      e.preventDefault();
+      col.scrollTop += e.deltaY;
+    }, { passive: false });
+  });
 </script>
 </body>
 </html>
