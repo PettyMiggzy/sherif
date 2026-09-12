@@ -1,6 +1,7 @@
 # No-Pool-Forever — design + status
 
-Status: **core `RobinCurveV4` mechanism implemented and unit-tested (105/105 passing, zero
+Status: **core `RobinCurveV4` mechanism implemented and unit-tested, plus a new
+`RobinDividendPool` holder-reward sink (114/114 passing across the full unit suite, zero
 regressions to the legacy path). One real bug found by this session's own adversarial
 security-audit pass and fixed (see below). Not deployed. Not wired into any factory/pad-type/
 frontend yet. Not audited by anyone but this session's own research/audit passes — a real
@@ -103,6 +104,51 @@ factory's classic pads are byte-for-byte unchanged):
   emits a new `NoPoolCheckpoint(liquidityWithdrawn, liquidityRetained, toStakingEth)` event
   instead of a real `lpTokenId` in `Graduated` (which stays 0 for these pads).
 - `collectFees()`: `if (graduated && !noPoolForever) revert AlreadyGraduated();`
+
+## `RobinDividendPool` — "dividends, not staking" holder-reward sink
+
+New contract, `contracts/pads/RobinDividendPool.sol` — the destination the folded-in
+`lpEth` (and any leftover reserve token) actually pays into for a `noPoolForever` pad,
+replacing "staking" with a no-lock, no-deposit snapshot-claim reward.
+
+**Design, in one paragraph:** it wires into `RobinCurveV4`'s existing `staking` slot
+through the exact same `IStakingFund`/`IStakingFundEth` surfaces `setStaking()` already
+probes for (`token()`, `fundETH()`, `fundTokenPushed()`) — so a pad picks this OR
+`DualStaking` at `setStaking()` time, and **zero changes to `RobinCurveV4.sol` were
+needed**. The trust/claim shape is `ArrowDistributor`'s merkle+bitmap self-claim pattern
+(already audited, see `ARROW.md`) generalized to recurring epochs: an off-chain indexer
+periodically snapshots real holder balances, computes a merkle root of
+`(index, account, amount)` leaves sized to that epoch's slice of the accumulated pool,
+and the platform wallet (same address already trusted for `setStaking`/`setFloor`/
+`setAmbush` — no new trust assumption) opens the epoch. Anyone then self-claims their
+leaf — no lock, no stake, no action required beyond having held the token at snapshot
+time. ETH is accrue-and-pull (`claimEth` books to `ethOwed`, `withdraw()` sends it —
+matches `RobinCurveV4`'s own `claimPlatform`/`claimCreator` convention so one bad
+recipient can never brick anyone else); token payouts use inline `safeTransfer` (matches
+`ArrowDistributor`, since a plain `PadToken` can't revert on transfer). There is no
+withdraw/rescue/sweep/owner path over pooled or committed funds anywhere in the
+contract — money only ever leaves via a valid leaf claim, or sits unclaimed forever.
+
+**Tested** (`test/unit/RobinDividendPool.test.js`, 9/9 passing): zero-address
+construction reverts, `fundETH`/`pendingEth` accumulation and platform-gating of
+`openEthEpoch`, `claimEth` accrue-and-pull + double-claim/wrong-proof reverts,
+`withdraw()` payout and retriability on a failed send, payout clamping to an epoch's
+remaining balance (dust shortfall can't brick the tail claim — the `ArrowDistributor`
+[audit L3] pattern reused verbatim), `fundTokenPushed`'s balance-diff correctness
+(including a same-block double-notify no-op and a mismatched-asset no-op),
+`openTokenEpoch`+`claimToken`, and — the integration test that matters most — a REAL
+`RobinCurveV4` deployed with `noPoolForever=true`, wired to a fresh `RobinDividendPool`
+via the unmodified `setStaking()`, bought to ceiling, graduated, with both `pendingEth`
+and `pendingToken` landing nonzero and `stakingEthOwed` correctly zeroed (proving the
+money isn't stranded and confirming, again, that this integration needed no
+`RobinCurveV4` changes at all).
+
+**Not tested / not built yet:** the off-chain indexer that computes real snapshots and
+opens epochs (no code written — this is pure off-chain infra, analogous to what a real
+external audit + a keeper script would need before this pays anyone for real), any
+UI wiring (the token page's "Dividends, not staking" panel is still static/mocked), and
+burn-boosted reward weighting (a planned follow-up: bigger burn ⇒ bigger snapshot
+weight — not started).
 
 ## What's tested vs. not
 
