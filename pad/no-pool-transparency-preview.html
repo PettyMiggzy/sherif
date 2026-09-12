@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>No-pool pad preview — Transparency — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<!-- INTERNAL. Deliberately not linked from any nav, and noindex — same convention as preview.html.
+     Design preview of the "pad-wide live transparency page" differentiator from
+     ROBIN-PAD-NEXT-GEN-IDEAS.md — show the real money backing the whole pad, not per-token.
+     Static only — no live data. Part of a 6-page preview set: no-pool-preview.html (token),
+     no-pool-create-preview.html, no-pool-auction-preview.html, no-pool-browse-preview.html,
+     no-pool-migrate-preview.html, no-pool-transparency-preview.html (this). -->
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<meta name="theme-color" content="#080a04" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+  :root{
+    --bg:#060803; --bg-2:#0b0f06; --panel:#0c1108; --panel-2:#101609;
+    --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06); --line-strong:rgba(220,233,5,.4);
+    --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
+    --lime:#dce905; --lime-2:#c3d400; --lime-deep:#8a9c00; --green:#5fd16a; --red:#ff5a52;
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+  .preview-strip{background:var(--panel-2);border-bottom:1px solid var(--line);color:var(--faint);
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
+    text-align:center;padding:8px 10px}
+  .preview-strip b{color:var(--lime)}
+  .preview-strip .set a{color:var(--dim);text-decoration:underline;margin:0 4px}
+
+  header.nav{border-bottom:1px solid var(--line-2);background:var(--bg)}
+  .nav-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:14px 20px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:.98rem;letter-spacing:.01em}
+  .brand b{color:var(--lime)}
+  .nav-links{display:flex;gap:18px;font-size:.86rem;color:var(--dim);flex:1;flex-wrap:wrap}
+  .nav-cta{display:flex;gap:10px;align-items:center}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;
+    font-size:.86rem;border-radius:12px;padding:10px 16px;border:1px solid transparent;white-space:nowrap;
+    font-family:var(--sans);cursor:default}
+  .btn-dark{background:var(--panel);border-color:var(--line-2);color:var(--ink)}
+  .btn-lime{background:var(--lime);color:#0a0e05}
+
+  main{max-width:1080px;margin:0 auto;padding:30px 20px 90px}
+  h1.pt{font-size:1.5rem;font-weight:800;margin:0 0 4px}
+  .lede{color:var(--dim);font-size:.9rem;margin:0 0 26px;max-width:64ch}
+
+  .bignums{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1px;
+    background:var(--line-2);border:1px solid var(--line-2);border-radius:14px;overflow:hidden;margin-bottom:24px}
+  .bn{background:var(--panel);padding:20px}
+  .bn .k{font-family:var(--mono);font-size:.66rem;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+  .bn .v{font-family:var(--mono);font-size:1.5rem;font-weight:700;margin-top:6px}
+  .bn .sub{font-size:.76rem;color:var(--dim);margin-top:2px}
+
+  .layout{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media (max-width:800px){.layout{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line-2);border-radius:14px;padding:18px}
+  .panel h3{margin:0 0 4px;font-size:.86rem;font-weight:700}
+  .panel .ph{color:var(--faint);font-size:.76rem;margin:0 0 14px}
+
+  .perpad{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid var(--line-2);font-size:.84rem}
+  .perpad:first-child{border-top:none}
+  .perpad .name{font-weight:700}
+  .perpad .amt{font-family:var(--mono);color:var(--dim)}
+
+  .logrow{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line-2);font-size:.82rem}
+  .logrow:first-child{border-top:none}
+  .logrow .tag{font-family:var(--mono);font-size:.66rem;color:var(--lime);border:1px solid var(--line-strong);
+    border-radius:6px;padding:1px 6px;flex:none}
+  .logrow .txt{color:var(--dim);flex:1}
+  .logrow .ago{font-family:var(--mono);color:var(--faint);font-size:.72rem}
+</style>
+</head>
+<body>
+
+<div class="preview-strip">Internal design preview — <b>not live</b>, noindex, unlinked. Layout only.
+  <span class="set">· <a href="no-pool-preview.html">Token</a> · <a href="no-pool-create-preview.html">Create</a> · <a href="no-pool-auction-preview.html">Auction</a> · <a href="no-pool-browse-preview.html">Browse</a> · <a href="no-pool-migrate-preview.html">Migrate</a></span></div>
+
+<header class="nav"><div class="nav-in">
+  <a class="brand">ROBIN <b>LABS</b></a>
+  <nav class="nav-links"><a>Browse</a><a>Swap</a><a>Stocks</a><a>Bridge</a><a>Migrate</a><a>Docs</a></nav>
+  <div class="nav-cta"><span class="btn btn-dark">Connect Wallet</span><span class="btn btn-lime">Launch Token</span></div>
+</div></header>
+
+<main>
+  <h1 class="pt">Show your work</h1>
+  <p class="lede">Every number here is read straight from the chain, pad-wide, not per-token — not a claim,
+  a receipt. This is the whole point of "backed by real money, not a pool."</p>
+
+  <div class="bignums">
+    <div class="bn"><div class="k">Total treasury (all curves)</div><div class="v">4,180 ETH</div><div class="sub">across 61 live tokens</div></div>
+    <div class="bn"><div class="k">Total ever burned</div><div class="v">312.6 ETH</div><div class="sub">donated through burn pages</div></div>
+    <div class="bn"><div class="k">Keeper actions (30d)</div><div class="v">1,904</div><div class="sub">visibility-pool restocks, fee sweeps</div></div>
+    <div class="bn"><div class="k">Migrated communities</div><div class="v">7</div><div class="sub">zero holder action, all of them</div></div>
+  </div>
+
+  <div class="layout">
+    <div class="panel">
+      <h3>Biggest treasuries</h3>
+      <p class="ph">Per-pad, live.</p>
+      <div class="perpad"><span class="name">Robin — $ROBIN</span><span class="amt">312.4 ETH</span></div>
+      <div class="perpad"><span class="name">Dustline — $DUST</span><span class="amt">241.0 ETH</span></div>
+      <div class="perpad"><span class="name">Kevlar — $KVLR</span><span class="amt">96.7 ETH</span></div>
+      <div class="perpad"><span class="name">Fable — $FABLE</span><span class="amt">2.6 ETH</span><span style="color:var(--faint);font-family:var(--mono);font-size:.7rem">auction</span></div>
+    </div>
+
+    <div class="panel">
+      <h3>Keeper activity</h3>
+      <p class="ph">What the bots actually did, as it happens.</p>
+      <div class="logrow"><span class="tag">RESTOCK</span><span class="txt">Bought back 4,200 $DUST from the visibility pool</span><span class="ago">2m</span></div>
+      <div class="logrow"><span class="tag">SWEEP</span><span class="txt">Collected floor fees on $ROBIN</span><span class="ago">14m</span></div>
+      <div class="logrow"><span class="tag">SEED</span><span class="txt">Restocked $KVLR visibility pool</span><span class="ago">51m</span></div>
+      <div class="logrow"><span class="tag">RESTOCK</span><span class="txt">Bought back 890 $ROBIN from the visibility pool</span><span class="ago">1h</span></div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

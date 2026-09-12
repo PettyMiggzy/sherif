@@ -8,6 +8,23 @@ a running notes file, expected to be tweaked, trimmed, and added to as the idea 
 here automatically, without asking first — and any new idea worth surfacing gets raised
 proactively, not held back until asked.
 
+**UI build status (Phase 1 — hidden preview pages in `pad/`, no backend wiring yet):**
+every idea below that has a checkbox has already been built into one of the six hidden
+preview pages, so it survives a memory/context reset even before the backend exists.
+Anything without a checkbox is still notes-only.
+
+- [x] Token page → `no-pool-preview.html` (chart, buy/sell/limit tax breakdown, holder
+  rewards, burn leaderboard, community locks, launch history, mirror-pool note)
+- [x] Create flow → `no-pool-create-preview.html` (creator-picked supply, auction
+  window, vested 10% allocation, review)
+- [x] Live auction → `no-pool-auction-preview.html` (countdown, min/target progress,
+  contribute, what happens at finalize)
+- [x] Our own DexScreener-style page → `no-pool-browse-preview.html` (trending/new/live
+  auctions/graduated tabs, sparkline grid)
+- [x] Migration (zero holder action) → `no-pool-migrate-preview.html`
+- [x] Pad-wide transparency page → `no-pool-transparency-preview.html`
+- [ ] Everything else below is still concept-only — no page yet.
+
 ---
 
 ## Core pivot

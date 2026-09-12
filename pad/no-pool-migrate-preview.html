@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>No-pool pad preview — Migrate — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<!-- INTERNAL. Deliberately not linked from any nav, and noindex — same convention as preview.html.
+     Design preview of the "zero-action" migration feature from ROBIN-PAD-NEXT-GEN-IDEAS.md
+     (snapshot an external project's holders, deploy fresh here, airdrop everyone — no claim, no
+     bridge step, $200 flat creator fee). Static only — no wallet, no contracts, no real snapshot.
+     Part of a 6-page preview set: no-pool-preview.html (token), no-pool-create-preview.html,
+     no-pool-auction-preview.html, no-pool-browse-preview.html, no-pool-migrate-preview.html (this),
+     no-pool-transparency-preview.html. -->
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<meta name="theme-color" content="#080a04" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+  :root{
+    --bg:#060803; --bg-2:#0b0f06; --panel:#0c1108; --panel-2:#101609;
+    --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06); --line-strong:rgba(220,233,5,.4);
+    --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
+    --lime:#dce905; --lime-2:#c3d400; --lime-deep:#8a9c00; --green:#5fd16a; --red:#ff5a52;
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+  .preview-strip{background:var(--panel-2);border-bottom:1px solid var(--line);color:var(--faint);
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
+    text-align:center;padding:8px 10px}
+  .preview-strip b{color:var(--lime)}
+  .preview-strip .set a{color:var(--dim);text-decoration:underline;margin:0 4px}
+
+  header.nav{border-bottom:1px solid var(--line-2);background:var(--bg)}
+  .nav-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:14px 20px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:.98rem;letter-spacing:.01em}
+  .brand b{color:var(--lime)}
+  .nav-links{display:flex;gap:18px;font-size:.86rem;color:var(--dim);flex:1;flex-wrap:wrap}
+  .nav-cta{display:flex;gap:10px;align-items:center}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;
+    font-size:.86rem;border-radius:12px;padding:10px 16px;border:1px solid transparent;white-space:nowrap;
+    font-family:var(--sans);cursor:default}
+  .btn-dark{background:var(--panel);border-color:var(--line-2);color:var(--ink)}
+  .btn-lime{background:var(--lime);color:#0a0e05}
+  .btn-ghost{background:transparent;border-color:var(--line-strong);color:var(--ink)}
+
+  main{max-width:820px;margin:0 auto;padding:30px 20px 90px}
+  h1.pt{font-size:1.5rem;font-weight:800;margin:0 0 4px}
+  .lede{color:var(--dim);font-size:.9rem;margin:0 0 26px;max-width:60ch}
+
+  .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:26px}
+  @media (max-width:700px){.flow{grid-template-columns:1fr 1fr}}
+  .flow .st{background:var(--panel);border:1px solid var(--line-2);border-radius:12px;padding:14px}
+  .flow .st .n{font-family:var(--mono);font-size:.66rem;color:var(--lime);letter-spacing:.05em;text-transform:uppercase}
+  .flow .st .t{font-weight:700;font-size:.86rem;margin-top:6px}
+  .flow .st .d{color:var(--dim);font-size:.76rem;margin-top:4px;line-height:1.4}
+
+  .panel{background:var(--panel);border:1px solid var(--line-2);border-radius:14px;padding:20px}
+  .panel + .panel{margin-top:16px}
+  .panel h3{margin:0 0 4px;font-size:.95rem;font-weight:700}
+  .panel .ph{color:var(--faint);font-size:.78rem;margin:0 0 16px}
+
+  .fw{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+  .fw label{font-family:var(--mono);font-size:.68rem;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+  .inp{background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:11px 13px;
+    color:var(--ink);font-size:.9rem;font-family:var(--mono)}
+
+  .snapbox{background:var(--bg-2);border:1px solid var(--line-2);border-radius:12px;padding:14px 16px;margin-top:6px}
+  .snapbox .row{display:flex;justify-content:space-between;padding:6px 0;font-size:.84rem}
+  .snapbox .row .k{color:var(--dim)}
+  .snapbox .row .v{font-family:var(--mono);font-weight:700}
+
+  .rowline{display:flex;justify-content:space-between;align-items:center;padding:9px 0;
+    border-top:1px solid var(--line-2);font-size:.86rem}
+  .rowline:first-child{border-top:none}
+  .rowline .k{color:var(--dim)}
+  .rowline .v{font-family:var(--mono);font-weight:700}
+  .go-btn{width:100%;margin-top:6px;padding:14px;border-radius:10px;font-size:.95rem}
+  .mini{font-family:var(--mono);font-size:.72rem;color:var(--faint);margin-top:10px;line-height:1.5}
+</style>
+</head>
+<body>
+
+<div class="preview-strip">Internal design preview — <b>not live</b>, noindex, unlinked. Layout only.
+  <span class="set">· <a href="no-pool-preview.html">Token</a> · <a href="no-pool-create-preview.html">Create</a> · <a href="no-pool-auction-preview.html">Auction</a> · <a href="no-pool-browse-preview.html">Browse</a> · <a href="no-pool-transparency-preview.html">Transparency</a></span></div>
+
+<header class="nav"><div class="nav-in">
+  <a class="brand">ROBIN <b>LABS</b></a>
+  <nav class="nav-links"><a>Browse</a><a>Swap</a><a>Stocks</a><a>Bridge</a><a>Migrate</a><a>Docs</a></nav>
+  <div class="nav-cta"><span class="btn btn-dark">Connect Wallet</span><span class="btn btn-lime">Launch Token</span></div>
+</div></header>
+
+<main>
+  <h1 class="pt">Migrate your community</h1>
+  <p class="lede">Bring an existing project over — your holders don't lift a finger. No claim button,
+  no bridge step, they just wake up holding it here.</p>
+
+  <div class="flow">
+    <div class="st"><div class="n">1</div><div class="t">Snapshot</div><div class="d">We read real balances straight off the old chain — not a list you send us.</div></div>
+    <div class="st"><div class="n">2</div><div class="t">Deploy</div><div class="d">Fresh token here, on the no-pool curve, same rules as any launch.</div></div>
+    <div class="st"><div class="n">3</div><div class="t">Airdrop</div><div class="d">Every snapshotted holder gets sent their share automatically.</div></div>
+    <div class="st"><div class="n">4</div><div class="t">Live</div><div class="d">Curve trading starts immediately — nobody had to do anything.</div></div>
+  </div>
+
+  <div class="panel">
+    <h3>Old token</h3>
+    <p class="ph">Point us at what you're moving from.</p>
+    <div class="fw"><label>Contract address</label><div class="inp">0x1f3a…c2b9</div></div>
+    <div class="snapbox">
+      <div class="row"><span class="k">Chain detected</span><span class="v">Ethereum</span></div>
+      <div class="row"><span class="k">Holders found</span><span class="v">2,140</span></div>
+      <div class="row"><span class="k">Snapshot block</span><span class="v">#20,441,207</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>New token here</h3>
+    <p class="ph">Same details as any launch — supply, auction window, your own vested allocation.</p>
+    <div class="fw"><label>Name / Symbol</label><div class="inp">Kevin — $KEVIN</div></div>
+    <div class="fw"><label>Total supply</label><div class="inp">500,000,000</div></div>
+  </div>
+
+  <div class="panel">
+    <h3>Review</h3>
+    <div class="rowline"><span class="k">Migration fee</span><span class="v">$200 flat</span></div>
+    <div class="rowline"><span class="k">Airdrop covers</span><span class="v">All 2,140 snapshotted holders</span></div>
+    <div class="rowline"><span class="k">Bonus</span><span class="v">Free week on the trending page</span></div>
+    <div class="mini">Your community shows up already holding the new token — no action required from them, ever.</div>
+    <span class="btn btn-lime go-btn">Snapshot &amp; migrate</span>
+  </div>
+</main>
+</body>
+</html>

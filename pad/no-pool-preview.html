@@ -138,7 +138,7 @@
 <body>
 
 <div class="preview-strip">Internal design preview — <b>not live</b>, noindex, unlinked. Layout only.
-  <span class="set">· <a href="no-pool-create-preview.html">Create</a> · <a href="no-pool-auction-preview.html">Auction</a> · <a href="no-pool-browse-preview.html">Browse / Dex</a></span></div>
+  <span class="set">· <a href="no-pool-create-preview.html">Create</a> · <a href="no-pool-auction-preview.html">Auction</a> · <a href="no-pool-browse-preview.html">Browse / Dex</a> · <a href="no-pool-migrate-preview.html">Migrate</a> · <a href="no-pool-transparency-preview.html">Transparency</a></span></div>
 
 <header class="nav"><div class="nav-in">
   <a class="brand">ROBIN <b>LABS</b></a>
@@ -230,6 +230,7 @@
         <div class="swaptabs">
           <div class="swaptab on">Buy</div>
           <div class="swaptab off">Sell</div>
+          <div class="swaptab off">Limit</div>
         </div>
         <div class="field"><div class="lbl">You pay</div><div class="amt">0.25 ETH</div></div>
         <div class="field"><div class="lbl">You receive (est.)</div><div class="amt">33,940 ROBIN</div></div>
@@ -241,6 +242,18 @@
           <div class="row"><span>→ trader rebate pool</span><span>0.50%</span></div>
         </div>
         <span class="btn btn-lime go-btn">Buy $ROBIN</span>
+        <div class="mini">Limit tab: a sealed order nobody can see coming — funds lock in immediately,
+        contents only reveal when it executes. Our own "good" mempool — can't be sniped.</div>
+      </div>
+
+      <div class="panel">
+        <h3>Community locks</h3>
+        <div class="mini" style="margin-top:0">Anyone can publicly lock their own tokens as a costly,
+        on-chain show of belief — harder to fake than a paid post.</div>
+        <div class="rowline"><span class="k">0x4f…19a2</span><span class="v">400,000 · 90d</span></div>
+        <div class="rowline"><span class="k">0x9c…22de</span><span class="v">120,000 · 60d</span></div>
+        <div class="rowline"><span class="k">0x2b…f701</span><span class="v">75,000 · 30d</span></div>
+        <span class="btn btn-ghost go-btn">Lock your own</span>
       </div>
 
       <div class="panel">
@@ -256,7 +269,9 @@
         <div class="mini" style="margin-top:0">Sell in, skip the payout — your ETH goes straight into the pool as
         permanent backing. Not reclaimable, not even by us.</div>
         <div class="rowline"><span class="k">Total burned</span><span class="v">18.9 ETH</span></div>
-        <div class="rowline"><span class="k">Top backer</span><span class="v">0x4f…19a2</span></div>
+        <div class="rowline"><span class="k">#1 · 0x4f…19a2</span><span class="v">6.2 ETH</span></div>
+        <div class="rowline"><span class="k">#2 · 0x91…7cd0</span><span class="v">4.8 ETH</span></div>
+        <div class="rowline"><span class="k">#3 · 0x0a…44de</span><span class="v">3.1 ETH</span></div>
         <span class="btn btn-dark go-btn">Open burn page</span>
       </div>
     </div>

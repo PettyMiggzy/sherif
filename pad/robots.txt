@@ -9,5 +9,7 @@ Disallow: /no-pool-preview.html
 Disallow: /no-pool-create-preview.html
 Disallow: /no-pool-auction-preview.html
 Disallow: /no-pool-browse-preview.html
+Disallow: /no-pool-migrate-preview.html
+Disallow: /no-pool-transparency-preview.html
 
 Sitemap: https://robinlab.io/sitemap.xml
