@@ -268,9 +268,10 @@
       <div class="tokmark">R</div>
       <div class="tokname">
         <div class="venue">Robinhood <span class="sep">›</span> No-pool curve</div>
-        <h1>Robin — $ROBIN</h1>
-        <div class="sub">0x7a2f…e91c · migrated from the old pad</div>
+        <h1 id="v4-tok-h1">Robin — $ROBIN</h1>
+        <div id="v4-tok-sub" class="sub">0x7a2f…e91c · migrated from the old pad</div>
         <div class="badges">
+          <span id="v4-live-badge" class="badge" style="display:none">🟢 Live local devnet</span>
           <span class="badge">No-pool curve</span>
           <span class="badge">Migrated ✓ airdropped</span>
           <span class="badge alt">IPO window: cleared</span>
@@ -279,7 +280,7 @@
       </div>
     </div>
     <div class="price-block">
-      <div class="price">$0.00184</div>
+      <div id="v4-price" class="price">$0.00184</div>
       <div class="chg">▲ 6.2% · 24h</div>
       <div class="stockcompare">≈ 0.000019 shares of NVDA</div>
     </div>
@@ -400,18 +401,18 @@
     <div class="col-right">
       <div class="panel">
         <h3>Trade</h3>
+        <div id="v4-status-line" class="mini" style="margin-top:0">⚪ checking local devnet…</div>
         <div class="swaptabs">
-          <div class="swaptab on">Buy</div>
-          <div class="swaptab off">Sell</div>
+          <div id="v4-tab-buy" class="swaptab on">Buy</div>
+          <div id="v4-tab-sell" class="swaptab off">Sell</div>
           <div class="swaptab off">Limit</div>
         </div>
         <div class="field">
           <div class="lbl">You pay</div>
-          <div class="amt-row"><div class="amt">0.25</div><span class="paytoken">ETH ▾</span></div>
+          <div class="amt-row"><input id="v4-amt" class="amt" type="text" value="0.25" style="background:transparent;border:0;color:inherit;font:inherit;width:100%;outline:none" /><span id="v4-pay-unit" class="paytoken">ETH ▾</span></div>
         </div>
-        <div class="field"><div class="lbl">You receive (est.)</div><div class="amt">33,940 ROBIN</div></div>
-        <div class="mini" style="margin-top:0">Pay with any token — we route it through a built-in bridge/swap
-        before it hits the curve. ETH shown by default.</div>
+        <div class="field"><div class="lbl">You receive (est.)</div><div id="v4-receive" class="amt">—</div></div>
+        <div id="v4-balance-line" class="mini" style="margin-top:0">Connect a wallet to see your balance.</div>
         <div class="taxsplit">
           <div class="row"><span>Buy tax</span><b>1.5%</b></div>
           <div class="row"><span>→ holders</span><span>0.20%</span></div>
@@ -419,7 +420,7 @@
           <div class="row"><span>→ platform</span><span>0.60%</span></div>
           <div class="row"><span>→ trader rebate pool</span><span>0.50%</span></div>
         </div>
-        <span class="btn btn-lime go-btn">Buy $ROBIN</span>
+        <span id="v4-go-btn" class="btn btn-lime go-btn">Connect wallet</span>
         <div class="mini">Limit tab: a sealed order nobody can see coming — funds lock in immediately,
         contents only reveal when it executes. Our own "good" mempool — can't be sniped.</div>
       </div>
@@ -562,6 +563,116 @@
       col.scrollTop += e.deltaY;
     }, { passive: false });
   });
+</script>
+
+<!-- ── pad-v4 no-pool-forever LOCAL DEVNET wiring ──────────────────────────────
+     ?token=0x... picks a real launched pad from the local devnet (see
+     pad-v4/scripts/deploy-local-demo.js); with no query param this defaults to the first demo pad.
+     Real balance reads, real buy/sell transactions. Falls back to the static mock content above,
+     unmodified, if the local chain isn't reachable. -->
+<script type="module">
+  import { ethers } from './assets/ethers.min.js';
+  import { listPads, ethPerToken, balanceOf, ethBalanceOf, connect, account, isConnected, buy, sell } from './js/wallet-v4-local.js';
+
+  let pad = null;
+  let side = 'buy';
+
+  function fmtTok(n) { return n.toLocaleString('en-US', { maximumFractionDigits: 2 }); }
+
+  async function refreshBalance() {
+    const line = document.getElementById('v4-balance-line');
+    if (!pad) return;
+    if (!isConnected()) { line.textContent = 'Connect a wallet to see your balance.'; return; }
+    const [tokBal, ethBal] = await Promise.all([
+      balanceOf(pad.token, account()),
+      ethBalanceOf(account()),
+    ]);
+    line.textContent = `Your balance: ${fmtTok(Number(tokBal) / 1e18)} $${pad.symbol} · ${Number(ethBal) / 1e18} ETH`;
+  }
+
+  function updateReceiveEstimate() {
+    if (!pad) return;
+    const amtEl = document.getElementById('v4-amt');
+    const recvEl = document.getElementById('v4-receive');
+    const priceEth = ethPerToken(pad.sqrtPriceX96);
+    const amt = parseFloat(amtEl.value || '0');
+    if (side === 'buy') {
+      recvEl.textContent = priceEth > 0 ? `≈ ${fmtTok(amt / priceEth)} $${pad.symbol}` : '—';
+    } else {
+      recvEl.textContent = `≈ ${(amt * priceEth).toFixed(6)} ETH`;
+    }
+  }
+
+  function setSide(next) {
+    side = next;
+    document.getElementById('v4-tab-buy').classList.toggle('on', side === 'buy');
+    document.getElementById('v4-tab-buy').classList.toggle('off', side !== 'buy');
+    document.getElementById('v4-tab-sell').classList.toggle('on', side === 'sell');
+    document.getElementById('v4-tab-sell').classList.toggle('off', side !== 'sell');
+    document.getElementById('v4-pay-unit').textContent = side === 'buy' ? 'ETH ▾' : (pad ? '$' + pad.symbol : 'TOKEN');
+    document.getElementById('v4-go-btn').textContent = isConnected() ? (side === 'buy' ? `Buy $${pad?.symbol || ''}` : `Sell $${pad?.symbol || ''}`) : 'Connect wallet';
+    updateReceiveEstimate();
+  }
+
+  document.getElementById('v4-tab-buy').addEventListener('click', () => setSide('buy'));
+  document.getElementById('v4-tab-sell').addEventListener('click', () => setSide('sell'));
+  document.getElementById('v4-amt').addEventListener('input', updateReceiveEstimate);
+
+  document.getElementById('v4-go-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('v4-go-btn');
+    if (!isConnected()) {
+      btn.textContent = 'Connecting…';
+      try { await connect(); } catch (e) { alert(e.message || String(e)); btn.textContent = 'Connect wallet'; return; }
+      setSide(side);
+      await refreshBalance();
+      return;
+    }
+    const amt = parseFloat(document.getElementById('v4-amt').value || '0');
+    if (!(amt > 0)) { alert('Enter an amount first.'); return; }
+    btn.textContent = 'Confirm in wallet…';
+    btn.style.pointerEvents = 'none';
+    try {
+      if (side === 'buy') {
+        await buy(pad, amt);
+      } else {
+        const bal = await balanceOf(pad.token, account());
+        const amtWei = ethers.parseEther(String(amt));
+        await sell(pad, amtWei > bal ? bal : amtWei);
+      }
+      const fresh = (await listPads()).find((p) => p.token.toLowerCase() === pad.token.toLowerCase());
+      if (fresh) pad = fresh;
+      document.getElementById('v4-price').textContent = '$' + ethPerToken(pad.sqrtPriceX96).toFixed(8);
+      await refreshBalance();
+      updateReceiveEstimate();
+      btn.textContent = (side === 'buy' ? 'Buy $' : 'Sell $') + pad.symbol + ' ✓ done';
+      setTimeout(() => setSide(side), 1500);
+    } catch (e) {
+      alert(e.message || String(e));
+      setSide(side);
+    } finally {
+      btn.style.pointerEvents = '';
+    }
+  });
+
+  (async () => {
+    try {
+      const pads = await listPads();
+      if (!pads.length) throw new Error('no pads deployed');
+      const wanted = new URLSearchParams(location.search).get('token');
+      pad = (wanted && pads.find((p) => p.token.toLowerCase() === wanted.toLowerCase())) || pads[0];
+
+      document.getElementById('v4-tok-h1').textContent = `${pad.name} — $${pad.symbol}`;
+      document.getElementById('v4-tok-sub').textContent = `${pad.token} · local devnet pad`;
+      document.getElementById('v4-price').textContent = '$' + ethPerToken(pad.sqrtPriceX96).toFixed(8);
+      document.getElementById('v4-live-badge').style.display = '';
+      document.getElementById('v4-status-line').textContent = `🟢 Live local devnet — trading $${pad.symbol} for real`;
+      setSide('buy');
+      if (isConnected()) await refreshBalance();
+    } catch (e) {
+      document.getElementById('v4-status-line').textContent = '⚪ devnet offline — this panel is a static preview';
+      document.getElementById('v4-status-line').title = String(e.message || e);
+    }
+  })();
 </script>
 </body>
 </html>

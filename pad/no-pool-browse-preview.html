@@ -123,6 +123,11 @@
     transition:filter .12s ease,transform .12s ease}
   .btn:hover{filter:brightness(1.12)} .btn:active{transform:scale(.98)}
   .btn-flame{background:linear-gradient(135deg,var(--flame),#ff7a3d);color:#1a0d02}
+  .v4-badge{font-size:.72rem;font-weight:700;padding:5px 10px;border-radius:7px;letter-spacing:.02em;
+    border:1px solid var(--border);color:var(--dim);background:var(--panel-2)}
+  .v4-badge-on{color:var(--green);border-color:rgba(95,209,106,.35);background:rgba(95,209,106,.08)}
+  .v4-badge-off{color:var(--faint)}
+  #v4-connect{background:var(--accent);color:#141a06}
 
   .statbar{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px;padding:11px 16px;background:var(--panel);
     border:1px solid var(--border);border-radius:9px}
@@ -241,6 +246,8 @@
   <div class="content">
     <div class="pagehead">
       <div class="wordmark"><h1>Trending <span class="accent">pairs</span></h1></div>
+      <span id="v4-status" class="v4-badge v4-badge-off">● checking devnet…</span>
+      <button id="v4-connect" class="btn" style="display:none">Connect wallet</button>
       <span class="btn btn-flame">⚡ Boost your token</span>
     </div>
 
@@ -409,6 +416,88 @@
       match.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
     });
   });
+</script>
+
+<!-- ── pad-v4 no-pool-forever LOCAL DEVNET wiring ──────────────────────────────
+     Replaces the static rows above with REAL on-chain data read from a local Hardhat devnet
+     (see pad-v4/scripts/deploy-local-demo.js). This is genuinely real: real contract reads, real
+     buy/sell transactions, real balances — it just isn't reachable outside this dev environment
+     yet (chainId 31337, not Robinhood Chain). Falls back to the static sample rows above, with a
+     visible "devnet offline" badge, if the local chain isn't reachable — never fails silently
+     into looking like real data when it isn't. -->
+<script type="module">
+  import { listPads, ethPerToken, connect, account, short, isConnected } from './js/wallet-v4-local.js';
+
+  const statusEl = document.getElementById('v4-status');
+  const connectBtn = document.getElementById('v4-connect');
+
+  function fmtEth(n) { return (Math.round(n * 1e6) / 1e6).toString(); }
+  function fmtUsd(n) { return '$' + n.toLocaleString('en-US', { maximumFractionDigits: n < 1 ? 6 : 0 }); }
+
+  function renderRealRows(pads) {
+    const tbody = document.querySelector('table.grid tbody');
+    // Real rows go FIRST (real data leads), tagged so re-render never duplicates them.
+    tbody.querySelectorAll('tr[data-v4-live]').forEach((tr) => tr.remove());
+    pads.slice().reverse().forEach((p) => {
+      const priceEth = ethPerToken(p.sqrtPriceX96);
+      const supply = Number(p.totalSupply) / 1e18;
+      const mcapEth = priceEth * supply;
+      const tr = document.createElement('tr');
+      tr.dataset.v4Live = '1';
+      tr.dataset.href = `no-pool-preview.html?token=${p.token}`;
+      tr.dataset.mcap = String(mcapEth); tr.dataset.price = String(priceEth);
+      tr.dataset.age = '0'; tr.dataset.txns = '0'; tr.dataset.volume = '0'; tr.dataset.traders = '0';
+      tr.dataset.pc5m = '0'; tr.dataset.pc1h = '0'; tr.dataset.pc6h = '0'; tr.dataset.pc24h = '0'; tr.dataset.liq = '0';
+      tr.innerHTML = `
+        <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button>
+          <div class="tmark">${p.symbol[0]}</div>
+          <div><div class="n">${p.name}</div><div class="s">$${p.symbol}</div></div></div></td>
+        <td>${fmtUsd(mcapEth)}</td><td>${priceEth.toFixed(8)} ETH</td><td class="muted">local</td>
+        <td>—</td><td>—</td><td>—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>
+        <td class="statuscell"><span class="mbadge live">🟢 Live devnet</span>${p.graduated ? ' <span class="mbadge">Graduated</span>' : ''}</td>`;
+      tbody.prepend(tr);
+    });
+    // Re-wire click-through for the freshly-added rows (the static-rows listener ran at load time,
+    // before these existed).
+    tbody.querySelectorAll('tr[data-v4-live]').forEach((row) => {
+      row.addEventListener('click', () => { window.location.href = row.dataset.href; });
+    });
+  }
+
+  async function refreshStatus() {
+    if (isConnected()) {
+      statusEl.textContent = '● ' + short(account());
+      statusEl.className = 'v4-badge v4-badge-on';
+      connectBtn.style.display = 'none';
+    }
+  }
+
+  connectBtn.addEventListener('click', async () => {
+    connectBtn.disabled = true;
+    try {
+      await connect();
+      await refreshStatus();
+    } catch (e) {
+      alert(e.message || String(e));
+    } finally {
+      connectBtn.disabled = false;
+    }
+  });
+
+  (async () => {
+    try {
+      const pads = await listPads();
+      renderRealRows(pads);
+      statusEl.textContent = `🟢 Live devnet — ${pads.length} real pad${pads.length === 1 ? '' : 's'}`;
+      statusEl.className = 'v4-badge v4-badge-on';
+      connectBtn.style.display = '';
+      await refreshStatus();
+    } catch (e) {
+      statusEl.textContent = '⚪ devnet offline — showing sample data';
+      statusEl.className = 'v4-badge v4-badge-off';
+      statusEl.title = String(e.message || e);
+    }
+  })();
 </script>
 </body>
 </html>
