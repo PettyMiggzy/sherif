@@ -138,7 +138,15 @@ one pass — will work through it with the user page by page.
     description) on their behalf — **$300**. Presented to users as "advertising."
   - We get a project a **10x DexScreener boost** — **$100**.
   - Later, on the token page itself: creator can **update their PFP + banner** — paid,
-    starting around **$50**.
+    starting around **$50**. **Scope decided:** banner upload lives ONLY on the token/
+    DEX page's paid update flow — not at creation, not anywhere else — since it's a
+    paid feature that funds its own storage/hosting cost; free-tier tokens never
+    generate a banner asset to store. (PFP stays free at creation per above — small,
+    cheap, needed for basic identity — banner is the part worth gating behind payment.)
+    Format: banner and PFP can be a short animation (GIF/video loop) or a static
+    image — not image-only. Once paid and updated, the new banner/PFP shows **site-
+    wide**, not just on the page where it was uploaded — DEX browse rows, the ticker,
+    the token detail page itself, wherever that token's identity appears.
   - All three need an actual page/flow for someone to pay us and request it — doesn't
     exist yet.
   - Services page (`services.html`, owned by a different session per `COORDINATION.md`)
