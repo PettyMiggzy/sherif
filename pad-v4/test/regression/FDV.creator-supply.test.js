@@ -60,7 +60,7 @@ describe("[FDV] creators choose their own supply; the FACTORY bounds the valuati
   const cfgFor = (tag, supply, startTickMag) => ({
     name: "Robin " + tag, symbol: tag, decimals: 18,
     supply, curveSupply: (supply * 73n) / 100n, reserveSupply: supply - (supply * 73n) / 100n,
-    tickSpacing: TS, startTickMag, creator: creator.address,
+    tickSpacing: TS, startTickMag, creator: creator.address, noPoolForever: false,
   });
 
   async function salts(cfg, tag) {

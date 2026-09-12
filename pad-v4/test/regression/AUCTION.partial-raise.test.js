@@ -71,7 +71,7 @@ describe("[AUCTION regression] partial raises launch, the fee tracks deployed ca
   function mk(tag, n) {
     return {
       name: "Robin " + tag, symbol: tag, decimals: 18,
-      supply: n * 2n, curveSupply: n, reserveSupply: n, tickSpacing: TS, startTickMag: 0, creator: creator.address,
+      supply: n * 2n, curveSupply: n, reserveSupply: n, tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false,
     };
   }
 

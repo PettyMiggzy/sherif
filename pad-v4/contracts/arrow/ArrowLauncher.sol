@@ -30,7 +30,7 @@ interface IRobinCurveGraduate {
 /// @title ArrowLauncher — a one-tx migration launch: buy the whole curve, graduate, airdrop to the dev's holders
 /// @notice "Arrow" is the migration launcher. A dev arrives with ETH and a committed merkle root of their existing
 /// holders (address+amount). In ONE transaction this contract:
-///   1. takes a flat `PLATFORM_FEE` (0.5 ETH) off the top → the platform (the platform's cut; the platform takes ETH),
+///   1. takes a flat `platformFee` (set at deploy) off the top → the platform (the platform's cut; the platform takes ETH),
 ///   2. launches a fresh Robin V4 curve (`factory.launch` — deploys token+hook+curve, seeds the single-sided curve),
 ///   3. buys out the ENTIRE curve in one price-limited swap that lands spot EXACTLY at the graduation ceiling,
 ///   4. graduates it → the permanent LP is minted and LOCKED (LockVault); the pad is live and un-ruggable,
@@ -48,8 +48,12 @@ contract ArrowLauncher is IUnlockCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using BalanceDeltaLibrary for BalanceDelta;
 
-    /// @notice Flat platform cut taken off the top of every Arrow launch, in ETH. The platform takes ETH only.
-    uint256 public constant PLATFORM_FEE = 0.5 ether;
+    /// @notice Flat platform cut taken off the top of every Arrow launch through THIS instance, in ETH. The
+    /// platform takes ETH only. Set ONCE at deploy time (immutable, not a bare `constant`) precisely so a stale
+    /// figure baked into bytecode can never silently undercharge as ETH's price moves — retuning it means
+    /// deploying a fresh launcher, the same "immutable per instance, forward-only for new instances" posture
+    /// every other economic knob in this repo already follows (see RobinV4FeeConfig).
+    uint256 public immutable platformFee;
     /// @dev Over-request the buyout by this margin so the price-limited swap always REACHES the ceiling (the exact
     /// `_absorbableIn` is a floor, a couple wei short of gradSqrt, which would leave graduate() reverting NotReady).
     /// The price limit caps execution AT gradSqrt, so the margin never overshoots — it only guarantees arrival. The
@@ -86,16 +90,18 @@ contract ArrowLauncher is IUnlockCallback, ReentrancyGuard {
     error NotReady();
     error EthSendFailed();
 
-    constructor(address factory_, address feeRegistry_) {
+    constructor(address factory_, address feeRegistry_, uint256 platformFee_) {
         if (factory_ == address(0) || feeRegistry_ == address(0)) revert ZeroAddress();
         factory = ICurvePadFactoryV4(factory_);
         poolManager = IPoolManager(ICurvePadFactoryV4(factory_).poolManager());
         feeRegistry = IFeeWalletRegistry(feeRegistry_);
+        platformFee = platformFee_;
     }
 
     /// @notice Launch a migration pad, buy out the whole curve, graduate, and airdrop the bought supply to the dev's
-    /// committed holders — all atomically. `msg.value` must cover the 0.5 ETH platform fee PLUS the full-curve
-    /// buyout; any surplus is refunded to the caller. `merkleRoot` commits the (index, account, amount) holder set.
+    /// committed holders — all atomically. `msg.value` must cover this instance's flat `platformFee` PLUS the
+    /// full-curve buyout; any surplus is refunded to the caller. `merkleRoot` commits the (index, account, amount)
+    /// holder set.
     /// @param cfg the launch config (creator = the dev's own address for the ordinary creator ETH stream)
     /// @param merkleRoot the immutable root of the dev's holder snapshot, handed to the distributor
     function launch(
@@ -106,7 +112,7 @@ contract ArrowLauncher is IUnlockCallback, ReentrancyGuard {
         bytes32 merkleRoot
     ) external payable nonReentrant returns (address token, address curve, address distributor) {
         if (merkleRoot == bytes32(0)) revert EmptyRoot();
-        if (msg.value <= PLATFORM_FEE) revert BelowPlatformFee();
+        if (msg.value <= platformFee) revert BelowPlatformFee();
 
         // [audit M1] Snapshot any pre-existing balance (a donation / force-send to the receive() below, or ETH
         // stranded by an earlier launch) so step-7 refunds ONLY this launch's change — never sweeps a stranger's
@@ -114,8 +120,8 @@ contract ArrowLauncher is IUnlockCallback, ReentrancyGuard {
         uint256 preBal = address(this).balance - msg.value;
 
         // 1) flat platform fee off the top → the platform (ETH only). Sent first; CEI-safe (no state depends on it).
-        uint256 budget = msg.value - PLATFORM_FEE;
-        _sendEth(feeRegistry.platformFeeWallet(), PLATFORM_FEE);
+        uint256 budget = msg.value - platformFee;
+        _sendEth(feeRegistry.platformFeeWallet(), platformFee);
 
         // 2) launch the pad (deploys token+hook+curve, inits the pool at startTick, seeds the single-sided curve)
         address hook;
@@ -166,7 +172,7 @@ contract ArrowLauncher is IUnlockCallback, ReentrancyGuard {
         uint256 leftover = address(this).balance - preBal;
         if (leftover > 0) _sendEth(msg.sender, leftover);
 
-        emit ArrowLaunched(msg.sender, token, curve, distributor, PLATFORM_FEE, spent, bought, merkleRoot);
+        emit ArrowLaunched(msg.sender, token, curve, distributor, platformFee, spent, bought, merkleRoot);
     }
 
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {

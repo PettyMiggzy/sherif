@@ -10,8 +10,10 @@ permissionless `curve.graduate()`. It modifies **nothing** in the audited curve 
 
 ## The one-tx flow (`ArrowLauncher.launch`)
 
-1. **0.5 ETH off the top → platform.** A flat `PLATFORM_FEE = 0.5 ether` is sent to the timelocked platform wallet.
-   The platform takes ETH only. `msg.value` must exceed the fee.
+1. **A flat `platformFee` off the top → platform.** Set ONCE per `ArrowLauncher` instance at deploy time
+   (`constructor(factory, feeRegistry, platformFee)` — immutable, not a bare constant), it's sent to the
+   timelocked platform wallet. The platform takes ETH only. `msg.value` must exceed the fee. See "Migration fee
+   corrected" below for why this moved off a hardcoded constant.
 2. **Launch the pad.** `factory.launch(cfg, salts)` deploys token + hook + curve, initializes the pool at `startTick`,
    and seeds the single-sided curve (exactly `curveSupply` over `[gradTick, startTick]`).
 3. **Buy out the whole curve.** One exact-input swap, **price-limited at `gradSqrt`**, sized to `_absorbableIn` (the
@@ -49,8 +51,8 @@ with OZ sorted-pair (`MerkleProof.verify`) internal nodes. See `test/sim/arrow.s
 - **The dev funds the ENTIRE raise.** "Buy out the whole curve" means providing all the ETH that would normally come
   from many buyers. The buyout cost is **geometry × curveSupply**, not a fixed number — at the production geometry
   (start ~$3.4k / grad ~$34k) it's ~4.2 ETH; a different geometry or a larger `curveSupply` costs proportionally
-  more. `launch` reverts `UnderfundedBuyout` if `msg.value − 0.5 ETH` can't cover it. Quote the real figure per
-  geometry — do not promise a fixed buyout.
+  more. `launch` reverts `UnderfundedBuyout` if `msg.value − platformFee` can't cover it. Quote the real figure
+  per geometry — do not promise a fixed buyout.
 - **Commit amounts summing to ≈ `curveSupply`.** The distributor is funded with the *measured* bought supply, which
   the v4 pool rounds down by a few wei (so `bought = curveSupply − dust`). The distributor **clamps the final claim
   to its on-hand balance** ([audit L3]), so committing exactly `curveSupply` no longer bricks the tail claimant — the
@@ -63,8 +65,8 @@ with OZ sorted-pair (`MerkleProof.verify`) internal nodes. See `test/sim/arrow.s
   commit-reveal). On a **public mempool** a copycat can copy `cfg` + all three salts and either (a) launch a bare
   copycat to revert the dev's tx via the deterministic `poolOf` collision (griefing DoS — dev retries with a fresh
   salt, no funds lost), or (b) substitute **their own** `merkleRoot` and front-run, so the pad's addresses are
-  identical but the bought supply airdrops to the attacker's holders. Both cost the attacker a full 0.5 ETH + buyout
-  of a token they solely, visibly control — identity-hijack/griefing, **not theft of dev funds**. On Robinhood
+  identical but the bought supply airdrops to the attacker's holders. Both cost the attacker a full `platformFee`
+  + buyout of a token they solely, visibly control — identity-hijack/griefing, **not theft of dev funds**. On Robinhood
   Chain's single-sequencer FCFS ordering with a private mempool, neither is reachable. If Arrow is ever deployed to a
   public-mempool chain, harden per the audit: bind `merkleRoot` (+ optionally `msg.sender`) into the effective
   CREATE2 salts inside `ArrowLauncher` so a substituted root yields a different address (`HookFlagsMismatch` on the
@@ -87,8 +89,9 @@ with OZ sorted-pair (`MerkleProof.verify`) internal nodes. See `test/sim/arrow.s
 ## Tests
 
 - `test/sim/arrow.sim.test.js` — full end-to-end on a real v4 stack at production geometry: launch → full buyout →
-  atomic graduation → airdrop; asserts the dev holds zero token, the platform got exactly 0.5 ETH, holders self-claim,
-  and the underfunded / below-fee / empty-root reverts.
+  atomic graduation → airdrop; asserts the dev holds zero token, the platform got exactly the configured fee
+  (this suite deploys its launcher with `platformFee = 0.5 ETH` to keep its existing calibrated assertions),
+  holders self-claim, and the underfunded / below-fee / empty-root reverts.
 - `test/unit/ArrowDistributor.test.js` — merkle claim correctness, one-claim-per-index, funds-to-account-not-caller,
   no-withdraw shape, ends-at-zero, and the [audit L3] tail-claim clamp.
 
@@ -120,8 +123,23 @@ An adversarial audit (`arrow-audit`, 25 agents: finders per dimension → skepti
 - **[design — INFO] stranded remainder.** An under-committed root strands the positive remainder forever (no
   withdraw). This is the honest core of the trustless design; the L3 clamp handles the dust direction.
 
+## Migration fee corrected: hardcoded 0.5 ETH constant → deploy-time immutable
+
+The product decision (ROBIN-PAD-NEXT-GEN-IDEAS.md, "Migration feature") is a flat **~$200** fee — bumped up from
+an initial $100 idea specifically to cover real gas/API cost with margin — not the 0.5 ETH this contract
+originally shipped with (0.5 ETH was never actually priced against $200; it was just the number written down
+before the product figure was decided). Rather than hand-picking a new hardcoded constant that will just as
+silently drift out of date as ETH's price moves, `PLATFORM_FEE` became `platformFee`: an **immutable constructor
+argument**, set once when an `ArrowLauncher` instance is deployed. `scripts/deploy-arrow.js` computes a real
+figure (default 0.08 ETH against an ETH ≈ $2,540 snapshot, Sep 2026 — override via `ARROW_FEE_ETH` with whatever
+figure is accurate at actual deploy time). Retuning it for a NEW instance costs nothing (just a fresh deploy,
+same as retuning `RobinV4FeeConfig` costs nothing for future launches); an already-deployed singleton's fee is
+still permanently fixed, by design — same "immutable per instance, forward-only for new instances" posture
+every other economic knob in this repo already follows.
+
 ## Open money-path decisions (locked)
 
-Off-top = **flat 0.5 ETH to platform**. Distributor = **merkle self-claim** (dev commits the holder root). Both per
-the operator's decision. If teams span very different raise sizes and a flat fee is too blunt, `max(0.5 ETH, X%)` is
-a localized change in `launch` (add a percentage floor before the buyout sizing).
+Off-top = **flat `platformFee` to platform, set at deploy** (see above; ~$200-equivalent by default). Distributor
+= **merkle self-claim** (dev commits the holder root). Both per the operator's decision. If teams span very
+different raise sizes and a flat fee is too blunt, `max(platformFee, X%)` is a localized change in `launch` (add
+a percentage floor before the buyout sizing).

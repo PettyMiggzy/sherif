@@ -79,4 +79,35 @@ describe("RobinV4FeeConfig", () => {
     await cfg.connect(other).acceptOwnership();
     expect(await cfg.owner()).to.equal(other.address);
   });
+
+  // [NO-POOL] independent of Defaults/setDefaults on purpose — see RobinV4FeeConfig.sol's comment. Starts
+  // disabled so a fresh deploy behaves exactly as before until an owner opts in.
+  describe("noPoolForever governance (independent of Defaults)", () => {
+    it("starts disabled with a zero default bps", async () => {
+      expect(await cfg.noPoolForeverEnabled()).to.equal(false);
+      expect(await cfg.visibilityWithdrawBpsDefault()).to.equal(0n);
+    });
+
+    it("owner can enable it with a valid bps", async () => {
+      await cfg.setNoPoolForeverDefaults(true, 4000);
+      expect(await cfg.noPoolForeverEnabled()).to.equal(true);
+      expect(await cfg.visibilityWithdrawBpsDefault()).to.equal(4000n);
+    });
+
+    it("rejects enabling with 0 bps or a bps over the hard cap", async () => {
+      await expect(cfg.setNoPoolForeverDefaults(true, 0)).to.be.revertedWithCustomError(cfg, "BadParam");
+      await expect(cfg.setNoPoolForeverDefaults(true, 5001)).to.be.revertedWithCustomError(cfg, "BadParam");
+      await expect(cfg.setNoPoolForeverDefaults(true, 5000)).to.not.be.reverted; // exactly the cap is allowed
+    });
+
+    it("disabling ignores the bps bound (any value, since it's meaningless while disabled)", async () => {
+      await expect(cfg.setNoPoolForeverDefaults(false, 0)).to.not.be.reverted;
+      await expect(cfg.setNoPoolForeverDefaults(false, 12345)).to.not.be.reverted;
+    });
+
+    it("gates the setter to the owner", async () => {
+      await expect(cfg.connect(other).setNoPoolForeverDefaults(true, 4000))
+        .to.be.revertedWithCustomError(cfg, "OwnableUnauthorizedAccount");
+    });
+  });
 });

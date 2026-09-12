@@ -54,7 +54,7 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
       name: "Robin Curve", symbol: "rCRV", decimals: 18,
       // NO DEV MINT: supply == curveSupply + reserveSupply exactly (creator gets nothing at launch)
       supply: 300n * 10n ** 18n, curveSupply: 100n * 10n ** 18n, reserveSupply: 200n * 10n ** 18n,
-      tickSpacing: SPACING, startTickMag: 0, creator: creator.address,
+      tickSpacing: SPACING, startTickMag: 0, creator: creator.address, noPoolForever: false,
     };
 
     // mine the BRANDED token salt (address must end in `1ab5`), THEN predict the token addr → mine the hook

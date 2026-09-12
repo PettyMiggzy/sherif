@@ -75,7 +75,7 @@ describe("SIM — Arrow migration launcher (buy out curve, graduate, airdrop to 
     [deployer, platform, dev, h1, h2, h3, stranger] = await ethers.getSigners();
     S = await deployStack(deployer, platform);
     launcher = await (await ethers.getContractFactory("ArrowLauncher")).deploy(
-      await S.factory.getAddress(), await S.reg.getAddress()
+      await S.factory.getAddress(), await S.reg.getAddress(), E("0.5") // matches this file's existing 0.5 ETH-calibrated assertions
     );
     factoryAddr = await S.factory.getAddress();
     depAddr = await S.dep.getAddress();
@@ -84,7 +84,7 @@ describe("SIM — Arrow migration launcher (buy out curve, graduate, airdrop to 
   });
 
   function makeCfg(tag, curveSupply, reserveSupply) {
-    return { name: "Arrow " + tag, symbol: tag, decimals: 18, supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: dev.address };
+    return { name: "Arrow " + tag, symbol: tag, decimals: 18, supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: dev.address, noPoolForever: false };
   }
   async function prepareSalts(tag, cfg) {
     // [brand] the pad token address must end in `1ab5` or CurvePadFactoryV4 (which ArrowLauncher launches
@@ -164,6 +164,32 @@ describe("SIM — Arrow migration launcher (buy out curve, graduate, airdrop to 
     // empty root
     await expect(launcher.connect(dev).launch(cfg, salts.tokenSalt, salts.hookSalt, salts.curveSalt, ethers.ZeroHash, { value: E(60) }))
       .to.be.revertedWithCustomError(launcher, "EmptyRoot");
+  });
+
+  // [migration fee] platformFee moved from a hardcoded PLATFORM_FEE constant to an immutable constructor arg
+  // (see ARROW.md "Migration fee corrected") specifically so a stale figure can never be silently wrong across
+  // every deployed instance — retuning it costs a fresh deploy, not a contract change. Prove the gate actually
+  // moves with whatever fee a given instance was deployed with, independent of the 0.5 ETH this file's other
+  // tests are calibrated against.
+  it("[migration fee] platformFee is per-instance: a launcher deployed with a DIFFERENT fee gates at that fee, not 0.5 ETH", async () => {
+    const otherFee = E("0.08"); // ~$200-equivalent default (see scripts/deploy-arrow.js)
+    const launcher2 = await (await ethers.getContractFactory("ArrowLauncher")).deploy(
+      await S.factory.getAddress(), await S.reg.getAddress(), otherFee
+    );
+    expect(await launcher2.platformFee()).to.equal(otherFee);
+    expect(await launcher.platformFee()).to.equal(E("0.5")); // the shared singleton is unaffected
+
+    const tag = "ARW" + (tagN++);
+    const cfg = makeCfg(tag, CURVE, RESERVE);
+    const salts = await prepareSalts(tag, cfg);
+    const root = ethers.id("fee-check-" + tag);
+    // below launcher2's fee (but above the ORIGINAL launcher's 0.5 ETH fee — proves it's really THIS instance's
+    // own fee being checked, not a leftover global constant)
+    await expect(launcher2.connect(dev).launch(cfg, salts.tokenSalt, salts.hookSalt, salts.curveSalt, root, { value: E("0.05") }))
+      .to.be.revertedWithCustomError(launcher2, "BelowPlatformFee");
+    // above launcher2's fee but still far short of the full-curve buyout
+    await expect(launcher2.connect(dev).launch(cfg, salts.tokenSalt, salts.hookSalt, salts.curveSalt, root, { value: E("0.1") }))
+      .to.be.revertedWithCustomError(launcher2, "UnderfundedBuyout");
   });
 
   // ── adversarial ──────────────────────────────────────────────────────────────────

@@ -75,7 +75,7 @@ async function main() {
   console.log(`  CurvePadFactoryV4      ${await factory.getAddress()}\n  swap router            ${await SW.getAddress()}\n`);
 
   // ── launch a SMALL pad so a tiny buy sells it out (production geometry, but curve=100k tokens) ──
-  const cfg = { name: "Robin E2E", symbol: "rE2E", decimals: 18, supply: 200_000n * ONE, curveSupply: 100_000n * ONE, reserveSupply: 100_000n * ONE, tickSpacing: TS, startTickMag: 0, creator: w.address };
+  const cfg = { name: "Robin E2E", symbol: "rE2E", decimals: 18, supply: 200_000n * ONE, curveSupply: 100_000n * ONE, reserveSupply: 100_000n * ONE, tickSpacing: TS, startTickMag: 0, creator: w.address, noPoolForever: false };
   const TokenF = await ethers.getContractFactory("PadToken");
   const tokenSalt = ethers.id("e2e-" + Date.now());
   const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, 18, cfg.supply, await factory.getAddress()])]);

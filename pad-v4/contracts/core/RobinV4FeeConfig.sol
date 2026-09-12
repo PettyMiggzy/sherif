@@ -37,6 +37,10 @@ contract RobinV4FeeConfig is Ownable2Step {
     // oracle: the operator must stay free to move it a long way as ETH moves, in either direction.
     uint128 public constant HARD_MAX_FDV_WEI = 1_000_000 ether;
     uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
+    // [NO-POOL] MUST mirror RobinCurveV4.MAX_VISIBILITY_WITHDRAW_BPS. Duplicated, not imported — RobinCurveV4's
+    // own constructor is the authoritative, fail-closed check regardless of what this contract lets through, so
+    // a drift here only ever makes THIS gate looser or tighter than the real one, never unsafe.
+    uint16 public constant MAX_VISIBILITY_WITHDRAW_BPS = 5000;
 
     /// @dev v3-economics model: graduation rewards are a PERCENTAGE of the raise (so they scale with any MC),
     /// and a slice of the BUY tax is held in the curve as an idle ETH balance through the curve phase, then swept
@@ -67,6 +71,14 @@ contract RobinV4FeeConfig is Ownable2Step {
 
     Defaults private _d;
 
+    // [NO-POOL] Governed switch + default reward-checkpoint size for the "no-pool-forever" pad type. Deliberately
+    // NOT a field on `Defaults`/`setDefaults` — adding one there would change the struct every existing deploy
+    // script and test builds, for a pad type most launches don't use. Independent state instead: a fresh
+    // RobinV4FeeConfig starts with this disabled and behaves exactly as before until an owner opts in.
+    bool public noPoolForeverEnabled;
+    uint16 public visibilityWithdrawBpsDefault;
+
+    event NoPoolForeverDefaultsUpdated(bool enabled, uint16 visibilityWithdrawBps);
     event DefaultsUpdated(
         uint16 buyTaxBps,
         uint16 sellTaxBps,
@@ -101,6 +113,19 @@ contract RobinV4FeeConfig is Ownable2Step {
         _validate(d);
         _d = d;
         _emit(d);
+    }
+
+    /// @notice Enable/disable the noPoolForever pad type for FUTURE launches and set the governed size of its
+    /// one-time checkpoint reward slice (the bps of curve liquidity CurvePadFactoryV4 stamps into a new pad's
+    /// immutable `visibilityWithdrawBps` when a creator opts in). Same forward-only guarantee as `setDefaults`:
+    /// an already-launched pad's bps is immutable, stamped at launch — retuning this only affects NEW launches.
+    function setNoPoolForeverDefaults(bool enabled, uint16 visibilityWithdrawBps) external onlyOwner {
+        if (enabled && (visibilityWithdrawBps == 0 || visibilityWithdrawBps > MAX_VISIBILITY_WITHDRAW_BPS)) {
+            revert BadParam();
+        }
+        noPoolForeverEnabled = enabled;
+        visibilityWithdrawBpsDefault = visibilityWithdrawBps;
+        emit NoPoolForeverDefaultsUpdated(enabled, visibilityWithdrawBps);
     }
 
     function _validate(Defaults memory d) internal pure {

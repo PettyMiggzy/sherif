@@ -72,7 +72,7 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
   function makeCfg(tag, { supply, curveSupply, reserveSupply }) {
     return {
       name: "Robin " + tag, symbol: tag, decimals: 18,
-      supply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: creator.address,
+      supply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false,
     };
   }
 

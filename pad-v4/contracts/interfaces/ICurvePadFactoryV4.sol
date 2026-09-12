@@ -17,6 +17,11 @@ struct LaunchConfig {
     // sets the implied valuation, which the factory bounds against RobinV4FeeConfig's FDV band.
     int24 startTickMag;
     address creator;
+    // [NO-POOL] Creator's structural pad-type choice: true asks the factory to checkpoint at graduation instead
+    // of fully exiting (see RobinCurveV4's noPoolForever). Reverts NoPoolForeverDisabled if the factory's
+    // governed RobinV4FeeConfig hasn't opted the pad type in yet. Appended last so this stays ABI-compatible
+    // with every existing encoder of this struct.
+    bool noPoolForever;
 }
 
 /// @notice The thin slice of CurvePadFactoryV4 the presale add-on consumes. `launch` is externally callable by any

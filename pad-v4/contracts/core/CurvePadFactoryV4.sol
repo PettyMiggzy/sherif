@@ -68,6 +68,12 @@ contract CurvePadFactoryV4 {
         // start price moves the valuation without changing the multiple every coin graduates at.
         int24 startTickMag;
         address creator; // gets supply - curveSupply - reserveSupply
+        // [NO-POOL] Creator's structural pad-type choice — true asks for a "checkpoint, not exit" graduation
+        // (RobinCurveV4.noPoolForever). Gated on RobinV4FeeConfig.noPoolForeverEnabled(); the bps of curve
+        // liquidity withdrawn at that checkpoint is GOVERNED (feeConfig.visibilityWithdrawBpsDefault()), never
+        // creator-chosen — same "economics come from feeConfig, never the caller" rule every other bps here
+        // follows. Appended last so this mirrors ICurvePadFactoryV4.LaunchConfig field-for-field.
+        bool noPoolForever;
     }
 
     struct Launch {
@@ -95,6 +101,7 @@ contract CurvePadFactoryV4 {
     error MarketCapOutOfRange(uint256 fdvWei); // [FDV] supply x launch price outside the governed band
     error NotCurve();
     error PoolAlreadyInit();
+    error NoPoolForeverDisabled(); // [NO-POOL] cfg.noPoolForever requested but feeConfig hasn't opted the pad type in
 
     constructor(
         address poolManager_,
@@ -165,6 +172,15 @@ contract CurvePadFactoryV4 {
 
         // 1) governed defaults, snapshotted + stamped immutably
         RobinV4FeeConfig.Defaults memory d = feeConfig.defaults(); // all shares/geometry validated in the FeeConfig
+        // [NO-POOL] Structural pad-type choice is the creator's; its economics are NOT. A creator can ask for
+        // noPoolForever, but only ever gets the GOVERNED visibilityWithdrawBps — never one of their own choosing
+        // — and only if the platform has opted the pad type in at all. Snapshotted here, same as every other
+        // bps below, so a mid-tx retune can't change what THIS launch stamps immutably onto the curve.
+        uint16 visibilityWithdrawBps = 0;
+        if (cfg.noPoolForever) {
+            if (!feeConfig.noPoolForeverEnabled()) revert NoPoolForeverDisabled();
+            visibilityWithdrawBps = feeConfig.visibilityWithdrawBpsDefault();
+        }
         int24 ts = cfg.tickSpacing;
         // [FDV] The creator may pick their own launch price; 0 keeps the governed default. `curveWidth` stays
         // GLOBAL on purpose — it is the tick span from launch to the graduation ceiling, so holding it fixed
@@ -329,8 +345,8 @@ contract CurvePadFactoryV4 {
                 d.creatorGradBps,
                 d.ambushGradBps,
                 cfg.creator,
-                false, // noPoolForever: this factory only ever deploys classic graduating pads
-                uint16(0) // visibilityWithdrawBps: unused when noPoolForever is false
+                cfg.noPoolForever,
+                visibilityWithdrawBps
             )
         );
         isCurve[curve] = true;

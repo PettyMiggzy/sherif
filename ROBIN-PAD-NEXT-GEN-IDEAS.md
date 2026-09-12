@@ -477,6 +477,16 @@ the connection now so it isn't rediscovered from scratch later.
 
 ## Core pivot
 
+- **Status (2026-09-12): see `pad-v4/NO-POOL-FOREVER.md` for the as-built mechanism** — the
+  final design landed differently from the "mint/redeem" framing sketched below (trading
+  was already real Uniswap v4 swaps against the curve's own AMM position, pre- and
+  post-graduation; the pivot turned out to be "don't fully withdraw the curve's liquidity
+  at graduation" instead). That doc is the authoritative status: `RobinCurveV4`'s
+  checkpoint mechanism, `RobinDividendPool` (holder rewards), `RobinBurnTracker`
+  (burn-boost), and `CurvePadFactoryV4`'s pad-type wiring (a creator opts into
+  `noPoolForever` per launch; the platform governs whether the pad type is enabled at all
+  and the size of its one-time reward checkpoint via `RobinV4FeeConfig`) are all built and
+  unit-tested. This section stays as the original brainstorm record.
 - Question raised: does the pad need a real Uniswap liquidity pool at all?
 - Direction being explored: **no.** The bonding curve becomes the permanent market —
   buy = mint from curve, sell = redeem into curve, forever. No "graduation" into a real
@@ -610,6 +620,16 @@ the connection now so it isn't rediscovered from scratch later.
   Disperse-related contract-verification artifacts sitting around; worth checking if
   reusable before building new batch-send logic.
 - Possible sweetener: bundle a free week of front-page/trending placement with the fee.
+- **Built (2026-09-12): the $200 fee is real now.** `ArrowLauncher.PLATFORM_FEE` was a hardcoded
+  `0.5 ether` constant, never actually priced against $200 — fixed by turning it into an
+  immutable constructor arg (`platformFee`, set once at deploy). `scripts/deploy-arrow.js`
+  computes a real figure (default 0.08 ETH against an ETH ≈ $2,540 snapshot, Sep 2026 —
+  override `ARROW_FEE_ETH` at actual deploy time). `ArrowDistributor` needed ZERO changes —
+  it was already fully generic over any (index, account, amount) snapshot, curve-buyout-sourced
+  or externally-sourced; the batch-airdrop-at-scale question turned out to be a non-issue too,
+  since Arrow's whole design is "buy the ENTIRE curve out atomically, hand the whole bought
+  supply to one distributor, holders self-claim" — no per-recipient batch-send transaction
+  loop exists or is needed (the Disperse-style push-batching idea doesn't apply to this shape).
 
 ## Rewards — moving past plain staking
 
@@ -618,6 +638,19 @@ the connection now so it isn't rediscovered from scratch later.
 - Optional boost: burning your own tokens increases *your* share of that same pool. Not
   a separate lottery, not winner-take-all — burning just buys a bigger slice of the same
   guaranteed pool.
+- **Built (2026-09-12): the on-chain half of burn-boost.** `RobinBurnTracker.sol` — one
+  contract, deployed ONCE, shared across every pad token (same "deployed once, reused
+  everywhere" shape as Disperse). Permissionless `burn(token, amount)` pulls via
+  `transferFrom` and sends to the dead address (PadToken has no real `burn()` selector,
+  same dead-transfer convention as `RobinTokenTreasury`), and tallies `burnedBy[token][
+  account]` on-chain forever. No owner, no pause, no rescue, no un-burn, no "burn on
+  behalf of" path. Deliberately does NOT decide the weighting formula on-chain — the
+  off-chain indexer that computes each `RobinDividendPool` snapshot epoch reads
+  `burnedBy(token, account)` alongside live balance and folds both into that epoch's leaf
+  amount however the product wants (balance + burned, balance × multiplier, etc.), so the
+  formula can be retuned per epoch without a contract upgrade. Tested (6/6,
+  `test/unit/RobinBurnTracker.test.js`). Not yet built: the actual weighting formula
+  (that's an indexer/off-chain decision, not a contract), and the Burn page's UI wiring.
 - **Confirmed technical point:** a plain ERC-20 burn does *not* move price on our curve
   design — our pricing comes off the pool/curve's own reserves and ticks, not off total
   token supply. This differs from some other projects (e.g. a friend's project "NOMO"
