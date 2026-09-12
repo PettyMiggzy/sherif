@@ -70,6 +70,12 @@ Anything without a checkbox is still notes-only.
   locks + rewards + burn. More columns of real content than DexScreener's own sample
   since we're a full DEX, not just a chart aggregator — their layout, our features and
   colors.
+- [x] Token page's 3 columns now each scroll independently — hover a column and scroll,
+  only that column's content moves (page itself doesn't jump), each pinned in place via
+  `position:sticky` with its own bounded height + `overflow-y:auto` +
+  `overscroll-behavior:contain` so scrolling past one column's end doesn't bleed into
+  the page scroll. Collapses back to normal single-page scroll on narrow/mobile widths
+  where the columns stack.
 - [x] Migration (zero holder action) → `no-pool-migrate-preview.html`
 - [x] Pad-wide transparency page → `no-pool-transparency-preview.html`
 - [ ] Everything else below is still concept-only — no page yet.
