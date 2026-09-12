@@ -100,6 +100,15 @@
   .rowline:first-child{border-top:none}
   .rowline .k{color:var(--dim)}
   .rowline .v{font-family:var(--mono);font-weight:700}
+
+  .bell-desc{color:var(--dim);font-size:.82rem;line-height:1.5;margin:0 0 14px}
+  .bell-stage{background:var(--bg-2);border:1px solid var(--line-2);border-radius:12px;
+    padding:22px;text-align:center}
+  .bell-icon{font-size:2.1rem;display:inline-block;animation:bell-swing 2.4s ease-in-out infinite}
+  @keyframes bell-swing{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-12deg)}
+    40%{transform:rotate(9deg)}60%{transform:rotate(-6deg)}80%{transform:rotate(3deg)}}
+  .bell-caption{font-family:var(--mono);font-size:.8rem;color:var(--dim);margin-top:10px}
+  .bell-caption b{color:var(--lime)}
   .btn:hover{filter:brightness(1.1)}
   .btn:active{transform:scale(.98)}
   .tab,.tf,.txtab,.swaptab,.mini-btn{cursor:pointer;transition:.12s ease}
@@ -177,6 +186,17 @@
         <div class="rowline"><span class="k">Your tokens + ETH-back</span><span class="v">Claimable after</span></div>
         <div class="rowline"><span class="k">Milestone payout</span><span class="v">0.5 ETH each to creator + platform, at $34K mcap</span></div>
         <div class="rowline"><span class="k">Visibility pool</span><span class="v">Seeded automatically</span></div>
+      </div>
+
+      <div class="panel">
+        <h3>🔔 Bell Ring — the launch moment</h3>
+        <p class="bell-desc">The crypto version of ringing the opening bell — the instant this auction
+        finalizes and the curve goes live, it's a real on-site moment, not just a background transaction.
+        Every launch gets a shareable clip.</p>
+        <div class="bell-stage">
+          <div class="bell-icon">🔔</div>
+          <div class="bell-caption">Curve goes live in <b>1d 06h</b></div>
+        </div>
       </div>
     </div>
   </div>

@@ -90,6 +90,11 @@
     font-size:.82rem;font-weight:500;cursor:pointer}
   .side-item svg{flex:none;color:var(--faint)}
   .side-item:hover{background:var(--panel);color:var(--text)}
+  .side-item.soon{opacity:.5;cursor:default}
+  .side-item.soon:hover{background:none;color:var(--dim)}
+  .soon-tag{font-family:var(--mono);font-size:.56rem;color:var(--faint);border:1px solid var(--border);
+    border-radius:4px;padding:1px 5px;margin-left:auto}
+  .watchlist-box.flash{border-color:var(--accent)}
 
   .side-h{font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;
     color:var(--faint);padding:10px 8px 6px}
@@ -210,13 +215,13 @@
     </div>
 
     <div class="side-nav">
-      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7-5.4-4.7 7.1-.6z"/></svg>Watchlist</div>
-      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>Alerts</div>
-      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Multicharts</div>
-      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>New Pairs</div>
-      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>Gainers &amp; Losers</div>
-      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3L3 8v8l5 5 8-8V5z"/></svg>API</div>
-      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11v2a2 2 0 002 2h1l4 4V5L6 9H5a2 2 0 00-2 2z"/><path d="M16 8a4 4 0 010 8"/></svg>Advertise</div>
+      <div class="side-item" data-scroll-to=".watchlist-box"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7-5.4-4.7 7.1-.6z"/></svg>Watchlist</div>
+      <a class="side-item" href="no-pool-hub-preview.html#notifications"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>Alerts</a>
+      <div class="side-item soon" title="Coming soon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Multicharts <span class="soon-tag">Soon</span></div>
+      <div class="side-item" data-activate-tab="New Pairs"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>New Pairs</div>
+      <div class="side-item" data-activate-tab="Gainers"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>Gainers &amp; Losers</div>
+      <a class="side-item" href="no-pool-hub-preview.html#developer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3L3 8v8l5 5 8-8V5z"/></svg>API</a>
+      <a class="side-item" href="no-pool-hub-preview.html#services"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11v2a2 2 0 002 2h1l4 4V5L6 9H5a2 2 0 00-2 2z"/><path d="M16 8a4 4 0 010 8"/></svg>Advertise</a>
     </div>
 
     <div class="side-h">Chains</div>
@@ -257,6 +262,7 @@
         <span class="tab on">Trending</span>
         <div class="tfset"><span class="tf">5M</span><span class="tf">1H</span><span class="tf on">6H</span><span class="tf">24H</span></div>
         <span class="tab">Top</span>
+        <span class="tab">Robin 20</span>
         <span class="tab">Gainers</span>
         <span class="tab">New Pairs</span>
         <span class="tab">Boosted</span>
@@ -326,7 +332,8 @@
     trader count and other activity signals, so a volume bot can't cheaply out-rank someone actually paying
     us. A boost (⚡) adds weight on top of that same score — it's not an instant #1, and organic activity
     can still out-rank a boosted token. Price/volume/liquidity numbers are never touched by a boost, ranking
-    only.</div>
+    only. "Robin 20" is a fixed top-20-by-mcap index view, styled like a stock market index — same real
+    numbers, just a different cut of the same table.</div>
   </div>
 </div>
 
@@ -376,6 +383,30 @@
     row.addEventListener('click', function (e) {
       if (e.target.closest('.favstar')) return;
       window.location.href = row.dataset.href;
+    });
+  });
+
+  // Sidebar items that are real, just not separate pages — scroll to what's already
+  // on this page (Watchlist), or activate the matching toolbar tab (New Pairs,
+  // Gainers & Losers) instead of sitting there doing nothing on click.
+  document.querySelectorAll('.side-item[data-scroll-to]').forEach(function (item) {
+    item.addEventListener('click', function () {
+      var target = document.querySelector(item.dataset.scrollTo);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add('flash');
+      setTimeout(function () { target.classList.remove('flash'); }, 1200);
+    });
+  });
+  document.querySelectorAll('.side-item[data-activate-tab]').forEach(function (item) {
+    item.addEventListener('click', function () {
+      var label = item.dataset.activateTab;
+      var tabs = Array.prototype.slice.call(document.querySelectorAll('.toolbar .tabs .tab'));
+      var match = tabs.filter(function (t) { return t.textContent.trim() === label; })[0];
+      if (!match) return;
+      tabs.forEach(function (t) { t.classList.remove('on'); });
+      match.classList.add('on');
+      match.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
     });
   });
 </script>

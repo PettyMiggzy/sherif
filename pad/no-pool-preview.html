@@ -70,6 +70,7 @@
   .price{font-family:var(--mono);font-size:1.7rem;font-weight:700}
   .chg{font-family:var(--mono);font-size:.9rem;color:var(--green);font-weight:700}
   .chg.down{color:var(--red)}
+  .stockcompare{font-family:var(--mono);font-size:.7rem;color:var(--faint);margin-top:4px}
 
   .banner{height:150px;border-radius:14px;overflow:hidden;margin-bottom:14px;border:1px solid var(--line-2);
     background:linear-gradient(135deg,#16210c,#0c1108 65%);display:flex;align-items:center;justify-content:center;
@@ -136,6 +137,9 @@
   .field{background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:12px 14px;margin-bottom:10px}
   .field .lbl{font-family:var(--mono);font-size:.66rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
   .field .amt{font-size:1.3rem;font-family:var(--mono);margin-top:4px;color:var(--ink)}
+  .amt-row{display:flex;justify-content:space-between;align-items:center;margin-top:4px}
+  .amt-row .amt{margin-top:0}
+  .paytoken{font-family:var(--mono);font-size:.86rem;font-weight:700;color:var(--lime);cursor:pointer}
   .taxsplit{margin:8px 0 4px;padding:10px 12px;background:var(--bg-2);border-radius:10px;border:1px solid var(--line-2)}
   .taxsplit .row{display:flex;justify-content:space-between;font-size:.74rem;padding:3px 0;color:var(--dim);font-family:var(--mono)}
   .taxsplit .row b{color:var(--lime)}
@@ -169,6 +173,12 @@
   .stat2 .c{background:var(--panel);padding:9px 12px}
   .stat2 .c .k{font-family:var(--mono);font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
   .stat2 .c .v{font-family:var(--mono);font-weight:700;margin-top:2px;font-size:.86rem}
+
+  .earnings-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line-2);
+    border:1px solid var(--line-2);border-radius:10px;overflow:hidden;margin-bottom:10px}
+  .earnings-grid .e{background:var(--panel-2);padding:9px 12px}
+  .earnings-grid .e .k{font-family:var(--mono);font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+  .earnings-grid .e .v{font-family:var(--mono);font-weight:700;margin-top:2px;font-size:.86rem;color:var(--lime)}
 
   .pctrow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line-2);border:1px solid var(--line-2);
     border-radius:10px;overflow:hidden;margin-bottom:12px}
@@ -263,6 +273,7 @@
         <div class="badges">
           <span class="badge">No-pool curve</span>
           <span class="badge">Migrated ✓ airdropped</span>
+          <span class="badge alt">IPO window: cleared</span>
           <span class="badge alt">Creator: Robin Labs</span>
         </div>
       </div>
@@ -270,6 +281,7 @@
     <div class="price-block">
       <div class="price">$0.00184</div>
       <div class="chg">▲ 6.2% · 24h</div>
+      <div class="stockcompare">≈ 0.000019 shares of NVDA</div>
     </div>
   </div>
 
@@ -391,8 +403,13 @@
           <div class="swaptab off">Sell</div>
           <div class="swaptab off">Limit</div>
         </div>
-        <div class="field"><div class="lbl">You pay</div><div class="amt">0.25 ETH</div></div>
+        <div class="field">
+          <div class="lbl">You pay</div>
+          <div class="amt-row"><div class="amt">0.25</div><span class="paytoken">ETH ▾</span></div>
+        </div>
         <div class="field"><div class="lbl">You receive (est.)</div><div class="amt">33,940 ROBIN</div></div>
+        <div class="mini" style="margin-top:0">Pay with any token — we route it through a built-in bridge/swap
+        before it hits the curve. ETH shown by default.</div>
         <div class="taxsplit">
           <div class="row"><span>Buy tax</span><b>1.5%</b></div>
           <div class="row"><span>→ holders</span><span>0.20%</span></div>
@@ -416,11 +433,27 @@
       </div>
 
       <div class="panel">
-        <h3>Rewards</h3>
-        <div class="rowline"><span class="k">Holder pool (your share)</span><span class="v">0.014 ETH</span></div>
+        <h3>Dividends</h3>
+        <div class="mini" style="margin-top:0">Not staking — nothing locked, nothing deposited. A periodic
+        snapshot of who's holding pays a pro-rata share of tax revenue straight to your wallet.</div>
+        <div class="rowline"><span class="k">Your share (last snapshot)</span><span class="v">0.014 ETH</span></div>
         <div class="rowline"><span class="k">Boost by burning</span><span class="v">+0.6%/1k burned</span></div>
         <div class="rowline"><span class="k">Trader rebate earned (30d)</span><span class="v">0.031 ETH</span></div>
-        <span class="btn btn-ghost go-btn">Claim rewards</span>
+        <div class="rowline"><span class="k">Next snapshot</span><span class="v">~11h</span></div>
+        <span class="btn btn-ghost go-btn">Claim dividends</span>
+      </div>
+
+      <div class="panel">
+        <h3>Earnings Day</h3>
+        <div class="mini" style="margin-top:0">Every snapshot doubles as a report card — the same moment
+        dividends pay out, $ROBIN's on-chain stats get bundled into a shareable recap.</div>
+        <div class="earnings-grid">
+          <div class="e"><div class="k">Holders</div><div class="v">4,208</div></div>
+          <div class="e"><div class="k">Volume</div><div class="v">96.1 ETH</div></div>
+          <div class="e"><div class="k">Treasury</div><div class="v">312.4 ETH</div></div>
+          <div class="e"><div class="k">Burned</div><div class="v">18.9 ETH</div></div>
+        </div>
+        <span class="btn btn-dark go-btn">Share this Earnings Day →</span>
       </div>
 
       <div class="panel">

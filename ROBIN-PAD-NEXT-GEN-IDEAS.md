@@ -164,6 +164,29 @@ Anything without a checkbox is still notes-only.
   since we have no DEX venue), a banner creative slot + website/Twitter/Telegram social
   links row up top, "Pair created" age in the Contract panel, and a new Security panel
   (source verification + community flags — our own framing, not their badge names).
+- [x] Token page: **Dividends, not staking** — the "Rewards" panel is now framed as
+  "Dividends," explicitly explaining the snapshot mechanic (nothing locked, nothing
+  deposited, a periodic snapshot pays pro-rata) with a "next snapshot" countdown. Added
+  an **Earnings Day** panel right after it — the same snapshot moment bundles holders/
+  volume/treasury/burned into a shareable "report card." Added an IPO-window badge
+  ("IPO window: cleared") next to the existing badges, a stock-price-comparison stat
+  under the price ("≈ 0.000019 shares of NVDA" — pure display, no real exposure), and a
+  "pay with any token" selector stub on the Trade panel's "You pay" field (routes
+  through a built-in bridge/swap, ETH shown by default).
+- [x] DEX page: sidebar items are no longer dead. Watchlist scrolls to and flashes the
+  existing watchlist box; New Pairs / Gainers & Losers activate the matching toolbar
+  tab instead of doing nothing; Alerts, API, and Advertise now link to the Creator
+  Hub's Notifications, Developer, and Paid Services sections respectively (the Hub's
+  API-key feature is literally what should sit behind "API"); Multicharts is marked
+  "Soon" instead of pretending to work. Added a **Robin 20** tab — a fixed top-20-by-
+  mcap index view, stock-index styled, same real numbers as everything else.
+- [x] Auction page: added a **Bell Ring** panel — the crypto version of ringing the
+  opening bell, framed as the actual on-site moment when the curve goes live (with a
+  small swinging-bell animation, respecting `prefers-reduced-motion` like the rest of
+  the site) — the shareable-launch-moment idea from the stocks-culture brainstorm.
+- [x] Migrate page: added a line noting migration doesn't care what a project was
+  paired against before — including a tokenized stock instead of ETH — since the
+  feature only needs the holder snapshot regardless of origin.
 - [ ] Everything else below is still concept-only — no page yet.
 
 ## Live walkthrough backlog (2026-09-12) — not built yet, notes only
