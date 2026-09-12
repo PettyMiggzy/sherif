@@ -13,8 +13,11 @@ every idea below that has a checkbox has already been built into one of the six 
 preview pages, so it survives a memory/context reset even before the backend exists.
 Anything without a checkbox is still notes-only.
 
-- [x] Token page → `no-pool-preview.html` (chart, buy/sell/limit tax breakdown, holder
-  rewards, burn leaderboard, community locks, launch history, mirror-pool note)
+- [x] Token page, **now doubles as the landing page** → `no-pool-preview.html` (a hero
+  pitch up top, same job the real site's home page does, then chart, buy/sell/limit tax
+  breakdown, holder rewards, burn leaderboard, community locks, launch history,
+  mirror-pool note). Nav links across all six preview pages now actually navigate
+  between them (previously dead text, matching the real site's look only).
 - [x] Create flow → `no-pool-create-preview.html` (creator-picked supply, auction
   window, vested 10% allocation, review)
 - [x] Live auction → `no-pool-auction-preview.html` (countdown, min/target progress,
@@ -26,7 +29,13 @@ Anything without a checkbox is still notes-only.
   "we need to look just as good or people won't take our DEX seriously." Includes a paid
   "Boost" concept (flame-marked rows, boosted-only tab, a "Boost your token" button) —
   ranking-only, footer note makes clear price/volume/liquidity numbers are never
-  adjustable by a boost, only ranking is. **Chart architecture decision:** render with
+  adjustable by a boost, only ranking is. **Boost decided:** not an instant #1 —
+  ranking runs on a real composite algorithm (volume weighed together with unique
+  trader count and other activity signals), so a cheap volume/trend bot can't easily
+  out-rank someone actually paying to boost. A boost adds weight on top of that same
+  score; organic activity can still out-rank a boosted token. Also added: new launches
+  can buy a flat guaranteed top-5 slot for their first 24 hours — a distinct, simpler
+  product from ongoing Boost. **Chart architecture decision:** render with
   TradingView's lightweight-charts library (industry-standard, free), but the data
   itself comes from our own indexer — NOT a third-party API like CoinGecko or
   DexScreener's own API, since neither is guaranteed to index this chain or a
@@ -149,12 +158,19 @@ Anything without a checkbox is still notes-only.
   refund/fail path once the floor is hit).
 - Creator gets a **separate guaranteed allocation** at creation: 10% of supply for $100
   flat, instant — no competing with the public auction for their own coin.
-- That 10% vests/unlocks gradually (~2–4 weeks, exact length TBD) instead of all at once
-  — stops an instant dump without relying on an unenforceable "ban the ruggers" list
-  (trivially bypassed with a new wallet; an on-chain lock is real).
-- Milestone payout: when the raise crosses ~4 ETH, platform + creator get a payout —
-  replaces the old fixed "0.5 ETH each at graduation" idea (which assumed seeding a real
-  pool). Paid straight out of treasury at that point instead. Exact payout size TBD.
+- **Decided, overrides the earlier default:** vesting length on the creator's 10% is
+  fully optional, not mandatory — a creator can launch with zero vesting if they want.
+  (Earlier default was a 2-week enforced floor to protect the community from an instant
+  dump; explicit direction reversed that — creator control wins here.) Consistency fix
+  applied across the UI: since it's no longer universally true, "can't be dumped"
+  dropped as a blanket claim on Perch/the token page — replaced with "vesting is
+  optional, always shown, never hidden," since whatever a creator actually chose still
+  shows up in their facts-only launch history either way.
+- **Decided: milestone payout is flat 0.5 ETH each to creator and platform**, at the
+  ~$34K mcap / ~4 ETH raised mark — not a percentage cut. This is the number "as
+  promised" already, and closes the earlier open question about 0.5 ETH vs. a
+  percentage-derived 0.419 ETH. Paid straight out of treasury at that point, same as
+  before — no pool-seeding involved.
 
 ## Migration feature
 
@@ -272,7 +288,8 @@ Ideas on the table so far, beyond the mechanics above:
 
 ## Open / unresolved
 
-- Confirm DexScreener actually indexes Robinhood Chain at all.
+- ~~Confirm DexScreener actually indexes Robinhood Chain at all.~~ **Resolved: yes** —
+  confirmed via a real Robinhood Chain surface at dexscreener.com/robinhood.
 - `services.html` is owned by a different Claude session (trending-bot branch, per
   `COORDINATION.md`) — coordinate before adding a market-maker-support listing there,
   don't edit solo.
@@ -283,7 +300,17 @@ Ideas on the table so far, beyond the mechanics above:
 - Final call on visibility-pool openness (fully sell-only vs. something more open).
 - The ~19%-total-platform-take number from earlier tonight — still unresolved, not yet
   reconciled with this new no-pool model.
-- NOMO's contract address, to verify the burn-pump mechanism precisely.
+- **NOMO investigated, partially resolved, real concern found.** Contract address
+  `0xfD036176739e03BaB9E5eA881069Ca2845e5c0de` (name "NoMore", symbol NOMO, 18
+  decimals), launched via a different launchpad ("hood.dev"). Confirmed on-chain: a
+  real, standalone, non-proxy contract (~6.7KB bytecode, no EIP-1967 implementation
+  slot). Checked for burns two ways — Transfer events to the dead address
+  (`0x…dEaD`) and to the zero address — across the last 300,000 blocks: **zero burn
+  transfers found, either way.** Could not pull verified source (Blockscout's API was
+  blocked from this environment) to confirm the exact pricing mechanism. This doesn't
+  prove the friend lied, but a claimed burn with no matching on-chain event over that
+  wide a window is a real red flag — next step is getting the actual burn transaction
+  hash to check directly, rather than guessing further.
 - Perch's paid "Boost" feature may overlap with the existing "DEX Trending" product
   already sold on `services.html` (owned by the trending-bot session per
   `COORDINATION.md`) — worth checking whether that's the same product wearing two
