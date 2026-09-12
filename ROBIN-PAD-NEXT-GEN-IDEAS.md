@@ -343,6 +343,21 @@ considered:
    equities themselves. Needs actual legal sign-off, regardless of trend, and isn't
    something to build reflexively just because it's trendy.
 
+**Considered and explicitly recommended against — "turn your token into a stock"
+(reverse direction of pairing).** User asked about this directly. Different category
+of risk than everything else in this file: giving a token the actual legal
+characteristics of a stock (a claim on profits/assets, ownership, voting rights) is,
+by definition, issuing a security — on-chain or not. Not a "flag for legal review
+before touching it" item like the stock-pairing options above; it's a fundamentally
+different project needing a securities lawyer designing compliance from day one
+(registration or a real exemption, KYC/accreditation gating, ongoing disclosures), with
+real civil/criminal liability for both platform and creator if done wrong. The
+underlying want — holders feeling like they have real skin in the game — is already
+served by what's already locked in (dividends, "founder's shares" vocabulary, the
+portfolio page, long-hold badge tiers), which get the feel of stock ownership without
+the token ever legally entitling anyone to anything. Not proposing this one; logging it
+so it doesn't quietly get built later without this context.
+
 ---
 
 ## Core pivot
