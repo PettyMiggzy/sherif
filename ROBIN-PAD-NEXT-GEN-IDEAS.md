@@ -22,8 +22,9 @@ Anything without a checkbox is still notes-only.
   window, vested 10% allocation, review)
 - [x] Live auction → `no-pool-auction-preview.html` (countdown, min/target progress,
   contribute, what happens at finalize)
-- [x] Our own DexScreener-style page, **named "Perch"** (a robin perches to survey its
-  territory — decided over the generic "Browse") → `no-pool-browse-preview.html`.
+- [x] Our own DexScreener-style page, **renamed to plain "DEX"** (was "Perch" — clever
+  but nobody knew what it meant; user pushed back after seeing real DexScreener
+  screenshots, plain beats clever here) → `no-pool-browse-preview.html`.
   Column density deliberately mirrors real DexScreener/DexTools (age, txns, 5m/1h/6h/24h
   % change, liquidity, mcap) rather than a simplified version — direction was explicit:
   "we need to look just as good or people won't take our DEX seriously." Includes a paid
@@ -35,7 +36,16 @@ Anything without a checkbox is still notes-only.
   out-rank someone actually paying to boost. A boost adds weight on top of that same
   score; organic activity can still out-rank a boosted token. Also added: new launches
   can buy a flat guaranteed top-5 slot for their first 24 hours — a distinct, simpler
-  product from ongoing Boost. **Chart architecture decision:** render with
+  product from ongoing Boost. **Rebuilt for density after direct reference to real
+  DexScreener screenshots** — added a top ticker of hot/boosted tokens, a 24h
+  volume/txns stat bar, rank numbers, a TRADERS column, and a "Sponsored" ad slot
+  (matches DexScreener's own ad-banner monetization pattern). Deliberately kept this
+  site's own top nav instead of copying DexScreener's left-sidebar app-shell, since a
+  sidebar would be inconsistent with every other real page on the site. Same density
+  upgrade applied to the token page: a proper stat panel (liquidity/FDV/mcap,
+  5m/1h/6h/24h % row, buy-vs-sell split bars for txns/volume/traders), tabs above the
+  transaction list (Transactions / Top Traders / Holders), and an ad slot of its own.
+  **Chart architecture decision:** render with
   TradingView's lightweight-charts library (industry-standard, free), but the data
   itself comes from our own indexer — NOT a third-party API like CoinGecko or
   DexScreener's own API, since neither is guaranteed to index this chain or a

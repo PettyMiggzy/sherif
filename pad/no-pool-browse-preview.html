@@ -3,19 +3,19 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>No-pool pad preview — Perch — Robin Labs</title>
+<title>No-pool pad preview — DEX — Robin Labs</title>
 <meta name="robots" content="noindex, nofollow" />
 <!-- INTERNAL. Deliberately not linked from any nav, and noindex — same convention as preview.html.
-     Design preview of the pad's own DexScreener-style discovery page, named "Perch." Static only —
-     no live data. Column density deliberately mirrors real DexScreener/DexTools (age, txns, multi-
-     timeframe % change, liquidity, mcap) rather than a simplified version, per explicit direction:
-     "we need to look just as good or people won't take our DEX seriously." Chart data plan (for
-     Phase 2, not built yet): render with TradingView's lightweight-charts library, sourced from our
-     OWN indexer — not a third-party API like CoinGecko/DexScreener, since neither is guaranteed to
-     index this chain or a brand-new token. See ROBIN-PAD-NEXT-GEN-IDEAS.md for the full concept.
-     Part of a 6-page preview set: no-pool-preview.html (token), no-pool-create-preview.html,
-     no-pool-auction-preview.html, no-pool-browse-preview.html (this, "Perch"),
-     no-pool-migrate-preview.html, no-pool-transparency-preview.html. -->
+     Rebuilt after direct reference screenshots of the real DexScreener trending page — renamed off
+     "Perch" (nobody knew what it meant) to plain "DEX," and rebuilt to match that density: top
+     ticker of hot tokens, a 24h volume/txns stat bar, a fuller filter row, rank numbers, boost
+     count, a TRADERS column, and an ad/sponsored slot. Deliberately keeps this SITE's own top nav
+     (matches every other real page) rather than adopting DexScreener's left-sidebar app-shell,
+     which would be inconsistent with the rest of this site. Static only — no live data.
+     See ROBIN-PAD-NEXT-GEN-IDEAS.md for the full concept. Part of a 6-page preview set:
+     no-pool-preview.html (token), no-pool-create-preview.html, no-pool-auction-preview.html,
+     no-pool-browse-preview.html (this, "DEX"), no-pool-migrate-preview.html,
+     no-pool-transparency-preview.html. -->
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
@@ -42,7 +42,7 @@
   .preview-strip .set a{color:var(--dim);text-decoration:underline;margin:0 4px}
 
   header.nav{border-bottom:1px solid var(--line-2);background:var(--bg)}
-  .nav-in{max-width:1320px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:14px 20px}
+  .nav-in{max-width:1360px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:14px 20px}
   .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:.98rem;letter-spacing:.01em}
   .brand b{color:var(--lime)}
   .nav-links{display:flex;gap:18px;font-size:.86rem;color:var(--dim);flex:1;flex-wrap:wrap}
@@ -54,52 +54,79 @@
   .btn-lime{background:var(--lime);color:#0a0e05}
   .btn-flame{background:linear-gradient(135deg,#ffb020,#ff6b3d);color:#1a0d02}
 
-  main{max-width:1320px;margin:0 auto;padding:24px 20px 90px}
+  /* top ticker of hot tokens */
+  .ticker-bar{border-bottom:1px solid var(--line-2);background:var(--panel-2);overflow:hidden}
+  .ticker-in{max-width:1360px;margin:0 auto;display:flex;gap:22px;padding:8px 20px;overflow-x:auto;white-space:nowrap}
+  .tick{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;flex:none}
+  .tick .rk{color:var(--faint);font-family:var(--mono);font-size:.7rem}
+  .tick .nm{font-weight:700}
+  .tick .bolt{color:var(--flame);font-family:var(--mono);font-size:.7rem}
+  .tick .pc{font-family:var(--mono);font-size:.72rem}
+  .tick .pc.up{color:var(--green)}
+  .tick .pc.down{color:var(--red)}
 
-  .pagehead{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px;margin-bottom:16px}
-  .wordmark{display:flex;align-items:baseline;gap:10px}
-  .wordmark h1{margin:0;font-size:1.5rem;font-weight:800;letter-spacing:-.01em}
-  .wordmark .tag{font-family:var(--mono);font-size:.68rem;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
-  .wordmark p{margin:2px 0 0;color:var(--dim);font-size:.84rem}
+  main{max-width:1360px;margin:0 auto;padding:20px 20px 90px}
 
-  .pitch-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
-  .pitch-chip{font-family:var(--mono);font-size:.66rem;color:var(--lime);border:1px solid var(--line-strong);
+  .pagehead{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px;margin-bottom:14px}
+  .wordmark{display:flex;align-items:baseline;gap:4px}
+  .wordmark h1{margin:0;font-size:1.4rem;font-weight:800;letter-spacing:-.01em}
+  .wordmark .lime{color:var(--lime)}
+
+  .statbar{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px;padding:12px 16px;background:var(--panel);
+    border:1px solid var(--line-2);border-radius:10px}
+  .statbar .item{font-size:.82rem;color:var(--dim)}
+  .statbar .item b{color:var(--ink);font-family:var(--mono);margin-left:6px}
+
+  .pitch-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .pitch-chip{font-family:var(--mono);font-size:.65rem;color:var(--lime);border:1px solid var(--line-strong);
     background:rgba(220,233,5,.06);border-radius:999px;padding:5px 11px}
 
-  .toolbar{display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:16px}
-  .tabs{display:flex;gap:6px;flex-wrap:wrap}
-  .tab{font-family:var(--mono);font-size:.78rem;padding:8px 14px;border-radius:9px;border:1px solid var(--line-2);color:var(--dim)}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .tab{font-family:var(--mono);font-size:.76rem;padding:7px 13px;border-radius:9px;border:1px solid var(--line-2);color:var(--dim)}
   .tab.on{border-color:var(--line-strong);color:var(--lime);background:rgba(220,233,5,.06)}
-  .toolbar-right{display:flex;gap:10px;align-items:center}
-  .search{background:var(--panel);border:1px solid var(--line-2);border-radius:10px;padding:9px 14px;
-    color:var(--faint);font-size:.82rem;min-width:200px;font-family:var(--sans)}
+  .tfset{display:flex;gap:2px;background:var(--bg-2);border-radius:8px;padding:3px;margin-left:4px}
+  .tf{font-family:var(--mono);font-size:.68rem;padding:5px 9px;border-radius:6px;color:var(--faint)}
+  .tf.on{background:var(--panel);color:var(--lime)}
+  .toolbar-right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .search{background:var(--panel);border:1px solid var(--line-2);border-radius:10px;padding:8px 13px;
+    color:var(--faint);font-size:.8rem;min-width:180px;font-family:var(--sans)}
+  .mini-btn{font-family:var(--mono);font-size:.72rem;color:var(--dim);border:1px solid var(--line-2);
+    border-radius:8px;padding:8px 12px}
 
   .gridwrap{background:var(--panel);border:1px solid var(--line-2);border-radius:14px;overflow-x:auto}
-  table.grid{width:100%;border-collapse:collapse;min-width:1020px}
-  table.grid th{text-align:right;font-family:var(--mono);font-size:.64rem;letter-spacing:.05em;text-transform:uppercase;
-    color:var(--faint);padding:11px 14px;border-bottom:1px solid var(--line-2);font-weight:600;white-space:nowrap}
+  table.grid{width:100%;border-collapse:collapse;min-width:1180px}
+  table.grid th{text-align:right;font-family:var(--mono);font-size:.63rem;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--faint);padding:11px 13px;border-bottom:1px solid var(--line-2);font-weight:600;white-space:nowrap}
   table.grid th:first-child, table.grid td:first-child{text-align:left}
-  table.grid td{padding:11px 14px;border-bottom:1px solid var(--line-2);font-size:.82rem;vertical-align:middle;
+  table.grid td{padding:11px 13px;border-bottom:1px solid var(--line-2);font-size:.8rem;vertical-align:middle;
     text-align:right;font-family:var(--mono);white-space:nowrap}
   table.grid tr:last-child td{border-bottom:none}
   table.grid tr:hover td{background:rgba(255,255,255,.015)}
 
-  .namecell{display:flex;align-items:center;gap:9px;font-family:var(--sans)}
-  .flame{color:var(--flame);font-size:.8rem}
+  .namecell{display:flex;align-items:center;gap:8px;font-family:var(--sans)}
+  .rank{color:var(--faint);font-family:var(--mono);font-size:.72rem;width:18px;flex:none}
   .tmark{width:28px;height:28px;border-radius:8px;background:linear-gradient(155deg,var(--lime),var(--lime-deep));
-    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;color:#0a0e05;font-size:.7rem;flex:none}
-  .namecell .n{font-weight:700;font-size:.84rem}
-  .namecell .s{color:var(--faint);font-size:.68rem;font-family:var(--mono)}
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;color:#0a0e05;font-size:.68rem;flex:none}
+  .namecell .n{font-weight:700;font-size:.82rem;display:flex;align-items:center;gap:5px}
+  .namecell .s{color:var(--faint);font-size:.66rem;font-family:var(--mono)}
+  .boost{color:var(--flame);font-size:.66rem;font-family:var(--mono)}
+  .tagpill{font-family:var(--mono);font-size:.58rem;padding:1px 5px;border-radius:4px;border:1px solid var(--line-2);color:var(--faint)}
 
   .up{color:var(--green)}
   .down{color:var(--red)}
   .muted{color:var(--faint)}
-
   .statuscell{text-align:left !important}
-  .mbadge{font-family:var(--mono);font-size:.6rem;padding:3px 7px;border-radius:5px;border:1px solid var(--line-2);color:var(--faint)}
+  .mbadge{font-family:var(--mono);font-size:.58rem;padding:2px 6px;border-radius:5px;border:1px solid var(--line-2);color:var(--faint)}
   .mbadge.live{color:var(--lime);border-color:var(--line-strong)}
 
   .foot-note{font-family:var(--mono);font-size:.72rem;color:var(--faint);margin-top:12px;line-height:1.6}
+
+  .adslot{margin-top:16px;border:1px dashed var(--line-2);border-radius:12px;padding:16px;
+    display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .adslot .l{font-size:.82rem;color:var(--dim)}
+  .adslot .l b{color:var(--ink)}
+  .adslot .tag{font-family:var(--mono);font-size:.62rem;color:var(--faint);letter-spacing:.05em;text-transform:uppercase}
 </style>
 </head>
 <body>
@@ -109,20 +136,30 @@
 
 <header class="nav"><div class="nav-in">
   <a class="brand" href="no-pool-preview.html">ROBIN <b>LABS</b></a>
-  <nav class="nav-links"><a href="no-pool-browse-preview.html">Perch</a><a href="no-pool-preview.html">Swap</a><a href="no-pool-transparency-preview.html">Transparency</a><a>Bridge</a><a href="no-pool-migrate-preview.html">Migrate</a><a>Docs</a></nav>
+  <nav class="nav-links"><a href="no-pool-browse-preview.html">DEX</a><a href="no-pool-preview.html">Swap</a><a href="no-pool-transparency-preview.html">Transparency</a><a>Bridge</a><a href="no-pool-migrate-preview.html">Migrate</a><a>Docs</a></nav>
   <div class="nav-cta"><span class="btn btn-dark">Connect Wallet</span><a class="btn btn-lime" href="no-pool-create-preview.html">Launch Token</a></div>
 </div></header>
 
+<div class="ticker-bar"><div class="ticker-in">
+  <span class="tick"><span class="rk">#1</span><span class="nm">Dustline</span><span class="bolt">⚡900</span><span class="pc up">▲18.4%</span></span>
+  <span class="tick"><span class="rk">#2</span><span class="nm">Robin</span><span class="bolt">⚡500</span><span class="pc up">▲6.2%</span></span>
+  <span class="tick"><span class="rk">#3</span><span class="nm">Kevlar</span><span class="bolt">⚡100</span><span class="pc down">▼3.8%</span></span>
+  <span class="tick"><span class="rk">#4</span><span class="nm">Fable</span><span class="pc muted">auction</span></span>
+  <span class="tick"><span class="rk">#5</span><span class="nm">Dogestar</span><span class="pc up">▲2,411%</span></span>
+</div></div>
+
 <main>
   <div class="pagehead">
-    <div class="wordmark">
-      <h1>Perch</h1>
-      <span class="tag">Live market screener</span>
-    </div>
-    <span class="btn btn-flame">🔥 Boost your token</span>
+    <div class="wordmark"><h1>ROBIN <span class="lime">DEX</span></h1></div>
+    <span class="btn btn-flame">⚡ Boost your token</span>
   </div>
-  <p style="color:var(--dim);font-size:.88rem;margin:-8px 0 16px;max-width:60ch">
-    Every number here reads straight off our own curves — not borrowed from anyone else's index.</p>
+
+  <div class="statbar">
+    <span class="item">24H VOLUME<b>$486K</b></span>
+    <span class="item">24H TXNS<b>18,204</b></span>
+    <span class="item">LIVE TOKENS<b>61</b></span>
+    <span class="item">LIVE AUCTIONS<b>3</b></span>
+  </div>
 
   <div class="pitch-strip">
     <span class="pitch-chip">Can't be rugged — no pool to drain</span>
@@ -133,12 +170,17 @@
   <div class="toolbar">
     <div class="tabs">
       <span class="tab on">Trending</span>
-      <span class="tab">New</span>
+      <div class="tfset"><span class="tf">5M</span><span class="tf">1H</span><span class="tf on">6H</span><span class="tf">24H</span></div>
+      <span class="tab">Top</span>
+      <span class="tab">Gainers</span>
+      <span class="tab">New Pairs</span>
+      <span class="tab">Boosted</span>
       <span class="tab">Live auctions</span>
       <span class="tab">Graduated</span>
-      <span class="tab">Boosted</span>
     </div>
     <div class="toolbar-right">
+      <span class="mini-btn">Rank by: Trending 6H ▾</span>
+      <span class="mini-btn">Filters</span>
       <span class="search">Search name or address…</span>
     </div>
   </div>
@@ -147,32 +189,64 @@
     <table class="grid">
       <thead>
         <tr>
-          <th>Token</th><th>Price</th><th>Age</th><th>Txns</th><th>Volume</th>
-          <th>5m</th><th>1h</th><th>6h</th><th>24h</th><th>Liquidity</th><th>Mcap</th><th class="statuscell">Status</th>
+          <th>Token</th><th>Mcap</th><th>Price</th><th>Age</th><th>Txns</th><th>Volume</th><th>Traders</th>
+          <th>5m</th><th>1h</th><th>6h</th><th>24h</th><th>Liquidity</th><th class="statuscell">Status</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td><div class="namecell"><span class="flame">🔥</span><div class="tmark">R</div><div><div class="n">Robin</div><div class="s">$ROBIN</div></div></div></td>
+          <td><div class="namecell"><span class="rank">#1</span><div class="tmark">D</div><div><div class="n">Dustline <span class="boost">⚡900</span></div><div class="s">$DUST</div></div></div></td>
+          <td>$3.91M</td>
+          <td>$0.00412</td>
+          <td class="muted">3d</td>
+          <td>5,882</td>
+          <td>241.0 ETH</td>
+          <td>1,204</td>
+          <td class="up">+6.9%</td>
+          <td class="up">+11.2%</td>
+          <td class="up">+15.0%</td>
+          <td class="up">+18.4%</td>
+          <td>241.0 ETH</td>
+          <td class="statuscell"><span class="mbadge live">No-pool</span> <span class="mbadge">Trending</span></td>
+        </tr>
+        <tr>
+          <td><div class="namecell"><span class="rank">#2</span><div class="tmark">R</div><div><div class="n">Robin <span class="boost">⚡500</span></div><div class="s">$ROBIN</div></div></div></td>
+          <td>$1.84M</td>
           <td>$0.00184</td>
           <td class="muted">41d</td>
           <td>3,204</td>
           <td>96.1 ETH</td>
+          <td>842</td>
           <td class="up">+2.1%</td>
           <td class="up">+4.0%</td>
           <td class="up">+5.6%</td>
           <td class="up">+6.2%</td>
           <td>312.4 ETH</td>
-          <td>$1.84M</td>
           <td class="statuscell"><span class="mbadge live">No-pool</span> <span class="mbadge">Migrated</span></td>
         </tr>
         <tr>
-          <td><div class="namecell"><div class="tmark">F</div><div><div class="n">Fable</div><div class="s">$FABLE</div></div></div></td>
+          <td><div class="namecell"><span class="rank">#3</span><div class="tmark">K</div><div><div class="n">Kevlar <span class="boost">⚡100</span></div><div class="s">$KVLR</div></div></div></td>
+          <td>$212K</td>
+          <td>$0.00007</td>
+          <td class="muted">12d</td>
+          <td>1,110</td>
+          <td>12.0 ETH</td>
+          <td>390</td>
+          <td class="down">-0.4%</td>
+          <td class="down">-1.2%</td>
+          <td class="down">-2.9%</td>
+          <td class="down">-3.8%</td>
+          <td>96.7 ETH</td>
+          <td class="statuscell"><span class="mbadge live">No-pool</span></td>
+        </tr>
+        <tr>
+          <td><div class="namecell"><span class="rank">#4</span><div class="tmark">F</div><div><div class="n">Fable</div><div class="s">$FABLE</div></div></div></td>
+          <td class="muted">—</td>
           <td class="muted">—</td>
           <td class="muted">6h</td>
           <td>88</td>
           <td>2.6 ETH raised</td>
-          <td class="muted">—</td>
+          <td>34</td>
           <td class="muted">—</td>
           <td class="muted">—</td>
           <td class="muted">—</td>
@@ -180,43 +254,20 @@
           <td class="muted">—</td>
           <td class="statuscell"><span class="mbadge live">Auction · 1d 06h left</span></td>
         </tr>
-        <tr>
-          <td><div class="namecell"><span class="flame">🔥</span><div class="tmark">K</div><div><div class="n">Kevlar</div><div class="s">$KVLR</div></div></div></td>
-          <td>$0.00007</td>
-          <td class="muted">12d</td>
-          <td>1,110</td>
-          <td>12.0 ETH</td>
-          <td class="down">-0.4%</td>
-          <td class="down">-1.2%</td>
-          <td class="down">-2.9%</td>
-          <td class="down">-3.8%</td>
-          <td>96.7 ETH</td>
-          <td>$212K</td>
-          <td class="statuscell"><span class="mbadge live">No-pool</span></td>
-        </tr>
-        <tr>
-          <td><div class="namecell"><div class="tmark">D</div><div><div class="n">Dustline</div><div class="s">$DUST</div></div></div></td>
-          <td>$0.00412</td>
-          <td class="muted">3d</td>
-          <td>5,882</td>
-          <td>241.0 ETH</td>
-          <td class="up">+6.9%</td>
-          <td class="up">+11.2%</td>
-          <td class="up">+15.0%</td>
-          <td class="up">+18.4%</td>
-          <td>241.0 ETH</td>
-          <td>$3.91M</td>
-          <td class="statuscell"><span class="mbadge live">No-pool</span> <span class="mbadge">Trending</span></td>
-        </tr>
       </tbody>
     </table>
   </div>
 
+  <div class="adslot">
+    <div class="l"><span class="tag">Sponsored</span><br /><b>Your project here</b> — top-5 placement for new launches, first 24 hours.</div>
+    <span class="btn btn-dark">Reserve a slot</span>
+  </div>
+
   <div class="foot-note">Ranking is a real algorithm, not raw volume — it weighs volume together with unique
   trader count and other activity signals, so a volume bot can't cheaply out-rank someone actually paying
-  us. A boost (🔥) adds weight on top of that same score — it's not an instant #1, and organic activity
+  us. A boost (⚡) adds weight on top of that same score — it's not an instant #1, and organic activity
   can still out-rank a boosted token. Price/volume/liquidity numbers are never touched by a boost, ranking
-  only. New launches can also buy a flat guaranteed top-5 slot for their first 24 hours.</div>
+  only.</div>
 </main>
 </body>
 </html>
