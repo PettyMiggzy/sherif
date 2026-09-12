@@ -116,6 +116,24 @@ Anything without a checkbox is still notes-only.
   boundary (supply/ownership/pool/pause power) that never moves regardless of what a
   creator picks. All controls are static/mocked — toggles flip visually, nothing is
   wired to real state yet.
+- [x] **Creator Hub extended** with the rest of rounds 2-4 from the brainstorm: Identity
+  gained a multi-language description, an accent-color picker (bounded, contrast-
+  checked palette, themes only the creator's own token page). Tax & rewards gained an
+  auto-reinvest toggle, a dedicated "Dividends, not staking" panel (the snapshot-based
+  reward mechanic — no lock, no separate contract, cadence choice between streaming and
+  batch drops), loyalty-weighted sell tax, and a referral-share slider with a
+  time-boxed-boost toggle. New **Trading limits** section (ongoing max-wallet-holding
+  cap, decaying early-sell surcharge, own minimum-trade/dust floor, post-launch
+  min-hold window). New **Automation** section (keeper aggressiveness slider — passive
+  accumulate vs. aggressive support, same keeper either way). New **Wallets** section
+  (separate payout wallet, backup/co-manager wallet). Launch notes gained a pinned-
+  announcement slot and delegate-posting-rights control. New **Recognition &
+  milestones** section (cosmetic supporter badges by hold/lock threshold, custom
+  mcap/holder-count goals separate from the platform's fixed milestone). New
+  **Developer** section (read-only API key — the real feature behind the DEX page's
+  dead "API" sidebar item — and an embed-code generator). New **Notifications**
+  section (milestone/large-trade alert toggles). Quick-nav updated to match. Still all
+  static/mocked.
 - [x] **Portfolio page** → `no-pool-portfolio-preview.html` (new, 8th preview page,
   cross-linked from all seven others). Holdings table across every pad token a wallet
   holds (balance/price/value/24h/dividends earned), an Auction-positions panel for

@@ -146,6 +146,10 @@
 
   .allow-list{background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:10px 12px;
     font-family:var(--mono);font-size:.76rem;color:var(--dim);min-height:64px;margin-bottom:8px}
+
+  .swatchrow{display:flex;gap:10px}
+  .swatch{width:32px;height:32px;border-radius:50%;border:2px solid transparent;cursor:pointer;flex:none;transition:.12s ease}
+  .swatch.on{border-color:var(--ink)}
 </style>
 </head>
 <body>
@@ -178,8 +182,10 @@
 
   <div class="quicknav">
     <a href="#identity">Identity</a><a href="#tax">Tax &amp; rewards</a><a href="#launch">Launch settings</a>
-    <a href="#airdrop">Airdrop</a><a href="#notes">Launch notes</a><a href="#services">Paid services</a>
-    <a href="#locked">What stays locked</a>
+    <a href="#limits">Trading limits</a><a href="#automation">Automation</a><a href="#airdrop">Airdrop</a>
+    <a href="#wallets">Wallets</a><a href="#notes">Launch notes</a><a href="#recognition">Recognition</a>
+    <a href="#developer">Developer</a><a href="#notifications">Notifications</a>
+    <a href="#services">Paid services</a><a href="#locked">What stays locked</a>
   </div>
 
   <section class="hubsec" id="identity">
@@ -201,11 +207,27 @@
       </div>
       <div class="panel">
         <h3>Links &amp; description</h3>
-        <p class="ph">Editable any time, not frozen at launch.</p>
+        <p class="ph">Editable any time, not frozen at launch. Add more languages if your community isn't
+        English-only.</p>
         <div class="fw"><label>Website</label><input class="inp" value="https://robinlabs.fun" /></div>
         <div class="fw"><label>Twitter / X</label><input class="inp" value="@robinlabs" /></div>
         <div class="fw"><label>Telegram</label><input class="inp" value="t.me/robinlabs" /></div>
+        <div class="fw"><label>Description (EN)</label><textarea class="inp" placeholder="Tell people what this token is…"></textarea></div>
+        <span class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px">+ Add another language</span>
         <span class="btn btn-dark btn-sm" style="width:100%">Save links</span>
+      </div>
+      <div class="panel">
+        <h3>Accent color</h3>
+        <p class="ph">Themes your own token page only — never the site's overall branding.</p>
+        <div class="swatchrow">
+          <span class="swatch on" style="background:#dce905"></span>
+          <span class="swatch" style="background:#5fd16a"></span>
+          <span class="swatch" style="background:#ff8a3d"></span>
+          <span class="swatch" style="background:#5ab0ff"></span>
+          <span class="swatch" style="background:#e05fd1"></span>
+        </div>
+        <span class="mini" style="margin-top:12px;display:block">Bounded palette, contrast-checked against the
+        page background — can't pick something unreadable.</span>
       </div>
     </div>
   </section>
@@ -227,6 +249,7 @@
         <p class="ph">Split your share of tax revenue between yourself and your own holders.</p>
         <div class="slider-mock"><div class="fill" style="width:50%"></div><div class="knob" style="left:50%"></div></div>
         <div class="slider-labels"><span>All to holders</span><span>50 / 50</span><span>All to you</span></div>
+        <div class="toggle-row"><div><div class="t">Auto-reinvest my cut</div><div class="d">Compounds into your own community lock instead of sitting in your wallet.</div></div><div class="switch"><div class="knob"></div></div></div>
       </div>
       <div class="panel">
         <h3>Burn-boost rate</h3>
@@ -234,6 +257,25 @@
         something abusive.</p>
         <div class="slider-mock"><div class="fill" style="width:40%"></div><div class="knob" style="left:40%"></div></div>
         <div class="slider-labels"><span>+0.3%/1k</span><span>+0.6%/1k</span><span>+1.0%/1k cap</span></div>
+      </div>
+      <div class="panel">
+        <h3>Dividends, not staking</h3>
+        <p class="ph">No lock, no separate contract — a periodic snapshot of who's holding pays your holders'
+        share of tax revenue pro-rata. Nothing for anyone to deposit or withdraw from.</p>
+        <div class="toggle-row" style="border-top:none"><div><div class="t">Distribution cadence</div><div class="d">Instant streaming, or one visible batch drop per snapshot.</div></div><div class="switch on"><div class="knob"></div></div></div>
+        <div class="rowline"><span class="k">Next snapshot</span><span class="v">~11h</span></div>
+      </div>
+      <div class="panel">
+        <h3>Loyalty-weighted sell tax</h3>
+        <p class="ph">Lower effective sell tax for wallets that have held longer — on top of your extra-tax
+        setting above, not instead of it.</p>
+        <div class="toggle-row" style="border-top:none"><div><div class="t">Enable loyalty weighting</div><div class="d">Longer holders pay less on the way out.</div></div><div class="switch"><div class="knob"></div></div></div>
+      </div>
+      <div class="panel">
+        <h3>Referral</h3>
+        <div class="slider-mock"><div class="fill" style="width:25%"></div><div class="knob" style="left:25%"></div></div>
+        <div class="slider-labels"><span>0%</span><span>share of tax to referrers</span><span>cap</span></div>
+        <div class="toggle-row"><div><div class="t">Time-boxed referral boost</div><div class="d">e.g. double the referral share for launch week only.</div></div><div class="switch"><div class="knob"></div></div></div>
       </div>
     </div>
   </section>
@@ -263,6 +305,50 @@
     </div>
   </section>
 
+  <section class="hubsec" id="limits">
+    <div class="sechead"><h2>Trading limits</h2><span class="tag opt">Optional · ongoing</span></div>
+    <p class="secdesc">Unlike Launch settings, these apply continuously, not just before launch — real anti-whale
+    and anti-bot tooling if you want it, all within platform-capped bands.</p>
+    <div class="cards">
+      <div class="panel">
+        <h3>Max wallet holding</h3>
+        <p class="ph">Caps how much of total supply any one wallet can hold at a time, on an ongoing basis.</p>
+        <div class="toggle-row" style="border-top:none"><div><div class="t">Enable cap</div><div class="d">Within a platform ceiling — can't be set so tight it breaks normal trading.</div></div><div class="switch"><div class="knob"></div></div></div>
+      </div>
+      <div class="panel">
+        <h3>Early-sell surcharge</h3>
+        <p class="ph">Extra sell tax right after launch that decays to baseline over a window you set.</p>
+        <div class="slider-mock"><div class="fill" style="width:30%"></div><div class="knob" style="left:30%"></div></div>
+        <div class="slider-labels"><span>Off</span><span>decays over 48h</span><span>7d cap</span></div>
+      </div>
+      <div class="panel">
+        <h3>Minimum trade size</h3>
+        <p class="ph">Your own dust floor, at or above the platform minimum — keeps your volume/stats clean of
+        noise transactions.</p>
+        <div class="fw"><label>Minimum counted trade</label><input class="inp" value="0.001 ETH" /></div>
+      </div>
+      <div class="panel">
+        <h3>Post-launch min-hold window</h3>
+        <p class="ph">A short forced delay before a freshly-bought wallet can resell — an extra anti-bot layer
+        on top of there being no public mempool to snipe from anyway.</p>
+        <div class="toggle-row" style="border-top:none"><div><div class="t">Enable min-hold</div><div class="d">e.g. a few blocks after a wallet's first buy.</div></div><div class="switch"><div class="knob"></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="hubsec" id="automation">
+    <div class="sechead"><h2>Automation</h2><span class="tag opt">Optional</span></div>
+    <p class="secdesc">Control over how your token's own keeper behaves — not new money, just how aggressively
+    it acts within the bounds already coded into it.</p>
+    <div class="panel">
+      <h3>Keeper aggressiveness</h3>
+      <div class="slider-mock"><div class="fill" style="width:35%"></div><div class="knob" style="left:35%"></div></div>
+      <div class="slider-labels"><span>Passive — accumulate</span><span>Balanced</span><span>Aggressive — support</span></div>
+      <span class="mini" style="margin-top:12px;display:block">Passive banks fee-buffer accumulation; aggressive
+      restocks the visibility pool more readily. Same keeper either way, just a different setting.</span>
+    </div>
+  </section>
+
   <section class="hubsec" id="airdrop">
     <div class="sechead"><h2>Airdrop</h2><span class="tag opt">Optional</span></div>
     <p class="secdesc">Send to as many wallets as you want — no cap on recipient count. Separate from the
@@ -275,17 +361,104 @@
     </div>
   </section>
 
+  <section class="hubsec" id="wallets">
+    <div class="sechead"><h2>Wallets</h2><span class="tag opt">Optional</span></div>
+    <p class="secdesc">Your call who else touches this Hub, and where the money actually lands.</p>
+    <div class="cards">
+      <div class="panel">
+        <h3>Payout wallet</h3>
+        <p class="ph">Where your tax cut and milestone payout land — separate from the wallet that launched
+        this token, if you want your launch wallet to stay hot and payouts to go somewhere colder.</p>
+        <div class="fw"><label>Payout address</label><input class="inp" value="0x7a2f…e91c (same as launch wallet)" /></div>
+      </div>
+      <div class="panel">
+        <h3>Backup / co-manager</h3>
+        <p class="ph">A second wallet that can also access this Hub — protects against losing access to a
+        single wallet. Your own choice of who you trust, not a platform-granted power.</p>
+        <div class="fw"><label>Backup address</label><input class="inp" placeholder="0x…" /></div>
+        <span class="btn btn-dark btn-sm" style="width:100%">Add backup wallet</span>
+      </div>
+    </div>
+  </section>
+
   <section class="hubsec" id="notes">
     <div class="sechead"><h2>Launch notes</h2><span class="tag opt">Optional</span></div>
     <p class="secdesc">Post your own updates to your token's launch history — clearly tagged as yours, never
     disguised as one of the system's verified facts. Keeps the "facts only, no score" promise intact.</p>
-    <div class="panel">
+    <div class="cards">
+      <div class="panel">
+        <h3>Pinned announcement</h3>
+        <p class="ph">One highlighted spot at the top of your token page, separate from the ongoing notes feed
+        below — whatever's most important right now.</p>
+        <textarea class="inp" placeholder="Pin something to the top of your token page…"></textarea>
+        <span class="btn btn-dark btn-sm" style="margin-top:8px;width:100%">Pin announcement</span>
+      </div>
+      <div class="panel">
+        <h3>Delegate posting rights</h3>
+        <p class="ph">Let a second wallet post launch notes on your behalf, without giving them full Hub access.</p>
+        <div class="fw"><label>Delegate address</label><input class="inp" placeholder="0x…" /></div>
+        <span class="btn btn-dark btn-sm" style="width:100%">Add delegate</span>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h3>Post an update</h3>
       <textarea class="inp" placeholder="Write an update for your holders…"></textarea>
       <span class="btn btn-dark btn-sm" style="margin-top:8px">Post note</span>
       <div class="notes-feed">
         <div class="note-item"><span class="note-tag">Creator</span><span class="txt">Team allocation vesting extended voluntarily to 45 days.</span><span class="ago">2d</span></div>
         <div class="note-item"><span class="note-tag sys">System</span><span class="txt">No sells from the creator wallet since launch.</span><span class="ago">—</span></div>
       </div>
+    </div>
+  </section>
+
+  <section class="hubsec" id="recognition">
+    <div class="sechead"><h2>Recognition &amp; milestones</h2><span class="tag opt">Optional</span></div>
+    <p class="secdesc">Cosmetic only — nothing here moves money or supply.</p>
+    <div class="cards">
+      <div class="panel">
+        <h3>Supporter badges</h3>
+        <p class="ph">Set thresholds that show a small badge next to a wallet in Holders/Top Traders — pure
+        recognition, no financial weight.</p>
+        <div class="fw"><label>Hold at least</label><input class="inp" value="100,000 ROBIN" /></div>
+        <div class="fw"><label>Or locked for at least</label><input class="inp" value="60 days" /></div>
+        <span class="btn btn-dark btn-sm" style="width:100%">Save badge rule</span>
+      </div>
+      <div class="panel">
+        <h3>Custom milestones</h3>
+        <p class="ph">Your own mcap/holder-count goals, shown as progress bars — separate from the platform's
+        fixed $34K milestone, purely motivational.</p>
+        <div class="fw"><label>Goal</label><input class="inp" value="10,000 holders" /></div>
+        <span class="btn btn-dark btn-sm" style="width:100%">Add milestone</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="hubsec" id="developer">
+    <div class="sechead"><h2>Developer</h2><span class="tag opt">Optional</span></div>
+    <p class="secdesc">For projects that want to build on top of their own token's data.</p>
+    <div class="cards">
+      <div class="panel">
+        <h3>Read-only API key</h3>
+        <p class="ph">Pulls your token's own public stats — this is the real feature behind the DEX page's
+        "API" sidebar item.</p>
+        <div class="rowline"><span class="k">Key</span><span class="v">rk_live_•••• •••• 8f2a</span></div>
+        <span class="btn btn-dark btn-sm" style="width:100%">Generate new key</span>
+      </div>
+      <div class="panel">
+        <h3>Embed this chart</h3>
+        <p class="ph">A copy-pasteable snippet for your own external site.</p>
+        <div class="rowline"><span class="k">Snippet</span><span class="v">&lt;iframe src="…/embed/robin"&gt;</span></div>
+        <span class="btn btn-dark btn-sm" style="width:100%">Copy embed code</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="hubsec" id="notifications">
+    <div class="sechead"><h2>Notifications</h2><span class="tag opt">Optional</span></div>
+    <p class="secdesc">Not a control exactly, but belongs in the same place as everything else.</p>
+    <div class="panel">
+      <div class="toggle-row" style="border-top:none"><div><div class="t">Milestone alerts</div><div class="d">Telegram/email when a milestone hits.</div></div><div class="switch on"><div class="knob"></div></div></div>
+      <div class="toggle-row"><div><div class="t">Large-trade alerts</div><div class="d">Notify on unusually large buys/sells.</div></div><div class="switch"><div class="knob"></div></div></div>
     </div>
   </section>
 
@@ -335,6 +508,15 @@
 <script>
   document.querySelectorAll('.switch').forEach(function (sw) {
     sw.addEventListener('click', function () { sw.classList.toggle('on'); });
+  });
+  document.querySelectorAll('.swatchrow').forEach(function (row) {
+    var swatches = Array.prototype.slice.call(row.querySelectorAll('.swatch'));
+    swatches.forEach(function (sw) {
+      sw.addEventListener('click', function () {
+        swatches.forEach(function (s) { s.classList.remove('on'); });
+        sw.classList.add('on');
+      });
+    });
   });
 </script>
 </body>
