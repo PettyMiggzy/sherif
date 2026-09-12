@@ -1,9 +1,32 @@
 # No-Pool-Forever — design + status
 
-Status: **core `RobinCurveV4` mechanism implemented and unit-tested (103/103 passing, zero
-regressions to the legacy path). Not deployed. Not wired into any factory/pad-type/frontend
-yet. Not audited by anyone but this session's own research passes — a real audit is planned
-before this ever touches mainnet or real funds.**
+Status: **core `RobinCurveV4` mechanism implemented and unit-tested (105/105 passing, zero
+regressions to the legacy path). One real bug found by this session's own adversarial
+security-audit pass and fixed (see below). Not deployed. Not wired into any factory/pad-type/
+frontend yet. Not audited by anyone but this session's own research/audit passes — a real
+external audit is planned before this ever touches mainnet or real funds.**
+
+## Audit finding, fixed: `stakingEthOwed` double-booking
+
+An adversarial security-review pass on the diff (this session, not an external auditor) found
+a real bug: **`sweepToPlatform()`'s `booked` total and `graduate()`'s step-9 `platformEthOwed`
+formula both omitted `stakingEthOwed`** from the set of "money already spoken for" they exclude
+from what gets swept to the platform. Pre-existing code, unaffected in practice before this
+diff since `stakingEthOwed` only ever held the small buy-tax-buffer carve — but `noPoolForever`
+folds the entire would-be-permanent-LP ETH leg (`lpEth`, potentially the majority of the raise)
+into that same bucket. If `staking` isn't wired yet at checkpoint time (`_fundStakingEth()`
+re-parks instead of sending) — an already-documented, expected scenario per `ArrowLauncher`'s
+own notes ("graduates with curve.staking unset") — that money would be claimed by
+`platformEthOwed` *and* still claimed by `stakingEthOwed`. Paying the platform first would then
+leave the contract's real balance short when `flushStakingEth()` later tried to actually send
+it, permanently stranding the stakers' share.
+
+**Fixed** by subtracting `stakingEthOwed` in both formulas, exactly like the other pending
+books (`floorEthOwed`/`creatorEthOwed`/`ambushEthOwed`) already were. Verified the fix is real,
+not cosmetic: temporarily reverted it and confirmed the new regression test
+(`test/unit/RobinCurveV4.noPoolForever.test.js`, "audit-fix regression" describe block) fails
+without it — the platform's book overshoots the real balance and `flushStakingEth()` comes up
+short — then re-applied the fix and confirmed all 105 tests pass.
 
 ## Why this exists
 

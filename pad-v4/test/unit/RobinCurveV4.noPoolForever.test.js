@@ -175,3 +175,98 @@ describe("RobinCurveV4 — no-pool-forever checkpoint (real PoolManager, mock po
     await expect(curve.graduate()).to.be.revertedWithCustomError(curve, "AlreadyGraduated");
   });
 });
+
+// [NO-POOL audit fix] Regression for a real finding from this session's own adversarial security-audit pass
+// (see pad-v4/NO-POOL-FOREVER.md): stakingEthOwed was missing from both sweepToPlatform()'s `booked` total and
+// graduate()'s step-9 platformEthOwed formula. That's harmless while stakingEthOwed only ever holds the small
+// buy-tax buffer, but noPoolForever folds the WHOLE would-be-permanent-LP ETH leg into stakingEthOwed — so if
+// staking isn't wired yet when a noPoolForever pad checkpoints (an already-documented, expected scenario per
+// ArrowLauncher's own notes: "graduates with curve.staking unset"), that money would get double-booked: claimed
+// by platformEthOwed AND still claimed by stakingEthOwed, so paying the platform would leave nothing for
+// flushStakingEth() to actually send once staking is later wired. Fixed by excluding stakingEthOwed from both
+// formulas, exactly like the other pending books (floor/creator/ambush) already were.
+describe("RobinCurveV4 — no-pool-forever checkpoint with staking NOT yet wired (audit-fix regression)", () => {
+  const START = 6000, GRAD = 3000, SPACING = 60, FEE = 3000;
+  const CURVE_SUPPLY = 1000n * 10n ** 18n;
+  const RESERVE = 1000n * 10n ** 18n;
+  const VISIBILITY_WITHDRAW_BPS = 4000; // large slice, so the would-be-staking amount is large and any
+                                         // mis-booking would be easy to see, not lost in dust/rounding
+  let owner, platform, creator, trader;
+  let pm, stateView, th, reg, permit2, posm, lockVault, mockFactory, tok, sw, ds, curve, key, curveAddr;
+
+  before(async () => {
+    [owner, platform, creator, trader] = await ethers.getSigners();
+    pm = await (await ethers.getContractFactory("PoolManager")).deploy(owner.address);
+    stateView = await (await ethers.getContractFactory("RobinStateView")).deploy(await pm.getAddress());
+    th = await (await ethers.getContractFactory("TickHelper")).deploy();
+    reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
+    permit2 = await (await ethers.getContractFactory("MockPermit2")).deploy();
+    posm = await (await ethers.getContractFactory("MockPositionManagerV4")).deploy(await pm.getAddress(), await permit2.getAddress());
+    lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await posm.getAddress(), await reg.getAddress());
+    mockFactory = await (await ethers.getContractFactory("MockCurveFactory")).deploy();
+    await mockFactory.setLockVault(await lockVault.getAddress());
+    await lockVault.setFactory(await mockFactory.getAddress());
+    tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
+
+    const tokAddr = await tok.getAddress();
+    key = { currency0: ZERO, currency1: tokAddr, fee: FEE, tickSpacing: SPACING, hooks: ZERO };
+    await pm.initialize(key, await th.sqrt(START));
+
+    curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
+      await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
+      await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
+      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address,
+      true, VISIBILITY_WITHDRAW_BPS
+    );
+    curveAddr = await curve.getAddress();
+
+    await tok.connect(owner).transfer(curveAddr, CURVE_SUPPLY);
+    await mockFactory.seedCurve(curveAddr);
+    await tok.connect(owner).transfer(curveAddr, RESERVE);
+    // deliberately do NOT call setStaking — this is the whole point of the test
+
+    await sw.connect(trader).swap(
+      key, { zeroForOne: true, amountSpecified: -ethers.parseEther("6000"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: ethers.parseEther("6000") }
+    );
+    expect(await curve.ready()).to.equal(true);
+  });
+
+  it("checkpoints with staking unwired: stakingEthOwed parks (nonzero), platformEthOwed correctly excludes it", async () => {
+    await curve.graduate();
+
+    const stakingOwed = await curve.stakingEthOwed();
+    expect(stakingOwed).to.be.gt(0n); // parked — _fundStakingEth() had nowhere to send it
+
+    const platformOwed = await curve.platformEthOwed();
+    const creatorOwed = await curve.creatorEthOwed();
+    const ambushOwed = await curve.ambushEthOwed();
+    const balance = await ethers.provider.getBalance(curveAddr);
+
+    // conservation: every book together must not exceed what the contract actually holds. Before the fix,
+    // platformEthOwed alone would have absorbed stakingOwed too, so platformOwed + stakingOwed would have
+    // exceeded the true remaining balance once creator/ambush are also accounted for.
+    expect(platformOwed + creatorOwed + ambushOwed + stakingOwed).to.be.lte(balance);
+  });
+
+  it("once staking is wired, flushStakingEth() actually succeeds — the money was real, not double-booked away", async () => {
+    const stakingOwedBefore = await curve.stakingEthOwed();
+    expect(stakingOwedBefore).to.be.gt(0n);
+
+    // platform claims their (correctly smaller, post-fix) share FIRST — if the bug were still present, this
+    // would have already drained the ETH stakingEthOwed still claims, and the next step would fail.
+    await curve.claimPlatform();
+
+    const tokAddr = await tok.getAddress();
+    ds = await (await ethers.getContractFactory("DualStaking")).deploy(tokAddr, ZERO, owner.address, 0, ZERO, ethers.ZeroHash, TOKEN);
+    await ds.setRewarder(curveAddr, true);
+    await ds.listReward(TOKEN, tokAddr, 7 * 86400);
+    await curve.connect(platform).setStaking(await ds.getAddress());
+
+    const dsBalBefore = await ethers.provider.getBalance(await ds.getAddress());
+    await expect(curve.flushStakingEth()).to.not.be.reverted;
+    expect(await curve.stakingEthOwed()).to.equal(0n);
+    expect((await ethers.provider.getBalance(await ds.getAddress())) - dsBalBefore).to.equal(stakingOwedBefore);
+  });
+});

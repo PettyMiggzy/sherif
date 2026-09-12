@@ -397,7 +397,13 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     /// graduated-only, and it never touches the still-outstanding creator/floor/ambush/gas-bounty books.
     function sweepToPlatform() external nonReentrant {
         if (!graduated) revert NotReady();
-        uint256 booked = platformEthOwed + creatorEthOwed + floorEthOwed + ambushEthOwed + totalGasBountyOwed;
+        // [NO-POOL audit fix] stakingEthOwed used to only ever hold a dust-level buy-tax-buffer carve, so its
+        // absence here was a minor gap — noPoolForever's lpEth fold-in (see graduate()) can make it the majority
+        // of the raise instead. If staking isn't wired (or its funding call reverts) when this money arrives, it
+        // stays parked in stakingEthOwed AND in this contract's raw balance; without excluding it here, a
+        // platform sweep would double-book it — claiming it for the platform while stakingEthOwed still claims
+        // it for holders — and a later flushStakingEth() would then fail for insufficient balance, permanently.
+        uint256 booked = platformEthOwed + creatorEthOwed + floorEthOwed + ambushEthOwed + totalGasBountyOwed + stakingEthOwed;
         uint256 bal = address(this).balance;
         if (bal <= booked) return; // nothing new arrived
         uint256 fresh = bal - booked;
@@ -544,10 +550,15 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         _fundAmbush();
 
         // 9) reserve the keeper bounty, sweep any remaining unbooked ETH dust → platform book (preserving the floor
-        //    + creator + ambush books still owed), then pay the bounty LAST (max reentrancy distance; all state is
-        //    final). A failed send books it to gasBountyOwed (retriable via claimGasBounty) — never traps, never
-        //    lets the platform book absorb the keeper's ETH.
-        platformEthOwed = address(this).balance - floorEthOwed - creatorEthOwed - ambushEthOwed - bounty;
+        //    + creator + ambush + staking books still owed), then pay the bounty LAST (max reentrancy distance;
+        //    all state is final). A failed send books it to gasBountyOwed (retriable via claimGasBounty) — never
+        //    traps, never lets the platform book absorb the keeper's (or the stakers') ETH.
+        // [NO-POOL audit fix] stakingEthOwed must be excluded here too — see the matching note in
+        // sweepToPlatform(). If _fundStakingEth() above just re-parked it (staking unwired or its send
+        // reverted), that ETH is still sitting in this contract's balance; without this exclusion it would be
+        // folded into platformEthOwed on top of still being claimed by stakingEthOwed — paid to the platform
+        // once, then unavailable when flushStakingEth() tries to actually send it.
+        platformEthOwed = address(this).balance - floorEthOwed - creatorEthOwed - ambushEthOwed - bounty - stakingEthOwed;
         emit Graduated(lpTokenId, raisedEth, leftoverToken, platReward, creatReward, ambushReward);
         if (bounty > 0) {
             (bool ok,) = payable(msg.sender).call{value: bounty}("");
