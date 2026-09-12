@@ -248,6 +248,30 @@ this list is the trade-off side of "control over everything safe."
   "facts only, never hidden" trust pitch the whole product is built on. Not proposing
   this one.
 
+**Round 3 (2026-09-12) — token *mechanics* control specifically, not branding/UI.**
+User asked to focus here next. Idea phase only — hold off building until told the idea
+phase is done. All still capped/bounded; none touch supply, ownership, pool, or pause
+power, so the "can't be rugged" trust story stays intact:
+- **Ongoing per-wallet max-holding cap** — not just during the auction; a continuous,
+  optional cap (within a platform ceiling) on how much supply any one wallet can hold
+  at a time. Real anti-whale tooling.
+- **Decaying early-sell surcharge** — extra sell tax that's higher right after launch
+  and decays to baseline over a creator-set window (e.g. 48h) — discourages immediate
+  dumping without permanently punishing anyone.
+- **Loyalty-weighted sell tax** — lower effective sell tax for wallets that have held
+  longer, layered on top of the existing extra-tax lever.
+- **Buyback/keeper aggressiveness mode** — creator picks how aggressively their own
+  visibility-pool keeper restocks/supports (e.g. aggressive vs. passive) within the
+  bounds already coded into the keeper — control over automated behavior, not new money.
+- **Reward distribution cadence** — instant streaming vs. periodic batch drops for the
+  holder-reward pool.
+- **Own dust/minimum-trade floor** — creator sets their token's minimum counted trade
+  size (at or above the platform floor) so their own volume/stats stay clean of noise.
+- **Time-boxed referral boost** — a limited-time bump to the referral share (e.g.
+  double for launch week), distinct from the flat referral-share slider already logged.
+- **Post-launch min-hold window** — an opt-in short delay before a freshly-bought
+  wallet can resell — an extra anti-bot layer on top of "no public mempool."
+
 ---
 
 ## Core pivot
