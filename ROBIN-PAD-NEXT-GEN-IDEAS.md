@@ -19,8 +19,21 @@ Anything without a checkbox is still notes-only.
   window, vested 10% allocation, review)
 - [x] Live auction → `no-pool-auction-preview.html` (countdown, min/target progress,
   contribute, what happens at finalize)
-- [x] Our own DexScreener-style page → `no-pool-browse-preview.html` (trending/new/live
-  auctions/graduated tabs, sparkline grid)
+- [x] Our own DexScreener-style page, **named "Perch"** (a robin perches to survey its
+  territory — decided over the generic "Browse") → `no-pool-browse-preview.html`.
+  Column density deliberately mirrors real DexScreener/DexTools (age, txns, 5m/1h/6h/24h
+  % change, liquidity, mcap) rather than a simplified version — direction was explicit:
+  "we need to look just as good or people won't take our DEX seriously." Includes a paid
+  "Boost" concept (flame-marked rows, boosted-only tab, a "Boost your token" button) —
+  ranking-only, footer note makes clear price/volume/liquidity numbers are never
+  adjustable by a boost, only ranking is. **Chart architecture decision:** render with
+  TradingView's lightweight-charts library (industry-standard, free), but the data
+  itself comes from our own indexer — NOT a third-party API like CoinGecko or
+  DexScreener's own API, since neither is guaranteed to index this chain or a
+  brand-new token. Those two stay separate: our own chart is never dependent on a
+  third party's indexing schedule; a third party (DexScreener, maybe CoinGecko) picking
+  up the separate thin visibility pool is still just a bonus distribution channel, not
+  something the main product relies on.
 - [x] Migration (zero holder action) → `no-pool-migrate-preview.html`
 - [x] Pad-wide transparency page → `no-pool-transparency-preview.html`
 - [ ] Everything else below is still concept-only — no page yet.
@@ -271,6 +284,12 @@ Ideas on the table so far, beyond the mechanics above:
 - The ~19%-total-platform-take number from earlier tonight — still unresolved, not yet
   reconciled with this new no-pool model.
 - NOMO's contract address, to verify the burn-pump mechanism precisely.
+- Perch's paid "Boost" feature may overlap with the existing "DEX Trending" product
+  already sold on `services.html` (owned by the trending-bot session per
+  `COORDINATION.md`) — worth checking whether that's the same product wearing two
+  names, or genuinely different (boosting rank on our own internal page vs. boosting
+  visibility on external DexScreener/DexTools), before building real payment plumbing
+  for it.
 
 ---
 *Brainstorm capture only — nothing above is implemented, committed to a contract, or
