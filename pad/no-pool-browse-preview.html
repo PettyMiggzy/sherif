@@ -108,6 +108,10 @@
   table.grid tr:last-child td{border-bottom:none}
   table.grid tr:hover td{background:rgba(255,255,255,.015)}
 
+  th[data-k]{cursor:pointer;user-select:none}
+  th[data-k] .arrow{color:var(--lime);margin-left:3px;font-size:.6rem}
+  .favstar{background:none;border:none;color:#4a5240;font-size:.9rem;cursor:pointer;padding:0;line-height:1;flex:none}
+  .favstar.on{color:var(--lime)}
   .namecell{display:flex;align-items:center;gap:8px;font-family:var(--sans)}
   .rank{color:var(--faint);font-family:var(--mono);font-size:.72rem;width:18px;flex:none}
   .tmark{width:28px;height:28px;border-radius:8px;background:linear-gradient(155deg,var(--lime),var(--lime-deep));
@@ -214,13 +218,24 @@
     <table class="grid">
       <thead>
         <tr>
-          <th>Token</th><th>Mcap</th><th>Price</th><th>Age</th><th>Txns</th><th>Volume</th><th>Traders</th>
-          <th>5m</th><th>1h</th><th>6h</th><th>24h</th><th>Liquidity</th><th class="statuscell">Status</th>
+          <th>Token</th>
+          <th data-k="mcap">Mcap<span class="arrow"></span></th>
+          <th data-k="price">Price<span class="arrow"></span></th>
+          <th data-k="age">Age<span class="arrow"></span></th>
+          <th data-k="txns">Txns<span class="arrow"></span></th>
+          <th data-k="volume">Volume<span class="arrow"></span></th>
+          <th data-k="traders">Traders<span class="arrow"></span></th>
+          <th data-k="pc5m">5m<span class="arrow"></span></th>
+          <th data-k="pc1h">1h<span class="arrow"></span></th>
+          <th data-k="pc6h">6h<span class="arrow"></span></th>
+          <th data-k="pc24h">24h<span class="arrow">↓</span></th>
+          <th data-k="liq">Liquidity<span class="arrow"></span></th>
+          <th class="statuscell">Status</th>
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td><div class="namecell"><span class="rank">#1</span><div class="tmark">D</div><div><div class="n">Dustline <span class="boost">⚡900</span></div><div class="s">$DUST</div></div></div></td>
+        <tr data-mcap="3910000" data-price="0.00412" data-age="3" data-txns="5882" data-volume="241.0" data-traders="1204" data-pc5m="6.9" data-pc1h="11.2" data-pc6h="15.0" data-pc24h="18.4" data-liq="241.0">
+          <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#1</span><div class="tmark">D</div><div><div class="n">Dustline <span class="boost">⚡900</span></div><div class="s">$DUST</div></div></div></td>
           <td>$3.91M</td>
           <td>$0.00412</td>
           <td class="muted">3d</td>
@@ -234,8 +249,8 @@
           <td>241.0 ETH</td>
           <td class="statuscell"><span class="mbadge live">No-pool</span> <span class="mbadge">Trending</span></td>
         </tr>
-        <tr>
-          <td><div class="namecell"><span class="rank">#2</span><div class="tmark">R</div><div><div class="n">Robin <span class="boost">⚡500</span></div><div class="s">$ROBIN</div></div></div></td>
+        <tr data-mcap="1840000" data-price="0.00184" data-age="41" data-txns="3204" data-volume="96.1" data-traders="842" data-pc5m="2.1" data-pc1h="4.0" data-pc6h="5.6" data-pc24h="6.2" data-liq="312.4">
+          <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#2</span><div class="tmark">R</div><div><div class="n">Robin <span class="boost">⚡500</span></div><div class="s">$ROBIN</div></div></div></td>
           <td>$1.84M</td>
           <td>$0.00184</td>
           <td class="muted">41d</td>
@@ -249,8 +264,8 @@
           <td>312.4 ETH</td>
           <td class="statuscell"><span class="mbadge live">No-pool</span> <span class="mbadge">Migrated</span></td>
         </tr>
-        <tr>
-          <td><div class="namecell"><span class="rank">#3</span><div class="tmark">K</div><div><div class="n">Kevlar <span class="boost">⚡100</span></div><div class="s">$KVLR</div></div></div></td>
+        <tr data-mcap="212000" data-price="0.00007" data-age="12" data-txns="1110" data-volume="12.0" data-traders="390" data-pc5m="-0.4" data-pc1h="-1.2" data-pc6h="-2.9" data-pc24h="-3.8" data-liq="96.7">
+          <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#3</span><div class="tmark">K</div><div><div class="n">Kevlar <span class="boost">⚡100</span></div><div class="s">$KVLR</div></div></div></td>
           <td>$212K</td>
           <td>$0.00007</td>
           <td class="muted">12d</td>
@@ -264,8 +279,8 @@
           <td>96.7 ETH</td>
           <td class="statuscell"><span class="mbadge live">No-pool</span></td>
         </tr>
-        <tr>
-          <td><div class="namecell"><span class="rank">#4</span><div class="tmark">F</div><div><div class="n">Fable</div><div class="s">$FABLE</div></div></div></td>
+        <tr data-mcap="0" data-price="0" data-age="0.25" data-txns="88" data-volume="2.6" data-traders="34" data-pc5m="0" data-pc1h="0" data-pc6h="0" data-pc24h="0" data-liq="0">
+          <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#4</span><div class="tmark">F</div><div><div class="n">Fable</div><div class="s">$FABLE</div></div></div></td>
           <td class="muted">—</td>
           <td class="muted">—</td>
           <td class="muted">6h</td>
@@ -303,6 +318,35 @@
   }
   wireToggle('.toolbar .tabs', '.tab', 'on');
   wireToggle('.tfset', '.tf', 'on');
+
+  // real client-side sort by column, like the actual table would do
+  document.querySelectorAll('th[data-k]').forEach(function (th) {
+    var dir = th.dataset.k === 'pc24h' ? -1 : 0; // 24h starts as the active sort
+    th.addEventListener('click', function () {
+      var key = th.dataset.k;
+      dir = th.classList.contains('sort-asc') ? -1 : 1;
+      document.querySelectorAll('th[data-k]').forEach(function (t) {
+        t.classList.remove('sort-asc', 'sort-desc');
+        t.querySelector('.arrow').textContent = '';
+      });
+      th.classList.add(dir === 1 ? 'sort-desc' : 'sort-asc');
+      th.querySelector('.arrow').textContent = dir === 1 ? '↓' : '↑';
+      var tbody = th.closest('table').querySelector('tbody');
+      var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+      rows.sort(function (a, b) {
+        return (parseFloat(a.dataset[key]) - parseFloat(b.dataset[key])) * dir * -1;
+      });
+      rows.forEach(function (r) { tbody.appendChild(r); });
+    });
+  });
+
+  // per-row favorite star, independent toggle, no siblings affected
+  document.querySelectorAll('.favstar').forEach(function (star) {
+    star.addEventListener('click', function (e) {
+      e.stopPropagation();
+      star.classList.toggle('on');
+    });
+  });
 </script>
 </body>
 </html>
