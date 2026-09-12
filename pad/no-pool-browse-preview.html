@@ -3,15 +3,19 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>No-pool pad preview — DEX — Robin Labs</title>
+<title>No-pool pad preview — DEX (true clone) — Robin Labs</title>
 <meta name="robots" content="noindex, nofollow" />
 <!-- INTERNAL. Deliberately not linked from any nav, and noindex — same convention as preview.html.
-     Rebuilt after direct reference screenshots of the real DexScreener trending page — renamed off
-     "Perch" (nobody knew what it meant) to plain "DEX," and rebuilt to match that density: top
-     ticker of hot tokens, a 24h volume/txns stat bar, a fuller filter row, rank numbers, boost
-     count, a TRADERS column, and an ad/sponsored slot. Deliberately keeps this SITE's own top nav
-     (matches every other real page) rather than adopting DexScreener's left-sidebar app-shell,
-     which would be inconsistent with the rest of this site. Static only — no live data.
+     v2 rebuild: after the first DexScreener-styled attempt (Robin Labs green/lime palette, our
+     own top nav, no sidebar) still didn't read as "DexScreener" to the user, we deliberately asked
+     which direction to take and were told: go for the TRUE CLONE look. This version adopts
+     DexScreener's actual near-black/blue-accent palette, Inter font, and — the single biggest
+     thing that makes their site recognizable — the left sidebar (search, watchlist, alerts,
+     chain list). This breaks visual consistency with the rest of the Robin Labs site on purpose;
+     that trade-off was made explicitly, not by accident. Our own data/content/differentiators
+     (pitch chips, the boost-ranking-algorithm footnote, our tokens) are kept, just under this
+     chrome instead of ours. Only "Robinhood" is listed as a real chain (we're single-chain; no
+     fake multi-chain entries). Static only — no live data.
      See ROBIN-PAD-NEXT-GEN-IDEAS.md for the full concept. Part of a 6-page preview set:
      no-pool-preview.html (token), no-pool-create-preview.html, no-pool-auction-preview.html,
      no-pool-browse-preview.html (this, "DEX"), no-pool-migrate-preview.html,
@@ -19,143 +23,160 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
-<meta name="theme-color" content="#080a04" />
+<meta name="theme-color" content="#0b0d10" />
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
   :root{
-    --bg:#060803; --bg-2:#0b0f06; --panel:#0c1108; --panel-2:#101609;
-    --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06); --line-strong:rgba(220,233,5,.4);
-    --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
-    --lime:#dce905; --lime-2:#c3d400; --lime-deep:#8a9c00; --green:#5fd16a; --red:#ff5a52; --flame:#ffb020;
-    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --bg:#0b0d10; --panel:#14171b; --panel-2:#1a1e23; --sidebar:#101317;
+    --border:#262b31; --border-soft:#1d2126;
+    --text:#e7e9ec; --dim:#8b929b; --faint:#5f666e;
+    --accent:#4c8dff; --accent-soft:rgba(76,141,255,.12);
+    --green:#1fc16b; --red:#f6465d; --flame:#ffa726;
+    --robin:#c8e600; --robin-soft:rgba(200,230,0,.10);
+    --sans:"Inter",system-ui,-apple-system,sans-serif;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box} html,body{margin:0}
-  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;-webkit-font-smoothing:antialiased}
   a{color:inherit;text-decoration:none}
+  button{font-family:inherit}
   @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 
-  .preview-strip{background:var(--panel-2);border-bottom:1px solid var(--line);color:var(--faint);
-    font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
+  .preview-strip{background:var(--panel-2);border-bottom:1px solid var(--border);color:var(--faint);
+    font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;
     text-align:center;padding:8px 10px}
-  .preview-strip b{color:var(--lime)}
+  .preview-strip b{color:var(--robin)}
   .preview-strip .set a{color:var(--dim);text-decoration:underline;margin:0 4px}
 
-  header.nav{border-bottom:1px solid var(--line-2);background:var(--bg)}
-  .nav-in{max-width:1360px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:14px 20px}
-  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:.98rem;letter-spacing:.01em}
-  .brand b{color:var(--lime)}
-  .nav-links{display:flex;gap:18px;font-size:.86rem;color:var(--dim);flex:1;flex-wrap:wrap}
-  .nav-cta{display:flex;gap:10px;align-items:center}
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;
-    font-size:.86rem;border-radius:12px;padding:10px 16px;border:1px solid transparent;white-space:nowrap;
-    font-family:var(--sans);cursor:pointer;transition:filter .12s ease,transform .12s ease}
-  .btn-dark{background:var(--panel);border-color:var(--line-2);color:var(--ink)}
-  .btn-lime{background:var(--lime);color:#0a0e05}
-  .btn-flame{background:linear-gradient(135deg,#ffb020,#ff6b3d);color:#1a0d02}
-
-  /* top ticker of hot tokens — actually scrolls, like a real stock ticker tape */
-  .ticker-bar{border-bottom:1px solid var(--line-2);background:var(--panel-2);overflow:hidden}
-  .ticker-track{display:flex;gap:22px;padding:8px 20px;width:max-content;
-    animation:ticker-scroll 24s linear infinite}
+  /* top ticker — DexScreener's "metas" bar equivalent, our hot-token version, actually scrolls */
+  .ticker-bar{border-bottom:1px solid var(--border);background:var(--panel);overflow:hidden}
+  .ticker-track{display:flex;gap:22px;padding:8px 20px;width:max-content;animation:ticker-scroll 24s linear infinite}
   .ticker-bar:hover .ticker-track{animation-play-state:paused}
   @keyframes ticker-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
   @media (prefers-reduced-motion: reduce){.ticker-track{animation:none;overflow-x:auto}}
   .tick{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;flex:none}
   .tick .rk{color:var(--faint);font-family:var(--mono);font-size:.7rem}
-  .tick .nm{font-weight:700}
+  .tick .nm{font-weight:600}
   .tick .bolt{color:var(--flame);font-family:var(--mono);font-size:.7rem}
   .tick .pc{font-family:var(--mono);font-size:.72rem}
-  .tick .pc.up{color:var(--green)}
-  .tick .pc.down{color:var(--red)}
+  .tick .pc.up{color:var(--green)} .tick .pc.down{color:var(--red)} .tick .pc.muted{color:var(--faint)}
 
-  main{max-width:1360px;margin:0 auto;padding:20px 20px 90px}
+  .ad-bar{border-bottom:1px solid var(--border);background:var(--panel-2)}
+  .ad-bar-in{padding:9px 20px;display:flex;align-items:center;gap:14px;font-size:.82rem}
+  .ad-bar .headline{font-weight:700;white-space:nowrap}
+  .ad-bar .desc{color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ad-bar .cta{color:var(--accent);font-weight:700;white-space:nowrap}
+  .ad-bar .adtag{font-family:var(--mono);font-size:.6rem;color:var(--faint);border:1px solid var(--border);
+    border-radius:4px;padding:1px 5px;flex:none}
+  .ad-bar .x{color:var(--faint);font-size:.85rem;background:none;border:none;flex:none;line-height:1;cursor:pointer}
+
+  /* shell: sidebar + content */
+  .shell{display:flex;align-items:flex-start}
+  .sidebar{width:200px;flex:none;background:var(--sidebar);border-right:1px solid var(--border);
+    min-height:calc(100vh - 90px);padding:16px 12px;position:sticky;top:0}
+  @media (max-width:860px){.sidebar{display:none}}
+
+  .side-logo{display:flex;align-items:baseline;gap:2px;font-weight:800;font-size:1.05rem;padding:2px 8px 14px}
+  .side-logo .a{color:var(--text)} .side-logo .b{color:var(--accent)}
+
+  .side-search{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--border);
+    border-radius:8px;padding:8px 10px;margin-bottom:14px}
+  .side-search svg{flex:none;color:var(--faint)}
+  .side-search input{background:none;border:none;outline:none;color:var(--text);font-size:.82rem;width:100%;font-family:var(--sans)}
+  .side-search input::placeholder{color:var(--faint)}
+
+  .side-nav{display:flex;flex-direction:column;gap:1px;margin-bottom:16px}
+  .side-item{display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:7px;color:var(--dim);
+    font-size:.82rem;font-weight:500;cursor:pointer}
+  .side-item svg{flex:none;color:var(--faint)}
+  .side-item:hover{background:var(--panel);color:var(--text)}
+
+  .side-h{font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--faint);padding:10px 8px 6px}
+  .chain-list{display:flex;flex-direction:column;gap:1px;margin-bottom:16px}
+  .chain-item{display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:7px;font-size:.82rem;
+    font-weight:600;color:var(--dim);cursor:pointer}
+  .chain-item .dot{width:18px;height:18px;border-radius:5px;flex:none;display:flex;align-items:center;
+    justify-content:center;font-size:.6rem;font-weight:800;color:#0a0e05}
+  .chain-item.active{background:var(--robin-soft);color:var(--robin);border:1px solid rgba(200,230,0,.3)}
+  .chain-item.active .dot{background:var(--robin)}
+  .chain-item.soon{opacity:.4;cursor:default}
+  .chain-item.soon .dot{background:var(--border)}
+
+  .watchlist-box{background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:10px}
+  .wl-row{display:flex;justify-content:space-between;align-items:center;padding:5px 2px;font-size:.76rem}
+  .wl-row .n{font-weight:600}
+  .wl-row .p{font-family:var(--mono);color:var(--dim)}
+
+  .content{flex:1;min-width:0;padding:18px 20px 80px}
 
   .pagehead{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px;margin-bottom:14px}
-  .wordmark{display:flex;align-items:baseline;gap:4px}
-  .wordmark h1{margin:0;font-size:1.4rem;font-weight:800;letter-spacing:-.01em}
-  .wordmark .lime{color:var(--lime)}
+  .wordmark h1{margin:0;font-size:1.3rem;font-weight:800;letter-spacing:-.01em}
+  .wordmark .accent{color:var(--accent)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;font-size:.84rem;
+    border-radius:9px;padding:9px 15px;border:1px solid transparent;white-space:nowrap;cursor:pointer;
+    transition:filter .12s ease,transform .12s ease}
+  .btn:hover{filter:brightness(1.12)} .btn:active{transform:scale(.98)}
+  .btn-flame{background:linear-gradient(135deg,var(--flame),#ff7a3d);color:#1a0d02}
 
-  .statbar{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px;padding:12px 16px;background:var(--panel);
-    border:1px solid var(--line-2);border-radius:10px}
-  .statbar .item{font-size:.82rem;color:var(--dim)}
-  .statbar .item b{color:var(--ink);font-family:var(--mono);margin-left:6px}
+  .statbar{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px;padding:11px 16px;background:var(--panel);
+    border:1px solid var(--border);border-radius:9px}
+  .statbar .item{font-size:.8rem;color:var(--dim)}
+  .statbar .item b{color:var(--text);font-family:var(--mono);margin-left:6px}
 
   .pitch-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-  .pitch-chip{font-family:var(--mono);font-size:.65rem;color:var(--lime);border:1px solid var(--line-strong);
-    background:rgba(220,233,5,.06);border-radius:999px;padding:5px 11px}
+  .pitch-chip{font-family:var(--mono);font-size:.64rem;color:var(--robin);border:1px solid rgba(200,230,0,.3);
+    background:var(--robin-soft);border-radius:999px;padding:5px 11px}
 
   .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:14px}
   .tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-  .tab{font-family:var(--mono);font-size:.76rem;padding:7px 13px;border-radius:9px;border:1px solid var(--line-2);color:var(--dim)}
-  .tab.on{border-color:var(--line-strong);color:var(--lime);background:rgba(220,233,5,.06)}
-  .tfset{display:flex;gap:2px;background:var(--bg-2);border-radius:8px;padding:3px;margin-left:4px}
-  .tf{font-family:var(--mono);font-size:.68rem;padding:5px 9px;border-radius:6px;color:var(--faint)}
-  .tf.on{background:var(--panel);color:var(--lime)}
+  .tab{font-size:.78rem;padding:7px 13px;border-radius:8px;border:1px solid var(--border);color:var(--dim);cursor:pointer;transition:.12s ease}
+  .tab.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .tfset{display:flex;gap:2px;background:var(--bg);border-radius:7px;padding:3px;margin-left:4px}
+  .tf{font-family:var(--mono);font-size:.68rem;padding:5px 9px;border-radius:5px;color:var(--faint);cursor:pointer;transition:.12s ease}
+  .tf.on{background:var(--panel-2);color:var(--accent)}
   .toolbar-right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .search{background:var(--panel);border:1px solid var(--line-2);border-radius:10px;padding:8px 13px;
-    color:var(--ink);font-size:.8rem;min-width:180px;font-family:var(--sans);outline:none}
+  .search{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 13px;
+    color:var(--text);font-size:.8rem;min-width:180px;font-family:var(--sans);outline:none}
   .search::placeholder{color:var(--faint)}
-  .search:focus{border-color:var(--line-strong)}
-  .mini-btn{font-family:var(--mono);font-size:.72rem;color:var(--dim);border:1px solid var(--line-2);
-    border-radius:8px;padding:8px 12px}
+  .search:focus{border-color:var(--accent)}
+  .mini-btn{font-size:.76rem;color:var(--dim);border:1px solid var(--border);border-radius:8px;padding:8px 12px;cursor:pointer;transition:.12s ease}
+  .mini-btn:hover{color:var(--text);border-color:var(--faint)}
 
-  .gridwrap{background:var(--panel);border:1px solid var(--line-2);border-radius:14px;overflow-x:auto}
+  .gridwrap{background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow-x:auto}
   table.grid{width:100%;border-collapse:collapse;min-width:1180px}
-  table.grid th{text-align:right;font-family:var(--mono);font-size:.63rem;letter-spacing:.05em;text-transform:uppercase;
-    color:var(--faint);padding:11px 13px;border-bottom:1px solid var(--line-2);font-weight:600;white-space:nowrap}
+  table.grid th{text-align:right;font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--faint);padding:11px 13px;border-bottom:1px solid var(--border);font-weight:600;white-space:nowrap}
   table.grid th:first-child, table.grid td:first-child{text-align:left}
-  table.grid td{padding:11px 13px;border-bottom:1px solid var(--line-2);font-size:.8rem;vertical-align:middle;
+  table.grid td{padding:11px 13px;border-bottom:1px solid var(--border-soft);font-size:.8rem;vertical-align:middle;
     text-align:right;font-family:var(--mono);white-space:nowrap}
   table.grid tr:last-child td{border-bottom:none}
-  table.grid tr:hover td{background:rgba(255,255,255,.015)}
-
+  table.grid tr:hover td{background:rgba(255,255,255,.02)}
   th[data-k]{cursor:pointer;user-select:none}
-  th[data-k] .arrow{color:var(--lime);margin-left:3px;font-size:.6rem}
-  .favstar{background:none;border:none;color:#4a5240;font-size:.9rem;cursor:pointer;padding:0;line-height:1;flex:none}
-  .favstar.on{color:var(--lime)}
+  th[data-k] .arrow{color:var(--accent);margin-left:3px;font-size:.6rem}
+
+  .favstar{background:none;border:none;color:#3a3f45;font-size:.9rem;cursor:pointer;padding:0;line-height:1;flex:none}
+  .favstar.on{color:var(--flame)}
   .namecell{display:flex;align-items:center;gap:8px;font-family:var(--sans)}
-  .rank{color:var(--faint);font-family:var(--mono);font-size:.72rem;width:18px;flex:none}
-  .tmark{width:28px;height:28px;border-radius:8px;background:linear-gradient(155deg,var(--lime),var(--lime-deep));
-    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;color:#0a0e05;font-size:.68rem;flex:none}
-  .namecell .n{font-weight:700;font-size:.82rem;display:flex;align-items:center;gap:5px}
+  .rank{color:var(--faint);font-family:var(--mono);font-size:.72rem;width:16px;flex:none}
+  .tmark{width:26px;height:26px;border-radius:7px;background:linear-gradient(155deg,var(--robin),#8a9c00);
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;color:#0a0e05;font-size:.66rem;flex:none}
+  .namecell .n{font-weight:600;font-size:.82rem;display:flex;align-items:center;gap:5px}
   .namecell .s{color:var(--faint);font-size:.66rem;font-family:var(--mono)}
   .boost{color:var(--flame);font-size:.66rem;font-family:var(--mono)}
-  .tagpill{font-family:var(--mono);font-size:.58rem;padding:1px 5px;border-radius:4px;border:1px solid var(--line-2);color:var(--faint)}
-
-  .up{color:var(--green)}
-  .down{color:var(--red)}
-  .muted{color:var(--faint)}
+  .up{color:var(--green)} .down{color:var(--red)} .muted{color:var(--faint)}
   .statuscell{text-align:left !important}
-  .mbadge{font-family:var(--mono);font-size:.58rem;padding:2px 6px;border-radius:5px;border:1px solid var(--line-2);color:var(--faint)}
-  .mbadge.live{color:var(--lime);border-color:var(--line-strong)}
+  .mbadge{font-family:var(--mono);font-size:.58rem;padding:2px 6px;border-radius:5px;border:1px solid var(--border);color:var(--faint)}
+  .mbadge.live{color:var(--robin);border-color:rgba(200,230,0,.3)}
 
   .foot-note{font-family:var(--mono);font-size:.72rem;color:var(--faint);margin-top:12px;line-height:1.6}
-
-  /* ad banner — slim full-bleed strip, styled like a real ad placement, not an upsell box */
-  .ad-bar{border-bottom:1px solid var(--line-2);background:var(--panel-2)}
-  .ad-bar-in{max-width:1360px;margin:0 auto;padding:9px 20px;display:flex;align-items:center;gap:14px;font-size:.82rem}
-  .ad-bar .headline{font-weight:700;white-space:nowrap}
-  .ad-bar .desc{color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .ad-bar .cta{color:var(--lime);font-weight:700;white-space:nowrap}
-  .ad-bar .adtag{font-family:var(--mono);font-size:.6rem;color:var(--faint);border:1px solid var(--line-2);
-    border-radius:4px;padding:1px 5px;flex:none}
-  .ad-bar .x{color:var(--faint);font-size:.85rem;background:none;border:none;flex:none;line-height:1}
-  .btn:hover{filter:brightness(1.1)}
-  .btn:active{transform:scale(.98)}
-  .tab,.tf,.txtab,.swaptab,.mini-btn{cursor:pointer;transition:.12s ease}
 </style>
 </head>
 <body>
 
-<div class="preview-strip">Internal design preview — <b>not live</b>, noindex, unlinked. Layout only.
+<div class="preview-strip">Internal design preview — <b>not live</b>, noindex, unlinked. Layout only. True-clone
+  palette by explicit direction — breaks from the rest of the site's look on purpose.
   <span class="set">· <a href="no-pool-preview.html">Token page</a> · <a href="no-pool-create-preview.html">Create</a> · <a href="no-pool-auction-preview.html">Auction</a> · <a href="no-pool-migrate-preview.html">Migrate</a> · <a href="no-pool-transparency-preview.html">Transparency</a></span></div>
-
-<header class="nav"><div class="nav-in">
-  <a class="brand" href="no-pool-preview.html">ROBIN <b>LABS</b></a>
-  <nav class="nav-links"><a href="no-pool-browse-preview.html">DEX</a><a href="no-pool-preview.html">Swap</a><a href="no-pool-transparency-preview.html">Transparency</a><a>Bridge</a><a href="no-pool-migrate-preview.html">Migrate</a><a>Docs</a></nav>
-  <div class="nav-cta"><span class="btn btn-dark">Connect Wallet</span><a class="btn btn-lime" href="no-pool-create-preview.html">Launch Token</a></div>
-</div></header>
 
 <div class="ticker-bar"><div class="ticker-track">
   <span class="tick"><span class="rk">#1</span><span class="nm">Dustline</span><span class="bolt">⚡900</span><span class="pc up">▲18.4%</span></span>
@@ -163,7 +184,6 @@
   <span class="tick"><span class="rk">#3</span><span class="nm">Kevlar</span><span class="bolt">⚡100</span><span class="pc down">▼3.8%</span></span>
   <span class="tick"><span class="rk">#4</span><span class="nm">Fable</span><span class="pc muted">auction</span></span>
   <span class="tick"><span class="rk">#5</span><span class="nm">Dogestar</span><span class="pc up">▲2,411%</span></span>
-  <!-- duplicated so the loop is seamless (animation shifts exactly one copy's width) -->
   <span class="tick" aria-hidden="true"><span class="rk">#1</span><span class="nm">Dustline</span><span class="bolt">⚡900</span><span class="pc up">▲18.4%</span></span>
   <span class="tick" aria-hidden="true"><span class="rk">#2</span><span class="nm">Robin</span><span class="bolt">⚡500</span><span class="pc up">▲6.2%</span></span>
   <span class="tick" aria-hidden="true"><span class="rk">#3</span><span class="nm">Kevlar</span><span class="bolt">⚡100</span><span class="pc down">▼3.8%</span></span>
@@ -179,133 +199,136 @@
   <button class="x" aria-label="Dismiss">✕</button>
 </div></div>
 
-<main>
-  <div class="pagehead">
-    <div class="wordmark"><h1>ROBIN <span class="lime">DEX</span></h1></div>
-    <span class="btn btn-flame">⚡ Boost your token</span>
-  </div>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="side-logo"><span class="a">ROBIN</span><span class="b">DEX</span></div>
 
-  <div class="statbar">
-    <span class="item">24H VOLUME<b>$486K</b></span>
-    <span class="item">24H TXNS<b>18,204</b></span>
-    <span class="item">LIVE TOKENS<b>61</b></span>
-    <span class="item">LIVE AUCTIONS<b>3</b></span>
-  </div>
-
-  <div class="pitch-strip">
-    <span class="pitch-chip">Can't be rugged — no pool to drain</span>
-    <span class="pitch-chip">Can't be sniped — no public mempool</span>
-    <span class="pitch-chip">Vesting is optional — always shown, never hidden</span>
-  </div>
-
-  <div class="toolbar">
-    <div class="tabs">
-      <span class="tab on">Trending</span>
-      <div class="tfset"><span class="tf">5M</span><span class="tf">1H</span><span class="tf on">6H</span><span class="tf">24H</span></div>
-      <span class="tab">Top</span>
-      <span class="tab">Gainers</span>
-      <span class="tab">New Pairs</span>
-      <span class="tab">Boosted</span>
-      <span class="tab">Live auctions</span>
-      <span class="tab">Graduated</span>
+    <div class="side-search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search" />
     </div>
-    <div class="toolbar-right">
-      <span class="mini-btn">Rank by: Trending 6H ▾</span>
-      <span class="mini-btn">Filters</span>
-      <input class="search" type="text" placeholder="Search name or address…" />
+
+    <div class="side-nav">
+      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7-5.4-4.7 7.1-.6z"/></svg>Watchlist</div>
+      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>Alerts</div>
+      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Multicharts</div>
+      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>New Pairs</div>
+      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>Gainers &amp; Losers</div>
+      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3L3 8v8l5 5 8-8V5z"/></svg>API</div>
+      <div class="side-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11v2a2 2 0 002 2h1l4 4V5L6 9H5a2 2 0 00-2 2z"/><path d="M16 8a4 4 0 010 8"/></svg>Advertise</div>
     </div>
-  </div>
 
-  <div class="gridwrap">
-    <table class="grid">
-      <thead>
-        <tr>
-          <th>Token</th>
-          <th data-k="mcap">Mcap<span class="arrow"></span></th>
-          <th data-k="price">Price<span class="arrow"></span></th>
-          <th data-k="age">Age<span class="arrow"></span></th>
-          <th data-k="txns">Txns<span class="arrow"></span></th>
-          <th data-k="volume">Volume<span class="arrow"></span></th>
-          <th data-k="traders">Traders<span class="arrow"></span></th>
-          <th data-k="pc5m">5m<span class="arrow"></span></th>
-          <th data-k="pc1h">1h<span class="arrow"></span></th>
-          <th data-k="pc6h">6h<span class="arrow"></span></th>
-          <th data-k="pc24h">24h<span class="arrow">↓</span></th>
-          <th data-k="liq">Liquidity<span class="arrow"></span></th>
-          <th class="statuscell">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr data-mcap="3910000" data-price="0.00412" data-age="3" data-txns="5882" data-volume="241.0" data-traders="1204" data-pc5m="6.9" data-pc1h="11.2" data-pc6h="15.0" data-pc24h="18.4" data-liq="241.0">
-          <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#1</span><div class="tmark">D</div><div><div class="n">Dustline <span class="boost">⚡900</span></div><div class="s">$DUST</div></div></div></td>
-          <td>$3.91M</td>
-          <td>$0.00412</td>
-          <td class="muted">3d</td>
-          <td>5,882</td>
-          <td>241.0 ETH</td>
-          <td>1,204</td>
-          <td class="up">+6.9%</td>
-          <td class="up">+11.2%</td>
-          <td class="up">+15.0%</td>
-          <td class="up">+18.4%</td>
-          <td>241.0 ETH</td>
-          <td class="statuscell"><span class="mbadge live">No-pool</span> <span class="mbadge">Trending</span></td>
-        </tr>
-        <tr data-mcap="1840000" data-price="0.00184" data-age="41" data-txns="3204" data-volume="96.1" data-traders="842" data-pc5m="2.1" data-pc1h="4.0" data-pc6h="5.6" data-pc24h="6.2" data-liq="312.4">
-          <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#2</span><div class="tmark">R</div><div><div class="n">Robin <span class="boost">⚡500</span></div><div class="s">$ROBIN</div></div></div></td>
-          <td>$1.84M</td>
-          <td>$0.00184</td>
-          <td class="muted">41d</td>
-          <td>3,204</td>
-          <td>96.1 ETH</td>
-          <td>842</td>
-          <td class="up">+2.1%</td>
-          <td class="up">+4.0%</td>
-          <td class="up">+5.6%</td>
-          <td class="up">+6.2%</td>
-          <td>312.4 ETH</td>
-          <td class="statuscell"><span class="mbadge live">No-pool</span> <span class="mbadge">Migrated</span></td>
-        </tr>
-        <tr data-mcap="212000" data-price="0.00007" data-age="12" data-txns="1110" data-volume="12.0" data-traders="390" data-pc5m="-0.4" data-pc1h="-1.2" data-pc6h="-2.9" data-pc24h="-3.8" data-liq="96.7">
-          <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#3</span><div class="tmark">K</div><div><div class="n">Kevlar <span class="boost">⚡100</span></div><div class="s">$KVLR</div></div></div></td>
-          <td>$212K</td>
-          <td>$0.00007</td>
-          <td class="muted">12d</td>
-          <td>1,110</td>
-          <td>12.0 ETH</td>
-          <td>390</td>
-          <td class="down">-0.4%</td>
-          <td class="down">-1.2%</td>
-          <td class="down">-2.9%</td>
-          <td class="down">-3.8%</td>
-          <td>96.7 ETH</td>
-          <td class="statuscell"><span class="mbadge live">No-pool</span></td>
-        </tr>
-        <tr data-mcap="0" data-price="0" data-age="0.25" data-txns="88" data-volume="2.6" data-traders="34" data-pc5m="0" data-pc1h="0" data-pc6h="0" data-pc24h="0" data-liq="0">
-          <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#4</span><div class="tmark">F</div><div><div class="n">Fable</div><div class="s">$FABLE</div></div></div></td>
-          <td class="muted">—</td>
-          <td class="muted">—</td>
-          <td class="muted">6h</td>
-          <td>88</td>
-          <td>2.6 ETH raised</td>
-          <td>34</td>
-          <td class="muted">—</td>
-          <td class="muted">—</td>
-          <td class="muted">—</td>
-          <td class="muted">—</td>
-          <td class="muted">—</td>
-          <td class="statuscell"><span class="mbadge live">Auction · 1d 06h left</span></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+    <div class="side-h">Chains</div>
+    <div class="chain-list">
+      <div class="chain-item active"><span class="dot">R</span>Robinhood</div>
+      <div class="chain-item soon"><span class="dot">·</span>More soon</div>
+    </div>
 
-  <div class="foot-note">Ranking is a real algorithm, not raw volume — it weighs volume together with unique
-  trader count and other activity signals, so a volume bot can't cheaply out-rank someone actually paying
-  us. A boost (⚡) adds weight on top of that same score — it's not an instant #1, and organic activity
-  can still out-rank a boosted token. Price/volume/liquidity numbers are never touched by a boost, ranking
-  only.</div>
-</main>
+    <div class="side-h">Watchlist</div>
+    <div class="watchlist-box">
+      <div class="wl-row"><span class="n">ROBIN</span><span class="p">$0.00184</span></div>
+      <div class="wl-row"><span class="n">DUST</span><span class="p">$0.00412</span></div>
+      <div class="wl-row"><span class="n">KVLR</span><span class="p">$0.00007</span></div>
+    </div>
+  </aside>
+
+  <div class="content">
+    <div class="pagehead">
+      <div class="wordmark"><h1>Trending <span class="accent">pairs</span></h1></div>
+      <span class="btn btn-flame">⚡ Boost your token</span>
+    </div>
+
+    <div class="statbar">
+      <span class="item">24H VOLUME<b>$486K</b></span>
+      <span class="item">24H TXNS<b>18,204</b></span>
+      <span class="item">LIVE TOKENS<b>61</b></span>
+      <span class="item">LIVE AUCTIONS<b>3</b></span>
+    </div>
+
+    <div class="pitch-strip">
+      <span class="pitch-chip">Can't be rugged — no pool to drain</span>
+      <span class="pitch-chip">Can't be sniped — no public mempool</span>
+      <span class="pitch-chip">Vesting is optional — always shown, never hidden</span>
+    </div>
+
+    <div class="toolbar">
+      <div class="tabs">
+        <span class="tab on">Trending</span>
+        <div class="tfset"><span class="tf">5M</span><span class="tf">1H</span><span class="tf on">6H</span><span class="tf">24H</span></div>
+        <span class="tab">Top</span>
+        <span class="tab">Gainers</span>
+        <span class="tab">New Pairs</span>
+        <span class="tab">Boosted</span>
+        <span class="tab">Live auctions</span>
+        <span class="tab">Graduated</span>
+      </div>
+      <div class="toolbar-right">
+        <span class="mini-btn">Rank by: Trending 6H ▾</span>
+        <span class="mini-btn">Filters</span>
+        <input class="search" type="text" placeholder="Search name or address…" />
+      </div>
+    </div>
+
+    <div class="gridwrap">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th>Token</th>
+            <th data-k="mcap">Mcap<span class="arrow"></span></th>
+            <th data-k="price">Price<span class="arrow"></span></th>
+            <th data-k="age">Age<span class="arrow"></span></th>
+            <th data-k="txns">Txns<span class="arrow"></span></th>
+            <th data-k="volume">Volume<span class="arrow"></span></th>
+            <th data-k="traders">Traders<span class="arrow"></span></th>
+            <th data-k="pc5m">5m<span class="arrow"></span></th>
+            <th data-k="pc1h">1h<span class="arrow"></span></th>
+            <th data-k="pc6h">6h<span class="arrow"></span></th>
+            <th data-k="pc24h">24h<span class="arrow">↓</span></th>
+            <th data-k="liq">Liquidity<span class="arrow"></span></th>
+            <th class="statuscell">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr data-mcap="3910000" data-price="0.00412" data-age="3" data-txns="5882" data-volume="241.0" data-traders="1204" data-pc5m="6.9" data-pc1h="11.2" data-pc6h="15.0" data-pc24h="18.4" data-liq="241.0">
+            <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#1</span><div class="tmark">D</div><div><div class="n">Dustline <span class="boost">⚡900</span></div><div class="s">$DUST</div></div></div></td>
+            <td>$3.91M</td><td>$0.00412</td><td class="muted">3d</td><td>5,882</td><td>241.0 ETH</td><td>1,204</td>
+            <td class="up">+6.9%</td><td class="up">+11.2%</td><td class="up">+15.0%</td><td class="up">+18.4%</td>
+            <td>241.0 ETH</td>
+            <td class="statuscell"><span class="mbadge live">No-pool</span> <span class="mbadge">Trending</span></td>
+          </tr>
+          <tr data-mcap="1840000" data-price="0.00184" data-age="41" data-txns="3204" data-volume="96.1" data-traders="842" data-pc5m="2.1" data-pc1h="4.0" data-pc6h="5.6" data-pc24h="6.2" data-liq="312.4">
+            <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#2</span><div class="tmark">R</div><div><div class="n">Robin <span class="boost">⚡500</span></div><div class="s">$ROBIN</div></div></div></td>
+            <td>$1.84M</td><td>$0.00184</td><td class="muted">41d</td><td>3,204</td><td>96.1 ETH</td><td>842</td>
+            <td class="up">+2.1%</td><td class="up">+4.0%</td><td class="up">+5.6%</td><td class="up">+6.2%</td>
+            <td>312.4 ETH</td>
+            <td class="statuscell"><span class="mbadge live">No-pool</span> <span class="mbadge">Migrated</span></td>
+          </tr>
+          <tr data-mcap="212000" data-price="0.00007" data-age="12" data-txns="1110" data-volume="12.0" data-traders="390" data-pc5m="-0.4" data-pc1h="-1.2" data-pc6h="-2.9" data-pc24h="-3.8" data-liq="96.7">
+            <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#3</span><div class="tmark">K</div><div><div class="n">Kevlar <span class="boost">⚡100</span></div><div class="s">$KVLR</div></div></div></td>
+            <td>$212K</td><td>$0.00007</td><td class="muted">12d</td><td>1,110</td><td>12.0 ETH</td><td>390</td>
+            <td class="down">-0.4%</td><td class="down">-1.2%</td><td class="down">-2.9%</td><td class="down">-3.8%</td>
+            <td>96.7 ETH</td>
+            <td class="statuscell"><span class="mbadge live">No-pool</span></td>
+          </tr>
+          <tr data-mcap="0" data-price="0" data-age="0.25" data-txns="88" data-volume="2.6" data-traders="34" data-pc5m="0" data-pc1h="0" data-pc6h="0" data-pc24h="0" data-liq="0">
+            <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#4</span><div class="tmark">F</div><div><div class="n">Fable</div><div class="s">$FABLE</div></div></div></td>
+            <td class="muted">—</td><td class="muted">—</td><td class="muted">6h</td><td>88</td><td>2.6 ETH raised</td><td>34</td>
+            <td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>
+            <td class="muted">—</td>
+            <td class="statuscell"><span class="mbadge live">Auction · 1d 06h left</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="foot-note">Ranking is a real algorithm, not raw volume — it weighs volume together with unique
+    trader count and other activity signals, so a volume bot can't cheaply out-rank someone actually paying
+    us. A boost (⚡) adds weight on top of that same score — it's not an instant #1, and organic activity
+    can still out-rank a boosted token. Price/volume/liquidity numbers are never touched by a boost, ranking
+    only.</div>
+  </div>
+</div>
+
 <script>
   function wireToggle(containerSel, itemSel, onClass) {
     document.querySelectorAll(containerSel).forEach(function (container) {
@@ -321,12 +344,10 @@
   wireToggle('.toolbar .tabs', '.tab', 'on');
   wireToggle('.tfset', '.tf', 'on');
 
-  // real client-side sort by column, like the actual table would do
   document.querySelectorAll('th[data-k]').forEach(function (th) {
-    var dir = th.dataset.k === 'pc24h' ? -1 : 0; // 24h starts as the active sort
     th.addEventListener('click', function () {
       var key = th.dataset.k;
-      dir = th.classList.contains('sort-asc') ? -1 : 1;
+      var dir = th.classList.contains('sort-asc') ? -1 : 1;
       document.querySelectorAll('th[data-k]').forEach(function (t) {
         t.classList.remove('sort-asc', 'sort-desc');
         t.querySelector('.arrow').textContent = '';
@@ -335,14 +356,11 @@
       th.querySelector('.arrow').textContent = dir === 1 ? '↓' : '↑';
       var tbody = th.closest('table').querySelector('tbody');
       var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
-      rows.sort(function (a, b) {
-        return (parseFloat(a.dataset[key]) - parseFloat(b.dataset[key])) * dir * -1;
-      });
+      rows.sort(function (a, b) { return (parseFloat(a.dataset[key]) - parseFloat(b.dataset[key])) * dir * -1; });
       rows.forEach(function (r) { tbody.appendChild(r); });
     });
   });
 
-  // per-row favorite star, independent toggle, no siblings affected
   document.querySelectorAll('.favstar').forEach(function (star) {
     star.addEventListener('click', function (e) {
       e.stopPropagation();
