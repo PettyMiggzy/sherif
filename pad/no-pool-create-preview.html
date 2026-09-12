@@ -72,7 +72,7 @@
 
   .segrow{display:flex;gap:8px;flex-wrap:wrap}
   .seg{flex:1;text-align:center;padding:10px;border-radius:10px;border:1px solid var(--line-2);
-    font-family:var(--mono);font-size:.82rem;color:var(--dim);min-width:64px}
+    font-family:var(--mono);font-size:.82rem;color:var(--dim);min-width:64px;cursor:pointer;transition:.12s ease}
   .seg.on{border-color:var(--line-strong);color:var(--lime);background:rgba(220,233,5,.06)}
 
   .slider-mock{height:6px;border-radius:99px;background:var(--line-2);position:relative;margin:14px 2px 6px}
@@ -175,5 +175,16 @@
     <span class="btn btn-lime go-btn">Launch token</span>
   </div>
 </main>
+<script>
+  document.querySelectorAll('.segrow').forEach(function (group) {
+    var items = Array.prototype.slice.call(group.querySelectorAll('.seg'));
+    items.forEach(function (item) {
+      item.addEventListener('click', function () {
+        items.forEach(function (i) { i.classList.remove('on'); });
+        item.classList.add('on');
+      });
+    });
+  });
+</script>
 </body>
 </html>
