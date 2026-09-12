@@ -296,6 +296,21 @@ Ideas on the table so far, beyond the mechanics above:
     expense. Cancellation (if allowed at all) must cost something. Same standing rule as
     everything else on this pad: nobody gets upside with zero downside.
 
+## RPC / infra notes (Phase 2, backend — not started)
+
+- **Paid RPC as a read fallback:** already has a slot — `indexer/src/config.js`'s
+  `RPC_BACKUP` env var is wired into the read-priority order (`readOrder` = free →
+  primary → backup → blockscout) but empty by default. No code change needed — just
+  set `RPC_BACKUP=<paid RPC URL>` in the droplet's `.env` and restart. Writes/broadcasts
+  stay pinned to the primary `RPC_URL` on purpose (keepers shouldn't bounce between
+  providers mid-transaction).
+- **Robinhood's free read-only WSS:** genuinely new work, not config. Today everything
+  is polled HTTP JSON-RPC. Subscribing to new blocks/logs over WSS instead would push
+  updates rather than poll for them — lower latency, less RPC load, and it's exactly
+  what would make our own chart/ticker data (see "chart architecture decision" above)
+  feel truly live instead of refresh-on-an-interval. Real code when Phase 2 starts, not
+  a flag to flip.
+
 ## Open / unresolved
 
 - ~~Confirm DexScreener actually indexes Robinhood Chain at all.~~ **Resolved: yes** —
