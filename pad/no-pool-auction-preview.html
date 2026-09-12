@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>No-pool pad preview — Auction — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<!-- INTERNAL. Deliberately not linked from any nav, and noindex — same convention as preview.html.
+     Design preview of the no-pool pad's live-auction flow. Static only — no wallet, no contracts.
+     See ROBIN-PAD-NEXT-GEN-IDEAS.md for the full concept. Part of a 4-page preview set:
+     no-pool-preview.html (token page), no-pool-create-preview.html, no-pool-auction-preview.html (this),
+     no-pool-browse-preview.html. -->
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<meta name="theme-color" content="#080a04" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+  :root{
+    --bg:#060803; --bg-2:#0b0f06; --panel:#0c1108; --panel-2:#101609;
+    --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06); --line-strong:rgba(220,233,5,.4);
+    --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
+    --lime:#dce905; --lime-2:#c3d400; --lime-deep:#8a9c00; --green:#5fd16a; --red:#ff5a52;
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+  .preview-strip{background:var(--panel-2);border-bottom:1px solid var(--line);color:var(--faint);
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
+    text-align:center;padding:8px 10px}
+  .preview-strip b{color:var(--lime)}
+  .preview-strip .set a{color:var(--dim);text-decoration:underline;margin:0 4px}
+
+  header.nav{border-bottom:1px solid var(--line-2);background:var(--bg)}
+  .nav-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:14px 20px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:.98rem;letter-spacing:.01em}
+  .brand b{color:var(--lime)}
+  .nav-links{display:flex;gap:18px;font-size:.86rem;color:var(--dim);flex:1;flex-wrap:wrap}
+  .nav-cta{display:flex;gap:10px;align-items:center}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;
+    font-size:.86rem;border-radius:12px;padding:10px 16px;border:1px solid transparent;white-space:nowrap;
+    font-family:var(--sans);cursor:default}
+  .btn-dark{background:var(--panel);border-color:var(--line-2);color:var(--ink)}
+  .btn-lime{background:var(--lime);color:#0a0e05}
+  .btn-ghost{background:transparent;border-color:var(--line-strong);color:var(--ink)}
+
+  main{max-width:1080px;margin:0 auto;padding:28px 20px 90px}
+
+  .tokhead{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;justify-content:space-between;
+    padding-bottom:18px;border-bottom:1px solid var(--line-2);margin-bottom:20px}
+  .tokid{display:flex;gap:14px;align-items:center}
+  .tokmark{width:48px;height:48px;border-radius:13px;background:linear-gradient(155deg,var(--lime),var(--lime-deep));
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;color:#0a0e05;font-size:1rem}
+  .tokname h1{margin:0;font-size:1.35rem;font-weight:800}
+  .tokname .sub{color:var(--faint);font-size:.82rem;font-family:var(--mono)}
+  .badge{font-family:var(--mono);font-size:.65rem;letter-spacing:.05em;text-transform:uppercase;
+    padding:4px 9px;border-radius:999px;border:1px solid var(--line-strong);color:var(--lime);display:inline-block;margin-top:6px}
+
+  .countdown{text-align:right}
+  .countdown .lbl{font-family:var(--mono);font-size:.66rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+  .countdown .val{font-family:var(--mono);font-size:1.4rem;font-weight:700;color:var(--lime)}
+
+  .layout{display:grid;grid-template-columns:1.5fr 1fr;gap:20px}
+  @media (max-width:860px){.layout{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line-2);border-radius:14px;padding:18px}
+  .panel + .panel{margin-top:16px}
+  .panel h3{margin:0 0 14px;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--faint);font-family:var(--mono);font-weight:600}
+
+  .progress-wrap{margin-bottom:6px}
+  .progress-track{height:14px;border-radius:99px;background:var(--bg-2);border:1px solid var(--line-2);
+    position:relative;overflow:hidden}
+  .progress-fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--lime-deep),var(--lime));
+    border-radius:99px 0 0 99px}
+  .progress-marks{display:flex;justify-content:space-between;margin-top:8px;font-family:var(--mono);font-size:.7rem;color:var(--faint)}
+  .progress-marks .min{color:var(--green)}
+  .progress-nums{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .progress-nums .big{font-family:var(--mono);font-size:1.6rem;font-weight:700}
+  .progress-nums .of{color:var(--faint);font-size:.85rem;font-family:var(--mono)}
+
+  .explain{font-size:.85rem;color:var(--dim);line-height:1.55;margin-top:14px;padding-top:14px;border-top:1px solid var(--line-2)}
+  .explain b{color:var(--ink)}
+
+  .contribrow{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line-2);font-size:.82rem}
+  .contribrow:first-child{border-top:none}
+  .contribrow .who{font-family:var(--mono);color:var(--dim);flex:1}
+  .contribrow .amt{font-family:var(--mono);font-weight:700}
+  .contribrow .ago{font-family:var(--mono);color:var(--faint);font-size:.72rem;width:44px;text-align:right}
+
+  .field{background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+  .field .lbl{font-family:var(--mono);font-size:.66rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+  .field .amt{font-size:1.3rem;font-family:var(--mono);margin-top:4px;color:var(--ink)}
+  .go-btn{width:100%;margin-top:6px;padding:13px;border-radius:10px}
+  .rowline{display:flex;justify-content:space-between;align-items:center;padding:8px 0;
+    border-top:1px solid var(--line-2);font-size:.82rem}
+  .rowline:first-child{border-top:none}
+  .rowline .k{color:var(--dim)}
+  .rowline .v{font-family:var(--mono);font-weight:700}
+</style>
+</head>
+<body>
+
+<div class="preview-strip">Internal design preview — <b>not live</b>, noindex, unlinked. Layout only.
+  <span class="set">· <a href="no-pool-preview.html">Token page</a> · <a href="no-pool-create-preview.html">Create</a> · <a href="no-pool-browse-preview.html">Browse / Dex</a></span></div>
+
+<header class="nav"><div class="nav-in">
+  <a class="brand">ROBIN <b>LABS</b></a>
+  <nav class="nav-links"><a>Browse</a><a>Swap</a><a>Stocks</a><a>Bridge</a><a>Migrate</a><a>Docs</a></nav>
+  <div class="nav-cta"><span class="btn btn-dark">Connect Wallet</span><span class="btn btn-lime">Launch Token</span></div>
+</div></header>
+
+<main>
+  <div class="tokhead">
+    <div class="tokid">
+      <div class="tokmark">F</div>
+      <div class="tokname">
+        <h1>Fable — $FABLE</h1>
+        <div class="sub">2,000,000,000 supply · created by 0x8b…3ad1</div>
+        <div class="badge">Auction live</div>
+      </div>
+    </div>
+    <div class="countdown">
+      <div class="lbl">Time left</div>
+      <div class="val">1d 06h 42m</div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="panel">
+        <h3>Raise progress</h3>
+        <div class="progress-nums">
+          <span class="big">2.6 ETH</span>
+          <span class="of">raised of 4.0 ETH target</span>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-track"><div class="progress-fill" style="width:65%"></div></div>
+        </div>
+        <div class="progress-marks">
+          <span class="min">✓ min raise cleared (1.2 ETH)</span>
+          <span>target 4.0 ETH</span>
+        </div>
+        <div class="explain">
+          Already past the minimum, so this token <b>launches no matter what happens next</b> — worst case
+          it opens at 2.6 ETH instead of 4.0. Nothing to refund, nothing to fail. If the target's hit before
+          time runs out, it opens early.
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Contributions</h3>
+        <div class="contribrow"><span class="who">0x4f…19a2</span><span class="amt">0.40 ETH</span><span class="ago">2m</span></div>
+        <div class="contribrow"><span class="who">0x91…7cd0</span><span class="amt">0.15 ETH</span><span class="ago">6m</span></div>
+        <div class="contribrow"><span class="who">0x0a…44de</span><span class="amt">1.00 ETH</span><span class="ago">22m</span></div>
+        <div class="contribrow"><span class="who">0x2c…f11a</span><span class="amt">0.08 ETH</span><span class="ago">1h</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h3>Contribute</h3>
+        <div class="field"><div class="lbl">You send</div><div class="amt">0.20 ETH</div></div>
+        <div class="field"><div class="lbl">Your share (est., pro-rata)</div><div class="amt">~1.9% of raise</div></div>
+        <span class="btn btn-lime go-btn">Contribute</span>
+      </div>
+
+      <div class="panel">
+        <h3>What happens at finalize</h3>
+        <div class="rowline"><span class="k">Curve goes live</span><span class="v">Same block</span></div>
+        <div class="rowline"><span class="k">Your tokens + ETH-back</span><span class="v">Claimable after</span></div>
+        <div class="rowline"><span class="k">Milestone payout</span><span class="v">If raise ≥ 4 ETH</span></div>
+        <div class="rowline"><span class="k">Visibility pool</span><span class="v">Seeded automatically</span></div>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

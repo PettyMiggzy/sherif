@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>No-pool pad preview — Browse — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<!-- INTERNAL. Deliberately not linked from any nav, and noindex — same convention as preview.html.
+     Design preview of the pad's own DexScreener-style discovery page. Static only — no live data.
+     See ROBIN-PAD-NEXT-GEN-IDEAS.md for the full concept. Part of a 4-page preview set:
+     no-pool-preview.html (token page), no-pool-create-preview.html, no-pool-auction-preview.html,
+     no-pool-browse-preview.html (this). -->
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<meta name="theme-color" content="#080a04" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+  :root{
+    --bg:#060803; --bg-2:#0b0f06; --panel:#0c1108; --panel-2:#101609;
+    --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06); --line-strong:rgba(220,233,5,.4);
+    --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
+    --lime:#dce905; --lime-2:#c3d400; --lime-deep:#8a9c00; --green:#5fd16a; --red:#ff5a52;
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+  .preview-strip{background:var(--panel-2);border-bottom:1px solid var(--line);color:var(--faint);
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
+    text-align:center;padding:8px 10px}
+  .preview-strip b{color:var(--lime)}
+  .preview-strip .set a{color:var(--dim);text-decoration:underline;margin:0 4px}
+
+  header.nav{border-bottom:1px solid var(--line-2);background:var(--bg)}
+  .nav-in{max-width:1280px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:14px 20px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:.98rem;letter-spacing:.01em}
+  .brand b{color:var(--lime)}
+  .nav-links{display:flex;gap:18px;font-size:.86rem;color:var(--dim);flex:1;flex-wrap:wrap}
+  .nav-cta{display:flex;gap:10px;align-items:center}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;
+    font-size:.86rem;border-radius:12px;padding:10px 16px;border:1px solid transparent;white-space:nowrap;
+    font-family:var(--sans);cursor:default}
+  .btn-dark{background:var(--panel);border-color:var(--line-2);color:var(--ink)}
+  .btn-lime{background:var(--lime);color:#0a0e05}
+
+  main{max-width:1280px;margin:0 auto;padding:26px 20px 90px}
+
+  .toolbar{display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .tabs{display:flex;gap:6px}
+  .tab{font-family:var(--mono);font-size:.78rem;padding:8px 14px;border-radius:9px;border:1px solid var(--line-2);color:var(--dim)}
+  .tab.on{border-color:var(--line-strong);color:var(--lime);background:rgba(220,233,5,.06)}
+  .search{background:var(--panel);border:1px solid var(--line-2);border-radius:10px;padding:9px 14px;
+    color:var(--faint);font-size:.82rem;min-width:220px;font-family:var(--sans)}
+
+  .pitch-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px}
+  .pitch-chip{font-family:var(--mono);font-size:.68rem;color:var(--lime);border:1px solid var(--line-strong);
+    background:rgba(220,233,5,.06);border-radius:999px;padding:6px 12px}
+
+  table.grid{width:100%;border-collapse:collapse}
+  .gridwrap{background:var(--panel);border:1px solid var(--line-2);border-radius:14px;overflow:hidden}
+  .gridwrap{overflow-x:auto}
+  table.grid{min-width:760px}
+  table.grid th{text-align:left;font-family:var(--mono);font-size:.66rem;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--faint);padding:12px 16px;border-bottom:1px solid var(--line-2);font-weight:600}
+  table.grid td{padding:12px 16px;border-bottom:1px solid var(--line-2);font-size:.86rem;vertical-align:middle}
+  table.grid tr:last-child td{border-bottom:none}
+  .namecell{display:flex;align-items:center;gap:10px}
+  .tmark{width:32px;height:32px;border-radius:9px;background:linear-gradient(155deg,var(--lime),var(--lime-deep));
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;color:#0a0e05;font-size:.78rem;flex:none}
+  .namecell .n{font-weight:700;font-size:.88rem}
+  .namecell .s{color:var(--faint);font-size:.72rem;font-family:var(--mono)}
+  .mono{font-family:var(--mono)}
+  .up{color:var(--green);font-family:var(--mono);font-weight:700}
+  .down{color:var(--red);font-family:var(--mono);font-weight:700}
+  .spark{width:74px;height:26px}
+  .badges-cell{display:flex;gap:4px;flex-wrap:wrap}
+  .mbadge{font-family:var(--mono);font-size:.6rem;padding:2px 6px;border-radius:5px;border:1px solid var(--line-2);color:var(--faint)}
+  .mbadge.live{color:var(--lime);border-color:var(--line-strong)}
+</style>
+</head>
+<body>
+
+<div class="preview-strip">Internal design preview — <b>not live</b>, noindex, unlinked. Layout only.
+  <span class="set">· <a href="no-pool-preview.html">Token page</a> · <a href="no-pool-create-preview.html">Create</a> · <a href="no-pool-auction-preview.html">Auction</a></span></div>
+
+<header class="nav"><div class="nav-in">
+  <a class="brand">ROBIN <b>LABS</b></a>
+  <nav class="nav-links"><a>Browse</a><a>Swap</a><a>Stocks</a><a>Bridge</a><a>Migrate</a><a>Docs</a></nav>
+  <div class="nav-cta"><span class="btn btn-dark">Connect Wallet</span><span class="btn btn-lime">Launch Token</span></div>
+</div></header>
+
+<main>
+  <div class="pitch-strip">
+    <span class="pitch-chip">Can't be rugged — no pool to drain</span>
+    <span class="pitch-chip">Can't be sniped — no public mempool</span>
+    <span class="pitch-chip">Can't be dumped — creator stake vests</span>
+  </div>
+
+  <div class="toolbar">
+    <div class="tabs">
+      <span class="tab on">Trending</span>
+      <span class="tab">New</span>
+      <span class="tab">Live auctions</span>
+      <span class="tab">Graduated</span>
+    </div>
+    <span class="search">Search name or address…</span>
+  </div>
+
+  <div class="gridwrap">
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Token</th><th>Price</th><th>24h</th><th>Chart</th><th>Volume</th><th>Mcap</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><div class="namecell"><div class="tmark">R</div><div><div class="n">Robin</div><div class="s">$ROBIN</div></div></div></td>
+          <td class="mono">$0.00184</td>
+          <td class="up">▲ 6.2%</td>
+          <td><svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#5fd16a" stroke-width="2" points="0,20 10,17 20,19 30,12 40,14 50,7 60,9 74,3"/></svg></td>
+          <td class="mono">96.1 ETH</td>
+          <td class="mono">$1.84M</td>
+          <td class="badges-cell"><span class="mbadge live">No-pool</span><span class="mbadge">Migrated</span></td>
+        </tr>
+        <tr>
+          <td><div class="namecell"><div class="tmark">F</div><div><div class="n">Fable</div><div class="s">$FABLE</div></div></div></td>
+          <td class="mono">—</td>
+          <td class="mono" style="color:var(--faint)">—</td>
+          <td><svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#93a382" stroke-width="2" points="0,13 74,13" stroke-dasharray="3 4"/></svg></td>
+          <td class="mono">2.6 ETH raised</td>
+          <td class="mono">—</td>
+          <td class="badges-cell"><span class="mbadge live">Auction · 1d 06h left</span></td>
+        </tr>
+        <tr>
+          <td><div class="namecell"><div class="tmark">K</div><div><div class="n">Kevlar</div><div class="s">$KVLR</div></div></div></td>
+          <td class="mono">$0.00007</td>
+          <td class="down">▼ 3.8%</td>
+          <td><svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#ff5a52" stroke-width="2" points="0,4 10,8 20,7 30,14 40,13 50,19 60,17 74,22"/></svg></td>
+          <td class="mono">12.0 ETH</td>
+          <td class="mono">$212K</td>
+          <td class="badges-cell"><span class="mbadge live">No-pool</span></td>
+        </tr>
+        <tr>
+          <td><div class="namecell"><div class="tmark">D</div><div><div class="n">Dustline</div><div class="s">$DUST</div></div></div></td>
+          <td class="mono">$0.00412</td>
+          <td class="up">▲ 18.4%</td>
+          <td><svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#5fd16a" stroke-width="2" points="0,22 10,20 20,15 30,17 40,9 50,10 60,4 74,2"/></svg></td>
+          <td class="mono">241.0 ETH</td>
+          <td class="mono">$3.91M</td>
+          <td class="badges-cell"><span class="mbadge live">No-pool</span><span class="mbadge">Trending</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+</body>
+</html>
