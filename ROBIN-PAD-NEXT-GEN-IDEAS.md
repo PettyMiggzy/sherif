@@ -228,6 +228,26 @@ this list is the trade-off side of "control over everything safe."
 - **Notification preferences** — Telegram/email alerts for milestones, unusually large
   trades, etc. Not a control exactly, but belongs in the same hub.
 
+**Round 2 (2026-09-12), asked for again — still just ideas, nothing built/decided:**
+- **Custom accent color** for their own token page — creator-picked (contrast-checked,
+  bounded palette), themes only their page, not the site's overall branding.
+- **Pinned announcement slot** — one highlighted spot at the top of the token page,
+  separate from the ongoing launch-notes feed, for whatever's most important right now.
+- **Delegate posting rights** — a second wallet that can post launch notes on the
+  creator's behalf without full Hub access, for projects with more than one person.
+- **Cosmetic supporter badges** — creator sets thresholds (hold >X, or lock for >Y days)
+  that show a small badge next to a wallet in Holders/Top Traders. Purely cosmetic, no
+  financial weight.
+- **Read-only API key** for their own token's stats — the real feature that should live
+  behind the DEX page's currently-dead "API" sidebar item.
+- **Optional anti-bot buy delay** at launch — a short forced gap between a wallet
+  funding and its first buy, opt-in fairness tooling.
+- **Multi-language description/socials** for non-English communities.
+- **Considered and deliberately left out:** letting creators choose which stats show
+  publicly (e.g. soft-hiding holder count early on) — cuts directly against the
+  "facts only, never hidden" trust pitch the whole product is built on. Not proposing
+  this one.
+
 ---
 
 ## Core pivot
