@@ -315,6 +315,34 @@ Chain" as a name perfectly:
 - **Stock-index-style leaderboard** (e.g. "Robin 20" — top 20 by mcap) as a discovery
   hook.
 
+**All of rounds 1–4 locked in** by the user — goes on the build list once the idea
+phase wraps.
+
+**Round 5 (2026-09-12) — pairing a token with a (tokenized) stock.** User noted this is
+a real trend elsewhere right now. Our no-pool model has no real trading pairs at all —
+no pool, the curve *is* the market — so this doesn't map onto our mechanism the same way
+it does on a normal AMM. Options, safest to riskiest, in the order they should ever be
+considered:
+1. **Price-comparison display (safe).** Token page shows price "in terms of" a
+   reference stock (e.g. "1 ROBIN ≈ 0.0002 shares of TSLA") — pure display stat, no
+   real exposure, no regulatory surface.
+2. **Migration marketing angle (safe, already covered).** The existing zero-action
+   migration feature doesn't care what a project was paired against elsewhere — worth
+   explicitly marketing as "came from a stock-paired token on another chain? migrate
+   here." No new mechanic, just messaging.
+3. **Stock as one component of the index-token basket (safe-ish).** The index-token
+   idea from round 4 could optionally include a tokenized stock as one basket
+   component, framed as tracking/exposure, not custody of the stock itself.
+4. **Visibility pool paired against a tokenized stock instead of ETH (risky — needs
+   real legal review before ever touching this).** Technically possible since the
+   visibility pool is just a thin aggregator-facing pool, but this means real price
+   exposure to a real equity backing something, not a cosmetic feature. Flagging, not
+   proposing.
+5. **A token designed to track/correlate a real stock's price (do not build).** That's
+   a synthetic derivative on a security — same regulatory territory as tokenized
+   equities themselves. Needs actual legal sign-off, regardless of trend, and isn't
+   something to build reflexively just because it's trendy.
+
 ---
 
 ## Core pivot
