@@ -272,6 +272,49 @@ power, so the "can't be rugged" trust story stays intact:
 - **Post-launch min-hold window** — an opt-in short delay before a freshly-bought
   wallet can resell — an extra anti-bot layer on top of "no public mempool."
 
+**Round 4 (2026-09-12) — a few more creator-control ideas, plus two bigger asks**
+
+More creator-control ideas:
+- **Auto-reinvest toggle** — creator's own tax cut auto-compounds into their locked
+  community-lock balance instead of sitting in a wallet — a visible "not selling,
+  reinvesting" signal.
+- **Custom milestone announcements** — creator-defined mcap/holder-count targets
+  (separate from the platform's fixed $34K milestone) shown as progress bars, purely
+  motivational, no payout attached.
+- **Creator badge tier** — cosmetic recognition unlocked by things like a no-sells-
+  since-launch streak, drawing off the existing launch-history facts rather than
+  inventing a new scoring system.
+
+**Holder rewards, reinvented — not staking.** User wants a holder-reward mechanic that
+isn't literally staking. Staking implies locking funds in a separate contract — custody
+risk, the opposite of "nothing to drain." Proposed instead:
+- **Primary pick: snapshot-based "dividends."** Holders lock nothing, move nothing — a
+  periodic snapshot (e.g. every restock cycle) of who holds what pays a pro-rata slice
+  of tax revenue to whoever's holding at that moment. Zero custody, nothing to rug,
+  literally how real stock dividends work — doubles as the stocks-trend hook below.
+- **Secondary option: "Diamond Score."** A reputation number computed purely from
+  continuous holding duration (no lock — the wallet just has to keep holding),
+  weighting dividend share and unlocking cosmetic badges/early access. Still zero
+  custody, a read of on-chain history rather than a contract holders deposit into.
+- Recommendation: lead with dividends — simpler to explain, and it's the more direct
+  "stocks are hot" framing anyway.
+
+**"Stocks are hot" — leaning into the trend without real-securities risk.** Actual
+tokenized equities are a heavy regulatory lift (securities law) — not proposing that.
+The vocabulary/UX of stock trading is free to borrow though, and fits "Robinhood
+Chain" as a name perfectly:
+- Reframe the auction as an **"IPO window"** (creator allocation → "founder's shares",
+  milestone payout → "listing event") — zero new mechanics, a pure copy/vocabulary pass
+  over what already exists.
+- **Dividends** (above) instead of staking.
+- **Index tokens** — a basket product bundling several trending pad tokens into one
+  tradeable "index," like a mini-ETF, built from the same no-pool curve infra per
+  constituent.
+- **Portfolio page** — personal holdings across pad tokens, P&L, dividend history —
+  brokerage-app UX, arguably the most on-brand thing this project could have.
+- **Stock-index-style leaderboard** (e.g. "Robin 20" — top 20 by mcap) as a discovery
+  hook.
+
 ---
 
 ## Core pivot
