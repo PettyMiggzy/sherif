@@ -54,9 +54,13 @@
   .btn-lime{background:var(--lime);color:#0a0e05}
   .btn-flame{background:linear-gradient(135deg,#ffb020,#ff6b3d);color:#1a0d02}
 
-  /* top ticker of hot tokens */
+  /* top ticker of hot tokens — actually scrolls, like a real stock ticker tape */
   .ticker-bar{border-bottom:1px solid var(--line-2);background:var(--panel-2);overflow:hidden}
-  .ticker-in{max-width:1360px;margin:0 auto;display:flex;gap:22px;padding:8px 20px;overflow-x:auto;white-space:nowrap}
+  .ticker-track{display:flex;gap:22px;padding:8px 20px;width:max-content;
+    animation:ticker-scroll 24s linear infinite}
+  .ticker-bar:hover .ticker-track{animation-play-state:paused}
+  @keyframes ticker-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  @media (prefers-reduced-motion: reduce){.ticker-track{animation:none;overflow-x:auto}}
   .tick{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;flex:none}
   .tick .rk{color:var(--faint);font-family:var(--mono);font-size:.7rem}
   .tick .nm{font-weight:700}
@@ -143,12 +147,18 @@
   <div class="nav-cta"><span class="btn btn-dark">Connect Wallet</span><a class="btn btn-lime" href="no-pool-create-preview.html">Launch Token</a></div>
 </div></header>
 
-<div class="ticker-bar"><div class="ticker-in">
+<div class="ticker-bar"><div class="ticker-track">
   <span class="tick"><span class="rk">#1</span><span class="nm">Dustline</span><span class="bolt">⚡900</span><span class="pc up">▲18.4%</span></span>
   <span class="tick"><span class="rk">#2</span><span class="nm">Robin</span><span class="bolt">⚡500</span><span class="pc up">▲6.2%</span></span>
   <span class="tick"><span class="rk">#3</span><span class="nm">Kevlar</span><span class="bolt">⚡100</span><span class="pc down">▼3.8%</span></span>
   <span class="tick"><span class="rk">#4</span><span class="nm">Fable</span><span class="pc muted">auction</span></span>
   <span class="tick"><span class="rk">#5</span><span class="nm">Dogestar</span><span class="pc up">▲2,411%</span></span>
+  <!-- duplicated so the loop is seamless (animation shifts exactly one copy's width) -->
+  <span class="tick" aria-hidden="true"><span class="rk">#1</span><span class="nm">Dustline</span><span class="bolt">⚡900</span><span class="pc up">▲18.4%</span></span>
+  <span class="tick" aria-hidden="true"><span class="rk">#2</span><span class="nm">Robin</span><span class="bolt">⚡500</span><span class="pc up">▲6.2%</span></span>
+  <span class="tick" aria-hidden="true"><span class="rk">#3</span><span class="nm">Kevlar</span><span class="bolt">⚡100</span><span class="pc down">▼3.8%</span></span>
+  <span class="tick" aria-hidden="true"><span class="rk">#4</span><span class="nm">Fable</span><span class="pc muted">auction</span></span>
+  <span class="tick" aria-hidden="true"><span class="rk">#5</span><span class="nm">Dogestar</span><span class="pc up">▲2,411%</span></span>
 </div></div>
 
 <main>
