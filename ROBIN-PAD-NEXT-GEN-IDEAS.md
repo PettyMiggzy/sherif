@@ -187,6 +187,13 @@ Anything without a checkbox is still notes-only.
 - [x] Migrate page: added a line noting migration doesn't care what a project was
   paired against before — including a tokenized stock instead of ETH — since the
   feature only needs the holder snapshot regardless of origin.
+- [x] **Price correction:** the paid banner update is **$100**, not $50 as first logged
+  — "update token details" in the Creator Hub, not just "update banner." Fixed on the
+  Hub's Identity panel. **Also fixed:** the token page was unconditionally rendering an
+  empty banner placeholder box for every token, paid or not — removed it; banner space
+  now only exists once a creator has actually paid to set one, no reserved empty space
+  otherwise. (The $50/100-boosts price elsewhere is the unrelated DEX-trending Boost
+  feature — unaffected by this correction.)
 - [ ] Everything else below is still concept-only — no page yet.
 
 ## Live walkthrough backlog (2026-09-12) — not built yet, notes only
