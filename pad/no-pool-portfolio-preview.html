@@ -114,6 +114,8 @@
     border-radius:999px;padding:3px 9px;flex:none}
 
   .empty-hint{color:var(--faint);font-size:.8rem;text-align:center;padding:20px 0}
+  .cancel-link{color:var(--red);cursor:pointer;font-family:var(--sans);font-weight:600}
+  .cancel-link:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -172,6 +174,29 @@
           <div><div class="n">Fable — $FABLE</div><div class="d">0.40 ETH committed</div></div>
           <span class="when">1d 06h left</span>
         </div>
+      </div>
+
+      <!-- "Orders page" was a genuinely unspecified request — this is our best-guess
+           interpretation, not a confirmed spec: pending sealed limit orders across the
+           pad (the same "Limit" tab already on the token page's Trade panel), plus
+           history, gathered here since Portfolio is already "your stuff, pad-wide." -->
+      <div class="panel">
+        <h3>Open orders</h3>
+        <p class="ph">Sealed limit orders across the pad — funds lock in immediately, contents only reveal
+        when one executes. Nobody can see these coming, not even us.</p>
+        <table class="hold">
+          <thead><tr><th>Token</th><th>Type</th><th>Locked</th><th>Placed</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="namecell"><div class="tmark">R</div><div><div class="n">Robin</div><div class="s">$ROBIN</div></div></div></td>
+              <td>Sealed limit</td><td>0.15 ETH</td><td>2h</td><td><span class="cancel-link">Cancel</span></td>
+            </tr>
+            <tr>
+              <td><div class="namecell"><div class="tmark">D</div><div><div class="n">Dustline</div><div class="s">$DUST</div></div></div></td>
+              <td>Sealed limit</td><td>0.08 ETH</td><td>1d</td><td><span class="cancel-link">Cancel</span></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 

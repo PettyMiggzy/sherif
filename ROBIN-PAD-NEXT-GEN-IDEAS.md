@@ -202,6 +202,14 @@ Anything without a checkbox is still notes-only.
   composition (weighted by mcap, capped per-token), AUM, rebalance cadence/methodology,
   and a buy/sell panel matching the rest of the site's trading UI. Static only —
   rebalancing, minting, and redemption are all mocked.
+- [x] **"Orders" — best-guess interpretation, not a confirmed spec.** The original ask
+  ("orders page... don't know how to cleanly build this") was never actually specified.
+  Built an "Open orders" panel on the Portfolio page as the most defensible reading:
+  pending **sealed limit orders** — reusing the "Limit" tab that already exists on the
+  token page's Trade panel (funds lock in immediately, contents reveal only on
+  execution) — listed pad-wide with a cancel action, since Portfolio is already "your
+  stuff, everywhere on the pad." Flagged in-code as an interpretation the user should
+  confirm or correct, not a locked-in design.
 - [ ] Everything else below is still concept-only — no page yet.
 
 ## Live walkthrough backlog (2026-09-12) — not built yet, notes only
