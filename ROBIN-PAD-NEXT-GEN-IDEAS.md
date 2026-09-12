@@ -457,6 +457,22 @@ since none of them are named after a stock trading app.
   a small "Upcoming IPOs" calendar teaser as a safe, natural extension of the existing
   auction feature, styled like a stock IPO calendar.
 
+**Round 7 (2026-09-12) — multiple pad TYPES, including "launch paired with a token."**
+User clarified the plan was always to ship a few different pad variants, not just one,
+and still wants a pad type where a new launch is quoted/paired against an EXISTING
+TOKEN (not ETH, and not specifically a stock) — can wait to see what gets built first.
+**Directly relevant discovery from backend research (2026-09-12):** `pad-v4` already
+has exactly this shape of thing, just for stocks specifically —
+`contracts/adapters/StockQuoteAdapter.sol` + `contracts/core/StockPadFactory.sol`
+implement an `IQuoteAdapter` interface that lets a pad's curve use something other than
+ETH as its quote asset (there, a registry-gated Robinhood Stock Token, with heavy
+allow-list gating because a stock is a security). A generic **TokenQuoteAdapter** —
+same `IQuoteAdapter` shape, but for an arbitrary ERC20 with no securities-registry
+gating needed, since pairing against a plain token isn't a securities question the way
+pairing against a stock is — looks like a natural, low-risk extension of an
+abstraction that already exists, rather than a new architecture. Not started; noting
+the connection now so it isn't rediscovered from scratch later.
+
 ---
 
 ## Core pivot
