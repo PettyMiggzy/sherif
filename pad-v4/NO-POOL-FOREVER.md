@@ -4,9 +4,12 @@ Status: **core `RobinCurveV4` mechanism, `RobinDividendPool` (holder rewards),
 `RobinBurnTracker` (burn-boost), and `CurvePadFactoryV4`'s pad-type wiring are all
 implemented and unit-tested (129/129 passing across the full unit suite, zero regressions
 to the legacy path). One real bug found by this session's own adversarial security-audit
-pass and fixed (see below). Not deployed. Frontend not wired yet. Not audited by anyone but
-this session's own research/audit passes — a real external audit is planned before this
-ever touches mainnet or real funds.**
+pass and fixed (see below). Also verified end-to-end with real transactions against a
+persistent local devnet (`scripts/deploy-local-demo.js` + `scripts/e2e-lifecycle.js` +
+`scripts/e2e-arrow-only.js`, see "Local devnet end-to-end proof" below) — the pad-v4 DEX and
+token pages in `pad/` are genuinely wired to it, not mocked. Not deployed to any real
+network. Not audited by anyone but this session's own research/audit passes — a real
+external audit is planned before this ever touches mainnet or real funds.**
 
 ## Audit finding, fixed: `stakingEthOwed` double-booking
 
@@ -276,9 +279,49 @@ attached — same scope as the existing local graduation test):
 - **Migration, burn-boost, vesting, keeper wiring** (visibility-restock keeper, holder
   dividend snapshot cadence) — separate research done this session (see conversation/session
   notes), no code written yet.
-- **Frontend wiring.** The UI already built this session (Creator Hub, token page's
-  Dividends/Earnings Day panels, Portfolio, Index tokens page) is static/mocked throughout —
-  none of it reads from or writes to any of these contracts yet.
+- **Frontend wiring.** The DEX/browse page and the token page (`pad/no-pool-browse-preview.html`,
+  `pad/no-pool-preview.html`) are now genuinely wired to a real local devnet deployment — see
+  below. The rest of the preview set (Creator Hub, Portfolio, Index tokens, Auction, Migrate,
+  Transparency) is still static/mocked.
+
+## Local devnet end-to-end proof
+
+Everything above was proven with real transactions against a real (local) chain, not just
+Hardhat unit tests:
+
+- `scripts/deploy-local-demo.js` — deploys the whole classic-pad stack (real `PoolManager`,
+  `MockPermit2`/`MockPositionManagerV4` in place of the real, differently-solc-pinned Uniswap
+  v4 periphery — same substitution the test suite uses) to a persistent local Hardhat node,
+  launches 3 real demo pads with real simulated trading, and writes `pad/js/deploy.local.json`
+  — which `pad/js/config-v4-local.js` and `pad/js/wallet-v4-local.js` read to wire the DEX and
+  token pages to real contract calls (real balances, real wallet connect, real buy/sell via
+  `PoolSwapTest`). Verified with a real headless-browser run (Playwright): connected a wallet,
+  bought a real pad's token with real ETH, sold it back, and confirmed both the token and ETH
+  balance changes directly on-chain afterward.
+- `scripts/e2e-lifecycle.js` — a full scripted lifecycle against that same devnet: enables
+  `noPoolForever` governance, launches a NEW `noPoolForever` pad through the real factory,
+  deploys a `RobinDividendPool` and wires it as `staking` BEFORE checkpoint, buys the pad to its
+  ceiling, then runs the REAL `scripts/auto-graduate.cjs` keeper bot (a separate process, plain
+  ethers, no Hardhat) and confirms the bot — not the script itself — calls `graduate()`.
+  Confirms the checkpoint (no permanent LP, still a live tradeable market, dividend pool funded
+  with real ETH + token), opens a real ETH dividend epoch and has a real holder claim + withdraw
+  it, and burns tokens through `RobinBurnTracker` with the on-chain tally confirmed.
+- `scripts/e2e-arrow-only.js` — a full `ArrowLauncher` migration launch against the same devnet:
+  one real transaction launches a fresh pad, buys out the entire curve, graduates it, and hands
+  the bought supply to a real `ArrowDistributor`; two real holders self-claim their committed
+  amounts and the creator ends holding exactly zero tokens.
+
+All of this is genuinely real — real balance changes, real gas spent, a real bot (not this
+session) triggering graduation — but only reachable from inside this sandboxed dev
+environment (chainId 31337). Getting from "verified real locally" to "a real user can open a
+link and use it" needs an actual testnet/mainnet deployment using this same code, which needs
+funded keys/RPC access this session doesn't have.
+
+(One flaky note, not a contract bug: the `ArrowLauncher.launch()` call intermittently hit a
+`UND_ERR_SOCKET "other side closed"` against this sandbox's loopback RPC on the first attempt
+of a fresh script process — nothing ever reached the Hardhat node's own log when it happened,
+and a plain retry always succeeded immediately. Looks like a sandbox/networking quirk specific
+to this environment, not a Solidity or ethers.js issue.)
 
 ## Before this touches mainnet or real funds
 

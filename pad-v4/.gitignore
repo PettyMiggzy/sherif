@@ -9,6 +9,7 @@ coverage.json
 !.env.example
 deploy.local.json
 deploy.curve.json
+scripts/.auto-graduate-state*.json
 
 # transient Workflow tool scripts
 scratch-*.mjs
