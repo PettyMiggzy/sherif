@@ -3,19 +3,18 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>No-pool pad preview — DEX (true clone) — Robin Labs</title>
+<title>No-pool pad preview — DEX — Robin Labs</title>
 <meta name="robots" content="noindex, nofollow" />
 <!-- INTERNAL. Deliberately not linked from any nav, and noindex — same convention as preview.html.
-     v2 rebuild: after the first DexScreener-styled attempt (Robin Labs green/lime palette, our
-     own top nav, no sidebar) still didn't read as "DexScreener" to the user, we deliberately asked
-     which direction to take and were told: go for the TRUE CLONE look. This version adopts
-     DexScreener's actual near-black/blue-accent palette, Inter font, and — the single biggest
-     thing that makes their site recognizable — the left sidebar (search, watchlist, alerts,
-     chain list). This breaks visual consistency with the rest of the Robin Labs site on purpose;
-     that trade-off was made explicitly, not by accident. Our own data/content/differentiators
-     (pitch chips, the boost-ranking-algorithm footnote, our tokens) are kept, just under this
-     chrome instead of ours. Only "Robinhood" is listed as a real chain (we're single-chain; no
-     fake multi-chain entries). Static only — no live data.
+     v3: v1 kept Robin Labs' own palette but no sidebar and didn't read as "DexScreener." v2 went
+     full true-clone (their near-black/blue palette + Inter). Direction landed here, in v3: keep
+     the DexScreener-inspired LAYOUT (the left sidebar — search, watchlist, alerts, chain list —
+     is the single biggest thing that makes their site recognizable, plus the dense trending
+     table), but recolor it with Robin Labs' own palette (dark green/lime, Plus Jakarta Sans) so
+     this page stays visually consistent with the rest of the site instead of being the one
+     oddly-colored page. Our own content (pitch chips, the boost-ranking-algorithm footnote, our
+     tokens) lives under this same structure either way. Only "Robinhood" is listed as a real
+     chain (we're single-chain; no fake multi-chain entries). Static only — no live data.
      See ROBIN-PAD-NEXT-GEN-IDEAS.md for the full concept. Part of a 6-page preview set:
      no-pool-preview.html (token), no-pool-create-preview.html, no-pool-auction-preview.html,
      no-pool-browse-preview.html (this, "DEX"), no-pool-migrate-preview.html,
@@ -23,17 +22,18 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
 <link rel="apple-touch-icon" href="assets/favicon-180.png" />
-<meta name="theme-color" content="#0b0d10" />
+<meta name="theme-color" content="#060803" />
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
   :root{
-    --bg:#0b0d10; --panel:#14171b; --panel-2:#1a1e23; --sidebar:#101317;
-    --border:#262b31; --border-soft:#1d2126;
-    --text:#e7e9ec; --dim:#8b929b; --faint:#5f666e;
-    --accent:#4c8dff; --accent-soft:rgba(76,141,255,.12);
-    --green:#1fc16b; --red:#f6465d; --flame:#ffa726;
-    --robin:#c8e600; --robin-soft:rgba(200,230,0,.10);
-    --sans:"Inter",system-ui,-apple-system,sans-serif;
+    /* Robin Labs' own palette — layout is DexScreener-inspired, colors are ours, not theirs */
+    --bg:#060803; --panel:#0c1108; --panel-2:#101609; --sidebar:#0b0f06;
+    --border:rgba(255,255,255,.07); --border-soft:rgba(255,255,255,.05);
+    --text:#f4f7ee; --dim:#93a382; --faint:#808c68;
+    --accent:#dce905; --accent-soft:rgba(220,233,5,.12);
+    --green:#5fd16a; --red:#ff5a52; --flame:#ffb020;
+    --robin:#dce905; --robin-soft:rgba(220,233,5,.10);
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box} html,body{margin:0}
@@ -174,8 +174,8 @@
 </head>
 <body>
 
-<div class="preview-strip">Internal design preview — <b>not live</b>, noindex, unlinked. Layout only. True-clone
-  palette by explicit direction — breaks from the rest of the site's look on purpose.
+<div class="preview-strip">Internal design preview — <b>not live</b>, noindex, unlinked. Layout only. DexScreener-inspired
+  layout (sidebar, density), Robin Labs' own colors — not their palette.
   <span class="set">· <a href="no-pool-preview.html">Token page</a> · <a href="no-pool-create-preview.html">Create</a> · <a href="no-pool-auction-preview.html">Auction</a> · <a href="no-pool-migrate-preview.html">Migrate</a> · <a href="no-pool-transparency-preview.html">Transparency</a></span></div>
 
 <div class="ticker-bar"><div class="ticker-track">
