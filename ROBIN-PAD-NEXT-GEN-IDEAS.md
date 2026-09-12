@@ -107,6 +107,13 @@ proactively, not held back until asked.
 
 ## Auction / launch mechanics
 
+- **Creator controls as much as safely possible.** Standing principle: open up any
+  parameter that's purely the creator's own call (total supply, likely auction length
+  within the window), keep a floor only on parameters that protect *other people* from
+  the creator (vesting minimum, tax rate stays platform-wide/fixed) — their money, their
+  coin, their call, wherever it doesn't put someone else at risk.
+- Creator picks the token's total supply at creation — no fixed number imposed by us,
+  the curve just prices against whatever supply exists.
 - Public still goes through the existing 1–4 day auction (already built: PresaleVault,
   minRaise/target window, no-fail design — always launches once minRaise clears, no
   refund/fail path once the floor is hit).
