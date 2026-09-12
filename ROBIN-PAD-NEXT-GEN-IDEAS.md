@@ -168,6 +168,36 @@ one pass — will work through it with the user page by page.
   other pages that read as under-using wide viewports. Needs a real pass, not a
   one-line fix.
 
+### More creator control — brainstorm (2026-09-12), not built, nothing decided yet
+
+User asked for ideas on the "give creators control over everything that's safe" theme.
+Proposed, none picked/committed yet:
+
+**Launch-time**
+- Auction stays optional (already logged) + an optional per-wallet max-buy cap during
+  the auction window (anti-whale, creator's choice to turn on)
+- Allowlist/early-access window before the public auction opens, for a specific
+  community, if the creator wants one
+- Vesting *shape* choice, not just length — linear vs. cliff-then-linear
+- A separate "team allocation" address with its own independent vesting, distinct from
+  the creator's personal wallet
+
+**Post-launch, ongoing**
+- Edit socials/description/PFP any time from a "manage token" panel — not frozen at
+  whatever was set during creation
+- Choose how their cut of tax revenue splits (more to holder rewards vs. more to
+  themselves) within a platform-capped range
+- Set their own burn-boost multiplier rate, within a capped band so it can't be tuned
+  into something abusive
+- Author "launch notes" entries in the facts-only launch history, clearly tagged as
+  creator-written vs. system-verified facts (keeps the "facts only, no score" promise
+  intact — opinion is visibly opinion, not disguised as a verified fact)
+
+**Explicitly NOT creator-controllable — the boundary that keeps "can't be rugged" true**
+Total supply after launch, ownership renouncement, pool existence (there is none),
+any pause/blacklist/reclaim power. These stay fixed no matter what the creator wants —
+this list is the trade-off side of "control over everything safe."
+
 ---
 
 ## Core pivot
