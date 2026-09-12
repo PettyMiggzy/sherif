@@ -12,5 +12,6 @@ Disallow: /no-pool-browse-preview.html
 Disallow: /no-pool-migrate-preview.html
 Disallow: /no-pool-transparency-preview.html
 Disallow: /no-pool-hub-preview.html
+Disallow: /no-pool-portfolio-preview.html
 
 Sitemap: https://robinlab.io/sitemap.xml

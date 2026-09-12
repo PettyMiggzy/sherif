@@ -97,12 +97,24 @@
   .btn:hover{filter:brightness(1.1)}
   .btn:active{transform:scale(.98)}
   .tab,.tf,.txtab,.swaptab,.mini-btn{cursor:pointer;transition:.12s ease}
+
+  .toggle-row{display:flex;justify-content:space-between;align-items:center;gap:16px}
+  .switch{width:38px;height:22px;border-radius:99px;background:var(--bg-2);border:1px solid var(--line-2);
+    position:relative;flex:none;cursor:pointer;transition:.15s ease}
+  .switch .knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--faint);transition:.15s ease}
+  .switch.on{background:rgba(220,233,5,.16);border-color:var(--line-strong)}
+  .switch.on .knob{left:18px;background:var(--lime)}
+
+  .pfp-row{display:flex;gap:14px;align-items:center}
+  .pfp-slot{width:64px;height:64px;border:1px dashed var(--line-2);border-radius:12px;flex:none;
+    display:flex;align-items:center;justify-content:center;color:var(--faint);font-family:var(--mono);
+    font-size:.62rem;text-transform:uppercase;letter-spacing:.03em;text-align:center}
 </style>
 </head>
 <body>
 
 <div class="preview-strip">Internal design preview — <b>not live</b>, noindex, unlinked. Layout only.
-  <span class="set">· <a href="no-pool-preview.html">Token page</a> · <a href="no-pool-auction-preview.html">Auction</a> · <a href="no-pool-browse-preview.html">DEX</a> · <a href="no-pool-migrate-preview.html">Migrate</a> · <a href="no-pool-transparency-preview.html">Transparency</a> · <a href="no-pool-hub-preview.html">Hub</a></span></div>
+  <span class="set">· <a href="no-pool-preview.html">Token page</a> · <a href="no-pool-auction-preview.html">Auction</a> · <a href="no-pool-browse-preview.html">DEX</a> · <a href="no-pool-migrate-preview.html">Migrate</a> · <a href="no-pool-transparency-preview.html">Transparency</a> · <a href="no-pool-hub-preview.html">Hub</a> · <a href="no-pool-portfolio-preview.html">Portfolio</a></span></div>
 
 <header class="nav"><div class="nav-in">
   <a class="brand" href="no-pool-preview.html">ROBIN <b>LABS</b></a>
@@ -123,26 +135,40 @@
 
   <div class="panel">
     <h3>Token details</h3>
-    <p class="ph">Your call, all of it — name, symbol, and supply.</p>
+    <p class="ph">Your call, all of it — name, symbol, supply, and how it looks.</p>
     <div class="fieldgrid">
-      <div class="fw"><label>Name</label><div class="inp">Robin</div></div>
-      <div class="fw"><label>Symbol</label><div class="inp">ROBIN</div></div>
+      <div class="fw"><label>Name</label><input class="inp" value="Robin" /></div>
+      <div class="fw"><label>Symbol</label><input class="inp" value="ROBIN" /></div>
     </div>
-    <div class="fw"><label>Total supply</label><div class="inp">1,000,000,000</div>
+    <div class="fw"><label>Total supply</label><input class="inp" value="1,000,000,000" />
       <span class="hint">No fixed number — pick whatever fits your project. Price scales to whatever you choose.</span></div>
+    <div class="fw"><label>Profile picture</label>
+      <div class="pfp-row">
+        <div class="pfp-slot">Drop image</div>
+        <span class="hint" style="margin:0">Free, and you can change it any time from the Creator Hub after launch.
+        Banner comes later — it's a paid update, so it isn't part of creation.</span>
+      </div>
+    </div>
   </div>
 
   <div class="panel">
-    <h3>Auction window</h3>
-    <p class="ph">1 to 4 days. Longer gives more people a fair shot; shorter gets you live faster.</p>
-    <div class="segrow">
-      <span class="seg">1 day</span><span class="seg on">2 days</span><span class="seg">3 days</span><span class="seg">4 days</span>
+    <div class="toggle-row" style="border-top:none;padding-top:0">
+      <div><h3 style="margin:0">Auction window</h3><div class="hint" style="margin-top:4px">Off = skip straight to a fixed launch, no bidding window. Entirely your call.</div></div>
+      <div class="switch on" id="auction-switch"><div class="knob"></div></div>
     </div>
-    <div class="fieldgrid" style="margin-top:16px">
-      <div class="fw"><label>Minimum raise (always launches above this)</label><div class="inp">1.2 ETH</div></div>
-      <div class="fw"><label>Target (auction cap)</label><div class="inp">4.0 ETH</div></div>
+    <div id="auction-fields">
+      <p class="ph">1 to 4 days. Longer gives more people a fair shot; shorter gets you live faster.</p>
+      <div class="segrow">
+        <span class="seg">1 day</span><span class="seg on">2 days</span><span class="seg">3 days</span><span class="seg">4 days</span>
+      </div>
+      <div class="fieldgrid" style="margin-top:16px">
+        <div class="fw"><label>Minimum raise (always launches above this)</label><input class="inp" value="1.2 ETH" /></div>
+        <div class="fw"><label>Target (auction cap)</label><input class="inp" value="4.0 ETH" /></div>
+      </div>
+      <span class="hint">No-fail design: clear the minimum and it launches, full stop — no refunds, no "nobody bid" outcome.</span>
     </div>
-    <span class="hint">No-fail design: clear the minimum and it launches, full stop — no refunds, no "nobody bid" outcome.</span>
+    <p class="ph" id="fixed-launch-note" hidden style="margin:12px 0 0">No auction — your token goes live on the curve
+    immediately at launch, same rules as any other, just no bidding window first.</p>
   </div>
 
   <div class="panel">
@@ -184,6 +210,15 @@
         item.classList.add('on');
       });
     });
+  });
+
+  var auctionSwitch = document.getElementById('auction-switch');
+  var auctionFields = document.getElementById('auction-fields');
+  var fixedLaunchNote = document.getElementById('fixed-launch-note');
+  auctionSwitch.addEventListener('click', function () {
+    var on = auctionSwitch.classList.toggle('on');
+    auctionFields.hidden = !on;
+    fixedLaunchNote.hidden = on;
   });
 </script>
 </body>

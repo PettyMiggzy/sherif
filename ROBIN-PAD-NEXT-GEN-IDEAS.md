@@ -116,6 +116,22 @@ Anything without a checkbox is still notes-only.
   boundary (supply/ownership/pool/pause power) that never moves regardless of what a
   creator picks. All controls are static/mocked — toggles flip visually, nothing is
   wired to real state yet.
+- [x] **Portfolio page** → `no-pool-portfolio-preview.html` (new, 8th preview page,
+  cross-linked from all seven others). Holdings table across every pad token a wallet
+  holds (balance/price/value/24h/dividends earned), an Auction-positions panel for
+  not-yet-tradeable commitments, a Dividends panel (the snapshot-based, no-lock reward
+  mechanic decided on in the ideas brainstorm — explicitly not staking, nothing to
+  deposit or withdraw from), a Watchlist, and an "Upcoming IPOs" calendar teaser styled
+  like a stock IPO calendar (same auction mechanic underneath, just framed for
+  discovery). Brokerage-app UX for pad tokens — the safe, UI-only side of the
+  stocks-are-trending conversation. Real balances/P&L need the indexer — Phase 2 for the
+  data, this page is the Phase 1 UI for it.
+- [x] Create flow: **auction is now optional**, with a real on/off switch — off skips
+  straight to a fixed launch (copy explains what that means), on shows the existing
+  auction fields. Name/symbol/supply are now real `<input>`s instead of static text
+  (matches the pattern already used to fix the DEX page's fake search box). Added a
+  free PFP-upload slot to the Token Details panel, with a note that banner comes later
+  as a paid update from the Creator Hub, not at creation.
 - [x] Fixed the per-column scroll dead zone: the previous "always capture the wheel"
   fix meant a column with nothing to scroll (left/center, especially after the
   activity table moved out) blocked the page from scrolling too — hovering it and
@@ -357,6 +373,25 @@ served by what's already locked in (dividends, "founder's shares" vocabulary, th
 portfolio page, long-hold badge tiers), which get the feel of stock ownership without
 the token ever legally entitling anyone to anything. Not proposing this one; logging it
 so it doesn't quietly get built later without this context.
+
+**Round 6 (2026-09-12) — the differentiation angle: rituals, not instruments.** User
+worried that steering away from real tokenized-equity risk means missing the trend
+entirely, and wants something unique enough to actually stand out. Answer: lean into
+stock-market *culture* (earnings season, opening bell, IPO calendars) rather than
+stock-market *instruments* — nobody else in the memecoin-pad space can own that culture,
+since none of them are named after a stock trading app.
+- **"Bell Ring" launch ceremony** — when an auction finalizes and the curve goes live,
+  it's a real on-site moment (animation/sound, shareable clip) — the crypto version of
+  ringing the NYSE opening bell. Every launch becomes a built-in viral moment creators
+  want to share. Pure presentation, zero financial mechanic. Touches the auction
+  finalize flow — its own build, not part of the Portfolio page.
+- **"Earnings Day"** — a recurring, scheduled per-token event bundling on-chain stats
+  (holders, volume, treasury, burns) into a shareable "report card," timed to also be
+  when accumulated dividends actually pay out. Borrows the cultural weight of earnings
+  season as a real engagement spike. Touches the token page — own build too.
+- **Portfolio page** — being built now (see UI build status above once done). Includes
+  a small "Upcoming IPOs" calendar teaser as a safe, natural extension of the existing
+  auction feature, styled like a stock IPO calendar.
 
 ---
 

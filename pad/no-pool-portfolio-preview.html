@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>No-pool pad preview — Portfolio — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<!-- INTERNAL. Deliberately not linked from any nav, and noindex — same convention as preview.html.
+     Design preview of a personal portfolio page — holdings, P&L, and dividend history across every
+     pad token a wallet holds, brokerage-app UX for tokens instead of stocks (the safe, UI-only side
+     of leaning into "stocks are hot" — see ROBIN-PAD-NEXT-GEN-IDEAS.md, round 4-6). Dividends here
+     are the "not staking" holder-reward mechanic: a periodic snapshot pays pro-rata to whoever's
+     holding, no lock, no separate custody contract. Static only — no wallet, no real balances; this
+     page needs the real indexer to mean anything, so it's UI-only until Phase 2. Part of an 8-page
+     preview set: no-pool-preview.html (token), no-pool-create-preview.html, no-pool-auction-preview.html,
+     no-pool-browse-preview.html, no-pool-migrate-preview.html, no-pool-transparency-preview.html,
+     no-pool-hub-preview.html, no-pool-portfolio-preview.html (this). -->
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<meta name="theme-color" content="#080a04" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+  :root{
+    --bg:#060803; --bg-2:#0b0f06; --panel:#0c1108; --panel-2:#101609;
+    --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06); --line-strong:rgba(220,233,5,.4);
+    --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
+    --lime:#dce905; --lime-2:#c3d400; --lime-deep:#8a9c00; --green:#5fd16a; --red:#ff5a52;
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  button{font-family:inherit}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+  .preview-strip{background:var(--panel-2);border-bottom:1px solid var(--line);color:var(--faint);
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
+    text-align:center;padding:8px 10px}
+  .preview-strip b{color:var(--lime)}
+  .preview-strip .set a{color:var(--dim);text-decoration:underline;margin:0 4px}
+
+  header.nav{border-bottom:1px solid var(--line-2);background:var(--bg)}
+  .nav-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:14px 20px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:.98rem;letter-spacing:.01em}
+  .brand b{color:var(--lime)}
+  .nav-links{display:flex;gap:18px;font-size:.86rem;color:var(--dim);flex:1;flex-wrap:wrap}
+  .nav-cta{display:flex;gap:10px;align-items:center}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;
+    font-size:.86rem;border-radius:12px;padding:10px 16px;border:1px solid transparent;white-space:nowrap;
+    font-family:var(--sans);cursor:pointer;transition:filter .12s ease,transform .12s ease}
+  .btn-dark{background:var(--panel);border-color:var(--line-2);color:var(--ink)}
+  .btn-lime{background:var(--lime);color:#0a0e05}
+  .btn-ghost{background:transparent;border-color:var(--line-strong);color:var(--ink)}
+  .btn-sm{padding:7px 12px;font-size:.78rem;border-radius:9px}
+  .btn:hover{filter:brightness(1.1)}
+  .btn:active{transform:scale(.98)}
+
+  main{max-width:1180px;margin:0 auto;padding:26px 20px 90px}
+
+  .pfhead{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;justify-content:space-between;
+    padding-bottom:20px;border-bottom:1px solid var(--line-2);margin-bottom:24px}
+  .pfid .eyebrow{font-family:var(--mono);font-size:.68rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+  .pfid h1{margin:4px 0 0;font-size:1.6rem;font-weight:800}
+  .pfid .addr{color:var(--faint);font-size:.82rem;font-family:var(--mono);margin-top:4px}
+  .pf-value{text-align:right}
+  .pf-value .v{font-family:var(--mono);font-size:2rem;font-weight:800}
+  .pf-value .chg{font-family:var(--mono);font-size:.9rem;color:var(--green);font-weight:700;margin-top:2px}
+  .pf-value .chg.down{color:var(--red)}
+
+  .layout2{display:grid;grid-template-columns:1.7fr 1fr;gap:20px}
+  @media (max-width:900px){.layout2{grid-template-columns:1fr}}
+
+  .panel{background:var(--panel);border:1px solid var(--line-2);border-radius:14px;padding:18px}
+  .panel + .panel{margin-top:16px}
+  .panel h3{margin:0 0 4px;font-size:.9rem;font-weight:700}
+  .panel .ph{color:var(--faint);font-size:.76rem;margin:0 0 14px;line-height:1.5}
+
+  table.hold{width:100%;border-collapse:collapse}
+  table.hold th{text-align:right;font-size:.64rem;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);
+    padding:9px 8px;border-bottom:1px solid var(--line-2);font-weight:600;white-space:nowrap}
+  table.hold th:first-child,table.hold td:first-child{text-align:left}
+  table.hold td{padding:10px 8px;border-bottom:1px solid var(--line-2);font-size:.84rem;text-align:right;
+    font-family:var(--mono);white-space:nowrap}
+  table.hold tr:last-child td{border-bottom:none}
+  table.hold tr:hover td{background:rgba(255,255,255,.02)}
+  .namecell{display:flex;align-items:center;gap:8px;font-family:var(--sans);text-align:left}
+  .tmark{width:24px;height:24px;border-radius:6px;background:linear-gradient(155deg,var(--lime),var(--lime-deep));
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;color:#0a0e05;font-size:.62rem;flex:none}
+  .namecell .n{font-weight:600;font-size:.82rem}
+  .namecell .s{color:var(--faint);font-size:.66rem;font-family:var(--mono)}
+  .up{color:var(--green)} .down{color:var(--red)} .muted{color:var(--faint)}
+
+  .div-item{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line-2);font-size:.83rem}
+  .div-item:first-child{border-top:none}
+  .div-item .tmark{margin-right:2px}
+  .div-item .txt{flex:1;color:var(--dim)} .div-item .txt b{color:var(--ink)}
+  .div-item .amt{font-family:var(--mono);font-weight:700;color:var(--lime)}
+  .div-item .ago{font-family:var(--mono);color:var(--faint);font-size:.7rem;width:44px;text-align:right}
+  .div-note{font-family:var(--mono);font-size:.7rem;color:var(--faint);margin-top:12px;line-height:1.6}
+
+  .wl-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-top:1px solid var(--line-2);font-size:.82rem}
+  .wl-row:first-child{border-top:none}
+  .wl-row .n{font-weight:600}
+  .wl-row .p{font-family:var(--mono);color:var(--dim)}
+  .wl-row .p.up{color:var(--green)} .wl-row .p.down{color:var(--red)}
+
+  .ipo-item{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid var(--line-2);font-size:.82rem}
+  .ipo-item:first-child{border-top:none}
+  .ipo-item .n{font-weight:600}
+  .ipo-item .d{color:var(--faint);font-size:.72rem;font-family:var(--mono)}
+  .ipo-item .when{font-family:var(--mono);font-size:.72rem;color:var(--lime);border:1px solid var(--line-strong);
+    border-radius:999px;padding:3px 9px;flex:none}
+
+  .empty-hint{color:var(--faint);font-size:.8rem;text-align:center;padding:20px 0}
+</style>
+</head>
+<body>
+
+<div class="preview-strip">Internal design preview — <b>not live</b>, noindex, unlinked. Layout only. Needs the
+  real indexer to mean anything — balances/P&amp;L below are mocked.
+  <span class="set">· <a href="no-pool-preview.html">Token</a> · <a href="no-pool-create-preview.html">Create</a> · <a href="no-pool-auction-preview.html">Auction</a> · <a href="no-pool-browse-preview.html">DEX</a> · <a href="no-pool-migrate-preview.html">Migrate</a> · <a href="no-pool-transparency-preview.html">Transparency</a> · <a href="no-pool-hub-preview.html">Hub</a></span></div>
+
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="no-pool-preview.html">ROBIN <b>LABS</b></a>
+  <nav class="nav-links"><a href="no-pool-browse-preview.html">DEX</a><a href="no-pool-preview.html">Swap</a><a href="no-pool-transparency-preview.html">Transparency</a><a>Bridge</a><a href="no-pool-migrate-preview.html">Migrate</a><a>Docs</a></nav>
+  <div class="nav-cta"><span class="btn btn-dark">Connect Wallet</span><a class="btn btn-lime" href="no-pool-create-preview.html">Launch Token</a></div>
+</div></header>
+
+<main>
+  <div class="pfhead">
+    <div class="pfid">
+      <div class="eyebrow">Portfolio</div>
+      <h1>Your holdings</h1>
+      <div class="addr">0x4f2a…19a2</div>
+    </div>
+    <div class="pf-value">
+      <div class="v">$659.80</div>
+      <div class="chg">▲ $28.40 (24h)</div>
+    </div>
+  </div>
+
+  <div class="layout2">
+    <div>
+      <div class="panel">
+        <h3>Holdings</h3>
+        <p class="ph">Every no-pool token this wallet holds, priced live off each curve.</p>
+        <table class="hold">
+          <thead><tr><th>Token</th><th>Balance</th><th>Price</th><th>Value</th><th>24h</th><th>Dividends earned</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="namecell"><div class="tmark">R</div><div><div class="n">Robin</div><div class="s">$ROBIN</div></div></div></td>
+              <td>250,000</td><td>$0.00184</td><td>$460.00</td><td class="up">+6.2%</td><td>$4.82</td>
+            </tr>
+            <tr>
+              <td><div class="namecell"><div class="tmark">D</div><div><div class="n">Dustline</div><div class="s">$DUST</div></div></div></td>
+              <td>40,000</td><td>$0.00412</td><td>$164.80</td><td class="up">+18.4%</td><td>$1.90</td>
+            </tr>
+            <tr>
+              <td><div class="namecell"><div class="tmark">K</div><div><div class="n">Kevlar</div><div class="s">$KVLR</div></div></div></td>
+              <td>500,000</td><td>$0.00007</td><td>$35.00</td><td class="down">-3.8%</td><td>$0.21</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h3>Auction positions</h3>
+        <p class="ph">Committed, not tradeable yet — becomes a holding above once the auction finalizes.</p>
+        <div class="ipo-item">
+          <div><div class="n">Fable — $FABLE</div><div class="d">0.40 ETH committed</div></div>
+          <span class="when">1d 06h left</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h3>Dividends</h3>
+        <p class="ph">No lock, no staking contract — a periodic snapshot of who's holding pays out a slice of
+        tax revenue, pro-rata. Nothing to deposit, nothing to withdraw from.</p>
+        <div class="div-item"><div class="tmark">R</div><span class="txt">$ROBIN — <b>snapshot #41</b></span><span class="amt">+$4.82</span><span class="ago">2d</span></div>
+        <div class="div-item"><div class="tmark">D</div><span class="txt">$DUST — <b>snapshot #12</b></span><span class="amt">+$1.90</span><span class="ago">4d</span></div>
+        <div class="div-item"><div class="tmark">K</div><span class="txt">$KVLR — <b>snapshot #7</b></span><span class="amt">+$0.21</span><span class="ago">6d</span></div>
+        <div class="div-note">Total earned this wallet: $6.93. Next $ROBIN snapshot in ~11h.</div>
+      </div>
+
+      <div class="panel">
+        <h3>Watchlist</h3>
+        <div class="wl-row"><span class="n">ROBIN</span><span class="p up">$0.00184</span></div>
+        <div class="wl-row"><span class="n">DUST</span><span class="p up">$0.00412</span></div>
+        <div class="wl-row"><span class="n">KVLR</span><span class="p down">$0.00007</span></div>
+        <a class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px" href="no-pool-browse-preview.html">Find more on the DEX →</a>
+      </div>
+
+      <div class="panel">
+        <h3>Upcoming IPOs</h3>
+        <p class="ph">New launches on the pad, styled like a stock IPO calendar — same auction mechanic underneath.</p>
+        <div class="ipo-item"><div><div class="n">Nomo — $NOMO</div><div class="d">2 day auction window</div></div><span class="when">Opens in 3h</span></div>
+        <div class="ipo-item"><div><div class="n">Stocktard — $STKT</div><div class="d">4 day auction window</div></div><span class="when">Opens in 1d</span></div>
+        <a class="btn btn-dark btn-sm" style="width:100%;margin-top:10px" href="no-pool-auction-preview.html">View live auction →</a>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
