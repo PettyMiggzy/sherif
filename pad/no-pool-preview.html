@@ -58,6 +58,8 @@
   .tokid{display:flex;gap:14px;align-items:center}
   .tokmark{width:52px;height:52px;border-radius:14px;background:linear-gradient(155deg,var(--lime),var(--lime-deep));
     display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;color:#0a0e05;font-size:1.1rem}
+  .venue{font-family:var(--mono);font-size:.68rem;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+  .venue .sep{color:var(--lime);margin:0 4px}
   .tokname h1{margin:0;font-size:1.5rem;font-weight:800}
   .tokname .sub{color:var(--faint);font-size:.84rem;font-family:var(--mono)}
   .badges{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
@@ -68,6 +70,14 @@
   .price{font-family:var(--mono);font-size:1.7rem;font-weight:700}
   .chg{font-family:var(--mono);font-size:.9rem;color:var(--green);font-weight:700}
   .chg.down{color:var(--red)}
+
+  .banner{height:150px;border-radius:14px;overflow:hidden;margin-bottom:14px;border:1px solid var(--line-2);
+    background:linear-gradient(135deg,#16210c,#0c1108 65%);display:flex;align-items:center;justify-content:center;
+    color:var(--faint);font-family:var(--mono);font-size:.7rem;letter-spacing:.05em;text-transform:uppercase}
+  .social-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+  .social-link{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;font-weight:600;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line-2);border-radius:9px;padding:8px 13px;cursor:pointer;transition:.12s ease}
+  .social-link:hover{border-color:var(--line-strong)}
 
   .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;
     background:var(--line-2);border:1px solid var(--line-2);border-radius:12px;overflow:hidden;margin-bottom:24px}
@@ -247,6 +257,7 @@
     <div class="tokid">
       <div class="tokmark">R</div>
       <div class="tokname">
+        <div class="venue">Robinhood <span class="sep">›</span> No-pool curve</div>
         <h1>Robin — $ROBIN</h1>
         <div class="sub">0x7a2f…e91c · migrated from the old pad</div>
         <div class="badges">
@@ -260,6 +271,14 @@
       <div class="price">$0.00184</div>
       <div class="chg">▲ 6.2% · 24h</div>
     </div>
+  </div>
+
+  <div class="banner">Banner creative — 1500×500</div>
+
+  <div class="social-row">
+    <a class="social-link">🌐 Website</a>
+    <a class="social-link">𝕏 Twitter</a>
+    <a class="social-link">✈ Telegram</a>
   </div>
 
   <div class="stats">
@@ -308,12 +327,21 @@
 
       <div class="panel">
         <h3>Contract</h3>
+        <div class="rowline"><span class="k">Pair created</span><span class="v">41d ago</span></div>
         <div class="rowline"><span class="k">Address</span><span class="v">0x7a2f…e91c</span></div>
         <div class="rowline"><span class="k">Total supply</span><span class="v">1,000,000,000</span></div>
         <div class="rowline"><span class="k">Ownership</span><span class="v" style="color:var(--green)">Renounced ✓</span></div>
         <div class="rowline"><span class="k">Pool</span><span class="v" style="color:var(--green)">None — nothing to drain</span></div>
         <div class="mini" style="margin-top:0">No pool means no LP to lock or burn in the first place —
         there's simply nothing here for anyone to pull.</div>
+      </div>
+
+      <div class="panel">
+        <h3>Security</h3>
+        <div class="rowline"><span class="k">Source verification</span><span class="v" style="color:var(--green)">Verified ✓</span></div>
+        <div class="rowline"><span class="k">Community flags</span><span class="v">0 reports</span></div>
+        <div class="mini" style="margin-top:0">Every launch is automatically source-verified at deploy —
+        including our own contracts. Not a paid audit badge, just what's actually on-chain.</div>
       </div>
 
       <div class="adslot">
@@ -485,15 +513,16 @@
     });
   });
 
-  // Each column scrolls independently, even the ones whose content is shorter than
-  // the viewport (CSS overflow alone only isolates scroll once a column actually
-  // overflows — the left/center columns are short enough that the wheel event was
-  // just falling through to the page instead of staying put). Below the breakpoint
-  // where columns stack into one page, let the page scroll normally.
+  // A column only captures the wheel when it actually has its own overflow to
+  // scroll — grabbing it unconditionally (previous version) left columns whose
+  // content fits (nothing to scroll) as a dead zone: no page scroll, no column
+  // scroll, nothing happened. Below the breakpoint where columns stack into one
+  // page, skip this entirely and let the page scroll normally.
   var stackedLayout = window.matchMedia('(max-width: 1080px)');
   document.querySelectorAll('.col-left, .col-center, .col-right').forEach(function (col) {
     col.addEventListener('wheel', function (e) {
       if (stackedLayout.matches) return;
+      if (col.scrollHeight <= col.clientHeight) return; // nothing to scroll here — let the page handle it
       e.preventDefault();
       col.scrollTop += e.deltaY;
     }, { passive: false });

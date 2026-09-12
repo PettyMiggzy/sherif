@@ -93,7 +93,64 @@ Anything without a checkbox is still notes-only.
   space with the old inline trade-row list.
 - [x] Migration (zero holder action) → `no-pool-migrate-preview.html`
 - [x] Pad-wide transparency page → `no-pool-transparency-preview.html`
+- [x] Fixed the per-column scroll dead zone: the previous "always capture the wheel"
+  fix meant a column with nothing to scroll (left/center, especially after the
+  activity table moved out) blocked the page from scrolling too — hovering it and
+  scrolling did literally nothing. Now a column only captures the wheel when it
+  actually has its own overflow (`scrollHeight > clientHeight`); otherwise the event
+  passes through to the page like normal.
+- [x] Token page left column now matches more of what a real DexScreener info panel
+  shows (user walked through it live with reference screenshots of DexScreener's own
+  right-side panel — chain›venue badge, banner, socials, pair-created age, pooled/pair
+  addresses, GoPlus/Quick-Intel-style security badges) — added: a "Robinhood › No-pool
+  curve" venue line above the token name (their chain›DEX-venue badge, our equivalent
+  since we have no DEX venue), a banner creative slot + website/Twitter/Telegram social
+  links row up top, "Pair created" age in the Contract panel, and a new Security panel
+  (source verification + community flags — our own framing, not their badge names).
 - [ ] Everything else below is still concept-only — no page yet.
+
+## Live walkthrough backlog (2026-09-12) — not built yet, notes only
+
+User did a full click-through of all six preview pages and called out a long list.
+Logged here in full before building any of it, since it's too much to build blind in
+one pass — will work through it with the user page by page.
+
+- **Create flow:** auction window should be **optional**, not mandatory — a creator can
+  skip straight to a fixed launch if they don't want an auction. Total-supply picker the
+  user expected isn't visible/wired on the page yet (supply field exists as a static
+  mock — needs to actually look pickable). Creator should be able to **airdrop to as
+  many wallets as they want** as part of/after the create flow (bulk recipient list, not
+  capped). Creator should be able to **set their own tax rate** — platform takes a flat
+  **20% cut of whatever tax is set above the baseline** (i.e. the extra the creator
+  adds, not the base 1.5/1.5). Creator can upload a **PFP** at creation (banner comes
+  later — see below). General theme: **give creators control over everything that's
+  safe to expose** — platform still controls what isn't (e.g. minting/immutability).
+- **Paid services, new:**
+  - We pay to update a project's real **DexScreener token profile** (banner, socials,
+    description) on their behalf — **$300**. Presented to users as "advertising."
+  - We get a project a **10x DexScreener boost** — **$100**.
+  - Later, on the token page itself: creator can **update their PFP + banner** — paid,
+    starting around **$50**.
+  - All three need an actual page/flow for someone to pay us and request it — doesn't
+    exist yet.
+  - Services page (`services.html`, owned by a different session per `COORDINATION.md`)
+    needs a **second section/page** covering the trending bot, volume bot, maker bot,
+    and market-maker bot — on top of (not replacing) the new DexScreener services above.
+- **Payments:** buy with **any token** — effectively a built-in bridge/aggregator swap
+  so purchases (launches, boosts, services) aren't limited to the chain's native token.
+- **Tokens should be auto-verified** at deploy (source verification), including our own
+  contracts — ties into the new Security panel added to the token page today, which is
+  currently just a static preview of the idea, not real verification.
+- **"Orders page"** — user flagged they don't see one and isn't sure how to cleanly
+  build it yet. Open question, not specified — needs more thought before it's even a
+  wireframe.
+- **DEX page:** sidebar items (Multicharts, New Pairs, Gainers & Losers, API, Advertise)
+  are currently inert — clicking does nothing. Need real behavior or real destinations,
+  not decorative list items.
+- **General layout complaint:** noticeably wasted side space on desktop across pages —
+  the DEX page's actual content area is fine, it's more the space around/below it and
+  other pages that read as under-using wide viewports. Needs a real pass, not a
+  one-line fix.
 
 ---
 
