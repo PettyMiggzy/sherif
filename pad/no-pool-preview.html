@@ -102,7 +102,7 @@
   .panel h3{margin:0 0 14px;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;
     color:var(--faint);font-family:var(--mono);font-weight:600}
 
-  .chart{height:230px;border-radius:10px;background:
+  .chart{height:320px;border-radius:10px;background:
       linear-gradient(180deg, rgba(220,233,5,.08), transparent 70%),
       repeating-linear-gradient(90deg, transparent, transparent 39px, var(--line-2) 40px);
     position:relative;overflow:hidden;margin-bottom:6px}
@@ -178,6 +178,21 @@
   .txtabs{display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap}
   .txtab{font-family:var(--mono);font-size:.72rem;padding:6px 12px;border-radius:8px;color:var(--dim);border:1px solid var(--line-2)}
   .txtab.on{color:var(--lime);border-color:var(--line-strong);background:rgba(220,233,5,.06)}
+
+  /* full-width activity table at the bottom of the page — Transactions/Top Traders/
+     Holders, DexScreener's own bottom-of-page pattern, switched by tab, not stacked */
+  .activity-panel{margin-top:20px}
+  .activity-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+  .gridwrap{border:1px solid var(--line-2);border-radius:10px;overflow-x:auto}
+  table.grid{width:100%;border-collapse:collapse;min-width:640px}
+  table.grid th{text-align:right;font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);
+    padding:11px 13px;border-bottom:1px solid var(--line-2);font-weight:600;white-space:nowrap}
+  table.grid th:first-child,table.grid td:first-child{text-align:left}
+  table.grid td{padding:10px 13px;border-bottom:1px solid var(--line-2);font-size:.8rem;text-align:right;
+    font-family:var(--mono);white-space:nowrap}
+  table.grid tr:last-child td{border-bottom:none}
+  table.grid tr:hover td{background:rgba(255,255,255,.02)}
+  .activity-table .up{color:var(--green)} .activity-table .down{color:var(--red)} .activity-table .muted{color:var(--faint)}
 
   /* ad panel — a real rectangular banner unit, not a text-in-a-dashed-box upsell */
   .adslot{border:1px solid var(--line-2);border-radius:14px;overflow:hidden;margin-top:0}
@@ -325,18 +340,6 @@
         </div>
         <div class="chart-foot"><span>30D</span><span>Chart reads straight off the curve's own trade log — no pool needed.</span></div>
 
-        <div class="txtabs">
-          <span class="txtab on">Transactions</span>
-          <span class="txtab">Top Traders</span>
-          <span class="txtab">Holders (4,208)</span>
-        </div>
-        <div class="trades">
-          <div class="trade-row"><span class="side buy">BUY</span><span class="who">0x4f…19a2</span><span class="amt">+ 240,000 ROBIN</span><span class="ago">12s</span></div>
-          <div class="trade-row"><span class="side sell">SELL</span><span class="who">0x91…7cd0</span><span class="amt">− 88,400 ROBIN</span><span class="ago">40s</span></div>
-          <div class="trade-row"><span class="side buy">BUY</span><span class="who">bot·0x2c…f11</span><span class="amt">+ 12,000 ROBIN</span><span class="ago">1m</span></div>
-          <div class="trade-row"><span class="side sell">SELL</span><span class="who">0x0a…44de</span><span class="amt">− 1,204,000 ROBIN</span><span class="ago">3m</span></div>
-        </div>
-
         <div class="mirror-strip">
           <b>Also visible on:</b> a thin mirror pool exists for chart/aggregator visibility only —
           sell-only for the public, restocked by our own bot, same tax either way.
@@ -405,6 +408,52 @@
     </div>
   </div>
 
+  <div class="panel activity-panel">
+    <div class="activity-head">
+      <h3 style="margin:0">Activity</h3>
+      <div class="txtabs">
+        <span class="txtab on" data-view="tx">Transactions</span>
+        <span class="txtab" data-view="traders">Top Traders</span>
+        <span class="txtab" data-view="holders">Holders (4,208)</span>
+      </div>
+    </div>
+
+    <div class="gridwrap">
+      <table class="grid activity-table" data-view="tx">
+        <thead><tr><th>Time</th><th>Type</th><th>Price</th><th>Amount</th><th>Value</th><th>Wallet</th></tr></thead>
+        <tbody>
+          <tr><td class="muted">12s</td><td class="up">Buy</td><td>$0.00184</td><td>240,000 ROBIN</td><td>0.44 ETH</td><td>0x4f…19a2</td></tr>
+          <tr><td class="muted">40s</td><td class="down">Sell</td><td>$0.00183</td><td>88,400 ROBIN</td><td>0.16 ETH</td><td>0x91…7cd0</td></tr>
+          <tr><td class="muted">1m</td><td class="up">Buy</td><td>$0.00183</td><td>12,000 ROBIN</td><td>0.02 ETH</td><td>bot·0x2c…f11</td></tr>
+          <tr><td class="muted">3m</td><td class="down">Sell</td><td>$0.00181</td><td>1,204,000 ROBIN</td><td>2.18 ETH</td><td>0x0a…44de</td></tr>
+          <tr><td class="muted">5m</td><td class="up">Buy</td><td>$0.00180</td><td>64,200 ROBIN</td><td>0.12 ETH</td><td>0x7d…3a91</td></tr>
+          <tr><td class="muted">9m</td><td class="up">Buy</td><td>$0.00178</td><td>410,000 ROBIN</td><td>0.73 ETH</td><td>0x2f…c410</td></tr>
+        </tbody>
+      </table>
+
+      <table class="grid activity-table" data-view="traders" hidden>
+        <thead><tr><th>Rank</th><th>Wallet</th><th>Bought</th><th>Sold</th><th>Realized PNL</th><th>Txns</th></tr></thead>
+        <tbody>
+          <tr><td class="muted">#1</td><td>0x4f…19a2</td><td>2.1 ETH</td><td>1.4 ETH</td><td class="up">+0.62 ETH</td><td>84</td></tr>
+          <tr><td class="muted">#2</td><td>bot·0x2c…f11</td><td>3.4 ETH</td><td>3.1 ETH</td><td class="up">+0.29 ETH</td><td>340</td></tr>
+          <tr><td class="muted">#3</td><td>0x91…7cd0</td><td>1.8 ETH</td><td>2.0 ETH</td><td class="down">-0.11 ETH</td><td>61</td></tr>
+          <tr><td class="muted">#4</td><td>0x0a…44de</td><td>0.9 ETH</td><td>1.6 ETH</td><td class="down">-0.08 ETH</td><td>22</td></tr>
+        </tbody>
+      </table>
+
+      <table class="grid activity-table" data-view="holders" hidden>
+        <thead><tr><th>Rank</th><th>Wallet</th><th>Balance</th><th>% Supply</th><th>Tag</th></tr></thead>
+        <tbody>
+          <tr><td class="muted">#1</td><td>0x7a2f…e91c</td><td>180,000,000 ROBIN</td><td>18.0%</td><td class="muted">Creator · vested</td></tr>
+          <tr><td class="muted">#2</td><td>0x4f…19a2</td><td>42,400,000 ROBIN</td><td>4.24%</td><td class="muted">Locked · 90d</td></tr>
+          <tr><td class="muted">#3</td><td>0x9c…22de</td><td>19,100,000 ROBIN</td><td>1.91%</td><td class="muted">Locked · 60d</td></tr>
+          <tr><td class="muted">#4</td><td>0x91…7cd0</td><td>11,800,000 ROBIN</td><td>1.18%</td><td class="muted">—</td></tr>
+          <tr><td class="muted">#5</td><td>0x0a…44de</td><td>8,300,000 ROBIN</td><td>0.83%</td><td class="muted">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
 </main>
 <script>
   function wireToggle(containerSel, itemSel, onClass, offClass) {
@@ -423,8 +472,18 @@
     });
   }
   wireToggle('.swaptabs', '.swaptab', 'on', 'off');
-  wireToggle('.txtabs', '.txtab', 'on', null);
   wireToggle('.chart-tf', 'span', 'on', null);
+
+  document.querySelectorAll('.activity-panel .txtab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.activity-panel .txtab').forEach(function (t) { t.classList.remove('on'); });
+      tab.classList.add('on');
+      var view = tab.dataset.view;
+      document.querySelectorAll('.activity-table').forEach(function (table) {
+        table.hidden = table.dataset.view !== view;
+      });
+    });
+  });
 
   // Each column scrolls independently, even the ones whose content is shorter than
   // the viewport (CSS overflow alone only isolates scroll once a column actually

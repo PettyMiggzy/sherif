@@ -82,6 +82,15 @@ Anything without a checkbox is still notes-only.
   scrolled on its own. Added a small wheel-event handler per column that always takes
   over scrolling above the 1080px breakpoint, so all three are isolated regardless of
   how much content each one holds.
+- [x] Moved the token page's activity data out of the cramped center-column list into a
+  real full-width table at the bottom of the page, DexScreener's actual pattern (their
+  bottom section spans the page, it isn't squeezed into one of the info columns) —
+  switches between Transactions / Top Traders / Holders (4,208) via tabs, one real
+  `<table>` per view with its own columns (time/type/price/amount/value/wallet for
+  transactions; rank/wallet/bought/sold/realized PNL/txns for top traders; rank/wallet/
+  balance/%supply/tag for holders), only the active one visible. Chart panel above it
+  grew (230px → 320px) since it's now the sole focus of that panel instead of sharing
+  space with the old inline trade-row list.
 - [x] Migration (zero holder action) → `no-pool-migrate-preview.html`
 - [x] Pad-wide transparency page → `no-pool-transparency-preview.html`
 - [ ] Everything else below is still concept-only — no page yet.
