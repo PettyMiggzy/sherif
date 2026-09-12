@@ -46,7 +46,7 @@
   .nav-cta{display:flex;gap:10px;align-items:center}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;
     font-size:.86rem;border-radius:12px;padding:10px 16px;border:1px solid transparent;white-space:nowrap;
-    font-family:var(--sans);cursor:default}
+    font-family:var(--sans);cursor:pointer;transition:filter .12s ease,transform .12s ease}
   .btn-dark{background:var(--panel);border-color:var(--line-2);color:var(--ink)}
   .btn-lime{background:var(--lime);color:#0a0e05}
   .btn-ghost{background:transparent;border-color:var(--line-strong);color:var(--ink)}
@@ -172,6 +172,9 @@
   .hero h1 .g{color:var(--lime)}
   .hero p{color:var(--dim);font-size:1rem;max-width:56ch;margin:0 0 20px;line-height:1.5}
   .hero-cta{display:flex;gap:10px;flex-wrap:wrap}
+  .btn:hover{filter:brightness(1.1)}
+  .btn:active{transform:scale(.98)}
+  .tab,.tf,.txtab,.swaptab,.mini-btn{cursor:pointer;transition:.12s ease}
 </style>
 </head>
 <body>
@@ -225,7 +228,7 @@
     <div class="stat"><div class="k">Market cap</div><div class="v">$1.84M</div></div>
     <div class="stat"><div class="k">Treasury (curve)</div><div class="v">312.4 ETH</div></div>
     <div class="stat"><div class="k">Holders</div><div class="v">4,208</div></div>
-    <div class="stat"><div class="k">Sacrificed total</div><div class="v">18.9 ETH</div></div>
+    <div class="stat"><div class="k">Total burned</div><div class="v">18.9 ETH</div></div>
     <div class="stat"><div class="k">24h volume</div><div class="v">96.1 ETH</div></div>
   </div>
 
@@ -365,5 +368,24 @@
   </div>
 
 </main>
+<script>
+  function wireToggle(containerSel, itemSel, onClass, offClass) {
+    document.querySelectorAll(containerSel).forEach(function (container) {
+      var items = Array.prototype.slice.call(container.querySelectorAll(itemSel));
+      items.forEach(function (item) {
+        item.addEventListener('click', function () {
+          items.forEach(function (i) {
+            i.classList.remove(onClass);
+            if (offClass) i.classList.add(offClass);
+          });
+          item.classList.add(onClass);
+          if (offClass) item.classList.remove(offClass);
+        });
+      });
+    });
+  }
+  wireToggle('.swaptabs', '.swaptab', 'on', 'off');
+  wireToggle('.txtabs', '.txtab', 'on', null);
+</script>
 </body>
 </html>

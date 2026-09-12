@@ -44,7 +44,7 @@
   .nav-cta{display:flex;gap:10px;align-items:center}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;
     font-size:.86rem;border-radius:12px;padding:10px 16px;border:1px solid transparent;white-space:nowrap;
-    font-family:var(--sans);cursor:default}
+    font-family:var(--sans);cursor:pointer;transition:filter .12s ease,transform .12s ease}
   .btn-dark{background:var(--panel);border-color:var(--line-2);color:var(--ink)}
   .btn-lime{background:var(--lime);color:#0a0e05}
 
@@ -76,6 +76,9 @@
     border-radius:6px;padding:1px 6px;flex:none}
   .logrow .txt{color:var(--dim);flex:1}
   .logrow .ago{font-family:var(--mono);color:var(--faint);font-size:.72rem}
+  .btn:hover{filter:brightness(1.1)}
+  .btn:active{transform:scale(.98)}
+  .tab,.tf,.txtab,.swaptab,.mini-btn{cursor:pointer;transition:.12s ease}
 </style>
 </head>
 <body>

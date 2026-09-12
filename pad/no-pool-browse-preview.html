@@ -49,7 +49,7 @@
   .nav-cta{display:flex;gap:10px;align-items:center}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;
     font-size:.86rem;border-radius:12px;padding:10px 16px;border:1px solid transparent;white-space:nowrap;
-    font-family:var(--sans);cursor:default}
+    font-family:var(--sans);cursor:pointer;transition:filter .12s ease,transform .12s ease}
   .btn-dark{background:var(--panel);border-color:var(--line-2);color:var(--ink)}
   .btn-lime{background:var(--lime);color:#0a0e05}
   .btn-flame{background:linear-gradient(135deg,#ffb020,#ff6b3d);color:#1a0d02}
@@ -127,6 +127,9 @@
   .adslot .l{font-size:.82rem;color:var(--dim)}
   .adslot .l b{color:var(--ink)}
   .adslot .tag{font-family:var(--mono);font-size:.62rem;color:var(--faint);letter-spacing:.05em;text-transform:uppercase}
+  .btn:hover{filter:brightness(1.1)}
+  .btn:active{transform:scale(.98)}
+  .tab,.tf,.txtab,.swaptab,.mini-btn{cursor:pointer;transition:.12s ease}
 </style>
 </head>
 <body>
@@ -269,5 +272,20 @@
   can still out-rank a boosted token. Price/volume/liquidity numbers are never touched by a boost, ranking
   only.</div>
 </main>
+<script>
+  function wireToggle(containerSel, itemSel, onClass) {
+    document.querySelectorAll(containerSel).forEach(function (container) {
+      var items = Array.prototype.slice.call(container.querySelectorAll(itemSel));
+      items.forEach(function (item) {
+        item.addEventListener('click', function () {
+          items.forEach(function (i) { i.classList.remove(onClass); });
+          item.classList.add(onClass);
+        });
+      });
+    });
+  }
+  wireToggle('.toolbar .tabs', '.tab', 'on');
+  wireToggle('.tfset', '.tf', 'on');
+</script>
 </body>
 </html>
