@@ -156,11 +156,13 @@ proactively, not held back until asked.
   buybacks (reusing the buyback keeper already built tonight) purchase tokens off the
   curve — the buy is what moves price — then burn them instead of holding, so the gain
   can't later be reversed by a resale.
-- Community "Sacrifice" page (name TBD — avoid "burn," it over-promises a pump it won't
-  deliver): user sells tokens in, but instead of taking the ETH payout, it's donated
-  straight into the pool as permanent extra backing. Optionally also burn the tokens
-  taken in, making it a user-funded version of the same buy-and-burn mechanic. Framed
-  honestly to users: this raises the floor going forward, it is not an instant pump.
+- **Named: "Burn" page** (decided — catchier than "Sacrifice," user's call). Substance
+  unchanged, and this still isn't a price-pump mechanic on its own (see the burn/price
+  note above) — the label is punchy, but the on-page copy stays honest: user sells
+  tokens in, but instead of taking the ETH payout, it's donated straight into the pool
+  as permanent extra backing. Optionally also burn the tokens taken in, making it a
+  user-funded version of the same buy-and-burn mechanic. Framed honestly to users: this
+  raises the floor going forward, it is not an instant pump — the name is just the name.
   - **Open question raised, recommendation attached:** should the dev/creator retain
     access to reclaim these donated/burned tokens later "in case they need them"?
     **Recommendation: no.** Reversibility breaks the entire premise — it stops actually
@@ -193,9 +195,9 @@ Ideas on the table so far, beyond the mechanics above:
   launches" — so first-time creators aren't scared off by looking worse than anyone
   else. We're a mirror, not a judge. Cheap to build: mostly reading events already
   emitted.
-- **Sacrifice-page leaderboard.** Public ranking of top donors to the sacrifice/backing
-  pool. Near-free once the sacrifice page exists — just surfaces events already being
-  emitted. Gives people social credit for backing a project publicly.
+- **Burn-page leaderboard.** Public ranking of top donors to the burn/backing pool.
+  Near-free once the burn page exists — just surfaces events already being emitted.
+  Gives people social credit for backing a project publicly.
 - **Lead with structural rug-immunity as the pitch, not a footnote.** Because there's no
   real pool to drain, this pad can honestly claim something most of the ~200
   competitors can't. Combine with the launch history above for the actual headline: "the
@@ -252,7 +254,6 @@ Ideas on the table so far, beyond the mechanics above:
 - The ~19%-total-platform-take number from earlier tonight — still unresolved, not yet
   reconciled with this new no-pool model.
 - NOMO's contract address, to verify the burn-pump mechanism precisely.
-- Naming for the "Sacrifice" page.
 
 ---
 *Brainstorm capture only — nothing above is implemented, committed to a contract, or
