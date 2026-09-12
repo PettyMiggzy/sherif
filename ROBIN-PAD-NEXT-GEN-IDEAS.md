@@ -34,7 +34,15 @@ Anything without a checkbox is still notes-only.
   ranking runs on a real composite algorithm (volume weighed together with unique
   trader count and other activity signals), so a cheap volume/trend bot can't easily
   out-rank someone actually paying to boost. A boost adds weight on top of that same
-  score; organic activity can still out-rank a boosted token. Also added: new launches
+  score; organic activity can still out-rank a boosted token. **Pricing set:** $50 per
+  100 boosts (matches the DexScreener-style boost-count reaction shown in the reference
+  screenshots — 🚀 count etc.). **Anti-gamification is a hard requirement, not a nice-
+  to-have:** the trending algo must combine boost weight with *real* trading volume, and
+  "real" specifically excludes (a) dust transactions below some min-size floor, and (b)
+  wash trades — buys/sells from the same wallet within a short window (e.g. X minutes)
+  — so nobody can cheaply fake volume to inflate their own rank, boosted or not. This
+  needs to be airtight before launch, not a rough first pass — it's a backend/indexer
+  concern (Phase 2), logged here now so the requirement isn't lost. Also added: new launches
   can buy a flat guaranteed top-5 slot for their first 24 hours — a distinct, simpler
   product from ongoing Boost. **Rebuilt for density after direct reference to real
   DexScreener screenshots** — added a top ticker of hot/boosted tokens, a 24h
