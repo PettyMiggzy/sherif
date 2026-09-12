@@ -29,7 +29,8 @@ describe("SIM — curve round-trip slippage is ~fees, not 50%", () => {
     curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), owner.address, owner.address, await stateView.getAddress(),
       owner.address, factory.address, await reg.getAddress(),
-      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, owner.address
+      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, owner.address,
+      false, 0 // noPoolForever, visibilityWithdrawBps — legacy full-graduation curve
     );
     await tok.connect(owner).transfer(await curve.getAddress(), CURVE_SUPPLY);
     await curve.connect(factory).seed();

@@ -50,7 +50,8 @@ describe("SIM — RobinLockStaking fed by the curve at graduation (monthly-lock 
     curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
-      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address
+      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address,
+      false, 0 // noPoolForever, visibilityWithdrawBps — legacy full-graduation curve
     );
     curveAddr = await curve.getAddress();
     await tok.connect(owner).transfer(curveAddr, CURVE_SUPPLY);

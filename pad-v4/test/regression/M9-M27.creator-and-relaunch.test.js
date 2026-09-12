@@ -71,7 +71,8 @@ describe("M-9 — one repoint governs both creator books", () => {
     curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
-      ZERO, await tok.getAddress(), FEE, TS, addr, START, GRAD, 2000, 1000, 1000, 500, A.address
+      ZERO, await tok.getAddress(), FEE, TS, addr, START, GRAD, 2000, 1000, 1000, 500, A.address,
+      false, 0 // noPoolForever, visibilityWithdrawBps — legacy full-graduation curve
     );
   });
 
@@ -99,7 +100,8 @@ describe("M-9 — one repoint governs both creator books", () => {
     const bare = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
-      ZERO, await tok2.getAddress(), FEE, TS, ZERO, START, GRAD, 2000, 1000, 1000, 500, A.address
+      ZERO, await tok2.getAddress(), FEE, TS, ZERO, START, GRAD, 2000, 1000, 1000, 500, A.address,
+      false, 0 // noPoolForever, visibilityWithdrawBps — legacy full-graduation curve
     );
     expect(await bare.currentCreator()).to.equal(A.address);
   });
@@ -117,7 +119,8 @@ describe("M-9 — one repoint governs both creator books", () => {
     const c = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
-      ZERO, await tok3.getAddress(), FEE, TS, await bad.getAddress(), START, GRAD, 2000, 1000, 1000, 500, A.address
+      ZERO, await tok3.getAddress(), FEE, TS, await bad.getAddress(), START, GRAD, 2000, 1000, 1000, 500, A.address,
+      false, 0 // noPoolForever, visibilityWithdrawBps — legacy full-graduation curve
     );
     expect(await c.currentCreator()).to.equal(A.address); // no revert, falls back
   });

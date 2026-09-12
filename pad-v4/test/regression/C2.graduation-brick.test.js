@@ -64,7 +64,8 @@ describe("C-2 exploit, replayed against the patched curve", () => {
     curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
-      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address
+      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address,
+      false, 0 // noPoolForever, visibilityWithdrawBps — legacy full-graduation curve
     );
     curveAddr = await curve.getAddress();
     await tok.connect(owner).transfer(curveAddr, CURVE_SUPPLY);
@@ -173,7 +174,8 @@ describe("C-2 segment bounds, checked on a live (un-graduated) curve", () => {
     curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
-      ZERO, await tok.getAddress(), FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address
+      ZERO, await tok.getAddress(), FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address,
+      false, 0 // noPoolForever, visibilityWithdrawBps — legacy full-graduation curve
     );
     await tok.connect(owner).transfer(await curve.getAddress(), E(1000));
     await mockFactory.seedCurve(await curve.getAddress());

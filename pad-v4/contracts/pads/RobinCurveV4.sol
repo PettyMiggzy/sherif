@@ -125,6 +125,11 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     uint256 internal constant UNSOLD_STAKING_BPS = 2500; // 25% to staking, 75% to the sell band
     uint256 internal constant GRAD_BOUNTY_BPS = 20; // 0.2% of the raise to the graduation trigger
     uint256 internal constant GRAD_BOUNTY_MAX_WEI = 0.02 ether; // absolute ceiling (raise ≳ 10 ETH)
+    // [NO-POOL] A no-pool-forever pad's checkpoint may never carve out more than half the curve's own liquidity
+    // in one shot — the whole point is that the curve stays the DOMINANT permanent market, not a one-time raise
+    // event with a token left over. A misconfigured 100% would silently reproduce the legacy full-drain behavior
+    // under a different name; capping well below that keeps the two models honestly distinct.
+    uint16 internal constant MAX_VISIBILITY_WITHDRAW_BPS = 5000;
 
     IPoolManager public immutable poolManager;
     IPositionManagerMinimal public immutable positionManager;
@@ -153,6 +158,16 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     /// necessarily the payee — `claimCreator` pays `currentCreator()`, which follows the hook's repointable slot.
     address public immutable creator;
 
+    // [NO-POOL] When true, this pad never hands off to a permanent full-range LP: graduate() becomes a one-time
+    // reward CHECKPOINT instead of a full exit. It withdraws only `visibilityWithdrawBps` of the curve's own
+    // liquidity to fund the same platform/creator/ambush/bounty waterfall as a legacy pad, leaves the rest of
+    // curveL in place forever, never lifts the hook's third-party-liquidity lock (onGraduated is simply never
+    // called), and never mints/registers a permanent LP. The curve itself stays the sole, permanent market.
+    bool public immutable noPoolForever;
+    // Bps of curveL withdrawn at the one-time checkpoint, capped by MAX_VISIBILITY_WITHDRAW_BPS. Meaningless
+    // (unused) when noPoolForever is false.
+    uint16 public immutable visibilityWithdrawBps;
+
     bool public seeded;
     bool public graduated;
     uint128 public curveL; // liquidity minted at seed (removed whole at graduation)
@@ -175,6 +190,9 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     // from raisedEth and falls through to the step-9 platform sweep (a griefer's ETH → platform, not LP/creator).
     // Set inside _graduatePull, consumed once in graduate(); the `graduated` one-shot makes a reset unnecessary.
     uint256 private _nudgeEthExcluded;
+    // [NO-POOL] Liquidity actually withdrawn by _graduatePull's step (b), for the NoPoolCheckpoint event only.
+    // Same one-shot lifecycle as _nudgeEthExcluded: set inside _graduatePull, read once in graduate().
+    uint128 private _pulledLiquidity;
 
     event Seeded(uint128 liquidity, uint256 tokens);
     event CurveFeesAccrued(uint256 eth, uint256 tokenFees);
@@ -200,6 +218,8 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     event GradBountyClaimed(address indexed to, uint256 amount);
     event PlatformSwept(uint256 eth);
     event CeilingRestored(address indexed by, uint256 tokenSpent, uint256 ethOut);
+    // [NO-POOL] Emitted instead of a permanent-LP mint for a noPoolForever pad's checkpoint — no lpTokenId exists.
+    event NoPoolCheckpoint(uint128 liquidityWithdrawn, uint128 liquidityRetained, uint256 toStakingEth);
 
     error NotPoolManager();
     error NotFactory();
@@ -218,6 +238,7 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     error EthSendFailed();
     error StakingAssetMismatch();
     error BadPriceLimit();
+    error BadVisibilityBps(); // [NO-POOL] noPoolForever pad with visibilityWithdrawBps == 0 or > the hard cap
 
     constructor(
         address poolManager_,
@@ -238,13 +259,22 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         uint16 platformGradBps_,
         uint16 creatorGradBps_,
         uint16 ambushGradBps_,
-        address creator_
+        address creator_,
+        bool noPoolForever_,
+        uint16 visibilityWithdrawBps_
     ) {
         if (
             poolManager_ == address(0) || positionManager_ == address(0) || permit2_ == address(0)
                 || stateView_ == address(0) || lockVault_ == address(0) || factory_ == address(0)
                 || feeRegistry_ == address(0) || creator_ == address(0)
         ) revert ZeroAddress();
+        // [NO-POOL] Fail closed at deploy time, not silently at the first (and only) checkpoint attempt: this is
+        // an immutable with no re-set, so a 0 or over-cap value would permanently brick graduate() for this pad.
+        if (noPoolForever_ && (visibilityWithdrawBps_ == 0 || visibilityWithdrawBps_ > MAX_VISIBILITY_WITHDRAW_BPS)) {
+            revert BadVisibilityBps();
+        }
+        noPoolForever = noPoolForever_;
+        visibilityWithdrawBps = visibilityWithdrawBps_;
         poolManager = IPoolManager(poolManager_);
         positionManager = IPositionManagerMinimal(positionManager_);
         permit2 = IPermit2Minimal(permit2_);
@@ -287,7 +317,10 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     /// principal untouched. Pull with claimPlatform(). Per the locked model, ALL curve-phase LP fees → platform.
     function collectFees() external nonReentrant {
         if (!seeded) revert NotSeeded();
-        if (graduated) revert AlreadyGraduated();
+        // [NO-POOL] A noPoolForever pad keeps a live position after its one-time checkpoint (graduated == true
+        // means "the reward waterfall ran once", not "the curve's liquidity is gone") — fees keep accruing on
+        // whatever curveL remains, forever, exactly as during the pre-checkpoint curve phase.
+        if (graduated && !noPoolForever) revert AlreadyGraduated();
         poolManager.unlock(abi.encode(Op.COLLECT, uint256(0)));
     }
 
@@ -453,22 +486,41 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         uint256 lpEth = distributable - platReward - creatReward - ambushReward;
         if (lpEth == 0) revert EmptyRaise();
 
-        // 3b) [LP-1] Lift the hook's curve-phase liquidity lock BEFORE step 4. The permanent LP is minted through
-        //    the PositionManager, which the lock deliberately does NOT admit (it is the route every third party
-        //    would use), so the gate has to be open by the time step 4 runs. Ordering is safe: the curve's own
-        //    position was already unwound in step 1, and this is all one transaction. Guarded by a code check —
-        //    a codeless hook (a hookless test pool) would revert the typed call UNCAUGHT — then try/caught, so a
-        //    pad whose bufferRecipient was never wired is not gated in the first place and must not brick here.
-        if (address(hooks).code.length > 0) {
-            try IRobinFeeHookGrad(address(hooks)).onGraduated(_poolId()) {} catch {}
+        uint256 lpTokenId;
+        if (noPoolForever) {
+            // [NO-POOL] Never lift the hook's liquidity lock, never mint a permanent LP, never register anything
+            // with LockVault — there is no hand-off. The curve's remaining position (curveL, after the partial
+            // withdrawal inside _graduatePull) stays exactly where it already was, still owned by this contract,
+            // and the hook's PoolConfig.graduated flag stays false FOREVER for this pool (onGraduated is simply
+            // never called), so third-party liquidity can never be added here — not just during a curve phase,
+            // permanently. `lpTokenId` stays 0 (nothing was minted) for the event below.
+            //
+            // What would have been the permanent LP's ETH leg (lpEth) has nowhere structural to go, so it becomes
+            // an extra holder reward: added to stakingEthOwed alongside the buy-tax buffer, paid out through the
+            // same dividend/staking path as everything else in stakingEthOwed. This is a deliberate choice, not a
+            // fallback — the whole point of this design is that value that would have gone into a permanent pool
+            // stays with the pad, and this is the pad's own existing "give it to holders" sink.
+            stakingEthOwed += lpEth;
+            emit NoPoolCheckpoint(_pulledLiquidity, curveL, lpEth);
+        } else {
+            // 3b) [LP-1] Lift the hook's curve-phase liquidity lock BEFORE step 4. The permanent LP is minted
+            //    through the PositionManager, which the lock deliberately does NOT admit (it is the route every
+            //    third party would use), so the gate has to be open by the time step 4 runs. Ordering is safe:
+            //    the curve's own position was already unwound in step 1, and this is all one transaction. Guarded
+            //    by a code check — a codeless hook (a hookless test pool) would revert the typed call UNCAUGHT —
+            //    then try/caught, so a pad whose bufferRecipient was never wired is not gated in the first place
+            //    and must not brick here.
+            if (address(hooks).code.length > 0) {
+                try IRobinFeeHookGrad(address(hooks)).onGraduated(_poolId()) {} catch {}
+            }
+
+            // 4) seed the PERMANENT LOCKED full-range 2-sided LP (NFT → LockVault). The reserve is sized so the
+            //    ETH leg binds; the surplus reserve tokens stay here for staking.
+            lpTokenId = _mintPermanentLp(lpEth, tokenReserve);
+
+            // 5) register the lock through the factory (LockVault's sole registrar) — carries the immutable slice
+            ICurveFactoryCallback(factory).onGraduated(lpTokenId, currency0, currency1, staking);
         }
-
-        // 4) seed the PERMANENT LOCKED full-range 2-sided LP (NFT → LockVault). The reserve is sized so the ETH
-        //    leg binds; the surplus reserve tokens stay here for staking.
-        uint256 lpTokenId = _mintPermanentLp(lpEth, tokenReserve);
-
-        // 5) register the lock through the factory (LockVault's sole registrar) — carries the immutable slice
-        ICurveFactoryCallback(factory).onGraduated(lpTokenId, currency0, currency1, staking);
 
         // 6) book the per-side rewards (retriable via claim*/flush*; never inline-brick graduation)
         platformEthOwed += platReward;
@@ -748,10 +800,21 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
         );
         _takeFeesToBook(fees);
 
-        // (b) remove the whole curve principal → this contract (the raised ETH; token ≈ 0 at the ceiling)
+        // (b) remove the curve principal → this contract (the raised ETH; token ≈ 0 at the ceiling). A legacy
+        // pad removes ALL of curveL (full exit, as always). [NO-POOL] A noPoolForever pad removes only
+        // `visibilityWithdrawBps` of it — since spot sits exactly at gradSqrt here (post-nudge), the position is
+        // ~100% currency0 (ETH), so a bps-slice of the LIQUIDITY yields the SAME bps-slice of the ETH value:
+        // liquidity and amount0 are linearly related at a fixed price for a single-sided position, so no separate
+        // liquidity↔amount conversion is needed — just remove the slice and measure whatever the pool actually
+        // returns, exactly like the legacy full removal already does. The remainder stays live, forever, as the
+        // curve's own permanent position — nobody else can ever add to it (the hook's lock never lifts for these
+        // pads; see graduate()).
+        uint128 pullL = noPoolForever ? uint128((uint256(curveL) * visibilityWithdrawBps) / BPS) : curveL;
+        curveL -= pullL;
+        _pulledLiquidity = pullL;
         (BalanceDelta d,) = poolManager.modifyLiquidity(
             key,
-            ModifyLiquidityParams({tickLower: gradTick, tickUpper: startTick, liquidityDelta: -int256(uint256(curveL)), salt: bytes32(0)}),
+            ModifyLiquidityParams({tickLower: gradTick, tickUpper: startTick, liquidityDelta: -int256(uint256(pullL)), salt: bytes32(0)}),
             ""
         );
         if (d.amount0() > 0) poolManager.take(currency0, address(this), uint256(uint128(d.amount0())));

@@ -42,7 +42,8 @@ describe("RobinCurveV4 — graduation grief recovery (restoreCeiling)", () => {
     curve = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
-      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address
+      ZERO, tokAddr, FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address,
+      false, 0 // noPoolForever, visibilityWithdrawBps — legacy full-graduation curve
     );
     curveAddr = await curve.getAddress();
     await tok.connect(owner).transfer(curveAddr, CURVE_SUPPLY);
@@ -68,7 +69,8 @@ describe("RobinCurveV4 — graduation grief recovery (restoreCeiling)", () => {
     const curve2 = await (await ethers.getContractFactory("RobinCurveV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await lockVault.getAddress(), await mockFactory.getAddress(), await reg.getAddress(),
-      ZERO, await tok.getAddress(), FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address
+      ZERO, await tok.getAddress(), FEE, SPACING, ZERO, START, GRAD, 2000, 1000, 1000, 500, creator.address,
+      false, 0 // noPoolForever, visibilityWithdrawBps — legacy full-graduation curve
     );
     // `tok` is a plain ERC20: it HAS code (passes the code.length gate) but has neither receive() nor a payable
     // fallback, so the M-21 probe `f.call{value:0}("")` reverts → EthSendFailed. Without the probe, wiring it would

@@ -328,7 +328,9 @@ contract CurvePadFactoryV4 {
                 d.platformGradBps,
                 d.creatorGradBps,
                 d.ambushGradBps,
-                cfg.creator
+                cfg.creator,
+                false, // noPoolForever: this factory only ever deploys classic graduating pads
+                uint16(0) // visibilityWithdrawBps: unused when noPoolForever is false
             )
         );
         isCurve[curve] = true;
