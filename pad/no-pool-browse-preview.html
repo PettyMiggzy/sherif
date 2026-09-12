@@ -126,11 +126,15 @@
 
   .foot-note{font-family:var(--mono);font-size:.72rem;color:var(--faint);margin-top:12px;line-height:1.6}
 
-  .adslot{margin-top:16px;border:1px dashed var(--line-2);border-radius:12px;padding:16px;
-    display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
-  .adslot .l{font-size:.82rem;color:var(--dim)}
-  .adslot .l b{color:var(--ink)}
-  .adslot .tag{font-family:var(--mono);font-size:.62rem;color:var(--faint);letter-spacing:.05em;text-transform:uppercase}
+  /* ad banner — slim full-bleed strip, styled like a real ad placement, not an upsell box */
+  .ad-bar{border-bottom:1px solid var(--line-2);background:var(--panel-2)}
+  .ad-bar-in{max-width:1360px;margin:0 auto;padding:9px 20px;display:flex;align-items:center;gap:14px;font-size:.82rem}
+  .ad-bar .headline{font-weight:700;white-space:nowrap}
+  .ad-bar .desc{color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ad-bar .cta{color:var(--lime);font-weight:700;white-space:nowrap}
+  .ad-bar .adtag{font-family:var(--mono);font-size:.6rem;color:var(--faint);border:1px solid var(--line-2);
+    border-radius:4px;padding:1px 5px;flex:none}
+  .ad-bar .x{color:var(--faint);font-size:.85rem;background:none;border:none;flex:none;line-height:1}
   .btn:hover{filter:brightness(1.1)}
   .btn:active{transform:scale(.98)}
   .tab,.tf,.txtab,.swaptab,.mini-btn{cursor:pointer;transition:.12s ease}
@@ -159,6 +163,14 @@
   <span class="tick" aria-hidden="true"><span class="rk">#3</span><span class="nm">Kevlar</span><span class="bolt">⚡100</span><span class="pc down">▼3.8%</span></span>
   <span class="tick" aria-hidden="true"><span class="rk">#4</span><span class="nm">Fable</span><span class="pc muted">auction</span></span>
   <span class="tick" aria-hidden="true"><span class="rk">#5</span><span class="nm">Dogestar</span><span class="pc up">▲2,411%</span></span>
+</div></div>
+
+<div class="ad-bar"><div class="ad-bar-in">
+  <span class="headline">🚀 New: guaranteed top-5, first 24h</span>
+  <span class="desc">Reserve your launch's spot before the crowd shows up.</span>
+  <span class="cta">Reserve a slot →</span>
+  <span class="adtag">Ad</span>
+  <button class="x" aria-label="Dismiss">✕</button>
 </div></div>
 
 <main>
@@ -269,11 +281,6 @@
         </tr>
       </tbody>
     </table>
-  </div>
-
-  <div class="adslot">
-    <div class="l"><span class="tag">Sponsored</span><br /><b>Your project here</b> — top-5 placement for new launches, first 24 hours.</div>
-    <span class="btn btn-dark">Reserve a slot</span>
   </div>
 
   <div class="foot-note">Ranking is a real algorithm, not raw volume — it weighs volume together with unique

@@ -160,11 +160,15 @@
   .txtab{font-family:var(--mono);font-size:.72rem;padding:6px 12px;border-radius:8px;color:var(--dim);border:1px solid var(--line-2)}
   .txtab.on{color:var(--lime);border-color:var(--line-strong);background:rgba(220,233,5,.06)}
 
-  .adslot{margin-top:16px;border:1px dashed var(--line-2);border-radius:12px;padding:14px;
-    display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-  .adslot .l{font-size:.8rem;color:var(--dim)}
+  /* ad panel — a real rectangular banner unit, not a text-in-a-dashed-box upsell */
+  .adslot{border:1px solid var(--line-2);border-radius:14px;overflow:hidden;margin-top:0}
+  .adslot .creative{height:90px;background:linear-gradient(135deg,#1a2a10,#0c1108 60%);
+    display:flex;align-items:center;justify-content:center;color:var(--faint);font-family:var(--mono);
+    font-size:.68rem;letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid var(--line-2)}
+  .adslot .l{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;font-size:.8rem;color:var(--dim)}
   .adslot .l b{color:var(--ink)}
-  .adslot .tag{font-family:var(--mono);font-size:.6rem;color:var(--faint);letter-spacing:.05em;text-transform:uppercase}
+  .adslot .tag{font-family:var(--mono);font-size:.6rem;color:var(--faint);letter-spacing:.05em;text-transform:uppercase;
+    border:1px solid var(--line-2);border-radius:4px;padding:1px 5px;flex:none}
 
   /* landing hero — this page doubles as the home page */
   .hero{padding:34px 0 26px;border-bottom:1px solid var(--line-2);margin-bottom:26px}
@@ -361,8 +365,8 @@
       </div>
 
       <div class="adslot">
-        <div class="l"><span class="tag">Sponsored</span><br /><b>Advertise here</b> — every token page on the pad.</div>
-        <span class="btn btn-dark">Learn more</span>
+        <div class="creative">Ad creative — 728×90</div>
+        <div class="l"><span><b>Advertise here</b> — every token page on the pad.</span><span class="tag">Ad</span></div>
       </div>
     </div>
   </div>
