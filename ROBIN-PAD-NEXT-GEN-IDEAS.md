@@ -194,6 +194,14 @@ Anything without a checkbox is still notes-only.
   now only exists once a creator has actually paid to set one, no reserved empty space
   otherwise. (The $50/100-boosts price elsewhere is the unrelated DEX-trending Boost
   feature — unaffected by this correction.)
+- [x] **Index tokens** → `no-pool-index-preview.html` (new, 9th preview page, cross-
+  linked from all eight others). $R20 — a basket/ETF-style token giving exposure to
+  the pad's own top-20-by-mcap leaderboard in one buy. Deliberately tied to the DEX
+  page's "Robin 20" tab rather than invented as a separate feature: same real ranking
+  algorithm decides basket membership, no second scoring system. Shows current basket
+  composition (weighted by mcap, capped per-token), AUM, rebalance cadence/methodology,
+  and a buy/sell panel matching the rest of the site's trading UI. Static only —
+  rebalancing, minting, and redemption are all mocked.
 - [ ] Everything else below is still concept-only — no page yet.
 
 ## Live walkthrough backlog (2026-09-12) — not built yet, notes only
