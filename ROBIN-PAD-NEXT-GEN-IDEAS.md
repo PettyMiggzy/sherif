@@ -101,6 +101,21 @@ Anything without a checkbox is still notes-only.
   space with the old inline trade-row list.
 - [x] Migration (zero holder action) → `no-pool-migrate-preview.html`
 - [x] Pad-wide transparency page → `no-pool-transparency-preview.html`
+- [x] **Creator Hub** → `no-pool-hub-preview.html` (new, 7th preview page, cross-linked
+  from all six others). Builds the UI for every item from the creator-control
+  brainstorm, all framed as opt-in — nothing on the page is mandatory, the creator picks
+  what to use: Identity & branding (free PFP, paid $50 banner, editable socials/
+  description), Tax & rewards (extra-tax slider with the 20%-of-the-extra platform cut,
+  tax-split-destination slider, capped burn-boost-rate slider), Launch settings
+  (auction on/off, per-wallet max-buy toggle, allowlist/early-access, vesting
+  length+shape, separate team-allocation toggle) — labeled pre-launch-only, Airdrop
+  (unlimited pasted wallet list), Launch notes (creator-authored updates, tagged
+  distinctly from system facts so "facts only, no score" stays true), Paid services
+  (DexScreener update $300, DexScreener boost $100, our own boost $50/100, link out to
+  the bot services page), and a read-only "What stays locked" panel restating the
+  boundary (supply/ownership/pool/pause power) that never moves regardless of what a
+  creator picks. All controls are static/mocked — toggles flip visually, nothing is
+  wired to real state yet.
 - [x] Fixed the per-column scroll dead zone: the previous "always capture the wheel"
   fix meant a column with nothing to scroll (left/center, especially after the
   activity table moved out) blocked the page from scrolling too — hovering it and
@@ -197,6 +212,21 @@ Proposed, none picked/committed yet:
 Total supply after launch, ownership renouncement, pool existence (there is none),
 any pause/blacklist/reclaim power. These stay fixed no matter what the creator wants —
 this list is the trade-off side of "control over everything safe."
+
+**More ideas (2026-09-12), asked for and added on top of the above — all optional too:**
+- Designate a **payout wallet** for their tax cut and milestone payout, separate from
+  the wallet that actually launched/manages the token (useful if launch wallet is a hot
+  wallet but payouts should go to something colder).
+- Designate a **backup/co-manager wallet** that can also access the Hub — protects
+  against losing access to a single wallet; still just the creator's own choice of who
+  else they trust, not a platform-granted power.
+- Adjustable **referral share** for people who share their token's link (within a
+  capped band, same spirit as the tax-split slider).
+- An **embed generator** — copy-pasteable chart/price-ticker snippet the creator can
+  drop on their own external site (DexScreener has the same "Embed this chart" feature,
+  visible in the reference screenshots).
+- **Notification preferences** — Telegram/email alerts for milestones, unusually large
+  trades, etc. Not a control exactly, but belongs in the same hub.
 
 ---
 
