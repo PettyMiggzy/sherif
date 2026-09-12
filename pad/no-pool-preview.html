@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>No-pool pad preview — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<!-- INTERNAL. Deliberately not linked from any nav, and noindex — same convention as preview.html.
+     This is a design preview of the "no-pool" curve-forever pad concept (see
+     ROBIN-PAD-NEXT-GEN-IDEAS.md at the repo root for the full write-up). Nothing on this page is
+     wired to real data or real contracts — those don't exist yet. It exists purely so the real
+     layout can be reviewed in place, styled to match the live site, before anything is built for
+     real or linked from anywhere public. -->
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<meta name="theme-color" content="#080a04" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+  :root{
+    --bg:#060803; --bg-2:#0b0f06; --panel:#0c1108; --panel-2:#101609;
+    --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06); --line-strong:rgba(220,233,5,.4);
+    --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
+    --lime:#dce905; --lime-2:#c3d400; --lime-deep:#8a9c00; --green:#5fd16a; --red:#ff5a52;
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+  .preview-strip{background:var(--panel-2);border-bottom:1px solid var(--line);color:var(--faint);
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
+    text-align:center;padding:8px 10px}
+  .preview-strip b{color:var(--lime)}
+
+  header.nav{border-bottom:1px solid var(--line-2);background:var(--bg)}
+  .nav-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:14px 20px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;text-decoration:none;font-size:.98rem;letter-spacing:.01em}
+  .brand b{color:var(--lime)}
+  .nav-links{display:flex;gap:18px;font-size:.86rem;color:var(--dim);flex:1;flex-wrap:wrap}
+  .nav-cta{display:flex;gap:10px;align-items:center}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font-weight:700;
+    font-size:.86rem;border-radius:12px;padding:10px 16px;border:1px solid transparent;white-space:nowrap;
+    font-family:var(--sans);cursor:default}
+  .btn-dark{background:var(--panel);border-color:var(--line-2);color:var(--ink)}
+  .btn-lime{background:var(--lime);color:#0a0e05}
+  .btn-ghost{background:transparent;border-color:var(--line-strong);color:var(--ink)}
+
+  main{max-width:1180px;margin:0 auto;padding:26px 20px 90px}
+
+  .tokhead{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;justify-content:space-between;
+    padding-bottom:20px;border-bottom:1px solid var(--line-2);margin-bottom:22px}
+  .tokid{display:flex;gap:14px;align-items:center}
+  .tokmark{width:52px;height:52px;border-radius:14px;background:linear-gradient(155deg,var(--lime),var(--lime-deep));
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;color:#0a0e05;font-size:1.1rem}
+  .tokname h1{margin:0;font-size:1.5rem;font-weight:800}
+  .tokname .sub{color:var(--faint);font-size:.84rem;font-family:var(--mono)}
+  .badges{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .badge{font-family:var(--mono);font-size:.65rem;letter-spacing:.05em;text-transform:uppercase;
+    padding:4px 9px;border-radius:999px;border:1px solid var(--line-strong);color:var(--lime)}
+  .badge.alt{border-color:var(--line-2);color:var(--dim)}
+  .price-block{text-align:right}
+  .price{font-family:var(--mono);font-size:1.7rem;font-weight:700}
+  .chg{font-family:var(--mono);font-size:.9rem;color:var(--green);font-weight:700}
+  .chg.down{color:var(--red)}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;
+    background:var(--line-2);border:1px solid var(--line-2);border-radius:12px;overflow:hidden;margin-bottom:24px}
+  .stat{background:var(--panel);padding:14px 16px}
+  .stat .k{font-family:var(--mono);font-size:.62rem;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+  .stat .v{font-family:var(--mono);font-size:1rem;font-weight:700;margin-top:4px}
+
+  .layout{display:grid;grid-template-columns:1.6fr 1fr;gap:20px}
+  @media (max-width:860px){.layout{grid-template-columns:1fr}}
+
+  .panel{background:var(--panel);border:1px solid var(--line-2);border-radius:14px;padding:18px}
+  .panel + .panel{margin-top:16px}
+  .panel h3{margin:0 0 14px;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--faint);font-family:var(--mono);font-weight:600}
+
+  .chart{height:230px;border-radius:10px;background:
+      linear-gradient(180deg, rgba(220,233,5,.08), transparent 70%),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, var(--line-2) 40px);
+    position:relative;overflow:hidden;margin-bottom:6px}
+  .chart svg{position:absolute;inset:0;width:100%;height:100%}
+  .chart-foot{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.68rem;color:var(--faint)}
+
+  .trades{margin-top:16px}
+  .trade-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line-2);font-size:.82rem}
+  .trade-row:first-child{border-top:none}
+  .side{font-family:var(--mono);font-weight:700;font-size:.68rem;padding:2px 7px;border-radius:6px;width:38px;text-align:center}
+  .side.buy{background:rgba(95,209,106,.14);color:var(--green)}
+  .side.sell{background:rgba(255,90,82,.14);color:var(--red)}
+  .trade-row .who{font-family:var(--mono);color:var(--dim);flex:1}
+  .trade-row .amt{font-family:var(--mono)}
+  .trade-row .ago{font-family:var(--mono);color:var(--faint);font-size:.72rem;width:48px;text-align:right}
+
+  .swaptabs{display:flex;gap:6px;background:var(--bg-2);border-radius:10px;padding:4px;margin-bottom:14px}
+  .swaptab{flex:1;text-align:center;padding:8px;border-radius:8px;font-weight:700;font-size:.84rem;font-family:var(--mono)}
+  .swaptab.on{background:var(--lime);color:#0a0e05}
+  .swaptab.off{color:var(--dim)}
+  .field{background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+  .field .lbl{font-family:var(--mono);font-size:.66rem;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+  .field .amt{font-size:1.3rem;font-family:var(--mono);margin-top:4px;color:var(--ink)}
+  .taxsplit{margin:8px 0 4px;padding:10px 12px;background:var(--bg-2);border-radius:10px;border:1px solid var(--line-2)}
+  .taxsplit .row{display:flex;justify-content:space-between;font-size:.74rem;padding:3px 0;color:var(--dim);font-family:var(--mono)}
+  .taxsplit .row b{color:var(--lime)}
+  .go-btn{width:100%;margin-top:6px;padding:13px;border-radius:10px}
+
+  .rowline{display:flex;justify-content:space-between;align-items:center;padding:9px 0;
+    border-top:1px solid var(--line-2);font-size:.86rem}
+  .rowline:first-child{border-top:none}
+  .rowline .k{color:var(--dim)}
+  .rowline .v{font-family:var(--mono);font-weight:700}
+  .mini{font-family:var(--mono);font-size:.72rem;color:var(--faint);margin-top:10px;line-height:1.5}
+
+  .history-item{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line-2);font-size:.82rem}
+  .history-item:first-child{border-top:none}
+  .history-item .dot{width:7px;height:7px;border-radius:50%;background:var(--green);margin-top:6px;flex:none}
+  .history-item .txt{color:var(--dim)}
+  .history-item .txt b{color:var(--ink)}
+
+  .pitch-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:22px}
+  .pitch{background:var(--panel);border:1px solid var(--line-2);border-radius:12px;padding:14px 16px}
+  .pitch .t{font-family:var(--mono);font-size:.68rem;color:var(--lime);text-transform:uppercase;letter-spacing:.05em}
+  .pitch .d{font-size:.82rem;color:var(--dim);margin-top:4px}
+
+  .mirror-strip{display:flex;align-items:center;gap:10px;background:var(--panel-2);border:1px dashed var(--line-2);
+    border-radius:10px;padding:10px 14px;font-size:.78rem;color:var(--faint);margin-top:10px}
+  .mirror-strip b{color:var(--dim)}
+</style>
+</head>
+<body>
+
+<div class="preview-strip">Internal design preview — <b>not live</b>, noindex, not linked from anywhere on the
+site. Layout only — see ROBIN-PAD-NEXT-GEN-IDEAS.md for the full concept.</div>
+
+<header class="nav"><div class="nav-in">
+  <a class="brand">ROBIN <b>LABS</b></a>
+  <nav class="nav-links">
+    <a>Browse</a><a>Swap</a><a>Stocks</a><a>Bridge</a><a>Migrate</a><a>Docs</a>
+  </nav>
+  <div class="nav-cta">
+    <span class="btn btn-dark">Connect Wallet</span>
+    <span class="btn btn-lime">Launch Token</span>
+  </div>
+</div></header>
+
+<main>
+
+  <div class="tokhead">
+    <div class="tokid">
+      <div class="tokmark">R</div>
+      <div class="tokname">
+        <h1>Robin — $ROBIN</h1>
+        <div class="sub">0x7a2f…e91c · migrated from the old pad</div>
+        <div class="badges">
+          <span class="badge">No-pool curve</span>
+          <span class="badge">Migrated ✓ airdropped</span>
+          <span class="badge alt">Creator: Robin Labs</span>
+        </div>
+      </div>
+    </div>
+    <div class="price-block">
+      <div class="price">$0.00184</div>
+      <div class="chg">▲ 6.2% · 24h</div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Market cap</div><div class="v">$1.84M</div></div>
+    <div class="stat"><div class="k">Treasury (curve)</div><div class="v">312.4 ETH</div></div>
+    <div class="stat"><div class="k">Holders</div><div class="v">4,208</div></div>
+    <div class="stat"><div class="k">Sacrificed total</div><div class="v">18.9 ETH</div></div>
+    <div class="stat"><div class="k">24h volume</div><div class="v">96.1 ETH</div></div>
+  </div>
+
+  <div class="pitch-row">
+    <div class="pitch"><div class="t">Can't be rugged</div><div class="d">No pool to drain — the curve is the market.</div></div>
+    <div class="pitch"><div class="t">Can't be sniped</div><div class="d">No public mempool on this chain — nothing to front-run.</div></div>
+    <div class="pitch"><div class="t">Can't be dumped</div><div class="d">Creator's stake vests over time, not all at once.</div></div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="panel">
+        <h3>Price</h3>
+        <div class="chart">
+          <svg viewBox="0 0 400 160" preserveAspectRatio="none">
+            <polyline fill="none" stroke="#dce905" stroke-width="2"
+              points="0,120 20,110 40,118 60,95 80,100 100,80 120,88 140,70 160,74 180,55 200,60
+                      220,40 240,48 260,35 280,42 300,28 320,33 340,20 360,26 380,15 400,20"/>
+            <polyline fill="rgba(220,233,5,.10)" stroke="none"
+              points="0,120 20,110 40,118 60,95 80,100 100,80 120,88 140,70 160,74 180,55 200,60
+                      220,40 240,48 260,35 280,42 300,28 320,33 340,20 360,26 380,15 400,20 400,160 0,160"/>
+          </svg>
+        </div>
+        <div class="chart-foot"><span>30D</span><span>Chart reads straight off the curve's own trade log — no pool needed.</span></div>
+
+        <div class="trades">
+          <div class="trade-row"><span class="side buy">BUY</span><span class="who">0x4f…19a2</span><span class="amt">+ 240,000 ROBIN</span><span class="ago">12s</span></div>
+          <div class="trade-row"><span class="side sell">SELL</span><span class="who">0x91…7cd0</span><span class="amt">− 88,400 ROBIN</span><span class="ago">40s</span></div>
+          <div class="trade-row"><span class="side buy">BUY</span><span class="who">bot·0x2c…f11</span><span class="amt">+ 12,000 ROBIN</span><span class="ago">1m</span></div>
+          <div class="trade-row"><span class="side sell">SELL</span><span class="who">0x0a…44de</span><span class="amt">− 1,204,000 ROBIN</span><span class="ago">3m</span></div>
+        </div>
+
+        <div class="mirror-strip">
+          <b>Also visible on:</b> a thin mirror pool exists for chart/aggregator visibility only —
+          sell-only for the public, restocked by our own bot, same tax either way.
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Launch history — facts only, no score</h3>
+        <div class="history-item"><span class="dot"></span><span class="txt"><b>Robin Labs</b> has launched 3 tokens on this pad. All 3 still trading normally.</span></div>
+        <div class="history-item"><span class="dot"></span><span class="txt">Creator allocation for $ROBIN is <b>62% vested</b>, unlocking linearly through day 28.</span></div>
+        <div class="history-item"><span class="dot"></span><span class="txt">No sells from the creator wallet since launch.</span></div>
+        <div class="mini">We're not rating anyone — just showing what actually happened, so you can decide for yourself.</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h3>Trade</h3>
+        <div class="swaptabs">
+          <div class="swaptab on">Buy</div>
+          <div class="swaptab off">Sell</div>
+        </div>
+        <div class="field"><div class="lbl">You pay</div><div class="amt">0.25 ETH</div></div>
+        <div class="field"><div class="lbl">You receive (est.)</div><div class="amt">33,940 ROBIN</div></div>
+        <div class="taxsplit">
+          <div class="row"><span>Buy tax</span><b>1.5%</b></div>
+          <div class="row"><span>→ holders</span><span>0.20%</span></div>
+          <div class="row"><span>→ referrer</span><span>0.20%</span></div>
+          <div class="row"><span>→ platform</span><span>0.60%</span></div>
+          <div class="row"><span>→ trader rebate pool</span><span>0.50%</span></div>
+        </div>
+        <span class="btn btn-lime go-btn">Buy $ROBIN</span>
+      </div>
+
+      <div class="panel">
+        <h3>Rewards</h3>
+        <div class="rowline"><span class="k">Holder pool (your share)</span><span class="v">0.014 ETH</span></div>
+        <div class="rowline"><span class="k">Boost by burning</span><span class="v">+0.6%/1k burned</span></div>
+        <div class="rowline"><span class="k">Trader rebate earned (30d)</span><span class="v">0.031 ETH</span></div>
+        <span class="btn btn-ghost go-btn">Claim rewards</span>
+      </div>
+
+      <div class="panel">
+        <h3>Sacrifice page</h3>
+        <div class="mini" style="margin-top:0">Sell in, skip the payout — your ETH goes straight into the pool as
+        permanent backing. Not reclaimable, not even by us.</div>
+        <div class="rowline"><span class="k">Total sacrificed</span><span class="v">18.9 ETH</span></div>
+        <div class="rowline"><span class="k">Top backer</span><span class="v">0x4f…19a2</span></div>
+        <span class="btn btn-dark go-btn">Open sacrifice page</span>
+      </div>
+    </div>
+  </div>
+
+</main>
+</body>
+</html>
