@@ -75,8 +75,18 @@
   .stat .k{font-family:var(--mono);font-size:.62rem;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
   .stat .v{font-family:var(--mono);font-size:1rem;font-weight:700;margin-top:4px}
 
-  .layout{display:grid;grid-template-columns:1.6fr 1fr;gap:20px}
-  @media (max-width:860px){.layout{grid-template-columns:1fr}}
+  /* DexScreener-inspired 3-panel token-detail layout — info | chart | trade,
+     adapted to our own content and colors, not their palette or markup. */
+  .layout{display:grid;grid-template-columns:250px 1fr 300px;gap:16px;align-items:start}
+  @media (max-width:1080px){.layout{grid-template-columns:1fr 300px}.col-left{grid-column:1 / -1}}
+  @media (max-width:700px){.layout{grid-template-columns:1fr}.col-left{grid-column:auto}}
+  .col-left,.col-center,.col-right{min-width:0}
+  .col-left{position:sticky;top:16px}
+  @media (max-width:1080px){.col-left{position:static}}
+
+  .chart-tf{display:flex;gap:2px;background:var(--bg-2);border-radius:8px;padding:3px;width:max-content;margin-bottom:10px}
+  .chart-tf span{font-family:var(--mono);font-size:.68rem;padding:5px 10px;border-radius:6px;color:var(--faint)}
+  .chart-tf span.on{background:var(--panel-2);color:var(--lime)}
 
   .panel{background:var(--panel);border:1px solid var(--line-2);border-radius:14px;padding:18px}
   .panel + .panel{margin-top:16px}
@@ -178,7 +188,7 @@
   .hero-cta{display:flex;gap:10px;flex-wrap:wrap}
   .btn:hover{filter:brightness(1.1)}
   .btn:active{transform:scale(.98)}
-  .tab,.tf,.txtab,.swaptab,.mini-btn{cursor:pointer;transition:.12s ease}
+  .tab,.tf,.txtab,.swaptab,.mini-btn,.chart-tf span{cursor:pointer;transition:.12s ease}
 </style>
 </head>
 <body>
@@ -243,9 +253,57 @@
   </div>
 
   <div class="layout">
-    <div>
+    <div class="col-left">
+      <div class="panel">
+        <h3>Stats</h3>
+        <div class="stat2">
+          <div class="c"><div class="k">Liquidity</div><div class="v">312.4 ETH</div></div>
+          <div class="c"><div class="k">FDV</div><div class="v">$1.84M</div></div>
+          <div class="c"><div class="k">Mkt cap</div><div class="v">$1.84M</div></div>
+          <div class="c"><div class="k">Holders</div><div class="v">4,208</div></div>
+        </div>
+        <div class="pctrow">
+          <div class="c"><div class="k">5m</div><div class="v up">+2.1%</div></div>
+          <div class="c"><div class="k">1h</div><div class="v up">+4.0%</div></div>
+          <div class="c"><div class="k">6h</div><div class="v up">+5.6%</div></div>
+          <div class="c"><div class="k">24h</div><div class="v up">+6.2%</div></div>
+        </div>
+        <div class="splitstat">
+          <div class="lbls"><span>Txns <b>3,204</b></span><span>Buys <b style="color:var(--green)">2,010</b> / Sells <b style="color:var(--red)">1,194</b></span></div>
+          <div class="splitbar"><div class="buy" style="width:63%"></div><div class="sell" style="width:37%"></div></div>
+        </div>
+        <div class="splitstat">
+          <div class="lbls"><span>Volume <b>96.1 ETH</b></span><span>Buy <b style="color:var(--green)">58.4</b> / Sell <b style="color:var(--red)">37.7</b></span></div>
+          <div class="splitbar"><div class="buy" style="width:61%"></div><div class="sell" style="width:39%"></div></div>
+        </div>
+        <div class="splitstat">
+          <div class="lbls"><span>Traders <b>842</b></span><span>Buyers <b style="color:var(--green)">510</b> / Sellers <b style="color:var(--red)">332</b></span></div>
+          <div class="splitbar"><div class="buy" style="width:61%"></div><div class="sell" style="width:39%"></div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Contract</h3>
+        <div class="rowline"><span class="k">Address</span><span class="v">0x7a2f…e91c</span></div>
+        <div class="rowline"><span class="k">Total supply</span><span class="v">1,000,000,000</span></div>
+        <div class="rowline"><span class="k">Ownership</span><span class="v" style="color:var(--green)">Renounced ✓</span></div>
+        <div class="rowline"><span class="k">Pool</span><span class="v" style="color:var(--green)">None — nothing to drain</span></div>
+        <div class="mini" style="margin-top:0">No pool means no LP to lock or burn in the first place —
+        there's simply nothing here for anyone to pull.</div>
+      </div>
+
+      <div class="adslot">
+        <div class="creative">Ad creative — 300×250</div>
+        <div class="l"><span><b>Advertise here</b> — every token page on the pad.</span><span class="tag">Ad</span></div>
+      </div>
+    </div>
+
+    <div class="col-center">
       <div class="panel">
         <h3>Price</h3>
+        <div class="chart-tf">
+          <span>5m</span><span>1H</span><span class="on">4H</span><span>1D</span><span>1W</span>
+        </div>
         <div class="chart">
           <svg viewBox="0 0 400 160" preserveAspectRatio="none">
             <polyline fill="none" stroke="#dce905" stroke-width="2"
@@ -285,35 +343,7 @@
       </div>
     </div>
 
-    <div>
-      <div class="panel">
-        <h3>Stats</h3>
-        <div class="stat2">
-          <div class="c"><div class="k">Liquidity</div><div class="v">312.4 ETH</div></div>
-          <div class="c"><div class="k">FDV</div><div class="v">$1.84M</div></div>
-          <div class="c"><div class="k">Mkt cap</div><div class="v">$1.84M</div></div>
-          <div class="c"><div class="k">Holders</div><div class="v">4,208</div></div>
-        </div>
-        <div class="pctrow">
-          <div class="c"><div class="k">5m</div><div class="v up">+2.1%</div></div>
-          <div class="c"><div class="k">1h</div><div class="v up">+4.0%</div></div>
-          <div class="c"><div class="k">6h</div><div class="v up">+5.6%</div></div>
-          <div class="c"><div class="k">24h</div><div class="v up">+6.2%</div></div>
-        </div>
-        <div class="splitstat">
-          <div class="lbls"><span>Txns <b>3,204</b></span><span>Buys <b style="color:var(--green)">2,010</b> / Sells <b style="color:var(--red)">1,194</b></span></div>
-          <div class="splitbar"><div class="buy" style="width:63%"></div><div class="sell" style="width:37%"></div></div>
-        </div>
-        <div class="splitstat">
-          <div class="lbls"><span>Volume <b>96.1 ETH</b></span><span>Buy <b style="color:var(--green)">58.4</b> / Sell <b style="color:var(--red)">37.7</b></span></div>
-          <div class="splitbar"><div class="buy" style="width:61%"></div><div class="sell" style="width:39%"></div></div>
-        </div>
-        <div class="splitstat">
-          <div class="lbls"><span>Traders <b>842</b></span><span>Buyers <b style="color:var(--green)">510</b> / Sellers <b style="color:var(--red)">332</b></span></div>
-          <div class="splitbar"><div class="buy" style="width:61%"></div><div class="sell" style="width:39%"></div></div>
-        </div>
-      </div>
-
+    <div class="col-right">
       <div class="panel">
         <h3>Trade</h3>
         <div class="swaptabs">
@@ -363,11 +393,6 @@
         <div class="rowline"><span class="k">#3 · 0x0a…44de</span><span class="v">3.1 ETH</span></div>
         <span class="btn btn-dark go-btn">Open burn page</span>
       </div>
-
-      <div class="adslot">
-        <div class="creative">Ad creative — 728×90</div>
-        <div class="l"><span><b>Advertise here</b> — every token page on the pad.</span><span class="tag">Ad</span></div>
-      </div>
     </div>
   </div>
 
@@ -390,6 +415,7 @@
   }
   wireToggle('.swaptabs', '.swaptab', 'on', 'off');
   wireToggle('.txtabs', '.txtab', 'on', null);
+  wireToggle('.chart-tf', 'span', 'on', null);
 </script>
 </body>
 </html>

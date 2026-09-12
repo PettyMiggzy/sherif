@@ -151,6 +151,7 @@
   table.grid td{padding:11px 13px;border-bottom:1px solid var(--border-soft);font-size:.8rem;vertical-align:middle;
     text-align:right;font-family:var(--mono);white-space:nowrap}
   table.grid tr:last-child td{border-bottom:none}
+  table.grid tbody tr{cursor:pointer}
   table.grid tr:hover td{background:rgba(255,255,255,.02)}
   th[data-k]{cursor:pointer;user-select:none}
   th[data-k] .arrow{color:var(--accent);margin-left:3px;font-size:.6rem}
@@ -289,28 +290,28 @@
           </tr>
         </thead>
         <tbody>
-          <tr data-mcap="3910000" data-price="0.00412" data-age="3" data-txns="5882" data-volume="241.0" data-traders="1204" data-pc5m="6.9" data-pc1h="11.2" data-pc6h="15.0" data-pc24h="18.4" data-liq="241.0">
+          <tr data-href="no-pool-preview.html" data-mcap="3910000" data-price="0.00412" data-age="3" data-txns="5882" data-volume="241.0" data-traders="1204" data-pc5m="6.9" data-pc1h="11.2" data-pc6h="15.0" data-pc24h="18.4" data-liq="241.0">
             <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#1</span><div class="tmark">D</div><div><div class="n">Dustline <span class="boost">⚡900</span></div><div class="s">$DUST</div></div></div></td>
             <td>$3.91M</td><td>$0.00412</td><td class="muted">3d</td><td>5,882</td><td>241.0 ETH</td><td>1,204</td>
             <td class="up">+6.9%</td><td class="up">+11.2%</td><td class="up">+15.0%</td><td class="up">+18.4%</td>
             <td>241.0 ETH</td>
             <td class="statuscell"><span class="mbadge live">No-pool</span> <span class="mbadge">Trending</span></td>
           </tr>
-          <tr data-mcap="1840000" data-price="0.00184" data-age="41" data-txns="3204" data-volume="96.1" data-traders="842" data-pc5m="2.1" data-pc1h="4.0" data-pc6h="5.6" data-pc24h="6.2" data-liq="312.4">
+          <tr data-href="no-pool-preview.html" data-mcap="1840000" data-price="0.00184" data-age="41" data-txns="3204" data-volume="96.1" data-traders="842" data-pc5m="2.1" data-pc1h="4.0" data-pc6h="5.6" data-pc24h="6.2" data-liq="312.4">
             <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#2</span><div class="tmark">R</div><div><div class="n">Robin <span class="boost">⚡500</span></div><div class="s">$ROBIN</div></div></div></td>
             <td>$1.84M</td><td>$0.00184</td><td class="muted">41d</td><td>3,204</td><td>96.1 ETH</td><td>842</td>
             <td class="up">+2.1%</td><td class="up">+4.0%</td><td class="up">+5.6%</td><td class="up">+6.2%</td>
             <td>312.4 ETH</td>
             <td class="statuscell"><span class="mbadge live">No-pool</span> <span class="mbadge">Migrated</span></td>
           </tr>
-          <tr data-mcap="212000" data-price="0.00007" data-age="12" data-txns="1110" data-volume="12.0" data-traders="390" data-pc5m="-0.4" data-pc1h="-1.2" data-pc6h="-2.9" data-pc24h="-3.8" data-liq="96.7">
+          <tr data-href="no-pool-preview.html" data-mcap="212000" data-price="0.00007" data-age="12" data-txns="1110" data-volume="12.0" data-traders="390" data-pc5m="-0.4" data-pc1h="-1.2" data-pc6h="-2.9" data-pc24h="-3.8" data-liq="96.7">
             <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#3</span><div class="tmark">K</div><div><div class="n">Kevlar <span class="boost">⚡100</span></div><div class="s">$KVLR</div></div></div></td>
             <td>$212K</td><td>$0.00007</td><td class="muted">12d</td><td>1,110</td><td>12.0 ETH</td><td>390</td>
             <td class="down">-0.4%</td><td class="down">-1.2%</td><td class="down">-2.9%</td><td class="down">-3.8%</td>
             <td>96.7 ETH</td>
             <td class="statuscell"><span class="mbadge live">No-pool</span></td>
           </tr>
-          <tr data-mcap="0" data-price="0" data-age="0.25" data-txns="88" data-volume="2.6" data-traders="34" data-pc5m="0" data-pc1h="0" data-pc6h="0" data-pc24h="0" data-liq="0">
+          <tr data-href="no-pool-auction-preview.html" data-mcap="0" data-price="0" data-age="0.25" data-txns="88" data-volume="2.6" data-traders="34" data-pc5m="0" data-pc1h="0" data-pc6h="0" data-pc24h="0" data-liq="0">
             <td><div class="namecell"><button class="favstar" aria-label="Favorite">★</button><span class="rank">#4</span><div class="tmark">F</div><div><div class="n">Fable</div><div class="s">$FABLE</div></div></div></td>
             <td class="muted">—</td><td class="muted">—</td><td class="muted">6h</td><td>88</td><td>2.6 ETH raised</td><td>34</td>
             <td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>
@@ -365,6 +366,16 @@
     star.addEventListener('click', function (e) {
       e.stopPropagation();
       star.classList.toggle('on');
+    });
+  });
+
+  // Row click → token detail page, DexScreener-style. Static preview: every row still
+  // links somewhere real (its own token page, or the auction page while pre-launch) —
+  // per-token pages come with the real indexer in Phase 2.
+  document.querySelectorAll('table.grid tbody tr[data-href]').forEach(function (row) {
+    row.addEventListener('click', function (e) {
+      if (e.target.closest('.favstar')) return;
+      window.location.href = row.dataset.href;
     });
   });
 </script>

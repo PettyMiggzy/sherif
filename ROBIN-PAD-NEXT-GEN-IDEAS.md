@@ -53,6 +53,23 @@ Anything without a checkbox is still notes-only.
   third party's indexing schedule; a third party (DexScreener, maybe CoinGecko) picking
   up the separate thin visibility pool is still just a bonus distribution channel, not
   something the main product relies on.
+- [x] DEX page rows are now clickable, DexScreener-style — clicking anywhere on a token
+  row (except the favorite star, which still just toggles) navigates to that token's
+  detail page; the still-in-auction row routes to the auction page instead since it
+  isn't trading yet. Static preview limitation: all three non-$ROBIN rows currently
+  point at the same `no-pool-preview.html` (there's only one built detail page) —
+  real per-token pages are a Phase 2/indexer thing, not a UI-only concern.
+- [x] Token detail page rebuilt into a real 3-panel DexScreener-style layout (user
+  supplied a reference sample of DexScreener's actual token-detail page and said
+  "clone dex screener one or make a better one," not to copy it verbatim) — left
+  column: stats block + a new "Contract" panel (address, supply, renounced ownership,
+  "no pool — nothing to drain," reframing DexScreener's contract-verification panel
+  around our own no-pool pitch) + an ad slot; center column: chart (now with a
+  1m/5m/15m/1H/4H-style timeframe toggle above it, previously static) + transactions/
+  traders/holders tabs + launch history; right column: Trade (buy/sell/limit) + community
+  locks + rewards + burn. More columns of real content than DexScreener's own sample
+  since we're a full DEX, not just a chart aggregator — their layout, our features and
+  colors.
 - [x] Migration (zero holder action) → `no-pool-migrate-preview.html`
 - [x] Pad-wide transparency page → `no-pool-transparency-preview.html`
 - [ ] Everything else below is still concept-only — no page yet.
