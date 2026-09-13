@@ -21,8 +21,12 @@ export const CHAIN = {
   hexId: "0x1237",
   name: "Robinhood Chain (pad-v4 tester devnet)",
   currency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpc: ["http://138.68.248.211:8545"],
-  walletRpcUrls: ["http://138.68.248.211:8545"],
+  // HTTPS via Caddy reverse-proxying test.robinlab.io/rpc -> localhost:8545 on the droplet — a plain
+  // http:// RPC URL (what this pointed at before) is rejected outright by MetaMask MOBILE when adding
+  // a custom network (the desktop extension is more lenient). Same-origin with the pad pages served
+  // from the same domain, so no CORS config is needed either.
+  rpc: ["https://test.robinlab.io/rpc"],
+  walletRpcUrls: ["https://test.robinlab.io/rpc"],
   explorer: "",
 };
 
