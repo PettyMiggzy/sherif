@@ -418,13 +418,13 @@
   });
 </script>
 
-<!-- ── pad-v4 no-pool-forever LOCAL DEVNET wiring ──────────────────────────────
-     Replaces the static rows above with REAL on-chain data read from a local Hardhat devnet
-     (see pad-v4/scripts/deploy-local-demo.js). This is genuinely real: real contract reads, real
-     buy/sell transactions, real balances — it just isn't reachable outside this dev environment
-     yet (chainId 31337, not Robinhood Chain). Falls back to the static sample rows above, with a
-     visible "devnet offline" badge, if the local chain isn't reachable — never fails silently
-     into looking like real data when it isn't. -->
+<!-- ── pad-v4 no-pool-forever TESTER DEVNET wiring ──────────────────────────────
+     Replaces the static rows above with REAL on-chain data read from a Hardhat devnet running on
+     the team's droplet (see pad/js/config-v4-local.js + pad-v4/scripts/deploy-local-demo.js).
+     This is genuinely real: real contract reads, real buy/sell transactions, real balances — just
+     not on the real Robinhood Chain (it's a test deployment reachable only by whoever has this
+     RPC URL). Falls back to the static sample rows above, with a visible "devnet offline" badge,
+     if the devnet isn't reachable — never fails silently into looking like real data when it isn't. -->
 <script type="module">
   import { listPads, ethPerToken, connect, account, short, isConnected } from './js/wallet-v4-local.js';
 

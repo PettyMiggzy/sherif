@@ -1,25 +1,28 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Robin Labs — pad-v4 (no-pool-forever rewrite) LOCAL DEVNET config
+// Robin Labs — pad-v4 (no-pool-forever rewrite) TESTER DEVNET config
 //
-// This points at a local Hardhat node (chainId 31337), NOT Robinhood Chain. It exists so the
-// pad-v4 no-pool-forever preview pages can make REAL contract calls against a REAL deployment
+// Points at a Hardhat node running on the team's droplet (a fork of Robinhood Chain — real
+// chainId 4663, cheat-codes like hardhat_setBalance enabled — running pad-v4's OWN fresh
+// contracts, not the real deployed ones; see pad-v4/scripts/deploy-local-demo.js). It exists so
+// the pad-v4 no-pool-forever preview pages make REAL contract calls against a REAL deployment
 // while pad-v4 itself is still pre-testnet R&D (see pad-v4/NO-POOL-FOREVER.md status). Addresses
-// below come straight out of pad-v4/scripts/deploy-local-demo.js's output
-// (pad/js/deploy.local.json) — regenerate that file and this one stays in sync automatically via
-// loadDeployment() below; nothing here is hand-typed.
+// below come straight out of that deploy script's output (pad/js/deploy.local.json) — regenerate
+// that file and this one stays in sync automatically via loadDeployment() below; nothing here is
+// hand-typed.
 //
 // DO NOT point this file at a real network. MockPermit2/MockPositionManagerV4 (used in the local
 // deploy so pad-v4 doesn't need the real, differently-pinned-solc Uniswap v4 periphery) are not
-// real custody, and the local node's accounts are Hardhat's publicly-known dev keys.
+// real custody, and the local node's accounts are Hardhat's publicly-known dev keys — anyone can
+// spend from them. This is for internal team testing only; don't publicize the RPC URL.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const CHAIN = {
-  id: 31337,
-  hexId: "0x7a69",
-  name: "Robin Pad-V4 Local Devnet",
+  id: 4663,
+  hexId: "0x1237",
+  name: "Robinhood Chain (pad-v4 tester devnet)",
   currency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpc: ["http://127.0.0.1:8545"],
-  walletRpcUrls: ["http://127.0.0.1:8545"],
+  rpc: ["http://138.68.248.211:8545"],
+  walletRpcUrls: ["http://138.68.248.211:8545"],
   explorer: "",
 };
 
