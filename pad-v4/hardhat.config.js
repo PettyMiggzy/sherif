@@ -57,6 +57,13 @@ module.exports = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       gasPrice: 30_180_000,
     },
+    // Explicit localhost entry (Hardhat's implicit default has a short HTTP timeout) — a forked node's
+    // lazy per-slot state fetching against a real remote RPC can make a single complex call genuinely
+    // slow, well past that default, without anything actually being wrong.
+    localhost: {
+      url: "http://127.0.0.1:8545",
+      timeout: 300000,
+    },
   },
   etherscan: {
     apiKey: { robinhood: process.env.BLOCKSCOUT_KEY || "blockscout" },
