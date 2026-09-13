@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tester faucet — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<!-- INTERNAL. Not linked from any nav, noindex — same convention as the other pad-v4 preview pages.
+     Self-serve faucet for the pad-v4 tester devnet (pad/js/config-v4-local.js): paste a wallet
+     address, get test ETH instantly via the devnet's hardhat_setBalance cheat-code. No wallet
+     signature needed to REQUEST funds — it's a plain RPC call, not a transaction. Only works
+     against the team's own test devnet; does nothing on a real network. -->
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<meta name="theme-color" content="#060803" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+  :root{
+    --bg:#060803; --panel:#0c1108; --panel-2:#101609;
+    --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06);
+    --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
+    --lime:#dce905; --lime-2:#c3d400; --green:#5fd16a; --red:#ff5a52;
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased;
+    min-height:100vh;display:flex;flex-direction:column}
+  a{color:inherit}
+
+  .preview-strip{background:var(--panel-2);border-bottom:1px solid var(--line);color:var(--faint);
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
+    text-align:center;padding:8px 10px}
+  .preview-strip b{color:var(--lime)}
+
+  .wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:32px 16px}
+  .card{width:100%;max-width:460px;background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:32px 28px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:1rem;margin-bottom:6px}
+  .brand b{color:var(--lime)}
+  h1{font-size:1.5rem;margin:10px 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--dim);font-size:.92rem;line-height:1.5;margin-bottom:22px}
+  .sub code{background:var(--panel-2);border:1px solid var(--line-2);border-radius:5px;padding:1px 6px;font-family:var(--mono);font-size:.85em}
+
+  label{display:block;font-size:.78rem;font-weight:700;color:var(--faint);text-transform:uppercase;
+    letter-spacing:.04em;margin-bottom:8px}
+  input{width:100%;background:var(--panel-2);border:1px solid var(--line-2);border-radius:10px;
+    color:var(--ink);font-family:var(--mono);font-size:.92rem;padding:13px 14px;outline:none}
+  input:focus{border-color:var(--lime)}
+  input::placeholder{color:var(--faint)}
+
+  .amtrow{display:flex;gap:8px;margin:14px 0 20px}
+  .amtchip{flex:1;text-align:center;padding:10px 8px;border-radius:9px;border:1px solid var(--line-2);
+    background:var(--panel-2);color:var(--dim);font-size:.82rem;font-weight:700;cursor:pointer;transition:all .12s}
+  .amtchip.on{border-color:var(--lime);color:var(--lime);background:rgba(220,233,5,.08)}
+
+  button.go{width:100%;background:var(--lime);color:#141a06;border:0;border-radius:10px;font-weight:800;
+    font-size:.95rem;padding:14px;cursor:pointer;transition:filter .12s}
+  button.go:hover{filter:brightness(1.1)}
+  button.go:disabled{opacity:.55;cursor:default;filter:none}
+
+  .msg{margin-top:16px;padding:12px 14px;border-radius:10px;font-size:.86rem;font-family:var(--mono);
+    display:none;word-break:break-all}
+  .msg.ok{display:block;background:rgba(95,209,106,.1);border:1px solid rgba(95,209,106,.35);color:var(--green)}
+  .msg.err{display:block;background:rgba(255,90,82,.1);border:1px solid rgba(255,90,82,.35);color:var(--red)}
+
+  .footlinks{margin-top:22px;padding-top:18px;border-top:1px solid var(--line-2);display:flex;
+    justify-content:space-between;font-size:.82rem;color:var(--dim)}
+  .footlinks a{text-decoration:underline}
+</style>
+</head>
+<body>
+
+<div class="preview-strip">Internal — <b>tester devnet only</b>, noindex, unlinked. Fake ETH, no real value.</div>
+
+<div class="wrap">
+  <div class="card">
+    <div class="brand">ROBIN <b>LABS</b></div>
+    <h1>Get test ETH</h1>
+    <div class="sub">Paste your wallet address below to get funded on the pad-v4 tester devnet. This isn't
+      real money — it only exists on our internal test chain (<code>chainId 4663</code>, <code id="rpc-display">…</code>) so you
+      can trade with as much as you want.</div>
+
+    <label for="addr">Your wallet address</label>
+    <input id="addr" type="text" placeholder="0x…" autocomplete="off" spellcheck="false" />
+
+    <div class="amtrow">
+      <div class="amtchip" data-eth="10">10 ETH</div>
+      <div class="amtchip on" data-eth="1000">1,000 ETH</div>
+      <div class="amtchip" data-eth="100000000">100M ETH</div>
+    </div>
+
+    <button id="go" class="go">Send me test ETH</button>
+    <div id="msg" class="msg"></div>
+
+    <div class="footlinks">
+      <a href="no-pool-browse-preview.html">← Browse tokens</a>
+      <a href="no-pool-preview.html">Token page →</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { ethers } from './assets/ethers.min.js';
+  import { CHAIN } from './js/config-v4-local.js';
+
+  document.getElementById('rpc-display').textContent = CHAIN.rpc[0];
+
+  let amountEth = "1000";
+  document.querySelectorAll('.amtchip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.amtchip').forEach((c) => c.classList.remove('on'));
+      chip.classList.add('on');
+      amountEth = chip.dataset.eth;
+    });
+  });
+
+  const addrInput = document.getElementById('addr');
+  const btn = document.getElementById('go');
+  const msg = document.getElementById('msg');
+
+  function showMsg(text, ok) {
+    msg.textContent = text;
+    msg.className = 'msg ' + (ok ? 'ok' : 'err');
+  }
+
+  btn.addEventListener('click', async () => {
+    const addr = addrInput.value.trim();
+    if (!ethers.isAddress(addr)) {
+      showMsg('That doesn\'t look like a valid wallet address (needs to start with 0x, 42 characters).', false);
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    msg.className = 'msg';
+    try {
+      const res = await fetch(CHAIN.rpc[0], {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'hardhat_setBalance',
+          params: [ethers.getAddress(addr), '0x' + ethers.parseEther(amountEth).toString(16)],
+          id: 1,
+        }),
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message || 'RPC error');
+      showMsg(`✓ Sent — ${amountEth} ETH landed in ${addr.slice(0, 6)}…${addr.slice(-4)}. Refresh your wallet balance if it doesn't show up right away.`, true);
+    } catch (e) {
+      showMsg('Could not reach the test devnet (' + (e.message || e) + '). It may be down — ping the team.', false);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send me test ETH';
+    }
+  });
+
+  addrInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btn.click(); });
+</script>
+</body>
+</html>

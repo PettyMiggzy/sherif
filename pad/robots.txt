@@ -14,5 +14,6 @@ Disallow: /no-pool-transparency-preview.html
 Disallow: /no-pool-hub-preview.html
 Disallow: /no-pool-portfolio-preview.html
 Disallow: /no-pool-index-preview.html
+Disallow: /tester-faucet.html
 
 Sitemap: https://robinlab.io/sitemap.xml
