@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tester guide — Robin Labs</title>
+<meta name="robots" content="noindex, nofollow" />
+<!-- INTERNAL. Not linked from any nav, noindex — same convention as the other pad-v4 preview pages.
+     Onboarding guide for the pad-v4 tester devnet: what this is, one-click network setup (via
+     wallet_addEthereumChain — no manual field entry), get test ETH, start trading. Written for
+     people who have never touched this project before. -->
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" href="assets/favicon-180.png" />
+<meta name="theme-color" content="#060803" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+  :root{
+    --bg:#060803; --panel:#0c1108; --panel-2:#101609;
+    --line:rgba(220,233,5,.16); --line-2:rgba(255,255,255,.06);
+    --ink:#f4f7ee; --dim:#93a382; --faint:#808c68;
+    --lime:#dce905; --lime-2:#c3d400; --green:#5fd16a; --red:#ff5a52;
+    --sans:"Plus Jakarta Sans",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased}
+  a{color:var(--lime)}
+
+  .preview-strip{background:var(--panel-2);border-bottom:1px solid var(--line);color:var(--faint);
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
+    text-align:center;padding:8px 10px}
+  .preview-strip b{color:var(--lime)}
+
+  .wrap{max-width:640px;margin:0 auto;padding:40px 20px 80px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:1rem;margin-bottom:18px}
+  .brand b{color:var(--lime)}
+  h1{font-size:2rem;letter-spacing:-.02em;margin:0 0 10px}
+  .lede{color:var(--dim);font-size:1rem;line-height:1.6;margin-bottom:8px}
+  .warn{background:rgba(255,176,32,.08);border:1px solid rgba(255,176,32,.3);color:#ffb020;
+    border-radius:10px;padding:12px 16px;font-size:.88rem;margin:20px 0 32px;line-height:1.5}
+
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin-bottom:16px}
+  .step-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .step-num{width:28px;height:28px;border-radius:50%;background:var(--lime);color:#141a06;font-weight:800;
+    display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0}
+  .step h2{font-size:1.05rem;margin:0}
+  .step p{color:var(--dim);font-size:.9rem;line-height:1.6;margin:0 0 14px}
+  .step p:last-child{margin-bottom:0}
+  code{background:var(--panel-2);border:1px solid var(--line-2);border-radius:5px;padding:1px 6px;font-family:var(--mono);font-size:.85em}
+
+  .btn{display:inline-flex;align-items:center;gap:8px;background:var(--lime);color:#141a06;border:0;
+    border-radius:10px;font-weight:800;font-size:.9rem;padding:12px 20px;cursor:pointer;text-decoration:none;
+    transition:filter .12s}
+  .btn:hover{filter:brightness(1.1)}
+  .btn:disabled{opacity:.5;cursor:default;filter:none}
+  .btn-ghost{background:transparent;border:1px solid var(--line-2);color:var(--ink)}
+
+  .fieldbox{background:var(--panel-2);border:1px solid var(--line-2);border-radius:10px;padding:14px 16px;
+    font-family:var(--mono);font-size:.82rem;color:var(--dim);margin-bottom:14px}
+  .fieldbox .row{display:flex;justify-content:space-between;gap:12px;padding:3px 0}
+  .fieldbox .row b{color:var(--ink);font-weight:600}
+
+  .statusline{margin-top:12px;font-size:.85rem;display:none}
+  .statusline.ok{display:block;color:var(--green)}
+  .statusline.err{display:block;color:var(--red)}
+
+  .faq{margin-top:36px}
+  .faq h2{font-size:1.2rem;margin-bottom:14px}
+  details{background:var(--panel);border:1px solid var(--line-2);border-radius:10px;padding:14px 18px;margin-bottom:8px}
+  summary{cursor:pointer;font-weight:700;font-size:.92rem}
+  details p{color:var(--dim);font-size:.88rem;line-height:1.6;margin:10px 0 0}
+</style>
+</head>
+<body>
+
+<div class="preview-strip">Internal — <b>tester build</b>, noindex, unlinked. Nothing here is real money.</div>
+
+<div class="wrap">
+  <div class="brand">ROBIN <b>LABS</b></div>
+  <h1>Testing the new pad</h1>
+  <p class="lede">You're testing a work-in-progress version of the Robin Labs launchpad. Everything below
+    happens on our own private test network — <b>no real money is ever involved</b>, and none of this touches
+    the real Robinhood Chain. Follow the 3 steps below and you'll be trading in a couple minutes.</p>
+
+  <div class="warn">⚠️ This is a test build. Things may break, reset, or look unfinished — that's expected,
+    that's what you're here to find. If something seems broken, tell the team what you did right before it
+    happened.</div>
+
+  <div class="step">
+    <div class="step-head"><div class="step-num">1</div><h2>Get a wallet</h2></div>
+    <p>You need <a href="https://metamask.io/download/" target="_blank" rel="noopener">MetaMask</a> (a free
+      browser extension) if you don't already have it. Install it, create a wallet, and come back to this
+      page.</p>
+    <p id="mm-status" style="color:var(--faint);font-size:.85rem">Checking for a wallet…</p>
+  </div>
+
+  <div class="step">
+    <div class="step-head"><div class="step-num">2</div><h2>Add the test network</h2></div>
+    <p>One click adds our test network to your wallet — you won't need to type anything in.</p>
+    <button id="add-network" class="btn">+ Add Robin Test Devnet to MetaMask</button>
+    <div id="add-network-status" class="statusline"></div>
+    <div class="fieldbox">
+      <div class="row"><span>Network name</span><b>Robin Test Devnet</b></div>
+      <div class="row"><span>RPC URL</span><b id="rpc-manual"></b></div>
+      <div class="row"><span>Chain ID</span><b>4663</b></div>
+      <div class="row"><span>Currency symbol</span><b>ETH</b></div>
+      <div class="row"><span>Block explorer URL</span><b>leave blank</b></div>
+    </div>
+    <p style="font-size:.8rem">(If the button doesn't work, open MetaMask → Settings → Networks → Add
+      network → Add manually, and enter the values above. There's no block explorer for this test network —
+      leave that field empty, MetaMask lets you skip it.)</p>
+  </div>
+
+  <div class="step">
+    <div class="step-head"><div class="step-num">3</div><h2>Get test ETH</h2></div>
+    <p>Paste your wallet address on our faucet page and you'll instantly have plenty of test ETH to trade
+      with — no waiting, no limits.</p>
+    <a class="btn" href="tester-faucet.html">Go to the faucet →</a>
+  </div>
+
+  <div class="step">
+    <div class="step-head"><div class="step-num">4</div><h2>Start trading</h2></div>
+    <p>Head to the token list, pick anything, hit <b>Connect wallet</b>, and buy/sell like you would on a
+      real exchange. It's all real transactions — just on the test network.</p>
+    <a class="btn" href="no-pool-browse-preview.html">Browse tokens →</a>
+  </div>
+
+  <div class="faq">
+    <h2>If something's not working</h2>
+    <details>
+      <summary>MetaMask says "insufficient funds" when I try to buy</summary>
+      <p>You skipped step 3, or the faucet didn't reach you — go back and get test ETH first.</p>
+    </details>
+    <details>
+      <summary>The page shows "devnet offline" instead of real tokens</summary>
+      <p>Our test server might be down — ping the team, it usually just needs a restart.</p>
+    </details>
+    <details>
+      <summary>Is any of this real money?</summary>
+      <p>No. Nothing on this page, the faucet, or the token pages involves real funds. It's an isolated test
+        network we control — the "ETH" here can't be moved anywhere real.</p>
+    </details>
+    <details>
+      <summary>MetaMask is warning me about the network / asking to confirm</summary>
+      <p>Normal — MetaMask always warns on a custom network it doesn't recognize. Safe to proceed, this is
+        our own test infrastructure.</p>
+    </details>
+  </div>
+</div>
+
+<script type="module">
+  import { CHAIN } from './js/config-v4-local.js';
+
+  document.getElementById('rpc-manual').textContent = CHAIN.rpc[0];
+
+  const mmStatus = document.getElementById('mm-status');
+  const addBtn = document.getElementById('add-network');
+  const addStatus = document.getElementById('add-network-status');
+
+  if (window.ethereum) {
+    mmStatus.textContent = '✓ Wallet found.';
+    mmStatus.style.color = 'var(--green)';
+  } else {
+    mmStatus.textContent = 'No wallet detected yet — install MetaMask above, then reload this page.';
+    addBtn.disabled = true;
+  }
+
+  addBtn.addEventListener('click', async () => {
+    if (!window.ethereum) return;
+    addBtn.disabled = true;
+    addStatus.className = 'statusline';
+    try {
+      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      try {
+        await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN.hexId }] });
+        addStatus.textContent = '✓ Already added — switched to it.';
+        addStatus.className = 'statusline ok';
+      } catch (switchErr) {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: CHAIN.hexId, chainName: CHAIN.name, nativeCurrency: CHAIN.currency,
+            rpcUrls: CHAIN.walletRpcUrls, blockExplorerUrls: [],
+          }],
+        });
+        addStatus.textContent = '✓ Added! You can move to step 3.';
+        addStatus.className = 'statusline ok';
+      }
+    } catch (e) {
+      addStatus.textContent = 'Didn\'t go through: ' + (e.message || e) + ' — try the manual steps below instead.';
+      addStatus.className = 'statusline err';
+    } finally {
+      addBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
