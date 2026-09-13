@@ -40,7 +40,15 @@ module.exports = {
             46630: { hardforkHistory: { cancun: 0 } },
           },
         }
-      : {},
+      : // HARDHAT_CHAIN_ID lets a plain, UNFORKED node still report a real chain's id (e.g. 4663) so a
+        // wallet configures against it as "Robinhood Chain" — with none of forking's staleness risk
+        // (Robinhood Chain's public RPC only retains ~10,000 recent blocks, so a fork's pinned block
+        // ages out of servable history within ~15-20 minutes and every not-yet-cached state read then
+        // fails with "metadata is not found"). Existing behavior (plain default chainId 31337) is
+        // unchanged when this isn't set.
+        process.env.HARDHAT_CHAIN_ID
+        ? { chainId: Number(process.env.HARDHAT_CHAIN_ID) }
+        : {},
     robinhood: {
       url: process.env.ROBINHOOD_RPC || "https://rpc.mainnet.chain.robinhood.com",
       chainId: 4663,
