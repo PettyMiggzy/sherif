@@ -62,10 +62,29 @@ async function launchDemoPad(S, { name, symbol, supplyM, curveShareBps, tag, cre
     hookInitCode(HookF.bytecode, POOL_MANAGER, await S.factory.getAddress(), await S.reg.getAddress(), predictedToken)
   );
   const curveSalt = ethers.id(tag + "-curve");
-  const ret = await S.factory.launch.staticCall(cfg, tokenSalt, hookSalt, curveSalt);
-  await (await S.factory.launch(cfg, tokenSalt, hookSalt, curveSalt)).wait();
-  console.log(`  launched ${symbol.padEnd(6)} token=${ret[0]} curve=${ret[2]}`);
-  return { token: ret[0], hook: ret[1], curveAddr: ret[2], poolId: ret[3], cfg };
+
+  // Idempotency guard: if a PRIOR attempt's transaction actually landed but the client never saw the
+  // response (the flaky-fork failure mode this script retries around), this exact cfg+tokenSalt would
+  // already be launched — poolOf(predictedToken) is nonzero. Recover its real data from the emitted
+  // event instead of resubmitting (which would revert AlreadyLaunched).
+  const existingPoolId = await S.factory.poolOf(predictedToken);
+  if (existingPoolId !== ethers.ZeroHash) {
+    const filter = S.factory.filters.CurvePadLaunched(null, predictedToken);
+    const [log] = await S.factory.queryFilter(filter);
+    const { token, hook, curve: curveAddr, poolId } = log.args;
+    console.log(`  ${symbol.padEnd(6)} already launched (recovered from a prior attempt) token=${token} curve=${curveAddr}`);
+    return { token, hook, curveAddr, poolId, cfg };
+  }
+
+  // A staticCall pre-check here (as this script originally did) doubles the work of a call that's
+  // already the slow part against a forked real PoolManager (lazy per-slot state fetch over the real
+  // remote RPC) — read the real result off the mined tx's logs instead of simulating it twice.
+  const rc = await (await S.factory.launch(cfg, tokenSalt, hookSalt, curveSalt)).wait();
+  const parsed = rc.logs.map((l) => { try { return S.factory.interface.parseLog(l); } catch { return null; } })
+    .find((l) => l && l.name === "CurvePadLaunched");
+  const { token, hook, curve: curveAddr, poolId } = parsed.args;
+  console.log(`  launched ${symbol.padEnd(6)} token=${token} curve=${curveAddr}`);
+  return { token, hook, curveAddr, poolId, cfg };
 }
 
 async function simulateTrades(S, pad, buyers) {
@@ -75,6 +94,24 @@ async function simulateTrades(S, pad, buyers) {
       key, { zeroForOne: true, amountSpecified: -ethers.parseEther(String(ethIn)), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
       { takeClaims: false, settleUsingBurn: false }, "0x", { value: ethers.parseEther(String(ethIn)) }
     );
+  }
+}
+
+// Interacting with the REAL PoolManager over a fork has been observed to intermittently die mid-request
+// (SocketError "other side closed" / HeadersTimeoutError) — the forked node lazily fetches any storage
+// slot it hasn't cached yet from the real remote RPC, and a call that touches a lot of the real
+// PoolManager's state (launching a pad does) can apparently trip something in that path. Nothing ever
+// reaches the Hardhat node's own log when it happens (confirmed on two separate machines), and a plain
+// retry immediately succeeds — so retry each pad's launch+trade step independently instead of failing
+// the whole run over one flaky call.
+async function withRetry(fn, label, attempts = 4) {
+  for (let i = 1; i <= attempts; i++) {
+    try { return await fn(); }
+    catch (e) {
+      if (i === attempts) throw e;
+      console.log(`  ${label}: attempt ${i} failed (${e.code || e.message}) — retrying in 2s...`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
   }
 }
 
@@ -111,14 +148,14 @@ async function main() {
   console.log("\nLaunching demo pads against the REAL PoolManager...");
   const S = { dep, reg, factory, sw };
 
-  const padA = await launchDemoPad(S, { name: "Robin Demo Alpha", symbol: "RALPHA", supplyM: 1_000_000_000, curveShareBps: 7300, tag: "fork-demo-alpha", creator: creatorA });
-  await simulateTrades(S, padA, [{ signer: buyer1, ethIn: 0.8 }, { signer: buyer2, ethIn: 1.5 }]);
+  const padA = await withRetry(() => launchDemoPad(S, { name: "Robin Demo Alpha", symbol: "RALPHA", supplyM: 1_000_000_000, curveShareBps: 7300, tag: "fork-demo-alpha", creator: creatorA }), "RALPHA launch");
+  await withRetry(() => simulateTrades(S, padA, [{ signer: buyer1, ethIn: 0.8 }, { signer: buyer2, ethIn: 1.5 }]), "RALPHA trades");
 
-  const padB = await launchDemoPad(S, { name: "Robin Demo Beta", symbol: "RBETA", supplyM: 500_000_000, curveShareBps: 7300, tag: "fork-demo-beta", creator: creatorB });
-  await simulateTrades(S, padB, [{ signer: buyer2, ethIn: 2.0 }]);
+  const padB = await withRetry(() => launchDemoPad(S, { name: "Robin Demo Beta", symbol: "RBETA", supplyM: 500_000_000, curveShareBps: 7300, tag: "fork-demo-beta", creator: creatorB }), "RBETA launch");
+  await withRetry(() => simulateTrades(S, padB, [{ signer: buyer2, ethIn: 2.0 }]), "RBETA trades");
 
-  const padC = await launchDemoPad(S, { name: "Robin Demo Gamma", symbol: "RGAMMA", supplyM: 2_000_000_000, curveShareBps: 7300, tag: "fork-demo-gamma", creator: creatorC });
-  await simulateTrades(S, padC, [{ signer: buyer3, ethIn: 3.2 }]);
+  const padC = await withRetry(() => launchDemoPad(S, { name: "Robin Demo Gamma", symbol: "RGAMMA", supplyM: 2_000_000_000, curveShareBps: 7300, tag: "fork-demo-gamma", creator: creatorC }), "RGAMMA launch");
+  await withRetry(() => simulateTrades(S, padC, [{ signer: buyer3, ethIn: 3.2 }]), "RGAMMA trades");
 
   const out = {
     chainId: 4663,
