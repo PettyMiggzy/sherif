@@ -189,29 +189,6 @@
   layout (sidebar, density), Robin Labs' own colors — not their palette.
   <span class="set">· <a href="no-pool-preview.html">Token page</a> · <a href="no-pool-create-preview.html">Create</a> · <a href="no-pool-auction-preview.html">Auction</a> · <a href="no-pool-migrate-preview.html">Migrate</a> · <a href="no-pool-transparency-preview.html">Transparency</a> · <a href="no-pool-hub-preview.html">Hub</a> · <a href="no-pool-portfolio-preview.html">Portfolio</a> · <a href="no-pool-index-preview.html">Index</a></span></div>
 
-<div class="ticker-bar"><div class="ticker-track">
-  <span class="tick"><span class="rk">#1</span><span class="nm">Dustline</span><span class="bolt">⚡900</span><span class="pc up">▲18.4%</span></span>
-  <span class="tick"><span class="rk">#2</span><span class="nm">Pumpjack</span><span class="bolt">⚡1200</span><span class="pc up">▲41.2%</span></span>
-  <span class="tick"><span class="rk">#3</span><span class="nm">Robin</span><span class="bolt">⚡500</span><span class="pc up">▲6.2%</span></span>
-  <span class="tick"><span class="rk">#4</span><span class="nm">Mothbank</span><span class="pc up">▲34.2%</span></span>
-  <span class="tick"><span class="rk">#5</span><span class="nm">Kevlar</span><span class="bolt">⚡100</span><span class="pc down">▼3.8%</span></span>
-  <span class="tick"><span class="rk">#6</span><span class="nm">Fable</span><span class="pc muted">auction</span></span>
-  <span class="tick"><span class="rk">#7</span><span class="nm">Snapdust</span><span class="pc up">▲22.7%</span></span>
-  <span class="tick"><span class="rk">#8</span><span class="nm">Dogestar</span><span class="pc up">▲2,411%</span></span>
-  <span class="tick"><span class="rk">#9</span><span class="nm">Cinderjet</span><span class="bolt">⚡300</span><span class="pc down">▼1.9%</span></span>
-  <span class="tick"><span class="rk">#10</span><span class="nm">Velvetworm</span><span class="pc muted">auction</span></span>
-  <span class="tick" aria-hidden="true"><span class="rk">#1</span><span class="nm">Dustline</span><span class="bolt">⚡900</span><span class="pc up">▲18.4%</span></span>
-  <span class="tick" aria-hidden="true"><span class="rk">#2</span><span class="nm">Pumpjack</span><span class="bolt">⚡1200</span><span class="pc up">▲41.2%</span></span>
-  <span class="tick" aria-hidden="true"><span class="rk">#3</span><span class="nm">Robin</span><span class="bolt">⚡500</span><span class="pc up">▲6.2%</span></span>
-  <span class="tick" aria-hidden="true"><span class="rk">#4</span><span class="nm">Mothbank</span><span class="pc up">▲34.2%</span></span>
-  <span class="tick" aria-hidden="true"><span class="rk">#5</span><span class="nm">Kevlar</span><span class="bolt">⚡100</span><span class="pc down">▼3.8%</span></span>
-  <span class="tick" aria-hidden="true"><span class="rk">#6</span><span class="nm">Fable</span><span class="pc muted">auction</span></span>
-  <span class="tick" aria-hidden="true"><span class="rk">#7</span><span class="nm">Snapdust</span><span class="pc up">▲22.7%</span></span>
-  <span class="tick" aria-hidden="true"><span class="rk">#8</span><span class="nm">Dogestar</span><span class="pc up">▲2,411%</span></span>
-  <span class="tick" aria-hidden="true"><span class="rk">#9</span><span class="nm">Cinderjet</span><span class="bolt">⚡300</span><span class="pc down">▼1.9%</span></span>
-  <span class="tick" aria-hidden="true"><span class="rk">#10</span><span class="nm">Velvetworm</span><span class="pc muted">auction</span></span>
-</div></div>
-
 <div class="ad-bar"><div class="ad-bar-in">
   <span class="headline">🚀 New: guaranteed top-5, first 24h</span>
   <span class="desc">Reserve your launch's spot before the crowd shows up.</span>
@@ -262,10 +239,7 @@
     </div>
 
     <div class="statbar">
-      <span class="item">24H VOLUME<b>$486K</b></span>
-      <span class="item">24H TXNS<b>18,204</b></span>
-      <span class="item">LIVE TOKENS<b>61</b></span>
-      <span class="item">LIVE AUCTIONS<b>3</b></span>
+      <span class="item">LIVE PADS<b id="stat-live-pads">—</b></span>
     </div>
 
     <div class="pitch-strip">
@@ -472,6 +446,7 @@
       const pads = await listPads();
       document.getElementById('loading-row')?.remove();
       renderRealRows(pads);
+      document.getElementById('stat-live-pads').textContent = pads.length;
       statusEl.textContent = `🟢 Live devnet — ${pads.length} real pad${pads.length === 1 ? '' : 's'}`;
       statusEl.className = 'v4-badge v4-badge-on';
       connectBtn.style.display = '';
@@ -479,6 +454,7 @@
     } catch (e) {
       const loadingRow = document.getElementById('loading-row');
       if (loadingRow) loadingRow.querySelector('td').textContent = '⚪ devnet offline — no pads to show right now';
+      document.getElementById('stat-live-pads').textContent = '0';
       statusEl.textContent = '⚪ devnet offline';
       statusEl.className = 'v4-badge v4-badge-off';
       statusEl.title = String(e.message || e);
