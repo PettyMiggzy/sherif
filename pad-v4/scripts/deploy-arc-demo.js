@@ -56,13 +56,13 @@ async function deploy(name, args = []) {
   return c;
 }
 
-async function launchDemoPad(S, { name, symbol, supplyM, curveShareBps, tag, creator }) {
+async function launchDemoPad(S, { name, symbol, supplyM, curveShareBps, tag, creator, noPoolForever = false }) {
   const supply = BigInt(supplyM) * 10n ** 18n;
   const curveSupply = (supply * BigInt(curveShareBps)) / 10000n;
   const reserveSupply = supply - curveSupply;
   const cfg = {
     name, symbol, decimals: 18, supply, curveSupply, reserveSupply,
-    tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false,
+    tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever,
   };
   const tokenSalt = await brandedTokenSalt(await S.dep.getAddress(), await S.factory.getAddress(), cfg, ethers.id(tag));
   const TokenF = await ethers.getContractFactory("PadToken");
@@ -125,6 +125,10 @@ async function main() {
     await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
   ]);
   await (await lockVault.setFactory(await factory.getAddress())).wait();
+  // Off by default on a fresh RobinV4FeeConfig — enable it so AGAMMA below (noPoolForever: true)
+  // isn't silently downgraded to the legacy full-graduation path. 4000 bps = the value used
+  // throughout the test suite (RobinCurveV4.noPoolForever.test.js etc.).
+  await (await feeCfg.setNoPoolForeverDefaults(true, 4000)).wait();
   const sw = await deploy("PoolSwapTest", [await pm.getAddress()]);
   const arrowLauncher = await deploy("ArrowLauncher", [await factory.getAddress(), await reg.getAddress(), ethers.parseEther("150")]);
   const burnTracker = await deploy("RobinBurnTracker");
@@ -140,7 +144,10 @@ async function main() {
   const padB = await launchDemoPad(S, { name: "Arc Demo Beta", symbol: "ABETA", supplyM: 500_000_000, curveShareBps: 7300, tag: "arc-demo-beta", creator: creatorB });
   await simulateTrades(S, padB, [{ signer: buyer2, nativeIn: 3800 }, { signer: buyer1, nativeIn: 950 }]);
 
-  const padC = await launchDemoPad(S, { name: "Arc Demo Gamma", symbol: "AGAMMA", supplyM: 2_000_000_000, curveShareBps: 7300, tag: "arc-demo-gamma", creator: creatorC });
+  // AGAMMA is the no-pool-forever demo: after graduate(), it checkpoints (withdraws only the
+  // governed bps slice) and keeps trading on the SAME curve forever — no permanent LP is ever
+  // minted, unlike AALPHA/ABETA above (the legacy full-graduation path).
+  const padC = await launchDemoPad(S, { name: "Arc Demo Gamma", symbol: "AGAMMA", supplyM: 2_000_000_000, curveShareBps: 7300, tag: "arc-demo-gamma", creator: creatorC, noPoolForever: true });
   await simulateTrades(S, padC, [{ signer: buyer3, nativeIn: 6100 }]);
 
   // Real proof the recalibration landed correctly: read the curve's own start/grad sqrt prices back
@@ -150,6 +157,12 @@ async function main() {
   const startTick = await curveA.startTick();
   const gradTickVal = await curveA.gradTick();
   console.log(`  startTick=${startTick} gradTick=${gradTickVal} (width=${Number(startTick) - Number(gradTickVal)}, expect ${WIDTH})`);
+
+  console.log("\nVerifying noPoolForever mode landed correctly per-pad:");
+  for (const [label, pad] of [["padA (AALPHA, legacy)", padA], ["padB (ABETA, legacy)", padB], ["padC (AGAMMA, no-pool-forever)", padC]]) {
+    const c = await ethers.getContractAt("RobinCurveV4", pad.curveAddr);
+    console.log(`  ${label.padEnd(32)} noPoolForever()=${await c.noPoolForever()} visibilityWithdrawBps()=${await c.visibilityWithdrawBps()}`);
+  }
 
   const out = {
     chainId: 5042,

@@ -1,7 +1,7 @@
 {
   "chainId": 5042,
   "rpcUrl": "http://127.0.0.1:8545",
-  "deployedAt": "2026-09-16T16:34:17.682Z",
+  "deployedAt": "2026-09-16T17:04:10.478Z",
   "accounts": {
     "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "platform": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
@@ -23,9 +23,9 @@
     "curveDeployer": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
     "feeConfig": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
     "curveFactory": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
-    "poolSwapTest": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
-    "arrowLauncher": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
-    "burnTracker": "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
+    "poolSwapTest": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+    "arrowLauncher": "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82",
+    "burnTracker": "0x9A676e781A523b5d0C0e43731313A708CB607508"
   },
   "pads": [
     {
@@ -45,10 +45,10 @@
       "symbol": "ABETA"
     },
     {
-      "token": "0xf8738e4Ef03551c88585f521A47c3E9811781AB5",
-      "hook": "0x52Fa451D087327640c9aEE449c59D117b17c68Cc",
-      "curve": "0x08b3a158D5537FD3013410F4B209E9B4Fe9c0E17",
-      "poolId": "0x81eafc43f41b7fe958a24e7c50b518a071a21dfaffd3d7a30b8b9c221f075ed9",
+      "token": "0xaa440f3325296Fc1b4e810ebf672473442261AB5",
+      "hook": "0xaAfFa8f5B7edBD49b0A3c015A4FD480C0478A8cc",
+      "curve": "0xd242ce81248e510eF6368F7D60F4094A24ee8cbe",
+      "poolId": "0xfc4dddce0e695246e70bb79a20bbee6c2b49beb738b1cd1426e84c1b7db155df",
       "name": "Arc Demo Gamma",
       "symbol": "AGAMMA"
     }

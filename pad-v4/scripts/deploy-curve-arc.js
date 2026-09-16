@@ -118,6 +118,16 @@ async function main() {
   const rc = await setTx.wait();
   console.log(`  lockVault.setFactory -> ${await factory.getAddress()}\n`);
 
+  // [IMPORTANT] noPoolForever is OFF by default on a fresh RobinV4FeeConfig — a creator's
+  // noPoolForever:true launch config is silently ignored (CurvePadFactoryV4 falls back to the
+  // legacy full-graduation path) until this governance call runs. deploy-curve.js (Robinhood
+  // Chain) does NOT currently make this call either — flagged separately, not fixed here, since
+  // that's a decision for the live production pad, not something to change as a side effect of
+  // an Arc deploy script. 4000 bps (40%) matches the value used throughout the test suite.
+  const NO_POOL_FOREVER_BPS = Number(process.env.NO_POOL_FOREVER_BPS || 4000);
+  await (await feeConfig.setNoPoolForeverDefaults(true, NO_POOL_FOREVER_BPS)).wait();
+  console.log(`  feeConfig.setNoPoolForeverDefaults(true, ${NO_POOL_FOREVER_BPS}) — no-pool-forever launches enabled\n`);
+
   const curveFactory = await factory.getAddress();
 
   const presaleImpl = await deploy("PresaleVault");
