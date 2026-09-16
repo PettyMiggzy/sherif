@@ -52,17 +52,20 @@ const PERMIT2 = process.env.PERMIT2 || "0x000000000022D473030F116dDEE9F6B43aC78B
 const DEFAULTS = {
   // [fee-model] Same 1%/1% split as Robinhood Chain — see deploy-curve.js's comment block for the
   // exact buy/sell fee breakdown; nothing here is currency-dependent, only the tax rate itself.
-  // [SIMPLE-FEES] 1% buy / 1% sell tax splits 1.5% creator / 0.5% trader-rebate overall (0.75%/0.25% per
-  // side): sellFloorShareBps and buyBufferShareBps are REPURPOSED (see RobinFeeHook.sol) to both feed the
-  // SAME trader-rebate pot instead of separate floor/buffer destinations — 25% of each 1% leg = 0.25% + 0.25%
-  // = 0.5% total, remainder 0.75% + 0.75% = 1.5% total to creator. Floor and ambush are retired for this fee
-  // model (see ARC-FEES-AND-NOTES.md) — ambushGradBps=0, no floor vault is deployed or wired.
+  // [SIMPLE-FEES v2] 1% buy / 1% sell tax splits 1% creator (FLAT, referral-independent) / 1% trader-rebate
+  // pool overall (0.5%/0.5% per side): sellFloorShareBps and buyBufferShareBps are REPURPOSED (see
+  // RobinFeeHook.sol) to both feed the SAME trader-rebate pot instead of separate floor/buffer destinations
+  // — 50% of each 1% leg = 0.5% + 0.5% = 1% total, remainder 0.5% + 0.5% = 1% total to creator. Referral
+  // (buy side only) now carves from the trader-rebate pool, NOT the creator's cut — referralShareBps=2500
+  // means 25% of the buy-side rebate pool (0.125% of buy volume) goes to a referrer when a ref link is used,
+  // vs. 0.375% staying as trader-rebate; creator's 1% is unaffected either way. Floor and ambush are retired
+  // for this fee model (see ARC-FEES-AND-NOTES.md) — ambushGradBps=0, no floor vault is deployed or wired.
   buyTaxBps: Number(process.env.BUY_TAX_BPS || 100),
   sellTaxBps: Number(process.env.SELL_TAX_BPS || 100),
-  sellFloorShareBps: Number(process.env.SELL_TRADER_REBATE_BPS || 2500), // trader-rebate share of SELL tax
+  sellFloorShareBps: Number(process.env.SELL_TRADER_REBATE_BPS || 5000), // trader-rebate share of SELL tax
   buyLpFloorShareBps: Number(process.env.BUY_LP_FLOOR_SHARE_BPS || 0),
-  buyBufferShareBps: Number(process.env.BUY_TRADER_REBATE_BPS || 2500), // trader-rebate share of BUY tax
-  referralShareBps: Number(process.env.REFERRAL_SHARE_BPS || 2500), // unchanged; now carved from creator's cut
+  buyBufferShareBps: Number(process.env.BUY_TRADER_REBATE_BPS || 5000), // trader-rebate+referral pool share of BUY tax
+  referralShareBps: Number(process.env.REFERRAL_SHARE_BPS || 2500), // share of the BUY-side rebate pool (not creator's cut)
   platformGradBps: Number(process.env.PLATFORM_GRAD_BPS || 1000),
   creatorGradBps: Number(process.env.CREATOR_GRAD_BPS || 1000),
   ambushGradBps: Number(process.env.AMBUSH_GRAD_BPS || 0), // [SIMPLE-FEES] ambush retired — was 1500

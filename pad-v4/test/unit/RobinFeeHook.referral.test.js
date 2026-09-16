@@ -75,7 +75,7 @@ describe("RobinFeeHook — on-chain referral revenue-share (ETH-denominated buy 
     );
   });
 
-  it("a buy WITH a referrer in hookData carves the referral from the creator cut (not the buffer, not the trader) [SIMPLE-FEES]", async () => {
+  it("a buy WITH a referrer in hookData carves the referral from the trader-rebate pool (not the creator) [SIMPLE-FEES v2]", async () => {
     const hookAddr = await hook.getAddress();
     const claimBefore = await pm.balanceOf(hookAddr, 0n); // ERC-6909 native-ETH claim (buy fee is minted, not taken)
     const spend = ethers.parseEther("1");
@@ -87,12 +87,12 @@ describe("RobinFeeHook — on-chain referral revenue-share (ETH-denominated buy 
     expect(skim).to.equal((spend * BUY_BPS) / 10000n); // trader paid exactly 1% of the ETH they spent — no extra cost
 
     const bufferCut = (skim * BUFFER_SHARE_BPS) / 10000n;
-    const creatorCut = skim - bufferCut;                 // [SIMPLE-FEES] creator's slice before the referral carve
-    const referralCut = (creatorCut * REFERRAL_SHARE_BPS) / 10000n;
+    const creatorCut = skim - bufferCut;                 // [SIMPLE-FEES v2] flat, referral-independent
+    const referralCut = (bufferCut * REFERRAL_SHARE_BPS) / 10000n; // carved from the rebate pool, not creator
 
     expect(await hook.referralOwed(referrer.address, ZERO)).to.equal(referralCut); // ETH-keyed (address(0))
-    expect(await hook.creatorOwed(poolId, 0)).to.equal(creatorCut - referralCut); // money side; creator keeps the rest
-    expect(await hook.bufferOwed(poolId)).to.equal(bufferCut); // buffer untouched by referral
+    expect(await hook.creatorOwed(poolId, 0)).to.equal(creatorCut); // money side; UNAFFECTED by referral
+    expect(await hook.bufferOwed(poolId)).to.equal(bufferCut - referralCut); // rebate pool keeps the rest
     expect(referralCut).to.be.gt(0n);
   });
 
@@ -126,11 +126,12 @@ describe("RobinFeeHook — on-chain referral revenue-share (ETH-denominated buy 
     await expect(buy("0.1", "0x1234567890")).to.not.be.reverted;
   });
 
-  it("[audit, SIMPLE-FEES] SELF-REFERRAL is a permissionless rebate that only lowers the CREATOR's own cut — conservation holds, the floor is pinned", async () => {
+  it("[audit, SIMPLE-FEES v2] SELF-REFERRAL is a permissionless rebate that only lowers the TRADER-REBATE POOL's own take — conservation holds, the creator is pinned", async () => {
     // A buyer names THEMSELVES as the referrer. On-chain this cannot be prevented (a Sybil alt-wallet works too),
-    // so the referral is by-design an at-most-referralShareBps rebate on the creator's OWN buy cut (was the
-    // platform's cut pre-[SIMPLE-FEES]). This sim PRICES the worst case: it must never touch the buffer, the
-    // trader's tokens, or any other book — only move creator→self.
+    // so the referral is by-design an at-most-referralShareBps rebate on the trader-rebate pool's OWN take
+    // (moved off the creator's cut in [SIMPLE-FEES v2], so the creator's share is now flat and
+    // referral-independent). This sim PRICES the worst case: it must never touch the creator's cut, the
+    // trader's tokens, or any other book — only move rebate-pool→self.
     const hookAddr = await hook.getAddress();
     const claimBefore = await pm.balanceOf(hookAddr, 0n);
     const creatorBefore = await hook.creatorOwed(poolId, 0);
@@ -140,19 +141,18 @@ describe("RobinFeeHook — on-chain referral revenue-share (ETH-denominated buy 
     await buy("1", abi.encode(["address"], [trader.address])); // buyer == referrer (self-referral)
 
     const fee = (spend * BUY_BPS) / 10000n;                     // 1% of input
-    const bufferCut = (fee * BUFFER_SHARE_BPS) / 10000n;        // 0.2% → buffer (UNAFFECTED by referral)
-    const creatorCut = fee - bufferCut;                         // 0.8% creator cut before the referral carve
-    const referralCut = (creatorCut * REFERRAL_SHARE_BPS) / 10000n; // 0.2% clawed back to the self-referrer
+    const bufferCut = (fee * BUFFER_SHARE_BPS) / 10000n;        // trader-rebate pool's share, before referral
+    const creatorCut = fee - bufferCut;                         // [SIMPLE-FEES v2] flat, UNAFFECTED by referral
+    const referralCut = (bufferCut * REFERRAL_SHARE_BPS) / 10000n; // clawed back from the rebate pool to the self-referrer
 
-    // conservation: buffer + creator-net + referral == the whole 1% fee (nothing created or lost)
+    // conservation: creator-net + rebate-pool-net + referral == the whole 1% fee (nothing created or lost)
     expect((await pm.balanceOf(hookAddr, 0n)) - claimBefore).to.equal(fee);
-    expect((await hook.bufferOwed(poolId)) - buffBefore).to.equal(bufferCut); // buffer untouched by self-referral
-    expect((await hook.creatorOwed(poolId, 0)) - creatorBefore).to.equal(creatorCut - referralCut); // 0.6% net
-    expect(await hook.referralOwed(trader.address, ZERO)).to.be.gte(referralCut); // self-referrer accrues the 0.2%
+    expect((await hook.creatorOwed(poolId, 0)) - creatorBefore).to.equal(creatorCut); // creator untouched by self-referral
+    expect((await hook.bufferOwed(poolId)) - buffBefore).to.equal(bufferCut - referralCut); // rebate pool net
+    expect(await hook.referralOwed(trader.address, ZERO)).to.be.gte(referralCut); // self-referrer accrues the carve
 
-    // CREATOR-REVENUE FLOOR: even under adversarial self-referral the creator still earns their full cut MINUS
-    // only the referral slice — i.e. creator (0.6%) + buffer (0.2%, → the trader-rebate pot) = 0.8% of buy volume,
-    // and the self-referrer's rebate is exactly the referral slice, never more. The 1% total is fully conserved.
-    expect(creatorCut - referralCut + bufferCut + referralCut).to.equal(fee);
+    // CREATOR-REVENUE FLOOR: even under adversarial self-referral the creator's flat share is completely
+    // unaffected — referral only ever redistributes WITHIN the trader-rebate pool. The 1% total is conserved.
+    expect(creatorCut + (bufferCut - referralCut) + referralCut).to.equal(fee);
   });
 });

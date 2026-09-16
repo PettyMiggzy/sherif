@@ -30,22 +30,36 @@ STILL PENDING: extend `indexer/src/announcer.js` (the existing Telegram bot) to 
 `NoPoolCheckpoint` fires, so a human buys the boost manually. Not yet built — needs the indexer to
 track this event first.
 
-## Ongoing buy/sell tax split — DONE ("keep it simple" fee model)
+## Ongoing buy/sell tax split — DONE, v2 ("keep it simple" + working referrals)
 
-Final numbers: **1.5% to creator, 0.5% to a trader-rebate pot, split evenly per leg** (0.75%/0.25%
-of each 1% tax side). Floor and ambush are **retired** for pads using this model, per explicit
-instruction — not deleted from the codebase (`RobinFloorVault`/`RobinAmbushVault` stay; Robinhood
-Chain's live pads still use them), just zero-allocated in the governed defaults (`ambushGradBps: 0`)
-so nothing deploys or gets funded for new launches.
+Final numbers (v2, supersedes the first pass): **1% flat to creator (referral-independent), 1% to
+a combined trader-rebate + referral pool, split evenly per leg** (0.5%/0.5% of each 1% tax side).
+Floor and ambush are **retired** for pads using this model, per explicit instruction — not deleted
+from the codebase (`RobinFloorVault`/`RobinAmbushVault` stay; Robinhood Chain's live pads still use
+them), just zero-allocated in the governed defaults (`ambushGradBps: 0`) so nothing deploys or gets
+funded for new launches.
 
-Implementation, two lines in `RobinFeeHook.sol` (see the `[SIMPLE-FEES]` comments there for the
-full reasoning):
-- `_bookBuy`: the buy-tax remainder now credits `creatorOwed`, not `platformOwed`
-- `afterSwap`: the sell-tax carve (still governed by `sellFloorShareBps`, repurposed) now credits
-  `bufferOwed`, not `floorOwed` — joining the SAME pot the buy-side buffer already feeds, so both
+v1 → v2 change: the user wanted referrals to actually pay out meaningfully, not be squeezed to a
+small carve off an already-thin creator cut. v1 had crept the split to 1.5% creator / 0.5% pool,
+with referral carved from the CREATOR's cut. v2: creator flat 1% (bufferShareBps raised from 25% to
+50% each leg), and referral now carves from the REBATE POOL instead of creator — so the creator's
+share is exactly `fee - bufferCut` always, completely unaffected by whether a referral fires.
+
+Implementation, in `RobinFeeHook.sol` (see the `[SIMPLE-FEES]` / `[SIMPLE-FEES v2]` comments there
+for the full reasoning):
+- `_bookBuy`: creator's cut is `fee - bufferCut` (flat). Referral carves `referralShareBps` of
+  `bufferCut` (the rebate pool), not of the creator's remainder — so referral only ever redistributes
+  within the pool, never touches the creator.
+- `afterSwap`: the sell-tax carve (still governed by `sellFloorShareBps`, repurposed) credits
+  `bufferOwed`, not `floorOwed` — joining the SAME pot the buy-side buffer feeds (no referral on the
+  sell leg — matches the existing hookData-based referral mechanism, which is buy-only). Both
   directions' trader-rebate money flows through one existing pull path (`claimBuffer()` → curve →
   `stakingEthOwed` → `_fundStakingEth()` → wherever `curve.staking` is wired) instead of building a
   new accrual/claim mechanism from scratch.
+
+At the default `referralShareBps=2500`: buy volume splits 0.5% creator / 0.375% trader-rebate /
+0.125% referral (when used); sell volume splits 0.5% creator / 0.5% trader-rebate (no referral).
+Overall: creator 1% flat, referral+trader-rebate pool 1% combined.
 
 Platform's revenue comes from the LP fee instead of the tax. Buy-side (ETH) LP fee was already 100%
 platform by default — no change needed. **Deliberately did NOT extend "100% platform" to the

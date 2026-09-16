@@ -19,14 +19,16 @@ import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin} from "../int
 /// stock ERC20 on a stock pad) — NEVER the pad coin — and routed by DIRECTION:
 ///
 ///   • BUY  (money → token, `zeroForOne`): `buyTaxBps` skimmed FEE-ON-INPUT in beforeSwap — a slice of the
-///          money the buyer spends, taken before the pool swaps the rest. Splits into a `buyBufferShareBps`
-///          trader-rebate carve (pulled to the curve's staking/dividend pipeline via claimBuffer -> curve ->
-///          stakingEthOwed) + a `referralShareBps` referrer slice (from the remainder, when a ref link is
-///          used) + the CREATOR [SIMPLE-FEES — this was platform-bound before; platform's take now comes
-///          from the LP fee instead, see ARC-FEES-AND-NOTES.md].
+///          money the buyer spends, taken before the pool swaps the rest. Splits into a FLAT `buyBufferShareBps`
+///          trader-rebate+referral pool (pulled to the curve's staking/dividend pipeline via claimBuffer ->
+///          curve -> stakingEthOwed; a `referralShareBps` slice of THIS pool, not the creator's cut, goes to
+///          a referrer when a ref link is used [SIMPLE-FEES v2]) + the CREATOR, whose share is always exactly
+///          `fee - bufferCut` regardless of whether a referral fires [SIMPLE-FEES — this was platform-bound
+///          before; platform's take now comes from the LP fee instead, see ARC-FEES-AND-NOTES.md].
 ///   • SELL (token → money, `oneForZero`): `sellTaxBps` of the money-side OUTPUT in afterSwap → creator,
-///          minus a `sellFloorShareBps` carve that now ALSO feeds the trader-rebate pot [SIMPLE-FEES — this
-///          used to fund a permanent price floor; the floor vault is retired for pads using this fee model].
+///          minus a `sellFloorShareBps` carve that also feeds the SAME trader-rebate pool as the buy side
+///          (no referral on this leg) [SIMPLE-FEES — this used to fund a permanent price floor; the floor
+///          vault is retired for pads using this fee model].
 ///
 /// Holders are rewarded separately, by staking (RobinLockStaking / DualStaking). All payouts are
 /// accrue-and-pull: nothing is pushed to an external wallet inside a swap, so a reverting recipient can
@@ -353,19 +355,22 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     /// remainder cut. On-chain attribution of a *genuine external* referrer is impossible (the hook sees the router
     /// as `sender`, not the buyer, and a buyer can always route through a fresh address), so a `referrer != sender`
     /// guard would be theatre. The carve is therefore an at-most-`referralShareBps` REBATE on the creator's own buy
-    /// cut: it never touches the buffer, the trader's proceeds, the raise, or any other pad's funds (conservation
-    /// holds — see the self-referral sim), and it only ever lowers the CREATOR's own take (previously the
-    /// platform's, before the buy-tax remainder was redirected to the creator). If strict external-only attribution
-    /// is ever required it must be enforced OFF-CHAIN (platform-signed referral codes verified here).
+    /// cut: it never touches the trader's proceeds, the raise, or any other pad's funds (conservation holds —
+    /// see the self-referral sim), and it only ever lowers the TRADER-REBATE pool's own take [SIMPLE-FEES v2 —
+    /// moved off the creator's cut so the creator's share is a flat, referral-independent amount; see below].
+    /// If strict external-only attribution is ever required it must be enforced OFF-CHAIN (platform-signed
+    /// referral codes verified here).
     function _bookBuy(PoolId id, PoolConfig storage c, Currency quote, uint256 fee, bytes calldata hookData) internal {
+        // [SIMPLE-FEES v2] creator's cut is a FLAT share of the fee (buyBufferShareBps governs the OTHER side —
+        // the trader-rebate+referral pool — so creator's share is always `fee - bufferCut`, completely
+        // unaffected by whether a referral fires). Referral now carves from the rebate pool, not the creator.
         uint256 bufferCut = (fee * c.buyBufferShareBps) / BPS;
-        uint256 platformCut = fee - bufferCut;
-        bufferOwed[id] += bufferCut;
+        uint256 creatorCut = fee - bufferCut;
         uint256 referralCut = 0;
         if (c.referralShareBps != 0) {
             address referrer = _decodeReferrer(hookData);
             if (referrer != address(0)) {
-                referralCut = (platformCut * c.referralShareBps) / BPS;
+                referralCut = (bufferCut * c.referralShareBps) / BPS;
                 if (referralCut != 0) {
                     address q = Currency.unwrap(quote);
                     referralOwed[referrer][q] += referralCut;
@@ -373,11 +378,9 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
                 }
             }
         }
-        // [SIMPLE-FEES] the buy-tax remainder (after the buffer/trader-rebate carve and any referral) goes to the
-        // CREATOR, not the platform — a deliberate change from the original platform-bound buy side. Platform's
-        // take now comes from the LP fee instead (see deploy config); see ARC-FEES-AND-NOTES.md for the full spec.
-        creatorOwed[id][0] += platformCut - referralCut; // index 0 = the money side (quote)
-        emit BuyTaxed(id, platformCut - referralCut, bufferCut);
+        bufferOwed[id] += bufferCut - referralCut;
+        creatorOwed[id][0] += creatorCut; // index 0 = the money side (quote); never touched by referral
+        emit BuyTaxed(id, creatorCut, bufferCut - referralCut);
     }
 
     /// @dev [H-3] This read must be genuinely best-effort, and a `try/catch` is not enough to make it so.
