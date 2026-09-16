@@ -26,9 +26,25 @@ wasn't wired yet).
 
 **DexScreener $400 boost:** deliberately NOT a contract concern — no oracle, per the user ("I don't
 know that you can make a contract do that... probably need an Oracle and it'd be a big bill").
-STILL PENDING: extend `indexer/src/announcer.js` (the existing Telegram bot) to alert the team when
-`NoPoolCheckpoint` fires, so a human buys the boost manually. Not yet built — needs the indexer to
-track this event first.
+
+**Telegram alert — DONE.** `indexer/src/nopoolwatcher.js` (new, standalone — same trust footprint as
+`announcer.js`: read-only, no wallet, only the Telegram bot token as a secret) polls `NoPoolCheckpoint`
+logs directly off the curves listed in `NOPOOL_CURVES` (manual comma-separated allowlist — pad-v4 has
+no factory-driven address discovery wired into this indexer yet, matching the same convention
+`supportkeeper.js` already uses for `SUPPORT_CURVES`) and posts an HTML-formatted alert (token, curve,
+creator, the ETH paid, a call to action) to Telegram via the same Bot API `announcer.js` uses, deduped
+by a persisted `{curve}:{txHash}:{logIndex}` state file so a restart never double-posts. Reuses
+`TG_BOT_TOKEN`; posts to `NOPOOL_TG_CHAT` (or `TG_CHAT` if unset) — kept as a separate env var since
+this is an internal "go buy the boost" ops alert, not public marketing copy like the launch/graduation
+announcer. Wired into both `docker-compose.yml` and `docker-compose.api.yml` as its own service, OFF
+by default until `NOPOOL_CURVES` + Telegram creds are set.
+
+Verified end-to-end against the real local Arc devnet: pushed AGAMMA (the noPoolForever demo pad) to
+its real gradTick with a real whale buy, called `graduate()` for real, confirmed the on-chain
+`NoPoolCheckpoint` event, then ran the watcher against a mock Telegram HTTP server and confirmed it
+correctly resolved the token symbol/creator via `curve.token()`/`currentCreator()`, posted one
+correctly formatted alert, and — on a full process restart — posted zero more (dedup via the state
+file held).
 
 ## Ongoing buy/sell tax split — DONE, v2 ("keep it simple" + working referrals)
 

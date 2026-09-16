@@ -12,6 +12,7 @@
     "index": "node src/server.js --no-api",
     "api": "node src/server.js --no-index",
     "backfill": "node src/server.js --once --no-api",
+    "nopoolwatcher": "node src/nopoolwatcher.js",
     "test": "node --test 'test/*.test.mjs'"
   },
   "dependencies": {

@@ -71,6 +71,19 @@ services:
     depends_on:
       - indexer
 
+  # No-pool-forever milestone watcher — posts a pad-v4 NoPoolCheckpoint alert to Telegram so a human
+  # buys the DexScreener boost. OFF (idle no-op) unless TG_BOT_TOKEN + a chat + NOPOOL_CURVES are set
+  # in .env. Read-only: no chain writes, no wallet. Shares the indexer volume for its state file.
+  nopoolwatcher:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - indexer-data:/app/data
+    command: ["node", "src/nopoolwatcher.js"]
+    depends_on:
+      - indexer
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
