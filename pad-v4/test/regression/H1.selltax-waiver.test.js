@@ -60,7 +60,6 @@ describe("H-1 exploit, replayed against the patched hook", () => {
       guardAdapter: ZERO, buyTaxBps: 0, sellTaxBps: Number(SELL_BPS), sellFloorShareBps: Number(FLOOR_SHARE),
       buyBufferShareBps: 0, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,
     });
-
     mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());
     sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
     await tok.connect(owner).transfer(lp.address, 10n ** 25n);
@@ -69,9 +68,16 @@ describe("H-1 exploit, replayed against the patched hook", () => {
       key, { tickLower: -60000, tickUpper: 60000, liquidityDelta: 10n ** 21n, salt: ethers.ZeroHash }, "0x",
       { value: E(5000) }
     );
+
+    // [SIMPLE-FEES] sellFloorShareBps now carves into bufferOwed (the trader-rebate pool), not floorOwed — wire a
+    // bufferRecipient (reusing the `floor` signer as a stand-in) so claimBuffer works below, factory-only/one-shot.
+    // Wired AFTER the initial LP add above: once bufferRecipient != 0, the [LP-1] liquidity lock only admits the
+    // buffer/floor recipients themselves, which would otherwise revert the `lp` signer's own initial mint.
+    await hook.connect(factory).setBufferRecipient(poolId, floor.address);
   });
 
-  const taxed = async () => (await hook.creatorOwed(poolId, 0)) + (await hook.floorOwed(poolId, 0));
+  // [SIMPLE-FEES] the sell-tax carve now accrues to bufferOwed (the trader-rebate pool), not floorOwed.
+  const taxed = async () => (await hook.creatorOwed(poolId, 0)) + (await hook.bufferOwed(poolId));
 
   it("the flash-starve no longer waives the tax: the attacker pays exactly what an honest seller pays", async () => {
     const SELL = E(500);
@@ -137,16 +143,18 @@ describe("H-1 exploit, replayed against the patched hook", () => {
       key, { zeroForOne: false, amountSpecified: -E(500), sqrtPriceLimitX96: MAX_SQRT_LIMIT },
       { takeClaims: false, settleUsingBurn: false }, "0x"
     );
-    const cOwed = await hook.creatorOwed(poolId, 0), fOwed = await hook.floorOwed(poolId, 0);
+    // [SIMPLE-FEES] the sell-tax rebate carve lands in bufferOwed and redeems via claimBuffer to the wired
+    // bufferRecipient (the `floor` signer, standing in for the curve — see beforeEach) — not floorOwed/claimFloor.
+    const cOwed = await hook.creatorOwed(poolId, 0), bOwed = await hook.bufferOwed(poolId);
     const cBefore = await ethers.provider.getBalance(creator.address);
-    const fBefore = await ethers.provider.getBalance(floor.address);
+    const bBefore = await ethers.provider.getBalance(floor.address);
     await hook.connect(owner).claimCreator(poolId, 0);
-    await hook.connect(owner).claimFloor(poolId, 0);
+    await hook.connect(owner).claimBuffer(poolId);
     expect((await ethers.provider.getBalance(creator.address)) - cBefore).to.equal(cOwed);
-    expect((await ethers.provider.getBalance(floor.address)) - fBefore).to.equal(fOwed);
+    expect((await ethers.provider.getBalance(floor.address)) - bBefore).to.equal(bOwed);
     expect(await pm.balanceOf(hookAddr, 0n)).to.equal(0n);
     expect(await ethers.provider.getBalance(hookAddr)).to.equal(0n);
-    // floor gets exactly 20% of the sell tax; dust is conserved into the creator's cut
-    expect(fOwed).to.equal(((cOwed + fOwed) * FLOOR_SHARE) / 10000n);
+    // the trader-rebate pool gets exactly 20% of the sell tax; dust is conserved into the creator's cut
+    expect(bOwed).to.equal(((cOwed + bOwed) * FLOOR_SHARE) / 10000n);
   });
 });

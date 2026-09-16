@@ -72,6 +72,15 @@ Verified: 19/19 tests passing across the three hook test files (adversarial, ref
 updated to test the new deliberate routing rather than the old platform/floor destinations. A fresh
 local Arc deploy with the new config confirms the curve/checkpoint math is unaffected.
 
+A full-suite run afterward caught two more regression files that predate this change and still
+referenced the old `floorOwed`/`platformOwed` destinations: `test/regression/H1.selltax-waiver.test.js`
+(a `taxed()` helper undercounted total tax since the sell carve now lands in `bufferOwed`; a claim test
+used `floorOwed`/`claimFloor` directly) and `test/regression/H3.short-return.test.js` (a buy-tax
+assertion checked `platformOwed`, which a buy no longer touches under this fee model). Both updated to
+the new `creatorOwed`/`bufferOwed`/`claimBuffer` routing — H1's suite also now wires a `bufferRecipient`
+(via `setBufferRecipient`, correctly ordered AFTER the test's initial LP add, since wiring it earlier
+trips the [LP-1] liquidity lock for any non-recipient signer). 13/13 passing in both files.
+
 ## Reminders (already-existing features, unaffected)
 
 - **Optional 1-4 day auction before the curve launches** — already exists (`PresaleVault` / the

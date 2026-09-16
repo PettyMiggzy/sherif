@@ -145,7 +145,9 @@ describe("H-3 — a short-returning guardAdapter no longer bricks every swap of 
       key, { zeroForOne: true, amountSpecified: -E(1), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
       { takeClaims: false, settleUsingBurn: false }, "0x", { value: E(1) }
     );
-    expect(await hook.platformOwed(poolId, 0)).to.be.gt(0n);
+    // [SIMPLE-FEES] buy tax now books to creatorOwed (the flat creator cut) + bufferOwed (the trader-rebate
+    // pool), never platformOwed — the platform's cut on this fee model comes from the LP fee, not the tax.
+    expect(await hook.creatorOwed(poolId, 0)).to.be.gt(0n);
   });
 
   it("SELLS still execute, and are still taxed", async () => {
