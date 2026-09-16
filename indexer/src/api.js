@@ -20,6 +20,7 @@ import { checkSlug, isValidStyle, isTakenDown, normalizeSlug } from "./sitegate.
 import { currentEpoch as rewardsEpoch, userAllocations as rewardsUserAlloc } from "./rewards.js";
 import { handleQuote as uniHandleQuote, handleSwap as uniHandleSwap, handleApproval as uniHandleApproval } from "./uniproxy.js";
 import { handleQuote as lifiQuote, handleTokens as lifiTokens, handleConnections as lifiConnections, handleStatus as lifiStatus, handleRoutes as lifiRoutes, stats as lifiUsage } from "./lifiproxy.js";
+import { createSession as onrampCreateSession } from "./onrampproxy.js";
 import { renderCard, coinOgHtml } from "./og.js";
 import { enabled as memeEnabled, makeMeme } from "./memeproxy.js";
 import { enabled as artEnabled, makeArt, tiers as artTiers, styles as artStyles, creditsFor } from "./artproxy.js";
@@ -357,6 +358,8 @@ const rpcRateOk = makeRateLimiter(CFG.rpcProxyMaxPerSec);
 const metaRateOk = makeRateLimiter(2); // profile uploads: ≤2/s/IP (HEIC decode is CPU-bound on the main thread)
 const uniRateOk = makeRateLimiter(CFG.uniRatePerSec);       // per-IP cap on the Uniswap swap proxy
 const uniGlobalOk = makeRateLimiter(CFG.uniGlobalPerSec);   // total upstream/sec (shared paid-key budget), keyed by a constant
+const onrampRateOk = makeRateLimiter(CFG.onrampRatePerSec); // per-IP cap on session minting
+const onrampGlobalOk = makeRateLimiter(CFG.onrampGlobalPerSec);
 const memeRateOk = makeRateLimiter(CFG.memeRatePerSec);     // per-IP/sec cap on the photo-to-meme generator
 // Per-MINUTE global cap on meme generation — the hard spend bound (each image costs a few cents, so this
 // is the ceiling on what a leaked endpoint can run up regardless of how many IPs hit it).
@@ -607,6 +610,10 @@ function uniOrigin(req) {
   const o = String(req.headers["origin"] || "");
   return CFG.uniCorsOrigins.includes(o) ? o : (CFG.uniCorsOrigins[0] || "https://robinlab.io");
 }
+function onrampOrigin(req) {
+  const o = String(req.headers["origin"] || "");
+  return CFG.onrampCorsOrigins.includes(o) ? o : (CFG.onrampCorsOrigins[0] || "https://robinlab.io");
+}
 // Meme proxy responses: scope CORS to our own origins (not "*"), never cache a per-user image.
 function memeOrigin(req) {
   const o = String(req.headers["origin"] || "");
@@ -713,6 +720,22 @@ export function startApi() {
           else return sendUni(res, 404, { error: "no such route" }, uorigin);
           return sendUni(res, out.status, out.json, uorigin);
         } catch { return sendUni(res, 502, { error: "trading upstream error" }, uorigin); }
+      }
+
+      // ── Arc Onramp: POST /api/onramp/session ─────────────────────────────────
+      // Body: { destinationAddress: "0x…" }. Off unless ONRAMP_API_KEY is set. Mints a session
+      // server-side (the key never reaches the browser) and returns only sessionToken/widgetUrl —
+      // see onrampproxy.js for why. This gets USDC onto Arc; it does not buy a pad token.
+      if (CFG.onrampApiKey && path === "/api/onramp/session") {
+        const oorigin = onrampOrigin(req);
+        const ip = clientIp(req);
+        if (!onrampRateOk(ip)) return sendUni(res, 429, { error: "rate limited, slow down" }, oorigin);
+        if (!onrampGlobalOk("g")) return sendUni(res, 429, { error: "busy, retry in a moment" }, oorigin);
+        let obody;
+        try { obody = JSON.parse((await readBody(req, 8 * 1024)).toString("utf8")); }
+        catch { return sendUni(res, 400, { error: "bad json" }, oorigin); }
+        const out2 = await onrampCreateSession(obody);
+        return sendUni(res, out2.status, out2.json, oorigin);
       }
 
       // ── Robin Labs AI: POST /api/chat ────────────────────────────────────────

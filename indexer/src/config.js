@@ -154,6 +154,20 @@ export const CFG = {
   uniCorsOrigins: (process.env.UNISWAP_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinlabs.fun,https://www.robinlabs.fun")
     .split(",").map((s) => s.trim()).filter(Boolean),
 
+  // ── Arc Onramp proxy (buy USDC on Arc with a card, then swap into a pad token) ──
+  // /api/onramp/session is OFF unless ONRAMP_API_KEY is set. The key is a SECRET (gitignored .env),
+  // used ONLY server-side by @circle-fin/app-kit to mint short-lived onramp sessions — it must never
+  // reach the browser (the SDK's own docs are explicit about this: it "grants full access to your
+  // integration"). Sandbox vs production is determined by the key's own TEST_/LIVE_ prefix, not a
+  // separate URL — see docs.arc.io/app-kit/onramp.md. referrerDomain is required when the widget is
+  // embedded in an iframe on our own page (which it is) so Transak authorizes us as a frame ancestor.
+  onrampApiKey: process.env.ONRAMP_API_KEY || "",
+  onrampReferrerDomain: process.env.ONRAMP_REFERRER_DOMAIN || "",
+  onrampRatePerSec: num("ONRAMP_RATE_PER_SEC", 1),
+  onrampGlobalPerSec: num("ONRAMP_GLOBAL_PER_SEC", 5),
+  onrampCorsOrigins: (process.env.ONRAMP_CORS_ORIGINS || "https://robinlab.io,https://www.robinlab.io,https://robinlabs.fun,https://www.robinlabs.fun")
+    .split(",").map((s) => s.trim()).filter(Boolean),
+
   // ── Photo-to-meme proxy (turn a snapshot into a coin's meme pfp) ──
   // /api/meme is OFF unless MEME_API_KEY is set. The key is a SECRET (gitignored .env), injected
   // server-side into the provider call and NEVER sent to the browser. Provider-agnostic: defaults
