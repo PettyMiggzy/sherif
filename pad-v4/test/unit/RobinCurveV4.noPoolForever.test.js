@@ -125,17 +125,27 @@ describe("RobinCurveV4 — no-pool-forever checkpoint (real PoolManager, mock po
     expect(checkpoint, "NoPoolCheckpoint emitted").to.not.equal(undefined);
     expect(checkpoint.args.liquidityWithdrawn).to.equal(expectedWithdrawn);
     expect(checkpoint.args.liquidityRetained).to.equal(curveLAfter);
-    expect(checkpoint.args.toStakingEth).to.be.gt(0n); // the would-be permanent-LP ETH leg, redirected to holders
+    // [MILESTONE] the would-be permanent-LP ETH leg is the creator's half of the milestone payout — the
+    // platform's other half is never separately booked (it's swept up by the end-of-graduate() catch-all,
+    // checked below via platformEthOwed).
+    expect(checkpoint.args.toCreatorEth).to.be.gt(0n);
+    const creatorEthOwedAfter = await curve.creatorEthOwed();
+    expect(creatorEthOwedAfter).to.be.gte(checkpoint.args.toCreatorEth); // + the separate sell-tax waterfall reward
 
     // the reward waterfall still ran, proportional to the (much smaller) withdrawn slice — same split logic as
     // the legacy path, just applied to a bps-slice of the raise instead of the whole thing.
-    expect(await curve.creatorEthOwed()).to.be.gt(0n);
     expect(await curve.ambushEthOwed()).to.be.gt(0n);
 
-    // the would-be LP ETH leg was folded into stakingEthOwed and successfully swept out to the staking pool in
-    // the same transaction (staking was wired before graduate() ran) — the book is zeroed, not stranded.
+    // the platform's milestone half landed too — it's never explicitly booked mid-function, only swept in by
+    // the end-of-graduate() catch-all, so this is the real proof it wasn't silently lost.
+    expect(await curve.platformEthOwed()).to.be.gt(0n);
+
+    // this fixture is hookless (see file header) — the buy-tax buffer that used to independently feed staking
+    // only exists when a real fee hook is attached, so with lpEth now going to creator/platform instead of
+    // stakingEthOwed, NOTHING funds staking here anymore. Both the book and the staking pool's real balance
+    // correctly stay at 0, rather than ds silently receiving money it was never actually owed by a separate path.
     expect(await curve.stakingEthOwed()).to.equal(0n);
-    expect(await ethers.provider.getBalance(await ds.getAddress())).to.be.gt(0n);
+    expect(await ethers.provider.getBalance(await ds.getAddress())).to.equal(0n);
   });
 
   it("the curve is still a live, tradeable market after checkpoint — sellers trade against the RETAINED liquidity", async () => {
@@ -176,16 +186,22 @@ describe("RobinCurveV4 — no-pool-forever checkpoint (real PoolManager, mock po
   });
 });
 
-// [NO-POOL audit fix] Regression for a real finding from this session's own adversarial security-audit pass
-// (see pad-v4/NO-POOL-FOREVER.md): stakingEthOwed was missing from both sweepToPlatform()'s `booked` total and
-// graduate()'s step-9 platformEthOwed formula. That's harmless while stakingEthOwed only ever holds the small
-// buy-tax buffer, but noPoolForever folds the WHOLE would-be-permanent-LP ETH leg into stakingEthOwed — so if
-// staking isn't wired yet when a noPoolForever pad checkpoints (an already-documented, expected scenario per
-// ArrowLauncher's own notes: "graduates with curve.staking unset"), that money would get double-booked: claimed
-// by platformEthOwed AND still claimed by stakingEthOwed, so paying the platform would leave nothing for
-// flushStakingEth() to actually send once staking is later wired. Fixed by excluding stakingEthOwed from both
-// formulas, exactly like the other pending books (floor/creator/ambush) already were.
-describe("RobinCurveV4 — no-pool-forever checkpoint with staking NOT yet wired (audit-fix regression)", () => {
+// [NO-POOL audit fix, HISTORICAL] Originally a regression for a real finding from this session's own
+// adversarial security-audit pass (see pad-v4/NO-POOL-FOREVER.md): stakingEthOwed was missing from both
+// sweepToPlatform()'s `booked` total and graduate()'s step-9 platformEthOwed formula. Back when noPoolForever
+// folded the WHOLE would-be-permanent-LP ETH leg into stakingEthOwed, an unwired staking contract at checkpoint
+// time meant that large sum could get double-booked: claimed by platformEthOwed AND still claimed by
+// stakingEthOwed. The exclusion fix in both formulas (still present, still correct) is what prevented that.
+//
+// [MILESTONE] That specific large-sum-through-stakingEthOwed scenario is now impossible by construction — lpEth
+// no longer routes through stakingEthOwed at all (see the milestone-payout change in graduate()'s noPoolForever
+// branch); it splits directly to creatorEthOwed/platformEthOwed, neither of which has a "not wired yet" state to
+// get stuck in. This block now tests the property that actually matters post-change: the creator's milestone
+// half is booked and claimable independent of whether staking happens to be wired, so the whole class of bug
+// this test used to guard against can't recur through this path. The stakingEthOwed exclusion formulas remain
+// in place defensively (they still protect the smaller buy-tax-buffer case on a hook-having pad), so this block
+// also keeps a basic sanity check that stakingEthOwed stays correctly at 0 here (hookless — nothing else feeds it).
+describe("RobinCurveV4 — no-pool-forever checkpoint with staking NOT yet wired", () => {
   const START = 6000, GRAD = 3000, SPACING = 60, FEE = 3000;
   const CURVE_SUPPLY = 1000n * 10n ** 18n;
   const RESERVE = 1000n * 10n ** 18n;
@@ -233,40 +249,46 @@ describe("RobinCurveV4 — no-pool-forever checkpoint with staking NOT yet wired
     expect(await curve.ready()).to.equal(true);
   });
 
-  it("checkpoints with staking unwired: stakingEthOwed parks (nonzero), platformEthOwed correctly excludes it", async () => {
-    await curve.graduate();
+  it("checkpoints with staking unwired: creator's milestone half is still booked, conservation holds", async () => {
+    const rc = await (await curve.graduate()).wait();
 
+    // [MILESTONE] the creator's half lands in creatorEthOwed regardless of staking wiring — no "not wired yet"
+    // state exists for this path anymore, which is the actual fix: there's nothing large left to double-book.
+    const checkpoint = rc.logs.map((l) => { try { return curve.interface.parseLog(l); } catch { return null; } })
+      .find((e) => e && e.name === "NoPoolCheckpoint");
+    expect(checkpoint.args.toCreatorEth).to.be.gt(0n);
+    const creatorOwed = await curve.creatorEthOwed();
+    expect(creatorOwed).to.be.gte(checkpoint.args.toCreatorEth);
+
+    // hookless setup (see file header) — nothing feeds stakingEthOwed here anymore, so it stays exactly 0
+    // rather than parking a large unclaimed sum the way the old lpEth-fold-in used to.
     const stakingOwed = await curve.stakingEthOwed();
-    expect(stakingOwed).to.be.gt(0n); // parked — _fundStakingEth() had nowhere to send it
+    expect(stakingOwed).to.equal(0n);
 
     const platformOwed = await curve.platformEthOwed();
-    const creatorOwed = await curve.creatorEthOwed();
     const ambushOwed = await curve.ambushEthOwed();
     const balance = await ethers.provider.getBalance(curveAddr);
 
-    // conservation: every book together must not exceed what the contract actually holds. Before the fix,
-    // platformEthOwed alone would have absorbed stakingOwed too, so platformOwed + stakingOwed would have
-    // exceeded the true remaining balance once creator/ambush are also accounted for.
+    // conservation: every book together must not exceed what the contract actually holds. The exclusion
+    // formulas (graduate() step 9, sweepToPlatform()) still guard this even though stakingOwed is 0 here.
     expect(platformOwed + creatorOwed + ambushOwed + stakingOwed).to.be.lte(balance);
   });
 
-  it("once staking is wired, flushStakingEth() actually succeeds — the money was real, not double-booked away", async () => {
-    const stakingOwedBefore = await curve.stakingEthOwed();
-    expect(stakingOwedBefore).to.be.gt(0n);
+  it("the creator's milestone half is claimable immediately, with no staking dependency at all", async () => {
+    const creatorOwedBefore = await curve.creatorEthOwed();
+    expect(creatorOwedBefore).to.be.gt(0n);
 
-    // platform claims their (correctly smaller, post-fix) share FIRST — if the bug were still present, this
-    // would have already drained the ETH stakingEthOwed still claims, and the next step would fail.
-    await curve.claimPlatform();
+    // platform claims their share too — proves neither claim path was silently starved by the other, the
+    // property the old test used to check via the staking angle.
+    await expect(curve.claimPlatform()).to.not.be.reverted;
 
-    const tokAddr = await tok.getAddress();
-    ds = await (await ethers.getContractFactory("DualStaking")).deploy(tokAddr, ZERO, owner.address, 0, ZERO, ethers.ZeroHash, TOKEN);
-    await ds.setRewarder(curveAddr, true);
-    await ds.listReward(TOKEN, tokAddr, 7 * 86400);
-    await curve.connect(platform).setStaking(await ds.getAddress());
+    const creatorBalBefore = await ethers.provider.getBalance(creator.address);
+    const tx = await curve.connect(creator).claimCreator();
+    const rc = await tx.wait();
+    const gasCost = rc.gasUsed * rc.gasPrice;
+    const creatorBalAfter = await ethers.provider.getBalance(creator.address);
 
-    const dsBalBefore = await ethers.provider.getBalance(await ds.getAddress());
-    await expect(curve.flushStakingEth()).to.not.be.reverted;
-    expect(await curve.stakingEthOwed()).to.equal(0n);
-    expect((await ethers.provider.getBalance(await ds.getAddress())) - dsBalBefore).to.equal(stakingOwedBefore);
+    expect(await curve.creatorEthOwed()).to.equal(0n);
+    expect(creatorBalAfter - creatorBalBefore + gasCost).to.equal(creatorOwedBefore);
   });
 });

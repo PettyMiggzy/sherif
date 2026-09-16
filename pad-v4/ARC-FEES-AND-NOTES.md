@@ -5,7 +5,28 @@ between sessions — see ROBIN-V4-CURVE-ECON.md for how the CURRENT (Robinhood C
 actually works; this file is where the proposed Arc changes get worked out before any Solidity is
 touched.
 
-## Status: NOT YET IMPLEMENTED — needs one number confirmed first (see below)
+## Status: SPEC FINALIZED — implementing now
+
+## Milestone payout — RESOLVED
+
+One-time only (not a repeating 4-tier ladder — ruled out because repeated ETH extraction would
+hurt the chart, and because the contract's checkpoint is architecturally a one-time event anyway).
+Fires at the curve's existing ~$34K FDV ceiling (`gradTick`) — this was already the calibrated
+target before this conversation, not a coincidence; it's a pre-existing promise to creators ("half
+ETH at $34K market cap").
+
+Mechanism: reuse the EXISTING no-pool-forever checkpoint math in `RobinCurveV4.graduate()`. At that
+checkpoint the contract already computes `lpEth` (what would have funded a permanent LP on a
+legacy pad) and currently routes 100% of it to `stakingEthOwed` (holder rewards). Change: split
+that same `lpEth` value 50% creator / 50% platform instead of 100% staking. No new math, no new
+milestone tiers, no oracle — just changing the destination of an already-computed number at an
+already-existing one-time event.
+
+**DexScreener $400 boost, paid alongside the ETH reward:** explicitly NOT a smart-contract concern
+— no oracle, deliberately kept off-chain per the user ("I don't know that you can make a contract
+do that... probably need an Oracle and it'd be a big bill"). Plan: extend the existing Telegram
+`announcer.js` service to also alert the team when `NoPoolCheckpoint` fires, so a human manually
+buys the DexScreener boost. Reuses infrastructure that already exists; adds no new recurring cost.
 
 ## What's clear and already matches the shipped defaults
 

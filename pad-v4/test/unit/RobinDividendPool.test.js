@@ -236,10 +236,15 @@ describe("RobinDividendPool — token side + real RobinCurveV4 wiring", () => {
 
     await curve.graduate();
 
-    // both sides actually arrived through the real graduation flow, unmodified: the no-pool-forever ETH leg via
-    // fundETH, and the leftover reserve token via fundTokenPushed
-    expect(await curvePool.pendingEth()).to.be.gt(0n);
+    // [MILESTONE] the no-pool-forever ETH leg (lpEth) now splits creator/platform instead of funding staking
+    // (see the milestone-payout change in graduate()) — this hookless fixture has no buy-tax-buffer path either
+    // (that requires a real fee hook), so nothing pushes ETH to the dividend pool here. That's correct, not a
+    // regression: setStaking() still accepted this pool exactly like DualStaking (asserted above), proving the
+    // wiring itself works; a hook-having pad would still push its buffer here via the same fundETH path.
+    expect(await curvePool.pendingEth()).to.equal(0n);
+    // the leftover reserve TOKEN push is a separate code path (_fundStaking, unrelated to lpEth/ETH routing) —
+    // still arrives exactly as before.
     expect(await curvePool.pendingToken()).to.be.gt(0n);
-    expect(await curve.stakingEthOwed()).to.equal(0n); // successfully pushed out, not stranded
+    expect(await curve.stakingEthOwed()).to.equal(0n); // nothing owed, nothing stranded
   });
 });

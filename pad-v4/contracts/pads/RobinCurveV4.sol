@@ -219,7 +219,11 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
     event PlatformSwept(uint256 eth);
     event CeilingRestored(address indexed by, uint256 tokenSpent, uint256 ethOut);
     // [NO-POOL] Emitted instead of a permanent-LP mint for a noPoolForever pad's checkpoint — no lpTokenId exists.
-    event NoPoolCheckpoint(uint128 liquidityWithdrawn, uint128 liquidityRetained, uint256 toStakingEth);
+    // [MILESTONE] lpEth (what would have funded a permanent LP) splits creator/platform, not staking — see the
+    // ARC-FEES-AND-NOTES.md milestone-payout spec. toCreatorEth is the creator's half; the platform's half is
+    // never separately booked here — it's simply left unclaimed by any other book, so the existing end-of-
+    // graduate() catch-all (`platformEthOwed = balance - <everything else owed>`) sweeps it there automatically.
+    event NoPoolCheckpoint(uint128 liquidityWithdrawn, uint128 liquidityRetained, uint256 toCreatorEth);
 
     error NotPoolManager();
     error NotFactory();
@@ -501,13 +505,19 @@ contract RobinCurveV4 is IUnlockCallback, ReentrancyGuard {
             // never called), so third-party liquidity can never be added here — not just during a curve phase,
             // permanently. `lpTokenId` stays 0 (nothing was minted) for the event below.
             //
-            // What would have been the permanent LP's ETH leg (lpEth) has nowhere structural to go, so it becomes
-            // an extra holder reward: added to stakingEthOwed alongside the buy-tax buffer, paid out through the
-            // same dividend/staking path as everything else in stakingEthOwed. This is a deliberate choice, not a
-            // fallback — the whole point of this design is that value that would have gone into a permanent pool
-            // stays with the pad, and this is the pad's own existing "give it to holders" sink.
-            stakingEthOwed += lpEth;
-            emit NoPoolCheckpoint(_pulledLiquidity, curveL, lpEth);
+            // [MILESTONE] What would have been the permanent LP's ETH leg (lpEth) has nowhere structural to go,
+            // so it becomes the milestone payout: half to the creator (a standing promise — "half ETH at $34K
+            // market cap" — paid here because this checkpoint IS that $34K-ish moment, gradTick's FDV), half to
+            // the platform. Only the creator's half is booked explicitly; the platform's half is deliberately
+            // left as unclaimed contract balance, because the existing end-of-graduate() catch-all a few lines
+            // below (`platformEthOwed = balance - <everything else owed>`) already sweeps every unbooked wei to
+            // the platform — booking it here too would double-count it against that sweep. Integer division
+            // rounds the creator's half down; the platform's sweep picks up the 1-wei (at most) remainder, which
+            // matches this codebase's existing dust-to-platform convention (see the accounting note in
+            // ROBIN-V4-CURVE-ECON.md, "subtraction conserves dust into the platform/creator cut").
+            uint256 creatorHalf = lpEth / 2;
+            creatorEthOwed += creatorHalf;
+            emit NoPoolCheckpoint(_pulledLiquidity, curveL, creatorHalf);
         } else {
             // 3b) [LP-1] Lift the hook's curve-phase liquidity lock BEFORE step 4. The permanent LP is minted
             //    through the PositionManager, which the lock deliberately does NOT admit (it is the route every
