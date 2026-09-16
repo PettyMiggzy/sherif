@@ -20,10 +20,13 @@ import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin} from "../int
 ///
 ///   • BUY  (money → token, `zeroForOne`): `buyTaxBps` skimmed FEE-ON-INPUT in beforeSwap — a slice of the
 ///          money the buyer spends, taken before the pool swaps the rest. Splits into a `buyBufferShareBps`
-///          curve buffer (ETH support held by the curve → platform at graduation) + a `referralShareBps`
-///          referrer slice (from the platform cut, when a ref link is used) + the platform.
+///          trader-rebate carve (pulled to the curve's staking/dividend pipeline via claimBuffer -> curve ->
+///          stakingEthOwed) + a `referralShareBps` referrer slice (from the remainder, when a ref link is
+///          used) + the CREATOR [SIMPLE-FEES — this was platform-bound before; platform's take now comes
+///          from the LP fee instead, see ARC-FEES-AND-NOTES.md].
 ///   • SELL (token → money, `oneForZero`): `sellTaxBps` of the money-side OUTPUT in afterSwap → creator,
-///          minus a `sellFloorShareBps` carve that funds the pad's permanent price FLOOR.
+///          minus a `sellFloorShareBps` carve that now ALSO feeds the trader-rebate pot [SIMPLE-FEES — this
+///          used to fund a permanent price floor; the floor vault is retired for pads using this fee model].
 ///
 /// Holders are rewarded separately, by staking (RobinLockStaking / DualStaking). All payouts are
 /// accrue-and-pull: nothing is pushed to an external wallet inside a swap, so a reverting recipient can
@@ -342,16 +345,18 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         return (IHooks.beforeSwap.selector, toBeforeSwapDelta(int128(int256(fee)), int128(0)), 0);
     }
 
-    /// @dev Book a buy tax (money-side currency0) → curve buffer + referrer + platform. Buffer first, then a referrer
-    /// from hookData earns a slice of the PLATFORM cut, platform takes the rest. Subtraction conserves dust → platform.
+    /// @dev Book a buy tax (money-side currency0) → curve buffer (trader-rebate) + referrer + CREATOR [SIMPLE-FEES].
+    /// Buffer first, then a referrer from hookData earns a slice of the remainder, creator takes the rest.
+    /// Subtraction conserves dust → creator.
     /// @dev [audit] The referral carve is PERMISSIONLESS BY DESIGN: whoever the swap's hookData names — including the
-    /// buyer themselves, or a Sybil alt-wallet — earns `referralShareBps` of the platform cut. On-chain attribution
-    /// of a *genuine external* referrer is impossible (the hook sees the router as `sender`, not the buyer, and a
-    /// buyer can always route through a fresh address), so a `referrer != sender` guard would be theatre. The carve is
-    /// therefore an at-most-`referralShareBps` REBATE on the platform's own buy cut: it never touches the buffer,
-    /// the trader's proceeds, the raise, or any other pad's funds (conservation holds — see the self-referral sim),
-    /// and it only ever lowers the PLATFORM's own take. If strict external-only attribution is ever required it must
-    /// be enforced OFF-CHAIN (platform-signed referral codes verified here), which is a deliberate future change.
+    /// buyer themselves, or a Sybil alt-wallet — earns `referralShareBps` of the (now creator-bound [SIMPLE-FEES])
+    /// remainder cut. On-chain attribution of a *genuine external* referrer is impossible (the hook sees the router
+    /// as `sender`, not the buyer, and a buyer can always route through a fresh address), so a `referrer != sender`
+    /// guard would be theatre. The carve is therefore an at-most-`referralShareBps` REBATE on the creator's own buy
+    /// cut: it never touches the buffer, the trader's proceeds, the raise, or any other pad's funds (conservation
+    /// holds — see the self-referral sim), and it only ever lowers the CREATOR's own take (previously the
+    /// platform's, before the buy-tax remainder was redirected to the creator). If strict external-only attribution
+    /// is ever required it must be enforced OFF-CHAIN (platform-signed referral codes verified here).
     function _bookBuy(PoolId id, PoolConfig storage c, Currency quote, uint256 fee, bytes calldata hookData) internal {
         uint256 bufferCut = (fee * c.buyBufferShareBps) / BPS;
         uint256 platformCut = fee - bufferCut;
@@ -368,7 +373,10 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
                 }
             }
         }
-        platformOwed[id][0] += platformCut - referralCut; // index 0 = the money side (quote)
+        // [SIMPLE-FEES] the buy-tax remainder (after the buffer/trader-rebate carve and any referral) goes to the
+        // CREATOR, not the platform — a deliberate change from the original platform-bound buy side. Platform's
+        // take now comes from the LP fee instead (see deploy config); see ARC-FEES-AND-NOTES.md for the full spec.
+        creatorOwed[id][0] += platformCut - referralCut; // index 0 = the money side (quote)
         emit BuyTaxed(id, platformCut - referralCut, bufferCut);
     }
 
@@ -439,11 +447,17 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
             emit SkimSkipped(id, 0, fee);
             return (IHooks.afterSwap.selector, int128(0));
         }
-        uint256 floorCut = (fee * c.sellFloorShareBps) / BPS;
-        uint256 creatorCut = fee - floorCut; // dust conserved into the creator's cut
+        // [SIMPLE-FEES] sellFloorShareBps now carves a trader-rebate share, not a floor share — it joins the SAME
+        // pot as the buy-side buffer carve (bufferOwed, pulled to the curve via claimBuffer() exactly as before),
+        // rather than floorOwed/floorRecipient. This reuses the curve's existing buffer -> stakingEthOwed ->
+        // _fundStakingEth() pipeline as the trader-reward destination (wherever curve.staking is wired) instead of
+        // building a new accrual/claim path. floorOwed/floorRecipient stay in the contract, unused by new pads —
+        // see ARC-FEES-AND-NOTES.md.
+        uint256 rebateCut = (fee * c.sellFloorShareBps) / BPS;
+        uint256 creatorCut = fee - rebateCut; // dust conserved into the creator's cut
         creatorOwed[id][0] += creatorCut;
-        floorOwed[id][0] += floorCut;
-        emit SellTaxed(id, creatorCut, floorCut);
+        bufferOwed[id] += rebateCut;
+        emit SellTaxed(id, creatorCut, rebateCut);
         // Return the +fee delta LAST (CEI). Nets the −fee from `mint` → unlock closes clean. [A3]
         return (IHooks.afterSwap.selector, int128(uint128(fee)));
     }

@@ -1,7 +1,7 @@
 {
   "chainId": 5042,
   "rpcUrl": "http://127.0.0.1:8545",
-  "deployedAt": "2026-09-16T17:04:10.478Z",
+  "deployedAt": "2026-09-16T18:50:26.068Z",
   "accounts": {
     "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "platform": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
@@ -30,25 +30,25 @@
   "pads": [
     {
       "token": "0xf6286e0317a200f25E928EeC10C3458c689c1Ab5",
-      "hook": "0x8A6cd44E62a5D248775d9971586F6a057CD2a8CC",
-      "curve": "0xC5fC54A7B6fB675fde14D8aC9740a9971AAAa7a8",
-      "poolId": "0x38eabe47b82fdf9ed77b5fde7043f9d5b39d5033ac5afb88e6511928ff8d912e",
+      "hook": "0x88DC932FC1A167928FE005876E730eB5BcdB68CC",
+      "curve": "0x64193a85E5dCCFE12B11432eB70ffd5206881ab3",
+      "poolId": "0xc402888668ffb52761deda210b9887ec59f43a6c33c9b7cb3905d49c4b9f6102",
       "name": "Arc Demo Alpha",
       "symbol": "AALPHA"
     },
     {
       "token": "0x1906b704C941a365f58E5865b718a16372421aB5",
-      "hook": "0x9491e4D7a5BE7B2071de98578d51fCB2720528cc",
-      "curve": "0xbB83609E8c660deC6aA868c84fEb26ee2FADa5f6",
-      "poolId": "0x9a6d75bee95a9411410c4c70ba478e269e89c574e72174af045f33895d2a0ebe",
+      "hook": "0xB47a05d1a9a55B4aa21e8F5A57E8020942da28Cc",
+      "curve": "0x0f00a46D683ADe26125AcfE006569A59aCD669eC",
+      "poolId": "0x8e09afb14aa1bfef0cda5262d5c0a32b6b811f6d0ef83423a18aace50ddf5188",
       "name": "Arc Demo Beta",
       "symbol": "ABETA"
     },
     {
       "token": "0xaa440f3325296Fc1b4e810ebf672473442261AB5",
-      "hook": "0xaAfFa8f5B7edBD49b0A3c015A4FD480C0478A8cc",
-      "curve": "0xd242ce81248e510eF6368F7D60F4094A24ee8cbe",
-      "poolId": "0xfc4dddce0e695246e70bb79a20bbee6c2b49beb738b1cd1426e84c1b7db155df",
+      "hook": "0x6EfB91213d33cDbc4a0df6367E6436c4F74ba8Cc",
+      "curve": "0xdc1018fddccfC0B01ea4C89af215018708e4AAf0",
+      "poolId": "0x919ae60c28e4322890be88482315195e83a1128a37b6ce349b4ee8e1e94f3c9b",
       "name": "Arc Demo Gamma",
       "symbol": "AGAMMA"
     }

@@ -41,9 +41,12 @@ const MIN_SQRT_LIMIT = 4295128739n + 1n;
 const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
 
 const START = 125900, WIDTH = 23000, GRAD = START - WIDTH, TS = 100, FEE = 10000, MINGRAD = 22800;
+// [SIMPLE-FEES] sellFloorShareBps/buyBufferShareBps repurposed as trader-rebate shares (25% each leg = 0.5%
+// total), remainder to creator (1.5% total) — matches deploy-curve-arc.js. ambushGradBps=0 — floor/ambush
+// retired for this fee model. See ARC-FEES-AND-NOTES.md and RobinFeeHook.sol for the full spec.
 const DEFAULTS = {
-  buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 0, buyLpFloorShareBps: 0, buyBufferShareBps: 2000,
-  referralShareBps: 2500, platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 1500,
+  buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2500, buyLpFloorShareBps: 0, buyBufferShareBps: 2500,
+  referralShareBps: 2500, platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 0,
   lpFee: FEE, startTickMag: START, curveWidth: WIDTH, minGradWidth: MINGRAD,
   minFdvWei: ethers.parseEther("100"), maxFdvWei: ethers.parseEther("200000"),
 };

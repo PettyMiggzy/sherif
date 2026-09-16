@@ -9,6 +9,8 @@ const { expect } = require("chai");
 //   BUY  (beforeSwap) → buyTax of the MONEY-SIDE INPUT (currency0: ETH) → platform + buffer
 //   SELL (afterSwap)  → sellTax of the MONEY-SIDE OUTPUT (currency0: ETH) → creator + floor
 // Both taxes are denominated in the money side (currency0), never the coin. Exact-output is rejected.
+// [SIMPLE-FEES] the buy-tax remainder now goes to the CREATOR (was platform), and the sell-tax carve now
+// joins the SAME buffer pot the buy-tax carve feeds (was a separate floor pot) — see RobinFeeHook.sol.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ZERO = ethers.ZeroAddress;
@@ -75,9 +77,13 @@ describe("RobinFeeHook — directional tax (ETH-native) closes clean (local real
       key, { tickLower: -887220, tickUpper: 887220, liquidityDelta: 10n ** 20n, salt: ethers.ZeroHash }, "0x",
       { value: ethers.parseEther("2000") }
     );
+    // [SIMPLE-FEES] bufferRecipient is normally wired by the factory at launch (setBufferRecipient); registerPool
+    // always seeds it to address(0). Reusing the `floor` signer as the stand-in trader-rebate-pot recipient here
+    // (its original floorRecipient role is retired — floorOwed no longer accrues via normal swap flow).
+    await hook.connect(factory).setBufferRecipient(poolId, floor.address);
   });
 
-  it("BUY: fee-on-input closes clean; buy tax of the MONEY-SIDE (ETH) input held as an ERC-6909 claim → platform + buffer", async () => {
+  it("BUY: fee-on-input closes clean; buy tax of the MONEY-SIDE (ETH) input held as an ERC-6909 claim → creator + buffer [SIMPLE-FEES]", async () => {
     const hookAddr = await hook.getAddress();
     const hookEthBefore = await ethers.provider.getBalance(hookAddr);
     const claimBefore = await pm.balanceOf(hookAddr, 0n); // ERC-6909 native-ETH claim (id 0)
@@ -93,32 +99,36 @@ describe("RobinFeeHook — directional tax (ETH-native) closes clean (local real
     expect((await ethers.provider.getBalance(hookAddr)) - hookEthBefore).to.equal(0n);
     const skim = (await pm.balanceOf(hookAddr, 0n)) - claimBefore;
     expect(skim).to.equal((spend * BUY_BPS) / 10000n); // 0.01 ETH, exact
-    // buy tax (money side, index 0) splits: 20% → curve buffer, the rest → platform. creator/floor untouched.
+    // [SIMPLE-FEES] buy tax (money side, index 0) splits: 20% → curve buffer (trader-rebate pot), the rest →
+    // CREATOR (was platform). floor untouched (retired).
     const bufferCut = (skim * BUFFER_SHARE_BPS) / 10000n;
-    const platformCut = skim - bufferCut; // contract conserves dust into the platform cut
-    expect(await hook.platformOwed(poolId, 0)).to.equal(platformCut);
+    const creatorCut = skim - bufferCut; // contract conserves dust into the creator cut
+    expect(await hook.creatorOwed(poolId, 0)).to.equal(creatorCut);
     expect(await hook.bufferOwed(poolId)).to.equal(bufferCut);
-    expect(await hook.creatorOwed(poolId, 0)).to.equal(0n);
+    expect(await hook.platformOwed(poolId, 0)).to.equal(0n);
     expect(await hook.floorOwed(poolId, 0)).to.equal(0n);
   });
 
-  it("SELL: money-side (ETH) output tax splits creator (80%) + floor (20%)", async () => {
+  it("SELL: money-side (ETH) output tax splits creator (80%) + the shared trader-rebate buffer (20%) [SIMPLE-FEES]", async () => {
     await tok.connect(owner).transfer(trader.address, 10n ** 22n);
     await tok.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
     const hookEthBefore = await ethers.provider.getBalance(await hook.getAddress());
     const hookClaimBefore = await pm.balanceOf(await hook.getAddress(), 0n); // ERC-6909 ETH claim
+    const creatorBefore = await hook.creatorOwed(poolId, 0);
+    const bufferBefore = await hook.bufferOwed(poolId); // buy already ran, so this is nonzero going in
 
     await sw.connect(trader).swap(
       key, { zeroForOne: false, amountSpecified: -(10n ** 21n), sqrtPriceLimitX96: MAX_SQRT_LIMIT },
       { takeClaims: false, settleUsingBurn: false }, "0x"
     );
 
-    const creatorCut = await hook.creatorOwed(poolId, 0); // money side (native)
-    const floorCut = await hook.floorOwed(poolId, 0);
-    const totalSell = creatorCut + floorCut;
+    const creatorCut = (await hook.creatorOwed(poolId, 0)) - creatorBefore; // money side (native)
+    const rebateCut = (await hook.bufferOwed(poolId)) - bufferBefore;
+    const totalSell = creatorCut + rebateCut;
     expect(totalSell).to.be.gt(0n);
-    // floor gets 20% of the sell tax, creator the remaining 80% (dust conserved into creator)
-    expect(floorCut).to.equal((totalSell * FLOOR_SHARE_BPS) / 10000n);
+    // [SIMPLE-FEES] the trader-rebate pot gets 20% of the sell tax (was floor), creator the remaining 80%
+    expect(rebateCut).to.equal((totalSell * FLOOR_SHARE_BPS) / 10000n);
+    expect(await hook.floorOwed(poolId, 0)).to.equal(0n); // retired — nothing ever lands here now
     // [H-1] the SELL fee is minted as an ERC-6909 claim, exactly like the BUY fee — never taken as real ETH at
     // swap time. So the hook's CLAIM grows by exactly the sell fee and its raw ETH balance does not move. Taking
     // real ETH here is what let a seller starve the singleton inside their own unlock and waive the tax outright.
@@ -136,23 +146,20 @@ describe("RobinFeeHook — directional tax (ETH-native) closes clean (local real
     ).to.be.reverted; // ExactOutputNotSupported (wrapped by PoolManager)
   });
 
-  it("claims: platform→registry (ETH), creator→creator (ETH), floor→floorRecipient (ETH)", async () => {
-    // platform (money side, index 0)
-    const pOwed = await hook.platformOwed(poolId, 0);
-    const pBefore = await ethers.provider.getBalance(platform.address);
-    await hook.connect(owner).claimPlatform(poolId, 0); // permissionless; funds go to registry wallet (platform)
-    expect((await ethers.provider.getBalance(platform.address)) - pBefore).to.equal(pOwed);
-
-    // creator (money/native leg)
+  it("claims: creator→creator (ETH), buffer→bufferRecipient (ETH) [SIMPLE-FEES]", async () => {
+    // creator (money/native leg) — [SIMPLE-FEES] this is now where the buy-tax remainder lands too, no platform claim to test here
     const cOwed = await hook.creatorOwed(poolId, 0);
     const cBefore = await ethers.provider.getBalance(creator.address);
     await hook.connect(owner).claimCreator(poolId, 0); // permissionless; funds go to creator slot
     expect((await ethers.provider.getBalance(creator.address)) - cBefore).to.equal(cOwed);
 
-    // floor (money/native leg) → floorRecipient
-    const fOwed = await hook.floorOwed(poolId, 0);
-    const fBefore = await ethers.provider.getBalance(floor.address);
-    await hook.connect(owner).claimFloor(poolId, 0);
-    expect((await ethers.provider.getBalance(floor.address)) - fBefore).to.equal(fOwed);
+    // buffer (money/native leg) → bufferRecipient — [SIMPLE-FEES] the shared trader-rebate pot both buy and
+    // sell feed; floorOwed stays 0 (retired, see the BUY/SELL tests above), nothing to claim there anymore.
+    const bOwed = await hook.bufferOwed(poolId);
+    const bBefore = await ethers.provider.getBalance(floor.address);
+    await hook.connect(owner).claimBuffer(poolId);
+    expect((await ethers.provider.getBalance(floor.address)) - bBefore).to.equal(bOwed);
+    expect(await hook.floorOwed(poolId, 0)).to.equal(0n);
+    await expect(hook.connect(owner).claimFloor(poolId, 0)).to.be.revertedWithCustomError(hook, "NothingToClaim");
   });
 });

@@ -119,23 +119,25 @@ describe("RobinFeeHook — adversarial", () => {
       { takeClaims: false, settleUsingBurn: false }, "0x"
     );
     expect(await tok.balanceOf(trader.address)).to.be.gt(tBefore); // buy filled
-    expect(await hook.platformOwed(poolId, 0)).to.be.gt(0n); // tax BOOKED (mint can't be blocked)
+    // [SIMPLE-FEES] the buy-tax remainder is creator-bound now, not platform-bound — see RobinFeeHook.sol's
+    // _bookBuy. Still proves the same property: the tax is BOOKED despite the blocklist (mint can't be blocked).
+    expect(await hook.creatorOwed(poolId, 0)).to.be.gt(0n); // tax BOOKED (mint can't be blocked)
     expect(await pm.balanceOf(hookAddr, BigInt(blkAddr))).to.be.gt(0n); // held as an ERC-6909 claim on the stock
 
-    // the redemption (claimPlatform → burn+take real stock to the hook) reverts while the hook is blocked — the
+    // the redemption (claimCreator → burn+take real stock to the hook) reverts while the hook is blocked — the
     // book is preserved (retriable), and trading is never bricked.
-    await expect(hook.claimPlatform(poolId, 0)).to.be.reverted;
-    expect(await hook.platformOwed(poolId, 0)).to.be.gt(0n); // book intact
+    await expect(hook.claimCreator(poolId, 0)).to.be.reverted;
+    expect(await hook.creatorOwed(poolId, 0)).to.be.gt(0n); // book intact
 
-    // once the block is lifted the claim succeeds and pays the platform wallet in real stock.
+    // once the block is lifted the claim succeeds and pays the creator in real stock.
     await blk.connect(owner).setBlocked(hookAddr, false);
-    const owed = await hook.platformOwed(poolId, 0);
-    await hook.claimPlatform(poolId, 0);
-    expect(await blk.balanceOf(platform.address)).to.equal(owed);
-    expect(await hook.platformOwed(poolId, 0)).to.equal(0n);
+    const owed = await hook.creatorOwed(poolId, 0);
+    await hook.claimCreator(poolId, 0);
+    expect(await blk.balanceOf(creator.address)).to.equal(owed);
+    expect(await hook.creatorOwed(poolId, 0)).to.equal(0n);
   });
 
-  it("buy routes to platform, sell routes to creator + floor", async () => {
+  it("buy routes to creator, sell routes to creator + trader-rebate buffer [SIMPLE-FEES]", async () => {
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
     const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());
     const key = await seedPool(hook, tok);
@@ -155,9 +157,12 @@ describe("RobinFeeHook — adversarial", () => {
       { takeClaims: false, settleUsingBurn: false }, "0x"
     );
 
-    expect(await hook.platformOwed(poolId, 0)).to.be.gt(0n, "buy → platform (money side, ETH)");
-    expect(await hook.creatorOwed(poolId, 0)).to.be.gt(0n, "sell → creator (money side, ETH)");
-    expect(await hook.floorOwed(poolId, 0)).to.be.gt(0n, "sell → floor carve (money side, ETH)");
+    // [SIMPLE-FEES] buy's remainder is creator-bound (was platform); sell's non-rebate remainder is also
+    // creator, and both the buy-side buffer carve AND the sell-side rebate carve now land in the SAME
+    // bufferOwed pot (was floorOwed for the sell side) — see RobinFeeHook.sol's afterSwap/_bookBuy.
+    expect(await hook.creatorOwed(poolId, 0)).to.be.gt(0n, "buy + sell → creator (money side, ETH)");
+    expect(await hook.bufferOwed(poolId)).to.be.gt(0n, "buy buffer + sell rebate carve → the shared trader-rebate pot");
+    expect(await hook.floorOwed(poolId, 0)).to.equal(0n, "floorOwed is retired for this fee model, stays at 0");
   });
 
   it("stock curb: beforeSwap reverts in-window, passes out-of-window and when adapter reverts", async () => {
@@ -230,37 +235,42 @@ describe("RobinFeeHook — adversarial", () => {
     await expect(hook.connect(platform).setFloorRecipient(id, creator.address)).to.be.revertedWithCustomError(hook, "FloorRecipientAlreadySet");
   });
 
-  it("[M-24] the hook can never be its own floor sink: setter rejects it, and a cfg-seeded self-send reverts PayoutFailed", async () => {
+  it("[M-24] the hook can never be its own floor sink: setter rejects it", async () => {
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
     const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());
     const hookAddr = await hook.getAddress();
 
-    // (a) the SETTER rejects the hook's own address — the M-24 entry point (a hook-as-floor pointer would make
-    //     claimFloor report success while moving nothing, stranding the carve permanently).
+    // the SETTER rejects the hook's own address — the M-24 entry point (a hook-as-floor pointer would make
+    // claimFloor report success while moving nothing, stranding the carve permanently). Unaffected by
+    // [SIMPLE-FEES]: floorRecipient/setFloorRecipient still exist, just unfed by normal swap flow now (see
+    // the buffer-path version of this test below, which covers the path that actually carries money today).
     const id0 = poolIdOf({ currency0: ZERO, currency1: await tok.getAddress(), fee: 500, tickSpacing: 10, hooks: hookAddr });
     await hook.connect(factory).registerPool(id0, CFG(ZERO, await tok.getAddress(), creator.address));
     await expect(hook.connect(platform).setFloorRecipient(id0, hookAddr)).to.be.revertedWithCustomError(hook, "ZeroAddress");
+  });
 
-    // (b) the registerPool variant (floorRecipient seeded straight from cfg, NOT via the setter): accrue a real floor
-    //     carve via a sell, then claimFloor must revert PayoutFailed (the shared self-send guard in _payout) and LEAVE
-    //     the book intact — never zero it while emitting FloorClaimed, which is the exact M-24 silent loss.
+  it("[M-24, SIMPLE-FEES] the shared self-send guard also protects the buffer path (now the trader-rebate pot both buy and sell feed)", async () => {
+    // [SIMPLE-FEES] floorOwed can no longer accrue via normal swap flow (afterSwap now routes the sell-side
+    // rebate carve to bufferOwed instead) — so the money-carrying path to defend against a self-pointed
+    // recipient is buffer, not floor. setBufferRecipient itself has no explicit self-address check (unlike
+    // setFloorRecipient) because it's FACTORY-ONLY and the factory always wires the real curve address — but
+    // the shared _payout self-send guard should still catch it defensively even so. Proving that here.
+    const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
+    const hook = await deployHook(pm, dep, reg, factory, await tok.getAddress());
+    const hookAddr = await hook.getAddress();
     const key = await seedPool(hook, tok);
     const poolId = poolIdOf(key);
-    await hook.connect(factory).registerPool(poolId, CFG(ZERO, await tok.getAddress(), creator.address, { floorRecipient: hookAddr }));
+    await hook.connect(factory).registerPool(poolId, CFG(ZERO, await tok.getAddress(), creator.address));
+    await hook.connect(factory).setBufferRecipient(poolId, hookAddr); // adversarial: factory misconfigured to the hook itself
+
     await sw.connect(trader).swap(
       key, { zeroForOne: true, amountSpecified: -ethers.parseEther("1"), sqrtPriceLimitX96: MIN_SQRT_LIMIT },
       { takeClaims: false, settleUsingBurn: false }, "0x", { value: ethers.parseEther("1") }
     );
-    await tok.connect(owner).transfer(trader.address, 10n ** 22n);
-    await tok.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
-    await sw.connect(trader).swap(
-      key, { zeroForOne: false, amountSpecified: -(10n ** 21n), sqrtPriceLimitX96: MAX_SQRT_LIMIT },
-      { takeClaims: false, settleUsingBurn: false }, "0x"
-    );
-    const owedBefore = await hook.floorOwed(poolId, 0);
-    expect(owedBefore).to.be.gt(0n, "sell accrued a floor carve to the hook-as-floor pool");
-    await expect(hook.claimFloor(poolId, 0)).to.be.revertedWithCustomError(hook, "PayoutFailed");
-    expect(await hook.floorOwed(poolId, 0)).to.equal(owedBefore); // book NOT zeroed — the revert rolled it back
+    const owedBefore = await hook.bufferOwed(poolId);
+    expect(owedBefore).to.be.gt(0n, "buy accrued a buffer carve to the hook-as-buffer pool");
+    await expect(hook.claimBuffer(poolId)).to.be.revertedWithCustomError(hook, "PayoutFailed");
+    expect(await hook.bufferOwed(poolId)).to.equal(owedBefore); // book NOT zeroed — the revert rolled it back
   });
 
   it("creator repoint is 2-step and creator-only", async () => {
