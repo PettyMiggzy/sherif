@@ -65,6 +65,15 @@ module.exports = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       gasPrice: 30_180_000,
     },
+    // Arc mainnet (chainId 5042), launched 2026-09-16. Unlike Robinhood Chain's Orbit stack, Arc
+    // supports EIP-1559 natively — no forced legacy gasPrice here, ethers sends normal type-2 txs.
+    // Gas is paid in USDC (Arc's native currency), so the deployer wallet needs real USDC, not ETH.
+    //   PLATFORM_WALLET=<addr> PRIVATE_KEY=<funded key> npx hardhat run scripts/deploy-curve-arc.js --network arc
+    arc: {
+      url: process.env.ARC_RPC || "https://rpc.mainnet.arc.io",
+      chainId: 5042,
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+    },
     // Explicit localhost entry (Hardhat's implicit default has a short HTTP timeout) — a forked node's
     // lazy per-slot state fetching against a real remote RPC can make a single complex call genuinely
     // slow, well past that default, without anything actually being wrong.
@@ -74,7 +83,7 @@ module.exports = {
     },
   },
   etherscan: {
-    apiKey: { robinhood: process.env.BLOCKSCOUT_KEY || "blockscout" },
+    apiKey: { robinhood: process.env.BLOCKSCOUT_KEY || "blockscout", arc: process.env.ARC_BLOCKSCOUT_KEY || "blockscout" },
     customChains: [
       {
         network: "robinhood",
@@ -82,6 +91,14 @@ module.exports = {
         urls: {
           apiURL: "https://robinhoodchain.blockscout.com/api",
           browserURL: "https://robinhoodchain.blockscout.com",
+        },
+      },
+      {
+        network: "arc",
+        chainId: 5042,
+        urls: {
+          apiURL: "https://explorer.arc.io/api",
+          browserURL: "https://explorer.arc.io",
         },
       },
     ],
