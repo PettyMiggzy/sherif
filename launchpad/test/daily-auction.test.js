@@ -120,6 +120,10 @@ describe("DailyAuctionVault — optional daily-tranche pre-launch auction", func
 
   it("a bid day closes correctly: platform gets exactly 10%, the rest buy-and-burns against the curve, bidders claim pro-rata", async () => {
     const { curve, pool: poolAddr, vault, token } = await launchWithAuction("BidClose", 1);
+    const TOK = await ethers.getContractAt("LaunchToken", token);
+    // the launch's own CREATION_FEE already burned a small amount to DEAD (the seed buy) — capture that
+    // baseline BEFORE this day's own burn-buy, so the assertion below isolates just THIS close's burn.
+    const deadAtLaunch = await TOK.balanceOf(DEAD);
     await vault.connect(alice).bid(1, { value: ethers.parseEther("1") });
     await vault.connect(bob).bid(1, { value: ethers.parseEther("3") });
     const total = ethers.parseEther("4");
@@ -148,9 +152,8 @@ describe("DailyAuctionVault — optional daily-tranche pre-launch auction", func
     const tickAfter = (await pool.slot0())[1];
     expect(tickAfter).to.not.equal(tickBefore);
 
-    const TOK = await ethers.getContractAt("LaunchToken", token);
-    const deadBefore = await TOK.balanceOf(DEAD);
-    expect(deadBefore).to.equal(ev.args.tokensBurned); // (nothing else burns on this token in this test)
+    const deadAfter = await TOK.balanceOf(DEAD);
+    expect(deadAfter - deadAtLaunch).to.equal(ev.args.tokensBurned);
 
     // pro-rata claims: alice bid 1/4 of the day, bob 3/4
     const tranche = await vault.dayTranche();
@@ -194,10 +197,13 @@ describe("DailyAuctionVault — optional daily-tranche pre-launch auction", func
     const TOK = await ethers.getContractAt("LaunchToken", token);
     expect(await TOK.balanceOf(stakingAddr)).to.equal(tranche); // the pool actually received the tokens
 
-    // and it's a REAL stream: someone who stakes the coin now earns MORE of the coin over time
-    await TOK.connect(dev).transfer(alice.address, ethers.parseEther("1000"));
+    // and it's a REAL stream: someone who stakes the coin now earns MORE of the coin over time. Get alice
+    // real tokens via an ordinary router buy (dev never bought any in this launch — CREATION_FEE alone).
+    await (await (await ethers.getContractAt("PadRouter", router)).connect(alice).buy(token, 0, { value: ethers.parseEther("1") })).wait();
+    const aliceStake = await TOK.balanceOf(alice.address);
+    expect(aliceStake).to.be.gt(0n);
     await TOK.connect(alice).approve(stakingAddr, ethers.MaxUint256);
-    await staking.connect(alice).stake(ethers.parseEther("1000"));
+    await staking.connect(alice).stake(aliceStake);
     await ethers.provider.send("evm_increaseTime", [15 * 24 * 3600]); // halfway through the 30-day stream
     await ethers.provider.send("evm_mine", []);
     const earned = await staking.earned(alice.address, token);

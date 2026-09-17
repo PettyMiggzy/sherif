@@ -206,12 +206,18 @@ contract DailyAuctionVault is IUniswapV3SwapCallback, ReentrancyGuard {
         bool zeroForOne = !tokenIsToken0;
         uint160 sqrtLimit = PoolMath.getSqrtRatioAtTick(ICurveForAuction(curve).gradTick());
 
+        // MUST be a balance DELTA, not the raw balance: unlike CurvePadFactory's launch-time seed buy (which
+        // runs in a fresh context holding none of this token), this vault holds a PERSISTENT reserve between
+        // calls — the not-yet-claimed dayTranche for every day, bid or not. Reading raw balanceOf() here would
+        // sweep that whole reserve into the burn on the very first bid day, stranding every other day's
+        // bidders. (Caught by a real test — a late claim reverted with an empty-vault ERC20 transfer failure.)
+        uint256 balBefore = token.balanceOf(address(this));
         IWETH9(WETH).deposit{value: value}();
         _swapping = true;
         IUniswapV3Pool(pool).swap(address(this), zeroForOne, int256(value), sqrtLimit, "");
         _swapping = false;
 
-        bought = token.balanceOf(address(this));
+        bought = token.balanceOf(address(this)) - balBefore;
         if (bought > 0) token.safeTransfer(DEAD, bought);
         // Refund any unspent WETH (e.g. this day's slice alone hit the ceiling) to the platform, same as the
         // factory's own creation-fee seed buy — never lost, never credited to a bidder who didn't earn it.
