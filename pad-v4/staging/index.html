@@ -80,8 +80,19 @@
       </div>
       <label>Curve supply (tokens) — ~470,000 graduates at ≈0.003 test-ETH</label>
       <input id="curveSupply" value="470000" />
+      <label>Optional daily auction — 0-4 days, carves that many 10% tranches out of the curve share for a
+        sealed daily batch auction (see DailyAuctionVaultV4.sol)</label>
+      <input id="auctionDays" value="0" />
       <div style="margin-top:12px"><button id="btnLaunch">Mine hook + Launch</button></div>
       <div class="hint" style="margin-top:8px">Launch mines a valid V4 hook address in your browser (~instant), then calls CurvePadFactoryV4.launch.</div>
+    </div>
+
+    <div class="card" id="auction" style="display:none">
+      <h3>Daily auction</h3>
+      <div id="auctionState" class="hint">—</div>
+      <div style="margin-top:12px"><button id="btnAuctionRefresh" class="ghost">Refresh auction</button></div>
+      <div class="hint" style="margin-top:8px">Each bid button sends a flat 0.1 ETH test bid. Closing a day is
+        permissionless once its 24h window passes; claiming pulls your pro-rata share once closed.</div>
     </div>
 
     <div class="card" id="trade" style="display:none">

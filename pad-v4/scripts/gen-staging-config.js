@@ -20,6 +20,8 @@ const factory = load("contracts/core/CurvePadFactoryV4.sol/CurvePadFactoryV4.jso
 const curve = load("contracts/pads/RobinCurveV4.sol/RobinCurveV4.json");
 const stateView = load("contracts/core/RobinStateView.sol/RobinStateView.json");
 const swapTest = load("@uniswap/v4-core/src/test/PoolSwapTest.sol/PoolSwapTest.json");
+// [AUCTION] the optional 0-4 day daily batch auction vault a launch deploys when cfg.auctionDays > 0.
+const auctionVault = load("contracts/pads/DailyAuctionVaultV4.sol/DailyAuctionVaultV4.json");
 
 // pick only the ABI fragments the app uses (keeps the file lean)
 const pick = (abi, names) => abi.filter((f) => f.type !== "function" || names.includes(f.name)).filter((f) => f.type === "function" || f.type === "event");
@@ -52,7 +54,9 @@ const cfg = {
     feeHook: feeHook.bytecode,
   },
   ABI: {
-    factory: pick(factory.abi, ["launch"]),
+    // [AUCTION] auctionVaultOf resolves a launch's optional vault (0 if none); auctionVaultDeployer tells the
+    // bench whether the feature is even wired on this deployment before it lets a creator pick a day count.
+    factory: pick(factory.abi, ["launch", "auctionVaultOf", "auctionVaultDeployer"]),
     curve: pick(curve.abi, ["ready", "graduated", "seeded", "graduate", "curveL", "startTick", "gradTick", "fee", "setStaking", "setFloor", "staking", "floor"]),
     stateView: pick(stateView.abi, ["getSlot0"]),
     token: [
@@ -61,6 +65,12 @@ const cfg = {
       { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
     ],
     swapRouter: pick(swapTest.abi, ["swap"]),
+    // [AUCTION] the optional per-launch daily batch auction vault. Same public surface as v3's sibling
+    // DailyAuctionVault.
+    dailyAuctionVault: pick(auctionVault.abi, [
+      "auctionDays", "startTime", "dayTranche", "dayWindow", "dayTotal", "bidOf", "closed", "claimed",
+      "stakingPool", "bid", "closeDay", "claim",
+    ]),
   },
 };
 

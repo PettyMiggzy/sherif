@@ -159,7 +159,7 @@ await page.close();
   check("the create page has a supply / starting-value panel", () => assert.equal(panel.exists, true));
   // Opt-in on purpose: the one-click launch has to stay one click for anyone who does not care.
   check("the panel is collapsed by default", () => assert.equal(panel.open, false));
-  check("it offers token-count presets", () => assert.deepEqual(panel.presets, ["1B", "100M", "1M", "10K"]));
+  check("it offers token-count presets", () => assert.deepEqual(panel.presets, ["1B", "100M", "10M", "1M", "100K", "10K"]));
 
   const preset = await p.evaluate(async () => {
     document.querySelector("[data-supply=\"10000\"]").click();

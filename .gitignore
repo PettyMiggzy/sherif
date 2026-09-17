@@ -52,3 +52,6 @@ launchpad/contracts/mocks/Zz*.sol
 
 # pad/e2e/auction-manual.mjs's screenshots — local verification artifacts, not the suite itself.
 pad/e2e/.shots/
+
+# pad-v4/staging/local-bench-manual.mjs's screenshots — same convention, not the suite itself.
+pad-v4/staging/.shots/

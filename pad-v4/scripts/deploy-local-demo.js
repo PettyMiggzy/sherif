@@ -37,13 +37,13 @@ async function deploy(name, args = []) {
   return c;
 }
 
-async function launchDemoPad(S, { name, symbol, supplyM, curveShareBps, tag, creator }) {
+async function launchDemoPad(S, { name, symbol, supplyM, curveShareBps, tag, creator, auctionDays = 0 }) {
   const supply = BigInt(supplyM) * 10n ** 18n;
   const curveSupply = (supply * BigInt(curveShareBps)) / 10000n;
   const reserveSupply = supply - curveSupply;
   const cfg = {
     name, symbol, decimals: 18, supply, curveSupply, reserveSupply,
-    tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays: 0,
+    tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays,
   };
   const tokenSalt = await brandedTokenSalt(await S.dep.getAddress(), await S.factory.getAddress(), cfg, ethers.id(tag));
   const TokenF = await ethers.getContractFactory("PadToken");
@@ -122,6 +122,15 @@ async function main() {
   const padC = await launchDemoPad(S, { name: "Robin Demo Gamma", symbol: "RGAMMA", supplyM: 2_000_000_000, curveShareBps: 7300, tag: "demo-gamma", creator: creatorC });
   await simulateTrades(S, padC, [{ signer: buyer3, ethIn: 3.2 }]);
 
+  // [AUCTION] a 4th pad with a 2-day auction wired on, so the bench UI has a real vault + a real open bidding
+  // window to read from without needing a fresh launch first.
+  const padD = await launchDemoPad(S, { name: "Robin Demo Delta", symbol: "RDELTA", supplyM: 1_000_000_000, curveShareBps: 7300, tag: "demo-delta", creator: creatorA, auctionDays: 2 });
+  const vaultD = await factory.auctionVaultOf(padD.token);
+  const vaultC = await ethers.getContractAt("DailyAuctionVaultV4", vaultD);
+  await (await vaultC.connect(buyer1).bid(1, { value: ethers.parseEther("0.3") })).wait();
+  await (await vaultC.connect(buyer2).bid(1, { value: ethers.parseEther("0.2") })).wait();
+  console.log(`  auction vault ${vaultD} — day 1: buyer1 0.3 ETH + buyer2 0.2 ETH bid`);
+
   const out = {
     chainId: 31337,
     rpcUrl: "http://127.0.0.1:8545",
@@ -148,10 +157,11 @@ async function main() {
       arrowLauncher: await arrowLauncher.getAddress(),
       burnTracker: await burnTracker.getAddress(),
     },
-    pads: [padA, padB, padC].map((p) => ({
+    pads: [padA, padB, padC, padD].map((p) => ({
       token: p.token, hook: p.hook, curve: p.curveAddr, poolId: p.poolId,
-      name: p.cfg.name, symbol: p.cfg.symbol,
+      name: p.cfg.name, symbol: p.cfg.symbol, auctionDays: p.cfg.auctionDays,
     })),
+    auctionVault: vaultD,
   };
   const file = path.join(__dirname, "..", "..", "pad", "js", "deploy.local.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });

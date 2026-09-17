@@ -7,7 +7,10 @@ const $ = (id) => document.getElementById(id);
 const ZERO = "0x0000000000000000000000000000000000000000";
 const MIN_SQRT = 4295128739n + 1n;
 const MAX_SQRT = 1461446703485210103287273052203988822378723970342n - 1n;
-const FEE = 10000, TS = 60; // default 1% pool fee / tickSpacing 60 — the REAL fee is read from the curve
+// [FIX] tickSpacing was 60 — the governed curveWidth every real deploy ships (23000, see
+// scripts/deploy-curve.js/deploy-local-demo.js) only divides evenly by 100, so a launch with tickSpacing=60
+// reverted BadGeometry (`d.curveWidth % ts != 0`) every single time. 100 matches production/testnet/local.
+const FEE = 10000, TS = 100; // default 1% pool fee / tickSpacing 100 — the REAL fee is read from the curve
 const abi = ethers.AbiCoder.defaultAbiCoder();
 // [audit M5] Curve read-ABI incl. fee() so we can read the pool's ACTUAL lp fee (governed on-chain) and never
 // desync the poolId by hardcoding it. Only appends fee() if the generated ABI doesn't already carry it.
@@ -50,6 +53,7 @@ function sqrtAtTick(tick) {
 
 let provider, signer, me;
 let launched = null; // { token, hook, curve, poolId, key }
+let auctionVault = null; // [AUCTION] this launch's DailyAuctionVaultV4 address, or null if auctionDays was 0
 
 function log(msg, cls = "") {
   const el = $("log");
@@ -91,23 +95,61 @@ function poolIdOf(k) {
   return ethers.keccak256(abi.encode(["tuple(address,address,uint24,int24,address)"], [[k.currency0, k.currency1, k.fee, k.tickSpacing, k.hooks]]));
 }
 
+// [FIX] CurvePadFactoryV4.launch() does NOT hand the caller's tokenSalt to the CREATE2 deployer raw — it
+// folds the WHOLE LaunchConfig in first (`keccak256(abi.encode(cfg, tokenSalt))`, see the contract's own
+// [SALT BINDING] comment), specifically so a replayed salt with a changed field can't land on the same
+// address. This bench predicted (and mined the hook against) `getCreate2Address(deployer, tokenSalt, ...)`
+// using the RAW salt — the wrong address entirely, and since it never mined for the `1ab5` brand suffix at
+// all (PadBrand.requireBrand is enforced unconditionally), essentially every launch reverted BadTokenSuffix.
+const LAUNCH_CFG_TUPLE = "tuple(string,string,uint8,uint256,uint256,uint256,int24,int24,address,bool,uint24,uint8)";
+function cfgTupleValues(cfg) {
+  return [cfg.name, cfg.symbol, cfg.decimals, cfg.supply, cfg.curveSupply, cfg.reserveSupply, cfg.tickSpacing, cfg.startTickMag, cfg.creator, cfg.noPoolForever, cfg.lpFee, cfg.auctionDays];
+}
+async function mineTokenSalt(cfg, tokenInitCodeHash, maxTries = 200000) {
+  for (let i = 0n; i < BigInt(maxTries); i++) {
+    const candidate = ethers.zeroPadValue(ethers.toBeHex(i), 32);
+    const wrapped = ethers.keccak256(abi.encode([LAUNCH_CFG_TUPLE, "bytes32"], [cfgTupleValues(cfg), candidate]));
+    const addr = ethers.getCreate2Address(CFG.ADDR.deployer, wrapped, tokenInitCodeHash);
+    if ((BigInt(addr) & 0xffffn) === 0x1ab5n) return { tokenSalt: candidate, token: addr };
+    if (i % 20000n === 0n && i > 0n) await new Promise((r) => setTimeout(r)); // yield so the UI doesn't freeze
+  }
+  return null;
+}
+
 // ── LAUNCH ─────────────────────────────────────────────────────────────────────
 async function launch() {
   const name = $("name").value.trim(), symbol = $("symbol").value.trim().toUpperCase();
   if (!name || !symbol) return log("Enter a name + symbol.", "err");
   const curveSupply = ethers.parseEther($("curveSupply").value || "470000");
   const reserveSupply = curveSupply; // safe: satisfies the factory reserve invariant
-  const supply = curveSupply + reserveSupply + ethers.parseEther("100000"); // + launcher allocation
+  // [FIX] there is no "launcher allocation" in CurvePadFactoryV4 — NO DEV MINT is structural, enforced exactly:
+  // supply MUST equal curveSupply + reserveSupply (see the factory's own BadConfig check) or every launch
+  // reverts BadConfig immediately. The creator gets tokens only by buying from the curve like anyone else.
+  const supply = curveSupply + reserveSupply;
 
   const salt = (s) => ethers.id(s + ":" + Date.now() + ":" + Math.floor(performance.now()));
-  const tokenSalt = salt("tok");
   const curveSalt = salt("curve");
 
-  log("Predicting token address…");
-  const tokenInit = ethers.concat([CFG.BYTECODE.padToken, abi.encode(["string", "string", "uint8", "uint256", "address"], [name, symbol, 18, supply, CFG.ADDR.factory])]);
-  const token = ethers.getCreate2Address(CFG.ADDR.deployer, tokenSalt, ethers.keccak256(tokenInit));
+  // [FIX] cfg was missing startTickMag/noPoolForever/lpFee — CurvePadFactoryV4.LaunchConfig has carried those
+  // for a while now (see the [FDV]/[NO-POOL]/[LP-FEE] rounds), so every launch through this bench has been
+  // failing at the ABI-encoding layer ("missing value for component ...") regardless of the auction feature.
+  // 0/false/FEE reproduce this bench's previous fixed behavior (governed-default price, no checkpoint pad,
+  // the same 1% pool fee poolKey() already hardcodes below).
+  const auctionDays = Number($("auctionDays")?.value || 0);
+  const cfg = {
+    name, symbol, decimals: 18, supply, curveSupply, reserveSupply, tickSpacing: TS,
+    startTickMag: 0, creator: me, noPoolForever: false, lpFee: FEE, auctionDays,
+  };
 
-  log(`Mining a valid hook address (flags 0x00C4)…`);
+  log("Mining a branded (…1ab5) token address — matches the factory's own salt-binding, ~a few seconds…");
+  const tokenInit = ethers.concat([CFG.BYTECODE.padToken, abi.encode(["string", "string", "uint8", "uint256", "address"], [name, symbol, 18, supply, CFG.ADDR.factory])]);
+  const tokenInitCodeHash = ethers.keccak256(tokenInit);
+  const mined = await mineTokenSalt(cfg, tokenInitCodeHash);
+  if (!mined) return log("Could not mine a branded token salt (unexpected).", "err");
+  const { tokenSalt, token } = mined;
+  log(`Token address mined ✓ ${token.slice(0, 10)}…${token.slice(-4)}`);
+
+  log(`Mining a valid hook address (flags ${CFG.HOOK_FLAGS})…`);
   const hookInit = ethers.concat([CFG.BYTECODE.feeHook, abi.encode(["address", "address", "address", "address"], [CFG.ADDR.poolManager, CFG.ADDR.factory, CFG.ADDR.feeRegistry, token])]);
   const hookHash = ethers.keccak256(hookInit);
   const FLAGS = BigInt(CFG.HOOK_FLAGS), MASK = BigInt(CFG.FLAG_MASK);
@@ -122,9 +164,13 @@ async function launch() {
   log(`Hook mined ✓  Submitting launch…`);
 
   const factory = new ethers.Contract(CFG.ADDR.factory, CFG.ABI.factory, signer);
-  const cfg = { name, symbol, decimals: 18, supply, curveSupply, reserveSupply, tickSpacing: TS, creator: me };
   try {
-    const tx = await factory.launch(cfg, tokenSalt, hookSalt, curveSalt, { type: 0 });
+    // [FIX] launch() deploys the token + curve + hook (+ auction vault, when auctionDays>0) in one tx —
+    // some RPC providers' automatic eth_estimateGas badly over-estimates a call shape this heavy (observed
+    // ~3x the real cost against a local node), which either wildly overshoots what the wallet shows the
+    // user or trips a provider-side gas cap outright. Measured real cost tops out ~8.7M gas even with a
+    // 4-day auction; 16M leaves comfortable headroom without depending on estimateGas being accurate.
+    const tx = await factory.launch(cfg, tokenSalt, hookSalt, curveSalt, { type: 0, gasLimit: 16_000_000n });
     log(`launch tx <a href="${ex(tx.hash)}" target="_blank">${tx.hash.slice(0, 10)}…</a> — waiting…`);
     const rc = await tx.wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((p) => p && p.name === "CurvePadLaunched");
@@ -145,6 +191,12 @@ async function launch() {
     log(`🚀 LAUNCHED <b>${symbol}</b> — token <a href="${exA(tk)}" target="_blank">${tk.slice(0, 8)}…</a> · curve <a href="${exA(cv)}" target="_blank">${cv.slice(0, 8)}…</a>`, "ok");
     $("trade").style.display = "block";
     $("coinLabel").textContent = `${name} (${symbol})`;
+    // [AUCTION] resolve this launch's vault (0 if auctionDays was 0, or the feature isn't wired here).
+    try {
+      const av = await factory.auctionVaultOf(tk);
+      if (av && av !== ZERO) { auctionVault = av; $("auction").style.display = "block"; refreshAuction(); }
+      else { auctionVault = null; $("auction").style.display = "none"; }
+    } catch { auctionVault = null; }
     refresh();
   } catch (e) { log("launch failed: " + (e.shortMessage || e.message), "err"); }
 }
@@ -297,12 +349,80 @@ async function refresh() {
   } catch (e) { /* pool may not be readable until first read */ }
 }
 
+// ── [AUCTION] optional 0-4 day daily batch auction ────────────────────────────────
+// Same mechanism as v3's sibling DailyAuctionVault (see launchpad/AUDIT-V3.md): a sealed batch per day,
+// permissionless close once the window passes, platform's flat 10% then a real burn-buy against this same
+// curve, pro-rata claim. See DailyAuctionVaultV4.sol.
+function auctionContract(signerOrProvider) {
+  return new ethers.Contract(auctionVault, CFG.ABI.dailyAuctionVault, signerOrProvider);
+}
+async function refreshAuction() {
+  if (!auctionVault) return;
+  try {
+    const v = auctionContract(provider);
+    // [FIX] the window math below is a pure chain-timestamp comparison (dayWindow() vs "now") — using the
+    // browser's wall clock instead of the chain's own block timestamp shows a stale/wrong status whenever
+    // the two drift apart (observed locally after repeated evm_increaseTime warps; a real chain can drift
+    // too), e.g. hiding a bid button for a window that is actually open right now.
+    // provider.getBlock("latest") goes through ethers's cached block-tag resolution, which can lag behind
+    // the chain's real head between its background polls — send the RPC directly so "now" is always the
+    // actual current block timestamp, not a stale cached one.
+    const [days, dayTranche, latestBlockHex] = await Promise.all([
+      v.auctionDays(), v.dayTranche(), provider.send("eth_getBlockByNumber", ["latest", false]),
+    ]);
+    const n = Number(days);
+    const now = Number(BigInt(latestBlockHex.timestamp));
+    const rows = [];
+    for (let day = 1; day <= n; day++) {
+      const [[opens, closes], total, closedFlag, myBid] = await Promise.all([
+        v.dayWindow(day), v.dayTotal(day), v.closed(day), v.bidOf(day, me),
+      ]);
+      const o = Number(opens), c = Number(closes);
+      let status, action;
+      if (now < o) { status = `opens in ${Math.ceil((o - now) / 3600)}h`; action = ""; }
+      else if (now < c) { status = `closes in ${Math.ceil((c - now) / 3600)}h`; action = `<button data-day="${day}" class="ghost bidBtn">Bid 0.1 ETH</button>`; }
+      else if (!closedFlag) { status = "window closed"; action = `<button data-day="${day}" class="ghost closeBtn">Close day ${day}</button>`; }
+      else { status = total === 0n ? "no bids — funded staking" : "settled"; action = (myBid > 0n) ? `<button data-day="${day}" class="ghost claimBtn">Claim day ${day}</button>` : ""; }
+      rows.push(`<div>Day ${day} — ${(+ethers.formatEther(total)).toFixed(3)} ETH bid${myBid > 0n ? ` (you: ${(+ethers.formatEther(myBid)).toFixed(3)})` : ""} — ${status} ${action}</div>`);
+    }
+    $("auctionState").innerHTML = `${n} day auction · ${(+ethers.formatEther(dayTranche)).toLocaleString()} tokens/day<br>` + rows.join("");
+    $("auctionState").querySelectorAll(".bidBtn").forEach((b) => b.onclick = () => bidAuction(Number(b.dataset.day)));
+    $("auctionState").querySelectorAll(".closeBtn").forEach((b) => b.onclick = () => closeAuctionDay(Number(b.dataset.day)));
+    $("auctionState").querySelectorAll(".claimBtn").forEach((b) => b.onclick = () => claimAuction(Number(b.dataset.day)));
+  } catch (e) { log("auction refresh failed: " + (e.shortMessage || e.message), "err"); }
+}
+async function bidAuction(day) {
+  try {
+    const v = auctionContract(signer);
+    const tx = await v.bid(day, { value: ethers.parseEther("0.1"), type: 0, gasLimit: GAS.swap });
+    log(`bid day ${day} <a href="${ex(tx.hash)}" target="_blank">${tx.hash.slice(0, 10)}…</a>`);
+    await tx.wait(); log("bid confirmed ✓", "ok"); refreshAuction();
+  } catch (e) { log("bid failed: " + reason(e), "err"); }
+}
+async function closeAuctionDay(day) {
+  try {
+    const v = auctionContract(signer);
+    const tx = await v.closeDay(day, { type: 0, gasLimit: GAS.graduate });
+    log(`close day ${day} <a href="${ex(tx.hash)}" target="_blank">${tx.hash.slice(0, 10)}…</a>`);
+    await tx.wait(); log("day closed ✓", "ok"); refreshAuction();
+  } catch (e) { log("close failed: " + reason(e), "err"); }
+}
+async function claimAuction(day) {
+  try {
+    const v = auctionContract(signer);
+    const tx = await v.claim(day, { type: 0, gasLimit: GAS.approve });
+    log(`claim day ${day} <a href="${ex(tx.hash)}" target="_blank">${tx.hash.slice(0, 10)}…</a>`);
+    await tx.wait(); log("claimed ✓", "ok"); refreshAuction();
+  } catch (e) { log("claim failed: " + reason(e), "err"); }
+}
+
 $("btnConnect").onclick = connect;
 $("btnLaunch").onclick = launch;
 $("btnBuy").onclick = buy;
 $("btnSell").onclick = sell;
 $("btnGrad").onclick = graduate;
 $("btnRefresh").onclick = refresh;
+$("btnAuctionRefresh").onclick = refreshAuction;
 
 // Signals to the non-module bootstrap diagnostic (index.html) that the ES module graph loaded and
 // every button handler is attached. If this never runs, the page shows a "did not initialize" banner.
