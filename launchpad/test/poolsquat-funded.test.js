@@ -92,8 +92,8 @@ describe("[F-1] an out-of-range WETH-only squat is repaired, not fatal", functio
     console.log("pool.liquidity() as the constructor/seed will read it:", (await pool.liquidity()).toString());
 
     // --- the launch ---
-    const params = { name: "Robin Meme", symbol: "MEME", dev: dev.address, tax: NOTAX(dev.address) };
-    const rc = await (await factory.connect(dev).launchWithSalt(params, salt)).wait();
+    const params = { name: "Robin Meme", symbol: "MEME", dev: dev.address, tax: NOTAX(dev.address), poolFee: 0, auctionDays: 0 };
+    const rc = await (await factory.connect(dev).launchWithSalt(params, salt, { value: ethers.parseEther("0.001") })).wait();
 
     // The assertions this file existed for, and did not have. It previously only checked that the token had
     // no code BEFORE the squat, then logged the outcome — so it passed just as happily while the launch

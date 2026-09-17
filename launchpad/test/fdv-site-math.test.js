@@ -137,7 +137,7 @@ describe("[FDV] the create page's supply/value maths agrees with the factory", f
     expect(quoted).to.be.gte(await factory.minFdvWei()).and.to.be.lte(await factory.maxFdvWei());
 
     const p = { name: "Robin Tiny", symbol: "TINY", dev: dev.address,
-      tax: { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address } };
+      tax: { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address }, poolFee: 0, auctionDays: 0 };
     const { salt, addr } = await mineFor(factory, dev.address, p, supplyTokens, "fdv-site-tiny");
 
     const [token] = await factory.connect(dev).launchWithSupplyAndSalt.staticCall(p, supplyTokens, mag, salt);

@@ -20,7 +20,7 @@ async function main() {
 
   // permissionless launch, plain 1% tax both sides
   const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-  const rc = await (await factory.launch({ name: "SimCoin", symbol: "SIM", dev: dev.address, tax })).wait();
+  const rc = await (await factory.launch({ name: "SimCoin", symbol: "SIM", dev: dev.address, tax, poolFee: 0, auctionDays: 0 })).wait();
   const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
     .find((e) => e && e.name === "Launched");
   const { token, curve, pool: poolAddr } = ev.args;

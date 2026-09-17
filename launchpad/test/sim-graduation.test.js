@@ -39,7 +39,7 @@ suite("Graduation sim — NEW calibration (201600 / 23000 / 22800) lands at ~4.2
 
     // ── launch a coin (no dev buy) ──────────────────────────────────────────────
     const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const rc = await (await factory.launch({ name: "Sim", symbol: "SIM", dev: dev.address, tax: NOTAX })).wait();
+    const rc = await (await factory.launch({ name: "Sim", symbol: "SIM", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = ev.args;

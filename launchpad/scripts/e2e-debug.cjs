@@ -26,7 +26,7 @@ async function main() {
 
   // launch with a 0.5 ETH dev buy
   const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: owner };
-  const params = { name: "Dbg", symbol: "DBG", dev: owner, tax };
+  const params = { name: "Dbg", symbol: "DBG", dev: owner, tax, poolFee: 0, auctionDays: 0 };
   const rc = await (await factory.launch(params, { value: ethers.parseEther("0.5") })).wait();
   const token = await factory.allTokens(0);
   const rec = await factory.recordOf(token);
@@ -205,7 +205,7 @@ async function main() {
   // (G) rescueUngraduated — recover stuck deferred/floor escrow for a coin that NEVER graduates (the audit fix)
   try {
     const tax2 = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: owner };
-    await (await factory.launch({ name: "Never", symbol: "NEVER", dev: owner, tax: tax2 }, { value: 0n })).wait();
+    await (await factory.launch({ name: "Never", symbol: "NEVER", dev: owner, tax: tax2, poolFee: 0, auctionDays: 0 }, { value: 0n })).wait();
     const tok2 = await factory.allTokens(1);
     const t2 = await ethers.getContractAt(["function windowEndsAt() view returns (uint256)"], tok2);
     const we = Number(await t2.windowEndsAt());

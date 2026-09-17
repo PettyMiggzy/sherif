@@ -33,11 +33,13 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
 
     // buy tax over 4% -> revert
     await expect(factory.launch({ ...base,
-      tax: { buyBps: 401, sellBps: 0, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address } }))
+      tax: { buyBps: 401, sellBps: 0, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address }, poolFee: 0, auctionDays: 0 },
+      { value: ethers.parseEther("0.001") }))
       .to.be.reverted;
     // allocation that doesn't sum to 100% -> revert
     await expect(factory.launch({ ...base,
-      tax: { buyBps: 125, sellBps: 125, walletBps: 5000, floorBps: 3000, burnBps: 1000, projectWallet: dev.address } }))
+      tax: { buyBps: 125, sellBps: 125, walletBps: 5000, floorBps: 3000, burnBps: 1000, projectWallet: dev.address }, poolFee: 0, auctionDays: 0 },
+      { value: ethers.parseEther("0.001") }))
       .to.be.reverted;
   });
 
@@ -47,7 +49,7 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
 
     // 3% buy, 3% sell; project 75% split 50% wallet / 30% floor / 20% burn
     const tax = { buyBps: 300, sellBps: 300, walletBps: 5000, floorBps: 3000, burnBps: 2000, projectWallet: dev.address };
-    const rc = await (await factory.launch({ name: "Taxed", symbol: "TAX", dev: dev.address, tax })).wait();
+    const rc = await (await factory.launch({ name: "Taxed", symbol: "TAX", dev: dev.address, tax, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
     const { token } = ev.args;
@@ -119,7 +121,7 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     const [dep, platform, dev, buyer] = await ethers.getSigners();
     const { router, factory } = await stack(dep, platform);
     const tax = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const rc = await (await factory.launch({ name: "Grad", symbol: "GRAD", dev: dev.address, tax })).wait();
+    const rc = await (await factory.launch({ name: "Grad", symbol: "GRAD", dev: dev.address, tax, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = ev.args;
     const curveC = await ethers.getContractAt("CurvePool", curve);
@@ -153,7 +155,7 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     const { router, factory } = await stack(dep, platform);
     // plain 1% coin so the whole fee lands in platform escrow (immediate + deferred) — easy to total
     const tax = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const rc = await (await factory.launch({ name: "Over", symbol: "OVER", dev: dev.address, tax })).wait();
+    const rc = await (await factory.launch({ name: "Over", symbol: "OVER", dev: dev.address, tax, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token } = ev.args;
     const routerAddr = await router.getAddress();
@@ -191,7 +193,7 @@ suite("PadRouter — the project tax (swap desk, 4% cap, platform 25%)", functio
     // ambush token supply, leaving 0 for the Ambush band. The Bond must post Sherwood+Bounty and skip Ambush.
     const { router, factory } = await stack(dep, platform, 259400, 4000, 2000);
     const tax = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const rc = await (await factory.launch({ name: "Tiny", symbol: "TINY", dev: dev.address, tax })).wait();
+    const rc = await (await factory.launch({ name: "Tiny", symbol: "TINY", dev: dev.address, tax, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token, curve } = ev.args;
     const curveC = await ethers.getContractAt("CurvePool", curve);

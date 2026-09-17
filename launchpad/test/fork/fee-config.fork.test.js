@@ -115,7 +115,7 @@ suite("v2 FeeConfig on a Robinhood Chain fork", function () {
 
     // a 3% buy tax coin (so the fee is a clean 0.03 ETH on a 1 ETH buy)
     const tax = { buyBps: 300, sellBps: 300, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const rc = await (await factory.launch({ name: "Cfg", symbol: "CFG", dev: dev.address, tax })).wait();
+    const rc = await (await factory.launch({ name: "Cfg", symbol: "CFG", dev: dev.address, tax, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
     const { token } = ev.args;
@@ -156,7 +156,7 @@ suite("v2 FeeConfig on a Robinhood Chain fork", function () {
     expect(await router.feeConfig()).to.equal(await bd.getAddress());
 
     const tax = { buyBps: 300, sellBps: 300, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const rc = await (await factory.launch({ name: "Broke", symbol: "BRK", dev: dev.address, tax })).wait();
+    const rc = await (await factory.launch({ name: "Broke", symbol: "BRK", dev: dev.address, tax, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
     const { token } = ev.args;

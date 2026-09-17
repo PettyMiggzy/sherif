@@ -29,7 +29,7 @@ suite("LaunchToken guard — sells never blocked; buy-side anti-snipe only", fun
     await (await router.setFactory(await factory.getAddress())).wait();
     const branded = brandedFactory(factory);
     const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const rc = await (await branded.launch({ name: "Guard", symbol: "GRD", dev: dev.address, tax: NOTAX })).wait();
+    const rc = await (await branded.launch({ name: "Guard", symbol: "GRD", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token } = ev.args;
     const TOK = await ethers.getContractAt(["function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)", "function transfer(address,uint256) returns (bool)"], token);

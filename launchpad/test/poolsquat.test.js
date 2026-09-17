@@ -75,7 +75,8 @@ describe("[F-1] a squatted pool is repaired, not fatal", function () {
 
     // ── the launch must still land, on the mined address, at OUR price ──
     const rc = await (await factory.connect(dev).launchWithSalt(
-      { name: "Robin Meme", symbol: "MEME", dev: dev.address, tax: NOTAX() }, salt
+      { name: "Robin Meme", symbol: "MEME", dev: dev.address, tax: NOTAX(), poolFee: 0, auctionDays: 0 }, salt,
+      { value: ethers.parseEther("0.001") }
     )).wait();
     const ev = launched(rc);
     expect(ev.args.token).to.equal(token);   // the mined address, not a fresh one
@@ -102,7 +103,8 @@ describe("[F-1] a squatted pool is repaired, not fatal", function () {
     const { salt, addr: token } = await mineFor(
       factory, dev.address, { name: "Robin Two", symbol: "TWO" }, 0n, "mined-clean");
     const rc = await (await factory.connect(dev).launchWithSalt(
-      { name: "Robin Two", symbol: "TWO", dev: dev.address, tax: NOTAX() }, salt
+      { name: "Robin Two", symbol: "TWO", dev: dev.address, tax: NOTAX(), poolFee: 0, auctionDays: 0 }, salt,
+      { value: ethers.parseEther("0.001") }
     )).wait();
     const ev = launched(rc);
     expect(ev.args.token).to.equal(token);

@@ -54,7 +54,7 @@ suite("DRESS REHEARSAL — full production stack + trading bot on a real fork", 
     const TAX = { buyBps: 200, sellBps: 200, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address }; // 2%/2% real tax
     const devBuyEth = ethers.parseEther((1400 / ETH_USD).toFixed(6));
     await ethers.provider.send("hardhat_setBalance", [dev.address, "0x" + (10n ** 24n).toString(16)]);
-    const lrc = await (await factory.connect(dev).launch({ name: "Robin", symbol: "ROBIN", dev: dev.address, tax: TAX }, { value: devBuyEth })).wait();
+    const lrc = await (await factory.connect(dev).launch({ name: "Robin", symbol: "ROBIN", dev: dev.address, tax: TAX, poolFee: 0, auctionDays: 0 }, { value: devBuyEth })).wait();
     const lev = lrc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = lev.args;
     const curveC = await ethers.getContractAt("CurvePool", curve);

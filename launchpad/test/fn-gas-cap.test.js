@@ -40,10 +40,10 @@ suite("Gas cap — launch() and graduate() fit under the 2^24 (16.77M) chain cap
 
   it("launch() — with and without a dev buy — is well under the cap", async () => {
     const { dev, factory } = await stack();
-    const plain = await (await factory.launch({ name: "Gas", symbol: "GAS", dev: dev.address, tax: NOTAX(dev.address) })).wait();
+    const plain = await (await factory.launch({ name: "Gas", symbol: "GAS", dev: dev.address, tax: NOTAX(dev.address), poolFee: 0, auctionDays: 0 })).wait();
     console.log(`      launch (no dev buy):   ${pct(plain.gasUsed)}`);
     const withBuy = await (await factory.connect(dev).launch(
-      { name: "GasB", symbol: "GSB", dev: dev.address, tax: NOTAX(dev.address) }, { value: ONE / 2n })).wait();
+      { name: "GasB", symbol: "GSB", dev: dev.address, tax: NOTAX(dev.address), poolFee: 0, auctionDays: 0 }, { value: ONE / 2n })).wait();
     console.log(`      launch (0.5 ETH buy):  ${pct(withBuy.gasUsed)}`);
     expect(plain.gasUsed).to.be.lessThan(CAP);
     expect(withBuy.gasUsed).to.be.lessThan(CAP);
@@ -53,7 +53,7 @@ suite("Gas cap — launch() and graduate() fit under the 2^24 (16.77M) chain cap
 
   it("graduate() at the ceiling — the heaviest tx (Bond CREATE + 3 mints) — fits under the cap", async () => {
     const { dev, buyer, factory } = await stack();
-    const rc = await (await factory.launch({ name: "Grad", symbol: "GRD", dev: dev.address, tax: NOTAX(dev.address) })).wait();
+    const rc = await (await factory.launch({ name: "Grad", symbol: "GRD", dev: dev.address, tax: NOTAX(dev.address), poolFee: 0, auctionDays: 0 })).wait();
     const { curve, pool } = curveOf(factory, rc);
     const curveC = await ethers.getContractAt("CurvePool", curve);
     const poolC = await ethers.getContractAt("IUniswapV3Pool", pool);

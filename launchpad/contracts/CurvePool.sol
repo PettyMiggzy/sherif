@@ -9,7 +9,7 @@ import {IUniswapV3Factory, IUniswapV3Pool, IUniswapV3MintCallback, IUniswapV3Swa
 import {PoolMath} from "./libraries/PoolMath.sol";
 
 interface ICurveBondDeployer {
-    function deploy(address token, address weth, address v3Factory, address platform, address curve)
+    function deploy(address token, address weth, address v3Factory, address platform, address curve, uint24 poolFee)
         external
         returns (address);
 }
@@ -36,8 +36,15 @@ interface ILaunchTokenGuard {
 contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    uint24 public constant POOL_FEE = 10000;
-    int24 public constant SPACING = 200;
+    /// @notice The Uniswap v3 fee tier this curve trades on, creator-chosen at launch. Restricted to
+    /// {500, 10000} (0.05% / 1%) — NOT the full standard {500, 3000, 10000} set. Uniswap ties tick
+    /// spacing to fee tier (10 / 60 / 200 respectively), and the Bond's wall geometry (AMBUSH_NEAR/FAR,
+    /// TICK_BOUND, and the BondDeployer-supplied BOUNTY_NEAR/FAR) is a fixed set of absolute tick
+    /// distances that happens to divide evenly by 10 and by 200, but NOT by 60. Supporting 0.3% would mean
+    /// re-deriving that live-tested wall geometry per tier — real tick-alignment risk in a contract that
+    /// holds real money — so it's deliberately left out rather than silently rounded.
+    uint24 public immutable POOL_FEE;
+    int24 public immutable SPACING;
     uint128 internal constant U128_MAX = type(uint128).max;
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
@@ -111,13 +118,21 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         uint256 ambushSupply_,
         int24 startTick_,
         int24 curveWidth_,
-        int24 minGradWidth_
+        int24 minGradWidth_,
+        uint24 poolFee_
     ) {
         require(
             token_ != address(0) && weth_ != address(0) && v3Factory_ != address(0) && platform_ != address(0)
                 && dev_ != address(0) && bondDeployer_ != address(0),
             "zero"
         );
+        // Fee tier first (see the POOL_FEE doc comment for why only these two) — SPACING is derived from it
+        // and the geometry checks right below depend on that derived value, not a fixed constant anymore.
+        require(poolFee_ == 500 || poolFee_ == 10000, "fee tier");
+        POOL_FEE = poolFee_;
+        int24 spacing = IUniswapV3Factory(v3Factory_).feeAmountTickSpacing(poolFee_);
+        require(spacing != 0, "fee tier"); // defense in depth: an unrecognized fee on this v3Factory
+        SPACING = spacing;
         require(
             curveSupply_ > 0 && ambushSupply_ > 0 && curveWidth_ > 0 && curveWidth_ % SPACING == 0
                 && startTick_ % SPACING == 0 && minGradWidth_ > 0 && minGradWidth_ % SPACING == 0
@@ -421,7 +436,7 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
         require(sherwoodTokens > 0, "sherwood");
         uint256 ambushForBond = tokenPool - sherwoodTokens;
 
-        address b = ICurveBondDeployer(bondDeployer).deploy(address(token), WETH, address(v3Factory), platform, address(this));
+        address b = ICurveBondDeployer(bondDeployer).deploy(address(token), WETH, address(v3Factory), platform, address(this), POOL_FEE);
         bond = b;
         // Exempt the Bond from the token's anti-snipe guard. Bond.poke()'s pool.collect() moves the Ambush
         // reserve from the pool back to the Bond, which reads as a "buy" (from == pool); without this exemption a

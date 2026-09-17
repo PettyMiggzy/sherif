@@ -43,7 +43,7 @@ async function main() {
 
   // 1) LAUNCH (+ a tiny dev buy so the swap path runs too; the dev buy is anti-snipe-exempt)
   const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: me.address };
-  const params = { name: "Smoke Test", symbol: "SMOKE", dev: me.address, tax };
+  const params = { name: "Smoke Test", symbol: "SMOKE", dev: me.address, tax, poolFee: 0, auctionDays: 0 };
   const devBuy = ethers.parseEther(process.env.DEV_BUY || "0.001");
   console.log(`> launching a throwaway coin with a ${ethers.formatEther(devBuy)} ETH dev buy ...`);
   const rc = await (await factory.launch(params, { value: devBuy, gasLimit: LAUNCH_GAS })).wait();

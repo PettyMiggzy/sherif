@@ -31,7 +31,7 @@ forkSuite("dev-buy FDV", function () {
       await (await router.setFactory(await factory.getAddress())).wait();
       const buyEth = ethers.parseEther((buyUsd / ETH_USD).toFixed(6));
       await ethers.provider.send("hardhat_setBalance", [dep.address, "0x" + (10n ** 24n).toString(16)]);
-      const rc = await (await factory.launch({ name: "Dev", symbol: "DEV", dev: dev.address, tax: NOTAX }, { value: buyEth })).wait();
+      const rc = await (await factory.launch({ name: "Dev", symbol: "DEV", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: buyEth })).wait();
       const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
         .find((e) => e && e.name === "Launched");
       const { token, curve, pool: poolAddr } = ev.args;

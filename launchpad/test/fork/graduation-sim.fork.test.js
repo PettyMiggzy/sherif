@@ -49,7 +49,7 @@ suite("Graduation battery — graduate at the ceiling, invariants hold every tim
     const tokAbi = ["function balanceOf(address) view returns (uint256)"];
 
     for (let i = 0; i < SIMS; i++) {
-      const rc = await (await factory.launch({ name: `S${i}`, symbol: `S${i}`, dev: dev.address, tax: NOTAX })).wait();
+      const rc = await (await factory.launch({ name: `S${i}`, symbol: `S${i}`, dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
       const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
       const { token, curve, pool: poolAddr } = ev.args;
       const curveC = await ethers.getContractAt("CurvePool", curve);

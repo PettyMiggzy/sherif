@@ -24,7 +24,7 @@ describe("[BRAND] every coin address ends in 1ab5", () => {
     name: NAME,
     symbol: SYMBOL,
     dev: devAddr,
-    tax: { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: devAddr },
+    tax: { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: devAddr }, poolFee: 0, auctionDays: 0,
   });
 
   before(async function () {
@@ -84,10 +84,10 @@ describe("[BRAND] every coin address ends in 1ab5", () => {
     console.log(`   mined ${addr} in ${tries} tries`);
     expect(addr.toLowerCase().endsWith("1ab5")).to.equal(true);
 
-    const [token] = await factory.connect(dev).launchWithSalt.staticCall(paramsFor(dev.address), salt);
+    const [token] = await factory.connect(dev).launchWithSalt.staticCall(paramsFor(dev.address), salt, { value: ethers.parseEther("0.001") });
     expect(token).to.equal(addr); // the factory really lands where the miner said
 
-    await (await factory.connect(dev).launchWithSalt(paramsFor(dev.address), salt)).wait();
+    await (await factory.connect(dev).launchWithSalt(paramsFor(dev.address), salt, { value: ethers.parseEther("0.001") })).wait();
     expect((await ethers.provider.getCode(addr)).length).to.be.greaterThan(2);
     expect(await (await ethers.getContractAt("LaunchToken", addr)).symbol()).to.equal(SYMBOL);
   });
@@ -97,7 +97,7 @@ describe("[BRAND] every coin address ends in 1ab5", () => {
     // prediction is unbranded first so this can never silently become a vacuous test.
     const salt = ethers.id("nobody-mined-this");
     expect(RobinMine.isBranded(RobinMine.predict(ethers, ctx, salt))).to.equal(false);
-    await expect(factory.connect(dev).launchWithSalt(paramsFor(dev.address), salt))
+    await expect(factory.connect(dev).launchWithSalt(paramsFor(dev.address), salt, { value: ethers.parseEther("0.001") }))
       .to.be.revertedWithCustomError(factory, "BadTokenSuffix");
   });
 
@@ -105,9 +105,9 @@ describe("[BRAND] every coin address ends in 1ab5", () => {
     // `launch` and `launchWithSupply` derived a block-dependent salt nobody can mine against. Under the brand
     // rule they can only ever revert, so they revert with a name that says WHY rather than BadTokenSuffix,
     // which would send a caller off to debug their mining when they simply have not started.
-    await expect(factory.connect(dev).launch(paramsFor(dev.address)))
+    await expect(factory.connect(dev).launch(paramsFor(dev.address), { value: ethers.parseEther("0.001") }))
       .to.be.revertedWithCustomError(factory, "SaltRequired");
-    await expect(factory.connect(dev).launchWithSupply(paramsFor(dev.address), SUPPLY, 201600))
+    await expect(factory.connect(dev).launchWithSupply(paramsFor(dev.address), SUPPLY, 201600, { value: ethers.parseEther("0.001") }))
       .to.be.revertedWithCustomError(factory, "SaltRequired");
   });
 
@@ -119,7 +119,7 @@ describe("[BRAND] every coin address ends in 1ab5", () => {
     const theirs = RobinMine.predict(ethers, { ...ctx, creator: other.address }, salt);
     expect(theirs).to.not.equal(addr);
     expect(RobinMine.isBranded(theirs)).to.equal(false);
-    await expect(factory.connect(other).launchWithSalt(paramsFor(other.address), salt))
+    await expect(factory.connect(other).launchWithSalt(paramsFor(other.address), salt, { value: ethers.parseEther("0.001") }))
       .to.be.revertedWithCustomError(factory, "BadTokenSuffix");
   });
 });

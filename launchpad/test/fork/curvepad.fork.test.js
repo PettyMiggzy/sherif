@@ -28,7 +28,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
     // ===== ONE CALL: token + real pool + seeded curve + trading on =====
-    const rc = await (await factory.launch({ name: "Robin Meme", symbol: "MEME", dev: dev.address, tax: NOTAX })).wait();
+    const rc = await (await factory.launch({ name: "Robin Meme", symbol: "MEME", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = ev.args;
@@ -121,7 +121,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     const spend = ONE / 2n; // 0.5 ETH
     const before = await ethers.provider.getBalance(dev.address);
     const rc = await (await factory.connect(dev).launch(
-      { name: "Robin Dev", symbol: "SDEV", dev: dev.address, tax: NOTAX }, { value: spend }
+      { name: "Robin Dev", symbol: "SDEV", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: spend }
     )).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
@@ -164,7 +164,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     await (await wethW.connect(buyer).approve(await probe.getAddress(), 40n * ONE)).wait();
 
     // The ONLY graduation point is the ceiling: buy all the way up to it, then graduate and check the Bond floor.
-    const rc = await (await factory.launch({ name: "RIDE", symbol: "RIDE", dev: dev.address, tax: NOTAX })).wait();
+    const rc = await (await factory.launch({ name: "RIDE", symbol: "RIDE", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { curve, pool: poolAddr } = ev.args;
     const curveC = await ethers.getContractAt("CurvePool", curve);
@@ -195,7 +195,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const rc = await (await factory.launch({ name: "Auto", symbol: "AUTO", dev: dev.address, tax: NOTAX })).wait();
+    const rc = await (await factory.launch({ name: "Auto", symbol: "AUTO", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { curve, pool: poolAddr } = ev.args;
     const curveC = await ethers.getContractAt("CurvePool", curve);
@@ -257,7 +257,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
 
     // dev buy big enough to walk the whole curve to the ceiling in the launch tx (excess ETH is refunded)
     const rc = await (await factory.connect(dev).launch(
-      { name: "Fast", symbol: "FAST", dev: dev.address, tax: NOTAX }, { value: 40n * ONE }
+      { name: "Fast", symbol: "FAST", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: 40n * ONE }
     )).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token, curve } = ev.args;
@@ -316,7 +316,8 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     expect(drift, "same valuation at 100,000x different supply").to.be.lessThan(0.03);
 
     const rc = await (await factory.launchWithSupply(
-      { name: "Tiny Supply", symbol: "TINY", dev: dev.address, tax: NOTAX }, SMALL_SUPPLY, SMALL_MAG
+      { name: "Tiny Supply", symbol: "TINY", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, SMALL_SUPPLY, SMALL_MAG,
+      { value: ethers.parseEther("0.001") }
     )).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = ev.args;
@@ -365,14 +366,14 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     );
     await (await router.setFactory(await factory.getAddress())).wait();
     const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const p = { name: "Dust", symbol: "DUST", dev: dev.address, tax: NOTAX };
+    const p = { name: "Dust", symbol: "DUST", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 };
 
     // 10,000 tokens at the DEFAULT price is a dust valuation: the curve would raise ~nothing and never graduate
     const fdv = await factory.quoteFdvWei(10_000n * ONE, 201600);
-    await expect(factory.launchWithSupply(p, 10_000n * ONE, 0))
+    await expect(factory.launchWithSupply(p, 10_000n * ONE, 0, { value: ethers.parseEther("0.001") }))
       .to.be.revertedWithCustomError(factory, "MarketCapOutOfRange").withArgs(fdv);
     // the default launch is always in band by construction
-    await expect(factory.launch({ ...p, symbol: "OKAY" })).to.not.be.reverted;
+    await expect(factory.launch({ ...p, symbol: "OKAY" }, { value: ethers.parseEther("0.001") })).to.not.be.reverted;
   });
 
   it("graduate() corrects a MANIPULATED post-buyout price back to the ceiling — floor-drain closed, no DoS (CP-1)", async () => {
@@ -389,7 +390,7 @@ suite("CurvePadFactory — one-call DEX-day-one launch", function () {
     await (await router.setFactory(await factory.getAddress())).wait();
     const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
 
-    const rc = await (await factory.launch({ name: "Manip", symbol: "MNP", dev: dev.address, tax: NOTAX })).wait();
+    const rc = await (await factory.launch({ name: "Manip", symbol: "MNP", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = ev.args;
     const curveC = await ethers.getContractAt("CurvePool", curve);

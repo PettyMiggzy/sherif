@@ -14,7 +14,7 @@ async function main() {
   // launch with a 3% fee both sides so we can watch the whole split live (all project share -> wallet=me)
   const tax = { buyBps: 300, sellBps: 300, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: me.address };
   console.log("launching $TEST …");
-  const rc = await (await factory.launch({ name: "Sheriff Test", symbol: "TEST", dev: me.address, tax })).wait();
+  const rc = await (await factory.launch({ name: "Sheriff Test", symbol: "TEST", dev: me.address, tax, poolFee: 0, auctionDays: 0 })).wait();
   const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
   const { token, curve, pool } = ev.args;
   console.log("  token:", token, "\n  curve:", curve, "\n  pool :", pool);

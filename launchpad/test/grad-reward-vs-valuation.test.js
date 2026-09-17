@@ -60,7 +60,7 @@ describe("[B2] the graduation reward tracks the creator's chosen valuation", fun
 
   /// Launch at `mag`, buy the curve out to its own ceiling, graduate, and report what everyone was paid.
   async function launchAndGraduate(name, symbol, mag, seed) {
-    const p = { name, symbol, dev: dev.address, tax: NOTAX() };
+    const p = { name, symbol, dev: dev.address, tax: NOTAX(), poolFee: 0, auctionDays: 0 };
     const { salt } = await mineFor(factory, dev.address, p, SUPPLY, seed);
     const rc = await (await factory.connect(dev).launchWithSupplyAndSalt(p, SUPPLY, mag, salt)).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })

@@ -61,7 +61,7 @@ suite("FloorCoop battery — random deposit/withdraw/compound/claim/shove; solve
     await (await wethW.connect(buyer).approve(probeAddr, 1n << 250n)).wait();
     const topUpWeth = async () => { if ((await wethW.balanceOf(buyer.address)) < 20n * ONE) await (await wethW.connect(buyer).deposit({ value: 400n * ONE })).wait(); };
 
-    const rc = await (await factory.launch({ name: "FC", symbol: "FC", dev: dev.address, tax: NOTAX })).wait();
+    const rc = await (await factory.launch({ name: "FC", symbol: "FC", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = ev.args;
     const curveC = await ethers.getContractAt("CurvePool", curve);

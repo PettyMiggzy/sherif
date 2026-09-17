@@ -35,7 +35,7 @@ describe("[F-1] the repair walks back from either end of the tick range", functi
         await (await p.connect(attacker).initialize(price)).wait();
       }
       try {
-        const rc = await (await factory.connect(dev).launchWithSalt({ name:"R"+label, symbol:"R", dev: dev.address, tax: NOTAX(dev.address) }, salt)).wait();
+        const rc = await (await factory.connect(dev).launchWithSalt({ name:"R"+label, symbol:"R", dev: dev.address, tax: NOTAX(dev.address), poolFee: 0, auctionDays: 0 }, salt, { value: ethers.parseEther("0.001") })).wait();
         console.log(label.padEnd(18), "OK   gas:", rc.gasUsed.toString());
       } catch (e) { console.log(label.padEnd(18), "REVERT:", e.shortMessage || e.message); }
     }

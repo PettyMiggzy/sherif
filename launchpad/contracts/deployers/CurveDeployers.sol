@@ -7,6 +7,7 @@ import {Bond} from "../Bond.sol";
 import {CurvePool} from "../CurvePool.sol";
 import {LaunchToken} from "../LaunchToken.sol";
 import {OtcVault} from "../OtcVault.sol";
+import {DailyAuctionVault} from "../DailyAuctionVault.sol";
 
 /// @notice Thin deployers so the big contracts' creation bytecode isn't inlined into CurveLaunchFactory
 /// (24KB contract-size limit). Each is deployed once and its address handed to the factory.
@@ -64,11 +65,11 @@ contract BondDeployer {
         bountyFar = bountyFar_;
     }
 
-    function deploy(address token, address weth, address v3Factory, address platform, address curve)
+    function deploy(address token, address weth, address v3Factory, address platform, address curve, uint24 poolFee)
         external
         returns (address)
     {
-        return address(new Bond(token, weth, v3Factory, platform, curve, bountyNear, bountyFar));
+        return address(new Bond(token, weth, v3Factory, platform, curve, bountyNear, bountyFar, poolFee));
     }
 }
 
@@ -168,13 +169,23 @@ contract CurvePoolDeployer {
         uint256 ambushSupply,
         int24 startTick,
         int24 curveWidth,
-        int24 minGradWidth
+        int24 minGradWidth,
+        uint24 poolFee
     ) external returns (address) {
         return address(
             new CurvePool(
-                token, weth, v3Factory, platform, dev, bondDeployer, feeConfig, curveSupply, ambushSupply, startTick, curveWidth, minGradWidth
+                token, weth, v3Factory, platform, dev, bondDeployer, feeConfig, curveSupply, ambushSupply, startTick, curveWidth, minGradWidth, poolFee
             )
         );
+    }
+}
+
+contract DailyAuctionVaultDeployer {
+    function deploy(address token, address weth, address curve, address platform, uint8 auctionDays, uint256 auctionAmt)
+        external
+        returns (address)
+    {
+        return address(new DailyAuctionVault(token, weth, curve, platform, auctionDays, auctionAmt));
     }
 }
 

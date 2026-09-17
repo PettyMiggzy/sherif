@@ -26,8 +26,13 @@ import {PoolMath} from "./libraries/PoolMath.sol";
 contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    uint24 public constant POOL_FEE = 10000;
-    int24 public constant SPACING = 200; // 1% tier tick spacing
+    /// @notice The Bond's fee tier, ALWAYS the same tier its curve traded on (passed through by
+    /// BondDeployer from CurvePool's own POOL_FEE at graduation) — the Bond posts into the SAME pool the
+    /// curve already lives in, so this can never diverge. Restricted to {500, 10000}; see CurvePool.POOL_FEE
+    /// for why 0.3% (spacing 60) is deliberately excluded — this contract's wall geometry below only holds
+    /// exactly for spacing 10 and 200.
+    uint24 public immutable POOL_FEE;
+    int24 public immutable SPACING;
     uint128 internal constant U128_MAX = type(uint128).max;
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
@@ -103,9 +108,15 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         address platform_,
         address curve_,
         int24 bountyNear_,
-        int24 bountyFar_
+        int24 bountyFar_,
+        uint24 poolFee_
     ) {
         require(token_ != address(0) && weth_ != address(0) && platform_ != address(0) && curve_ != address(0), "zero");
+        require(poolFee_ == 500 || poolFee_ == 10000, "fee tier");
+        POOL_FEE = poolFee_;
+        int24 spacing = IUniswapV3Factory(v3Factory_).feeAmountTickSpacing(poolFee_);
+        require(spacing != 0, "fee tier");
+        SPACING = spacing;
         // The wall must be a well-formed band, and it must sit strictly OUTSIDE the poke deviation tolerance.
         // `near <= MAX_DEV` is the case the poke anchoring comment below warns about: within +/-MAX_DEV a
         // mean-only recenter could straddle spot, so the band would stop being single-sided and the Bounty would
@@ -262,7 +273,7 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     /// `above` selects the side; token0Side == above (a band above the current tick holds only token0).
     /// Band ticks are clamped to the valid range so an extreme price can never push a bound past ±887200
     /// (which would revert getSqrtRatioAtTick / mint and brick poke).
-    function _band(int24 tick, bool above, int24 near, int24 far) internal pure returns (int24 lo, int24 hi, bool isAbove) {
+    function _band(int24 tick, bool above, int24 near, int24 far) internal view returns (int24 lo, int24 hi, bool isAbove) {
         int24 base = _snapDown(tick);
         if (above) {
             lo = _clamp(base + near);
@@ -280,7 +291,7 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         return t;
     }
 
-    function _snapDown(int24 t) internal pure returns (int24) {
+    function _snapDown(int24 t) internal view returns (int24) {
         int24 r = t % SPACING;
         if (r != 0 && t < 0) return t - r - SPACING; // floor toward -inf
         return t - r;

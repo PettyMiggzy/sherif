@@ -16,6 +16,12 @@ interface ICurvePool {
     function seed() external;
 }
 
+interface IDailyAuctionVaultDeployer {
+    function deploy(address token, address weth, address curve, address platform, uint8 auctionDays, uint256 auctionAmt)
+        external
+        returns (address);
+}
+
 interface IPadRouter {
     function register(
         address token,
@@ -54,7 +60,18 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     using SafeERC20 for IERC20;
 
     uint16 public constant AMBUSH_BPS = 2500; // 25% -> the Bond's Ambush; 75% is the curve
-    uint24 public constant POOL_FEE = 10000;
+    /// @notice Default fee tier for a launch that leaves `LaunchParams.poolFee` at 0 — unchanged from
+    /// pre-choice behavior. See CurvePool.POOL_FEE for why the creator's ALTERNATIVE choice is capped to
+    /// exactly {500, 10000} rather than the full standard Uniswap tier set.
+    uint24 public constant DEFAULT_POOL_FEE = 10000;
+    address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
+    /// @notice Flat creation fee, required on every launch (separate from, and on top of, the optional dev
+    /// buy). Spent immediately as a tiny protocol buy against the freshly seeded curve — real WETH lands
+    /// inside the curve's Uniswap v3 position before any outside buyer arrives, and price ticks forward a
+    /// hair off the exact start tick, instead of the first real buyer trading against a perfectly virgin,
+    /// zero-depth position. The tokens that buy nets are burned (sent to DEAD) — nobody is owed them; this
+    /// exists purely to seed real depth, not to hand out an allocation.
+    uint256 public constant CREATION_FEE = 0.001 ether;
     // The dev's atomic opening buy is uncapped by supply — it's bounded only by the curve itself
     // (it can climb to the graduation ceiling, never past) and by how much ETH the dev sends.
 
@@ -65,6 +82,12 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     CurvePoolDeployer public immutable curveDeployer;
     address public immutable bondDeployer;
     address public immutable feeConfig; // owner-governed LP/swap split source, handed to every curve
+    /// @notice DailyAuctionVaultDeployer, owner-settable rather than a constructor immutable — deliberately,
+    /// so every OTHER existing deploy call site (tests, scripts) that doesn't care about the auction feature
+    /// keeps working unchanged. Unset (0, the default) => `p.auctionDays > 0` reverts; the auction feature is
+    /// simply off until an owner opts a deployment into it with `setAuctionVaultDeployer`.
+    address public auctionVaultDeployer;
+    event AuctionVaultDeployerSet(address deployer);
 
     address public platform;
     bool private _swapping; // guards the swap callback (WETH is only ever transient, mid-launch)
@@ -95,6 +118,8 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         string symbol;
         address dev;
         TaxParams tax;
+        uint24 poolFee; // 0 => DEFAULT_POOL_FEE (10000, unchanged behavior); else must be 500 or 10000
+        uint8 auctionDays; // 0 (default) => no auction, unchanged behavior; else 1..4 — see DailyAuctionVault
     }
 
     struct Record {
@@ -106,6 +131,7 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
 
     mapping(address => Record) public recordOf;
     address[] public allTokens;
+    mapping(address => address) public auctionVaultOf; // token => DailyAuctionVault, or 0 if no auction was chosen
 
     // ---- creator-chosen supply: bound the VALUATION, not the token count ----
     // TOTAL_SUPPLY above is now a DEFAULT, not a law: `launchWithSupply` lets a creator pick any supply and any
@@ -133,9 +159,12 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
     /// say so up front. Use `launchWithSalt` / `launchWithSupplyAndSalt`.
     error SaltRequired();
     error FeeBelowFloor();
+    error CreationFeeRequired();
 
     event FdvBandChanged(uint256 minWei, uint256 maxWei);
-    event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought);
+    event Launched(
+        address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought, address auctionVault
+    );
     event PlatformChanged(address platform);
 
     constructor(
@@ -309,6 +338,7 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         returns (address token, address curve, address pool)
     {
         if (p.dev == address(0)) revert BadValue();
+        if (msg.value < CREATION_FEE) revert CreationFeeRequired();
 
         uint256 totalSupply = supply_ == 0 ? TOTAL_SUPPLY : supply_;
         int24 mag = startTickMag_ == 0 ? START_TICK_MAG : startTickMag_;
@@ -320,10 +350,23 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
             uint256 fdv = PoolMath.fdvWei(totalSupply, mag);
             if (fdv < minFdvWei || fdv > maxFdvWei) revert MarketCapOutOfRange(fdv);
         }
+        uint24 poolFee = p.poolFee == 0 ? DEFAULT_POOL_FEE : p.poolFee;
+        if (poolFee != 500 && poolFee != 10000) revert BadValue(); // see CurvePool.POOL_FEE for why not 3000
+        if (p.auctionDays > 4) revert BadValue();
+        if (p.auctionDays > 0 && auctionVaultDeployer == address(0)) revert BadValue(); // feature off on this deployment
 
         uint256 ambushAmt = (totalSupply * AMBUSH_BPS) / 10_000;
         uint256 curveAmt = totalSupply - ambushAmt;
         if (ambushAmt == 0 || curveAmt == 0) revert BadValue(); // a supply too small to split 75/25 at all
+
+        // Optional daily auction: carve auctionDays * 10% OF THE CURVE'S SHARE out before the curve is
+        // seeded — dayTranche computed FIRST (10% of the pre-carve curveAmt) so auctionAmt = dayTranche *
+        // auctionDays divides evenly by construction, never by a separate rounding division. curveAmt seeds
+        // with whatever's left; at the max (4 days) that's still 60% of the original curve share.
+        uint256 dayTranche = p.auctionDays == 0 ? 0 : curveAmt / 10;
+        uint256 auctionAmt = dayTranche * p.auctionDays;
+        curveAmt -= auctionAmt;
+        if (curveAmt == 0) revert BadValue();
 
         // ── NO ANTI-SNIPE GUARD. An all-zero GuardConfig, deliberately and permanently. ────────────────────
         //
@@ -386,15 +429,31 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
 
         int24 startTick = token < WETH ? -mag : mag;
         curve = curveDeployer.deploy(
-            token, WETH, v3Factory, platform, p.dev, bondDeployer, feeConfig, curveAmt, ambushAmt, startTick, CURVE_WIDTH, MIN_GRAD_WIDTH
+            token, WETH, v3Factory, platform, p.dev, bondDeployer, feeConfig, curveAmt, ambushAmt, startTick, CURVE_WIDTH, MIN_GRAD_WIDTH, poolFee
         );
         pool = ICurvePool(curve).pool();
 
-        IERC20(token).safeTransfer(curve, totalSupply);
+        // Optional daily auction: deployed BEFORE the token transfers below so its share of totalSupply has
+        // somewhere to land in the same breath as the curve's. Nothing extra to wire — the vault reads its
+        // own curve state (pool address, gradTick) directly from `curve`, and deploys+owns its own dedicated
+        // staking pool internally (see DailyAuctionVault's constructor).
+        address auctionVault;
+        if (p.auctionDays > 0) {
+            auctionVault =
+                IDailyAuctionVaultDeployer(auctionVaultDeployer).deploy(token, WETH, curve, platform, p.auctionDays, auctionAmt);
+            auctionVaultOf[token] = auctionVault;
+        }
+
+        IERC20(token).safeTransfer(curve, curveAmt + ambushAmt);
+        if (auctionVault != address(0)) IERC20(token).safeTransfer(auctionVault, auctionAmt);
         LaunchToken(token).setCurve(curve); // lets the curve exempt the Bond it posts at graduation
         LaunchToken(token).enableTrading(pool, curve, uint64(block.timestamp));
         LaunchToken(token).exemptAddress(router); // router receives tokens on burnDev/flushBurn — never a sniper
         ICurvePool(curve).seed();
+
+        // The creation fee seeds the curve for real: a tiny protocol buy, atomic and ahead of the dev buy
+        // below, whose output is burned (DEAD) rather than credited to anyone — see CREATION_FEE's doc comment.
+        _curveBuy(token, pool, startTick, DEAD, platform, CREATION_FEE);
 
         // register the project's tax with the swap desk (router enforces the 4% caps + 100% allocation)
         address projWallet = p.tax.projectWallet == address(0) ? p.dev : p.tax.projectWallet;
@@ -413,13 +472,16 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
             _bounded(stakingBps, p.tax.sellBps), _bounded(robinBps, p.tax.buyBps)
         );
 
-        // optional dev buy (uncapped by supply), atomic and ahead of the field
+        // optional dev buy (uncapped by supply), atomic and ahead of the field. devValue is whatever the
+        // caller sent BEYOND the mandatory CREATION_FEE (already spent above) — never underflows, msg.value
+        // >= CREATION_FEE was required at the top of this function.
+        uint256 devValue = msg.value - CREATION_FEE;
         uint256 devBought;
-        if (msg.value > 0) devBought = _devBuy(token, pool, startTick, p.dev);
+        if (devValue > 0) devBought = _curveBuy(token, pool, startTick, p.dev, p.dev, devValue);
 
         recordOf[token] = Record(token, curve, p.dev, block.timestamp);
         allTokens.push(token);
-        emit Launched(token, curve, pool, p.dev, devBought);
+        emit Launched(token, curve, pool, p.dev, devBought, auctionVault);
     }
 
     /// @dev Clamp a configured slice to what a coin's own fee can actually give up.
@@ -436,28 +498,34 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         return want > room ? room : want;
     }
 
-    function _devBuy(address token, address pool, int24 startTick, address dev) internal returns (uint256 bought) {
+    /// @dev Shared atomic curve buy: deposit `value` ETH as WETH and buy the token up the curve, capped at
+    /// the graduation ceiling (buys can never go past it — any ETH beyond what fills the curve is refunded).
+    /// Bought tokens go to `tokenTo`; any unspent WETH is unwrapped and refunded to `refundTo`. Used both for
+    /// the optional dev buy (tokenTo == refundTo == dev) and the mandatory creation-fee seed buy
+    /// (tokenTo == DEAD — burned, nobody is owed it; refundTo == platform, not that CREATION_FEE ever leaves
+    /// enough unspent to matter against any real curve's capacity).
+    function _curveBuy(address token, address pool, int24 startTick, address tokenTo, address refundTo, uint256 value)
+        internal
+        returns (uint256 bought)
+    {
         bool tokenIsToken0 = token < WETH;
         bool zeroForOne = !tokenIsToken0; // buying the token: WETH-in. WETH is token0 iff !tokenIsToken0.
-        // no supply cap on the dev buy: let it climb the whole curve up to the graduation ceiling
-        // (buys can never go past it). Any ETH beyond what fills the curve is refunded.
         int24 capTick = tokenIsToken0 ? startTick + CURVE_WIDTH : startTick - CURVE_WIDTH;
         uint160 sqrtLimit = PoolMath.getSqrtRatioAtTick(capTick);
 
-        IWETH9(WETH).deposit{value: msg.value}();
+        IWETH9(WETH).deposit{value: value}();
         _swapping = true;
         _activePool = pool;
-        IUniswapV3Pool(pool).swap(address(this), zeroForOne, int256(msg.value), sqrtLimit, "");
+        IUniswapV3Pool(pool).swap(address(this), zeroForOne, int256(value), sqrtLimit, "");
         _activePool = address(0);
         _swapping = false;
 
-        // deliver bought tokens to the dev; refund any unused ETH (no supply cap on the dev buy)
         bought = IERC20(token).balanceOf(address(this));
-        if (bought > 0) IERC20(token).safeTransfer(dev, bought);
+        if (bought > 0) IERC20(token).safeTransfer(tokenTo, bought);
         uint256 leftWeth = IERC20(WETH).balanceOf(address(this));
         if (leftWeth > 0) {
             IWETH9(WETH).withdraw(leftWeth);
-            (bool ok,) = dev.call{value: leftWeth}("");
+            (bool ok,) = refundTo.call{value: leftWeth}("");
             require(ok, "refund");
         }
     }
@@ -472,6 +540,13 @@ contract CurvePadFactory is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallbac
         require(p_ != address(0), "zero");
         platform = p_;
         emit PlatformChanged(p_);
+    }
+
+    /// @notice Opt this factory deployment into the daily-auction feature (or turn it back off with
+    /// address(0)). Applies to launches AFTER this call only — see `auctionVaultDeployer`'s doc comment.
+    function setAuctionVaultDeployer(address d) external onlyOwner {
+        auctionVaultDeployer = d;
+        emit AuctionVaultDeployerSet(d);
     }
 
     // [v2] `seedBlocklist` IS DELIBERATELY GONE. It was an owner pass-through for seeding a coin's buy-side

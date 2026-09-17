@@ -48,7 +48,7 @@ suite("Mass-dump sim — buy a coin up ~2x, then everyone dumps (fork)", functio
 
     // launch a plain 1% (no project tax) coin
     const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const rc = await (await factory.launch({ name: "DUMP", symbol: "DUMP", dev: dev.address, tax: NOTAX })).wait();
+    const rc = await (await factory.launch({ name: "DUMP", symbol: "DUMP", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
     const { token, curve, pool: poolAddr } = ev.args;
