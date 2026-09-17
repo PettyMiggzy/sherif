@@ -31,7 +31,7 @@ async function main() {
 
   // ---- launch a coin ----
   const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: me.address };
-  const rc = await (await factory.launch({ name: "Robin Test", symbol: "RBNT", dev: me.address, tax, poolFee: 0, auctionDays: 0 }, g(15_000_000))).wait();
+  const rc = await (await factory.launch({ name: "Robin Test", symbol: "RBNT", dev: me.address, tax, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001"), ...g(15_000_000) })).wait();
   const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Launched");
   const { token, curve, pool: poolAddr } = ev.args;
   const curveC = await ethers.getContractAt("CurvePool", curve);

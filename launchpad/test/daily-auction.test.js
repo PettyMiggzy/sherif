@@ -34,7 +34,8 @@ describe("DailyAuctionVault — optional daily-tranche pre-launch auction", func
     );
     await (await (await ethers.getContractAt("PadRouter", router)).connect(dep).setFactory(await factory.getAddress())).wait();
 
-    const davd = await at("DailyAuctionVaultDeployer");
+    const rsd = await at("RobinStakingDeployer");
+    const davd = await at("DailyAuctionVaultDeployer", rsd);
     await (await factory.connect(dep).setAuctionVaultDeployer(davd)).wait();
   });
 
@@ -173,14 +174,18 @@ describe("DailyAuctionVault — optional daily-tranche pre-launch auction", func
   it("a ZERO-bid day funds the vault's own dedicated RobinStaking pool instead of burning nothing", async () => {
     const { vault, token } = await launchWithAuction("ZeroBid", 1);
     const tranche = await vault.dayTranche();
-    const stakingAddr = await vault.stakingPool();
-    const staking = await ethers.getContractAt("RobinStaking", stakingAddr);
-    expect(await staking.owner()).to.equal(await vault.getAddress());
-    expect((await staking.rewardInfo(token))[0]).to.equal(true); // the coin itself is a LISTED reward asset
+    // deployed LAZILY (see DailyAuctionVault.sol's gas-budget note) — nothing exists until the first
+    // zero-bid closeDay() call below, which is exactly what this test is confirming.
+    expect(await vault.stakingPool()).to.equal(ethers.ZeroAddress);
 
     await ethers.provider.send("evm_increaseTime", [DAY + 1]);
     await ethers.provider.send("evm_mine", []);
     const rc = await (await vault.closeDay(1)).wait();
+    const stakingAddr = await vault.stakingPool();
+    expect(stakingAddr).to.not.equal(ethers.ZeroAddress);
+    const staking = await ethers.getContractAt("RobinStaking", stakingAddr);
+    expect(await staking.owner()).to.equal(await vault.getAddress());
+    expect((await staking.rewardInfo(token))[0]).to.equal(true); // the coin itself is a LISTED reward asset
     const ev = rc.logs.map((l) => { try { return vault.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "DayClosed");
     expect(ev.args.totalBid).to.equal(0n);
     expect(ev.args.tokensToStaking).to.equal(tranche);

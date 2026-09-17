@@ -37,16 +37,21 @@ async function main() {
   console.log(`padRouter    = ${padRouter}\n`);
 
   const factory = await ethers.getContractAt([
-    "function launch((string name,string symbol,address dev,(uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,address projectWallet) tax) p) payable returns (address token,address curve,address pool)",
+    "function launch((string name,string symbol,address dev,(uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,address projectWallet) tax,uint24 poolFee,uint8 auctionDays) p) payable returns (address token,address curve,address pool)",
     "event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought)",
   ], padFactory);
 
   // 1) LAUNCH (+ a tiny dev buy so the swap path runs too; the dev buy is anti-snipe-exempt)
   const tax = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: me.address };
   const params = { name: "Smoke Test", symbol: "SMOKE", dev: me.address, tax, poolFee: 0, auctionDays: 0 };
+  // CREATION_FEE (CurvePadFactory.CREATION_FEE, 0.001 ETH) is mandatory on every launch and is spent
+  // separately from the dev buy (devValue = msg.value - CREATION_FEE) — so send it ON TOP of DEV_BUY, not
+  // instead of it, or an unadjusted DEV_BUY of exactly 0.001 ETH would net a ZERO-ETH dev buy and this smoke
+  // test would fail.
+  const CREATION_FEE = ethers.parseEther("0.001");
   const devBuy = ethers.parseEther(process.env.DEV_BUY || "0.001");
-  console.log(`> launching a throwaway coin with a ${ethers.formatEther(devBuy)} ETH dev buy ...`);
-  const rc = await (await factory.launch(params, { value: devBuy, gasLimit: LAUNCH_GAS })).wait();
+  console.log(`> launching a throwaway coin with a ${ethers.formatEther(devBuy)} ETH dev buy (+ ${ethers.formatEther(CREATION_FEE)} ETH creation fee) ...`);
+  const rc = await (await factory.launch(params, { value: CREATION_FEE + devBuy, gasLimit: LAUNCH_GAS })).wait();
   const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((p) => p && p.name === "Launched");
   if (!ev) throw new Error("no Launched event — the launch did not complete as expected");
   const { token, curve, pool } = ev.args;

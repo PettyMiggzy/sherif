@@ -21,7 +21,7 @@ async function main() {
 
   console.log(`V3 curve (mainnet fork): STM=${STM} CW=${CW} | 1B supply, 75% curve, ETH=$${ETH_USD}`);
   for (const e of ["0.5", "1", "2"]) {
-    const rc = await (await factory.launch({ name: "Cal", symbol: "CAL", dev: dev.address, tax, poolFee: 0, auctionDays: 0 })).wait();
+    const rc = await (await factory.launch({ name: "Cal", symbol: "CAL", dev: dev.address, tax, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } }).find((x) => x && x.name === "Launched");
     const { token, pool: poolAddr } = ev.args;
     const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);

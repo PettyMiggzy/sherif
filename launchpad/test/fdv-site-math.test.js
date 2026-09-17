@@ -140,10 +140,10 @@ describe("[FDV] the create page's supply/value maths agrees with the factory", f
       tax: { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address }, poolFee: 0, auctionDays: 0 };
     const { salt, addr } = await mineFor(factory, dev.address, p, supplyTokens, "fdv-site-tiny");
 
-    const [token] = await factory.connect(dev).launchWithSupplyAndSalt.staticCall(p, supplyTokens, mag, salt);
+    const [token] = await factory.connect(dev).launchWithSupplyAndSalt.staticCall(p, supplyTokens, mag, salt, { value: ethers.parseEther("0.001") });
     expect(token).to.equal(addr); // the mined address survives the custom supply
 
-    await (await factory.connect(dev).launchWithSupplyAndSalt(p, supplyTokens, mag, salt)).wait();
+    await (await factory.connect(dev).launchWithSupplyAndSalt(p, supplyTokens, mag, salt, { value: ethers.parseEther("0.001") })).wait();
     const tok = await ethers.getContractAt("LaunchToken", addr);
     expect(await tok.totalSupply()).to.equal(supplyTokens); // the creator's token count, not the default
     expect(addr.toLowerCase().endsWith("1ab5")).to.equal(true);

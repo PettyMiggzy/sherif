@@ -53,15 +53,18 @@ describe("[v2] the second pad: deep wall, no guard, frozen interfaces", () => {
 
   it("BondDeployer.deploy's SIGNATURE is unchanged — the live CurvePool bytecode calls it", async () => {
     // The deployed CurvePool is reused by every factory (the pool deployer is shared and stateless) and its
-    // bytecode calls bondDeployer.deploy(address,address,address,address,address). If v2 changed that selector,
-    // every v2 coin would launch fine and then BRICK at graduation, with the raise already committed. Pin it.
+    // bytecode calls bondDeployer.deploy(address,address,address,address,address,uint24) — the trailing
+    // poolFee is the fee tier the CURVE itself launched on, so the Bond it deploys posts into that exact same
+    // pool rather than always assuming the default 1% tier. If v2 changed this selector any further, every v2
+    // coin would launch fine and then BRICK at graduation, with the raise already committed. Pin it.
     const f = (await ethers.getContractFactory("BondDeployer")).interface.getFunction("deploy");
-    expect(f.format("sighash")).to.equal("deploy(address,address,address,address,address)");
+    expect(f.format("sighash")).to.equal("deploy(address,address,address,address,address,uint24)");
     // hardcoded on purpose: the format check above would still pass if someone changed the arg list AND this
     // test's expectation together, whereas a frozen literal has to be edited deliberately
-    expect(ethers.id(f.format("sighash")).slice(0, 10)).to.equal("0x9937a678");
-    // and the geometry really did NOT leak into that signature — it is on the deployer, not the call
-    expect(f.inputs.length).to.equal(5);
+    expect(ethers.id(f.format("sighash")).slice(0, 10)).to.equal("0x24d09a63");
+    // and the geometry (bountyNear/bountyFar) really did NOT leak into that signature — it is on the deployer
+    // (constructor-immutable), not the call; poolFee is the only addition, so 5 addresses + poolFee = 6
+    expect(f.inputs.length).to.equal(6);
   });
 
   it("CurvePool still asks for the bondDeployer by address only, so a new one drops straight in", async () => {
@@ -177,9 +180,10 @@ describe("[v2] the second pad: deep wall, no guard, frozen interfaces", () => {
 
   it("the dev buy is uncapped by supply, by construction", async () => {
     const src = require("fs").readFileSync(__dirname + "/../contracts/CurvePadFactory.sol", "utf8");
-    expect(src).to.match(/no supply cap on the dev buy/);
-    // the only thing bounding it is the curve ceiling and the ETH sent — no bps-of-supply term anywhere in _devBuy
-    const devBuy = /function _devBuy[\s\S]*?\n    }/.exec(src)[0];
-    expect(devBuy).to.not.match(/maxWalletBps|maxTxBps|TOTAL_SUPPLY|totalSupply/);
+    expect(src).to.match(/uncapped by supply/);
+    // the only thing bounding it is the curve ceiling and the ETH sent — no bps-of-supply term anywhere in the
+    // shared curve-buy helper (the dev buy and the mandatory creation-fee seed buy both go through it now)
+    const curveBuy = /function _curveBuy[\s\S]*?\n    }/.exec(src)[0];
+    expect(curveBuy).to.not.match(/maxWalletBps|maxTxBps|TOTAL_SUPPLY|totalSupply/);
   });
 });

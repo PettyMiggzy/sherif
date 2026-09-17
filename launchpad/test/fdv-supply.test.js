@@ -77,9 +77,9 @@ describe("[FDV] v3 pad — creators choose supply; the factory bounds the valuat
     // It gets PAST the band: the token deploys and the pool is created, and the call only dies further down,
     // where the MOCK pool cannot mint CurvePool's concentrated seed position (an ERC20 balance error from the
     // mock, not a factory error). Passing the band is the whole claim here; the real seed is a fork test.
-    await expect(as(factory).launchWithSupply(params(), supply, mag))
+    await expect(as(factory).launchWithSupply(params(), supply, mag, { value: ethers.parseEther("0.001") }))
       .to.not.be.revertedWithCustomError(factory, "MarketCapOutOfRange");
-    await expect(as(factory).launchWithSupply(params(), supply, mag))
+    await expect(as(factory).launchWithSupply(params(), supply, mag, { value: ethers.parseEther("0.001") }))
       .to.not.be.revertedWithCustomError(factory, "BadValue");
   });
 
@@ -87,7 +87,7 @@ describe("[FDV] v3 pad — creators choose supply; the factory bounds the valuat
     const supply = 10_000n * ONE; // at the DEFAULT price this is ~1.8e-14 ETH of coin
     const fdv = await factory.quoteFdvWei(supply, START_TICK_MAG);
     expect(fdv).to.be.lt(await factory.minFdvWei());
-    await expect(as(factory).launchWithSupply(params(), supply, 0))
+    await expect(as(factory).launchWithSupply(params(), supply, 0, { value: ethers.parseEther("0.001") }))
       .to.be.revertedWithCustomError(factory, "MarketCapOutOfRange").withArgs(fdv);
     await expect(factory.allTokens(0)).to.be.reverted; // nothing was registered
   });
@@ -96,13 +96,13 @@ describe("[FDV] v3 pad — creators choose supply; the factory bounds the valuat
     const mag = 201600 - 115200; // ~100,000x pricier per token, at the FULL default supply
     const fdv = await factory.quoteFdvWei(DEFAULT_SUPPLY, mag);
     expect(fdv).to.be.gt(await factory.maxFdvWei());
-    await expect(as(factory).launchWithSupply(params(), 0, mag))
+    await expect(as(factory).launchWithSupply(params(), 0, mag, { value: ethers.parseEther("0.001") }))
       .to.be.revertedWithCustomError(factory, "MarketCapOutOfRange").withArgs(fdv);
   });
 
   it("REJECTS a malformed launch price (negative, unaligned, or past the usable range)", async () => {
     for (const mag of [-201600, 201601, 887200]) {
-      await expect(as(factory).launchWithSupply(params(), 0, mag)).to.be.revertedWithCustomError(factory, "BadValue");
+      await expect(as(factory).launchWithSupply(params(), 0, mag, { value: ethers.parseEther("0.001") })).to.be.revertedWithCustomError(factory, "BadValue");
     }
   });
 
@@ -124,13 +124,13 @@ describe("[FDV] v3 pad — creators choose supply; the factory bounds the valuat
     const tight = ethers.parseEther("2");
     await as(f).setFdvBand(tight, tight * 2n);
     const fdv = await f.quoteFdvWei(DEFAULT_SUPPLY, START_TICK_MAG); // ~1.758 ETH, now below the floor
-    await expect(as(f).launchWithSupply(params(), 0, 0))
+    await expect(as(f).launchWithSupply(params(), 0, 0, { value: ethers.parseEther("0.001") }))
       .to.be.revertedWithCustomError(f, "MarketCapOutOfRange").withArgs(fdv);
   });
 
   it("launch() and launchWithSupply(p,0,0) are the same call", async () => {
     // both must fail identically deep inside the mock pool — never at the band, never at BadValue
-    for (const call of [as(factory).launch(params()), as(factory).launchWithSupply(params(), 0, 0)]) {
+    for (const call of [as(factory).launch(params(), { value: ethers.parseEther("0.001") }), as(factory).launchWithSupply(params(), 0, 0, { value: ethers.parseEther("0.001") })]) {
       await expect(call).to.not.be.revertedWithCustomError(factory, "MarketCapOutOfRange");
       await expect(call).to.not.be.revertedWithCustomError(factory, "BadValue");
     }

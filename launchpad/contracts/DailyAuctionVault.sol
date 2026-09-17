@@ -6,11 +6,24 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IUniswapV3Pool, IUniswapV3SwapCallback, IWETH9} from "./interfaces/IUniswapV3.sol";
 import {PoolMath} from "./libraries/PoolMath.sol";
-import {RobinStaking} from "./RobinStaking.sol";
 
 interface ICurveForAuction {
     function pool() external view returns (address);
     function gradTick() external view returns (int24);
+}
+
+interface IRobinStakingDeployer {
+    function deploy(address stakeToken, address owner) external returns (address);
+}
+
+/// @dev Just the RobinStaking calls this vault needs to make — NOT the full contract. Importing (and
+/// `new`-ing) RobinStaking directly here would inline its ~8.6KB creation bytecode into THIS contract's own
+/// deployed bytecode (Solidity embeds a `new X(...)` target's init code in the caller), which is exactly the
+/// gas-budget mistake CurveDeployers.sol's "thin deployers" pattern exists to avoid — see
+/// RobinStakingDeployer in that file, and the gas-budget note on `stakingPool`'s declaration below.
+interface IRobinStaking {
+    function listReward(address asset, uint32 duration) external;
+    function notifyReward(address asset, uint256 amount) external;
 }
 
 /// @title DailyAuctionVault — optional 0-4 day pre-launch batch auction for a v3 pad coin
@@ -50,7 +63,8 @@ contract DailyAuctionVault is IUniswapV3SwapCallback, ReentrancyGuard {
     address public immutable curve; // the coin's CurvePool
     address public immutable pool; // curve's underlying Uniswap v3 pool (cached at construction)
     address public immutable platform;
-    RobinStaking public immutable stakingPool; // owned by this vault; funded only on a zero-bid day
+    address public immutable robinStakingDeployer; // thin deployer (see IRobinStaking's doc comment)
+    address public stakingPool; // deployed LAZILY, on the first zero-bid day — see _stakingPoolOrDeploy
     uint8 public immutable auctionDays; // 1..4
     uint64 public immutable startTime; // this contract's construction time; day windows are relative to it
     uint256 public immutable dayTranche; // tokens up for grabs each day = auctionAmt / auctionDays
@@ -81,29 +95,36 @@ contract DailyAuctionVault is IUniswapV3SwapCallback, ReentrancyGuard {
 
     /// @param auctionAmt_ the total token allocation this vault distributes, across every day combined.
     /// Must divide evenly by `auctionDays_` (CurvePadFactory sizes it that way — an exact multiple, never dust).
-    constructor(address token_, address weth_, address curve_, address platform_, uint8 auctionDays_, uint256 auctionAmt_) {
-        if (token_ == address(0) || weth_ == address(0) || curve_ == address(0) || platform_ == address(0)) revert Zero();
+    constructor(
+        address token_,
+        address weth_,
+        address curve_,
+        address platform_,
+        address robinStakingDeployer_,
+        uint8 auctionDays_,
+        uint256 auctionAmt_
+    ) {
+        if (token_ == address(0) || weth_ == address(0) || curve_ == address(0) || platform_ == address(0) || robinStakingDeployer_ == address(0)) {
+            revert Zero();
+        }
         require(auctionDays_ > 0 && auctionDays_ <= 4, "days");
         require(auctionAmt_ > 0 && auctionAmt_ % auctionDays_ == 0, "tranche");
         token = IERC20(token_);
         WETH = weth_;
         curve = curve_;
         platform = platform_;
+        robinStakingDeployer = robinStakingDeployer_;
         auctionDays = auctionDays_;
         dayTranche = auctionAmt_ / auctionDays_;
         startTime = uint64(block.timestamp);
         pool = ICurveForAuction(curve_).pool();
-
-        // A dedicated pool this vault owns outright — no cross-factory registry, no separate authorization
-        // step. `address(this)` is valid inside a constructor, so the vault can be its own pool's owner AND
-        // (per RobinStaking's constructor) its first rewarder in the same breath. Listing the coin itself as
-        // a reward asset (alongside the ETH default) is what makes "stake the coin, earn the coin" possible —
-        // nothing else in this codebase auto-lists a coin as its own staking pool's reward, which is
-        // deliberate everywhere else (it would usually be nonsensical); here it is exactly the point, since
-        // the only thing ever funding it is unsold AUCTION supply, never platform or creator revenue.
-        RobinStaking sp = new RobinStaking(token_, address(this));
-        sp.listReward(token_, STAKING_STREAM);
-        stakingPool = sp;
+        // stakingPool is deployed LAZILY (see _stakingPoolOrDeploy), not here. A normal launch already spends
+        // ~13.5M of Robinhood Chain's real 16.7M-per-tx gas cap (CurvePool.sol's own comments note the same
+        // limit); deploying a full RobinStaking contract inline in the SAME transaction blew straight through
+        // what's left (measured — the combined tx ran out of gas even at the cap). Most auction days will have
+        // bids and never need this pool at all, so paying to deploy it eagerly on every auction launch was
+        // wasteful even before the gas math — closeDay() is its own transaction, days later, with its own full
+        // budget, so that is where it belongs.
     }
 
     /// @notice `day`'s bidding window as [opens, closes) unix timestamps.
@@ -136,8 +157,9 @@ contract DailyAuctionVault is IUniswapV3SwapCallback, ReentrancyGuard {
 
         uint256 total = dayTotal[day];
         if (total == 0) {
-            token.forceApprove(address(stakingPool), dayTranche);
-            stakingPool.notifyReward(address(token), dayTranche);
+            address sp = _stakingPoolOrDeploy();
+            token.forceApprove(sp, dayTranche);
+            IRobinStaking(sp).notifyReward(address(token), dayTranche);
             emit DayClosed(day, 0, 0, 0, 0, dayTranche);
             return;
         }
@@ -149,6 +171,19 @@ contract DailyAuctionVault is IUniswapV3SwapCallback, ReentrancyGuard {
 
         uint256 burned = _burnBuy(toCurve);
         emit DayClosed(day, total, toPlatform, toCurve, burned, 0);
+    }
+
+    /// @dev Deploy the dedicated RobinStaking pool (via the thin deployer, see IRobinStaking's doc comment)
+    /// on first use (a zero-bid day), not at construction — see the gas-budget note on `stakingPool`'s
+    /// declaration. Idempotent: later zero-bid days reuse the same pool. owner == address(this): RobinStaking's
+    /// constructor auto-authorizes whoever it's told is the owner as its first rewarder, so this vault can
+    /// call notifyReward on the pool it just had built, no separate authorization step needed.
+    function _stakingPoolOrDeploy() internal returns (address sp) {
+        sp = stakingPool;
+        if (sp != address(0)) return sp;
+        sp = IRobinStakingDeployer(robinStakingDeployer).deploy(address(token), address(this));
+        IRobinStaking(sp).listReward(address(token), STAKING_STREAM);
+        stakingPool = sp;
     }
 
     /// @notice Claim your share of `day`'s tranche: `yourBid / dayTotal * dayTranche`. Callable any time

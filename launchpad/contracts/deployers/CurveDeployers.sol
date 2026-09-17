@@ -8,6 +8,7 @@ import {CurvePool} from "../CurvePool.sol";
 import {LaunchToken} from "../LaunchToken.sol";
 import {OtcVault} from "../OtcVault.sol";
 import {DailyAuctionVault} from "../DailyAuctionVault.sol";
+import {RobinStaking} from "../RobinStaking.sol";
 
 /// @notice Thin deployers so the big contracts' creation bytecode isn't inlined into CurveLaunchFactory
 /// (24KB contract-size limit). Each is deployed once and its address handed to the factory.
@@ -180,12 +181,32 @@ contract CurvePoolDeployer {
     }
 }
 
+/// @notice Deploys `RobinStaking` on demand. Exists so a `RobinStaking` contract's ~8.6KB creation bytecode
+/// lives HERE, not inlined into `DailyAuctionVault` (which would bloat every auction-enabled launch's
+/// deployment gas even though most auction days never touch a staking pool at all) — same "thin deployer"
+/// reasoning as every other deployer in this file, just discovered the hard way (measured: an inlined `new
+/// RobinStaking(...)` pushed a whole auction launch transaction past Robinhood Chain's real 16.7M-per-tx cap).
+contract RobinStakingDeployer {
+    function deploy(address stakeToken, address owner) external returns (address) {
+        return address(new RobinStaking(stakeToken, owner));
+    }
+}
+
 contract DailyAuctionVaultDeployer {
+    /// @notice Shared across every vault this deployer creates — baked in at ITS OWN construction (like
+    /// BondDeployer bakes in bountyNear/bountyFar) so CurvePadFactory's own deploy-call shape never needs to
+    /// change if the staking-deployer wiring ever does.
+    address public immutable robinStakingDeployer;
+
+    constructor(address robinStakingDeployer_) {
+        robinStakingDeployer = robinStakingDeployer_;
+    }
+
     function deploy(address token, address weth, address curve, address platform, uint8 auctionDays, uint256 auctionAmt)
         external
         returns (address)
     {
-        return address(new DailyAuctionVault(token, weth, curve, platform, auctionDays, auctionAmt));
+        return address(new DailyAuctionVault(token, weth, curve, platform, robinStakingDeployer, auctionDays, auctionAmt));
     }
 }
 

@@ -59,7 +59,7 @@ suite("Calibration sim — NEW params (201600 / 23000 / 22800): ~$3.4k start / ~
 
     // ── launch a coin (no dev buy) so we can read the real curve ticks on-chain ──
     const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-    const rc = await (await factory.launch({ name: "Cal", symbol: "CAL", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 })).wait();
+    const rc = await (await factory.launch({ name: "Cal", symbol: "CAL", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
     const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
       .find((e) => e && e.name === "Launched");
     const curveC = await ethers.getContractAt("CurvePool", ev.args.curve);
