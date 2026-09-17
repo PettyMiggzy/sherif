@@ -289,6 +289,57 @@ describe("CurvePadFactoryV4 / DailyAuctionVaultV4 — optional 0-4 day pre-launc
     await expect(vault.closeDay(1)).to.be.revertedWithCustomError(vault, "AlreadyClosed");
   });
 
+  // v3 sibling parity check: launchpad's DailyAuctionVault had a real, reachable bug where a bid day's
+  // burn-buy that didn't fully consume the ETH (price hit gradTick first) reverted forever trying to refund
+  // the leftover — it round-tripped WETH.withdraw() back to itself with no receive(). DailyAuctionVaultV4
+  // never round-trips: the vault already holds native ETH from bid() directly, and the leftover refund is a
+  // single outbound `platform.call{value: leftover}("")` straight from that balance — there is no receive()
+  // needed for it to work, so structurally this bug class can't recur here. This test proves that holds for
+  // real (not just on paper) AND closes the loop the user asked about: confirms the auction's contribution to
+  // the raise genuinely reaches BOTH creator and platform once graduation runs, exactly like v3's live proof.
+  it("closeDay (bid path) that overshoots the graduation ceiling refunds the leftover to the platform (not reverts); the auction's raise reaches BOTH creator and platform at graduation", async () => {
+    const cfg = baseCfg(creator, 4); // thinnest curve this pad geometry allows — 40% carved out before seeding
+    const { curveAddr, poolId, auctionVault } = await launchThroughFactory(S, cfg, "auc-overshoot");
+    const vault = await ethers.getContractAt("DailyAuctionVaultV4", auctionVault);
+    const curve = await ethers.getContractAt("RobinCurveV4", curveAddr);
+
+    // one bid, overwhelmingly larger than this thin test-geometry curve can absorb before spot hits gradTick
+    const total = ethers.parseEther("500");
+    await vault.connect(alice).bid(1, { value: total });
+    const expectedPlatformCut = (total * 1000n) / 10000n; // PLATFORM_BPS = 10%
+
+    const platformBefore = await ethers.provider.getBalance(platform.address);
+    const [, closes1] = await vault.dayWindow(1);
+    await ethers.provider.send("evm_setNextBlockTimestamp", [Number(closes1) + 1]);
+    await ethers.provider.send("evm_mine", []);
+    const rc = await (await vault.closeDay(1)).wait(); // must NOT revert
+    expect(await vault.closed(1)).to.equal(true);
+
+    const ev = findEvent(rc, vault.interface, "DayClosed");
+    expect(ev.args.toCurve).to.equal(total - expectedPlatformCut);
+
+    // platform received its flat 10% cut PLUS whatever the swap didn't spend of toCurve — proves the
+    // leftover-refund branch (the exact path v3's bug lived in) actually ran and actually succeeded.
+    const platformDelta = (await ethers.provider.getBalance(platform.address)) - platformBefore;
+    expect(platformDelta).to.be.gt(expectedPlatformCut);
+    expect(platformDelta).to.be.lte(total);
+
+    // confirm this genuinely hit the price limit rather than just spending everything: spot is at (or a
+    // rounding hair from) gradTick, not wherever an unconstrained 450 ETH buy would have landed.
+    const [, tickAfter] = await S.stateView.getSlot0(poolId);
+    const gradTick = await curve.gradTick();
+    const tickDiff = tickAfter > gradTick ? tickAfter - gradTick : gradTick - tickAfter;
+    expect(tickDiff).to.be.lte(2n);
+
+    // the overshoot alone should have filled the curve — graduate and confirm BOTH sides of the raise split
+    // actually got booked, non-zero, from ETH the auction (not an ordinary trader) contributed.
+    expect(await curve.ready()).to.equal(true);
+    await (await curve.connect(alice).graduate()).wait();
+    expect(await curve.graduated()).to.equal(true);
+    expect(await curve.platformEthOwed()).to.be.gt(0n);
+    expect(await curve.creatorEthOwed()).to.be.gt(0n);
+  });
+
   // ── 6. closeDay — zero-bid path (lazy RobinStaking deploy, idempotent reuse) ─────────────────────────────
 
   it("closeDay (zero-bid path): funds a lazily-deployed dedicated RobinStaking pool; a SECOND zero-bid day reuses the SAME pool and funds it again", async () => {
