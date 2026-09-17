@@ -37,7 +37,7 @@ async function deployStack(deployer, platform) {
   });
   const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
     await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
-    await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress()
+    await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(), ethers.ZeroAddress
   );
   await lockVault.setFactory(await factory.getAddress());
   return { pm, stateView, dep, reg, permit2, posm, lockVault, factory, feeCfg };
@@ -72,7 +72,7 @@ describe("SIM — trustless PresaleVault + PresaleVaultFactory (launch + pooled 
   function makeCfg(tag, { supply, curveSupply, reserveSupply }) {
     return {
       name: "Robin " + tag, symbol: tag, decimals: 18,
-      supply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000,
+      supply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays: 0,
     };
   }
 

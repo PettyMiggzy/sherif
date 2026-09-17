@@ -24,6 +24,19 @@ import {IRobinFeeHookAdmin} from "../interfaces/IRobinInterfaces.sol";
 import {PadBrand} from "./PadBrand.sol";
 import {PadValuation} from "./PadValuation.sol";
 
+/// @dev [AUCTION] Thin slice of DailyAuctionVaultV4Deployer (AuctionV4Deployers.sol) this factory needs to
+/// spin up an optional auction vault at launch time.
+interface IDailyAuctionVaultV4Deployer {
+    function deploy(
+        address token,
+        address poolManager,
+        address curve,
+        address feeRegistry,
+        uint8 auctionDays,
+        uint256 auctionAmt
+    ) external returns (address);
+}
+
 /// @title CurvePadFactoryV4 — free single-sided bonding-curve launch on Uniswap V4
 /// @notice One tx, NO ETH seed: deploy the token, mine+deploy the fee hook, initialize the pool at the curve
 /// top, stamp the IMMUTABLE per-pad fee config (pulled from the governed RobinV4FeeConfig), deploy the per-pad
@@ -46,6 +59,13 @@ contract CurvePadFactoryV4 {
     RobinV4FeeConfig public immutable feeConfig;
     address public immutable feeRegistry;
     LockVault public immutable lockVault;
+    /// @notice [AUCTION] address(0) disables the auction feature on this deployment entirely — a launch with
+    /// cfg.auctionDays > 0 reverts BadConfig rather than deploying a vault. Constructor-immutable, not
+    /// owner-settable: unlike v3's CurvePadFactory (already Ownable2Step for unrelated reasons), this factory
+    /// has no owner concept anywhere else, and every other economic/infra wiring here is already a constructor
+    /// immutable — adding a one-off owner just for this would be a bigger, more invasive change than the ripple
+    /// of one more constructor argument.
+    address public immutable auctionVaultDeployer;
 
     uint160 internal constant HOOK_FLAGS = 0x28CC;
     // [L-1] SAFETY FLOOR (not a product minimum): the minimum ETH the curve integral must yield for cfg.curveSupply
@@ -83,6 +103,9 @@ contract CurvePadFactoryV4 {
         // fee (0 up to the governed MAX_LP_FEE ceiling) doesn't weaken that rule. Appended last so this mirrors
         // ICurvePadFactoryV4.LaunchConfig field-for-field.
         uint24 lpFee;
+        // [AUCTION] 0-4 day optional pre-launch daily batch auction — see ICurvePadFactoryV4.LaunchConfig's
+        // doc comment. Appended last so this mirrors that struct field-for-field.
+        uint8 auctionDays;
     }
 
     struct Launch {
@@ -96,10 +119,14 @@ contract CurvePadFactoryV4 {
     mapping(uint256 => Launch) public launches;
     mapping(address token => PoolId) public poolOf;
     mapping(address curve => bool) public isCurve; // authorized graduation registrars
+    mapping(address token => address) public auctionVaultOf; // [AUCTION] set only when cfg.auctionDays > 0
 
     event CurvePadLaunched(
         uint256 indexed index, address indexed token, address indexed creator, address hook, address curve, PoolId poolId
     );
+    // [AUCTION] Separate from CurvePadLaunched rather than extending it, so every existing consumer of that
+    // event's ABI is unaffected by this feature.
+    event AuctionVaultLaunched(uint256 indexed index, address indexed token, address auctionVault, uint256 auctionAmt);
 
     error HookFlagsMismatch();
     error LockVaultMismatch();
@@ -121,7 +148,8 @@ contract CurvePadFactoryV4 {
         address curveDeployer_,
         address feeConfig_,
         address feeRegistry_,
-        address lockVault_
+        address lockVault_,
+        address auctionVaultDeployer_
     ) {
         poolManager = IPoolManager(poolManager_);
         positionManager = positionManager_;
@@ -132,6 +160,9 @@ contract CurvePadFactoryV4 {
         feeConfig = RobinV4FeeConfig(feeConfig_);
         feeRegistry = feeRegistry_;
         lockVault = LockVault(payable(lockVault_));
+        // [AUCTION] address(0) is a valid, deliberate "feature off on this deployment" value — see the
+        // storage var's own doc comment. Not validated against zero on purpose.
+        auctionVaultDeployer = auctionVaultDeployer_;
         // [I-1(19)] The vault holds its OWN positionManager immutable and uses it for collectFees and for the
         // onERC721Received gate. Nothing else cross-checks the two, and the gate is dead code on the mint path
         // (v4-periphery mints with solmate's plain _mint), so a divergence would let graduate() succeed, lock
@@ -182,6 +213,23 @@ contract CurvePadFactoryV4 {
         // 0 is a real, legitimate choice: a coin with no LP fee at all). Same static-only + ceiling checks
         // RobinV4FeeConfig._validate applies to the governed default, applied here to the caller's choice.
         if (cfg.lpFee & DYNAMIC_FEE_FLAG != 0 || cfg.lpFee > feeConfig.MAX_LP_FEE()) revert BadConfig();
+        // [AUCTION] Same bound as v3's DailyAuctionVault (0-4 days), and the feature must actually be wired on
+        // this deployment — an unset auctionVaultDeployer means "off", not "silently ignored".
+        if (cfg.auctionDays > 4) revert BadConfig();
+        if (cfg.auctionDays > 0 && auctionVaultDeployer == address(0)) revert BadConfig();
+
+        // [AUCTION] Carve `auctionDays * 10%` of the CURVE'S sellable share out before the curve is seeded —
+        // dayTranche computed FIRST (10% of the pre-carve curveSupply) so auctionAmt = dayTranche * auctionDays
+        // divides evenly by construction, never by a separate rounding division. `curveSupply` (this reduced
+        // local) is what actually gets seeded and what the geometry checks below size against; cfg.curveSupply
+        // itself is left untouched (it is still what cfg.reserveSupply's own check is measured against, and
+        // still what the supply-conservation check above already validated). At the max (4 days) the curve
+        // still seeds with 60% of the original curveSupply.
+        uint256 curveSupply = cfg.curveSupply;
+        uint256 dayTranche = cfg.auctionDays == 0 ? 0 : curveSupply / 10;
+        uint256 auctionAmt = dayTranche * cfg.auctionDays;
+        curveSupply -= auctionAmt;
+        if (curveSupply == 0) revert BadConfig();
 
         // 1) governed defaults, snapshotted + stamped immutably
         RobinV4FeeConfig.Defaults memory d = feeConfig.defaults(); // all shares/geometry validated in the FeeConfig
@@ -227,19 +275,22 @@ contract CurvePadFactoryV4 {
         // [HIGH-2] the reserve must be big enough that the ETH leg binds at graduation — otherwise the raise
         // would leak to the platform book, or (too small) brick graduation and trap the raise forever. Require
         // reserveSupply ≥ curveSupply·√grad/√start with a 5% margin (√grad < √start ⇒ threshold < curveSupply).
+        // [AUCTION] Measured against the REDUCED `curveSupply` (post carve-out) — that is what actually gets
+        // seeded into the curve and is what the permanent LP must be sized to pair at graduation. The carved-out
+        // auction supply never enters the curve, so it must not inflate this requirement.
         {
             uint256 sg = uint256(TickMath.getSqrtPriceAtTick(gradTick));
             uint256 ss = uint256(TickMath.getSqrtPriceAtTick(startTick));
-            if (uint256(cfg.reserveSupply) * ss * 100 < uint256(cfg.curveSupply) * sg * 105) revert BadConfig();
+            if (uint256(cfg.reserveSupply) * ss * 100 < curveSupply * sg * 105) revert BadConfig();
         }
         // [L-1] RAISE FLOOR: the geometry checks above bound the LP token-leg pairing, not the ETH raise. Compute the
-        // ETH the single-sided position [gradTick, startTick] actually yields for cfg.curveSupply and reject a
+        // ETH the single-sided position [gradTick, startTick] actually yields for curveSupply and reject a
         // geometry whose raise would floor to ~0 wei (else graduate() reverts EmptyRaise forever). currency1 = token,
         // so the sold supply is the amount1 leg; getAmount0ForLiquidity then gives the ETH walked out over the range.
         {
             uint160 sqGrad = TickMath.getSqrtPriceAtTick(gradTick);
             uint160 sqStart = TickMath.getSqrtPriceAtTick(startTick);
-            uint128 curveL = LiquidityAmounts.getLiquidityForAmount1(sqGrad, sqStart, cfg.curveSupply);
+            uint128 curveL = LiquidityAmounts.getLiquidityForAmount1(sqGrad, sqStart, curveSupply);
             // ETH walked out over [gradTick, startTick] for that liquidity (round DOWN — a lower bound on the raise),
             // mirroring PresaleVault._absorbableIn's getAmount0Delta(gradSqrt, startSqrt, L, false).
             if (SqrtPriceMath.getAmount0Delta(sqGrad, sqStart, curveL, false) < MIN_RAISE_WEI) revert BadGeometry();
@@ -365,16 +416,32 @@ contract CurvePadFactoryV4 {
         isCurve[curve] = true;
         // wire the curve as the buy-tax buffer sink ([L-5] the buffer is held as idle ETH, then swept to the PLATFORM at graduation); known only now
         RobinFeeHook(payable(hook)).setBufferRecipient(poolId, curve);
-        IERC20(token).safeTransfer(curve, cfg.curveSupply); // the SOLD portion → seeded into the curve
+
+        // [AUCTION] Deploy the optional vault now — after the curve exists (it reads currency0/currency1/fee/
+        // tickSpacing/hooks/gradTick straight off it), before any token moves. auctionVaultOf is set here so it
+        // reads correctly even if a later external call in this function were somehow to re-enter (it can't:
+        // PadToken/RobinFeeHook/RobinCurveV4 are all audited, non-callback code paths here).
+        address auctionVault;
+        if (cfg.auctionDays > 0) {
+            auctionVault = IDailyAuctionVaultV4Deployer(auctionVaultDeployer).deploy(
+                token, address(poolManager), curve, feeRegistry, cfg.auctionDays, auctionAmt
+            );
+            auctionVaultOf[token] = auctionVault;
+        }
+
+        IERC20(token).safeTransfer(curve, curveSupply); // the SOLD (post carve-out) portion → seeded into the curve
         RobinCurveV4(payable(curve)).seed();
         IERC20(token).safeTransfer(curve, cfg.reserveSupply); // the HELD reserve → pairs the permanent LP + staking
+        if (auctionVault != address(0)) IERC20(token).safeTransfer(auctionVault, auctionAmt);
 
-        // 6) NO remainder: supply == curveSupply + reserveSupply is enforced above, so the factory holds 0 token
-        //    now — nothing is minted to the creator (no premine). Any stray dust is left untouched (never sent).
+        // 6) NO remainder: supply == curveSupply + reserveSupply is enforced above, and curveSupply(reduced) +
+        //    auctionAmt == cfg.curveSupply by construction, so the factory holds 0 token now — nothing is minted
+        //    to the creator (no premine). Any stray dust is left untouched (never sent).
 
         uint256 index = launchCount++;
         launches[index] = Launch({token: token, hook: hook, curve: curve, poolId: poolId});
         emit CurvePadLaunched(index, token, cfg.creator, hook, curve, poolId);
+        if (auctionVault != address(0)) emit AuctionVaultLaunched(index, token, auctionVault, auctionAmt);
     }
 
     /// @notice Called by a graduating curve controller to register its permanent locked LP. LockVault accepts

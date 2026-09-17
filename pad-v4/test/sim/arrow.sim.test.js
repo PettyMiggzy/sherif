@@ -61,7 +61,7 @@ async function deployStack(deployer, platform) {
   });
   const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
     await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
-    await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress()
+    await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(), ethers.ZeroAddress
   );
   await lockVault.setFactory(await factory.getAddress());
   return { pm, stateView, dep, reg, permit2, posm, lockVault, factory, feeCfg };
@@ -84,7 +84,7 @@ describe("SIM — Arrow migration launcher (buy out curve, graduate, airdrop to 
   });
 
   function makeCfg(tag, curveSupply, reserveSupply) {
-    return { name: "Arrow " + tag, symbol: tag, decimals: 18, supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: dev.address, noPoolForever: false, lpFee: 10000 };
+    return { name: "Arrow " + tag, symbol: tag, decimals: 18, supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: dev.address, noPoolForever: false, lpFee: 10000, auctionDays: 0 };
   }
   async function prepareSalts(tag, cfg) {
     // [brand] the pad token address must end in `1ab5` or CurvePadFactoryV4 (which ArrowLauncher launches

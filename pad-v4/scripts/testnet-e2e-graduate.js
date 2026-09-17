@@ -69,13 +69,14 @@ async function main() {
   const factory = await dep("CurvePadFactoryV4", [
     POOL_MANAGER, await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
     await dd.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
+    ZERO,
   ]);
   await (await lockVault.setFactory(await factory.getAddress(), T0)).wait();
   const SW = await dep("PoolSwapTest", [POOL_MANAGER]);
   console.log(`  CurvePadFactoryV4      ${await factory.getAddress()}\n  swap router            ${await SW.getAddress()}\n`);
 
   // ── launch a SMALL pad so a tiny buy sells it out (production geometry, but curve=100k tokens) ──
-  const cfg = { name: "Robin E2E", symbol: "rE2E", decimals: 18, supply: 200_000n * ONE, curveSupply: 100_000n * ONE, reserveSupply: 100_000n * ONE, tickSpacing: TS, startTickMag: 0, creator: w.address, noPoolForever: false, lpFee: 10000 };
+  const cfg = { name: "Robin E2E", symbol: "rE2E", decimals: 18, supply: 200_000n * ONE, curveSupply: 100_000n * ONE, reserveSupply: 100_000n * ONE, tickSpacing: TS, startTickMag: 0, creator: w.address, noPoolForever: false, lpFee: 10000, auctionDays: 0 };
   const TokenF = await ethers.getContractFactory("PadToken");
   const tokenSalt = ethers.id("e2e-" + Date.now());
   const tokenInit = ethers.concat([TokenF.bytecode, abi.encode(["string", "string", "uint8", "uint256", "address"], [cfg.name, cfg.symbol, 18, cfg.supply, await factory.getAddress()])]);

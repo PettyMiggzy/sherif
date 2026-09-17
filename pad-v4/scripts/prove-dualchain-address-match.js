@@ -70,10 +70,12 @@ async function bootstrap(provider, signer, label) {
   const lockVault = await deployOn(provider, signer, nonceRef, "LockVault", [await posm.getAddress(), await reg.getAddress()]);
   const curveDeployer = await deployOn(provider, signer, nonceRef, "CurveV4Deployer", [await dep.getAddress()]);
   const feeConfig = await deployOn(provider, signer, nonceRef, "RobinV4FeeConfig", [signer.address, DEFAULTS]);
+  const robinStakingV4Deployer = await deployOn(provider, signer, nonceRef, "RobinStakingV4Deployer", []);
+  const auctionVaultDeployer = await deployOn(provider, signer, nonceRef, "DailyAuctionVaultV4Deployer", [await robinStakingV4Deployer.getAddress()]);
   const factory = await deployOn(provider, signer, nonceRef, "CurvePadFactoryV4", [
     await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
     await dep.getAddress(), await curveDeployer.getAddress(), await feeConfig.getAddress(), await reg.getAddress(),
-    await lockVault.getAddress(),
+    await lockVault.getAddress(), await auctionVaultDeployer.getAddress(),
   ]);
   const setFactoryTx = await lockVault.setFactory.populateTransaction(await factory.getAddress());
   await (await signer.sendTransaction({ ...setFactoryTx, nonce: nonceRef.n++ })).wait();
@@ -85,10 +87,12 @@ async function bootstrap(provider, signer, label) {
     lockVault: await lockVault.getAddress(),
     curveDeployer: await curveDeployer.getAddress(),
     feeConfig: await feeConfig.getAddress(),
+    robinStakingV4Deployer: await robinStakingV4Deployer.getAddress(),
+    auctionVaultDeployer: await auctionVaultDeployer.getAddress(),
     factory: await factory.getAddress(),
   };
   for (const [k, v] of Object.entries(addrs)) console.log(`  [${label}] ${k.padEnd(22)} ${v}`);
-  return { pm, permit2, posm, dep, stateView, reg, lockVault, curveDeployer, feeConfig, factory };
+  return { pm, permit2, posm, dep, stateView, reg, lockVault, curveDeployer, feeConfig, robinStakingV4Deployer, auctionVaultDeployer, factory };
 }
 
 async function main() {
@@ -116,7 +120,7 @@ async function main() {
 
   console.log("\n=== Infra address comparison ===");
   let allMatch = true;
-  const keys = { deterministicDeployer: "dep", stateView: "stateView", feeWalletRegistry: "reg", lockVault: "lockVault", curveDeployer: "curveDeployer", feeConfig: "feeConfig", factory: "factory" };
+  const keys = { deterministicDeployer: "dep", stateView: "stateView", feeWalletRegistry: "reg", lockVault: "lockVault", curveDeployer: "curveDeployer", feeConfig: "feeConfig", robinStakingV4Deployer: "robinStakingV4Deployer", auctionVaultDeployer: "auctionVaultDeployer", factory: "factory" };
   for (const [label, k] of Object.entries(keys)) {
     const a = await SA[k].getAddress();
     const b = await SB[k].getAddress();
@@ -138,7 +142,7 @@ async function main() {
   const cfg = {
     name: "Dual Chain Demo", symbol: "DUAL", decimals: 18,
     supply: 1_000_000_000n * 10n ** 18n, curveSupply: 730_000_000n * 10n ** 18n, reserveSupply: 270_000_000n * 10n ** 18n,
-    tickSpacing: TS, startTickMag: 0, creator: deployerA.address, noPoolForever: false, lpFee: LP_FEE,
+    tickSpacing: TS, startTickMag: 0, creator: deployerA.address, noPoolForever: false, lpFee: LP_FEE, auctionDays: 0,
   };
   // mined ONCE — same deployer, same factory address (now confirmed matching), same initCodeHash on both
   // chains, so the SAME salt is valid everywhere the stack is mirrored.

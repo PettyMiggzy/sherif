@@ -106,6 +106,8 @@ async function main() {
   const lockVault = await legacyDeploy("LockVault", [POSITION_MANAGER, await reg.getAddress()]);
   const curveDeployer = await legacyDeploy("CurveV4Deployer", [await dep.getAddress()]);
   const feeConfig = await legacyDeploy("RobinV4FeeConfig", [deployer.address, DEFAULTS]);
+  const robinStakingV4Deployer = await legacyDeploy("RobinStakingV4Deployer", []);
+  const auctionVaultDeployer = await legacyDeploy("DailyAuctionVaultV4Deployer", [await robinStakingV4Deployer.getAddress()]);
   const factory = await legacyDeploy("CurvePadFactoryV4", [
     POOL_MANAGER,
     POSITION_MANAGER,
@@ -116,6 +118,7 @@ async function main() {
     await feeConfig.getAddress(),
     await reg.getAddress(),
     await lockVault.getAddress(),
+    await auctionVaultDeployer.getAddress(),
   ]);
 
   const setTx = await lockVault.setFactory(await factory.getAddress(), { type: 0 });
@@ -146,6 +149,8 @@ async function main() {
       lockVault: await lockVault.getAddress(),
       curveDeployer: await curveDeployer.getAddress(),
       feeConfig: await feeConfig.getAddress(),
+      robinStakingV4Deployer: await robinStakingV4Deployer.getAddress(),
+      auctionVaultDeployer: await auctionVaultDeployer.getAddress(),
       curveFactory,
       presaleImpl: await presaleImpl.getAddress(),
       presaleFactory: await presaleFactory.getAddress(),

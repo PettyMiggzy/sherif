@@ -43,7 +43,7 @@ async function launchDemoPad(S, { name, symbol, supplyM, curveShareBps, tag, cre
   const reserveSupply = supply - curveSupply;
   const cfg = {
     name, symbol, decimals: 18, supply, curveSupply, reserveSupply,
-    tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000,
+    tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays: 0,
   };
   const tokenSalt = await brandedTokenSalt(await S.dep.getAddress(), await S.factory.getAddress(), cfg, ethers.id(tag));
   const TokenF = await ethers.getContractFactory("PadToken");
@@ -96,9 +96,12 @@ async function main() {
   const lockVault = await deploy("LockVault", [await posm.getAddress(), await reg.getAddress()]);
   const curveDep = await deploy("CurveV4Deployer", [await dep.getAddress()]);
   const feeCfg = await deploy("RobinV4FeeConfig", [deployer.address, DEFAULTS]);
+  const robinStakingV4Deployer = await deploy("RobinStakingV4Deployer", []);
+  const auctionVaultDeployer = await deploy("DailyAuctionVaultV4Deployer", [await robinStakingV4Deployer.getAddress()]);
   const factory = await deploy("CurvePadFactoryV4", [
     await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
     await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
+    await auctionVaultDeployer.getAddress(),
   ]);
   await (await lockVault.setFactory(await factory.getAddress())).wait();
   const sw = await deploy("PoolSwapTest", [await pm.getAddress()]);
@@ -138,6 +141,8 @@ async function main() {
       lockVault: await lockVault.getAddress(),
       curveDeployer: await curveDep.getAddress(),
       feeConfig: await feeCfg.getAddress(),
+      robinStakingV4Deployer: await robinStakingV4Deployer.getAddress(),
+      auctionVaultDeployer: await auctionVaultDeployer.getAddress(),
       curveFactory: await factory.getAddress(),
       poolSwapTest: await sw.getAddress(),
       arrowLauncher: await arrowLauncher.getAddress(),

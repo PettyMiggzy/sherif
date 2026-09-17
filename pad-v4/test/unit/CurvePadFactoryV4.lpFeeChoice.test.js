@@ -36,7 +36,8 @@ async function deployStack(deployer, platform) {
   const lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await posm.getAddress(), await reg.getAddress());
   const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
     await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
-    await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress()
+    await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
+    ethers.ZeroAddress
   );
   await lockVault.setFactory(await factory.getAddress());
   return { pm, stateView, dep, reg, permit2, posm, curveDep, feeCfg, lockVault, factory };
@@ -47,7 +48,7 @@ function baseCfg(creator, lpFee) {
     name: "Robin LPF", symbol: "LPF", decimals: 18,
     supply: 2000n * 10n ** 18n, curveSupply: 1000n * 10n ** 18n, reserveSupply: 1000n * 10n ** 18n,
     tickSpacing: SPACING, startTickMag: 0, creator: creator.address,
-    noPoolForever: false, lpFee,
+    noPoolForever: false, lpFee, auctionDays: 0,
   };
 }
 

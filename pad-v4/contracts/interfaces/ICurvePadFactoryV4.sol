@@ -31,6 +31,12 @@ struct LaunchConfig {
     // weaken "a launcher can never set their own tax." Appended last so this stays ABI-compatible with every
     // existing encoder of this struct.
     uint24 lpFee;
+    // [AUCTION] Optional 0-4 day pre-launch daily batch auction, parity with launchpad's (v3) DailyAuctionVault.
+    // 0 = no auction (the default; every existing encoder of this struct is unaffected). 1-4 = that many days;
+    // the factory carves `auctionDays * 10%` of `curveSupply` out BEFORE seeding the curve and hands it to a new
+    // DailyAuctionVaultV4. Reverts BadConfig above 4, or if the deployment hasn't wired an auctionVaultDeployer.
+    // Appended last, after lpFee, so this stays ABI-compatible with every existing encoder of this struct.
+    uint8 auctionDays;
 }
 
 /// @notice The thin slice of CurvePadFactoryV4 the presale add-on consumes. `launch` is externally callable by any

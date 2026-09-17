@@ -50,7 +50,8 @@ describe("[FDV] creators choose their own supply; the FACTORY bounds the valuati
     });
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
-      await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress()
+      await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
+      ethers.ZeroAddress
     );
     await lockVault.setFactory(await factory.getAddress());
     SW = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
@@ -60,7 +61,7 @@ describe("[FDV] creators choose their own supply; the FACTORY bounds the valuati
   const cfgFor = (tag, supply, startTickMag) => ({
     name: "Robin " + tag, symbol: tag, decimals: 18,
     supply, curveSupply: (supply * 73n) / 100n, reserveSupply: supply - (supply * 73n) / 100n,
-    tickSpacing: TS, startTickMag, creator: creator.address, noPoolForever: false, lpFee: 10000,
+    tickSpacing: TS, startTickMag, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays: 0,
   });
 
   async function salts(cfg, tag) {

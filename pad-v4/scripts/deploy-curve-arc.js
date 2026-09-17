@@ -110,6 +110,8 @@ async function main() {
   const lockVault = await deploy("LockVault", [POSITION_MANAGER, await reg.getAddress()]);
   const curveDeployer = await deploy("CurveV4Deployer", [await dep.getAddress()]);
   const feeConfig = await deploy("RobinV4FeeConfig", [deployer.address, DEFAULTS]);
+  const robinStakingV4Deployer = await deploy("RobinStakingV4Deployer", []);
+  const auctionVaultDeployer = await deploy("DailyAuctionVaultV4Deployer", [await robinStakingV4Deployer.getAddress()]);
   const factory = await deploy("CurvePadFactoryV4", [
     POOL_MANAGER,
     POSITION_MANAGER,
@@ -120,6 +122,7 @@ async function main() {
     await feeConfig.getAddress(),
     await reg.getAddress(),
     await lockVault.getAddress(),
+    await auctionVaultDeployer.getAddress(),
   ]);
 
   const setTx = await lockVault.setFactory(await factory.getAddress());
@@ -156,6 +159,8 @@ async function main() {
       lockVault: await lockVault.getAddress(),
       curveDeployer: await curveDeployer.getAddress(),
       feeConfig: await feeConfig.getAddress(),
+      robinStakingV4Deployer: await robinStakingV4Deployer.getAddress(),
+      auctionVaultDeployer: await auctionVaultDeployer.getAddress(),
       curveFactory,
       presaleImpl: await presaleImpl.getAddress(),
       presaleFactory: await presaleFactory.getAddress(),

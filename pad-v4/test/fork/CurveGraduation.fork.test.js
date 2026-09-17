@@ -46,7 +46,8 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       POOL_MANAGER, POSITION_MANAGER, PERMIT2, await stateView.getAddress(),
       await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(),
-      await reg.getAddress(), await lockVault.getAddress()
+      await reg.getAddress(), await lockVault.getAddress(),
+      ethers.ZeroAddress
     );
     await lockVault.setFactory(await factory.getAddress());
 
@@ -54,7 +55,7 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
       name: "Robin Curve", symbol: "rCRV", decimals: 18,
       // NO DEV MINT: supply == curveSupply + reserveSupply exactly (creator gets nothing at launch)
       supply: 300n * 10n ** 18n, curveSupply: 100n * 10n ** 18n, reserveSupply: 200n * 10n ** 18n,
-      tickSpacing: SPACING, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000,
+      tickSpacing: SPACING, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays: 0,
     };
 
     // mine the BRANDED token salt (address must end in `1ab5`), THEN predict the token addr → mine the hook

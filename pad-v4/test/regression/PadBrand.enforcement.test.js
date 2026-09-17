@@ -39,7 +39,8 @@ describe("[brand] pad token addresses are contract-forced to end in 1ab5", () =>
     });
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
-      await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress()
+      await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
+      ethers.ZeroAddress
     );
     await lockVault.setFactory(await factory.getAddress());
     S = { pm, dep, reg, factory };
@@ -48,7 +49,7 @@ describe("[brand] pad token addresses are contract-forced to end in 1ab5", () =>
   const cfgFor = (tag) => ({
     name: "Robin " + tag, symbol: tag, decimals: 18,
     supply: 2000n * 10n ** 18n, curveSupply: 1000n * 10n ** 18n, reserveSupply: 1000n * 10n ** 18n,
-    tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000,
+    tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays: 0,
   });
 
   // mine the hook salt against whatever token address `tokenSalt` produces (the hook init-code embeds it)

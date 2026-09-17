@@ -49,7 +49,7 @@ describe("[AUCTION regression] partial raises launch, the fee tracks deployed ca
     factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(),
-      await lockVault.getAddress()
+      await lockVault.getAddress(), ethers.ZeroAddress
     );
     await lockVault.setFactory(await factory.getAddress());
     const impl = await (await ethers.getContractFactory("PresaleVault")).deploy();
@@ -71,7 +71,7 @@ describe("[AUCTION regression] partial raises launch, the fee tracks deployed ca
   function mk(tag, n) {
     return {
       name: "Robin " + tag, symbol: tag, decimals: 18,
-      supply: n * 2n, curveSupply: n, reserveSupply: n, tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000,
+      supply: n * 2n, curveSupply: n, reserveSupply: n, tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays: 0,
     };
   }
 

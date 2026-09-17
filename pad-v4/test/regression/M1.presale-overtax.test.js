@@ -48,7 +48,7 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
     factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(),
-      await lockVault.getAddress()
+      await lockVault.getAddress(), ethers.ZeroAddress
     );
     await lockVault.setFactory(await factory.getAddress());
     const impl = await (await ethers.getContractFactory("PresaleVault")).deploy();
@@ -68,7 +68,7 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
     const curveSupply = 2n * 10n ** 17n, reserveSupply = 2n * 10n ** 17n; // 0.2e18 each
     return {
       name: "Robin " + tag, symbol: tag, decimals: 18,
-      supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000,
+      supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays: 0,
     };
   }
 

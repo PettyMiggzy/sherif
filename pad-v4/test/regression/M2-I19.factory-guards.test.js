@@ -41,7 +41,7 @@ async function deployFactory(B, posmAddr, lockVaultAddr) {
   return (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
     await B.pm.getAddress(), posmAddr, await B.permit2.getAddress(), await B.stateView.getAddress(),
     await B.dep.getAddress(), await B.curveDep.getAddress(), await B.feeCfg.getAddress(),
-    await B.reg.getAddress(), lockVaultAddr
+    await B.reg.getAddress(), lockVaultAddr, ethers.ZeroAddress
   );
 }
 
@@ -77,7 +77,7 @@ describe("[M-2 / I-1(19)] CurvePadFactoryV4 wiring guards — failing branches",
     const cfg = {
       name: "Robin X", symbol: "X", decimals: 18,
       supply: 10n ** 24n, curveSupply: 7n * 10n ** 23n, reserveSupply: 3n * 10n ** 23n,
-      tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000,
+      tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays: 0,
     };
     // [brand] mine a VALID branded tokenSalt so the only thing left to reject this launch is the M-2 guard —
     // an unmined salt would revert BadTokenSuffix and the test would pass for the wrong reason.
@@ -95,7 +95,7 @@ describe("[M-2 / I-1(19)] CurvePadFactoryV4 wiring guards — failing branches",
     const cfg = {
       name: "Robin X", symbol: "X", decimals: 18,
       supply: 10n ** 24n, curveSupply: 7n * 10n ** 23n, reserveSupply: 3n * 10n ** 23n,
-      tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000,
+      tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays: 0,
     };
     // [brand] valid mined salt — see the sibling test: the M-2 guard must be the ONLY reason this reverts.
     const tokenSalt = await brandedTokenSalt(
@@ -115,13 +115,14 @@ describe("[M-2 / I-1(19)] CurvePadFactoryV4 wiring guards — failing branches",
     const lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await B.posm.getAddress(), await B.reg.getAddress());
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await B.pm.getAddress(), await B.posm.getAddress(), await B.permit2.getAddress(), await B.stateView.getAddress(),
-      await B.dep.getAddress(), await B.curveDep.getAddress(), await feeCfgProd.getAddress(), await B.reg.getAddress(), await lockVault.getAddress()
+      await B.dep.getAddress(), await B.curveDep.getAddress(), await feeCfgProd.getAddress(), await B.reg.getAddress(), await lockVault.getAddress(),
+      ethers.ZeroAddress
     );
     await lockVault.setFactory(await factory.getAddress());
     const tiny = {
       name: "Robin Dust", symbol: "DUST", decimals: 18,
       supply: 200n * 10n ** 18n, curveSupply: 100n * 10n ** 18n, reserveSupply: 100n * 10n ** 18n,
-      tickSpacing: 100, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000,
+      tickSpacing: 100, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000, auctionDays: 0,
     };
     // [brand] valid mined salt so the revert can only be the L-1 raise floor, never BadTokenSuffix.
     const tokenSalt = await brandedTokenSalt(
