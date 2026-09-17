@@ -119,15 +119,37 @@ against the deployed contracts — **`MilestoneVault` / `AthVault` are NOT deplo
   in one tx: 0.5 ETH off top → platform, buy out the whole curve, graduate (LP locked), airdrop the bought
   supply to holders via a no-withdraw merkle distributor. **Dev ends holding zero tokens.** See `pad-v4/ARROW.md`.
 
-**Built this session (branch `claude/robinhood-chain-website-8loxcm`, 220 tests passing / 0 failing):**
+**Built earlier this session (branch `claude/robinhood-chain-website-8loxcm`, 220 tests passing / 0 failing at
+that point):**
 1. Closed the platform-token leak in `RobinFloorVault` (platform is now ETH-only, invariant-tested).
 2. Fee-model round 2: ETH LP → 100% platform (`buyLpFloorShareBps=0`); token LP → 70/30 via new
    `RobinTokenTreasury`; creator-triggered burn.
 3. **Arrow** launcher + distributor + adversarial hardening tests.
 
-**pad-v4 doc index:** `AUDITOR-HANDOFF.md` (remediation ledger — start §0), `AUDIT-SCOPE.md`, `DEPLOY.md`,
-`ROBIN-V4-CURVE-ECON.md` (economics), `ROBIN-V4-ARCHITECTURE.md`, `ARROW.md`, `FLOOR-REDESIGN.md` (H-5 floor,
-TWAP direction — deferred to external auditor).
+**Built later this session (audit ROUND 4 surface — see `pad-v4/AUDIT-ROUND-4-BRIEF.md` for the full scope
+brief, and `../launchpad/AUDIT-V3.md` for the v3 sibling's matching self-review):**
+1. **Daily auction** (`DailyAuctionVaultV4.sol` — optional 0-4 day pre-launch batch auction with unsold-day-to-
+   staking fallback, ported from v3's already-live `DailyAuctionVault.sol`). Built to v3 feature parity on
+   purpose — the user's explicit ask was "both are identical just one v3 one v4."
+2. **Creator-chosen LP fee**, `[0, feeConfig.MAX_LP_FEE()]` (v4 has no tier-registration constraint, unlike
+   v3's real Uniswap v3 factory, so it gets the full range instead of v3's discrete {500, 10000}).
+3. **Arc + Robinhood dual-chain matching-address launch**, proven locally against two independent devnets (no
+   new Solidity needed — every infra contract already deploys via plain CREATE). Same proof built for v3 too.
+4. A real, self-found HIGH bug in v3's `DailyAuctionVault` (missing `receive()`, permanently stranded a bid
+   day's funds under ordinary conditions) — found via a genuine local-devnet E2E proof, fixed, regression-
+   tested. v4's structurally different design for the same code path was checked and confirmed NOT to share
+   the bug, also via a live proof (not just by reading the source).
+5. v3's `deploy-v2.js` fixed — it never wired the auction feature onto a real deployment at all.
+
+Both pads are now at matching feature parity for this surface. **pad-v4 is audit-pending for this round** (see
+`pad-v4/AUDIT-ROUND-4-BRIEF.md`); **v3 is self-reviewed and ready for external audit too** (see
+`../launchpad/AUDIT-V3.md`) — v3 is already LIVE on mainnet, so this surface ships to production the moment the
+owner runs the now-fixed `deploy-v2.js` and wires `setAuctionVaultDeployer`.
+
+**pad-v4 doc index:** `AUDITOR-HANDOFF.md` (remediation ledger — start §0), `AUDIT-SCOPE.md`,
+`AUDIT-ROUND-4-BRIEF.md` (**start here for this round**), `DEPLOY.md`, `ROBIN-V4-CURVE-ECON.md` (economics),
+`ROBIN-V4-ARCHITECTURE.md`, `ARROW.md`, `FLOOR-REDESIGN.md` (H-5 floor, TWAP direction — deferred to external
+auditor).
 
 ## 7. Executable handoff — every open item, with exact steps (nothing lives only in chat)
 
@@ -252,6 +274,15 @@ Arrow launcher (`pad-v4/contracts/arrow/`) is new audit surface — 3-leg atomic
 Floor **H-5 TWAP** redesign is deferred (`pad-v4/FLOOR-REDESIGN.md`). Route through the external auditor; the full
 ledger is `pad-v4/AUDITOR-HANDOFF.md` (start at §0).
 
+### G. Send the Round 4 surface (auction + LP-fee-choice + dual-chain) to audit
+
+Not yet sent externally — self-reviewed only. **pad-v4**: hand the auditor `pad-v4/AUDIT-ROUND-4-BRIEF.md` (the
+kickoff doc, points to everything else needed). **v3**: hand `launchpad/AUDIT-V3.md` — smaller scope, no prior
+external-audit-round convention on this pad, self-review format matches the existing `AUDIT-V2.md`. Both are
+self-contained; an auditor can start from either without needing this file. v3's surface is already LIVE-ready
+(mainnet deploy just needs the owner to run the fixed `deploy-v2.js`) — consider whether that should happen
+before or after the external pass, given it's a self-found-and-fixed HIGH bug on already-shipped infrastructure.
+
 ## 8. Hard rules (from `CLAUDE.md` + operating constraints)
 
 - **Canonical repo = `https://github.com/Robinlabz/Labs`.** Never hand anyone `PettyMiggzy/sherif`.
@@ -273,3 +304,12 @@ Remaining (each has exact steps above — nothing is undocumented):
 - [ ] **D** — confirm in Vercel which repo serves the site (Labs was deleted+re-imported; reconnect if needed), then verify/add the `*.robinlabs.fun` wildcard.
 - [ ] **E** — confirm the v4-promotion + fee-sheet-version defaults (or override).
 - [ ] **F** — send pad-v4 to external audit before any v4 mainnet.
+- [ ] **G** — send the Round 4 surface (auction + LP-fee-choice + dual-chain, both pads) to external audit;
+      decide whether v3's self-found-and-fixed bug ships to mainnet before or after that pass.
+
+Already done since the above was last true (this session, later round):
+- ✅ v4 daily auction + LP-fee-choice + Arc/Robinhood dual-chain proof, matching v3 feature-for-feature.
+- ✅ v3 given the same three features, plus a self-found HIGH bug (stranded auction funds) found + fixed +
+  regression-tested, plus `deploy-v2.js` fixed to actually wire the feature on a real deployment.
+- ✅ `pad-v4/AUDIT-ROUND-4-BRIEF.md` and `launchpad/AUDIT-V3.md` written — both pads have a ready-to-send
+  audit entry point for this surface (see **G** above for what's still open: actually sending them).
