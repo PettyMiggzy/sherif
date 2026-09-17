@@ -106,8 +106,13 @@ describe("[F-1] an out-of-range WETH-only squat is repaired, not fatal", functio
 
     const curve = await ethers.getContractAt("CurvePool", ev.args.curve);
     expect(await curve.seeded()).to.equal(true);
-    expect((await pool.slot0())[1]).to.equal(await curve.startTick()); // landed on OUR tick, not theirs
-    const repaired = rc.logs.some((l) => { try { return curve.interface.parseLog(l).name === "PoolPriceRepaired"; } catch { return false; } });
-    expect(repaired).to.equal(true);             // and it went through the repair path to get there
+    // The repair itself (inside seed(), before the mandatory creation-fee buy that follows later in the same
+    // launch tx) landed EXACTLY on OUR tick, not theirs — checked via the event's own price argument rather
+    // than post-tx slot0, because slot0 now also reflects the creation-fee buy's small, separate, intentional
+    // forward nudge off that tick.
+    const repairedEv = rc.logs.map((l) => { try { return curve.interface.parseLog(l); } catch { return null; } })
+      .find((e) => e && e.name === "PoolPriceRepaired");
+    expect(repairedEv, "the launch did not go through the repair path").to.not.equal(undefined);
+    expect(repairedEv.args.startSqrtPriceX96).to.equal(getSqrtRatioAtTick(await curve.startTick()));
   });
 });

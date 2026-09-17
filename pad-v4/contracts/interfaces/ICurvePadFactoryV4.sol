@@ -19,9 +19,18 @@ struct LaunchConfig {
     address creator;
     // [NO-POOL] Creator's structural pad-type choice: true asks the factory to checkpoint at graduation instead
     // of fully exiting (see RobinCurveV4's noPoolForever). Reverts NoPoolForeverDisabled if the factory's
-    // governed RobinV4FeeConfig hasn't opted the pad type in yet. Appended last so this stays ABI-compatible
-    // with every existing encoder of this struct.
+    // governed RobinV4FeeConfig hasn't opted the pad type in yet.
     bool noPoolForever;
+    // [LP-FEE] The creator's OWN choice of the pool's static Uniswap v4 LP fee (pips; 0 = free, no implicit
+    // "0 means use the default" sentinel — this field is always read literally). Bounded to
+    // [0, RobinV4FeeConfig.MAX_LP_FEE()] and rejected if it carries the dynamic-fee flag, same as every other
+    // lpFee check in this codebase. This is the ONE economic knob this struct hands to the caller — every other
+    // field stays governed-only (see CurvePadFactoryV4's GOVERNANCE doc comment) because this is a second,
+    // genuinely separate take on top of the buy/sell tax (per RobinV4FeeConfig's own M-10 note), not the tax
+    // itself, and letting the creator pick it (down to 0%, if they want a coin with no LP take at all) doesn't
+    // weaken "a launcher can never set their own tax." Appended last so this stays ABI-compatible with every
+    // existing encoder of this struct.
+    uint24 lpFee;
 }
 
 /// @notice The thin slice of CurvePadFactoryV4 the presale add-on consumes. `launch` is externally callable by any

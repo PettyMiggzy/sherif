@@ -66,7 +66,7 @@ describe("Mainnet-fork E2E swarm — new ETH-fee suite vs live v4", function () 
     const cfg = {
       name: "Robin " + tag, symbol: tag, decimals: 18,
       supply: E(curveTok + reserveTok), curveSupply: E(curveTok), reserveSupply: E(reserveTok),
-      tickSpacing: SPACING, startTickMag: 0, creator: creator.address, noPoolForever: false,
+      tickSpacing: SPACING, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000,
     };
     const TokenF = await ethers.getContractFactory("PadToken");
     // [brand] the factory rejects any token address not ending in `1ab5` — mine the salt (seeded per-tag so two

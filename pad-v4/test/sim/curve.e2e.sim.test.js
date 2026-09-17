@@ -50,7 +50,7 @@ async function deployStack(deployer, platform) {
 async function launchPad(S, deployer, creator, tag, { supply, curveSupply, reserveSupply }) {
   const cfg = {
     name: "Robin " + tag, symbol: tag, decimals: 18,
-    supply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false,
+    supply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever: false, lpFee: 10000,
   };
   const TokenF = await ethers.getContractFactory("PadToken");
   // [brand] the token address must end in `1ab5` or the factory reverts BadTokenSuffix — mine the salt from

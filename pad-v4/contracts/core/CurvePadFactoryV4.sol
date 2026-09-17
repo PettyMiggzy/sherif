@@ -54,6 +54,10 @@ contract CurvePadFactoryV4 {
     // — the testnet-e2e geometry (curveSupply 100k → ~5.5e14 wei raise) and all production geometries pass with wide
     // margin. If the operator wants a higher PRODUCT minimum raise, that is a policy knob to raise deliberately.
     uint256 internal constant MIN_RAISE_WEI = 1e12;
+    // [LP-FEE] Uniswap's own protocol-level flag (LPFeeLibrary.DYNAMIC_FEE_FLAG) marking a pool as dynamic-fee
+    // rather than static. Duplicated from RobinV4FeeConfig (internal there) rather than imported — it's a fixed
+    // constant, not a policy value, so there's nothing to drift.
+    uint24 internal constant DYNAMIC_FEE_FLAG = 0x800000;
 
     struct LaunchConfig {
         string name;
@@ -72,8 +76,13 @@ contract CurvePadFactoryV4 {
         // (RobinCurveV4.noPoolForever). Gated on RobinV4FeeConfig.noPoolForeverEnabled(); the bps of curve
         // liquidity withdrawn at that checkpoint is GOVERNED (feeConfig.visibilityWithdrawBpsDefault()), never
         // creator-chosen — same "economics come from feeConfig, never the caller" rule every other bps here
-        // follows. Appended last so this mirrors ICurvePadFactoryV4.LaunchConfig field-for-field.
+        // follows.
         bool noPoolForever;
+        // [LP-FEE] The ONE deliberate exception to "economics come from feeConfig, never the caller" — see
+        // ICurvePadFactoryV4.LaunchConfig's doc comment for why letting a creator pick their own static pool
+        // fee (0 up to the governed MAX_LP_FEE ceiling) doesn't weaken that rule. Appended last so this mirrors
+        // ICurvePadFactoryV4.LaunchConfig field-for-field.
+        uint24 lpFee;
     }
 
     struct Launch {
@@ -169,6 +178,10 @@ contract CurvePadFactoryV4 {
             cfg.creator == address(0) || cfg.supply == 0 || cfg.curveSupply == 0 || cfg.reserveSupply == 0
                 || cfg.curveSupply + cfg.reserveSupply != cfg.supply
         ) revert BadConfig();
+        // [LP-FEE] The creator's own choice, always read literally (no "0 = use governed default" sentinel —
+        // 0 is a real, legitimate choice: a coin with no LP fee at all). Same static-only + ceiling checks
+        // RobinV4FeeConfig._validate applies to the governed default, applied here to the caller's choice.
+        if (cfg.lpFee & DYNAMIC_FEE_FLAG != 0 || cfg.lpFee > feeConfig.MAX_LP_FEE()) revert BadConfig();
 
         // 1) governed defaults, snapshotted + stamped immutably
         RobinV4FeeConfig.Defaults memory d = feeConfig.defaults(); // all shares/geometry validated in the FeeConfig
@@ -284,7 +297,7 @@ contract CurvePadFactoryV4 {
         PoolKey memory key = PoolKey({
             currency0: currency0,
             currency1: currency1,
-            fee: uint24(d.lpFee),
+            fee: cfg.lpFee,
             tickSpacing: ts,
             hooks: IHooks(hook)
         });
@@ -335,7 +348,7 @@ contract CurvePadFactoryV4 {
                 feeRegistry,
                 currency0,
                 currency1,
-                uint24(d.lpFee),
+                cfg.lpFee,
                 ts,
                 hook,
                 startTick,

@@ -84,7 +84,7 @@ describe("SIM — Arrow migration launcher (buy out curve, graduate, airdrop to 
   });
 
   function makeCfg(tag, curveSupply, reserveSupply) {
-    return { name: "Arrow " + tag, symbol: tag, decimals: 18, supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: dev.address, noPoolForever: false };
+    return { name: "Arrow " + tag, symbol: tag, decimals: 18, supply: curveSupply + reserveSupply, curveSupply, reserveSupply, tickSpacing: TS, startTickMag: 0, creator: dev.address, noPoolForever: false, lpFee: 10000 };
   }
   async function prepareSalts(tag, cfg) {
     // [brand] the pad token address must end in `1ab5` or CurvePadFactoryV4 (which ArrowLauncher launches
