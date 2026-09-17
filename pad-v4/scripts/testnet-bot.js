@@ -41,7 +41,7 @@ async function main() {
   const cfg = {
     name: "Robin Testnet", symbol: "rTEST", decimals: 18,
     supply: 1_000_000_000n * ONE, curveSupply: 730_000_000n * ONE, reserveSupply: 270_000_000n * ONE,
-    tickSpacing: TS, startTickMag: 0, creator: dev.address, noPoolForever: false,
+    tickSpacing: TS, startTickMag: 0, creator: dev.address, noPoolForever: false, lpFee: 10000,
   };
   const TokenF = await ethers.getContractFactory("PadToken");
   const tokenSalt = ethers.id("rtest-" + Date.now());

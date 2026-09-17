@@ -41,7 +41,7 @@ async function main() {
   const arrowCfg = {
     name: "Robin Migrated", symbol: "RMIGR", decimals: 18,
     supply: arrowCurveSupply + arrowReserveSupply, curveSupply: arrowCurveSupply, reserveSupply: arrowReserveSupply,
-    tickSpacing: TS, startTickMag: 0, creator: creatorA.address, noPoolForever: false,
+    tickSpacing: TS, startTickMag: 0, creator: creatorA.address, noPoolForever: false, lpFee: 10000,
   };
   const arrowTokenSalt = await brandedTokenSalt(d.contracts.deterministicDeployer, d.contracts.curveFactory, arrowCfg, ethers.id("arrow-demo"));
   const arrowPredictedToken = predictPadToken(d.contracts.deterministicDeployer, d.contracts.curveFactory, arrowCfg, arrowTokenSalt, TokenF.bytecode);

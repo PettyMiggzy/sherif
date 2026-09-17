@@ -74,7 +74,7 @@ async function main() {
   const cfg = {
     name: "Robin Demo Delta", symbol: "RDELTA", decimals: 18,
     supply: 1_000_000_000n * 10n ** 18n, curveSupply: 730_000_000n * 10n ** 18n, reserveSupply: 270_000_000n * 10n ** 18n,
-    tickSpacing: TS, startTickMag: 0, creator: creatorA.address, noPoolForever: true,
+    tickSpacing: TS, startTickMag: 0, creator: creatorA.address, noPoolForever: true, lpFee: 10000,
   };
   const tokenSalt = await brandedTokenSalt(d.contracts.deterministicDeployer, d.contracts.curveFactory, cfg, ethers.id("demo-delta"));
   const TokenF = await ethers.getContractFactory("PadToken");
@@ -174,7 +174,7 @@ async function main() {
   const arrowCfg = {
     name: "Robin Migrated", symbol: "RMIGR", decimals: 18,
     supply: arrowCurveSupply + arrowReserveSupply, curveSupply: arrowCurveSupply, reserveSupply: arrowReserveSupply,
-    tickSpacing: TS, startTickMag: 0, creator: creatorA.address, noPoolForever: false,
+    tickSpacing: TS, startTickMag: 0, creator: creatorA.address, noPoolForever: false, lpFee: 10000,
   };
   const arrowTokenSalt = await brandedTokenSalt(d.contracts.deterministicDeployer, d.contracts.curveFactory, arrowCfg, ethers.id("arrow-demo"));
   const arrowPredictedToken = predictPadToken(d.contracts.deterministicDeployer, d.contracts.curveFactory, arrowCfg, arrowTokenSalt, TokenF.bytecode);

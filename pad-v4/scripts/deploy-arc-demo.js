@@ -66,7 +66,7 @@ async function launchDemoPad(S, { name, symbol, supplyM, curveShareBps, tag, cre
   const reserveSupply = supply - curveSupply;
   const cfg = {
     name, symbol, decimals: 18, supply, curveSupply, reserveSupply,
-    tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever,
+    tickSpacing: TS, startTickMag: 0, creator: creator.address, noPoolForever, lpFee: 10000,
   };
   const tokenSalt = await brandedTokenSalt(await S.dep.getAddress(), await S.factory.getAddress(), cfg, ethers.id(tag));
   const TokenF = await ethers.getContractFactory("PadToken");

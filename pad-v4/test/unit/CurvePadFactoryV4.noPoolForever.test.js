@@ -52,7 +52,7 @@ function baseCfg(creator, noPoolForever) {
     name: "Robin NP", symbol: "NP", decimals: 18,
     supply: 2000n * 10n ** 18n, curveSupply: 1000n * 10n ** 18n, reserveSupply: 1000n * 10n ** 18n,
     tickSpacing: SPACING, startTickMag: 0, creator: creator.address,
-    noPoolForever,
+    noPoolForever, lpFee: 10000,
   };
 }
 
