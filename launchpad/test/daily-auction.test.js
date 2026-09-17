@@ -174,6 +174,52 @@ describe("DailyAuctionVault — optional daily-tranche pre-launch auction", func
     await expect(vault.closeDay(1)).to.be.revertedWithCustomError(vault, "AlreadyClosed");
   });
 
+  it("a bid day whose burn-buy overshoots the graduation ceiling refunds the leftover WETH to the platform, not reverts", async () => {
+    // Regression for a real bug: _burnBuy's leftover-WETH refund does `WETH.withdraw()` then sends the vault
+    // its own native ETH back before forwarding it to the platform — which reverted every time, forever,
+    // because DailyAuctionVault had no receive(). A 2-day auction carves 20% of the curve's share out before
+    // seeding (vs. 10% for a 1-day auction), so the curve left behind is thin enough that one ordinary bid
+    // day's ETH alone can push spot past gradTick before the swap consumes it all, forcing this exact path.
+    const { curve, pool: poolAddr, vault, token } = await launchWithAuction("Overshoot", 2);
+    const TOK = await ethers.getContractAt("LaunchToken", token);
+    const deadAtLaunch = await TOK.balanceOf(DEAD);
+    await vault.connect(alice).bid(1, { value: ethers.parseEther("1") });
+    await vault.connect(bob).bid(1, { value: ethers.parseEther("3") });
+    const total = ethers.parseEther("4");
+    const expectedPlatformCut = (total * 1000n) / 10000n; // PLATFORM_BPS = 10%
+    const toCurve = total - expectedPlatformCut;
+
+    const pool = await ethers.getContractAt("IUniswapV3Pool", poolAddr);
+    const curveC = await ethers.getContractAt("CurvePool", curve);
+    const gradTick = await curveC.gradTick();
+    const platformBefore = await ethers.provider.getBalance(platform.address);
+
+    await ethers.provider.send("evm_increaseTime", [DAY + 1]);
+    await ethers.provider.send("evm_mine", []);
+    const rc = await (await vault.closeDay(1)).wait(); // must NOT revert
+    expect(await vault.closed(1)).to.equal(true);
+
+    // confirm this test actually exercised the overshoot path — the swap stopped at (or a rounding hair past)
+    // the price-limit tick, not spent the whole toCurve amount, else the refund branch (and the bug) is never
+    // reached. slot0's tick is derived from sqrtPriceX96 by flooring, so it can land 1 tick off the exact
+    // limit; a tolerance of a few ticks still clearly distinguishes "hit the ceiling" from "consumed it all".
+    const tickAfter = (await pool.slot0())[1];
+    const tickDiff = tickAfter > gradTick ? tickAfter - gradTick : gradTick - tickAfter;
+    expect(tickDiff).to.be.lte(2n);
+
+    const ev = rc.logs.map((l) => { try { return vault.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "DayClosed");
+    expect(ev.args.toCurve).to.equal(toCurve);
+
+    // platform received its flat 10% cut PLUS whatever the swap didn't spend of toCurve
+    const platformDelta = (await ethers.provider.getBalance(platform.address)) - platformBefore;
+    expect(platformDelta).to.be.gt(expectedPlatformCut); // strictly more than the bare cut ⇒ a refund landed
+    expect(platformDelta).to.be.lte(total); // never more than the whole day's bids
+
+    const deadAfter = await TOK.balanceOf(DEAD);
+    expect(deadAfter - deadAtLaunch).to.equal(ev.args.tokensBurned);
+    expect(ev.args.tokensBurned).to.be.gt(0n);
+  });
+
   it("a ZERO-bid day funds the vault's own dedicated RobinStaking pool instead of burning nothing", async () => {
     const { vault, token } = await launchWithAuction("ZeroBid", 1);
     const tranche = await vault.dayTranche();

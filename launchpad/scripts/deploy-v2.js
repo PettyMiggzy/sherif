@@ -136,6 +136,23 @@ async function main() {
   );
   const factoryAddr = await factory.getAddress();
 
+  // 4b) RobinStakingDeployer + DailyAuctionVaultDeployer — the two thin deployers behind the optional 0-4 day
+  //     daily-tranche pre-launch auction (DailyAuctionVault.sol / RobinStaking.sol). `auctionVaultDeployer` on
+  //     CurvePadFactory is owner-settable rather than a constructor arg (see its doc comment in
+  //     CurvePadFactory.sol) specifically so every OTHER existing call site keeps working unchanged — but that
+  //     also means nothing wires it on by default. Deploy both here and wire it in step 7 below, or every v2
+  //     launch with auctionDays > 0 reverts BadValue forever, exactly like the live v1 factory today (nothing
+  //     in this repo ever called the setter for it).
+  const robinStakingDeployer = await track(
+    "RobinStakingDeployer",
+    await (await ethers.getContractFactory("RobinStakingDeployer")).deploy()
+  );
+  const dailyAuctionVaultDeployer = await track(
+    "DailyAuctionVaultDeployer",
+    await (await ethers.getContractFactory("DailyAuctionVaultDeployer")).deploy(await robinStakingDeployer.getAddress())
+  );
+  const dailyAuctionVaultDeployerAddr = await dailyAuctionVaultDeployer.getAddress();
+
   // 5) authorize it on the LIVE router (allowlist — v1 stays authorized unless you revoke it below)
   await (await router.setFactory(factoryAddr)).wait();
   console.log(`\n  router.setFactory(${factoryAddr}) — authorized`);
@@ -149,7 +166,25 @@ async function main() {
     console.log(`  router.transferOwnership(${owner}) — PENDING, call acceptOwnership() from that key`);
   }
 
-  // 7) optional valuation-band retune
+  // 7) wire the auction feature onto the factory. `setAuctionVaultDeployer` is onlyOwner — and UNLIKE the
+  //    router above, the factory is constructed ALREADY owned by `owner` (`Ownable(owner_)` in its
+  //    constructor, no pending/accept step), so `deployer` can only make this call when it genuinely IS the
+  //    owner. When the real owner is a separate treasury key this script holds no key for, it cannot sign for
+  //    it — surface that loudly instead of silently leaving the feature off, which is exactly the trap the
+  //    live v1 deploy fell into (nothing in this repo ever called this setter, so every `auctionDays > 0`
+  //    launch on the live factory reverts BadValue to this day).
+  let auctionWired = false;
+  if (owner.toLowerCase() === deployer.address.toLowerCase()) {
+    await (await factory.setAuctionVaultDeployer(dailyAuctionVaultDeployerAddr)).wait();
+    auctionWired = (await factory.auctionVaultDeployer()).toLowerCase() === dailyAuctionVaultDeployerAddr.toLowerCase();
+    console.log(`  factory.setAuctionVaultDeployer(${dailyAuctionVaultDeployerAddr}) — auction feature ON`);
+  } else {
+    console.log(`  factory.setAuctionVaultDeployer(${dailyAuctionVaultDeployerAddr}) — NOT CALLED: the factory's`);
+    console.log(`    owner is ${owner}, not the deploying key (${deployer.address}). Call this from that key —`);
+    console.log(`    until then auctionDays > 0 reverts BadValue on every v2 launch (feature off).`);
+  }
+
+  // 8) optional valuation-band retune
   if (MIN_FDV_ETH && MAX_FDV_ETH) {
     await (await factory.setFdvBand(ethers.parseEther(MIN_FDV_ETH), ethers.parseEther(MAX_FDV_ETH))).wait();
     console.log(`  setFdvBand(${MIN_FDV_ETH} .. ${MAX_FDV_ETH} ETH)`);
@@ -174,6 +209,17 @@ async function main() {
       // reverting BadTokenSuffix.
       launchTokenDeployer: await launchTokenDeployer.getAddress(),
       padRouter: routerAddr, // the v2 router — put this in pad/assets/config.js as `padRouterV2`
+      // The optional 0-4 day daily-tranche auction. robinStakingDeployer backs DailyAuctionVaultDeployer (its
+      // one constructor arg) and is never referenced directly anywhere else — recorded here purely so it's
+      // easy to find if a zero-bid auction day's lazily-deployed RobinStaking pool ever needs auditing.
+      robinStakingDeployer: await robinStakingDeployer.getAddress(),
+      dailyAuctionVaultDeployer: dailyAuctionVaultDeployerAddr,
+    },
+    auctionFeature: {
+      wired: auctionWired,
+      note: auctionWired
+        ? "factory.auctionVaultDeployer() is set — auctionDays > 0 works on this factory."
+        : `NOT wired — factory owner (${owner}) must call setAuctionVaultDeployer(${dailyAuctionVaultDeployerAddr}) before any auctionDays > 0 launch will work.`,
     },
     legacy: { padRouter: C.padRouter, note: "still live, still owns every coin launched before this deploy" },
     reused: { feeConfig: C.feeConfig },
@@ -194,6 +240,11 @@ async function main() {
   console.log(`  3. acceptOwnership() on the new router, from ${owner}. Until that happens the router is`);
   console.log(`     still owned by the deploying key — launches work either way, but governance does not.`);
   console.log(`  4. Verify on Blockscout:  node scripts/verify-sourcify.cjs`);
+  if (!auctionWired) {
+    console.log(`  5. REQUIRED for the auction feature: from ${owner}, call`);
+    console.log(`       factory.setAuctionVaultDeployer(${dailyAuctionVaultDeployerAddr})`);
+    console.log(`     on ${factoryAddr} — until this runs, every auctionDays > 0 launch reverts BadValue.`);
+  }
   console.log(`\nWhat you do NOT need to do:`);
   console.log(`  • Nothing on the legacy router (${C.padRouter}). It is untouched and keeps every coin`);
   console.log(`    launched before now — a coin's fee config is register-once, so those can never move.`);

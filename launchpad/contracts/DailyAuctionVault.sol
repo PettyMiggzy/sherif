@@ -229,6 +229,8 @@ contract DailyAuctionVault is IUniswapV3SwapCallback, ReentrancyGuard {
         }
     }
 
+    receive() external payable {} // WETH.withdraw refunds during _burnBuy's leftover-WETH refund (see above)
+
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata) external override {
         if (msg.sender != pool) revert NotPool();
         if (!_swapping) revert NoSwap();
