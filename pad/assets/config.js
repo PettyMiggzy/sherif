@@ -182,13 +182,16 @@ export const ABIS = {
     // reach one, so the site launches through `launchWithSalt`. It is kept in the ABI so an old cached bundle
     // gets a named error instead of a missing function. `tokenDeployer`/`TOTAL_SUPPLY` are the two reads the
     // miner needs.
-    "function launch((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax) p) payable returns (address token, address curve, address pool)",
-    "function launchWithSalt((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax) p, bytes32 tokenSalt) payable returns (address token, address curve, address pool)",
+    // [poolFee/auctionDays] Appended to the LaunchParams tuple this round — see CurvePadFactory.sol's own
+    // struct. poolFee: 0 = DEFAULT_POOL_FEE (10000, unchanged behavior), else must be 500 or 10000.
+    // auctionDays: 0 (default) = no auction, unchanged behavior; 1-4 = that many days.
+    "function launch((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax, uint24 poolFee, uint8 auctionDays) p) payable returns (address token, address curve, address pool)",
+    "function launchWithSalt((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax, uint24 poolFee, uint8 auctionDays) p, bytes32 tokenSalt) payable returns (address token, address curve, address pool)",
     // [FDV] Creator-chosen supply AND starting valuation. `supply` is in wei units (18 decimals) and
     // `startTickMag` is a positive tick magnitude that must be a multiple of 200 — a HIGHER magnitude is a
     // CHEAPER token, so raising it while holding supply lowers the valuation. Pass 0 for either to take the
     // factory's own default.
-    "function launchWithSupplyAndSalt((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax) p, uint256 supply, int24 startTickMag, bytes32 tokenSalt) payable returns (address token, address curve, address pool)",
+    "function launchWithSupplyAndSalt((string name, string symbol, address dev, (uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, address projectWallet) tax, uint24 poolFee, uint8 auctionDays) p, uint256 supply, int24 startTickMag, bytes32 tokenSalt) payable returns (address token, address curve, address pool)",
     // What the factory bounds is supply x launch price — the implied fully-diluted value — not supply itself.
     // The create page quotes the creator's choice through quoteFdvWei and checks it against the live band
     // BEFORE spending gas, because the contract's own check reverts MarketCapOutOfRange.
@@ -202,7 +205,34 @@ export const ABIS = {
     "function tokenCount() view returns (uint256)",
     "function allTokens(uint256) view returns (address)",
     "function recordOf(address) view returns (address token, address curve, address dev, uint256 at)",
-    "event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought)",
+    // [CREATION_FEE] Mandatory ETH sent with every launch — burned into the curve as a real seed buy, so a
+    // coin is never immediately underwater the instant it goes live. Every launch tx's value must be at
+    // least this, on top of any dev buy the creator also wants.
+    "function CREATION_FEE() view returns (uint256)",
+    // [AUCTION] address(0) = the feature is off on this deployment; auctionDays > 0 then reverts BadValue.
+    "function auctionVaultDeployer() view returns (address)",
+    "function auctionVaultOf(address token) view returns (address)",
+    "event Launched(address indexed token, address indexed curve, address indexed pool, address dev, uint256 devBought, address auctionVault)",
+  ],
+  // [AUCTION] The optional 0-4 day daily batch auction vault a launch deploys when auctionDays > 0
+  // (CurvePadFactory.auctionVaultOf(token)). Same public surface on both pads — this ABI is shared verbatim
+  // with pad-v4's DailyAuctionVaultV4.
+  dailyAuctionVault: [
+    "function auctionDays() view returns (uint8)",
+    "function startTime() view returns (uint64)",
+    "function dayTranche() view returns (uint256)",
+    "function dayWindow(uint8 day) view returns (uint64 opens, uint64 closes)",
+    "function dayTotal(uint8) view returns (uint256)",
+    "function bidOf(uint8, address) view returns (uint256)",
+    "function closed(uint8) view returns (bool)",
+    "function claimed(uint8, address) view returns (bool)",
+    "function stakingPool() view returns (address)",
+    "function bid(uint8 day) payable",
+    "function closeDay(uint8 day)",
+    "function claim(uint8 day) returns (uint256)",
+    "event Bid(uint8 indexed day, address indexed bidder, uint256 amount)",
+    "event DayClosed(uint8 indexed day, uint256 totalBid, uint256 toPlatform, uint256 toCurve, uint256 tokensBurned, uint256 tokensToStaking)",
+    "event Claimed(uint8 indexed day, address indexed bidder, uint256 tokens)",
   ],
   // The LaunchTokenDeployer the factory points at. It is the contract that embeds the coin's creation code,
   // so the init-code hash it serves is by construction the code it will deploy — the site never carries a copy

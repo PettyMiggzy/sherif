@@ -390,6 +390,16 @@ h1,h2,h3{font-family:var(--disp);font-weight:400;letter-spacing:.5px;text-transf
         </div>
       </div>
 
+      <!-- [AUCTION] optional 0-4 day daily batch auction — shown only when this coin opted in at launch -->
+      <div class="panel sec" id="auctionPanel" style="margin-top:16px;display:none"><h3>Daily auction <span class="meta" id="auctionMeta"></span></h3>
+        <p class="sub" id="auctionBlurb">Each day is a sealed batch: bid ETH during its 24h window, the day
+          closes (anyone can trigger it once the window passes), the platform takes a flat 10% and the rest
+          buys-and-burns against this curve, then bidders claim their pro-rata share. A day nobody bids on
+          funds a staking pool instead.</p>
+        <div id="auctionDayRows"></div>
+        <div class="tiny" id="auctionStakingNote" style="margin-top:10px;display:none"></div>
+      </div>
+
       <!-- dev-bag vesting lock (gold) - shown only when this coin's creator has an on-chain lock -->
       <div class="panel sec devlock" id="devLockPanel" style="margin-top:16px;display:none"><h3>Dev lock <span class="meta">irrevocable</span></h3>
         <p class="dl-blurb">The creator locked <b id="dlPct">-</b> in an <b>irrevocable</b> cliff+linear vesting lock, no cancel, no owner. It releases over time; anyone can verify it on-chain.</p>
@@ -954,6 +964,7 @@ async function loadCoin(){
   if (Number.isFinite(preBuy) && preBuy > 0 && !window.__preBuyDone) { window.__preBuyDone = true; if (SIDE !== 'buy') side('buy'); $('amtInput').value = String(preBuy); }
   loadTrades(); loadHolders(); renderFees(apiCoin); renderFloor();
   loadDevLock(); loadLocks(); loadRewards(); checkPendingLock(); // no-ops until the vesting lock / reward vault are deployed
+  loadAuction(); // no-op unless this specific coin opted into an auction at launch
   mountSafety(document.getElementById('safetyBody'), TOKEN); // GoPlus + template scan (read-only)
 }
 
@@ -988,6 +999,99 @@ function renderDemoCoin(){
 // [removed] The user-funded locked-LP vault (FloorCoop) is gone from the pad — see docs. renderFloor()
 // stays as a no-op so the two call sites in the coin-load path keep working without a null guard each.
 function renderFloor(){}
+
+// ── [AUCTION] optional 0-4 day daily batch auction panel ─────────────────────
+// STRICT NO-OP unless this specific coin opted into an auction at launch: auctionVaultOf() reads the
+// factory's own per-coin mapping, so an unset/reverting/zero result just hides the panel.
+let __auctionVault = null;
+async function loadAuction(){
+  const panel = $('auctionPanel');
+  const hide = () => { if (panel) panel.style.display = 'none'; };
+  if (DEMO || !COIN) return hide();
+  let vault = null;
+  try { vault = await Pad.auctionVaultOf(COIN.token); } catch { vault = null; }
+  if (!vault) return hide();
+  __auctionVault = vault;
+  let st = null;
+  try { st = await Pad.auctionStatus(vault, Pad.account()); } catch { return hide(); }
+  panel.style.display = '';
+  $('auctionMeta').textContent = st.auctionDays + ' day' + (st.auctionDays === 1 ? '' : 's') + ' · '
+    + fmtTok(st.dayTranche) + ' ' + disp(COIN.symbol) + '/day';
+
+  const rows = st.days.map((d) => {
+    const open = st.now >= d.opens && st.now < d.closes;
+    const upcoming = st.now < d.opens;
+    const past = st.now >= d.closes;
+    const youBid = BigInt(d.myBid || 0n) > 0n;
+    let statusHtml, actionHtml;
+    if (upcoming) {
+      statusHtml = `<span class="k">Opens in</span><span class="v">${esc(fmtDur(d.opens - st.now))}</span>`;
+      actionHtml = `<span class="tiny" style="color:var(--ink-faint)">Not open yet</span>`;
+    } else if (open) {
+      statusHtml = `<span class="k">Closes in</span><span class="v">${esc(fmtDur(d.closes - st.now))}</span>`;
+      actionHtml = `
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input type="number" class="inp auc-bid-amt" data-day="${d.day}" min="0" step="0.01" placeholder="0.1 ETH" style="flex:1" />
+          <button class="btn btn-lime auc-bid-btn" data-day="${d.day}" type="button">Bid</button>
+        </div>`;
+    } else if (past && !d.closed) {
+      statusHtml = `<span class="k">Window closed</span><span class="v">Ready to close</span>`;
+      actionHtml = `<button class="btn btn-ghost auc-close-btn" data-day="${d.day}" type="button" style="width:100%;margin-top:8px">Close day ${d.day}</button>`;
+    } else { // closed
+      const zeroBid = BigInt(d.total || 0n) === 0n;
+      statusHtml = `<span class="k">Closed</span><span class="v">${zeroBid ? 'No bids — funded staking' : 'Settled'}</span>`;
+      actionHtml = youBid && !d.myClaimed
+        ? `<button class="btn btn-gold auc-claim-btn" data-day="${d.day}" type="button" style="width:100%;margin-top:8px">Claim your share</button>`
+        : youBid && d.myClaimed ? `<span class="tiny" style="color:var(--ink-faint)">Claimed ✓</span>` : '';
+    }
+    return `
+      <div class="auc-day" style="border-top:1px solid var(--line-2);padding:10px 0">
+        <div class="bar-lab"><span>Day ${d.day}</span><b>${fmtEth(d.total)} ETH bid${youBid ? ' · you: ' + fmtEth(d.myBid) + ' ETH' : ''}</b></div>
+        <div class="bar-lab" style="margin-top:2px">${statusHtml}</div>
+        ${actionHtml}
+      </div>`;
+  }).join('');
+  $('auctionDayRows').innerHTML = rows;
+
+  const stakeNote = $('auctionStakingNote');
+  if (st.stakingPool && !/^0x0{40}$/i.test(st.stakingPool)) {
+    stakeNote.style.display = '';
+    stakeNote.textContent = 'A zero-bid day funded this coin\'s own staking pool — stake ' + disp(COIN.symbol) + ' to earn more of it.';
+  } else if (stakeNote) stakeNote.style.display = 'none';
+}
+// Event delegation — the day rows are re-rendered on every refresh, so listeners live on the container.
+$('auctionDayRows')?.addEventListener('click', async (e) => {
+  const bidBtn = e.target.closest('.auc-bid-btn');
+  const closeBtn = e.target.closest('.auc-close-btn');
+  const claimBtn = e.target.closest('.auc-claim-btn');
+  if (!bidBtn && !closeBtn && !claimBtn) return;
+  const btn = bidBtn || closeBtn || claimBtn;
+  const day = Number(btn.dataset.day);
+  btn.disabled = true;
+  const orig = btn.textContent;
+  try {
+    if (bidBtn) {
+      const amtEl = document.querySelector(`.auc-bid-amt[data-day="${day}"]`);
+      const amt = (amtEl && amtEl.value || '').trim();
+      if (!amt || Number(amt) <= 0) { btn.disabled = false; return; }
+      btn.textContent = 'Bidding…';
+      const tx = await Pad.auctionBid(__auctionVault, day, amt);
+      await tx.wait();
+    } else if (closeBtn) {
+      btn.textContent = 'Closing…';
+      const tx = await Pad.auctionCloseDay(__auctionVault, day);
+      await tx.wait();
+    } else if (claimBtn) {
+      btn.textContent = 'Claiming…';
+      const tx = await Pad.auctionClaim(__auctionVault, day);
+      await tx.wait();
+    }
+    await loadAuction();
+  } catch (err) {
+    btn.disabled = false; btn.textContent = orig;
+    setNote(err.message || 'That auction action failed.', 'err');
+  }
+});
 
 // ── dev-bag vesting lock (gold panel + 🔒 badge) ──────────────────────────────
 // STRICT NO-OP until TokenVestingLock is deployed: devLockOf() returns null while the

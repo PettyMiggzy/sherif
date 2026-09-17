@@ -336,8 +336,33 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
         </div>
       </details>
 
+      <!-- [AUCTION] Optional 0-4 day pre-launch daily batch auction. Carves that many 10%-of-curve tranches
+           out BEFORE the curve is seeded, one sealed batch auction per day: bidders send ETH during a 24h
+           window, the day closes (anyone can trigger it once the window passes), the platform takes a flat
+           10% and the rest buys-and-burns against the SAME curve (a real buy — it counts toward your raise),
+           then bidders claim their pro-rata share. A day with zero bids instead funds a dedicated staking
+           pool so nothing is stranded. Collapsed by default — most coins skip this. -->
+      <details class="field" id="auctionPanel" style="border:1px solid var(--line-2,rgba(220,233,5,.14));border-radius:12px;padding:12px 14px;margin-bottom:14px;background:rgba(220,233,5,.03)">
+        <summary style="cursor:pointer;font-weight:800;list-style:none;display:flex;align-items:center;gap:8px">Daily auction <span class="hint" style="font-weight:500">optional — most coins skip this</span></summary>
+        <div style="margin-top:12px">
+          <p class="hint" style="margin:0 0 10px">Carve off up to 4 days of your curve's own supply into daily
+            sealed-bid auctions that run alongside normal trading. Each day: bidders send ETH, the day closes,
+            the platform takes 10% and the rest buys-and-burns against your curve (advancing your raise same
+            as any trade), and bidders claim their share. A day nobody bids on funds a staking pool instead of
+            going to waste.</p>
+          <div class="sc" id="auctionDaysPicker" style="gap:8px">
+            <button type="button" data-days="0" class="on" style="flex:1">None</button>
+            <button type="button" data-days="1" style="flex:1">1 day</button>
+            <button type="button" data-days="2" style="flex:1">2 days</button>
+            <button type="button" data-days="3" style="flex:1">3 days</button>
+            <button type="button" data-days="4" style="flex:1">4 days</button>
+          </div>
+          <p class="hint" id="auctionNote" style="margin:10px 0 0">Off — the whole curve share stays in your curve, exactly as a standard launch.</p>
+        </div>
+      </details>
+
       <button class="btn btn-lime" id="launchBtn" type="button">Launch coin</button>
-      <p class="note" id="launchNote">Free to launch, you only pay network gas. One transaction: no token approval, no authority grant. The dev buy (if any) rides in the same tx, ahead of the field, no cap, and any ETH past the graduation ceiling is refunded.</p>
+      <p class="note" id="launchNote">A small <span id="creationFeeNote">0.001 ETH</span> creation fee seeds your curve so it's never immediately underwater — plus network gas. One transaction: no token approval, no authority grant. The dev buy (if any) rides in the same tx, ahead of the field, no cap, and any ETH past the graduation ceiling is refunded.</p>
     </form>
 
     <aside class="summary">
@@ -693,6 +718,48 @@ $('supplyPresets')?.addEventListener('click', (e) => {
   fdvSync();
 });
 
+// ── [AUCTION] optional 0-4 day daily auction picker ──────────────────────────
+window.__auctionDays = 0;
+const AUCTION_NOTES = {
+  0: 'Off — the whole curve share stays in your curve, exactly as a standard launch.',
+  1: '1 day: 10% of your curve\'s share is carved into a single 24h sealed-bid auction.',
+  2: '2 days: 20% of your curve\'s share, split evenly across two daily sealed-bid auctions.',
+  3: '3 days: 30% of your curve\'s share, split evenly across three daily sealed-bid auctions.',
+  4: '4 days: 40% of your curve\'s share, split evenly across four daily sealed-bid auctions.',
+};
+$('auctionDaysPicker')?.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-days]');
+  if (!b) return;
+  window.__auctionDays = Number(b.dataset.days);
+  for (const el of $('auctionDaysPicker').querySelectorAll('[data-days]')) el.classList.toggle('on', el === b);
+  const note = $('auctionNote');
+  if (note) note.textContent = AUCTION_NOTES[window.__auctionDays] || '';
+});
+// Read live whether the feature is even wired on this deployment — auctionVaultDeployer() reverting or
+// returning the zero address means an auctionDays > 0 launch would revert BadValue, so say so up front
+// rather than let the creator pick a day count and find out at the wallet prompt.
+(async () => {
+  try {
+    const live = await Pad.auctionFeatureLive();
+    if (live) return;
+    const panel = $('auctionPanel');
+    if (panel) { panel.open = false; panel.style.opacity = '.5'; panel.style.pointerEvents = 'none'; }
+    const note = $('auctionNote');
+    if (note) note.textContent = 'Not available on this deployment yet.';
+  } catch { /* leave the picker up; a launch is still checked on-chain */ }
+})();
+
+// Show the real, live creation fee rather than a number baked into this page — it is read from the same
+// contract the launch tx will actually be checked against. No ethers import needed for one number (see
+// ethers_formatEth's own comment further down this file for the same pattern).
+(async () => {
+  try {
+    const fee = await Pad.creationFeeWei();
+    const el = $('creationFeeNote');
+    if (el) el.textContent = `${(Number(fee) / 1e18).toFixed(4).replace(/\.?0+$/, '')} ETH`;
+  } catch { /* leave the default copy — the launch itself still enforces the real fee */ }
+})();
+
 // ── migrate-in: pull an existing token's name/ticker/logo from DexScreener so a project relaunching
 //    on Robin does not retype anything. The chain + address also become the coin's "Migrated from" badge. ──
 const isEvmAddr = (s) => /^0x[0-9a-fA-F]{40}$/.test(s);
@@ -815,12 +882,14 @@ $('launchBtn').addEventListener('click', async () => {
       // said was in band, so this cannot send a combination that reverts MarketCapOutOfRange.
       supply: window.__fdvChoice?.supplyWei,
       startTickMag: window.__fdvChoice?.startTickMag,
+      // [AUCTION] 0 unless the creator opened the panel and picked a day count.
+      auctionDays: window.__auctionDays || 0,
       onMining: mineNote,
       // Fires once the address is mined, just before the wallet prompt — and hands over the coin's real
       // address, so the creator sees it before they sign rather than after it is live.
       onSigning: (addr) => setNote(devEth > 0
-        ? `Your coin: ${addr} — launching + buying ${devEth} ETH of it in one tx, confirm in your wallet…`
-        : `Your coin: ${addr} — launching, confirm in your wallet…`),
+        ? `Your coin: ${addr} — launching + buying ${devEth} ETH of it in one tx (plus the creation fee), confirm in your wallet…`
+        : `Your coin: ${addr} — launching (plus the creation fee), confirm in your wallet…`),
     });
     setNote('Sent, waiting for confirmation…');
     const rc = await tx.wait();

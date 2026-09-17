@@ -49,3 +49,6 @@ launchpad/contracts/mocks/Zz*.sol
 # Local agent tooling scratch — nested git worktrees Claude Code creates for background research/
 # isolated-edit subagents. Each has its own .git; never meant to be committed into this repo.
 .claude/
+
+# pad/e2e/auction-manual.mjs's screenshots — local verification artifacts, not the suite itself.
+pad/e2e/.shots/

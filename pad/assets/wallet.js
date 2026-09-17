@@ -734,14 +734,21 @@ export async function disperse(token, recipients, amounts) {
 // tax: {buyBps, sellBps, walletBps, floorBps, burnBps, projectWallet} - the
 // project's self-set tax (≤4%/side; splits sum to 100%). Omitting it still charges the
 // 1% floor - clampBps enforces a 100 bps minimum, so every coin pays at least 1% buy & sell.
-export async function launch({ name, symbol, dev, devBuyEth = "0", tax, supply, startTickMag, onMining, onSigning }) {
+// auctionDays: 0-4, optional pre-launch daily batch auction (see the "Auction" panel on token.html). 0 = none,
+// unchanged behavior. poolFee: 0 = the factory's own default LP fee tier; pass 500 or 10000 to choose.
+export async function launch({ name, symbol, dev, devBuyEth = "0", tax, supply, startTickMag, auctionDays = 0, poolFee = 0, onMining, onSigning }) {
   if (!_signer) await connect();
   if (!isDeployed("padFactory"))
     throw new Error("The launch contract isn't live yet - the Pad is in pre-deploy audit.");
-  const value = devBuyEth && Number(devBuyEth) > 0 ? ethers.parseEther(String(devBuyEth)) : 0n;
   const factory = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _signer);
+  // [CREATION_FEE] Mandatory on every launch, on top of any dev buy — read live from the contract rather than
+  // hardcoded, so a future retune (there is none planned, but the contract does not promise it can never
+  // change) can't silently desync the site from what a launch actually costs.
+  const creationFee = await factory.CREATION_FEE();
+  const devValue = devBuyEth && Number(devBuyEth) > 0 ? ethers.parseEther(String(devBuyEth)) : 0n;
+  const value = creationFee + devValue;
   const t = normalizeTax(tax, dev || _account);
-  const params = { name, symbol, dev: dev || _account, tax: t };
+  const params = { name, symbol, dev: dev || _account, tax: t, poolFee: Number(poolFee || 0), auctionDays: Number(auctionDays || 0) };
 
   // [FDV] A creator who chose their own supply / starting value goes down the supply entrypoint; anyone who
   // left the defaults alone sends nothing extra. Both are the same launch — this is two arguments, not a
@@ -853,6 +860,23 @@ export async function mineCoinAddress(factoryOrNull, params, onMining, supplyOve
   return mineSaltAsync(ethers, ctx, ethers.id(`${params.symbol}-${params.name}-${params.dev}`), {
     onProgress: onMining,
   });
+}
+
+/// The mandatory creation-fee wei, read live from the factory. Lets the create page show the real number
+/// rather than one baked into the page that could drift from what a launch actually costs.
+export async function creationFeeWei() {
+  const factory = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _read);
+  return factory.CREATION_FEE();
+}
+
+/// Whether this deployment has the optional daily-auction feature wired on at all — auctionVaultDeployer()
+/// returning the zero address means any auctionDays > 0 launch would revert BadValue.
+export async function auctionFeatureLive() {
+  try {
+    const factory = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _read);
+    const d = await factory.auctionVaultDeployer();
+    return !/^0x0{40}$/i.test(d);
+  } catch { return false; }
 }
 
 /// Pull the new coin's address out of a launch receipt (the factory's Launched event).
@@ -2089,6 +2113,73 @@ export async function stakingClaimAll(pool, who) {
     }
   }
   return n;
+}
+
+// ── DAILY AUCTION — optional 0-4 day pre-launch batch auction ────────────────
+// A creator opts in at launch (auctionDays 1-4). CurvePadFactory then deploys a dedicated DailyAuctionVault
+// and carves auctionDays*10% of the curve's own share into it, split evenly into daily tranches. Each day is
+// a sealed batch: bidders send ETH inside a 24h window, and nobody's price/allocation is decided until the
+// day closes (permissionless) — the platform takes a flat 10%, the rest buys-and-burns against the SAME curve
+// (a real buy, counts toward the raise), and bidders then pull their pro-rata share of that day's tranche. A
+// day with zero bids instead funds a dedicated RobinStaking pool. See launchpad/contracts/DailyAuctionVault.sol.
+
+/// The coin's DailyAuctionVault address, or null if this launch didn't opt into an auction (or the feature
+/// wasn't wired on this deployment). Read directly off the factory — never cached/configured, since it's a
+/// per-coin address the factory itself is the source of truth for.
+export async function auctionVaultOf(token) {
+  if (!isDeployed("padFactory")) return null;
+  try {
+    const f = new ethers.Contract(CONTRACTS.padFactory, ABIS.padFactory, _read);
+    const v = await f.auctionVaultOf(token);
+    return /^0x0{40}$/i.test(v) ? null : v;
+  } catch { return null; }
+}
+
+/// Full per-day status for a coin's auction vault: the vault's own fixed parameters plus, for each day 1..N,
+/// its bidding window, total bid so far, whether it's closed, and (if `who` is given) that wallet's own bid
+/// and claim state. Read-only, no writes.
+export async function auctionStatus(vaultAddr, who) {
+  const addr = who || _account || ethers.ZeroAddress;
+  const v = new ethers.Contract(vaultAddr, ABIS.dailyAuctionVault, _read);
+  const [auctionDays, startTime, dayTranche, stakingPool, block] = await Promise.all([
+    v.auctionDays(), v.startTime(), v.dayTranche(), v.stakingPool(), _read.getBlock("latest"),
+  ]);
+  const n = Number(auctionDays);
+  const days = await Promise.all(Array.from({ length: n }, (_, i) => i + 1).map(async (day) => {
+    const [[opens, closes], total, closed, myBid, myClaimed] = await Promise.all([
+      v.dayWindow(day), v.dayTotal(day), v.closed(day), v.bidOf(day, addr), v.claimed(day, addr),
+    ]);
+    return { day, opens: Number(opens), closes: Number(closes), total, closed, myBid, myClaimed };
+  }));
+  // [LOCAL TESTING] the CHAIN's clock, not the browser's — on a local devnet where time is fast-forwarded via
+  // evm_increaseTime, the browser's wall clock never moves, so a window's open/closed state must be judged
+  // against the block timestamp this vault itself will be judged against, not Date.now().
+  return { vault: vaultAddr, auctionDays: n, startTime: Number(startTime), dayTranche, stakingPool, days, now: Number(block.timestamp) };
+}
+
+/// Bid `ethAmount` (a string, e.g. "0.5") on `day`. Additive — bidding again on the same day adds to your
+/// existing bid. Must land inside that day's 24h window or the contract reverts WindowNotOpen/WindowClosed.
+export async function auctionBid(vaultAddr, day, ethAmount) {
+  if (!_signer) await connect();
+  const value = ethers.parseEther(String(ethAmount || "0"));
+  if (value <= 0n) throw new Error("Enter an amount to bid.");
+  const v = new ethers.Contract(vaultAddr, ABIS.dailyAuctionVault, _signer);
+  return guardedSend(v, "bid", [day], value, "Bid");
+}
+
+/// Close `day` once its window has passed. Permissionless — anyone can trigger it (a bidder, a keeper,
+/// whoever notices first); nothing about the outcome depends on who calls it.
+export async function auctionCloseDay(vaultAddr, day) {
+  if (!_signer) await connect();
+  const v = new ethers.Contract(vaultAddr, ABIS.dailyAuctionVault, _signer);
+  return guardedSend(v, "closeDay", [day], 0n, "Close auction day");
+}
+
+/// Claim your pro-rata share of a closed day's tranche. Pull-based, no forced deadline.
+export async function auctionClaim(vaultAddr, day) {
+  if (!_signer) await connect();
+  const v = new ethers.Contract(vaultAddr, ABIS.dailyAuctionVault, _signer);
+  return guardedSend(v, "claim", [day], 0n, "Claim auction tokens");
 }
 
 // ── TIERED STAKING — locked terms, weighted shares, tax-to-stayers ───────────
