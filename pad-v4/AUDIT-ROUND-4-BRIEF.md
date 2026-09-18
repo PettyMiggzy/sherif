@@ -7,7 +7,7 @@ not reopened here — this covers only what's new since.
 | | |
 |---|---|
 | **Repo / branch** | `Robinlabz/Labs` (canonical) · working branch `claude/robinhood-chain-website-8loxcm` |
-| **Commit** | `881eec1` (auction feature) through `43c9bf7` (branch tip at brief time) |
+| **Commit** | `881eec1` (auction feature) through `4c3d44b` (branch tip at handoff time) — `76f654c`/`4c3d44b` are the v3 + v4 auction UI frontends and local test tooling, no contract changes, listed for completeness only |
 | **Compiler** | solc **0.8.26**, `viaIR: true`, optimizer **runs 1**, evmVersion **cancun** (unchanged from round 3) |
 | **Build / test** | `cd pad-v4 && npm i && npx hardhat compile && npx hardhat test` → **343 passing / 6 pending / 8 failing** as one combined run — see the caveat immediately below before reading that `8` as a red flag |
 | **Chain** | Robinhood Chain (chainId 4663) + **Arc** (Circle L1, mainnet chainId 1243 / testnet 5042002) — see focus area 3. NOT yet deployed to either. |

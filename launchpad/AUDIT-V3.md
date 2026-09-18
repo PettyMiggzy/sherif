@@ -7,7 +7,7 @@ finding set is CLOSED and not reopened here): the mandatory 0.001 ETH creation f
 | | |
 |---|---|
 | **Repo / branch** | `Robinlabz/Labs` (canonical) · working branch `claude/robinhood-chain-website-8loxcm` |
-| **Commit** | `b2cc104` (auction fixes) through `43c9bf7` (branch tip at self-review time) |
+| **Commit** | `b2cc104` (auction fixes) through `4c3d44b` (branch tip at handoff time) — `76f654c`/`4c3d44b` are the v3 + v4 auction UI frontends and local test tooling, no contract changes, listed for completeness only |
 | **Files, new** | `contracts/DailyAuctionVault.sol`, `contracts/RobinStaking.sol` |
 | **Files, modified** | `contracts/CurvePool.sol`, `contracts/Bond.sol` (immutable `poolFee`/`SPACING`), `contracts/CurvePadFactory.sol` (`CREATION_FEE`, `poolFee` validation, auction carve-out, `auctionVaultDeployer`), `contracts/deployers/CurveDeployers.sol` (`RobinStakingDeployer`, `DailyAuctionVaultDeployer`), `scripts/deploy-v2.js` |
 | **Build / test** | `cd launchpad && npx hardhat compile && npx hardhat test` → **360 passing / 0 failing / 41 pending** (pending = fork-only suites gated on `FORK_RPC`, no live-chain access in this environment — expected, not a gap in local coverage) |
