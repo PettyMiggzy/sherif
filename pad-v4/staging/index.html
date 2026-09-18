@@ -83,8 +83,11 @@
       <label>Optional daily auction — 0-4 days, carves that many 10% tranches out of the curve share for a
         sealed daily batch auction (see DailyAuctionVaultV4.sol)</label>
       <input id="auctionDays" value="0" />
-      <div style="margin-top:12px"><button id="btnLaunch">Mine hook + Launch</button></div>
-      <div class="hint" style="margin-top:8px">Launch mines a valid V4 hook address in your browser (~instant), then calls CurvePadFactoryV4.launch.</div>
+      <!-- [AUDIT HOLD] launch disabled on this build pending external audit of the round-4 surface (daily
+           auction, creator-chosen LP fee, dual-chain launch). Re-enable by removing `disabled` once the
+           audit clears. -->
+      <div style="margin-top:12px"><button id="btnLaunch" disabled>Mine hook + Launch</button></div>
+      <div class="hint" style="margin-top:8px">Launching is temporarily disabled while this build goes through external audit. Check back soon.</div>
     </div>
 
     <div class="card" id="auction" style="display:none">
