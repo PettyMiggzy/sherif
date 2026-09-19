@@ -6,7 +6,9 @@ const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 const abi = ethers.AbiCoder.defaultAbiCoder();
-const FLAGS = 0xccn, MASK = 0x3fffn;
+// [MERGE] 0x28CC, not 0x00CC — [L-25] added a FACTORY-ONLY beforeInitialize on this branch, and the flags are
+// mined into the hook's address, so mining 0x00CC lands on an address the hook's own ctor assert rejects.
+const FLAGS = 0x28ccn, MASK = 0x3fffn;
 
 function mineHookSalt(dep, initCodeHash) {
   for (let i = 0n; ; i++) {

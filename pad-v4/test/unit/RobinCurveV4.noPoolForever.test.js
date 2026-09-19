@@ -75,7 +75,9 @@ describe("RobinCurveV4 — no-pool-forever checkpoint (real PoolManager, mock po
 
     floor = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
       await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
-      ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10, 0
+      // [MERGE/H-5] the merged vault REJECTS a zero episodeBaseWei (a zero base parks a healthy pad's very
+      // first episode), so this fixture carries the same 1e14 base its sibling curve tests use.
+      ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10, 10n ** 14n
     );
     await curve.connect(platform).setFloor(await floor.getAddress());
   });

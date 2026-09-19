@@ -34,10 +34,12 @@ async function deployStack(deployer, platform) {
   const curveDep = await (await ethers.getContractFactory("CurveV4Deployer")).deploy(await dep.getAddress());
   const feeCfg = await (await ethers.getContractFactory("RobinV4FeeConfig")).deploy(deployer.address, DEFAULTS);
   const lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await posm.getAddress(), await reg.getAddress());
+  // [EIP-170] the factory forwards hook deploys to FeeHookDeployer instead of inlining the creationCode.
+  const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
   const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
     await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
     await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
-    ethers.ZeroAddress
+    ethers.ZeroAddress, await fhd.getAddress()
   );
   await lockVault.setFactory(await factory.getAddress());
   return { pm, stateView, dep, reg, permit2, posm, curveDep, feeCfg, lockVault, factory };

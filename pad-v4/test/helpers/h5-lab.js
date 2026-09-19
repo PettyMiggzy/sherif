@@ -106,7 +106,10 @@ async function buildLab(cfg) {
     await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
     ZERO, await tok.getAddress(), FEE, TS, hookAddr, 0 /* anchorTick = launch */, cfg.bandSpacings ?? 20,
   ];
-  if (vaultName === "RobinFloorVault") vaultArgs.push(episodeBaseWei);
+  // [MERGE] H5V3StyleVault carries the episodeBaseWei param on THIS branch too (the H-5 branch this lab came
+  // from had an older, 10-arg copy), so it takes the allowance as well. The other frozen H5* baselines predate
+  // the gate and keep their 10-arg ctor.
+  if (vaultName === "RobinFloorVault" || vaultName === "H5V3StyleVault") vaultArgs.push(episodeBaseWei);
   const vault = await (await ethers.getContractFactory(vaultName)).deploy(...vaultArgs);
   // shipped wiring: the sell-tax floor carve flows to the vault (attacker-favourable — their own sell-back
   // partially re-funds the carve they are draining)

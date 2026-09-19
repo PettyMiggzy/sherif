@@ -48,10 +48,12 @@ describe("[FDV] creators choose their own supply; the FACTORY bounds the valuati
       // the REAL shipped band — this file is the one place that tests the product policy, not an open fixture
       minFdvWei: MIN_FDV, maxFdvWei: MAX_FDV,
     });
+    // [EIP-170] the factory forwards hook deploys to FeeHookDeployer instead of inlining the creationCode.
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
-      ethers.ZeroAddress
+      ethers.ZeroAddress, await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
     SW = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());

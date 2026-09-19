@@ -46,10 +46,12 @@ describe("[AUCTION regression] partial raises launch, the fee tracks deployed ca
       lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: MINGRAD,
       minFdvWei: 1n, maxFdvWei: 1_000_000n * 10n ** 18n,
     });
+    // [EIP-170] the factory forwards hook deploys to FeeHookDeployer instead of inlining the creationCode.
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(),
-      await lockVault.getAddress(), ethers.ZeroAddress
+      await lockVault.getAddress(), ethers.ZeroAddress, await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
     const impl = await (await ethers.getContractFactory("PresaleVault")).deploy();

@@ -42,7 +42,8 @@ describe("SIM — fee conservation over many buys & sells", () => {
 
     const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: addr };
     const poolId = idOf(key);
-    await pm.initialize(key, SQRT_1_1);
+    // [MERGE/L-25] beforeInitialize is FACTORY-ONLY on this branch — initialize as the hook's factory.
+    await pm.connect(factory).initialize(key, SQRT_1_1);
     await hook.connect(factory).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address, floorRecipient: floor.address,
       guardAdapter: ZERO, buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,
@@ -123,7 +124,8 @@ describe("SIM — the floor only ever grows and absorbs dumps", () => {
     const { hook, hookAddr } = await deployHook(pm, factorySigner, reg, tok);
     const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: hookAddr };
     const floorPoolId = idOf(key);
-    await pm.initialize(key, SQRT_1_1);
+    // [MERGE/L-25] beforeInitialize is FACTORY-ONLY on this branch — initialize as the hook's factory.
+    await pm.connect(factorySigner).initialize(key, SQRT_1_1);
     await registerPool(hook, factorySigner, floorPoolId, tok, creator.address);
     const mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());
     const sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
