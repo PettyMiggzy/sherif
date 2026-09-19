@@ -83,7 +83,10 @@ async function main() {
         `parked=${ethers.formatEther(parked)} ETH allowance=${ethers.formatEther(st.allowance)} ETH`
       );
       if (!st.armed) console.log(`    ${REASONS[1]}`);
-      const ev = await floor.queryFilter(floor.filters.FloorParked(), -2000).catch(() => []);
+      // ethers has no relative block tags — resolve an absolute window off the head.
+      const head = await ethers.provider.getBlockNumber();
+      const from = head > 2000 ? head - 2000 : 0;
+      const ev = await floor.queryFilter(floor.filters.FloorParked(), from, head).catch(() => []);
       if (ev.length) console.log(`    last park reason: ${REASONS[Number(ev[ev.length - 1].args.reason)] || "?"}`);
       return null; // read-only step: nothing to wait on
     });

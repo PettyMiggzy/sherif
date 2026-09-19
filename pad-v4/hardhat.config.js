@@ -18,9 +18,15 @@ module.exports = {
   networks: {
     // FORK_RPC set → in-process hardhat forks Robinhood Chain so tests run against the
     // REAL v4 PoolManager 0x8366. Never commit the key: FORK_RPC=<url> npx hardhat test test/fork/*.js
+    // FORK_BLOCK pins the forked block. The public RPC is NOT an archive node, so a long fork run can outlive
+    // its state-retention window and abort mid-suite with "historical state ... is not available". Pin a recent
+    // block (and point FORK_RPC at an archive node for older ones) when running the whole fork suite at once.
     hardhat: process.env.FORK_RPC
       ? {
-          forking: { url: process.env.FORK_RPC },
+          forking: {
+            url: process.env.FORK_RPC,
+            ...(process.env.FORK_BLOCK ? { blockNumber: Number(process.env.FORK_BLOCK) } : {}),
+          },
           chainId: Number(process.env.FORK_CHAINID || 4663),
           hardfork: "cancun",
           // EDR needs the hardfork for historical blocks on these non-standard chains; both Robinhood

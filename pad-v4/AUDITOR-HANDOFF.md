@@ -1,5 +1,11 @@
 # Robin V4 — auditor hand-off: what needs fixing
 
+> **ROUND 4 — START AT [`AUDIT-ROUND-4-BRIEF.md`](./AUDIT-ROUND-4-BRIEF.md) INSTEAD.** This ledger is the
+> full remediation history from rounds 1–3 and stays authoritative for every finding ID, but the current
+> round's scope, focus areas and residuals live in the brief. Round 3's blocking finding — **H-5, the floor
+> forced-fill — is CLOSED** (`FLOOR-H5-CLOSURE-SPEC.md`, `ORACLE.md`); **M-15 / L-33 remain open**.
+> The live v3 stack is a separate review: [`../launchpad/AUDIT-V3.md`](../launchpad/AUDIT-V3.md).
+
 **This is a findings register plus a remediation ledger.** It is the output of a deep, adversarial audit pass
 over `pad-v4/`. The audit itself was report-only; a remediation phase then followed on the same branch. **Every
 finding below still reads exactly as it was filed** — none has been softened or deleted because it was fixed.

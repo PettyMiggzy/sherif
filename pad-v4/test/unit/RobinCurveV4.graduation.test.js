@@ -116,6 +116,15 @@ describe("RobinCurveV4 — full graduation waterfall (real PoolManager + mock po
     // the 20% buy-LP carve was swept to the floor (curve no longer holds the floor book)
     expect(await curve.floorEthOwed()).to.equal(0n);
     expect(await ethers.provider.getBalance(floorAddr)).to.be.gte(0n);
+    // [H-5 residual R4] GRADUATION REGRESSION. The floor vault's commit gate needs MIN_BELOW_DURATION of
+    // swap-witnessed below-band price, and graduation walks the tick down THROUGH the region above gradTick —
+    // so the graduation poke necessarily PARKS. That must be non-bricking, and it is: `_fundFloor` zeroes
+    // `floorEthOwed` and moves the ETH BEFORE its try/caught poke, so the carve is in the vault either way and
+    // `flushFloor()` / the keeper finish the job later. Assert both halves explicitly.
+    expect(await floor.floorLiquidity()).to.equal(0n); // parked, not committed — expected right after graduation
+    expect(await floor.bandQuoteWei()).to.equal(0n);
+    await expect(floor.addFloor()).to.not.be.reverted; // a poke into the gate never reverts
+    await expect(curve.flushFloor()).to.not.be.reverted; // and the retry path stays open
   });
 
   it("pays the %-of-raise graduation rewards to platform + creator (accrue-and-pull)", async () => {

@@ -25,7 +25,10 @@ export const CHAIN = {
   // RPC given to the WALLET when adding the chain (wallet_addEthereumChain). MUST be a
   // full, write-capable endpoint - the wallet broadcasts the user's txs through it - so
   // it must NEVER include the read-only /rpc proxy (which refuses eth_sendRawTransaction).
-  walletRpcUrls: ["https://robinhoodchain.blockscout.com/api/eth-rpc"],
+  // The CANONICAL chain RPC goes first: the Blockscout proxy sits behind a Cloudflare
+  // challenge (verified 403 to programmatic clients) on top of the browser 429s noted
+  // above, so a wallet pointed at it can fail to broadcast. Kept only as a second entry.
+  walletRpcUrls: ["https://rpc.mainnet.chain.robinhood.com", "https://robinhoodchain.blockscout.com/api/eth-rpc"],
   explorer: "https://robinhoodchain.blockscout.com",
 };
 

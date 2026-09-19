@@ -17,7 +17,9 @@ export const CHAIN = {
   hex: "0x1237",
   name: "Robinhood Chain",
   currency: "ETH",
-  rpc: "https://robinhoodchain.blockscout.com/api/eth-rpc",
+  // The canonical chain RPC. The Blockscout proxy (https://robinhoodchain.blockscout.com/api/eth-rpc)
+  // is Cloudflare-challenged and answers 403 to programmatic clients — never default to it.
+  rpc: "https://rpc.mainnet.chain.robinhood.com",
   explorer: "https://robinhoodchain.blockscout.com",
   perTxGasCap: 16_777_216, // 2^24 — relevant only if you batch calls in one tx
 };

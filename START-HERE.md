@@ -33,8 +33,10 @@ pointers. Last updated: 2026-08-15.
 ## 3. Repo map (all tracked dirs — 614 files; the 691M is gitignored `node_modules`/artifacts)
 
 ```
-launchpad/    LIVE v3 protocol — Solidity + Hardhat. $SHERIFF-named, IS Robin Labs. AUDIT.md is private.
-pad-v4/       V4 rewrite ("pad of pads"). Contracts, 220 passing tests, audit docs. See pad-v4/START below.
+launchpad/    LIVE v3 protocol — Solidity + Hardhat. $SHERIFF-named, IS Robin Labs. AUDIT.md is the
+              finding ledger; AUDIT-V3.md is the auditor entry point for the DEPLOYED stack.
+pad-v4/       V4 rewrite ("pad of pads"). Contracts, 272 passing tests + 6 live-fork, audit docs.
+              AUDITORS START AT pad-v4/AUDIT-ROUND-4-BRIEF.md (v4) and launchpad/AUDIT-V3.md (live v3).
 pad/          Static frontend — robinlab.io / *.robinlabs.fun coin sites. website.html = claim-a-site form.
 indexer/      Node indexer + JSON API (api.robinlab.io). Powers the feed + coin-site data + slug moderation.
 docs/         GitBook/Mintlify docs.

@@ -25,8 +25,12 @@ const num = (k, d) => {
 };
 
 export const CFG = {
-  rpcUrl: process.env.RPC_URL || "https://robinhoodchain.blockscout.com/api/eth-rpc",
-  // Upstream fallback for the /rpc read-proxy if the primary (paid) RPC errors.
+  // The canonical chain RPC. NOT the Blockscout proxy (robinhoodchain.blockscout.com/api/eth-rpc): that
+  // endpoint is Cloudflare-challenged and answers 403 to programmatic clients — verified, and it is what
+  // killed the keeper once already. Keep it only as a LAST-resort fallback, never as the primary.
+  rpcUrl: process.env.RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
+  // Upstream fallback for the /rpc read-proxy if the primary (paid) RPC errors. It must DIFFER from the
+  // primary or it is not a fallback at all — both defaulted to the same (Cloudflare-gated) URL before.
   rpcFallback: process.env.RPC_FALLBACK || "https://robinhoodchain.blockscout.com/api/eth-rpc",
   // Optional BACKUP RPC (e.g. a QuikNode/paid endpoint, key in URL = SECRET, keep in .env). When set
   // and distinct from RPC_URL it becomes a priority-2 backstop for BOTH the core poller (failover so a

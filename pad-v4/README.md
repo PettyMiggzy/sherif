@@ -10,7 +10,13 @@ Sibling to the untouched v3 pad in `../launchpad`. Full design: `ROBIN-V4-ARCHIT
 > dual staking, a USDG-yield ERC-4626 locked floor, and a tokenized-stock pad, all under one
 > immutable factory.
 
-## Status — Features 1–3 ✅ built & tested (47 unit tests + 2 live-fork tests passing)
+## Audit entry point
+
+> **Auditors start at [`AUDIT-ROUND-4-BRIEF.md`](./AUDIT-ROUND-4-BRIEF.md).** It is the one-page kickoff for
+> the current round: what changed, where to spend your effort, and every residual we are disclosing. The live
+> v3 stack is a separate review — see [`../launchpad/AUDIT-V3.md`](../launchpad/AUDIT-V3.md).
+
+## Status — built & tested: **272 passing** (unit + sim + regression) + **6 passing** against the live v4 stack
 
 ### Fee model (per pad)
 | | On a **BUY** (quote→token) | On a **SELL** (token→quote) |

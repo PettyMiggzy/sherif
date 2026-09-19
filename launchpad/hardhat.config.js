@@ -23,16 +23,24 @@ module.exports = {
     // drains hardhat's default 10,000 ETH faucet part-way through the run and fails the rest of
     // the suite with "Sender doesn't have enough funds". 10,000,000 ETH per account is ~1000x
     // the whole suite's throughput. Deploy networks are unaffected (real accounts, real balances).
+    // FORK_BLOCK pins the forked block. Robinhood Chain's public RPC is NOT an archive node, so a long fork
+    // run outlives its state-retention window and dies mid-suite with "historical state ... is not available".
+    // Pin a recent block (and use an archive RPC for older ones) when running the whole fork suite at once.
     hardhat: process.env.FORK_RPC
       ? {
-          forking: { url: process.env.FORK_RPC },
+          forking: {
+            url: process.env.FORK_RPC,
+            ...(process.env.FORK_BLOCK ? { blockNumber: Number(process.env.FORK_BLOCK) } : {}),
+          },
           chainId: 4663,
           accounts: { accountsBalance: ACCOUNTS_BALANCE },
         }
       : { accounts: { accountsBalance: ACCOUNTS_BALANCE } },
     // Robinhood Chain (fill RPC + PRIVATE_KEY via env before deploying)
     robinhood: {
-      url: process.env.ROBINHOOD_RPC || "https://robinhoodchain.blockscout.com/api/eth-rpc",
+      // The canonical chain RPC. NOT the Blockscout proxy: that endpoint sits behind a Cloudflare
+      // challenge and answers 403 to programmatic clients (verified), so it cannot serve a deploy.
+      url: process.env.ROBINHOOD_RPC || "https://rpc.mainnet.chain.robinhood.com",
       chainId: 4663,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
