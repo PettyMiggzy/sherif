@@ -7,7 +7,7 @@ not reopened here — this covers only what's new since.
 | | |
 |---|---|
 | **Repo / branch** | `Robinlabz/Labs` (canonical) · working branch `claude/robinhood-chain-website-8loxcm` |
-| **Commit** | `881eec1` (auction feature) through `4c3d44b` (branch tip at handoff time) — `76f654c`/`4c3d44b` are the v3 + v4 auction UI frontends and local test tooling, no contract changes, listed for completeness only |
+| **Commit** | `881eec1` (auction feature) through the branch tip. Everything after `43c9bf7` is non-contract: `76f654c`/`4c3d44b` are the v3 + v4 auction UI frontends and local test tooling, `6d254a8` disables both launch buttons pending this audit, and `941b892` fixes `launchpad/scripts/audit-live.js`. Listed for completeness — **no contract changes in any of them**. |
 | **Compiler** | solc **0.8.26**, `viaIR: true`, optimizer **runs 1**, evmVersion **cancun** (unchanged from round 3) |
 | **Build / test** | `cd pad-v4 && npm i && npx hardhat compile && npx hardhat test` → **343 passing / 6 pending / 8 failing** as one combined run — see the caveat immediately below before reading that `8` as a red flag |
 | **Chain** | Robinhood Chain (chainId 4663) + **Arc** (Circle L1, mainnet chainId 1243 / testnet 5042002) — see focus area 3. NOT yet deployed to either. |
@@ -89,8 +89,37 @@ Same product as round 3 (`AUDIT-SCOPE.md §1-3`) — this brief covers only the 
    changes any of this factory's or the curve's on-chain assumptions. `deploy-curve.js` and
    `deploy-curve-arc.js` currently duplicate their bootstrap sequence as two independently-maintained scripts
    with nothing enforcing they stay in lockstep — flagged, not fixed (tooling risk, not a contract risk).
-4. **Round 3's still-open item — unchanged, still your call to close.** Floor H-5 forced-fill
-   (`FLOOR-REDESIGN.md`) is untouched by this round's work and remains the top standing item from Round 3.
+4. **Floor H-5 forced-fill — still OPEN on this branch, but a candidate closure now exists elsewhere and we
+   would like your opinion on it specifically.** On THIS branch H-5 is open exactly as Round 3 left it:
+   P1/P2/P3 are implemented, but the shipped `episodeBaseWei = 0` makes the floor deploy nothing except ETH
+   that arrives *during* a below-band episode, and the per-episode cap is
+   `EPISODE_BASE_WEI + episodeStartBand * EPISODE_BAND_BPS` with `EPISODE_BAND_BPS = 50` (0.5%). See
+   `FLOOR-REDESIGN.md` and `FLOOR-H5-CLOSURE-SPEC.md` (whose header records the refutation).
+
+   A **separate branch** — `Robinlabz/Labs` @ `claude/laughing-goodall-qxrmq1`, commit `cb49dbe` — carries a
+   candidate closure developed in parallel. We have run its suite and **reproduced its numbers exactly**
+   (18/18 passing): the pre-fix attack nets **+8.7340 ETH** eating 17.85/20 of the carve; the auditor's
+   recommended `COMMIT_COOLDOWN > MIN_DWELL` fix is confirmed **inert** (identical +8.7340); against the gated
+   vault the round-trip loop nets **−1.1106 ETH** and commits **0.0000/20**, with the carve-vs-no-carve PnL
+   delta at **exactly 0** (so it is no longer extraction); the `[N-A]` sustained hold buys one ~1bp slice at
+   **−1.1042 ETH**; and the honest path still deploys **14.7571 of 20 ETH** over 40 pokes.
+
+   Two things we want you to weigh, because we do not think they are equally well-founded:
+   - **The substantive change is the cap formula.** That branch DELETES the band-proportional term and ships a
+     flat `EPISODE_BASE_WEI = D/10_000`, on the argument that the band term *inverts* — it turns
+     attacker-profitable once the band holds more than ~1.58x the pool's ETH depth. If that argument is
+     correct it is a finding against the vault ON THIS BRANCH, which still carries that term. Please confirm
+     or refute the inversion independently.
+   - **The TWAP/oracle conjunct may not be earning its surface.** That branch also adds a 128-slot observation
+     ring to `RobinFeeHook` plus a `consultTick` TWAP read, touched by every swap. Its own code comments
+     describe this conjunct as *"provably implied by P1"* — i.e. contributing no new security guarantee — and
+     this brief's authors agree on that reading. We would rather ship less hook surface and less per-swap gas
+     than defense-in-depth we cannot justify, so: does P4 buy anything P1 does not already give?
+
+   The closure is **NOT merged here**: it forks from a ~200-commit-old base and merges with 45 conflicts,
+   including `RobinFeeHook.sol`, `RobinFloorVault.sol` and `IRobinInterfaces.sol`. We deliberately did not
+   hand-resolve security-critical conflicts under time pressure — review it as the discrete, self-consistent
+   change it is on its own branch, and we will merge whichever shape you endorse.
 
 ## 4. Scope inventory
 
@@ -137,7 +166,11 @@ Same as Round 3 (`AUDIT-SCOPE.md §2`) — stock pads, Uniswap v4 core/periphery
 
 ## 8. Known open items (documented — no need to re-derive)
 
-- **Floor H-5 TWAP** (Round 3, unchanged, still the top standing item across both rounds).
+- **Floor H-5 forced-fill** — still the top standing item across both rounds ON THIS BRANCH. A candidate
+  closure exists on `Robinlabz/Labs` @ `claude/laughing-goodall-qxrmq1` (`cb49dbe`), independently re-run and
+  reproduced here (18/18), but deliberately not merged: see focus area 4, which also flags the two parts of it
+  we want judged separately (the cap-formula change, which we believe is the real content, and the TWAP/oracle
+  conjunct, which that branch's own comments call "provably implied by P1").
 - **Arrow L1/L2 front-run/hijack** (Round 3, unchanged).
 - **Dual-chain proof is local-only** — not yet run against funded wallets on real Arc + Robinhood Chain. That
   step needs a funded deployer key on each chain and is a deployment action, not a code question.

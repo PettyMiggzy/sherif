@@ -7,7 +7,7 @@ finding set is CLOSED and not reopened here): the mandatory 0.001 ETH creation f
 | | |
 |---|---|
 | **Repo / branch** | `Robinlabz/Labs` (canonical) · working branch `claude/robinhood-chain-website-8loxcm` |
-| **Commit** | `b2cc104` (auction fixes) through `4c3d44b` (branch tip at handoff time) — `76f654c`/`4c3d44b` are the v3 + v4 auction UI frontends and local test tooling, no contract changes, listed for completeness only |
+| **Commit** | `b2cc104` (auction fixes) through the branch tip. Everything after `43c9bf7` is non-contract: `76f654c`/`4c3d44b` are the v3 + v4 auction UI frontends and local test tooling, `6d254a8` disables both launch buttons pending this audit, and `941b892` fixes this repo's own `scripts/audit-live.js`. **No contract changes in any of them.** |
 | **Files, new** | `contracts/DailyAuctionVault.sol`, `contracts/RobinStaking.sol` |
 | **Files, modified** | `contracts/CurvePool.sol`, `contracts/Bond.sol` (immutable `poolFee`/`SPACING`), `contracts/CurvePadFactory.sol` (`CREATION_FEE`, `poolFee` validation, auction carve-out, `auctionVaultDeployer`), `contracts/deployers/CurveDeployers.sol` (`RobinStakingDeployer`, `DailyAuctionVaultDeployer`), `scripts/deploy-v2.js` |
 | **Build / test** | `cd launchpad && npx hardhat compile && npx hardhat test` → **360 passing / 0 failing / 41 pending** (pending = fork-only suites gated on `FORK_RPC`, no live-chain access in this environment — expected, not a gap in local coverage) |
@@ -16,6 +16,15 @@ finding set is CLOSED and not reopened here): the mandatory 0.001 ETH creation f
 **Verdict: no open blockers.** One real, self-found HIGH finding (V3-1) is fixed and regression-tested. One
 MEDIUM operational gap (V3-2) is fixed and live-proven. Everything else is either accepted/documented design or
 INFO.
+
+> **Expect `scripts/audit-live.js` to report a bytecode mismatch on this branch, and read it as correct.** That
+> script compares the LIVE mainnet `CurvePoolDeployer` against a local compile. The surface under review here
+> (`CurvePool.sol` +127, `deployers/CurveDeployers.sol` +120, `Bond.sol` +85) is **built but deliberately NOT
+> deployed** — deploying it is gated on this audit. So the executable code genuinely differs, and the script
+> says so explicitly rather than just failing. The other 7 live checks (wiring, sinks, ownership two-step) pass.
+> Note the script previously compared raw bytecode *including* solc's CBOR metadata blobs, which made it print
+> `AUDIT FAILED` whenever a mere comment moved; that false-failure mode is fixed (`941b892`), so a mismatch it
+> reports now is a real executable difference and nothing else.
 
 | id | sev | area | status |
 |---|---|---|---|
