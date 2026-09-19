@@ -55,7 +55,9 @@ describe("SIM — fee conservation over many buys & sells", () => {
     // [MERGE/LP-1] this sim mints its ambient depth through a generic PoolModifyLiquidityTest router, which
     // beforeAddLiquidity correctly rejects during the curve phase. It models a LIVE, traded market, so lift the
     // curve-phase lock exactly as RobinCurveV4.graduate() does — same reasoning as h5-lab (1a1d1ff).
-    await hook.connect(owner).onGraduated(poolId);
+    // onGraduated is gated on msg.sender == bufferRecipient (the pad's curve in prod), which this fixture
+    // set to `lp` on the line above — so it must be called as `lp`, not as `owner`.
+    await hook.connect(lp).onGraduated(poolId);
     const mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());
     const sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
     await tok.connect(owner).transfer(lp.address, 10n ** 25n);
@@ -99,12 +101,20 @@ describe("SIM — fee conservation over many buys & sells", () => {
     expect(await hook.creatorOwed(poolId, 1)).to.equal(0n);
     expect(await hook.floorOwed(poolId, 1)).to.equal(0n);
 
-    // INVARIANT 3: floor ≈ 20% of the sell tax. Per-swap the carve is floor(fee*0.2), so summed it
-    // lands a few wei UNDER an exact 20% — and that dust is conserved into the creator's cut (never lost).
-    const totalSell = creaEth + floorEth;
-    const exact20 = (totalSell * 2000n) / 10000n;
-    expect(floorEth).to.be.lte(exact20); // never more than 20%
-    expect(exact20 - floorEth).to.be.lte(BigInt(seq.length)); // dust ≤ one wei per swap, to creator
+    // INVARIANT 3: the sell carve no longer funds the floor.
+    //
+    // This used to assert `floor ≈ 20% of the sell tax`. That encoded the PRE-[SIMPLE-FEES] routing, and it is
+    // now false by design: 3b014bb retired the floor/ambush legs for this fee model, so afterSwap credits the
+    // `sellFloorShareBps` carve to `bufferOwed` — the SAME trader-rebate pot the buy side feeds — instead of
+    // `floorOwed`. The contract's own header says so ("this used to fund a permanent price floor; the floor
+    // vault is retired for pads using this fee model").
+    //
+    // The assertion was passing only because a setup error aborted this test before it ever reached here; the
+    // H-5 merge fixed that wiring and surfaced the stale expectation. The precise, falsifiable claim for the
+    // shipped model is that NOTHING is booked to the floor book, while the carve is still conserved — which
+    // INVARIANT 2 above already proves exactly, since it sums all four books against the hook's ERC-6909 claim.
+    expect(floorEth).to.equal(0n);
+    expect(creaEth).to.be.gt(0n); // the creator leg of the sell tax still accrues
 
     // INVARIANT 4: every claim succeeds (solvency proven), redeeming claims → real ETH, and drains BOTH the hook's
     // ETH claim and its raw ETH balance to exactly zero.
