@@ -9,11 +9,16 @@ const path = require("path");
 const { ethers } = require("ethers");
 const { keccak256 } = ethers;
 
-// Load ROBINHOOD_RPC without printing it.
-for (const line of fs.readFileSync(path.join(__dirname, "..", ".env"), "utf8").split("\n")) {
-  const t = line.trim(); if (!t || t.startsWith("#")) continue;
-  const i = t.indexOf("="); if (i === -1) continue;
-  const k = t.slice(0, i).trim(); if (process.env[k] === undefined) process.env[k] = t.slice(i + 1).trim();
+// Load ROBINHOOD_RPC without printing it. `.env` is gitignored, so it is OPTIONAL — a fresh clone (an
+// auditor's, for instance) has none, and this script is read-only and works against the public RPC default
+// below. Reading it unconditionally made the script die with ENOENT before printing a single check.
+const envFile = path.join(__dirname, "..", ".env");
+if (fs.existsSync(envFile)) {
+  for (const line of fs.readFileSync(envFile, "utf8").split("\n")) {
+    const t = line.trim(); if (!t || t.startsWith("#")) continue;
+    const i = t.indexOf("="); if (i === -1) continue;
+    const k = t.slice(0, i).trim(); if (process.env[k] === undefined) process.env[k] = t.slice(i + 1).trim();
+  }
 }
 const RPC = process.env.ROBINHOOD_RPC || "https://rpc.mainnet.chain.robinhood.com";
 
@@ -84,11 +89,28 @@ const check = (name, cond, got) => { console.log(`${cond ? "  ✅" : "  ❌"} ${
   const artifact = JSON.parse(fs.readFileSync(path.join(__dirname, "..",
     "artifacts/contracts/deployers/CurveDeployers.sol/CurvePoolDeployer.json"), "utf8"));
   const localCode = artifact.deployedBytecode;
-  const liveH = keccak256(liveCode), localH = keccak256(localCode);
-  check("live curveDeployer runtime bytecode == locally compiled (0.5/0.5 source)", liveH === localH);
+  // Compare the EXECUTABLE code, not solc's CBOR metadata blobs. Those carry an IPFS hash of the source
+  // METADATA, so they change when a COMMENT changes — and `CurvePoolDeployer` embeds
+  // `type(CurvePool).creationCode`, so it carries TWO of them (its own trailer and CurvePool's). Comparing
+  // raw runtime bytecode therefore printed "AUDIT FAILED" on a correctly-deployed stack every time the
+  // repo's comments moved on, which is exactly how a real drift gets trained away. Mask every blob first.
+  const META = /a2646970667358221220[0-9a-f]{64}64736f6c6343[0-9a-f]{6}0033/g;
+  const mask = (hex) => (hex.startsWith("0x") ? hex.slice(2) : hex).replace(META, (m) => "0".repeat(m.length));
+  const liveH = keccak256("0x" + mask(liveCode)), localH = keccak256("0x" + mask(localCode));
+  check("live curveDeployer EXECUTABLE bytecode == locally compiled (0.5/0.5 source)", liveH === localH);
   console.log(`     live  ${liveH}`);
   console.log(`     local ${localH}`);
-  console.log(`     (live code ${(liveCode.length - 2) / 2} bytes)`);
+  const blobs = (liveCode.match(META) || []).length;
+  console.log(`     (live code ${(liveCode.length - 2) / 2} bytes; ${blobs} solc metadata blob(s) masked)`);
+  if (liveH === localH && keccak256(liveCode) !== keccak256(localCode)) {
+    console.log("     · metadata hashes differ (source comments moved on since deploy) — informational, NOT drift");
+  }
+  if (liveH !== localH) {
+    console.log("     · EXECUTABLE code differs, so this is a REAL source/deployment gap, not metadata noise.");
+    console.log("       Expected while undeployed pool changes sit on the branch (the v3 daily auction,");
+    console.log("       creation fee and LP-fee-tier work all touch CurvePool/CurveDeployers). Deploy those");
+    console.log("       and re-run before reading this as drift on the LIVE stack.");
+  }
 
   console.log(`\n${fail === 0 ? "✅ AUDIT PASSED" : "❌ AUDIT FAILED"} — ${pass} passed, ${fail} failed\n`);
   process.exit(fail === 0 ? 0 : 1);
