@@ -41,7 +41,8 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
     hook = h.hook;
     key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: h.hookAddr };
     poolId = poolIdOf(key);
-    await pm.initialize(key, SQRT_1_1); // tick 0
+    // [MERGE/L-25] beforeInitialize is FACTORY-ONLY on this branch — initialize as the hook's factory.
+    await pm.connect(factorySigner).initialize(key, SQRT_1_1); // tick 0
     await registerPool(hook, factorySigner, poolId, tok, creator.address);
 
     mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());

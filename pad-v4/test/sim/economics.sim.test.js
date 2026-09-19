@@ -15,7 +15,9 @@ const ZERO = ethers.ZeroAddress;
 const SQRT_1_1 = 79228162514264337593543950336n;
 const MIN_SQRT_LIMIT = 4295128739n + 1n;
 const MAX_SQRT_LIMIT = 1461446703485210103287273052203988822378723970342n - 1n;
-const FLAGS = 0xccn, MASK = 0x3fffn;
+// [MERGE] 0x28CC, not 0x00CC — [L-25] added a FACTORY-ONLY beforeInitialize, and the flags are mined into the
+// hook's address, so mining 0x00CC lands somewhere the hook's own ctor assert rejects (DeployFailed).
+const FLAGS = 0x28ccn, MASK = 0x3fffn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 function mineHookSalt(dep, h) {

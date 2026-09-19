@@ -1,6 +1,13 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
 
+// 10,000,000 ETH per test signer. Every test file shares ONE in-process chain, and the sim/regression suites
+// move thousands of ETH per case; at hardhat's default 10,000 ETH the shared signers run dry partway through a
+// full combined run and everything after fails with "sender doesn't have enough funds" — failures that read as
+// regressions but are just an empty wallet. This is the caveat AUDIT-ROUND-4-BRIEF documented; fund the signers
+// past anything the suite can spend so a red test means a real red test. Mirrors launchpad/hardhat.config.js.
+const ACCOUNTS_BALANCE = (10_000_000n * 10n ** 18n).toString();
+
 // Robin V4 "pad of pads" — compiler pinned to match the live PoolManager
 // (0x8366a39CC670B4001A1121B8F6A443A643e40951): solc 0.8.26, viaIR, optimizer runs 1.
 // Never change these without re-checking hook-address mining (the mined salt depends
@@ -36,8 +43,9 @@ module.exports = {
             4663: { hardforkHistory: { cancun: 0 } },
             46630: { hardforkHistory: { cancun: 0 } },
           },
+          accounts: { accountsBalance: ACCOUNTS_BALANCE },
         }
-      : {},
+      : { accounts: { accountsBalance: ACCOUNTS_BALANCE } },
     robinhood: {
       url: process.env.ROBINHOOD_RPC || "https://rpc.mainnet.chain.robinhood.com",
       chainId: 4663,
