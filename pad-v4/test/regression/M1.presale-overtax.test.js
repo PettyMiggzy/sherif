@@ -42,10 +42,12 @@ describe("M-1 — a presale is taxed on what the curve absorbs, not on the whole
       platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
       lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: MINGRAD,
     });
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
       await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(),
-      await lockVault.getAddress()
+      await lockVault.getAddress(),
+      await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
     const impl = await (await ethers.getContractFactory("PresaleVault")).deploy();

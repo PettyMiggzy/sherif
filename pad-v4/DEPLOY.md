@@ -130,10 +130,29 @@ a theft risk.
 > cooldown, one `MAX_COMMIT_BPS` (20%) slice at a time — so a parked carve deploys over ~12h, not ~2h. That is
 > the intended trade.
 >
-> Treat the floor poke as a **security control, not revenue plumbing**: a poke while the pad is dumped
-> (`tick >= floorTickLower`) zeroes `belowSince` and denies an attacker the stale clock outright. Alert if
-> `belowSince` ages. NOTE it is *not* a complete defence on its own — against a sustained-hold attacker the tick
-> stays below the band, so pokes confirm the dwell instead of resetting it.
+> Treat the floor poke as **revenue plumbing now, not a security control**. Since the `[H-5]` closure shipped,
+> the security property is enforced on-chain by the hook's swap-witnessed `aboveLowerTs` watermark and the
+> episode allowance — it does not depend on any keeper behaviour, and an honest keeper poking *during* an
+> attack can no longer be made an accomplice (it commits at most the episode allowance, not a 20% slice).
+
+> ### [H-5] REQUIRED launch step — `hook.armFloorGate(poolId)`
+> This is a **SIXTH** platform-only, one-shot wiring call, alongside the five in `scripts/check-wiring.js`.
+> `RobinFloorVault` proves continuous below-band price off the hook's watermark, so a pad whose gate was never
+> armed **parks its carve forever** (`FloorParked` with reason `R_ORACLE`). Nothing is lost — the vault is
+> add-only and `parkedQuote` stays exact — but nothing deploys either. `scripts/launch.js` performs it and
+> asserts `gateStatus().armed`; `scripts/check-wiring.js` fails non-zero if it is missing, and also
+> cross-checks that the hook's armed band equals the vault's `floorTickLower`/`floorTickUpper` (the vault
+> parks on any mismatch, so a mis-wire is silent otherwise).
+>
+> `RobinFloorVault`'s constructor also takes an **11th argument, `episodeBaseWei`** — the per-episode base
+> commit allowance. Runbook value: **the pad's seed ETH / 10,000** (1 bp), computed from the launch constant,
+> **never from a chain read** (a live depth read was measured 335× inflatable by a JIT straddle across the
+> non-atomic launch → vault-deploy gap). A zero value is rejected by the constructor.
+>
+> **Expect the floor to PARK for the first `MIN_BELOW_DURATION` (195 min) after arming**, and again for 195 min
+> after a curve pad graduates (the curve walks the tick down through the region above `gradTick`, so the last
+> curve swap's pre-swap tick is above the band and stamps the watermark). This is correct, documented
+> behaviour, not a fault — `_fundFloor` moves the ETH *before* its try/caught poke, so nothing is at risk.
 
 ## Money model (per pad)
 | | BUY (quote→token) | SELL (token→quote) |

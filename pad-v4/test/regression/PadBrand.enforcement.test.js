@@ -34,9 +34,11 @@ describe("[brand] pad token addresses are contract-forced to end in faf0", () =>
       platformGradBps: 1000, creatorGradBps: 1000, ambushGradBps: 500,
       lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: MINGRAD,
     });
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
-      await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress()
+      await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
+      await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
     S = { pm, dep, reg, factory };

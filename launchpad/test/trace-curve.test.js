@@ -10,6 +10,11 @@ const ONE = 10n ** 18n;
 const ETH_USD = 1920;
 const TOTAL = 1_000_000_000; // 1B whole tokens
 
+// Needs the REAL Uniswap v3 factory + WETH on Robinhood Chain (the constants above are live
+// mainnet addresses, which have no code on a bare hardhat chain), so this suite is fork-only —
+// same convention as every other fork-dependent file here.
+const suite = process.env.FORK_RPC ? describe : describe.skip;
+
 // param sets to trace
 const SETS = [
   { name: "YOU on Pons system: $1800 start, grad ~$44k", smag: 207800, cw: 32000, mgw: 31800 },
@@ -24,7 +29,7 @@ function priceFDV(sqrtP, tokenIsToken0) {
   return { wethPerToken, mcapEth, mcapUsd: mcapEth * ETH_USD };
 }
 
-describe("Curve tracer — real FDV vs ETH raised, step by step", function () {
+suite("Curve tracer — real FDV vs ETH raised, step by step", function () {
   this.timeout(180000);
   for (const S of SETS) {
     it(`traces ${S.name}`, async () => {

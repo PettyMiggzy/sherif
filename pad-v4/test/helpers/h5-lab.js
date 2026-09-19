@@ -83,13 +83,25 @@ async function buildLab(cfg) {
   );
   const depthAtLaunch = await ethers.provider.getBalance(await pm.getAddress());
 
-  const vault = await (await ethers.getContractFactory(cfg.vaultContract ?? "RobinFloorVault")).deploy(
+  // [H-5/P2] runbook value: the pool's seed ETH / 10_000 (1 bp). Derived from the LOCAL launch constant, never
+  // from a chain read — a live depth read was measured 335x inflatable across the launch -> vault-deploy gap.
+  const episodeBaseWei = cfg.episodeBaseWei ?? depthAtLaunch / 10_000n;
+  // The frozen H5* baseline vaults predate the gate and keep their 10-arg ctor — that is the whole point of
+  // keeping them byte-identical to the shipped vault except for the one constant under test.
+  const vaultName = cfg.vaultContract ?? "RobinFloorVault";
+  const vaultArgs = [
     await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
-    ZERO, await tok.getAddress(), FEE, TS, hookAddr, 0 /* anchorTick = launch */, cfg.bandSpacings ?? 20
-  );
+    ZERO, await tok.getAddress(), FEE, TS, hookAddr, 0 /* anchorTick = launch */, cfg.bandSpacings ?? 20,
+  ];
+  if (vaultName === "RobinFloorVault") vaultArgs.push(episodeBaseWei);
+  const vault = await (await ethers.getContractFactory(vaultName)).deploy(...vaultArgs);
   // shipped wiring: the sell-tax floor carve flows to the vault (attacker-favourable — their own sell-back
   // partially re-funds the carve they are draining)
-  if (hook) await hook.connect(platform).setFloorRecipient(poolId, await vault.getAddress());
+  if (hook) {
+    await hook.connect(platform).setFloorRecipient(poolId, await vault.getAddress());
+    // [H-5] arm the swap-witnessed gate. Shipped runbook step; without it the vault parks forever (R_ORACLE).
+    if (vaultName === "RobinFloorVault" && cfg.arm !== false) await hook.connect(platform).armFloorGate(poolId);
+  }
 
   // helpers -------------------------------------------------------------------
   const sqrtAt = (t) => tick.sqrt(t);
@@ -99,11 +111,14 @@ async function buildLab(cfg) {
   await tok.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
   await ethers.provider.send("hardhat_setBalance", [trader.address, "0x" + (10n ** 26n).toString(16)]);
 
-  // DUMP the pad: sell token until the tick reaches dumpTick (token far cheaper than launch)
-  await sw.connect(trader).swap(
-    key, { zeroForOne: false, amountSpecified: -(10n ** 29n), sqrtPriceLimitX96: await sqrtAt(cfg.dumpTick) },
-    { takeClaims: false, settleUsingBurn: false }, "0x"
-  );
+  // DUMP the pad: sell token until the tick reaches dumpTick (token far cheaper than launch).
+  // `dumpTick: null` builds a HEALTHY pad that has never traded into the band — the honest-path baseline.
+  if (cfg.dumpTick != null) {
+    await sw.connect(trader).swap(
+      key, { zeroForOne: false, amountSpecified: -(10n ** 29n), sqrtPriceLimitX96: await sqrtAt(cfg.dumpTick) },
+      { takeClaims: false, settleUsingBurn: false }, "0x"
+    );
+  }
   const depthPreAttack = await ethers.provider.getBalance(await pm.getAddress());
 
   // park the carve — spot is above the band, so this is the honest, correct outcome
@@ -119,7 +134,7 @@ async function buildLab(cfg) {
 
   return {
     pm, stateView, tok, vault, mod, sw, key, poolId, tick, sqrtAt, nowTick,
-    owner, lp, trader, platform, attacker, hook,
+    owner, lp, trader, platform, attacker, hook, episodeBaseWei,
     depthAtLaunch, depthPreAttack,
     bandLower: Number(await vault.floorTickLower()), bandUpper: Number(await vault.floorTickUpper()),
   };
@@ -152,4 +167,24 @@ async function sizePush(L, targetTick, taxBps) {
   return (poolInput * 10000n) / BigInt(10000 - taxBps) + 10n ** 12n; // +1e-6 ETH so rounding never lands on tick 60
 }
 
-module.exports = { ZERO, SQRT_1_1, MIN_SQRT_LIMIT, MAX_SQRT_LIMIT, poolIdOf, E, f, buildLab, ledger, unpack, sizePush };
+// Advance past MIN_BELOW_DURATION without ever letting the tick touch the band: a 1-wei buy every `stepSec`
+// keeps a real swap cadence on the tape while staying strictly below `floorTickLower`. This is the honest
+// warm-up AND the attacker's best case — it is exactly what a sustained-hold attacker would do.
+async function warmBelowBand(L, { seconds, stepSec = 600 }) {
+  const { sw, key, attacker, sqrtAt } = L;
+  const target = L.bandLower - 1;
+  let elapsed = 0;
+  while (elapsed < seconds) {
+    const step = Math.min(stepSec, seconds - elapsed);
+    await time.increase(step);
+    elapsed += step;
+    await sw.connect(attacker).swap(
+      key, { zeroForOne: true, amountSpecified: -1n, sqrtPriceLimitX96: await sqrtAt(target) },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: 1n }
+    );
+  }
+}
+
+module.exports = {
+  ZERO, SQRT_1_1, MIN_SQRT_LIMIT, MAX_SQRT_LIMIT, poolIdOf, E, f, buildLab, ledger, unpack, sizePush, warmBelowBand,
+};

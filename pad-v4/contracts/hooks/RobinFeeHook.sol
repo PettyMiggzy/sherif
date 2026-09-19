@@ -12,7 +12,8 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {BaseHook} from "./BaseHook.sol";
-import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin} from "../interfaces/IRobinInterfaces.sol";
+import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin, IRobinFloorGate, IRobinFloorBand}
+    from "../interfaces/IRobinInterfaces.sol";
 
 /// @title RobinFeeHook — directional trade-tax engine (the heart of Robin V4)
 /// @notice Both trade taxes are denominated in the MONEY SIDE (currency0: ETH on a curve/ETH pad, or the
@@ -42,7 +43,7 @@ import {IFeeWalletRegistry, IStockGuardAdapter, IRobinFeeHookAdmin} from "../int
 ///        defers that one claim rather than bricking trading or waiving the fee [H-1].
 ///   [G1] REQUIRED_FLAGS == 0x00CC, self-asserted in the ctor and cross-checked by the factory.
 ///   [G2] No beforeInitialize; config is bound by `registerPool` in the same launch tx.
-contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
+contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin, IRobinFloorGate {
     using BalanceDeltaLibrary for BalanceDelta;
     using CurrencyLibrary for Currency;
 
@@ -52,6 +53,38 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     int128 internal constant MAX_SKIM = type(int128).max;
     /// @dev [H-2] Ceiling on the corporate-action curb window. See registerPool.
     uint32 public constant MAX_GUARD_WINDOW = 7 days;
+
+    // ------------------------------------------------------------------ //
+    //   [H-5] floor gate — swap-witnessed watermarks + a bucketed tick    //
+    //          accumulator. See FLOOR-H5-CLOSURE-SPEC.md and ORACLE.md.   //
+    // ------------------------------------------------------------------ //
+    /// @dev Compile-time ring cardinality. There is deliberately NO `grow()`/`cardinalityNext`: the cardinality a
+    /// pad ships with is the one it has from block zero, so it can never be under-sized by a forgotten bump.
+    /// Ring-span rule (corrected for two rollovers landing 1s apart across a bucket boundary):
+    /// `(OBS_N-1)*OBS_BUCKET - (OBS_BUCKET-1) = 127*180 - 179 = 22,681 >= TWAP_WINDOW (11,700)` — 1.94x.
+    uint16 internal constant OBS_N = 128;
+    /// @dev Seconds per ring slot. Appends are gated on bucket ROLLOVER, not on swap count, so no swap rate can
+    /// force more than one append per 180s — ring stuffing is structurally impossible, not merely expensive.
+    uint40 internal constant OBS_BUCKET = 180;
+    /// @dev Uniswap's MAX_ABS_TICK_MOVE re-homed PER SECOND. Robinhood Chain runs ~100ms blocks with 1-second
+    /// timestamp granularity, so a "per write" clamp would be defeated by ~10 writes inside one timestamp.
+    /// DECLARED NOT A SECURITY CONTROL — an insanity/overflow bound only. A tight clamp is actively HARMFUL: it
+    /// suppresses a genuine crash and lengthens the stale-low-average window that broke three refuted designs.
+    int256 internal constant MAX_TICK_MOVE_PER_SEC = 9116;
+    int256 internal constant MIN_TICK = -887272;
+    int256 internal constant MAX_TICK = 887272;
+    /// @dev Sentinel for "no usable average". `type(int256).max >= any floorTickLower`, so cold / short / stretched
+    /// all fail the caller's single `tw >= floorTickLower` compare identically.
+    int256 public constant TWAP_UNAVAILABLE = type(int256).max;
+    /// @dev A reported span may not exceed 4x the requested window, so a sparse pad's stretched average cannot
+    /// dilute recent history.
+    uint256 internal constant MAX_SPAN_MULT = 4;
+    /// @dev `StateLibrary.POOLS_SLOT` — the PoolManager's `pools` mapping slot. slot0 is the FIRST member of
+    /// `Pool.State`, so `keccak256(poolId, POOLS_SLOT)` is the slot0 word.
+    bytes32 internal constant POOLS_SLOT = bytes32(uint256(6));
+    /// @dev `bytes4(keccak256("extsload(bytes32)"))`. `extsload` is OVERLOADED on the PoolManager, so the
+    /// single-slot selector is pinned rather than derived. Asserted in test/unit/RobinFeeHook.oracle.test.js.
+    bytes4 internal constant EXTSLOAD_SEL = 0x1e2eaeaf;
 
     address public immutable factory;
     IFeeWalletRegistry public immutable feeRegistry;
@@ -79,6 +112,34 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     }
 
     mapping(PoolId => PoolConfig) public config;
+
+    /// @notice [H-5] Write-once at arming, read-only thereafter. 24+24+40 = 88 bits -> ONE slot.
+    struct FloorGateCfg {
+        int24 gateLower;
+        int24 gateUpper;
+        uint40 armedAt;
+    }
+
+    /// @notice [H-5] THE HOT RECORD — read and written on every swap of a registered pad.
+    /// 40+24+88+16+40+40 = 248 bits -> ONE slot.
+    struct OracleState {
+        uint40 ts; // wall clock of the newest accumulator advance
+        int24 lastTick; // clamped tick at `ts` — CLAMP REFERENCE ONLY, never credited to the accumulator
+        int88 tickCumulative; // sum of tick_i * dt_i (int88 ⇒ overflow provably unreachable, see ORACLE.md)
+        uint16 index; // newest ring slot
+        uint40 aboveLowerTs; // last second a swap saw a PRE-swap tick >= gateLower  <-- THE GATE
+        uint40 aboveUpperTs; // last second a swap saw a PRE-swap tick >= gateUpper  <-- diagnostics
+    }
+
+    /// @notice [H-5] COLD snapshot, appended at most once per OBS_BUCKET. 40+88 = 128 bits -> ONE slot.
+    struct Obs {
+        uint40 ts;
+        int88 tickCumulative;
+    }
+
+    mapping(PoolId => FloorGateCfg) public floorGate;
+    mapping(PoolId => OracleState) public oracleState;
+    mapping(PoolId => Obs[128]) internal obsRing;
 
     // Accrue-and-pull books. currencyIndex ∈ {0 = money side (quote/ETH), 1 = token}. Both taxes are
     // money-side, so live entries sit at index 0; index 1 is retained only for the generic claim signature.
@@ -120,6 +181,11 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
     error PayoutFailed();
     error CorporateActionCurb();
     error ExactOutputNotSupported();
+
+    event FloorGateArmed(PoolId indexed id, address vault, int24 gateLower, int24 gateUpper);
+
+    error FloorGateAlreadyArmed();
+    error FloorGateMismatch();
 
     event FloorRecipientSet(PoolId indexed id, address recipient);
     event BufferRecipientSet(PoolId indexed id, address recipient);
@@ -168,6 +234,21 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
             bufferRecipient: address(0),
             guardAdapter: cfg.guardAdapter
         });
+
+        // [H-5] Seed the observation record in the SAME tx the pool was initialized in, so `slot0` already holds
+        // the launch tick and the accumulator has a real anchor from block zero. No new hook flag is taken — this
+        // rides the factory-only registration call, so REQUIRED_FLAGS stays 0x00CC and every mined salt is valid.
+        (bool ok0, int24 t0) = _preSwapTick(id);
+        uint40 n0 = uint40(block.timestamp);
+        oracleState[id] = OracleState({
+            ts: n0,
+            lastTick: ok0 ? t0 : int24(0),
+            tickCumulative: 0,
+            index: 0,
+            aboveLowerTs: 0,
+            aboveUpperTs: 0
+        });
+        obsRing[id][0] = Obs({ts: n0, tickCumulative: 0}); // the anchor snapshot
         emit PoolRegistered(id, cfg.creator, cfg.buyTaxBps, cfg.sellTaxBps);
     }
 
@@ -204,6 +285,12 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
                 if (diff <= c.guardWindow) revert CorporateActionCurb();
             }
         }
+
+        // [H-5] Record this swap's PRE-swap tick. Placed AFTER the curb (a curbed swap reverts the whole tx
+        // anyway) and BEFORE the early return below, because that return fires on SELLS, on buyTaxBps == 0 and on
+        // the curve controller's own swaps — all of which move the tick and MUST be observed. Recording only taxed
+        // buys would hand an attacker a free unobserved direction.
+        if (c.registered) _observe(id);
 
         // BUY tax = fee on the money-side INPUT. zeroForOne spends currency0 (the quote) → a BUY. Sells (oneForZero)
         // are taxed in afterSwap from the money-side OUTPUT. Skip: unregistered, the hook's own swaps, sells, rate 0.
@@ -274,6 +361,158 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin {
         (bool ok, bytes memory data) = adapter.staticcall(abi.encodeCall(IStockGuardAdapter.scheduledEffectiveAt, ()));
         if (!ok || data.length < 32) return 0;
         return abi.decode(data, (uint256));
+    }
+
+    // --------------------------------------------------------------------- //
+    //                     [H-5] the floor gate / oracle                     //
+    // --------------------------------------------------------------------- //
+
+    /// @dev Read the pool's CURRENT (pre-swap, inside beforeSwap) tick straight out of the PoolManager's storage.
+    ///
+    /// Why this is the pre-swap tick: `PoolManager.swap` calls `pool.checkPoolInitialized()` (which reads slot0)
+    /// BEFORE `key.hooks.beforeSwap(...)`, and only runs `_swap` afterwards; `slot0` is the first member of
+    /// `Pool.State`. So inside beforeSwap the slot still holds the pre-swap tick, and it is already warm.
+    ///
+    /// Why NOT `StateLibrary.getSlot0`: its `abi.decode` runs in OUR frame after the call returns, outside any
+    /// try/catch — the exact [H-3] trap `_scheduledEffectiveAt` was rewritten to dodge. A low-level staticcall
+    /// plus a length check keeps this read genuinely infallible; `Extsload.extsload(bytes32)` is bare assembly
+    /// and cannot revert, so the guard is belt-and-braces.
+    function _preSwapTick(PoolId id) private view returns (bool ok, int24 tick) {
+        bytes32 slot = keccak256(abi.encodePacked(PoolId.unwrap(id), POOLS_SLOT));
+        (bool s, bytes memory d) = address(poolManager).staticcall(abi.encodeWithSelector(EXTSLOAD_SEL, slot));
+        if (!s || d.length < 32) return (false, 0);
+        // slot0 packs (sqrtPriceX96:160 | tick:24 | protocolFee:24 | lpFee:24) from the low bits up.
+        assembly ("memory-safe") {
+            tick := signextend(2, shr(160, mload(add(d, 32))))
+        }
+        ok = true;
+    }
+
+    /// @dev The entire hot-path write. Zero caller-controlled input (no `sender`, no `params`, no `hookData`),
+    /// at most three storage slots, one staticcall, no loops, no division, no SafeCast — so it cannot revert a
+    /// user's swap, and it cannot be steered.
+    function _observe(PoolId id) private {
+        FloorGateCfg memory g = floorGate[id];
+        OracleState memory s = oracleState[id];
+        if (s.ts == 0 && g.armedAt == 0) return; // neither seeded nor armed — nothing to maintain
+        (bool ok, int24 raw) = _preSwapTick(id);
+        uint40 nowTs = uint40(block.timestamp);
+        bool dirty;
+        unchecked {
+            // ---- WATERMARKS. Stamped on EVERY swap, INCLUDING same-second swaps (deliberately no `dt` guard),
+            //      on the RAW unclamped tick, and FAIL-CLOSED when the slot is unreadable. This is what makes an
+            //      above-band -> below-band transition impossible to hide: the transition IS a swap, and that
+            //      swap's pre-swap tick is the above-band one, so the attacker's own push closes the gate in the
+            //      same transaction it opens the opportunity.
+            if (g.armedAt != 0) {
+                if ((!ok || raw >= g.gateLower) && s.aboveLowerTs != nowTs) {
+                    s.aboveLowerTs = nowTs;
+                    dirty = true;
+                }
+                if ((!ok || raw >= g.gateUpper) && s.aboveUpperTs != nowTs) {
+                    s.aboveUpperTs = nowTs;
+                    dirty = true;
+                }
+            }
+            // ---- ACCUMULATOR — Uniswap V3 `Oracle.transform` semantics, minus everything that was ever a bug
+            //      source (grow/cardinality, binary search, interpolation, the 2106 `lte` wrap, liquidity terms).
+            if (ok && s.ts != 0) {
+                uint40 dt = nowTs - s.ts; // monotone clock ⇒ cannot underflow
+                if (dt != 0) {
+                    // same second ⇒ zero weight, and no clamp step either
+                    int256 t = int256(raw);
+                    int256 cap = MAX_TICK_MOVE_PER_SEC * int256(uint256(dt));
+                    int256 lo = int256(s.lastTick) - cap;
+                    int256 hi = int256(s.lastTick) + cap;
+                    if (t < lo) t = lo;
+                    else if (t > hi) t = hi;
+                    if (t < MIN_TICK) t = MIN_TICK;
+                    else if (t > MAX_TICK) t = MAX_TICK;
+
+                    // *** LOAD-BEARING. Credit [s.ts, now] at THIS swap's clamped PRE-swap tick — the tick that
+                    // *** genuinely prevailed across that interval, because ONLY `swap` writes slot0. Crediting
+                    // *** the STORED `s.lastTick` instead REOPENS H-5 at zero holding cost: push, 1-wei swap to
+                    // *** latch, sell back, idle for the window, one swap -> the whole window credited at the
+                    // *** pushed tick. DO NOT "SIMPLIFY" THIS LINE.
+                    s.tickCumulative += int88(t * int256(uint256(dt)));
+                    s.lastTick = int24(t); // provably within [MIN_TICK, MAX_TICK] after the clamp above
+
+                    if (nowTs / OBS_BUCKET != s.ts / OBS_BUCKET) {
+                        s.index = (s.index + 1) % OBS_N;
+                        obsRing[id][s.index] = Obs({ts: nowTs, tickCumulative: s.tickCumulative});
+                    }
+                    s.ts = nowTs;
+                    dirty = true;
+                }
+            }
+        }
+        if (dirty) oracleState[id] = s;
+    }
+
+    /// @notice Bind this pool's floor band into the hook so `_observe` can stamp the watermarks.
+    /// @dev Platform-only, ONE-SHOT, and HARD-REVERTS on any mismatch. A mis-wired floor vault is an
+    /// unrecoverable park-forever (the vault is add-only with no withdraw), so this must fail at deploy time,
+    /// loudly, rather than silently arm a band no vault owns. Deliberately NOT folded into `setFloorRecipient`:
+    /// that setter also serves pools whose recipient is not a `RobinFloorVault`, and it must keep working there.
+    /// A pool that is never armed simply PARKS forever (the vault reads "unarmed" as `R_ORACLE`); nothing bricks.
+    function armFloorGate(PoolId id) external {
+        if (msg.sender != feeRegistry.platformFeeWallet()) revert NotPlatform();
+        PoolConfig storage c = config[id];
+        if (!c.registered) revert NotRegistered();
+        address v = c.floorRecipient;
+        if (v == address(0)) revert NoFloorRecipient();
+        if (floorGate[id].armedAt != 0) revert FloorGateAlreadyArmed();
+
+        // Typed calls on purpose: a revert here IS the intended deploy-time failure. This is not a swap path.
+        int24 lo = IRobinFloorBand(v).floorTickLower();
+        int24 hi = IRobinFloorBand(v).floorTickUpper();
+        if (PoolId.unwrap(IRobinFloorBand(v).poolId()) != PoolId.unwrap(id)) revert FloorGateMismatch();
+        if (lo >= hi || lo < int24(MIN_TICK) || hi > int24(MAX_TICK)) revert FloorGateMismatch();
+
+        (bool ok, int24 t) = _preSwapTick(id);
+        uint40 n = uint40(block.timestamp);
+        floorGate[id] = FloorGateCfg({gateLower: lo, gateUpper: hi, armedAt: n});
+        OracleState storage os = oracleState[id];
+        // Conservative arming: if the tick is already at/above a watermark (or unreadable), stamp it now so the
+        // vault parks until a full MIN_BELOW_DURATION of continuous below-band price has been witnessed.
+        if (!ok || t >= lo) os.aboveLowerTs = n;
+        if (!ok || t >= hi) os.aboveUpperTs = n;
+        emit FloorGateArmed(id, v, lo, hi);
+    }
+
+    /// @inheritdoc IRobinFloorGate
+    /// @dev Every return is a full 32-byte word, so the vault's `abi.decode` can never revert on a dirty word.
+    function floorGateState(PoolId id)
+        external
+        view
+        override
+        returns (uint256 armedAt, uint256 aboveLowerTs, uint256 aboveUpperTs, int256 gateLower)
+    {
+        FloorGateCfg memory g = floorGate[id];
+        OracleState memory s = oracleState[id];
+        return (uint256(g.armedAt), uint256(s.aboveLowerTs), uint256(s.aboveUpperTs), int256(g.gateLower));
+    }
+
+    /// @inheritdoc IRobinFloorGate
+    /// @dev No interpolation, no binary search, no wrap-around comparison: BOTH endpoints are real recorded
+    /// `(ts, cum)` pairs divided by their true delta. Worst case 128 cold SLOADs, on the keeper poke path only —
+    /// NEVER on a swap. Retained as defence-in-depth only; the gate's security rests on the watermarks.
+    function consultTick(PoolId id, uint32 window) external view override returns (int256) {
+        OracleState memory s = oracleState[id];
+        if (s.ts == 0 || window == 0 || uint256(s.ts) < uint256(window)) return TWAP_UNAVAILABLE;
+        uint40 target = s.ts - uint40(window);
+        for (uint256 i = 1; i <= OBS_N; ++i) {
+            Obs memory o = obsRing[id][(uint256(s.index) + OBS_N - i) % OBS_N];
+            if (o.ts == 0) continue;
+            if (o.ts <= target) {
+                uint40 span = s.ts - o.ts; // >= window by construction
+                if (span == 0 || uint256(span) > uint256(window) * MAX_SPAN_MULT) return TWAP_UNAVAILABLE;
+                unchecked {
+                    return int256(s.tickCumulative - o.tickCumulative) / int256(uint256(span));
+                }
+            }
+        }
+        return TWAP_UNAVAILABLE;
     }
 
     // --------------------------------------------------------------------- //

@@ -40,10 +40,12 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
       lpFee: FEE, startTickMag: START, curveWidth: START - GRAD, minGradWidth: 1800,
     });
 
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       POOL_MANAGER, POSITION_MANAGER, PERMIT2, await stateView.getAddress(),
       await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(),
-      await reg.getAddress(), await lockVault.getAddress()
+      await reg.getAddress(), await lockVault.getAddress(),
+      await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
 

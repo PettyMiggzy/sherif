@@ -28,9 +28,11 @@ describe("[M-3 / L-27] PadFactory governed tax caps", () => {
     const dep = await (await ethers.getContractFactory("DeterministicDeployer")).deploy();
     const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
     const lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await posm.getAddress(), await reg.getAddress());
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     factory = await (await ethers.getContractFactory("PadFactory")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(),
-      await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress()
+      await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
+      await fhd.getAddress()
     );
     depAddr = await dep.getAddress();
     factoryAddr = await factory.getAddress();

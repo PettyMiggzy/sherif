@@ -56,6 +56,7 @@ async function main() {
   const lockVault = await dep("LockVault", [await posm.getAddress(), await reg.getAddress()]);
   const stateView = await dep("RobinStateView", [POOL_MANAGER]);
   const curveDep = await dep("CurveV4Deployer", [await dd.getAddress()]);
+  const feeHookDep = await dep("FeeHookDeployer", [await dd.getAddress()]); // [EIP-170]
   const START = 201600, WIDTH = 23000, GRAD = START - WIDTH, TS = 100, FEE = 10000;
   const feeCfg = await dep("RobinV4FeeConfig", [w.address, {
     buyTaxBps: 100, sellTaxBps: 100, sellFloorShareBps: 2000, buyLpFloorShareBps: 2000, buyBufferShareBps: 2000, referralShareBps: 2500,
@@ -65,6 +66,7 @@ async function main() {
   const factory = await dep("CurvePadFactoryV4", [
     POOL_MANAGER, await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
     await dd.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
+    await feeHookDep.getAddress(),
   ]);
   await (await lockVault.setFactory(await factory.getAddress(), T0)).wait();
   const SW = await dep("PoolSwapTest", [POOL_MANAGER]);

@@ -1,4 +1,6 @@
 const { ethers } = require("hardhat");
+// [H-5/P2] per-episode base allowance — runbook value is the pad's seed ETH / 10_000 (1 bp)
+const EPISODE_BASE_WEI = 10n ** 14n;
 const { expect } = require("chai");
 
 // RobinCurveV4 — the FULL graduation waterfall, run locally against a REAL Uniswap v4 PoolManager using a mock
@@ -69,7 +71,7 @@ describe("RobinCurveV4 — full graduation waterfall (real PoolManager + mock po
     // wire the permanent floor (band anchored just above the graduation tick)
     floor = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
       await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
-      ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10
+      ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10, EPISODE_BASE_WEI
     );
     await curve.connect(platform).setFloor(await floor.getAddress());
   });

@@ -40,9 +40,11 @@ describe("H-4 — the stock seed's remainder goes back to whoever paid it", () =
     await stockReg.setRegistered(await stock.getAddress(), true); // [H-2] the registry attests the stock
 
     // [H-2] the registry is pinned on the factory, and the curb adapter is derived from (stock, registry)
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     factory = await (await ethers.getContractFactory("StockPadFactory")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(),
-      await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress(), await stockReg.getAddress()
+      await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress(), await stockReg.getAddress(),
+      await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
 

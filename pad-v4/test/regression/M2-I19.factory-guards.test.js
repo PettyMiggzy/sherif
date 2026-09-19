@@ -31,14 +31,15 @@ async function base(deployer, platform) {
   const posm = await (await ethers.getContractFactory("MockPositionManagerV4")).deploy(await pm.getAddress(), await permit2.getAddress());
   const curveDep = await (await ethers.getContractFactory("CurveV4Deployer")).deploy(await dep.getAddress());
   const feeCfg = await (await ethers.getContractFactory("RobinV4FeeConfig")).deploy(deployer.address, DEFAULTS);
-  return { pm, stateView, dep, reg, permit2, posm, curveDep, feeCfg };
+  const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
+  return { pm, stateView, dep, reg, permit2, posm, curveDep, feeCfg, fhd };
 }
 
 async function deployFactory(B, posmAddr, lockVaultAddr) {
   return (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
     await B.pm.getAddress(), posmAddr, await B.permit2.getAddress(), await B.stateView.getAddress(),
     await B.dep.getAddress(), await B.curveDep.getAddress(), await B.feeCfg.getAddress(),
-    await B.reg.getAddress(), lockVaultAddr
+    await B.reg.getAddress(), lockVaultAddr, await B.fhd.getAddress()
   );
 }
 
@@ -110,9 +111,11 @@ describe("[M-2 / I-1(19)] CurvePadFactoryV4 wiring guards — failing branches",
     const PROD = { ...DEFAULTS, lpFee: FEE, startTickMag: 201600, curveWidth: 23000, minGradWidth: 22800 };
     const feeCfgProd = await (await ethers.getContractFactory("RobinV4FeeConfig")).deploy(deployer.address, PROD);
     const lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await B.posm.getAddress(), await B.reg.getAddress());
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await B.dep.getAddress());
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await B.pm.getAddress(), await B.posm.getAddress(), await B.permit2.getAddress(), await B.stateView.getAddress(),
-      await B.dep.getAddress(), await B.curveDep.getAddress(), await feeCfgProd.getAddress(), await B.reg.getAddress(), await lockVault.getAddress()
+      await B.dep.getAddress(), await B.curveDep.getAddress(), await feeCfgProd.getAddress(), await B.reg.getAddress(), await lockVault.getAddress(),
+      await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
     const tiny = {

@@ -1,9 +1,45 @@
-# H-5 closure — design specification (NOT YET IMPLEMENTED)
+# H-5 closure — design specification (**SHIPPED**)
 
-> **Status: DESIGN, red-teamed, awaiting implementation + external review.**
-> The shipped interim hardening (`COMMIT_COOLDOWN` 65m > `MAX_OBSERVED_GAP` 60m, see `RobinFloorVault` `[R3-H5]`
-> and `test/regression/H5.floor-forced-fill.test.js`) closes the demonstrated once-per-cooldown loop but only
-> *paces* the sustained-hold variant. This document is the structural closure.
+> **Status: IMPLEMENTED AND MEASURED.** Landed in `RobinFeeHook` (the swap-witnessed watermarks + the bucketed
+> accumulator, see `ORACLE.md`) and `RobinFloorVault` (the gate, the episode allowance, the mint-time re-check),
+> with `FeeHookDeployer` added first for EIP-170 headroom. Regressions:
+> `test/regression/H5.floor-forced-fill.test.js` (the attack and the closure), `H5.gate-liveness.test.js`
+> (every unreadable/unarmed/mismatched path parks rather than reverting),
+> `test/unit/RobinFeeHook.oracle.test.js` (the observation), `test/unit/FloorConstants.test.js` (the
+> inequalities). The round-3 interim hardening (`COMMIT_COOLDOWN` 65m > `MAX_OBSERVED_GAP` 60m) is retained
+> unchanged underneath it, as a subordinate AND-term.
+>
+> **Two deliberate deviations from this document, both forced by the auditor's `[R3 N-B]` must-fix. They are
+> the only places the shipped code differs from the specification below:**
+>
+> 1. **The episode is anchored on `aboveLowerTs`, not `aboveUpperTs`.** §2.1's L2 rolled the episode only when
+>    the tick crossed `floorTickUpper`; a dump that stalls anywhere in `[floorTickLower, floorTickUpper)` never
+>    crosses that pivot, so `episodeStartQuote` kept its zero default and the allowance was effectively
+>    uncapped — and the auditor measured the force-fill net-positive from the band midpoint upward, entirely
+>    below that pivot. Anchoring on any touch of the band closes it and is strictly more conservative.
+> 2. **`EPISODE_BAND_BPS` is NOT shipped.** The cap is `EPISODE_BASE_WEI` alone. That term's 3.2× margin was
+>    priced against the cost of crossing the *whole* band, which deviation (1) no longer requires; re-derived
+>    against the cheaper `floorTickLower` round trip it turns profitable once the band holds more than ~1.58×
+>    the pool's ETH depth. Dropping it gives a depth-independent bound instead: linearising near the band,
+>    `G ≈ 2·N_push/D` while a round trip costs `2·β_net·N_push`, so `profit/cost = cap/(β_net·D)` regardless of
+>    push depth — **~80× unprofitable** at `cap = D/10,000` and `β_net = 0.8%`. Measured at 116× (deep) and
+>    8.6× (shallow) on the lab geometry.
+>
+> Measured before/after, real contract code, `test/regression/H5.floor-forced-fill.test.js`:
+>
+> | run | attacker PnL | carve consumed | `floorLiquidity` |
+> |---|---|---|---|
+> | pre-fix constants (10 m cooldown) | **+8.7340 ETH** | 17.85 / 20 ETH | > 0 |
+> | auditor's `COMMIT_COOLDOWN > MIN_DWELL` | **+8.7340 ETH** (inert, bit-identical) | 17.85 / 20 ETH | > 0 |
+> | **shipped gate — round-trip loop** | **−1.1106 ETH** | **0** | **0** |
+> | **shipped gate — [N-A] sustained hold, 12 h** | **−1.1042 ETH** | 0.0095 ETH (= the cap) | one slice |
+> | **shipped gate — [N-B] shallow mid-band dump** | **−0.0817 ETH** | 0.0095 ETH (= the cap) | one slice |
+> | control: same run, no carve | −1.1106 ETH | — | 0 |
+>
+> The carve/no-carve delta is **0 wei**: the attack is no longer extraction. The honest path is intact —
+> 14.76 of a 20 ETH carve deploys over 40 pokes on a healthy pad.
+>
+> The rest of this document is the design as it was red-teamed, and is retained as the rationale record.
 
 ## READ THIS FIRST — the external auditor's blessed direction was MEASURED WORSE THAN DOING NOTHING
 

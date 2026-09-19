@@ -8,7 +8,12 @@ const ETH_USD = 1920;
 const TOTAL = 1_000_000_000;
 const SMAG = 207800, CW = 31200, MGW = 31000;
 
-describe("dev-buy FDV", function () {
+// Needs the REAL Uniswap v3 factory + WETH on Robinhood Chain (the constants above are live
+// mainnet addresses, which have no code on a bare hardhat chain), so this suite is fork-only —
+// same convention as every other fork-dependent file here.
+const suite = process.env.FORK_RPC ? describe : describe.skip;
+
+suite("dev-buy FDV", function () {
   this.timeout(180000);
   it("dev buy size -> resulting mcap (find what reaches $10k)", async () => {
     const [dep, platform, dev] = await ethers.getSigners();

@@ -38,9 +38,11 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
     await stockReg.setRegistered(await stock.getAddress(), true); // [H-2] the registry attests the stock
     const stockAddr = (await stock.getAddress()).toLowerCase();
 
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     const factory = await (await ethers.getContractFactory("StockPadFactory")).deploy(
       POOL_MANAGER, POSITION_MANAGER, PERMIT2, await dep.getAddress(), await reg.getAddress(),
-      await lockVault.getAddress(), await stockReg.getAddress()
+      await lockVault.getAddress(), await stockReg.getAddress(),
+      await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
 
@@ -85,7 +87,20 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
     const conf = await hookC.config(await factory.poolOf(token));
     expect(conf.registered).to.equal(true);
     expect(conf.quoteIsStock).to.equal(true);
-    expect(conf.guardAdapter).to.equal(await adapter.getAddress());
+
+    // [H-2] the curb adapter is DERIVED by the factory from (stock, its pinned registry) — a launcher never
+    // supplies one — so reproduce the deterministic address instead of reading a local handle.
+    const AdapterF = await ethers.getContractFactory("StockQuoteAdapter");
+    const adapterCtorArgs = abi.encode(["address", "address"], [await stock.getAddress(), await stockReg.getAddress()]);
+    const expectedAdapter = ethers.getCreate2Address(
+      depAddr,
+      ethers.keccak256(adapterCtorArgs),
+      ethers.keccak256(ethers.concat([AdapterF.bytecode, adapterCtorArgs]))
+    );
+    expect(conf.guardAdapter).to.equal(expectedAdapter);
+    const adapter = await ethers.getContractAt("StockQuoteAdapter", conf.guardAdapter);
+    expect(await adapter.stock()).to.equal(await stock.getAddress());
+    expect(await adapter.registry()).to.equal(await stockReg.getAddress());
 
     const posm = await ethers.getContractAt("IPositionManagerMinimal", POSITION_MANAGER);
     expect(await posm.ownerOf(lpTokenId)).to.equal(await lockVault.getAddress());

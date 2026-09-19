@@ -1,6 +1,9 @@
 const { ethers } = require("hardhat");
+// [H-5/P2] per-episode base allowance — runbook value is the pad's seed ETH / 10_000 (1 bp)
+const EPISODE_BASE_WEI = 10n ** 14n;
 const { expect } = require("chai");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
+const { deployHook, registerPool, wireAndArm } = require("../helpers/floor-gate");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ECONOMIC SIMULATIONS — multi-step scenarios against a real PoolManager that assert the
@@ -110,23 +113,30 @@ describe("SIM — fee conservation over many buys & sells", () => {
 
 describe("SIM — the floor only ever grows and absorbs dumps", () => {
   it("repeated carve monotonically increases floor liquidity; never decreases", async () => {
-    const [owner, lp, trader, platform] = await ethers.getSigners();
+    const [owner, lp, trader, platform, creator, factorySigner] = await ethers.getSigners();
     const pm = await (await ethers.getContractFactory("PoolManager")).deploy(owner.address);
     const stateView = await (await ethers.getContractFactory("RobinStateView")).deploy(await pm.getAddress());
     const tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
-    const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: ZERO };
+    const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
+    // [H-5] the commit gate reads the hook's swap-witnessed watermark, so the floor needs a REAL hook to deploy
+    // anything at all. Monotonicity — the property under test — is unchanged by the gate.
+    const { hook, hookAddr } = await deployHook(pm, factorySigner, reg, tok);
+    const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: 3000, tickSpacing: 60, hooks: hookAddr };
+    const floorPoolId = idOf(key);
     await pm.initialize(key, SQRT_1_1);
+    await registerPool(hook, factorySigner, floorPoolId, tok, creator.address);
     const mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());
     const sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
     await tok.connect(owner).transfer(lp.address, 10n ** 24n);
     await tok.connect(lp).approve(await mod.getAddress(), ethers.MaxUint256);
     await mod.connect(lp).modifyLiquidity(key, { tickLower: -12000, tickUpper: 12000, liquidityDelta: 10n ** 19n, salt: ethers.ZeroHash }, "0x", { value: ethers.parseEther("500") });
 
-    const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
     const vault = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(), ZERO, await tok.getAddress(), 3000, 60, ZERO, 0, 20
+      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(), ZERO, await tok.getAddress(),
+      3000, 60, hookAddr, 0, 20, EPISODE_BASE_WEI
     );
     const vaultAddr = await vault.getAddress();
+    await wireAndArm(hook, platform, floorPoolId, vault);
 
     let last = 0n;
     // [H-5] a commit needs the tick settled below the band for MIN_DWELL and is rate-limited per
@@ -134,7 +144,10 @@ describe("SIM — the floor only ever grows and absorbs dumps", () => {
     // [R3-H5] COMMIT_COOLDOWN (65m) now EXCEEDS MAX_OBSERVED_GAP (60m), so pokes must land INSIDE the gap or
     // `belowSince` re-arms every time and nothing ever commits. Poke at the MIN_DWELL cadence (the required
     // keeper behaviour, see DEPLOY.md §3) and let the cooldown pace the commits.
+    // [H-5] the gate adds a MIN_BELOW_DURATION warm-up from `armedAt` before the first commit; the pad never
+    // trades into the band here, so the episode never rolls and the allowance stays inflow-equal.
     const dwell = Number(await vault.MIN_DWELL()) + 1;
+    await time.increase(Number(await vault.MIN_BELOW_DURATION()) + 1);
     for (let i = 0; i < 8; i++) {
       await owner.sendTransaction({ to: vaultAddr, value: ethers.parseEther("2") });
       for (let p = 0; p < 8; p++) { await time.increase(dwell); await vault.addFloor(); }

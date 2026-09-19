@@ -8,7 +8,12 @@ const V3_FACTORY = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
 const ONE = 10n ** 18n;
 const START_TICK_MAG = 201600, CURVE_WIDTH = 23000, MIN_GRAD_WIDTH = 22800;
 
-describe("Graduation grief — spot shoved above the ceiling must not block graduation", function () {
+// Needs the REAL Uniswap v3 factory + WETH on Robinhood Chain (the constants above are live
+// mainnet addresses, which have no code on a bare hardhat chain), so this suite is fork-only —
+// same convention as every other fork-dependent file here.
+const suite = process.env.FORK_RPC ? describe : describe.skip;
+
+suite("Graduation grief — spot shoved above the ceiling must not block graduation", function () {
   this.timeout(180000);
   it("attacker pushes spot past the ceiling; graduate() nudges back and still posts the Bond", async () => {
     const [dep, platform, dev, buyer, attacker] = await ethers.getSigners();

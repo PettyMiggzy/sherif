@@ -1,11 +1,24 @@
 # Floor redesign — closing H-5 / M-15 / L-33 structurally
 
-**Status: DESIGN PROPOSAL for the external auditor to react to. Not yet implemented.**
-The shipped `RobinFloorVault` has interim hardening (see the contract header + `AUDIT-SCOPE.md` §5) that closes the
-*atomic whole-carve* force-fill and the *>1h-stale* replay, but a bounded slice can still be force-committed off a
-≤1h-stale `belowSince`. This document proposes the structural fix. Because three prior attempts on this exact surface
-were refuted (M-7's mid-curve build, M-15's naive live-`slot0` gate, H-5's dwell), **please validate the approach
-below before it is implemented.**
+**Status: SUPERSEDED for H-5 (closed by OTG-2, see `FLOOR-H5-CLOSURE-SPEC.md`). Still the live record for M-15
+and L-33, which remain OPEN product decisions, and the register of every refuted attempt on this surface.**
+
+The proposal in this document — "place add-only bands relative to *current* spot" — was itself **REFUTED** by
+the gauntlet (a fully-atomic sandwich: flash-push the tick down, poke to place the ETH band just below true
+price, sell back through it — strictly worse than doing nothing). It is retained so nobody re-proposes it.
+
+What shipped instead keeps the FIXED band and hardens the *gate*: a swap-witnessed below-band watermark plus a
+non-refilling, episode-scoped commit allowance. **Refutations 1–4 below are joined by four more, all recorded in
+`FLOOR-H5-CLOSURE-SPEC.md` §1:** (5) a TWAP conjunct alone — measured *strictly better for the attacker*
+(+23.84 → +31.92 ETH peak, break-even 30% → 4.0%); (6) lengthening `W`/`COMMIT_COOLDOWN` — measured **inert to
+the wei**, because holding costs nothing per unit time (T1); (7) any depth- or magnitude-based slice sizing —
+a live `getLiquidity` read was measured 335× inflatable by a one-spacing JIT straddle; (8) any time-refilling
+budget — profit grows linearly in hold duration, break-even ~2 days.
+
+**M-15 and L-33 are NOT closed**, and the closure slightly worsens M-15: the band is still fixed at the launch
+anchor, so a sustained drawdown parks the carve, and carve accrued in a previous episode now deploys only 1:1
+with new inflow (residual R1). Anyone reopening this surface must design against M-15, L-33, **and** the eight
+refutations together.
 
 ## The three findings, restated
 

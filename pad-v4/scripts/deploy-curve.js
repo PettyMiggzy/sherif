@@ -71,6 +71,8 @@ async function main() {
   const reg = await legacyDeploy("FeeWalletRegistry", [platform, deployer.address]);
   const lockVault = await legacyDeploy("LockVault", [POSITION_MANAGER, await reg.getAddress()]);
   const curveDeployer = await legacyDeploy("CurveV4Deployer", [await dep.getAddress()]);
+  // [EIP-170] holds RobinFeeHook's creationCode so the factory doesn't (same CREATE2 deployer ⇒ same mined addresses)
+  const feeHookDeployer = await legacyDeploy("FeeHookDeployer", [await dep.getAddress()]);
   const feeConfig = await legacyDeploy("RobinV4FeeConfig", [deployer.address, DEFAULTS]);
   const factory = await legacyDeploy("CurvePadFactoryV4", [
     POOL_MANAGER,
@@ -82,6 +84,7 @@ async function main() {
     await feeConfig.getAddress(),
     await reg.getAddress(),
     await lockVault.getAddress(),
+    await feeHookDeployer.getAddress(),
   ]);
 
   const setTx = await lockVault.setFactory(await factory.getAddress(), { type: 0 });
@@ -111,6 +114,7 @@ async function main() {
       feeWalletRegistry: await reg.getAddress(),
       lockVault: await lockVault.getAddress(),
       curveDeployer: await curveDeployer.getAddress(),
+      feeHookDeployer: await feeHookDeployer.getAddress(),
       feeConfig: await feeConfig.getAddress(),
       curveFactory,
       presaleImpl: await presaleImpl.getAddress(),
@@ -127,6 +131,13 @@ async function main() {
   console.log("     graduation deploy RobinFloorVault + the two-sided RobinAmbushVault(…, curve, …), then platform calls");
   console.log("     curve.setStaking(staking) / curve.setFloor(floor) / curve.setAmbush(ambush) (one-shot each). The");
   console.log("     ambush reads its band anchor from curve.gradTick() on-chain; seedAmbush()/graduate() arm it.");
+  console.log("     [H-5] THE FLOOR VAULT NOW TAKES AN 11th CTOR ARG, episodeBaseWei — use seedEth / 10_000 (1 bp),");
+  console.log("           computed from the LAUNCH CONSTANT, never a chain read. And after hook.setFloorRecipient,");
+  console.log("           the platform MUST call hook.armFloorGate(poolId): the vault proves continuous below-band");
+  console.log("           price off the hook's swap-witnessed watermark, so an UNARMED pad parks its carve forever");
+  console.log("           (FloorParked reason R_ORACLE). Arming hard-reverts on a band/pool mismatch by design.");
+  console.log("           Expect the floor to park for the first MIN_BELOW_DURATION (195 min) after arming, and");
+  console.log("           again for 195 min after graduation (the curve walks the tick down through the band).");
   console.log("     [M-7] ALSO REQUIRED, and previously missing from this list: hook.setFloorRecipient(poolId, floor).");
   console.log("     That is a SECOND, independent floor wiring — curve.setFloor routes the buy-side LP carve, while");
   console.log("     hook.setFloorRecipient routes the sell-TAX carve. Nothing on chain requires them to name the same");

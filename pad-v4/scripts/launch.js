@@ -85,15 +85,28 @@ async function main() {
   const FloorF = await ethers.getContractFactory("RobinFloorVault");
   const ratio = Number(cfg.sqrtPriceX96) / 2 ** 96;
   const anchorTick = Math.floor(Math.log(ratio * ratio) / Math.log(1.0001));
+  // [H-5/P2] the per-episode base allowance. Computed from the LOCAL seed constant, never a chain read — a live
+  // depth/liquidity read was measured 335x inflatable by a one-spacing JIT straddle across the non-atomic
+  // launch -> vault-deploy gap, which is why no on-chain read appears anywhere in the gate's sizing.
+  const episodeBaseWei = seedEth / 10_000n;
   const floor = await FloorF.deploy(
     // [L-11] pass the timelocked registry, not a raw platform address, so a wallet rotation reaches the floor vault
-    d.poolManager, d.stateView, d.feeWalletRegistry, ethers.ZeroAddress, token, FEE, TS, hook, anchorTick, FLOOR_BAND_SPACINGS, { type: 0 }
+    d.poolManager, d.stateView, d.feeWalletRegistry, ethers.ZeroAddress, token, FEE, TS, hook, anchorTick,
+    FLOOR_BAND_SPACINGS, episodeBaseWei, { type: 0 }
   );
   await floor.waitForDeployment();
   const floorAddr = await floor.getAddress();
   const hookC = HookF.attach(hook);
   await legacy(hookC, "setFloorRecipient", [poolId, floorAddr]); // platform-gated (signer must be platform)
-  console.log(`  floorVault ${floorAddr}  (wired)`);
+  // [H-5] ARM THE GATE. Without this the vault reads the hook as unarmed and parks FOREVER (reason R_ORACLE).
+  // It hard-reverts on a band/pool mismatch, which is exactly what we want at deploy time — a mis-wired
+  // add-only vault has no recovery path.
+  await legacy(hookC, "armFloorGate", [poolId]);
+  const gate = await floor.gateStatus();
+  if (!gate.armed) throw new Error("floor gate did not arm — refusing to continue");
+  console.log(`  floorVault ${floorAddr}  (wired + gate armed, episodeBaseWei ${ethers.formatEther(episodeBaseWei)} ETH)`);
+  console.log(`  NOTE: the floor PARKS its carve for the first ${Number(await floor.MIN_BELOW_DURATION()) / 60} minutes`);
+  console.log(`        (MIN_BELOW_DURATION warm-up from armedAt) and then deploys it normally. This is expected.`);
 
   // 4) staking pool for the token (claim fee = the factory's immutable default — shipped 0 per deploy.js [F1]; no lock)
   const stakingFactory = await ethers.getContractAt("StakingFactory", d.stakingFactory);
