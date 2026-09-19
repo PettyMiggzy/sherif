@@ -388,16 +388,15 @@ contract RobinFeeHook is BaseHook, IRobinFeeHookAdmin, IRobinFloorGate {
                 if (diff <= c.guardWindow) revert CorporateActionCurb();
             }
         }
-        // [R3-H5 P1] Witness the PRE-swap tick. Placed AFTER the curb (a curbed swap reverts the whole tx
-        // anyway) and BEFORE the early return below — that return fires on SELLS, on buyTaxBps == 0 and on the
-        // curve controller's own swaps, all of which move the tick and MUST be observed. Recording only taxed
-        // buys would hand an attacker a free unobserved direction straight through the gate.
-        if (c.registered) _observe(id);
-
-        // [H-5] Record this swap's PRE-swap tick. Placed AFTER the curb (a curbed swap reverts the whole tx
-        // anyway) and BEFORE the early return below, because that return fires on SELLS, on buyTaxBps == 0 and on
-        // the curve controller's own swaps — all of which move the tick and MUST be observed. Recording only taxed
-        // buys would hand an attacker a free unobserved direction.
+        // [H-5] Witness the PRE-swap tick. Placed AFTER the curb (a curbed swap reverts the whole tx anyway)
+        // and BEFORE the early return below — that return fires on SELLS, on buyTaxBps == 0 and on the curve
+        // controller's own swaps, all of which move the tick and MUST be observed. Recording only taxed buys
+        // would hand an attacker a free unobserved direction straight through the gate.
+        //
+        // [MERGE] This call existed ONCE on each parent and the hand-merge kept BOTH copies, so every swap on
+        // every pad paid a second extsload STATICCALL plus two SLOADs. It was idempotent only by luck (the
+        // second pass sees dt == 0), and the hook's bytecode is mined to a permanent CREATE2 address, so the
+        // waste would have been unpatchable. One call.
         if (c.registered) _observe(id);
 
         // BUY tax = fee on the money-side INPUT. zeroForOne spends currency0 (the quote) → a BUY. Sells (oneForZero)

@@ -112,6 +112,9 @@ async function main() {
   const feeConfig = await deploy("RobinV4FeeConfig", [deployer.address, DEFAULTS]);
   const robinStakingV4Deployer = await deploy("RobinStakingV4Deployer", []);
   const auctionVaultDeployer = await deploy("DailyAuctionVaultV4Deployer", [await robinStakingV4Deployer.getAddress()]);
+  // [EIP-170] The factory no longer inlines RobinFeeHook's creationCode — it forwards to this deployer, and
+  // its constructor REVERTS BadConfig() if the address is zero. Without this the Arc mainnet deploy aborts.
+  const feeHookDeployer = await deploy("FeeHookDeployer", [await dep.getAddress()]);
   const factory = await deploy("CurvePadFactoryV4", [
     POOL_MANAGER,
     POSITION_MANAGER,
@@ -123,6 +126,7 @@ async function main() {
     await reg.getAddress(),
     await lockVault.getAddress(),
     await auctionVaultDeployer.getAddress(),
+    await feeHookDeployer.getAddress(),
   ]);
 
   const setTx = await lockVault.setFactory(await factory.getAddress());

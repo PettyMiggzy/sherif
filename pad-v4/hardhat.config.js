@@ -46,6 +46,19 @@ module.exports = {
           accounts: { accountsBalance: ACCOUNTS_BALANCE },
         }
       : { accounts: { accountsBalance: ACCOUNTS_BALANCE } },
+    // [MERGE] arc + localhost were DELETED by taking the incoming branch's copy of this file wholesale.
+    // That branch forked before Arc existed here. Without `arc`, `--network arc` aborts with "Network arc
+    // doesn't exist" and the entire Arc deploy path is dead; without `localhost`, every
+    // `--network localhost` script (the local devnet demos) breaks. Restored from af0b433.
+    arc: {
+      url: process.env.ARC_RPC || "https://rpc.mainnet.arc.io",
+      chainId: 5042,
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+    },
+    localhost: {
+      url: "http://127.0.0.1:8545",
+      timeout: 300000,
+    },
     robinhood: {
       url: process.env.ROBINHOOD_RPC || "https://rpc.mainnet.chain.robinhood.com",
       chainId: 4663,

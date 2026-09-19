@@ -126,10 +126,13 @@ async function main() {
   const feeCfg = await deploy("RobinV4FeeConfig", [deployer.address, DEFAULTS]);
   const robinStakingV4Deployer = await deploy("RobinStakingV4Deployer", []);
   const auctionVaultDeployer = await deploy("DailyAuctionVaultV4Deployer", [await robinStakingV4Deployer.getAddress()]);
+  // [EIP-170] the factory forwards hook deploys here and REVERTS BadConfig() on a zero address.
+  const feeHookDeployer = await deploy("FeeHookDeployer", [await dep.getAddress()]);
   const factory = await deploy("CurvePadFactoryV4", [
     await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
     await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
     await auctionVaultDeployer.getAddress(),
+    await feeHookDeployer.getAddress(),
   ]);
   await (await lockVault.setFactory(await factory.getAddress())).wait();
   // Off by default on a fresh RobinV4FeeConfig — enable it so AGAMMA below (noPoolForever: true)

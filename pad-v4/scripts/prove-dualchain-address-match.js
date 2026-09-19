@@ -72,10 +72,15 @@ async function bootstrap(provider, signer, label) {
   const feeConfig = await deployOn(provider, signer, nonceRef, "RobinV4FeeConfig", [signer.address, DEFAULTS]);
   const robinStakingV4Deployer = await deployOn(provider, signer, nonceRef, "RobinStakingV4Deployer", []);
   const auctionVaultDeployer = await deployOn(provider, signer, nonceRef, "DailyAuctionVaultV4Deployer", [await robinStakingV4Deployer.getAddress()]);
+  // [EIP-170] The factory forwards hook deploys to FeeHookDeployer and REVERTS BadConfig() on a zero address.
+  // It is deployed HERE, inside the shared nonce sequence, so both chains stay in lockstep — the whole point
+  // of this proof is that plain-CREATE addresses are f(sender, nonce), so inserting a deploy on one chain and
+  // not the other would break the match this script exists to demonstrate.
+  const feeHookDeployer = await deployOn(provider, signer, nonceRef, "FeeHookDeployer", [await dep.getAddress()]);
   const factory = await deployOn(provider, signer, nonceRef, "CurvePadFactoryV4", [
     await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
     await dep.getAddress(), await curveDeployer.getAddress(), await feeConfig.getAddress(), await reg.getAddress(),
-    await lockVault.getAddress(), await auctionVaultDeployer.getAddress(),
+    await lockVault.getAddress(), await auctionVaultDeployer.getAddress(), await feeHookDeployer.getAddress(),
   ]);
   const setFactoryTx = await lockVault.setFactory.populateTransaction(await factory.getAddress());
   await (await signer.sendTransaction({ ...setFactoryTx, nonce: nonceRef.n++ })).wait();
