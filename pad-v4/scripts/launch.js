@@ -108,10 +108,25 @@ async function main() {
     d.poolManager, d.stateView, d.feeWalletRegistry, ethers.ZeroAddress, token, FEE, TS, hook, anchorTick,
     // [R3-H5 P2] episodeBaseWei — the per-episode base allowance, taken from the LAUNCH CONFIG and never from a
     // chain read (a live-liquidity read is inflatable by a JIT straddle across the non-atomic launch->deploy gap).
-    // Previously shipped at 0n, because P1 alone did NOT close H-5 and any functional base was a live drain.
-    // The merged closure changes that: the non-refilling, episode-scoped allowance bounds the attacker to one
-    // ~1bp slice per episode (measured -1.1042 ETH on the sustained hold) while the honest path still deploys
-    // 14.76 of a 20 ETH carve. The runbook value is seedQuoteWei / 10_000.
+    //
+    // SAFETY IS CLOSED. The non-refilling, episode-scoped allowance bounds the attacker to one ~1bp slice per
+    // episode (measured -1.1042 ETH on the sustained hold; carve-vs-no-carve delta exactly 0, so the forced-fill
+    // is no longer extraction). Runbook value: seedQuoteWei / 10_000.
+    //
+    // LIVENESS IS NOT CLOSED — DISCLOSED LIMITATION, carried forward deliberately. The "honest path deploys
+    // 14.76 of a 20 ETH carve" figure is measured on a pad that NEVER touched its band (H5 case 7 asserts
+    // episodeAnchor() == 0). It does NOT describe a pad that has crashed, which is every pad this floor exists
+    // for. The allowance is `cap + (amt - episodeStartQuote)` and `episodeStartQuote` snapshots the WHOLE banked
+    // carve when the episode opens, so after a crash the inflow term is 0 and the allowance is the bare cap —
+    // permanently, until the pad crashes again. At the shipped base that is ~0.0001 ETH per crash-recovery
+    // cycle against a carve that may be orders of magnitude larger. The carve is PARKED, never lost (the vault
+    // is add-only, with no withdraw selector), but it does not redeploy.
+    //
+    // This sentence is restored from the pre-merge tree, where it read: "only ETH arriving DURING a below-band
+    // episode deploys, so carve banked during a crash stays parked. That is a product limitation to disclose,
+    // not a closure." The H-5 merge deleted it, deleted the [R3-EXT-2] BASE BIND case that bound this constant,
+    // and raised the value — in one commit. H5 cases 8 and 9 now pin both halves; do not change this value
+    // without re-running them.
     FLOOR_BAND_SPACINGS, episodeBaseWei, { type: 0 }
   );
   await floor.waitForDeployment();

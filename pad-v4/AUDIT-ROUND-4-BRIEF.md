@@ -89,12 +89,54 @@ Same product as round 3 (`AUDIT-SCOPE.md §1-3`) — this brief covers only the 
    changes any of this factory's or the curve's on-chain assumptions. `deploy-curve.js` and
    `deploy-curve-arc.js` currently duplicate their bootstrap sequence as two independently-maintained scripts
    with nothing enforcing they stay in lockstep — flagged, not fixed (tooling risk, not a contract risk).
-4. **Floor H-5 forced-fill — still OPEN on this branch, but a candidate closure now exists elsewhere and we
-   would like your opinion on it specifically.** On THIS branch H-5 is open exactly as Round 3 left it:
-   P1/P2/P3 are implemented, but the shipped `episodeBaseWei = 0` makes the floor deploy nothing except ETH
-   that arrives *during* a below-band episode, and the per-episode cap is
-   `EPISODE_BASE_WEI + episodeStartBand * EPISODE_BAND_BPS` with `EPISODE_BAND_BPS = 50` (0.5%). See
-   `FLOOR-REDESIGN.md` and `FLOOR-H5-CLOSURE-SPEC.md` (whose header records the refutation).
+4. **Floor H-5 forced-fill — SAFETY IS CLOSED AND MERGED. LIVENESS IS NOT, and we are disclosing that
+   rather than claiming a closure.** Please read this split carefully; an earlier draft of this brief
+   overclaimed it as simply "closed", and correcting that is the single most important change here.
+
+   **What IS closed (merged, measured, reproducible).** The structural closure from
+   `Robinlabz/Labs @ claude/laughing-goodall-qxrmq1` (`cb49dbe`) is merged into this branch: the hook's
+   swap-witnessed `aboveLowerTs` watermark plus a non-refilling, episode-scoped allowance, with a 128-slot
+   observation ring / `consultTick` TWAP as a conjunct. The forced-fill attack is dead:
+
+   | scenario | result |
+   |---|---|
+   | pre-fix attack | **+8.7340 ETH**, carve eaten 17.8525/20 |
+   | the round-3 auditor's `COMMIT_COOLDOWN > MIN_DWELL` fix | +8.7340 — **inert**, confirmed |
+   | shipped gate, round-trip loop | **−1.1106 ETH**, carve consumed **0.0000**/20 |
+   | carve vs no-carve PnL delta | **exactly 0** — no longer extraction |
+   | `[N-A]` sustained hold | **−1.1042 ETH**, one ~1bp slice |
+
+   These were reproduced bit-identically before and after the merge.
+
+   **What is NOT closed.** The floor does not redeploy a carve that was banked during a crash. The
+   allowance is `cap + (amt - episodeStartQuote)`, and `episodeStartQuote` snapshots the *whole* banked
+   carve when an episode opens (`RobinFloorVault.sol` ~`:259`/`:326`), so after a crash the inflow term is
+   0 and the allowance is the bare cap — permanently, until the pad crashes again. The vault's own comment
+   at ~`:166` states the favourable branch outright: *"a healthy pad never touches the band, so it keeps
+   `episodeStartQuote == 0` and an inflow-equal allowance."* At the shipped
+   `episodeBaseWei = seedEth / 10_000` (1e14 wei with the default 1 ETH seed) that is ~0.0001 ETH released
+   per crash-recovery cycle against a carve that may be orders of magnitude larger. **The carve is parked,
+   not lost** — the vault is add-only with no withdraw/decrease selector — but it does not come back.
+
+   **Please weigh two things specifically:**
+   - Is a floor that is provably safe but effectively inert after a crash worth shipping, or does the
+     episode-pin need redesigning so a recovered pad can rebuild its wall?
+   - The TWAP/oracle conjunct. That branch's own comments call it *"provably implied by P1"* — i.e. no new
+     guarantee — and it costs a 128-slot ring written on the swap hot path (the pad-v4 suite went from ~26
+     to ~41 minutes with it in). We kept it because it is the artifact that was reviewed, not because we
+     can justify the surface. Should it ship?
+
+   **Coverage we had to restore, and why it matters to you.** The merge deleted
+   `7. [R3-EXT-2] THE BASE BIND` and `5. [R3-EXT-2 CORRECTED]` (slot 7 was reused for a different case) and,
+   *in the same commit*, raised `scripts/launch.js` from `0n` to `seedEth / 10_000n` — the exact change the
+   deleted comment said not to make without re-running case 7. Afterwards nothing in the tree varied
+   `EPISODE_BASE_WEI` at all, so the shipped constant was bound by no test. We have added
+   `8. [SAFETY / DEEP DUMP]` (the cap is pinned to *launch* depth while attacker cost scales with *live*
+   depth — nothing else in the suite dumps past tick 12000) and `9. [LIVENESS / DISCLOSED LIMITATION]`
+   (pins the post-crash behaviour at the **shipped** constant, not the lab's depth-derived default).
+   Note also that `test/helpers/h5-lab.js` derives its base from `provider.getBalance()` — a chain read —
+   directly beneath a comment asserting it is *"never from a chain read"*; the lab and production values
+   differ by ~95x. See `FLOOR-REDESIGN.md` and `FLOOR-H5-CLOSURE-SPEC.md` for the prior refutations.
 
    A **separate branch** — `Robinlabz/Labs` @ `claude/laughing-goodall-qxrmq1`, commit `cb49dbe` — carries a
    candidate closure developed in parallel. We have run its suite and **reproduced its numbers exactly**

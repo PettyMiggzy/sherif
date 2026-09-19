@@ -259,4 +259,62 @@ describe("[R3 H-5] floor forced-fill — the attack, the inert fixes, and the sh
     expect(committed).to.be.gt(E(10));
     await snap.restore();
   });
+
+  // ─────────────────────────────────────────────────────────────────────────────────────────────────────
+  // [RESTORED] The two cases below replace coverage this branch LOST. The H-5 merge deleted
+  // `7. [R3-EXT-2] THE BASE BIND` and `5. [R3-EXT-2 CORRECTED]` (slot 7 was reused for HONEST PATH), and in
+  // the SAME commit raised scripts/launch.js from `0n` to `seedEth / 10_000n` — the exact change the deleted
+  // comment said not to make without re-running case 7. Nothing in the tree varied EPISODE_BASE_WEI
+  // afterwards, so the shipped constant was bound by no test at all.
+  // ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  it("8. [SAFETY / DEEP DUMP] the cap is pinned to LAUNCH depth — prove a far deeper dump is still unprofitable", async () => {
+    const snap = await takeSnapshot();
+    // WHY THIS EXISTS: EPISODE_BASE_WEI is immutable, fixed from depth AT LAUNCH, while the attacker's cost
+    // scales with LIVE depth. Every other case in this file dumps to at most tick 12000. If live depth decays
+    // far enough below launch depth, a fixed cap that was ~80x unprofitable at launch could approach — or
+    // cross — break-even. That is a SAFETY question, not a liveness one, and it was never measured.
+    for (const dumpTick of [50000, 59000]) {
+      const L = await buildLab({ ...HOOKED, dumpTick, carve: E(20) });
+      const R = await runAttack(L, { rounds: 8, taxBps: 100, gapSec: 3901 });
+      console.log(`   deep dump tick ${dumpTick}: best ${f(R.best.pnl)} ETH, carve consumed ${f(R.best.consumed)}/${f(R.carve0)}`);
+      // The attacker must still LOSE money. If this ever flips positive, the fixed-cap-vs-live-depth coupling
+      // is real and EPISODE_BASE_WEI cannot stay pinned to launch depth.
+      expect(R.best.pnl).to.be.lt(0n);
+    }
+    await snap.restore();
+  });
+
+  it("9. [LIVENESS / DISCLOSED LIMITATION] a CRASHED pad's banked carve does NOT redeploy at the shipped base", async () => {
+    const snap = await takeSnapshot();
+    // WHAT THIS PINS — and it is a limitation, not a closure. Case 7 proves the carve deploys on a pad that
+    // NEVER touched its band (it asserts episodeAnchor() == 0). This is the opposite branch, and it is the one
+    // every real pad is in once it has crashed: the allowance is `cap + (amt - episodeStartQuote)`
+    // (RobinFloorVault ~:326), and `episodeStartQuote` snapshots the WHOLE banked carve when the episode opens
+    // (~:259). So the inflow term is exactly 0 and the allowance collapses to the bare cap — permanently, until
+    // the pad crashes again. The vault's own comment at ~:166 says as much: "a healthy pad never touches the
+    // band, so it keeps episodeStartQuote == 0 and an inflow-equal allowance."
+    //
+    // The pre-merge tree DISCLOSED this in scripts/launch.js: "only ETH arriving DURING a below-band episode
+    // deploys, so carve banked during a crash stays parked. That is a product limitation to disclose, not a
+    // closure." The merge deleted that sentence. This test puts the fact back where it cannot be lost again.
+    const base = 10n ** 14n; // the SHIPPED value: seedEth(1 ETH) / 10_000 — NOT the lab's depth-derived default
+    const L = await buildLab({ ...HOOKED, dumpTick: 12000, carve: E(20), episodeBaseWei: base });
+    const { vault } = L;
+    await time.increase(Number(await vault.MIN_BELOW_DURATION()) + 1);
+    const dwell = Number(await vault.MIN_DWELL()) + 1;
+    for (let i = 0; i < 40; i++) {
+      await time.increase(dwell);
+      await vault.addFloor();
+    }
+    const committed = await vault.bandQuoteWei();
+    const parked = await vault.parkedQuote();
+    console.log(`   crashed pad @ shipped base ${f(base, 6)} ETH: deployed ${f(committed, 6)} of ${f(E(20))} ETH, still parked ${f(parked)}`);
+    // Add-only is intact and nothing is lost — the carve is PARKED, not spent. This is the honest claim.
+    expect(committed + parked).to.be.gte(E(20) - 1n);
+    // And the deployed amount is bounded by the bare cap, NOT by the carve. If a future change makes a crashed
+    // pad deploy its backlog, this assertion fails and that is a GOOD failure — update it deliberately.
+    expect(committed).to.be.lte(base * 2n);
+    await snap.restore();
+  });
 });
