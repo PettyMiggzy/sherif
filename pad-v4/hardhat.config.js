@@ -80,5 +80,10 @@ module.exports = {
   // [brand] Launch tests now MINE a `faf0` token address (PadBrand.requireBrand), ~65k keccak tries (~2s) per
   // distinct pad config — and a stock pad mines against two constraints at once. Mocha's 40s default is too
   // tight for the suites that launch several pads in one test.
-  mocha: { timeout: 180000 },
+  // [MERGE] Raised from 180s. H2.stock-gate takes ~2 min in ISOLATION (it mines branded stock-pad addresses
+  // under two constraints), which left almost no headroom; under a full combined run it tipped over and failed
+  // as a timeout rather than on its own merits. The [H-5] observation ring also adds real per-swap cost, and
+  // the full suite went from ~26 to ~41 minutes with it — so the margin shrank exactly where it was thinnest.
+  // Overridable via MOCHA_TIMEOUT, same convention as launchpad.
+  mocha: { timeout: Number(process.env.MOCHA_TIMEOUT || 600000) },
 };
