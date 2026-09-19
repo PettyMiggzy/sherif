@@ -52,6 +52,10 @@ describe("SIM — fee conservation over many buys & sells", () => {
     });
     // the curve-buffer recipient (in prod, the pad's curve controller) — the buy-tax buffer carve is forwarded here
     await hook.connect(factory).setBufferRecipient(poolId, lp.address);
+    // [MERGE/LP-1] this sim mints its ambient depth through a generic PoolModifyLiquidityTest router, which
+    // beforeAddLiquidity correctly rejects during the curve phase. It models a LIVE, traded market, so lift the
+    // curve-phase lock exactly as RobinCurveV4.graduate() does — same reasoning as h5-lab (1a1d1ff).
+    await hook.connect(owner).onGraduated(poolId);
     const mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());
     const sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
     await tok.connect(owner).transfer(lp.address, 10n ** 25n);
