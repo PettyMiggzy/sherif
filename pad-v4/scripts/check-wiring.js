@@ -43,7 +43,20 @@ const CURVE_ABI = [
   "function token() view returns (address)",
 ];
 const HOOK_ABI = [
+  // NOTE: `graduated` is present on THIS branch's PoolConfig (the [LP-1] curve-phase liquidity gate reads it);
+  // the H-5 branch this gate merged from predates it. Keep it — the ABI must match the deployed hook.
   "function config(bytes32) view returns (bool registered, bool quoteIsStock, bool graduated, uint16 buyTaxBps, uint16 sellTaxBps, uint16 sellFloorShareBps, uint16 buyBufferShareBps, uint16 referralShareBps, uint32 guardWindow, address currency0, address currency1, address creator, address pendingCreator, address floorRecipient, address bufferRecipient, address guardAdapter)",
+  // [H-5] the floor gate
+  "function floorGate(bytes32) view returns (int24 gateLower, int24 gateUpper, uint40 armedAt)",
+];
+const FLOOR_ABI = [
+  "function floorTickLower() view returns (int24)",
+  "function floorTickUpper() view returns (int24)",
+  "function EPISODE_BASE_WEI() view returns (uint256)",
+  "function MIN_BELOW_DURATION() view returns (uint32)",
+  "function parkedQuote() view returns (uint256)",
+  "function bandQuoteWei() view returns (uint256)",
+  "function gateStatus() view returns (bool armed, bool warm, uint64 aboveLowerTs, int256 twapTick, uint256 allowance, int24 spot)",
 ];
 const LOCK_ABI = [
   "function locks(uint256) view returns (bool registered, address currency0, address currency1, address stakingRecipient)",
@@ -86,6 +99,44 @@ async function main() {
     if (cfg.floorRecipient !== ZERO && floor !== ZERO && cfg.floorRecipient.toLowerCase() !== floor.toLowerCase()) {
       console.log(warn(`the two floor wirings name DIFFERENT addresses: curve.floor=${floor} hook.floorRecipient=${cfg.floorRecipient}`));
       console.log(warn("  that is legal on chain and may be deliberate — confirm it is."));
+    }
+
+    // [H-5] the SIXTH one-shot step. An unarmed gate is not a silent misroute — it is a silent PARK-FOREVER:
+    // the vault keeps every wei (it is add-only and parkedQuote is exact) but never deploys any of it.
+    const gate = await hook.floorGate(process.env.POOL_ID);
+    if (gate.armedAt === 0n) {
+      console.log(bad("hook.armFloorGate — UNARMED (the floor vault parks its carve forever, reason R_ORACLE)"));
+      problems.push("hook.armFloorGate");
+    } else {
+      console.log(ok(`hook.armFloorGate → armedAt ${gate.armedAt}, band [${gate.gateLower}, ${gate.gateUpper}]`));
+      const floorAddr = cfg.floorRecipient !== ZERO ? cfg.floorRecipient : floor;
+      if (floorAddr !== ZERO) {
+        const fv = new ethers.Contract(floorAddr, FLOOR_ABI, ethers.provider);
+        const [lo, hi, base, minBelow, st] = await Promise.all([
+          fv.floorTickLower(), fv.floorTickUpper(), fv.EPISODE_BASE_WEI(), fv.MIN_BELOW_DURATION(), fv.gateStatus(),
+        ]);
+        if (lo !== gate.gateLower || hi !== gate.gateUpper) {
+          console.log(bad(`floor band MISMATCH: vault [${lo}, ${hi}] vs hook [${gate.gateLower}, ${gate.gateUpper}]`));
+          console.log(warn("  the vault cross-checks this on every poke and PARKS on mismatch — it will never commit"));
+          problems.push("floorGate band mismatch");
+        } else {
+          console.log(ok(`floor band agrees on both sides: [${lo}, ${hi}]`));
+        }
+        if (base === 0n) {
+          console.log(bad("EPISODE_BASE_WEI is 0 — impossible via the ctor; this is not a RobinFloorVault"));
+          problems.push("EPISODE_BASE_WEI");
+        } else {
+          console.log(ok(`EPISODE_BASE_WEI ${ethers.formatEther(base)} ETH (runbook: the pad's seed ETH / 10,000)`));
+        }
+        console.log(
+          `  gateStatus: armed=${st.armed} warm=${st.warm} spot=${st.spot} aboveLowerTs=${st.aboveLowerTs} ` +
+          `allowance=${ethers.formatEther(st.allowance)} ETH`
+        );
+        if (st.armed && !st.warm) {
+          console.log(warn(`  not warm yet — the floor parks until MIN_BELOW_DURATION (${minBelow}s) of continuous`));
+          console.log(warn("  below-band price has been witnessed. Expected right after launch and after graduation."));
+        }
+      }
     }
   } else {
     console.log(warn("hook.setFloorRecipient — not checked (pass HOOK=0x… POOL_ID=0x…)"));

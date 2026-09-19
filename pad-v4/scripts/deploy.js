@@ -34,6 +34,8 @@ async function main() {
   const stateView = await legacyDeploy("RobinStateView", [POOL_MANAGER]);
   const reg = await legacyDeploy("FeeWalletRegistry", [platform, deployer.address]);
   const lockVault = await legacyDeploy("LockVault", [POSITION_MANAGER, await reg.getAddress()]);
+  // [EIP-170] holds RobinFeeHook's creationCode so the factory doesn't (same CREATE2 deployer ⇒ same mined addresses)
+  const feeHookDeployer = await legacyDeploy("FeeHookDeployer", [await dep.getAddress()]);
   const factory = await legacyDeploy("PadFactory", [
     POOL_MANAGER,
     POSITION_MANAGER,
@@ -41,6 +43,7 @@ async function main() {
     await dep.getAddress(),
     await reg.getAddress(),
     await lockVault.getAddress(),
+    await feeHookDeployer.getAddress(),
   ]);
 
   const tx = await lockVault.setFactory(await factory.getAddress(), { type: 0 });
@@ -65,6 +68,7 @@ async function main() {
     positionManager: POSITION_MANAGER,
     permit2: PERMIT2,
     deterministicDeployer: await dep.getAddress(),
+    feeHookDeployer: await feeHookDeployer.getAddress(),
     stateView: await stateView.getAddress(),
     feeWalletRegistry: await reg.getAddress(),
     lockVault: await lockVault.getAddress(),

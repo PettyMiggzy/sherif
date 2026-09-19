@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { mineHookSalt, hookInitCode } = require("../../scripts/mine");
-const { predictPadToken, brandedTokenSalt, tokenInitCode } = require("../helpers/brand");
+const { brandedTokenSalt, tokenInitCode } = require("../helpers/brand");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Feature 4 — RobinBlue stock-pad launch against the LIVE V4 stack, using a MockStock as the quote
@@ -16,7 +16,7 @@ const POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
 const POSITION_MANAGER = "0x174c1130aD96Ff0BB5492dD2BF81ccd549572EFA";
 const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 const SQRT_1_1 = 79228162514264337593543950336n;
-const FLAG_MASK = 0x3fffn, HOOK_FLAGS = 0x28ccn;
+const FLAG_MASK = 0x3fffn, HOOK_FLAGS = 0xccn;
 const abi = ethers.AbiCoder.defaultAbiCoder();
 
 describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)", function () {
@@ -41,7 +41,8 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
     const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     const factory = await (await ethers.getContractFactory("StockPadFactory")).deploy(
       POOL_MANAGER, POSITION_MANAGER, PERMIT2, await dep.getAddress(), await reg.getAddress(),
-      await lockVault.getAddress(), await stockReg.getAddress(), await fhd.getAddress()
+      await lockVault.getAddress(), await stockReg.getAddress(),
+      await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
 
@@ -54,7 +55,7 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
       floorRecipient: ethers.ZeroAddress, stakingRecipient: ethers.ZeroAddress,
     };
 
-    // mine tokenSalt so the token address sorts ABOVE the stock (quote = currency0) AND carries the `1ab5`
+    // mine tokenSalt so the token address sorts ABOVE the stock (quote = currency0) AND carries the `faf0`
     // brand suffix — PadBrand.requireBrand reverts the launch otherwise, so this path must satisfy BOTH
     // constraints at once (the helper's extraOk predicate re-seeds until one address does).
     const depAddr = await dep.getAddress();
@@ -63,8 +64,9 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
     const tokenSalt = await brandedTokenSalt(
       depAddr, factoryAddr, cfg, ethers.id("robin-nvda-1"), (a) => BigInt(a) > BigInt(stockAddr)
     );
-    // cfg-bound salt: predict via the shared helper, never from the raw tokenSalt (see helpers/brand.js).
-    const predictedToken = predictPadToken(depAddr, factoryAddr, cfg, tokenSalt, TokenF.bytecode);
+    const predictedToken = ethers.getCreate2Address(
+      depAddr, tokenSalt, ethers.keccak256(tokenInitCode(TokenF.bytecode, cfg, factoryAddr))
+    );
 
     // mine the hook salt (token in init-code)
     const HookF = await ethers.getContractFactory("RobinFeeHook");
@@ -85,22 +87,20 @@ describe("StockPadFactory — RobinBlue launch on live 0x8366 (MockStock quote)"
     const conf = await hookC.config(await factory.poolOf(token));
     expect(conf.registered).to.equal(true);
     expect(conf.quoteIsStock).to.equal(true);
-    // [H-2] The curb adapter is DERIVED, never supplied — so assert the derivation itself rather than a
-    // handle to one we made. It is CREATE2 over keccak256(abi.encode(stock, registry)) with the adapter's
-    // init-code, through the same DeterministicDeployer, which is exactly what makes a launcher-authored
-    // adapter (a freeze primitive) impossible to slip onto the curb path.
+
+    // [H-2] the curb adapter is DERIVED by the factory from (stock, its pinned registry) — a launcher never
+    // supplies one — so reproduce the deterministic address instead of reading a local handle.
     const AdapterF = await ethers.getContractFactory("StockQuoteAdapter");
-    const adapterInit = ethers.concat([
-      AdapterF.bytecode,
-      abi.encode(["address", "address"], [await stock.getAddress(), await stockReg.getAddress()]),
-    ]);
+    const adapterCtorArgs = abi.encode(["address", "address"], [await stock.getAddress(), await stockReg.getAddress()]);
     const expectedAdapter = ethers.getCreate2Address(
-      await dep.getAddress(),
-      ethers.keccak256(abi.encode(["address", "address"], [await stock.getAddress(), await stockReg.getAddress()])),
-      ethers.keccak256(adapterInit)
+      depAddr,
+      ethers.keccak256(adapterCtorArgs),
+      ethers.keccak256(ethers.concat([AdapterF.bytecode, adapterCtorArgs]))
     );
     expect(conf.guardAdapter).to.equal(expectedAdapter);
-    expect(await ethers.provider.getCode(expectedAdapter)).to.not.equal("0x"); // really deployed there
+    const adapter = await ethers.getContractAt("StockQuoteAdapter", conf.guardAdapter);
+    expect(await adapter.stock()).to.equal(await stock.getAddress());
+    expect(await adapter.registry()).to.equal(await stockReg.getAddress());
 
     const posm = await ethers.getContractAt("IPositionManagerMinimal", POSITION_MANAGER);
     expect(await posm.ownerOf(lpTokenId)).to.equal(await lockVault.getAddress());

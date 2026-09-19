@@ -143,9 +143,11 @@ describe("M-27 — a pad token can only be launched once per factory", () => {
     permit2 = await (await ethers.getContractFactory("MockPermit2")).deploy();
     posm = await (await ethers.getContractFactory("MockPositionManagerV4")).deploy(await pm.getAddress(), await permit2.getAddress());
     lockVault = await (await ethers.getContractFactory("LockVault")).deploy(await posm.getAddress(), await reg.getAddress());
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     factory = await (await ethers.getContractFactory("PadFactory")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(),
-      await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress()
+      await dep.getAddress(), await reg.getAddress(), await lockVault.getAddress(),
+      await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
   });

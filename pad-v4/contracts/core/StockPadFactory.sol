@@ -47,7 +47,9 @@ contract StockPadFactory {
     IPositionManagerMinimal public immutable positionManager;
     IPermit2Minimal public immutable permit2;
     DeterministicDeployer public immutable deployer;
-    FeeHookDeployer public immutable feeHookDeployer; // [R3-H5] holds the hook creationCode
+    /// [EIP-170] Holds `RobinFeeHook`'s creationCode so this factory does not (see FeeHookDeployer). Forwards to
+    /// the SAME `deployer`, so every mined hook address is derived exactly as before.
+    FeeHookDeployer public immutable feeHookDeployer;
     address public immutable feeRegistry;
     LockVault public immutable lockVault;
 
@@ -122,7 +124,7 @@ contract StockPadFactory {
         address feeRegistry_,
         address lockVault_,
         address stockRegistry_,
-        address feeHookDeployer_ // [R3-H5] offloads RobinFeeHook creationCode — see FeeHookDeployer
+        address feeHookDeployer_ // [EIP-170] holds RobinFeeHook's creationCode
     ) {
         if (stockRegistry_ == address(0) || feeHookDeployer_ == address(0)) revert BadConfig();
         feeHookDeployer = FeeHookDeployer(feeHookDeployer_);
@@ -194,9 +196,12 @@ contract StockPadFactory {
         Currency currency1 = Currency.wrap(token);
 
         // 2) deploy the flag-mined hook (token in init-code ⇒ unique address)
-        // creationCode offloaded to FeeHookDeployer (EIP-170); the CREATE2 is still done by the shared
-        // DeterministicDeployer over identical init code, so the mined hook address is unchanged.
-        hook = feeHookDeployer.deploy(hookSalt, abi.encode(poolManager, address(this), feeRegistry, token));
+        // [EIP-170] the hook's creationCode is held by FeeHookDeployer, not inlined here — the [H-5] floor gate
+        // pushed the inline copy past the 24,576-byte limit on StockPadFactory. CREATE2 derivation is unchanged:
+        // FeeHookDeployer forwards to this same `deployer`, so the mined address formula is byte-identical.
+        hook = feeHookDeployer.deploy(
+            hookSalt, abi.encode(poolManager, address(this), feeRegistry, token)
+        );
         if (uint160(hook) & 0x3FFF != HOOK_FLAGS) revert HookFlagsMismatch();
         if (RobinFeeHook(payable(hook)).REQUIRED_FLAGS() != HOOK_FLAGS) revert HookFlagsMismatch();
 

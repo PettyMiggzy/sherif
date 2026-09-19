@@ -13,8 +13,13 @@ description: "Robinhood Chain details, live contract addresses, and constants."
 | Chain ID | `4663` (`0x1237`) |
 | Currency | ETH (18 decimals) |
 | Public RPC | `https://rpc.mainnet.chain.robinhood.com` |
+| Read-only proxy (rate-limited, ours) | `https://api.robinlab.io/rpc` |
 | Explorer | `https://robinhoodchain.blockscout.com` |
 | Per-tx gas cap | `16,777,216` (2²⁴), relevant if you batch calls |
+
+> The Blockscout endpoint `https://robinhoodchain.blockscout.com/api/eth-rpc` is a browser-oriented
+> proxy, not a general RPC: it is behind a Cloudflare challenge and answers **403** to programmatic
+> clients (and 429s browsers). Use the canonical chain RPC above for bots, scripts and wallets.
 
 ## Contract addresses (live)
 

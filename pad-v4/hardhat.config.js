@@ -18,16 +18,13 @@ module.exports = {
   networks: {
     // FORK_RPC set → in-process hardhat forks Robinhood Chain so tests run against the
     // REAL v4 PoolManager 0x8366. Never commit the key: FORK_RPC=<url> npx hardhat test test/fork/*.js
+    // FORK_BLOCK pins the forked block. The public RPC is NOT an archive node, so a long fork run can outlive
+    // its state-retention window and abort mid-suite with "historical state ... is not available". Pin a recent
+    // block (and point FORK_RPC at an archive node for older ones) when running the whole fork suite at once.
     hardhat: process.env.FORK_RPC
       ? {
           forking: {
             url: process.env.FORK_RPC,
-            // FORK_BLOCK pins the fork so hardhat caches state on disk per (url, blockNumber) instead of
-            // re-fetching everything from the RPC on every run. It is OFF by default because the public
-            // Robinhood node is NOT an archive node: measured retention is under 10,000 blocks (~100s at the
-            // chain's ~100ms block time), so any pinned constant goes stale within minutes and every run then
-            // fails with `metadata is not found`. Set FORK_BLOCK only when pointing FORK_RPC at an archive
-            // node — then repeat runs cost ~no network at all.
             ...(process.env.FORK_BLOCK ? { blockNumber: Number(process.env.FORK_BLOCK) } : {}),
           },
           chainId: Number(process.env.FORK_CHAINID || 4663),
@@ -40,15 +37,7 @@ module.exports = {
             46630: { hardforkHistory: { cancun: 0 } },
           },
         }
-      : // HARDHAT_CHAIN_ID lets a plain, UNFORKED node still report a real chain's id (e.g. 4663) so a
-        // wallet configures against it as "Robinhood Chain" — with none of forking's staleness risk
-        // (Robinhood Chain's public RPC only retains ~10,000 recent blocks, so a fork's pinned block
-        // ages out of servable history within ~15-20 minutes and every not-yet-cached state read then
-        // fails with "metadata is not found"). Existing behavior (plain default chainId 31337) is
-        // unchanged when this isn't set.
-        process.env.HARDHAT_CHAIN_ID
-        ? { chainId: Number(process.env.HARDHAT_CHAIN_ID) }
-        : {},
+      : {},
     robinhood: {
       url: process.env.ROBINHOOD_RPC || "https://rpc.mainnet.chain.robinhood.com",
       chainId: 4663,
@@ -65,25 +54,9 @@ module.exports = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       gasPrice: 30_180_000,
     },
-    // Arc mainnet (chainId 5042), launched 2026-09-16. Unlike Robinhood Chain's Orbit stack, Arc
-    // supports EIP-1559 natively — no forced legacy gasPrice here, ethers sends normal type-2 txs.
-    // Gas is paid in USDC (Arc's native currency), so the deployer wallet needs real USDC, not ETH.
-    //   PLATFORM_WALLET=<addr> PRIVATE_KEY=<funded key> npx hardhat run scripts/deploy-curve-arc.js --network arc
-    arc: {
-      url: process.env.ARC_RPC || "https://rpc.mainnet.arc.io",
-      chainId: 5042,
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-    },
-    // Explicit localhost entry (Hardhat's implicit default has a short HTTP timeout) — a forked node's
-    // lazy per-slot state fetching against a real remote RPC can make a single complex call genuinely
-    // slow, well past that default, without anything actually being wrong.
-    localhost: {
-      url: "http://127.0.0.1:8545",
-      timeout: 300000,
-    },
   },
   etherscan: {
-    apiKey: { robinhood: process.env.BLOCKSCOUT_KEY || "blockscout", arc: process.env.ARC_BLOCKSCOUT_KEY || "blockscout" },
+    apiKey: { robinhood: process.env.BLOCKSCOUT_KEY || "blockscout" },
     customChains: [
       {
         network: "robinhood",
@@ -93,22 +66,11 @@ module.exports = {
           browserURL: "https://robinhoodchain.blockscout.com",
         },
       },
-      {
-        network: "arc",
-        chainId: 5042,
-        urls: {
-          apiURL: "https://explorer.arc.io/api",
-          browserURL: "https://explorer.arc.io",
-        },
-      },
     ],
   },
   sourcify: { enabled: false },
-  // [brand] Launch tests now MINE a `1ab5` token address (PadBrand.requireBrand), ~65k keccak tries (~2s) per
+  // [brand] Launch tests now MINE a `faf0` token address (PadBrand.requireBrand), ~65k keccak tries (~2s) per
   // distinct pad config — and a stock pad mines against two constraints at once. Mocha's 40s default is too
   // tight for the suites that launch several pads in one test.
-  // [R3] Raised from 180s: the 1ab5 brand mining (test/helpers/brand.js) adds a real keccak loop per launch,
-  // and the H-5 attack lab drives multi-hour simulated runs. Individual files pass comfortably; the margin is
-  // for late-in-suite slowdown on a long serial run, not for any single slow assertion.
-  mocha: { timeout: Number(process.env.MOCHA_TIMEOUT || 600000) },
+  mocha: { timeout: 180000 },
 };

@@ -1,6 +1,7 @@
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
+const { deployHook, registerPool, wireAndArm } = require("../helpers/floor-gate");
 
 // Feature 3 — RobinFloorVault. A fee-funded, permanent, single-sided QUOTE buy-wall. Verified against
 // a real PoolManager: the carve deploys as pure currency0 liquidity in a band just below the token
@@ -21,46 +22,27 @@ function poolIdOf(k) {
 
 describe("RobinFloorVault — permanent single-sided quote floor", () => {
   const FEE = 3000, TS = 60;
-  let owner, lp, trader, platform, pm, stateView, tok, mod, sw, key, poolId, vault;
+  // [H-5/P2] per-episode base allowance — runbook value is the pad's seed ETH / 10_000 (1 bp).
+  const EPISODE_BASE_WEI = ethers.parseEther("50") / 10_000n;
+  let owner, lp, trader, platform, creator, factorySigner, pm, stateView, tok, mod, sw, key, poolId, vault, hook;
 
   before(async () => {
-    [owner, lp, trader, platform] = await ethers.getSigners();
+    [owner, lp, trader, platform, creator, factorySigner] = await ethers.getSigners();
     pm = await (await ethers.getContractFactory("PoolManager")).deploy(owner.address);
     stateView = await (await ethers.getContractFactory("RobinStateView")).deploy(await pm.getAddress());
     tok = await (await ethers.getContractFactory("TestERC20")).connect(owner).deploy(10n ** 30n);
     // [L-11] the floor vault takes the timelocked registry; platformFeeWallet() resolves to `platform`.
     const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
+    const regAddr = await reg.getAddress();
 
-    // [R3-H5] The floor's commit gate is SWAP-WITNESSED and fail-closed: without a hook stamping the
-    // watermark there is nothing to prove below-band duration with, so the carve parks forever. A hookless
-    // pool is not a weaker case to test — it is an unusable one — and a plain pool is just as attackable
-    // (cases 1a/2 of the H-5 regression extract +8.73 ETH from one). So this fixture now runs the real hook
-    // with the smallest legal tax, which is also the production configuration.
-    const dep = await (await ethers.getContractFactory("DeterministicDeployer")).deploy();
-    const HookF = await ethers.getContractFactory("RobinFeeHook");
-    const hookInit = ethers.concat([
-      HookF.bytecode,
-      abi.encode(["address", "address", "address", "address"],
-        [await pm.getAddress(), owner.address /* factory */, await reg.getAddress(), await tok.getAddress()]),
-    ]);
-    const FLAGS = 0x28ccn, MASK = 0x3fffn;
-    let hookSalt, hookAddr;
-    for (let i = 0n; ; i++) {
-      const sl = ethers.zeroPadValue(ethers.toBeHex(i), 32);
-      const a = ethers.getCreate2Address(await dep.getAddress(), sl, ethers.keccak256(hookInit));
-      if ((BigInt(a) & MASK) === FLAGS) { hookSalt = sl; hookAddr = a; break; }
-    }
-    await dep.deploy(hookSalt, hookInit);
-    const hook = HookF.attach(hookAddr);
-
-    key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: hookAddr };
+    // [H-5] A REAL hook is now part of the floor's trust base: the commit gate reads the hook's swap-witnessed
+    // `aboveLowerTs` watermark, so a hookless pool parks forever. Every production pad has one.
+    const h = await deployHook(pm, factorySigner, reg, tok);
+    hook = h.hook;
+    key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: h.hookAddr };
     poolId = poolIdOf(key);
-    await pm.connect(owner).initialize(key, SQRT_1_1); // tick 0
-    await hook.connect(owner).registerPool(poolId, {
-      currency0: ZERO, currency1: await tok.getAddress(), creator: owner.address, floorRecipient: ZERO,
-      guardAdapter: ZERO, buyTaxBps: 1, sellTaxBps: 0, sellFloorShareBps: 0,
-      buyBufferShareBps: 0, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,
-    });
+    await pm.initialize(key, SQRT_1_1); // tick 0
+    await registerPool(hook, factorySigner, poolId, tok, creator.address);
 
     mod = await (await ethers.getContractFactory("PoolModifyLiquidityTest")).deploy(await pm.getAddress());
     sw = await (await ethers.getContractFactory("PoolSwapTest")).deploy(await pm.getAddress());
@@ -73,13 +55,12 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
     );
 
     vault = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
-      ZERO, await tok.getAddress(), FEE, TS, hookAddr, 0 /* anchorTick = launch tick 0 */,
-      10, // band = 10 spacings wide
-      0 // episodeBaseWei: 0 => first-episode allowance is inflow-equal (honest-path default)
+      await pm.getAddress(), await stateView.getAddress(), regAddr,
+      ZERO, await tok.getAddress(), FEE, TS, await hook.getAddress(),
+      0 /* anchorTick = launch tick 0 */, 10 /* band = 10 spacings wide */, EPISODE_BASE_WEI
     );
-    await hook.connect(platform).setFloorRecipient(poolId, await vault.getAddress());
-    await vault.connect(platform).armGate(); // [R3-H5] without this every poke parks (R_ORACLE)
+    // the shipped runbook pair: route the sell-tax floor carve here, then arm the gate for this band
+    await wireAndArm(hook, platform, poolId, vault);
   });
 
   it("places the band just above spot (pure currency0 region)", async () => {
@@ -108,8 +89,12 @@ describe("RobinFloorVault — permanent single-sided quote floor", () => {
     expect(await vault.floorLiquidity()).to.equal(0n); // nothing commits on a just-observed tick
     // Each commit takes one COMMIT_COOLDOWN (65m) and moves 20%, so draining to <0.5 of a 5 ETH carve needs
     // ~11 commits (0.8^11 ≈ 0.086) ⇒ ~12h of keeper pokes at the MIN_DWELL cadence.
+    // [H-5] The gate also imposes a MIN_BELOW_DURATION (195m) warm-up from `armedAt` before the FIRST commit,
+    // so the poke loop has to run past it. The pad has never traded into the band, so `aboveLowerTs` is 0 and
+    // the episode never rolls — `episodeStartQuote` stays 0, the allowance is inflow-equal, and the honest
+    // drain is paced by MAX_COMMIT_BPS / COMMIT_COOLDOWN exactly as before.
     const dwell = Number(await vault.MIN_DWELL()) + 1;
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 130; i++) {
       await time.increase(dwell);
       await vault.addFloor();
     }

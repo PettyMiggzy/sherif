@@ -99,33 +99,34 @@ async function main() {
   const FloorF = await ethers.getContractFactory("RobinFloorVault");
   const ratio = Number(cfg.sqrtPriceX96) / 2 ** 96;
   const anchorTick = Math.floor(Math.log(ratio * ratio) / Math.log(1.0001));
+  // [H-5/P2] the per-episode base allowance. Computed from the LOCAL seed constant, never a chain read — a live
+  // depth/liquidity read was measured 335x inflatable by a one-spacing JIT straddle across the non-atomic
+  // launch -> vault-deploy gap, which is why no on-chain read appears anywhere in the gate's sizing.
+  const episodeBaseWei = seedEth / 10_000n;
   const floor = await FloorF.deploy(
     // [L-11] pass the timelocked registry, not a raw platform address, so a wallet rotation reaches the floor vault
     d.poolManager, d.stateView, d.feeWalletRegistry, ethers.ZeroAddress, token, FEE, TS, hook, anchorTick,
-    FLOOR_BAND_SPACINGS,
     // [R3-H5 P2] episodeBaseWei — the per-episode base allowance, taken from the LAUNCH CONFIG and never from a
     // chain read (a live-liquidity read is inflatable by a JIT straddle across the non-atomic launch->deploy gap).
-    //
-    // [R3-EXT-2] SHIPS AT 0 — THE ONLY VALUE THAT IS NOT A LIVE DRAIN. The previous value here (seedEth) was
-    // wrong and is withdrawn. P1 does NOT close H-5 on its own: it proves 195 minutes of continuous below-band
-    // price, which by T1 (holding is free per unit time) a sustained hold buys for one round-trip fee, so the
-    // gate opens identically for a held price and a genuine crash (measured: first commit at minute 210 at EVERY
-    // nonzero base). P2's allowance is therefore the only real bound, and it binds against liveness — at
-    // base ~= the carve the armed gate is drained for +8.34 ETH (74%), at base 0 the attacker gets nothing.
-    // 0 is safe. It is NOT fully functional: only ETH arriving DURING a below-band episode deploys, so carve
-    // banked during a crash stays parked. That is a product limitation to disclose, not a closure — see
-    // AUDIT-ROUND-3-EXTERNAL-ADDENDUM-2.md. Do not raise this without re-running H5 case 7.
-    0n,
-    { type: 0 }
+    // Previously shipped at 0n, because P1 alone did NOT close H-5 and any functional base was a live drain.
+    // The merged closure changes that: the non-refilling, episode-scoped allowance bounds the attacker to one
+    // ~1bp slice per episode (measured -1.1042 ETH on the sustained hold) while the honest path still deploys
+    // 14.76 of a 20 ETH carve. The runbook value is seedQuoteWei / 10_000.
+    FLOOR_BAND_SPACINGS, episodeBaseWei, { type: 0 }
   );
   await floor.waitForDeployment();
   const floorAddr = await floor.getAddress();
   const hookC = HookF.attach(hook);
   await legacy(hookC, "setFloorRecipient", [poolId, floorAddr]); // platform-gated (signer must be platform)
-  // [R3-H5 P1] Arm the swap-witnessed below-band gate. MANDATORY: until this lands the hook does not stamp the
-  // watermark, the vault reads the gate as unarmed, and the carve PARKS forever (safe, but never deployed).
-  await legacy(floor, "armGate", []);
-  console.log(`  floorVault ${floorAddr}  (wired + gate armed)`);
+  // [H-5] ARM THE GATE. Without this the vault reads the hook as unarmed and parks FOREVER (reason R_ORACLE).
+  // It hard-reverts on a band/pool mismatch, which is exactly what we want at deploy time — a mis-wired
+  // add-only vault has no recovery path.
+  await legacy(hookC, "armFloorGate", [poolId]);
+  const gate = await floor.gateStatus();
+  if (!gate.armed) throw new Error("floor gate did not arm — refusing to continue");
+  console.log(`  floorVault ${floorAddr}  (wired + gate armed, episodeBaseWei ${ethers.formatEther(episodeBaseWei)} ETH)`);
+  console.log(`  NOTE: the floor PARKS its carve for the first ${Number(await floor.MIN_BELOW_DURATION()) / 60} minutes`);
+  console.log(`        (MIN_BELOW_DURATION warm-up from armedAt) and then deploys it normally. This is expected.`);
 
   // 4) staking pool for the token (claim fee = the factory's immutable default — shipped 0 per deploy.js [F1]; no lock)
   const stakingFactory = await ethers.getContractAt("StakingFactory", d.stakingFactory);

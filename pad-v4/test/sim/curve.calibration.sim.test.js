@@ -53,9 +53,11 @@ describe("SIM — production-geometry calibration (start ~$3.4k, graduate ~$34k,
       // supplies, not the product's valuation policy. The band itself is proven in FDV.creator-supply.test.js.
       minFdvWei: 1n, maxFdvWei: 1_000_000n * 10n ** 18n, // = HARD_MAX_FDV_WEI
     });
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       await pm.getAddress(), await posm.getAddress(), await permit2.getAddress(), await stateView.getAddress(),
-      await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(), ethers.ZeroAddress
+      await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(), await reg.getAddress(), await lockVault.getAddress(), ethers.ZeroAddress,
+      await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
 

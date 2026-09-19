@@ -71,6 +71,34 @@ async function main() {
 
     await tryStep("claim floor carve", () => hook.claimFloor(L.poolId, 0, { type: 0 }));
     await tryStep("deploy carve into wall", () => floor.addFloor({ type: 0 }));
+    // [H-5] addFloor never reverts — it PARKS. Surface why, so a floor that has silently stopped deploying is
+    // diagnosable from the keeper log instead of needing a trace. R_ORACLE in particular means the gate was
+    // never armed (hook.armFloorGate), which is a wiring bug, not a market condition.
+    await tryStep("floor gate status", async () => {
+      const REASONS = {
+        1: "R_ORACLE — hook unreadable/unarmed/armed for another band (CHECK hook.armFloorGate)",
+        2: "R_SPOT — live spot is inside/above the band (the floor is doing its job)",
+        3: "R_WARMUP — armed less than MIN_BELOW_DURATION ago",
+        4: "R_BELOW — the band was touched too recently (gate)",
+        5: "R_TWAP — the window average is not below the band",
+        6: "R_DWELL — legacy poke dwell",
+        7: "R_COOLDOWN — legacy pace limiter",
+        8: "R_BUDGET — this episode's commit allowance is exhausted",
+      };
+      const st = await floor.gateStatus();
+      const parked = await floor.parkedQuote();
+      console.log(
+        `    gate: armed=${st.armed} warm=${st.warm} spot=${st.spot} ` +
+        `parked=${ethers.formatEther(parked)} ETH allowance=${ethers.formatEther(st.allowance)} ETH`
+      );
+      if (!st.armed) console.log(`    ${REASONS[1]}`);
+      // ethers has no relative block tags — resolve an absolute window off the head.
+      const head = await ethers.provider.getBlockNumber();
+      const from = head > 2000 ? head - 2000 : 0;
+      const ev = await floor.queryFilter(floor.filters.FloorParked(), from, head).catch(() => []);
+      if (ev.length) console.log(`    last park reason: ${REASONS[Number(ev[ev.length - 1].args.reason)] || "?"}`);
+      return null; // read-only step: nothing to wait on
+    });
     await tryStep("collect wall LP fees", () => floor.collectFloorFees({ type: 0 }));
   }
   await sweepPresaleFees(d);

@@ -1,45 +1,45 @@
-# H-5 — design specification (P1/P2/P3 IMPLEMENTED; **H-5 IS STILL OPEN**)
+# H-5 closure — design specification (**SHIPPED**)
 
-> ## ⛔ SUPERSEDED BY `AUDIT-ROUND-3-EXTERNAL-ADDENDUM-2.md` — THIS DESIGN DOES NOT CLOSE H-5.
-> Independently confirmed by re-measurement: P1 proves *duration below the band*, and duration is free for an
-> attacker (T1), so the gate opens identically for a held price and a real crash. The A/B that appeared to show
-> closure was run at `episodeBaseWei = 0` — a floor that cannot deploy anything. Raise the base enough for the
-> floor to function and the armed gate is drained for **+8.34 ETH (74% of the carve)**. See H5 case 7.
-> The runbook now ships `0`, which is safe but only deploys ETH arriving *during* a below-band episode.
+> **Status: IMPLEMENTED AND MEASURED.** Landed in `RobinFeeHook` (the swap-witnessed watermarks + the bucketed
+> accumulator, see `ORACLE.md`) and `RobinFloorVault` (the gate, the episode allowance, the mint-time re-check),
+> with `FeeHookDeployer` added first for EIP-170 headroom. Regressions:
+> `test/regression/H5.floor-forced-fill.test.js` (the attack and the closure), `H5.gate-liveness.test.js`
+> (every unreadable/unarmed/mismatched path parks rather than reverting),
+> `test/unit/RobinFeeHook.oracle.test.js` (the observation), `test/unit/FloorConstants.test.js` (the
+> inequalities). The round-3 interim hardening (`COMMIT_COOLDOWN` 65m > `MAX_OBSERVED_GAP` 60m) is retained
+> unchanged underneath it, as a subordinate AND-term.
 >
-> **STATUS (superseded): implemented and measured.** P1 (the swap-witnessed gate), P2 (episode allowance, with the [R3 N-B]
-> correction) and P3 (retained live-spot precondition) are on the branch. **P4 (the TWAP conjunct) is DEFERRED** —
-> by this spec's own §0 table it "kills nothing new — it is provably implied by P1", yet it needs a 128-slot
-> oracle ring, a new `FeeHookDeployer`, and ctor changes to all three factories. On a surface that has refuted
-> five designs, that much novel machinery for zero incremental security is the likeliest way to add a new
-> critical. Flagged for the auditor rather than shipped.
+> **Two deliberate deviations from this document, both forced by the auditor's `[R3 N-B]` must-fix. They are
+> the only places the shipped code differs from the specification below:**
 >
-> **Measured closure** (`test/regression/H5.floor-forced-fill.test.js` cases 5-6), same pad, same 1% hook tax,
-> same 12-hour sustained-hold run, only the gate differing:
+> 1. **The episode is anchored on `aboveLowerTs`, not `aboveUpperTs`.** §2.1's L2 rolled the episode only when
+>    the tick crossed `floorTickUpper`; a dump that stalls anywhere in `[floorTickLower, floorTickUpper)` never
+>    crosses that pivot, so `episodeStartQuote` kept its zero default and the allowance was effectively
+>    uncapped — and the auditor measured the force-fill net-positive from the band midpoint upward, entirely
+>    below that pivot. Anchoring on any touch of the band closes it and is strictly more conservative.
+> 2. **`EPISODE_BAND_BPS` is NOT shipped.** The cap is `EPISODE_BASE_WEI` alone. That term's 3.2× margin was
+>    priced against the cost of crossing the *whole* band, which deviation (1) no longer requires; re-derived
+>    against the cheaper `floorTickLower` round trip it turns profitable once the band holds more than ~1.58×
+>    the pool's ETH depth. Dropping it gives a depth-independent bound instead: linearising near the band,
+>    `G ≈ 2·N_push/D` while a round trip costs `2·β_net·N_push`, so `profit/cost = cap/(β_net·D)` regardless of
+>    push depth — **~80× unprofitable** at `cap = D/10,000` and `β_net = 0.8%`. Measured at 116× (deep) and
+>    8.6× (shallow) on the lab geometry.
 >
-> | | attacker PnL | commits | carve drained |
+> Measured before/after, real contract code, `test/regression/H5.floor-forced-fill.test.js`:
+>
+> | run | attacker PnL | carve consumed | `floorLiquidity` |
 > |---|---|---|---|
-> | control — pre-gate vault | **+9.4754 ETH** | 8 | 16.64 / 20 (83%) |
-> | **armed gate** | **-1.1106 ETH** | **0** | **0.00 / 20** |
+> | pre-fix constants (10 m cooldown) | **+8.7340 ETH** | 17.85 / 20 ETH | > 0 |
+> | auditor's `COMMIT_COOLDOWN > MIN_DWELL` | **+8.7340 ETH** (inert, bit-identical) | 17.85 / 20 ETH | > 0 |
+> | **shipped gate — round-trip loop** | **−1.1106 ETH** | **0** | **0** |
+> | **shipped gate — [N-A] sustained hold, 12 h** | **−1.1042 ETH** | 0.0095 ETH (= the cap) | one slice |
+> | **shipped gate — [N-B] shallow mid-band dump** | **−0.0817 ETH** | 0.0095 ETH (= the cap) | one slice |
+> | control: same run, no carve | −1.1106 ETH | — | 0 |
 >
-> The honest path still deploys (case 6): after a genuine 196-minute recovery the keeper commits normally.
+> The carve/no-carve delta is **0 wei**: the attack is no longer extraction. The honest path is intact —
+> 14.76 of a 20 ETH carve deploys over 40 pokes on a healthy pad.
 >
-> **[R3 N-B] correction applied.** The episode anchors on the ABOVE-LOWER watermark, not an above-upper one, so a
-> shallow dump that stalls inside the band can no longer hold one episode open forever.
->
-> ### OPEN — P2 sizing is a liveness/security tradeoff the auditor must set
-> The spec's `EPISODE_BASE_WEI = seedQuoteWei / 10_000` (1 bp) was measured to **starve the honest path**: the
-> allowance counts only ETH arriving AFTER the episode opens, so a carve accrued BEFORE a dump is effectively
-> undeployable for that episode — the floor stops being a floor exactly when it is needed. This is a real
-> M-15-class liveness regression the spec understated. Since P1 closes the measured attack ON ITS OWN, the
-> runbook currently ships a generous-but-bounded `episodeBaseWei` (`seedEth`) and P2 stands as the secondary
-> bound on an attacker who genuinely sustains `MIN_BELOW_DURATION`. Tightening it is an economic call for the
-> external auditor, with the liveness cost above on the table.
-
-> **Status: DESIGN, red-teamed, awaiting implementation + external review.**
-> The shipped interim hardening (`COMMIT_COOLDOWN` 65m > `MAX_OBSERVED_GAP` 60m, see `RobinFloorVault` `[R3-H5]`
-> and `test/regression/H5.floor-forced-fill.test.js`) closes the demonstrated once-per-cooldown loop but only
-> *paces* the sustained-hold variant. This document is the structural closure.
+> The rest of this document is the design as it was red-teamed, and is retained as the rationale record.
 
 ## READ THIS FIRST — the external auditor's blessed direction was MEASURED WORSE THAN DOING NOTHING
 

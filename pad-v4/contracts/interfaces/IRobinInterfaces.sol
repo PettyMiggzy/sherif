@@ -43,9 +43,29 @@ interface IRobinFeeHookAdmin {
     function registerPool(PoolId id, PoolFeeConfig calldata cfg) external;
 }
 
-/// @notice The hook's floor-gate surface, used by `RobinFloorVault`. [R3-H5 P1] The vault ARMS its own gate
-/// (passing its immutable band) and READS the witness as one flat word.
+/// @notice [H-5] The floor gate surface the hook exposes and `RobinFloorVault` reads.
+/// Every return is a FLAT single 32-byte word (uint256/int256) so the vault's `abi.decode` can never revert on a
+/// dirty word — the failure mode a packed `(bool,int24,uint40)` tuple would introduce in the CALLER's frame. The
+/// vault always reads these through a low-level `staticcall` + length check, so an unarmed hook, an EOA, a hook
+/// from an older build, or a short/garbage return all degrade to "park", never to a revert.
 interface IRobinFloorGate {
-    function armFloorGate(PoolId id, int24 lo) external;
-    function floorGateWord(PoolId id) external view returns (uint256);
+    /// @return armedAt      unix time `armFloorGate` bound this pool's band (0 = never armed)
+    /// @return aboveLowerTs last second a swap's PRE-swap tick was >= the band's lower tick (THE GATE)
+    /// @return aboveUpperTs last second a swap's PRE-swap tick was >= the band's upper tick (diagnostics)
+    /// @return gateLower    the band lower tick the hook is armed for — the vault cross-checks its own
+    function floorGateState(PoolId id)
+        external
+        view
+        returns (uint256 armedAt, uint256 aboveLowerTs, uint256 aboveUpperTs, int256 gateLower);
+
+    /// @return the arithmetic-mean tick over `window` seconds, or `type(int256).max` when unavailable
+    function consultTick(PoolId id, uint32 window) external view returns (int256);
+}
+
+/// @notice [H-5] The band surface `RobinFeeHook.armFloorGate` reads back off a floor vault, so arming can hard-revert
+/// on a mis-wired pair instead of silently arming the hook for a band no vault owns.
+interface IRobinFloorBand {
+    function floorTickLower() external view returns (int24);
+    function floorTickUpper() external view returns (int24);
+    function poolId() external view returns (PoolId);
 }

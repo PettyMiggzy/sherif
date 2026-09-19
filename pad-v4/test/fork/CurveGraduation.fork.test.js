@@ -43,11 +43,13 @@ describe("CurvePadFactoryV4 — launch → sellout → graduate on live 0x8366",
       minFdvWei: 1n, maxFdvWei: 1_000_000n * 10n ** 18n, // = HARD_MAX_FDV_WEI
     });
 
+    const fhd = await (await ethers.getContractFactory("FeeHookDeployer")).deploy(await dep.getAddress());
     const factory = await (await ethers.getContractFactory("CurvePadFactoryV4")).deploy(
       POOL_MANAGER, POSITION_MANAGER, PERMIT2, await stateView.getAddress(),
       await dep.getAddress(), await curveDep.getAddress(), await feeCfg.getAddress(),
       await reg.getAddress(), await lockVault.getAddress(),
-      ethers.ZeroAddress
+      ethers.ZeroAddress,
+      await fhd.getAddress()
     );
     await lockVault.setFactory(await factory.getAddress());
 

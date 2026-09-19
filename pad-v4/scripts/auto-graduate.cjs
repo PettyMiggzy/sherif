@@ -26,7 +26,8 @@ for (const p of [process.env.DEPLOY_JSON, path.resolve(__dirname, "..", "deploy.
   try { manifest = JSON.parse(fs.readFileSync(p, "utf8")); break; } catch { /* try next */ }
 }
 
-const RPC_URL = process.env.ROBINHOOD_RPC || process.env.RPC_URL || "https://robinhoodchain.blockscout.com/api/eth-rpc";
+// The canonical chain RPC — the Blockscout proxy is Cloudflare-challenged and answers 403 to programmatic clients.
+const RPC_URL = process.env.ROBINHOOD_RPC || process.env.RPC_URL || "https://rpc.mainnet.chain.robinhood.com";
 const KEY = process.env.KEEPER_PRIVATE_KEY || "";
 const FACTORY = (process.env.FACTORY || (manifest.contracts && manifest.contracts.curveFactory) || "").toLowerCase();
 const START_BLOCK = Number(process.env.START_BLOCK || manifest.curveFactoryBlock || 0);

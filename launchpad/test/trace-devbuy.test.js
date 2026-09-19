@@ -8,22 +8,22 @@ const ETH_USD = 1920;
 const TOTAL = 1_000_000_000;
 const SMAG = 207800, CW = 31200, MGW = 31000;
 
-// Needs a REAL Uniswap v3 (CurvePool.seed mints a concentrated position the mock cannot), so it is gated on
-// FORK_RPC exactly like test/fork/*. Without the gate these run in a plain `npx hardhat test` and fail with a
-// bare "reverted without a reason string" — four permanent red tests that look like regressions and train
-// everyone to ignore the suite. Run: FORK_RPC=<rpc> npx hardhat test <this file>
-const forkSuite = process.env.FORK_RPC ? describe : describe.skip;
-forkSuite("dev-buy FDV", function () {
+// Needs the REAL Uniswap v3 factory + WETH on Robinhood Chain (the constants above are live
+// mainnet addresses, which have no code on a bare hardhat chain), so this suite is fork-only —
+// same convention as every other fork-dependent file here.
+const suite = process.env.FORK_RPC ? describe : describe.skip;
+
+suite("dev-buy FDV", function () {
   this.timeout(180000);
   it("dev buy size -> resulting mcap (find what reaches $10k)", async () => {
     const [dep, platform, dev] = await ethers.getSigners();
-    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
     console.log(`\n      ===== DEV BUY vs RESULTING MCAP  (start ~$1816, grad ~$41k, 750M curve) =====`);
     console.log(`      spent$    ETH      dev tokens     %ofSupply   FDV after`);
     for (const buyUsd of [1400, 2000, 2800, 3500]) {
       const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
       const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-      const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
+      const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
       const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
       const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
         WETH, V3_FACTORY, platform.address, dep.address, await router.getAddress(),
@@ -31,7 +31,7 @@ forkSuite("dev-buy FDV", function () {
       await (await router.setFactory(await factory.getAddress())).wait();
       const buyEth = ethers.parseEther((buyUsd / ETH_USD).toFixed(6));
       await ethers.provider.send("hardhat_setBalance", [dep.address, "0x" + (10n ** 24n).toString(16)]);
-      const rc = await (await factory.launch({ name: "Dev", symbol: "DEV", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: buyEth })).wait();
+      const rc = await (await factory.launch({ name: "Dev", symbol: "DEV", dev: dev.address, tax: NOTAX }, { value: buyEth })).wait();
       const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
         .find((e) => e && e.name === "Launched");
       const { token, curve, pool: poolAddr } = ev.args;

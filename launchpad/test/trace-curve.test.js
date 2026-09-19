@@ -10,6 +10,11 @@ const ONE = 10n ** 18n;
 const ETH_USD = 1920;
 const TOTAL = 1_000_000_000; // 1B whole tokens
 
+// Needs the REAL Uniswap v3 factory + WETH on Robinhood Chain (the constants above are live
+// mainnet addresses, which have no code on a bare hardhat chain), so this suite is fork-only —
+// same convention as every other fork-dependent file here.
+const suite = process.env.FORK_RPC ? describe : describe.skip;
+
 // param sets to trace
 const SETS = [
   { name: "YOU on Pons system: $1800 start, grad ~$44k", smag: 207800, cw: 32000, mgw: 31800 },
@@ -24,19 +29,14 @@ function priceFDV(sqrtP, tokenIsToken0) {
   return { wethPerToken, mcapEth, mcapUsd: mcapEth * ETH_USD };
 }
 
-// Needs a REAL Uniswap v3 (CurvePool.seed mints a concentrated position the mock cannot), so it is gated on
-// FORK_RPC exactly like test/fork/*. Without the gate these run in a plain `npx hardhat test` and fail with a
-// bare "reverted without a reason string" — four permanent red tests that look like regressions and train
-// everyone to ignore the suite. Run: FORK_RPC=<rpc> npx hardhat test <this file>
-const forkSuite = process.env.FORK_RPC ? describe : describe.skip;
-forkSuite("Curve tracer — real FDV vs ETH raised, step by step", function () {
+suite("Curve tracer — real FDV vs ETH raised, step by step", function () {
   this.timeout(180000);
   for (const S of SETS) {
     it(`traces ${S.name}`, async () => {
       const [dep, platform, dev, buyer] = await ethers.getSigners();
       const ltd = await (await ethers.getContractFactory("LaunchTokenDeployer")).deploy();
       const cpd = await (await ethers.getContractFactory("CurvePoolDeployer")).deploy();
-      const bd = await (await ethers.getContractFactory("BondDeployer")).deploy(9000, 15600);
+      const bd = await (await ethers.getContractFactory("BondDeployer")).deploy();
       const router = await (await ethers.getContractFactory("PadRouter")).deploy(WETH, dep.address);
       const factory = await (await ethers.getContractFactory("CurvePadFactory")).deploy(
         WETH, V3_FACTORY, platform.address, dep.address, await router.getAddress(),
@@ -45,8 +45,8 @@ forkSuite("Curve tracer — real FDV vs ETH raised, step by step", function () {
       );
       await (await router.setFactory(await factory.getAddress())).wait();
 
-      const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-      const rc = await (await factory.launch({ name: "Trace", symbol: "TRC", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 }, { value: ethers.parseEther("0.001") })).wait();
+      const NOTAX = { buyBps: 100, sellBps: 100, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+      const rc = await (await factory.launch({ name: "Trace", symbol: "TRC", dev: dev.address, tax: NOTAX })).wait();
       const ev = rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
         .find((e) => e && e.name === "Launched");
       const { token, curve, pool: poolAddr } = ev.args;

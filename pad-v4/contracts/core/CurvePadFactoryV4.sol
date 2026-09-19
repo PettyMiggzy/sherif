@@ -14,6 +14,7 @@ import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmo
 import {IStateView} from "@uniswap/v4-periphery/src/interfaces/IStateView.sol";
 
 import {DeterministicDeployer} from "./DeterministicDeployer.sol";
+import {FeeHookDeployer} from "./FeeHookDeployer.sol";
 import {CurveV4Deployer} from "./CurveV4Deployer.sol";
 import {LockVault} from "./LockVault.sol";
 import {RobinV4FeeConfig} from "./RobinV4FeeConfig.sol";
@@ -55,6 +56,9 @@ contract CurvePadFactoryV4 {
     address public immutable permit2;
     address public immutable stateView;
     DeterministicDeployer public immutable deployer;
+    /// [EIP-170] Holds `RobinFeeHook`'s creationCode so this factory does not (see FeeHookDeployer). Forwards to
+    /// the SAME `deployer`, so every mined hook address is derived exactly as before.
+    FeeHookDeployer public immutable feeHookDeployer;
     CurveV4Deployer public immutable curveDeployer; // offloads RobinCurveV4 creationCode (24KB limit)
     RobinV4FeeConfig public immutable feeConfig;
     address public immutable feeRegistry;
@@ -149,8 +153,11 @@ contract CurvePadFactoryV4 {
         address feeConfig_,
         address feeRegistry_,
         address lockVault_,
-        address auctionVaultDeployer_
+        address auctionVaultDeployer_,
+        address feeHookDeployer_ // [EIP-170] holds RobinFeeHook's creationCode
     ) {
+        if (feeHookDeployer_ == address(0)) revert BadConfig();
+        feeHookDeployer = FeeHookDeployer(feeHookDeployer_);
         poolManager = IPoolManager(poolManager_);
         positionManager = positionManager_;
         permit2 = permit2_;
@@ -338,9 +345,11 @@ contract CurvePadFactoryV4 {
         Currency currency1 = Currency.wrap(token);
 
         // 3) deploy the flag-mined hook (token in init-code ⇒ unique address per pad)
-        hook = deployer.deploy(
-            hookSalt,
-            abi.encodePacked(type(RobinFeeHook).creationCode, abi.encode(poolManager, address(this), feeRegistry, token))
+        // [EIP-170] the hook's creationCode is held by FeeHookDeployer, not inlined here — the [H-5] floor gate
+        // pushed the inline copy past the 24,576-byte limit on StockPadFactory. CREATE2 derivation is unchanged:
+        // FeeHookDeployer forwards to this same `deployer`, so the mined address formula is byte-identical.
+        hook = feeHookDeployer.deploy(
+            hookSalt, abi.encode(poolManager, address(this), feeRegistry, token)
         );
         if (uint160(hook) & 0x3FFF != HOOK_FLAGS) revert HookFlagsMismatch();
         if (RobinFeeHook(payable(hook)).REQUIRED_FLAGS() != HOOK_FLAGS) revert HookFlagsMismatch();

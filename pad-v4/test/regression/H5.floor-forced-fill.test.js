@@ -3,37 +3,34 @@ const { expect } = require("chai");
 const { time, takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
 const { MAX_SQRT_LIMIT, E, f, buildLab, ledger, sizePush } = require("../helpers/h5-lab");
 
-// REGRESSION for ROUND-3 EXTERNAL FINDING H-5 (floor forced-fill), and for the two candidate one-constant
-// mitigations. Independently reproduced from scratch — the external auditor never committed their PoCs.
+// REGRESSION for ROUND-3 EXTERNAL FINDING H-5 (floor forced-fill) — the attack, the two one-constant
+// mitigations that do NOT close it, and the structural closure that does. Independently reproduced from
+// scratch; the external auditor never committed their PoCs.
 //
-// THE ATTACK. On a pad that has dumped below the fixed band, the carve parks. An attacker buys token to shove
-// the tick momentarily below `floorTickLower`, pokes `addFloor` (arming `belowSince`), and sells straight back
-// — a swap never writes `belowSince`, so he ends token-flat. `MIN_DWELL` later the same push+poke force-commits
-// a `MAX_COMMIT_BPS` slice of the carve into the deploy-anchored band at launch-era prices while true spot is
-// far below, and the sell-back sweeps that fresh ETH wall. Repeat once per `COMMIT_COOLDOWN`.
+// THE ATTACK. On a pad that has dumped past the fixed band the carve parks. An attacker buys token to shove the
+// tick momentarily below `floorTickLower`, pokes `addFloor` and sells straight back, force-committing the carve
+// into the deploy-anchored band at launch-era prices while true spot is far below — then sweeps that fresh ETH
+// wall with the sell-back. Repeat. WHY IT IS EXTRACTION, NOT GRIEFING: the identical loop with NO carve nets
+// negative (case 1b). Profit exists only when there is a committable carve to skim.
 //
-// WHY THIS IS EXTRACTION, NOT GRIEFING: the identical loop with NO carve present nets NEGATIVE (case 1b).
-// Profit exists only when there is a committable carve to skim.
+// WHAT DOES NOT WORK, both proven below on real contract code:
+//   • COMMIT_COOLDOWN > MIN_DWELL (the external auditor's own recommendation) — INERT. Bit-identical attacker
+//     PnL; only the wall clock stretches. The attacker is token-flat between commits, so waiting is free.
+//   • COMMIT_COOLDOWN > MAX_OBSERVED_GAP (the round-3 interim fix) — closes the token-flat round-trip loop ONLY.
+//     [R3 N-A] The SUSTAINED-HOLD variant walks straight through it: the attacker picks the poke cadence, keeps
+//     `lastObserved` fresh, and `belowSince` never re-arms. Measured on that build: +10.48 ETH, 83% of the carve.
 //
-// THE TWO CANDIDATE ONE-CONSTANT FIXES — the point of this file:
-//   • COMMIT_COOLDOWN > MIN_DWELL       (the external auditor's recommendation) — INERT. Proven below on real
-//     contract code: bit-identical attacker PnL, only the wall-clock stretches. Their stated rationale ("forces
-//     the attacker to hold a price-risked position across the gap") is false: he is token-flat between commits,
-//     so waiting is free. DO NOT SHIP THIS AS A MITIGATION.
-//   • COMMIT_COOLDOWN > MAX_OBSERVED_GAP — works ONLY against the token-flat round-trip loop above. Spacing
-//     commits beyond the observation gap forces the `nowTs > prevObserved + MAX_OBSERVED_GAP` branch to re-arm
-//     `belowSince`, so the stale clock THAT variant rides cannot survive to the next commit.
+// WHAT DOES WORK — the shipped closure (FLOOR-H5-CLOSURE-SPEC.md, OTG-2), exercised from case 3 onward:
+//   P1 the hook stamps `aboveLowerTs` on EVERY swap whose PRE-swap tick is at/above the band, and a commit needs
+//      MIN_BELOW_DURATION of continuous, swap-witnessed below-band price. The attacker's own push stamps the
+//      watermark in the same transaction, so the round-trip loop can never commit at all.
+//   P2 an episode-scoped, NON-REFILLING allowance caps what one episode can commit at EPISODE_BASE_WEI plus the
+//      ETH that arrived during that episode — so the sustained hold buys one ~1bp slice, not the backlog.
+//   [R3 N-B] the episode is anchored on ANY touch of the band (`aboveLowerTs`), not only on the deep
+//      `floorTickUpper` crossing — otherwise a dump that stalls inside the band inherits an uncapped allowance.
 //
-// [R3 N-A] BUT IT IS NOT A CLOSURE, AND CASE 3'S GREEN IS NOT EVIDENCE THAT IT IS. Case 3 hard-codes
-// `gapSec: 3901` — a >MAX_OBSERVED_GAP cadence that is attacker-UNFAVOURABLE. The attacker picks the cadence.
-// Case 4 below runs the SUSTAINED-HOLD variant: one push, held, poked every 30 min (under the 60 min gap), so
-// `lastObserved` never goes stale, `belowSince` never re-arms, and the shipped constant is never consulted.
-// Slices commit anyway. Holding costs nothing per unit time on a single-sequencer chain with no arbitrage, so
-// "he must hold a price-risked position" is not a cost. Treat case 3 as scoped to ONE variant, never as
-// "the floor is fixed" — the structural closure is FLOOR-H5-CLOSURE-SPEC.md.
-//
-// Both variants are REAL contracts, byte-identical to RobinFloorVault except the one constant
-// (contracts/test/H5CooldownVariantVault.sol = 30 min, H5GapCooldownVault.sol = 65 min).
+// The pre-fix baselines are REAL contracts, byte-identical to the shipped vault except the one constant
+// (contracts/test/H5PreFixVault.sol = 10 min, H5CooldownVariantVault.sol = 30 min).
 
 // Drive the attacker's loop: push tick below the band -> poke addFloor -> sell back. Asserts token-flat every
 // round (the whole premise of the cost model) and returns the best cumulative PnL over the run.
@@ -64,9 +61,9 @@ async function runAttack(L, { rounds, taxBps = 0, gapSec }) {
   return { best, carve0, floorL: await vault.floorLiquidity() };
 }
 
-// [R3 N-A] The SUSTAINED-HOLD variant. Unlike runAttack, the attacker is NOT token-flat between commits: he
-// pushes the tick below the band ONCE and HOLDS it there, poking on a cadence HE chooses (< MAX_OBSERVED_GAP)
-// so the observation clock never goes stale, then unwinds through every wall he minted at the end.
+// [R3 N-A] The SUSTAINED-HOLD variant. The attacker pushes the tick below the band ONCE and HOLDS it there,
+// poking on a cadence HE chooses, then unwinds through every wall he minted at the end. This is the variant
+// that defeated the round-3 interim fix; P1+P2 are what stop it.
 async function runSustainedHold(L, { pokeSec, pokes, taxBps = 0 }) {
   const { sw, key, vault, tok, attacker, sqrtAt } = L;
   const led = ledger(attacker.address);
@@ -97,14 +94,15 @@ async function runSustainedHold(L, { pokeSec, pokes, taxBps = 0 }) {
   return {
     pnl: (await ethers.provider.getBalance(attacker.address)) - start + led.gas,
     consumed: carve0 - (await ethers.provider.getBalance(await vault.getAddress())),
-    commits, carve0, floorL: await vault.floorLiquidity(),
+    commits, carve0, floorL: await vault.floorLiquidity(), banded: await vault.bandQuoteWei(),
   };
 }
 
-describe("[R3 H-5] floor forced-fill: the attack, and which one-constant fix actually works", function () {
+describe("[R3 H-5] floor forced-fill — the attack, the inert fixes, and the shipped closure", function () {
   this.timeout(3600000);
 
   const LAB = { baseL: 10n ** 20n, carve: E(20), dumpTick: 12000 }; // dumped ~70%, 20 ETH parked carve
+  const HOOKED = { ...LAB, hookTaxBps: 100 }; // every shipped pad runs 1% buy + 1% sell; 0/0 is contract-forbidden
 
   it("1a. PRE-FIX constants (cooldown 10m == dwell 10m): the attack is profitable and eats the carve", async () => {
     const snap = await takeSnapshot();
@@ -116,9 +114,9 @@ describe("[R3 H-5] floor forced-fill: the attack, and which one-constant fix act
     await snap.restore();
   });
 
-  it("1b. CONTROL — same loop with NO carve nets NEGATIVE (extraction, not griefing)", async () => {
+  it("1b. CONTROL — the same loop with NO carve nets NEGATIVE (extraction, not griefing)", async () => {
     const snap = await takeSnapshot();
-    const L = await buildLab({ ...LAB, carve: 0n });
+    const L = await buildLab({ ...LAB, vaultContract: "H5PreFixVault", carve: 0n });
     const R = await runAttack(L, { rounds: 6, gapSec: 601 });
     console.log(`   control (no carve): best ${f(R.best.pnl)} ETH — profit exists ONLY when a carve is present`);
     expect(R.best.pnl).to.be.lt(0n);
@@ -142,97 +140,123 @@ describe("[R3 H-5] floor forced-fill: the attack, and which one-constant fix act
     await snap2.restore();
   });
 
-  it("3. SHIPPED RobinFloorVault (COMMIT_COOLDOWN > MAX_OBSERVED_GAP) — attacker loses, carve untouched", async () => {
+  it("3. [P1] the AUDITOR'S PoC against the SHIPPED vault: the round-trip loop cannot commit at all", async () => {
     const snap = await takeSnapshot();
-    const L = await buildLab({ ...LAB, vaultContract: "H5GapCooldownVault" }); // pre-gate vault + the constant fix
-    expect(await L.vault.COMMIT_COOLDOWN()).to.be.gt(await L.vault.MAX_OBSERVED_GAP()); // the actual fix
-    const R = await runAttack(L, { rounds: 12, gapSec: 3901 });
-    console.log(`   cooldown 65m > gap 60m: best ${f(R.best.pnl)} ETH, carve consumed ${f(R.best.consumed)}, floorLiquidity ${R.floorL}`);
-    expect(R.best.pnl).to.be.lt(0n); // the attacker pays and gets nothing
-    expect(R.floorL).to.equal(0n); // nothing was ever force-committed
+    const L = await buildLab(HOOKED); // real hook, gate armed — the shipped wiring
+    const R = await runAttack(L, { rounds: 8, taxBps: 100, gapSec: 3901 });
+    console.log(`   shipped gate: best ${f(R.best.pnl)} ETH, carve consumed ${f(R.best.consumed)}/${f(R.carve0)}, floorLiquidity ${R.floorL}`);
+    // P1: the attacker's own push is the swap that stamps `aboveLowerTs`, so his poke is always inside the
+    // MIN_BELOW_DURATION shadow of his own transaction. No cadence he can choose escapes it.
+    expect(R.floorL).to.equal(0n);
+    expect(await L.vault.bandQuoteWei()).to.equal(0n);
     expect(R.best.consumed).to.equal(0n); // the carve is untouched
+    expect(R.best.pnl).to.be.lt(0n); // he pays the round-trip fee and gets nothing
     await snap.restore();
   });
 
-  it("4. [N-A] SUSTAINED HOLD defeats the shipped fix — the attacker chooses the poke cadence", async () => {
+  it("3b. CONTROL — the same shipped-gate run with NO carve is indistinguishable (the attack is not extraction)", async () => {
     const snap = await takeSnapshot();
-    const L = await buildLab({ ...LAB, vaultContract: "H5GapCooldownVault" }); // pre-gate vault, constant fix only
-    expect(await L.vault.COMMIT_COOLDOWN()).to.be.gt(await L.vault.MAX_OBSERVED_GAP()); // fix present...
-    // ...and irrelevant: poking every 30 min stays inside MAX_OBSERVED_GAP (60 min), so the re-arm branch that
-    // case 3 relies on never fires. Case 3 only passes because its 65-min gap is attacker-unfavourable.
-    const R = await runSustainedHold(L, { pokeSec: 1800, pokes: 24 }); // 12h of held pressure
-    console.log(`   sustained hold: ${f(R.pnl)} ETH, ${R.commits} commits, carve consumed ${f(R.consumed)}/${f(R.carve0)}`);
-    expect(R.commits).to.be.gt(0); // slices DO land despite COMMIT_COOLDOWN > MAX_OBSERVED_GAP
-    expect(R.consumed).to.be.gt(0n); // the carve is reachable — the shipped fix does not protect it
-    expect(R.floorL).to.be.gt(0n); // ETH was force-committed into the stale band
+    const withCarve = await runAttack(await buildLab(HOOKED), { rounds: 4, taxBps: 100, gapSec: 3901 });
+    await snap.restore();
+    const snap2 = await takeSnapshot();
+    const noCarve = await runAttack(await buildLab({ ...HOOKED, carve: 0n }), { rounds: 4, taxBps: 100, gapSec: 3901 });
+    const delta = withCarve.best.pnl - noCarve.best.pnl;
+    console.log(`   carve ${f(withCarve.best.pnl)} vs no-carve ${f(noCarve.best.pnl)} — delta ${f(delta, 9)} ETH`);
+    expect(withCarve.best.pnl).to.be.lt(0n);
+    expect(noCarve.best.pnl).to.be.lt(0n);
+    // the presence of a 20 ETH carve changes the attacker's PnL by less than a milli-ETH: nothing is extracted
+    expect(delta < 0n ? -delta : delta).to.be.lt(10n ** 15n);
+    await snap2.restore();
+  });
+
+  it("4. [P2 / N-A] SUSTAINED HOLD — the variant that beat the interim fix now buys ONE ~1bp slice, at a loss", async () => {
+    const snap = await takeSnapshot();
+    const L = await buildLab(HOOKED);
+    const base = await L.vault.EPISODE_BASE_WEI();
+    // poke every 30 min (inside MAX_OBSERVED_GAP, exactly the cadence that defeated the round-3 fix) for 12h
+    const R = await runSustainedHold(L, { pokeSec: 1800, pokes: 24, taxBps: 100 });
+    console.log(`   sustained hold: ${f(R.pnl)} ETH, ${R.commits} commits, committed ${f(R.banded, 6)} ETH of a ${f(R.carve0)} ETH carve (cap ${f(base, 6)})`);
+    // P2: one episode, one non-refilling allowance. 12h of held pressure buys EPISODE_BASE_WEI, not the backlog.
+    expect(R.banded).to.be.lte(base);
+    expect(R.consumed).to.be.lte(base);
+    expect(R.pnl).to.be.lt(0n); // and he still pays a full round trip for it
+    // the round-trip cost dwarfs the prize by orders of magnitude
+    expect(-R.pnl).to.be.gt(base * 100n);
     await snap.restore();
   });
 
-  it("5. [R3-EXT-2 CORRECTED] armed gate + a ZERO allowance blocks the hold — but that is P2, NOT P1", async () => {
+  it("5. [R3 N-B] SHALLOW DUMP — a dump that stalls INSIDE the band does not inherit an uncapped allowance", async () => {
     const snap = await takeSnapshot();
-    // [R3-EXT-2] READ WITH CASE 7. This case runs at the lab's DEFAULT episodeBaseWei of 0n, so P2's allowance
-    // is zero and nothing can commit for anyone. It does NOT prove P1 closes the attack — case 7 shows the same
-    // armed gate is drained for +8.34 ETH once the base is raised enough for the floor to actually function.
-    // Retained because a zero allowance IS the only safe setting measured so far, and this pins that fact.
-    // CONTROL FIRST — identical pad, identical 1% hook tax, but the PRE-GATE vault (shipped constant fix only).
-    // This isolates the gate as the cause: the difference below cannot be attributed to the tax or to the hook.
-    const C = await buildLab({ ...LAB, hookTaxBps: 100, vaultContract: "H5GapCooldownVault" });
-    const RC = await runSustainedHold(C, { pokeSec: 1800, pokes: 24, taxBps: 100 });
-    console.log(`   CONTROL (gate NOT armed): ${f(RC.pnl)} ETH, ${RC.commits} commits, consumed ${f(RC.consumed)}/${f(RC.carve0)}`);
-    expect(RC.commits).to.be.gt(0); // the attack still lands when the gate is unarmed
-
-    const L = await buildLab({ ...LAB, hookTaxBps: 100 });
-    expect(await L.vault.MIN_BELOW_DURATION()).to.equal(195 * 60);
-    const R = await runSustainedHold(L, { pokeSec: 1800, pokes: 24, taxBps: 100 }); // same run, gate ARMED
-    console.log(`   GATED sustained hold:      ${f(R.pnl)} ETH, ${R.commits} commits, consumed ${f(R.consumed)}/${f(R.carve0)}`);
-    expect(R.commits).to.equal(0); // not one slice landed
-    expect(R.consumed).to.equal(0n); // the carve is untouched
-    expect(R.floorL).to.equal(0n); // nothing was force-committed
-    expect(R.pnl).to.be.lt(0n); // and he paid fees for the privilege
+    // dumpTick 700 sits inside the band [60, 1260] — below `floorTickUpper`, so the FIRST-draft episode anchor
+    // (`aboveUpperTs`) would never have rolled and `episodeStartQuote` would have stayed at its 0 default,
+    // making the allowance `cap + amt` — i.e. the whole 20 ETH backlog. This is the auditor's N-B must-fix.
+    const L = await buildLab({ ...HOOKED, dumpTick: 700 });
+    const base = await L.vault.EPISODE_BASE_WEI();
+    expect(L.bandLower).to.equal(60);
+    expect(L.bandUpper).to.equal(1260);
+    const R = await runSustainedHold(L, { pokeSec: 1800, pokes: 24, taxBps: 100 });
+    console.log(`   shallow dump (tick 700, mid-band): committed ${f(R.banded, 6)} ETH of ${f(R.carve0)} ETH (cap ${f(base, 6)}), PnL ${f(R.pnl)} ETH`);
+    expect(R.banded).to.be.lte(base); // capped exactly as the deep-dump case — the N-B hole is closed
+    expect(await L.vault.episodeStartQuote()).to.be.gt(0n); // the episode DID roll on the shallow touch
+    expect(R.pnl).to.be.lt(0n);
     await snap.restore();
   });
 
-  it("7. [R3-EXT-2] THE BASE BIND — no single EPISODE_BASE_WEI is both safe and functional", async () => {
-    // The external auditor's addendum-2 finding, reproduced. Case 5's "0 commits" is NOT P1 working: the lab
-    // defaults episodeBaseWei to 0n, which pins P2's allowance at zero — a floor that can never deploy anything.
-    // P1 only proves 195 minutes of continuous below-band price, and by the design's own T1 (holding is free per
-    // unit time) that is exactly what a sustained hold buys for one round-trip fee. On-chain a held price and a
-    // genuine crash are indistinguishable, so the gate opens at t0+195m for BOTH — note firstCommit is identical
-    // at every nonzero base below. The ONLY real bound is P2, and it binds against liveness:
-    //   safe values strand the carve; functional values revive the full attack. ~5 orders of magnitude apart.
-    const rows = [];
-    for (const base of [0n, E(1), E(20)]) {
-      const snap = await takeSnapshot();
-      const L = await buildLab({ ...LAB, hookTaxBps: 100, episodeBaseWei: base });
-      const R = await runSustainedHold(L, { pokeSec: 1800, pokes: 24, taxBps: 100 });
-      rows.push({ base, ...R });
-      console.log(`   base ${f(base).padStart(8)} ETH -> attacker ${f(R.pnl).padStart(9)} ETH, ${R.commits} commits, consumed ${f(R.consumed)}/20`);
-      await snap.restore();
-    }
-    expect(rows[0].commits).to.equal(0); // base 0: safe, but the allowance is zero — nothing ever deploys
-    expect(rows[2].pnl).to.be.gt(0n); // base ~= carve: the armed gate is drained anyway. P1 did NOT close it.
-    expect(rows[2].consumed).to.be.gt(rows[0].consumed); // strictly worse as the base is raised for liveness
-  });
-
-  it("6. [R3-H5 CLOSURE] the HONEST path still deploys the carve once the price genuinely settles below", async () => {
+  it("6. [P1] POST-CRASH BACK-RUN — a crash then an immediate push cannot force a fill, even in the same second", async () => {
     const snap = await takeSnapshot();
-    const L = await buildLab({ ...LAB, hookTaxBps: 100, episodeBaseWei: E(20) });
-    // A GENUINE recovery: a real buyer lifts the price back above the wall and it STAYS there. That last
-    // above-band swap stamps the watermark; nothing else trades, so a full MIN_BELOW_DURATION of honest
-    // below-band price accrues and the keeper's poke commits — exactly what the attacker cannot fake, because
-    // faking it means holding the price himself for the same 195 minutes with zero excursions.
-    const X = await sizePush(L, 59, 100);
-    await L.sw.connect(L.trader).swap(
-      L.key, { zeroForOne: true, amountSpecified: -X, sqrtPriceLimitX96: await L.sqrtAt(59) },
+    // Healthy pad: no dump at build time, so the tick has never touched the band and the gate is fully warm.
+    const L = await buildLab({ ...HOOKED, dumpTick: null, carve: E(20) });
+    await time.increase(Number(await L.vault.MIN_BELOW_DURATION()) + 1);
+    const { sw, key, vault, tok, attacker, sqrtAt } = L;
+
+    // CRASH: one swap takes the tick from healthy straight through the band.
+    await sw.connect(L.trader).swap(
+      key, { zeroForOne: false, amountSpecified: -(10n ** 24n), sqrtPriceLimitX96: await sqrtAt(8090) },
+      { takeClaims: false, settleUsingBurn: false }, "0x"
+    );
+    expect(await L.nowTick()).to.be.gte(L.bandLower);
+
+    // BACK-RUN in the SAME block/timestamp: push straight back below the band and poke. The push's PRE-swap
+    // tick is above the band, so the watermark stamps in the attacker's own transaction — dt == 0 is
+    // deliberately NOT a guard on the watermark write, only on the accumulator.
+    await ethers.provider.send("evm_setAutomine", [false]);
+    const X = await sizePush(L, 59, 100).catch(() => E(200));
+    const tb = await tok.balanceOf(attacker.address);
+    await sw.connect(attacker).swap(
+      key, { zeroForOne: true, amountSpecified: -X, sqrtPriceLimitX96: await sqrtAt(59) },
       { takeClaims: false, settleUsingBurn: false }, "0x", { value: X }
     );
-    await time.increase(196 * 60);
-    await L.vault.connect(L.lp).addFloor(); // first poke arms the legacy belowSince dwell
-    await time.increase(11 * 60); // MIN_DWELL
-    await L.vault.connect(L.lp).addFloor();
-    const L1 = await L.vault.floorLiquidity();
-    console.log(`   honest keeper after a real 196m recovery: floorLiquidity ${L1}`);
-    expect(L1).to.be.gt(0n); // the floor still works — the gate costs liveness only to manipulators
+    await vault.connect(attacker).addFloor();
+    await ethers.provider.send("evm_mine", []);
+    await ethers.provider.send("evm_setAutomine", [true]);
+
+    expect(await vault.floorLiquidity()).to.equal(0n); // PARKED — the stale-TWAP window that broke three designs
+    expect(await vault.bandQuoteWei()).to.equal(0n);
+    expect(await tok.balanceOf(attacker.address)).to.be.gt(tb); // he really did land the push
+    await snap.restore();
+  });
+
+  it("7. HONEST PATH — a healthy pad still drains its carve into the wall, monotonically", async () => {
+    const snap = await takeSnapshot();
+    const L = await buildLab({ ...HOOKED, dumpTick: null, carve: E(20) }); // never traded into the band
+    const { vault } = L;
+    await time.increase(Number(await vault.MIN_BELOW_DURATION()) + 1);
+    const dwell = Number(await vault.MIN_DWELL()) + 1;
+    let last = 0n;
+    for (let i = 0; i < 40; i++) {
+      await time.increase(dwell);
+      await vault.addFloor();
+      const L2 = await vault.floorLiquidity();
+      expect(L2).to.be.gte(last); // add-only: never decreases
+      last = L2;
+    }
+    const committed = await vault.bandQuoteWei();
+    console.log(`   honest path: ${f(committed)} ETH of a ${f(E(20))} ETH carve deployed over 40 pokes, floorLiquidity ${last > 0n ? "> 0" : "0"}`);
+    expect(last).to.be.gt(0n);
+    // the episode never rolled (the pad never touched the band), so the allowance is inflow-equal and the
+    // carve deploys exactly as it did before the gate — paced only by MAX_COMMIT_BPS / COMMIT_COOLDOWN.
+    expect(await vault.episodeAnchor()).to.equal(0n);
+    expect(committed).to.be.gt(E(10));
     await snap.restore();
   });
 });

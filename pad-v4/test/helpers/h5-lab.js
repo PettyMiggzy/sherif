@@ -15,6 +15,10 @@ const poolIdOf = (k) =>
 const E = (x) => ethers.parseEther(String(x));
 const f = (x, d = 4) => Number(ethers.formatEther(x)).toFixed(d);
 
+// [MERGE] 0x28CC, not 0x00CC. The H-5 branch this lab came from predates [L-25], which added a FACTORY-ONLY
+// `beforeInitialize` to stop a second pool being stood up behind a pad's own hook. That adds BEFORE_INITIALIZE
+// to the required flags, and the flags are mined into the hook's address — so a lab mining 0x00CC deploys to an
+// address the hook's own ctor assert rejects (DeployFailed).
 const FLAGS = 0x28ccn, MASK = 0x3fffn;
 function mineHookSalt(dep, h) {
   for (let i = 0n; ; i++) {
@@ -45,7 +49,7 @@ async function buildLab(cfg) {
   const reg = await (await ethers.getContractFactory("FeeWalletRegistry")).deploy(platform.address, owner.address);
 
   let hookAddr = ZERO, hook = null;
-  if (cfg.hookTaxBps || cfg.withHook) {
+  if (cfg.hookTaxBps) {
     const dep = await (await ethers.getContractFactory("DeterministicDeployer")).deploy();
     const HookF = await ethers.getContractFactory("RobinFeeHook");
     const initCode = ethers.concat([
@@ -60,12 +64,14 @@ async function buildLab(cfg) {
 
   const key = { currency0: ZERO, currency1: await tok.getAddress(), fee: FEE, tickSpacing: TS, hooks: hookAddr };
   const poolId = poolIdOf(key);
+  // [MERGE/L-25] beforeInitialize is FACTORY-ONLY on this branch, and the hook above is constructed with
+  // `factorySigner` as its factory — so the pool must be initialized by that signer. Harmless when hookless.
   await pm.connect(factorySigner).initialize(key, SQRT_1_1); // tick 0 == launch
 
   if (hook) {
     await hook.connect(factorySigner).registerPool(poolId, {
       currency0: ZERO, currency1: await tok.getAddress(), creator: creator.address, floorRecipient: ZERO,
-      guardAdapter: ZERO, buyTaxBps: cfg.hookTaxBps ?? 0, sellTaxBps: cfg.hookTaxBps ?? 0, sellFloorShareBps: 2000,
+      guardAdapter: ZERO, buyTaxBps: cfg.hookTaxBps, sellTaxBps: cfg.hookTaxBps, sellFloorShareBps: 2000,
       buyBufferShareBps: 2000, referralShareBps: 0, guardWindow: 0, quoteIsStock: false,
     });
     await hook.connect(factorySigner).setBufferRecipient(poolId, owner.address);
@@ -74,6 +80,7 @@ async function buildLab(cfg) {
     // for a real market, not for the curve's own seed. So lift the curve-phase liquidity lock, exactly as
     // RobinCurveV4.graduate() does, before any third-party liquidity is minted — otherwise beforeAddLiquidity
     // (correctly) rejects the lab's generic PoolModifyLiquidityTest router with LiquidityLocked.
+    // [MERGE] Re-applied from 1a1d1ff: the H-5 branch this lab came from predates the LP-1 gate.
     await hook.connect(owner).onGraduated(poolId);
   }
 
@@ -89,21 +96,24 @@ async function buildLab(cfg) {
   );
   const depthAtLaunch = await ethers.provider.getBalance(await pm.getAddress());
 
-  // The H5* variant vaults are byte-identical copies of EARLIER shipped versions, so they keep the OLD
-  // constructor. Only the real vault takes the [R3-H5 P2] episodeBaseWei param.
+  // [H-5/P2] runbook value: the pool's seed ETH / 10_000 (1 bp). Derived from the LOCAL launch constant, never
+  // from a chain read — a live depth read was measured 335x inflatable across the launch -> vault-deploy gap.
+  const episodeBaseWei = cfg.episodeBaseWei ?? depthAtLaunch / 10_000n;
+  // The frozen H5* baseline vaults predate the gate and keep their 10-arg ctor — that is the whole point of
+  // keeping them byte-identical to the shipped vault except for the one constant under test.
   const vaultName = cfg.vaultContract ?? "RobinFloorVault";
   const vaultArgs = [
     await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(),
     ZERO, await tok.getAddress(), FEE, TS, hookAddr, 0 /* anchorTick = launch */, cfg.bandSpacings ?? 20,
   ];
-  if (vaultName === "RobinFloorVault" || vaultName === "H5V3StyleVault") vaultArgs.push(cfg.episodeBaseWei ?? 0n);
+  if (vaultName === "RobinFloorVault") vaultArgs.push(episodeBaseWei);
   const vault = await (await ethers.getContractFactory(vaultName)).deploy(...vaultArgs);
   // shipped wiring: the sell-tax floor carve flows to the vault (attacker-favourable — their own sell-back
   // partially re-funds the carve they are draining)
   if (hook) {
     await hook.connect(platform).setFloorRecipient(poolId, await vault.getAddress());
-    // [R3-H5 P1] Arm the swap-witnessed gate. Only the real vault has it; the H5* variants predate it.
-    if (vaultName === "RobinFloorVault" && cfg.armGate !== false) await vault.connect(platform).armGate();
+    // [H-5] arm the swap-witnessed gate. Shipped runbook step; without it the vault parks forever (R_ORACLE).
+    if (vaultName === "RobinFloorVault" && cfg.arm !== false) await hook.connect(platform).armFloorGate(poolId);
   }
 
   // helpers -------------------------------------------------------------------
@@ -114,11 +124,14 @@ async function buildLab(cfg) {
   await tok.connect(trader).approve(await sw.getAddress(), ethers.MaxUint256);
   await ethers.provider.send("hardhat_setBalance", [trader.address, "0x" + (10n ** 26n).toString(16)]);
 
-  // DUMP the pad: sell token until the tick reaches dumpTick (token far cheaper than launch)
-  await sw.connect(trader).swap(
-    key, { zeroForOne: false, amountSpecified: -(10n ** 29n), sqrtPriceLimitX96: await sqrtAt(cfg.dumpTick) },
-    { takeClaims: false, settleUsingBurn: false }, "0x"
-  );
+  // DUMP the pad: sell token until the tick reaches dumpTick (token far cheaper than launch).
+  // `dumpTick: null` builds a HEALTHY pad that has never traded into the band — the honest-path baseline.
+  if (cfg.dumpTick != null) {
+    await sw.connect(trader).swap(
+      key, { zeroForOne: false, amountSpecified: -(10n ** 29n), sqrtPriceLimitX96: await sqrtAt(cfg.dumpTick) },
+      { takeClaims: false, settleUsingBurn: false }, "0x"
+    );
+  }
   const depthPreAttack = await ethers.provider.getBalance(await pm.getAddress());
 
   // park the carve — spot is above the band, so this is the honest, correct outcome
@@ -134,7 +147,9 @@ async function buildLab(cfg) {
 
   return {
     pm, stateView, tok, vault, mod, sw, key, poolId, tick, sqrtAt, nowTick,
-    owner, lp, trader, platform, attacker, hook,
+    // [MERGE/L-25] factorySigner is exposed because beforeInitialize is FACTORY-ONLY on this branch: any test
+    // standing up an ADDITIONAL pool behind this hook must initialize it as the factory or get NotFactory().
+    owner, lp, trader, platform, attacker, hook, episodeBaseWei, factorySigner,
     depthAtLaunch, depthPreAttack,
     bandLower: Number(await vault.floorTickLower()), bandUpper: Number(await vault.floorTickUpper()),
   };
@@ -167,4 +182,24 @@ async function sizePush(L, targetTick, taxBps) {
   return (poolInput * 10000n) / BigInt(10000 - taxBps) + 10n ** 12n; // +1e-6 ETH so rounding never lands on tick 60
 }
 
-module.exports = { ZERO, SQRT_1_1, MIN_SQRT_LIMIT, MAX_SQRT_LIMIT, poolIdOf, E, f, buildLab, ledger, unpack, sizePush };
+// Advance past MIN_BELOW_DURATION without ever letting the tick touch the band: a 1-wei buy every `stepSec`
+// keeps a real swap cadence on the tape while staying strictly below `floorTickLower`. This is the honest
+// warm-up AND the attacker's best case — it is exactly what a sustained-hold attacker would do.
+async function warmBelowBand(L, { seconds, stepSec = 600 }) {
+  const { sw, key, attacker, sqrtAt } = L;
+  const target = L.bandLower - 1;
+  let elapsed = 0;
+  while (elapsed < seconds) {
+    const step = Math.min(stepSec, seconds - elapsed);
+    await time.increase(step);
+    elapsed += step;
+    await sw.connect(attacker).swap(
+      key, { zeroForOne: true, amountSpecified: -1n, sqrtPriceLimitX96: await sqrtAt(target) },
+      { takeClaims: false, settleUsingBurn: false }, "0x", { value: 1n }
+    );
+  }
+}
+
+module.exports = {
+  ZERO, SQRT_1_1, MIN_SQRT_LIMIT, MAX_SQRT_LIMIT, poolIdOf, E, f, buildLab, ledger, unpack, sizePush, warmBelowBand,
+};

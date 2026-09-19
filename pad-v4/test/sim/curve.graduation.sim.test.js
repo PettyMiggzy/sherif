@@ -1,4 +1,6 @@
 const { ethers } = require("hardhat");
+// [H-5/P2] per-episode base allowance — runbook value is the pad's seed ETH / 10_000 (1 bp)
+const EPISODE_BASE_WEI = 10n ** 14n;
 const { expect } = require("chai");
 
 // SIM — full-lifecycle VALUE CONSERVATION through graduation, against a REAL local Uniswap v4 PoolManager
@@ -62,7 +64,8 @@ describe("SIM — graduation value conservation (nothing stranded, every sink fu
     await ds.listReward(TOKEN, tokAddr, 7 * 86400);
     await curve.connect(platform).setStaking(await ds.getAddress());
     const floor = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(), ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10, 0 /* episodeBaseWei: 0 => first-episode allowance is inflow-equal (honest-path default) */
+      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(), ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10,
+      EPISODE_BASE_WEI
     );
     await curve.connect(platform).setFloor(await floor.getAddress());
     // wire the two-sided ambush vault — the ambushGradBps (5%) share of the raise is swept here at graduation.

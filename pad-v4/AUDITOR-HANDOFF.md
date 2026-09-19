@@ -1,5 +1,11 @@
 # Robin V4 — auditor hand-off: what needs fixing
 
+> **ROUND 4 — START AT [`AUDIT-ROUND-4-BRIEF.md`](./AUDIT-ROUND-4-BRIEF.md) INSTEAD.** This ledger is the
+> full remediation history from rounds 1–3 and stays authoritative for every finding ID, but the current
+> round's scope, focus areas and residuals live in the brief. Round 3's blocking finding — **H-5, the floor
+> forced-fill — is CLOSED** (`FLOOR-H5-CLOSURE-SPEC.md`, `ORACLE.md`); **M-15 / L-33 remain open**.
+> The live v3 stack is a separate review: [`../launchpad/AUDIT-V3.md`](../launchpad/AUDIT-V3.md).
+
 **This is a findings register plus a remediation ledger.** It is the output of a deep, adversarial audit pass
 over `pad-v4/`. The audit itself was report-only; a remediation phase then followed on the same branch. **Every
 finding below still reads exactly as it was filed** — none has been softened or deleted because it was fixed.
@@ -52,7 +58,7 @@ applied; where the correction turned it into a policy choice it was left, with t
 | **H-2** | HIGH | `StockPadFactory` pins the platform's `stockRegistry` as an immutable and **derives** the curb adapter from (stock, registry) rather than accepting one; `guardWindow` capped at 7 days in the factory **and** in `registerPool`. | `29339d6` | `test/regression/H2.stock-gate.test.js` |
 | **H-3** | HIGH | `RobinFeeHook._scheduledEffectiveAt` and all six `StockQuoteAdapter` reads use length-checked low-level staticcalls; flags decode as a word, not as a `bool`. | `b405502` | `test/regression/H3.short-return.test.js` |
 | **H-4** | HIGH | `StockPadFactory` refunds the unused stock seed to `msg.sender`, and only this launch's remainder (snapshot-and-delta). **99,900e18 → 0** to the creator. | `1c02825` | `test/regression/H4.stock-seed-refund.test.js` |
-| **H-5** | HIGH | `RobinFloorVault.addFloor` requires the tick to have been observed below the band for `MIN_DWELL` and commits at most `MAX_COMMIT_BPS` per `COMMIT_COOLDOWN`. Atomic push→commit→sell-back now commits **nothing**; holding the push for the full dwell yields **20% instead of 100%**. | `9bf789f` | `test/regression/H5.floor-forced-fill.test.js` |
+| **H-5** | HIGH | **CLOSED in round 4.** A commit now requires `MIN_BELOW_DURATION` of continuous, *swap-witnessed* below-band price (`RobinFeeHook.aboveLowerTs`, stamped on every swap's PRE-swap tick) AND fits inside a non-refilling, episode-scoped allowance. The attacker's own push stamps the watermark in the same tx, so the round-trip loop commits **nothing**, and 12 h of sustained hold buys one `EPISODE_BASE_WEI` slice at a **−1.10 ETH** round trip. Round-3's `MIN_DWELL`/`MAX_COMMIT_BPS`/`COMMIT_COOLDOWN` are retained unchanged underneath, as subordinate AND-terms. | round 4 | `test/regression/H5.floor-forced-fill.test.js`, `H5.gate-liveness.test.js`, `test/unit/RobinFeeHook.oracle.test.js`, `test/unit/FloorConstants.test.js` |
 | **M-2** | MEDIUM | `CurvePadFactoryV4` constructor asserts the lock vault's position manager matches the factory's. | `032191e` | covered by the factory suite |
 | **M-17** | MEDIUM | `DualStaking.boostOf` uses a length-checked staticcall; `setBoostOracle` requires code. Principal no longer freezes. | `b405502` | `test/regression/H3.short-return.test.js` |
 | **M-20** | MEDIUM | `DualStaking._applyReward` floors the scheduling window and parks sub-rate tranches. Tail-staking whale's take of a creator's gift **99.00% → 0.14%**, and arrival timing now buys nothing. | `d85dfeb` | `test/regression/M20.dualstaking-jit.test.js` |
@@ -210,12 +216,21 @@ The operator asked to drive all of these; resolved with governed defaults + adve
 - **M-14 — LEFT to the operator.** `platformFeeWallet` remains both payout + root-admin (honesty-doc corrected).
   Splitting the wiring role onto a separate hot `padAdmin` needs the operator to decide WHO holds that key — an
   operational call, not something to invent. No code change.
-- **M-15 / H-5 / L-33 — INTERIM HARDENING SHIPPED; full redesign REFUTED → TWAP.** See `FLOOR-REDESIGN.md`. The
-  natural "place add-only bands below spot" redesign was drafted and put through an adversarial gauntlet, which
-  **broke it** (a fully-atomic sandwich: flash-push the tick down, poke to place the ETH band just below true price,
-  sell back through it to sweep its ETH at above-market prices — worse than the shipped interim hardening). That is
-  the FOURTH refuted attempt on this surface. The doc pivots to the only survivor — a TWAP-gated commit (likely just
-  gating today's fixed-band commit on a TWAP tick) — and recommends the external auditor review it before build.
+- **H-5 — CLOSED (round 4). M-15 / L-33 — still open (product).** The structural closure shipped: see
+  `FLOOR-H5-CLOSURE-SPEC.md` (now marked SHIPPED, with the two deviations the auditor's `[R3 N-B]` must-fix
+  forced) and `ORACLE.md`. `RobinFeeHook` now stamps a swap-witnessed `aboveLowerTs` watermark on every swap
+  whose PRE-swap tick is at/above the band, and `RobinFloorVault` requires `MIN_BELOW_DURATION` (195 min) of
+  continuous below-band price plus a **non-refilling, episode-scoped** commit allowance
+  (`EPISODE_BASE_WEI` + this episode's inflow). The episode is anchored on ANY touch of the band, which is the
+  N-B fix; `EPISODE_BAND_BPS` is deliberately not shipped (re-derived, it inverts once the band exceeds ~1.58×
+  pool depth). Measured: the round-trip loop goes from **+8.73 ETH / 89% of the carve** to **−1.11 ETH / 0
+  carve**, the `[N-A]` sustained hold from **+10.48 ETH / 83%** to **−1.10 ETH / one `EPISODE_BASE_WEI`
+  slice**, and the carve/no-carve PnL delta is **0 wei**. `test/regression/H5.floor-forced-fill.test.js`,
+  `H5.gate-liveness.test.js`, `test/unit/RobinFeeHook.oracle.test.js`, `test/unit/FloorConstants.test.js`.
+  **What is NOT closed: M-15 / L-33.** The band is still FIXED at the launch anchor, so a sustained drawdown
+  still parks the carve rather than deepening the wall, and the closure adds residual R1 on top (carve accrued
+  in a previous episode deploys only 1:1 with new inflow). "Place add-only bands below spot" remains refuted
+  (`FLOOR-REDESIGN.md` — a fully-atomic sandwich beat it) and remains a product decision.
 - **Still open for the operator/auditor:** **L-3** (leftover reserve if staking never wired), **L-14** (anti-JIT
   forfeit is claim-before-unstake dodgeable), **L-25** (untaxed sibling pool), **L-32** (two staking one-shots).
 
@@ -242,7 +257,9 @@ told to find a bypass/regression/underflow/reachability break, plus three holist
   Test: `DualStaking.adversarial.test.js` `[re-audit/L-2]`.
 - **L-21 (low) — FIXED.** The hoisted pure-cfg checks missed launch's 6th unconditional reject, `tickSpacing <= 0`.
   Added to `createPresale`. Test: `presale.sim.test.js` bounds test.
-- **H-5 (HIGH, re-confirmed by the floor sweep) — INTERIM HARDENING + OPEN.** The shipped `MIN_DWELL` guard is
+- **H-5 (HIGH) — CLOSED in round 4** (see the M-15/H-5/L-33 entry above and `FLOOR-H5-CLOSURE-SPEC.md`). The
+  round-3 account below is retained verbatim as the record of what the interim hardening did and did not do.
+- **H-5 (HIGH, re-confirmed by the floor sweep) — [round-3 record] INTERIM HARDENING + OPEN.** The shipped `MIN_DWELL` guard is
   bypassable: `belowSince` is poke-observed, so a value left over from a prior healthy period is STALE, and after
   an un-poked dump an attacker force-fills the carve off it — the dwell contributes nothing. Interim fix
   (`MAX_OBSERVED_GAP` restarts a clock stale by >1h) closes the atomic WHOLE-CARVE fill and the >1h-stale replay
@@ -251,7 +268,8 @@ told to find a bypass/regression/underflow/reachability break, plus three holist
   BOUNDED slice (≤`MAX_COMMIT_BPS`) can still be force-committed off a ≤1h-stale `belowSince` in a single cheap tx
   (~2× pool fee per commit, no arbitrage cost), draining the carve over ~`1/MAX_COMMIT_BPS` commits. **Full closure
   is the floor redesign (M-15/H-5/L-33), the top open design decision — see the "Open — design / product decisions"
-  list above and AUDIT-SCOPE §5.**
+  list above and AUDIT-SCOPE §5.** *(Round-4 update: the closure shipped. What survived as open is M-15/L-33 —
+  the fixed anchor — not the forced-fill.)*
 
 
 ---

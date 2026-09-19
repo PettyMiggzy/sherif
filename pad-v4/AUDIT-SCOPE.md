@@ -83,21 +83,45 @@ Money side = **currency0** (native ETH on curve pads; the stock ERC20 on stock p
   Strict external-only attribution would need off-chain platform-signed codes (a deliberate future change).
 - **Buy fee on requested input** — computed on the requested exact-input, so a partial-fill on a tight price limit
   over-taxes the buyer (settlement-safe, buyer-controlled, by design).
-- **[OPEN — H-5, NOT fully closed] Floor forced-fill.** The floor's park→commit dwell is poke-observed, not
-  duration-enforced. Interim hardening (`MAX_OBSERVED_GAP` restart of a stale `belowSince`) closes the atomic
-  WHOLE-CARVE fill and any replay off a `belowSince` stale by more than `MAX_OBSERVED_GAP` (1h). But because
-  `COMMIT_COOLDOWN == MIN_DWELL`, a BOUNDED slice (≤`MAX_COMMIT_BPS`) can still be force-committed off a `belowSince`
-  stale by ≤1h — in a **single cheap tx** (the stale `belowSince` may have been set by anyone's earlier
-  commit-region poke; the attacker holds no position between commits, so the cost is ~2× the pool fee per commit,
-  **not** arbitrage/price risk), draining the carve over ~`1/MAX_COMMIT_BPS` commits one per `COMMIT_COOLDOWN`. A
-  poke-based dwell cannot prove continuous below-band price without a TWAP. **Full closure requires the floor
-  redesign (M-15/H-5/L-33 — add-only bands placed below spot, or a TWAP-gated commit), a product decision, ideally
-  reviewed by the external auditor before it ships.** This is the top open item; do not treat the floor as
-  forced-fill-safe until it lands.
+- **[CLOSED — H-5] Floor forced-fill.** The floor's park→commit flip used to be gated only by a live `slot0`
+  read, so anyone could push the tick below the band, poke `addFloor()`, and sell back — minting the parked
+  carve into a stale band and sweeping it. The round-3 interim hardening (`COMMIT_COOLDOWN 65m >
+  MAX_OBSERVED_GAP 60m`) closed only the token-flat round-trip loop; the auditor's `[R3 N-A]` sustained-hold
+  variant walked straight through it (+10.48 ETH, 83% of the carve). **The structural closure now ships**
+  (FLOOR-H5-CLOSURE-SPEC.md, OTG-2):
+  - **P1** `RobinFeeHook` stamps `aboveLowerTs` on **every** swap whose PRE-swap tick is at/above the band, and
+    a commit requires `MIN_BELOW_DURATION` (195 min) of continuous, swap-witnessed below-band price. An
+    above→below transition *is* a swap, so the attacker's own push closes the gate in the same transaction.
+  - **P2** an **episode-scoped, non-refilling** commit allowance: within one episode the vault may commit at
+    most `EPISODE_BASE_WEI` (the pad's seed ETH / 10,000) plus the ETH that arrived during that episode. There
+    is no time refill, so holding longer buys nothing.
+  - **[R3 N-B]** the episode is anchored on **any** touch of the band (`aboveLowerTs`), not only on crossing
+    `floorTickUpper` — the auditor's must-fix. The draft's second allowance term (0.5% of the band at episode
+    start) is deliberately **not** shipped; see the re-derivation in `RobinFloorVault`'s header.
+  - **P3** the live-spot read is retained as a settlement precondition and **re-checked inside
+    `unlockCallback`**, atomically with the mint, because `_collect` hands full gas to the platform wallet.
+  - **P4** a TWAP conjunct over `TWAP_WINDOW = 3 × COMMIT_COOLDOWN`, retained as defence-in-depth only.
+
+  Measured in `test/regression/H5.floor-forced-fill.test.js` on real contract code: pre-fix **+8.734 ETH** and
+  17.85 of a 20 ETH carve consumed; shipped gate **−1.111 ETH**, `floorLiquidity 0`, `bandQuoteWei 0`, carve
+  consumed **0**, and the presence of a 20 ETH carve changes attacker PnL by **0 wei** (it is no longer
+  extraction). The sustained-hold variant now buys one `EPISODE_BASE_WEI` slice for a **−1.104 ETH** round
+  trip — ~116× unprofitable — and the shallow mid-band dump is capped identically.
+
+  **Accepted residual (liveness, R1):** carve accrued in a *previous* episode deploys only 1:1 with new
+  inflow. That backlog is exactly the prize the auditor measured; making it un-drainable in bulk is the
+  security property. Nothing is lost — the vault is add-only, `parkedQuote` is exact, and the ETH can only
+  ever leave into the band. **M-15 is untouched:** the fixed anchor still idles the carve in a sustained
+  drawdown. Placing new bands below spot remains a product decision.
+
+  **New operational requirement:** `hook.armFloorGate(poolId)` is a SIXTH one-shot, platform-only wiring step.
+  An unarmed pad parks its carve forever (`FloorParked` reason `R_ORACLE`); `scripts/check-wiring.js` asserts
+  it, and `scripts/launch.js` performs it.
 
 ## 6. Validation performed (internal)
 
-- **Unit + economic sims**: 129 passing (`test/unit/*`, `test/sim/*`) against a real local v4 `PoolManager`.
+- **Unit + economic sims + regressions**: 272 passing (`test/unit/*`, `test/sim/*`, `test/regression/*`) against a
+  real local v4 `PoolManager`.
 - **Adversarial audit gauntlet** (parallel finders per lens → independent skeptic refutation): **3 consecutive clean
   passes** on the ETH-native fee rebuild; full-scope pass — see §8.
 - **Economic sim gauntlet**: **3 consecutive clean passes**.
@@ -114,7 +138,7 @@ Money side = **currency0** (native ETH on curve pads; the stock ERC20 on stock p
 cd pad-v4
 npm ci
 npx hardhat compile
-npx hardhat test test/unit/*.js test/sim/*.js          # 129 unit + economic sims
+npx hardhat test test/unit/*.js test/sim/*.js test/regression/*.js   # 272 unit + sim + regression
 FORK_RPC=https://rpc.mainnet.chain.robinhood.com FORK_CHAINID=4663 \
   npx hardhat test test/fork/*.js                       # real-v4 fork suite
 ```

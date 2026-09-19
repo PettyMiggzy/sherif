@@ -1,16 +1,24 @@
 # Floor redesign — closing H-5 / M-15 / L-33 structurally
 
-**Status: H-5 IS STILL OPEN.** This file is the reasoning trail for SIX designs proposed and refuted on this one
-surface: M-7's mid-curve build, M-15's naive live-`slot0` gate, H-5's dwell, the "place below spot" redesign
-below, the external auditor's blessed TWAP-gated commit, and now the swap-witnessed gate that was briefly
-believed to close it. **Do not implement anything in this document.**
+**Status: SUPERSEDED for H-5 (closed by OTG-2, see `FLOOR-H5-CLOSURE-SPEC.md`). Still the live record for M-15
+and L-33, which remain OPEN product decisions, and the register of every refuted attempt on this surface.**
 
-The recurring reason they fail is worth stating once: an honest keeper commits when the price has genuinely been
-below the band, and an attacker reproduces that by *holding* the price there — which costs him nothing per unit
-of time. On-chain the two are the same observation. No gate built on *duration* can separate them, which is why
-the sixth design fell the same way as the first five. Closing this needs a different discriminator (deploy only
-fees that arrived during the episode; or add liquidity atomically inside the sell that funds it), or the floor's
-guarantee needs descoping. See `AUDIT-ROUND-3-EXTERNAL-ADDENDUM-2.md`.
+The proposal in this document — "place add-only bands relative to *current* spot" — was itself **REFUTED** by
+the gauntlet (a fully-atomic sandwich: flash-push the tick down, poke to place the ETH band just below true
+price, sell back through it — strictly worse than doing nothing). It is retained so nobody re-proposes it.
+
+What shipped instead keeps the FIXED band and hardens the *gate*: a swap-witnessed below-band watermark plus a
+non-refilling, episode-scoped commit allowance. **Refutations 1–4 below are joined by four more, all recorded in
+`FLOOR-H5-CLOSURE-SPEC.md` §1:** (5) a TWAP conjunct alone — measured *strictly better for the attacker*
+(+23.84 → +31.92 ETH peak, break-even 30% → 4.0%); (6) lengthening `W`/`COMMIT_COOLDOWN` — measured **inert to
+the wei**, because holding costs nothing per unit time (T1); (7) any depth- or magnitude-based slice sizing —
+a live `getLiquidity` read was measured 335× inflatable by a one-spacing JIT straddle; (8) any time-refilling
+budget — profit grows linearly in hold duration, break-even ~2 days.
+
+**M-15 and L-33 are NOT closed**, and the closure slightly worsens M-15: the band is still fixed at the launch
+anchor, so a sustained drawdown parks the carve, and carve accrued in a previous episode now deploys only 1:1
+with new inflow (residual R1). Anyone reopening this surface must design against M-15, L-33, **and** the eight
+refutations together.
 
 ## The three findings, restated
 
@@ -65,26 +73,7 @@ exploitable, because the freshly-placed single-sided ETH is converted at that ma
 The lesson: the commit/placement price must come from a source the attacker CANNOT move within a transaction —
 i.e. a manipulation-resistant TWAP, not live `slot0`. There is no spot-based scheme (gate OR placement) that is safe.
 
-## ⛔ NOT RESOLVED — the swap-witnessed gate is the SIXTH refuted design (see ADDENDUM-2)
-
-**The table below is REAL but was read wrongly.** It was measured at `episodeBaseWei = 0`, i.e. with the commit
-allowance pinned at zero — a floor that can never deploy anything. The gate was not what stopped the attacker.
-At an allowance large enough for the floor to function, the same armed gate is drained for **+8.34 ETH (74%)**
-(H5 case 7). Duration is free for an attacker, so a gate that proves duration cannot separate him from an honest
-crash. Kept for the record:
-
-| | attacker PnL | commits | carve drained |
-|---|---|---|---|
-| pre-gate vault | **+9.4754 ETH** | 8 | 16.64 / 20 (83%) |
-| **armed gate** | **-1.1106 ETH** | **0** | **0.00 / 20** |
-
-The watermark itself is sound and worth keeping: `RobinFeeHook` stamps every swap whose PRE-swap tick sits at or
-above the band, so `now >= aboveLowerTs + MIN_BELOW_DURATION` really is an exact proof that the price was never
-above the band for that span. The error was believing that proof is worth anything. It establishes only that the
-price *was* below the band — never *why* — and an attacker who simply holds it there satisfies it for the price
-of one round trip. Measured: the first attacker commit lands at minute 210 at every nonzero allowance.
-
-## ⚠️ The TWAP-gated commit below was ALSO refuted; see `FLOOR-H5-CLOSURE-SPEC.md`
+## ⚠️ UPDATE — the TWAP-gated commit below was ALSO refuted; see `FLOOR-H5-CLOSURE-SPEC.md`
 
 The section below was written before the external round-3 review and before this surface was measured. It is
 kept for the reasoning trail, but **a plain TWAP-gated commit is now REFUTED too** — the fifth design to fall

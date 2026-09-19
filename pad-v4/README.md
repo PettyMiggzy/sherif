@@ -10,7 +10,13 @@ Sibling to the untouched v3 pad in `../launchpad`. Full design: `ROBIN-V4-ARCHIT
 > dual staking, a USDG-yield ERC-4626 locked floor, and a tokenized-stock pad, all under one
 > immutable factory.
 
-## Status — Features 1–3 ✅ built & tested (47 unit tests + 2 live-fork tests passing)
+## Audit entry point
+
+> **Auditors start at [`AUDIT-ROUND-4-BRIEF.md`](./AUDIT-ROUND-4-BRIEF.md).** It is the one-page kickoff for
+> the current round: what changed, where to spend your effort, and every residual we are disclosing. The live
+> v3 stack is a separate review — see [`../launchpad/AUDIT-V3.md`](../launchpad/AUDIT-V3.md).
+
+## Status — built & tested: **272 passing** (unit + sim + regression) + **6 passing** against the live v4 stack
 
 ### Fee model (per pad)
 | | On a **BUY** (quote→token) | On a **SELL** (token→quote) |
@@ -23,13 +29,21 @@ sell-side LP fee. The floor carve comes out of the creator's sell tax and builds
 under the price — liquidity placed there is permanent (no remove/withdraw selector exists). All numbers
 are per-pool config.
 
-> **Do not describe the floor as "un-ruggable" or "can't be rugged to zero."** Round-3 external finding
-> **H-5** (independently reproduced) shows the *parked* carve can be force-committed into the fixed band at
-> stale launch-era prices by an attacker who ends token-flat, and then swept back out — measured at up to
-> ~96% of the parked carve on the shipped configuration. What IS structurally true: no withdraw path exists,
-> and no user deposit or the locked seed LP is ever at risk. The guarantee is "add-only, nobody can pull it
-> out", NOT "the floor's value cannot be extracted". See `FLOOR-REDESIGN.md` +
-> `AUDIT-ROUND-3-EXTERNAL-RESPONSE.md` §1.
+> **How to describe the floor, precisely.** Two different claims, both now true, and they are not the same
+> claim: (1) **add-only** — no withdraw, remove or decrease selector exists, so nobody can *pull* the wall out;
+> (2) **not force-fillable** — since the `[H-5]` closure shipped, nobody can *make* the vault mint its parked
+> carve into a stale band either. Round-3 external finding **H-5** showed the parked carve being
+> force-committed at launch-era prices by an attacker who ends token-flat and sweeping it back out (measured
+> +8.73 ETH, 89% of the carve, and +10.48 ETH under the `[N-A]` sustained-hold variant that beat the first
+> interim fix). The structural closure — a swap-witnessed below-band watermark plus a non-refilling,
+> episode-scoped commit allowance — now measures the same attacks at **−1.11 ETH with ZERO carve consumed**,
+> and the presence of a carve changes the attacker's PnL by **0 wei**. See `FLOOR-H5-CLOSURE-SPEC.md`,
+> `ORACLE.md` and `test/regression/H5.floor-forced-fill.test.js`.
+>
+> **Still do not call the floor "un-ruggable" without qualification**, because **M-15 is untouched**: the band
+> is FIXED at the launch anchor, so during a sustained drawdown the carve parks rather than deepening, and
+> carve accrued in a previous episode deploys only 1:1 with new inflow (accepted residual R1). The floor
+> supports the price from *above* the dump, it does not chase it down.
 
 Coverage includes adversarial cases: unregistered-pool inertness, the D2 guarded-take (a blocklisted
 fee currency skips the skim instead of bricking the swap), buy→platform / sell→creator+floor routing,

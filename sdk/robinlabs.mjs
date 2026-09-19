@@ -17,6 +17,8 @@ export const CHAIN = {
   hex: "0x1237",
   name: "Robinhood Chain",
   currency: "ETH",
+  // The canonical chain RPC. The Blockscout proxy (https://robinhoodchain.blockscout.com/api/eth-rpc)
+  // is Cloudflare-challenged and answers 403 to programmatic clients — never default to it.
   rpc: "https://rpc.mainnet.chain.robinhood.com",
   explorer: "https://robinhoodchain.blockscout.com",
   perTxGasCap: 16_777_216, // 2^24 — relevant only if you batch calls in one tx
@@ -66,19 +68,7 @@ export async function legacyOverrides(provider) {
 // Human-readable ABIs — ethers v6 parses these directly. Read + core write fns.
 export const ABI = {
   factory: [
-    // [BRAND] Every Robin coin address ends in `1ab5`, enforced in the contract, so `launch` reverts
-    // SaltRequired — a launch must go through `launchWithSalt` with a salt mined off-chain. `launch` is kept
-    // in the ABI so an old caller gets a named error instead of a missing function.
-    //
-    // The miner is launchpad/mine/robin-mine.mjs in the Robin Labs repo. It needs three things, all readable
-    // from here: the factory's `tokenDeployer()`, its `TOTAL_SUPPLY()`, and that deployer's
-    // `tokenInitCodeHash(name, symbol, supply, factory)`. Do NOT bundle the coin's creation bytecode to
-    // compute the hash locally — it can drift from the deployer that is live, and the only symptom is every
-    // launch reverting with nothing to point at.
     "function launch((string name,string symbol,address dev,(uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,address projectWallet) tax) p) payable returns (address token,address curve,address pool)",
-    "function launchWithSalt((string name,string symbol,address dev,(uint16 buyBps,uint16 sellBps,uint16 walletBps,uint16 floorBps,uint16 burnBps,address projectWallet) tax) p, bytes32 tokenSalt) payable returns (address token,address curve,address pool)",
-    "function tokenDeployer() view returns (address)",
-    "function TOTAL_SUPPLY() view returns (uint256)",
     "function tokenCount() view returns (uint256)",
     "function allTokens(uint256 index) view returns (address)",
     "function recordOf(address token) view returns (address token,address curve,address dev,uint256 at)",

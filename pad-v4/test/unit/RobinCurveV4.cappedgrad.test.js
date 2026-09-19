@@ -1,4 +1,6 @@
 const { ethers } = require("hardhat");
+// [H-5/P2] per-episode base allowance — runbook value is the pad's seed ETH / 10_000 (1 bp)
+const EPISODE_BASE_WEI = 10n ** 14n;
 const { expect } = require("chai");
 
 // A buy CAPPED at the ceiling (sqrtPriceLimit == sqrtAtTick(gradTick)) — how the bench/router sells the curve
@@ -49,7 +51,8 @@ describe("RobinCurveV4 — graduation after a ceiling-CAPPED buy (no PriceLimitA
     await ds.listReward(0, tokAddr, 7 * 86400);
     await curve.connect(platform).setStaking(await ds.getAddress());
     floor = await (await ethers.getContractFactory("RobinFloorVault")).deploy(
-      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(), ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10, 0 /* episodeBaseWei: 0 => first-episode allowance is inflow-equal (honest-path default) */
+      await pm.getAddress(), await stateView.getAddress(), await reg.getAddress(), ZERO, tokAddr, FEE, SPACING, ZERO, GRAD, 10,
+      EPISODE_BASE_WEI
     );
     await curve.connect(platform).setFloor(await floor.getAddress());
   });
