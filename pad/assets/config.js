@@ -51,12 +51,13 @@ export const CONTRACTS = {
   v3Factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
 
   // Our CurvePadFactory (one-call launch) - LIVE on Robinhood Chain.
-  // REPOINT THIS WITH THE NEXT DEPLOY. The address below is the ORIGINAL factory, which has neither the
-  // `1ab5` brand entrypoints (`launchWithSalt`) nor creator-chosen supply (`launchWithSupplyAndSalt`) — this
-  // site now calls both, so launching against it fails. The site and the factory ship together; see
-  // launchpad/DEPLOY-V2.md. `assertModernFactory()` in wallet.js turns the mismatch into a plain message
-  // rather than an unreadable RPC error if the two ever get out of step.
-  padFactory: "0xD41479DE442366e0358Fd74Bf4a5911eBbF3055A",
+  // v3: deployed 2026-09-20 (creation fee, creator-chosen LP fee tier; the daily auction shipped in the
+  // contracts but is DELIBERATELY NOT WIRED on this factory — auctionVaultDeployer() reads address(0), so
+  // auctionDays > 0 reverts BadValue on purpose — see launchpad/DEPLOY-V3.md for why). This is the THIRD
+  // factory, not a replacement: the two addresses this replaced (the original, and the v2 that briefly sat
+  // here) both still exist on-chain and nothing routes to them from the site anymore, but the coins they
+  // launched still trade through their own routers below, untouched.
+  padFactory: "0x8F3395B601Dbc7A6daC27000482dE3dcCcD314Ec",
 
   // Our PadRouter - the swap desk + project fee. Robinhood Chain has no canonical
   // Uniswap periphery, so THIS is the router every trade goes through - LIVE.
@@ -66,15 +67,13 @@ export const CONTRACTS = {
   // trading is registered on the one above and can never be moved. Pointing the whole site at a new router
   // would simply stop those coins trading. So the old one keeps its coins forever, the new one takes every
   // coin from here on, and `routerFor()` asks the chain which is which rather than guessing.
-  // Empty until deployed — while empty, every coin resolves to the legacy router and nothing changes.
   padRouterV2: "0x7e3BbfddFd8B18b789710a6E419B12Dee1E9B9b1",
-  // The THIRD router, deployed alongside the v3 factory (the daily auction / LP fee-tier / creation-fee
-  // round). Same reasoning as above, one generation further on: it is additive, and the two routers above
-  // keep every coin already registered on them. Its ABI is byte-for-byte the v2 surface — PadRouter.sol has
-  // not changed since the v2 deploy — so `ABIS.padRouterV3` is that same list, and if the router ever does
-  // gain a function the two entries part ways rather than one shared entry mis-decoding both.
-  // Empty until deployed — while empty, `routerFor()` skips this tier entirely and nothing changes.
-  padRouterV3: "",
+  // The THIRD router, deployed 2026-09-20 alongside the v3 factory above. Same reasoning as v2, one
+  // generation further on. Its ABI is NOT byte-for-byte v2's — PadRouter.sol picked up a real fix this
+  // round (burnDev now takes a caller minOut; flushBurn gained an in-contract TWAP floor since it's
+  // permissionless and can't take one) — see ABIS.padRouterV3's own comment, which already reflects this;
+  // only this address-and-history comment was stale.
+  padRouterV3: "0x4608872C4F454AEE27e15BAf4f6602B6B35cdc5e",
 
   // Our FeeConfig - the single owner-governed fee dial (LP creator split + swap platform/creator/floor split).
   // Curves + router read it on-chain; the owner retunes it with a setter (no redeploy). LIVE.
