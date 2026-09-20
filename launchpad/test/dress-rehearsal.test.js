@@ -105,17 +105,24 @@ suite("DRESS REHEARSAL — full production stack + trading bot on a real fork", 
     ok("router collected project tax to escrow", (await router.devEscrow(token)) > 0n, `${ethers.formatEther(await router.devEscrow(token))} ETH`);
 
     // ── 4) DRIVE TO GRADUATION ─────────────────────────────────────────────────
+    // [AUTO-GRAD] router.buy() now graduates the curve INSIDE the same transaction the instant it reaches
+    // the ceiling (see PadRouter._autoGraduateIfReady) — there is no longer a separate window where
+    // ready()==true and graduated()==false for a test to observe from outside. Loop on graduated() instead,
+    // and pull the Graduated event out of whichever buy's own receipt triggered it, rather than a follow-up
+    // curve.graduate() call — which would now revert AlreadyGraduated().
     const ceiling = await curveC.gradSqrtPriceX96();
     const whale = traders[0];
     await ethers.provider.send("hardhat_setBalance", [whale.address, "0x" + (10n ** 24n).toString(16)]);
-    for (let i = 0; i < 40 && !(await curveC.ready()); i++) {
-      try { await (await router.connect(whale).buy(token, 0, { value: 2n * ONE })).wait(); } catch { break; }
-    }
-    ok("curve reaches graduation-ready", await curveC.ready());
     const devPre = await new ethers.Contract(WETH, ["function balanceOf(address) view returns (uint256)"], ethers.provider).balanceOf(dev.address);
     const platPre = await new ethers.Contract(WETH, ["function balanceOf(address) view returns (uint256)"], ethers.provider).balanceOf(platform.address);
-    const grc = await (await curveC.graduate()).wait();
-    const gev = grc.logs.map((l) => { try { return curveC.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Graduated");
+    let gev = null;
+    for (let i = 0; i < 40 && !(await curveC.graduated()); i++) {
+      let rc;
+      try { rc = await (await router.connect(whale).buy(token, 0, { value: 2n * ONE })).wait(); } catch { break; }
+      gev = rc.logs.map((l) => { try { return curveC.interface.parseLog(l); } catch { return null; } }).find((e) => e && e.name === "Graduated") || gev;
+    }
+    ok("curve auto-graduated inside the buy that reached the ceiling", await curveC.graduated());
+    if (!gev) throw new Error("graduation never happened within 40 buys — cannot read the Graduated event");
     const bondRaise = Number(ethers.formatEther(gev.args.raisedWeth));
     const W = new ethers.Contract(WETH, ["function balanceOf(address) view returns (uint256)"], ethers.provider);
     const creatorGot = Number(ethers.formatEther((await W.balanceOf(dev.address)) - devPre));

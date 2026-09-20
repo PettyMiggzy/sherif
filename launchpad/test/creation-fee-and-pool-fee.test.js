@@ -159,11 +159,10 @@ describe("Creation fee + LP fee-tier choice", function () {
     const pool = await ethers.getContractAt("IUniswapV3Pool", ev.args.pool);
 
     // buy the WHOLE curve out (cap sized generously; the router refunds/consumes only what the curve can take)
+    // [AUTO-GRAD] this buy also graduates the curve, in the same transaction — no separate call needed, and
+    // one would now revert AlreadyGraduated().
     await ethers.provider.send("hardhat_setBalance", [dev.address, "0x" + (10n ** 24n).toString(16)]);
     await (await (await ethers.getContractAt("PadRouter", router)).connect(dev).buy(token, 0, { value: ethers.parseEther("2000") })).wait();
-    expect(await curve.ready()).to.equal(true);
-
-    await (await curve.connect(dev).graduate()).wait();
     expect(await curve.graduated()).to.equal(true);
     const bondAddr = await curve.bond();
     const bond = await ethers.getContractAt("Bond", bondAddr);
@@ -176,6 +175,58 @@ describe("Creation fee + LP fee-tier choice", function () {
     const [lo, hi] = [await bond.ambushLo(), await bond.ambushHi()];
     expect(lo % 10n).to.equal(0n);
     expect(hi % 10n).to.equal(0n);
+  });
+
+  // ── [AUTO-GRAD] the buy that pushes a coin to the ceiling graduates it in the SAME transaction — no
+  // separate curve.graduate() call, no keeper, needed for this to happen. ──
+  it("[AUTO-GRAD] the buy that reaches the ceiling graduates the coin in that same transaction", async () => {
+    const { salt, addr: token } = await mineFor(factory, dev.address, { name: "AutoGrad", symbol: "AGRD" }, 0n, "autograd-buy");
+    const rc = await (await factory.connect(dev).launchWithSalt(
+      { name: "AutoGrad", symbol: "AGRD", dev: dev.address, tax: NOTAX(), poolFee: 0, auctionDays: 0 },
+      salt, { value: CREATION_FEE }
+    )).wait();
+    const ev = launched(rc);
+    const curve = await ethers.getContractAt("CurvePool", ev.args.curve);
+
+    await ethers.provider.send("hardhat_setBalance", [dev.address, "0x" + (10n ** 24n).toString(16)]);
+    const routerC = await ethers.getContractAt("PadRouter", router);
+    const devWethBefore = await (await ethers.getContractAt("IERC20", await curve.WETH())).balanceOf(dev.address);
+    const buyRc = await (await routerC.connect(dev).buy(token, 0, { value: ethers.parseEther("2000") })).wait();
+
+    // no separate graduate() call anywhere in this test — this is the whole point
+    expect(await curve.graduated(), "graduated() must already be true right after the buy, with no second tx").to.equal(true);
+    expect(await curve.bond()).to.not.equal(ethers.ZeroAddress);
+    const bond = await ethers.getContractAt("Bond", await curve.bond());
+    expect(await bond.posted()).to.equal(true);
+
+    // graduate()'s own event fired inside the SAME transaction receipt as the buy — not a second tx
+    const gradEv = buyRc.logs.map((l) => { try { return curve.interface.parseLog(l); } catch { return null; } })
+      .find((e) => e && e.name === "Graduated");
+    expect(gradEv, "Graduated must be emitted in the buy's own tx receipt").to.not.equal(null);
+
+    // and the creator really did receive GRAD_REWARD as part of that one transaction — auto-grad is not a
+    // no-op stand-in, it runs the real payout
+    const devWethAfter = await (await ethers.getContractAt("IERC20", await curve.WETH())).balanceOf(dev.address);
+    expect(devWethAfter - devWethBefore).to.equal(await curve.GRAD_REWARD());
+  });
+
+  it("[AUTO-GRAD] an ordinary buy that does NOT reach the ceiling is completely unaffected", async () => {
+    const { salt, addr: token } = await mineFor(factory, dev.address, { name: "SmallBuy", symbol: "SMB" }, 0n, "autograd-smallbuy");
+    const rc = await (await factory.connect(dev).launchWithSalt(
+      { name: "SmallBuy", symbol: "SMB", dev: dev.address, tax: NOTAX(), poolFee: 0, auctionDays: 0 },
+      salt, { value: CREATION_FEE }
+    )).wait();
+    const ev = launched(rc);
+    const curve = await ethers.getContractAt("CurvePool", ev.args.curve);
+    const routerC = await ethers.getContractAt("PadRouter", router);
+
+    // a small, ordinary buy — nowhere near the ceiling
+    const rcSmall = await (await routerC.connect(dev).buy(token, 0, { value: ethers.parseEther("0.01") })).wait();
+    expect(await curve.ready()).to.equal(false);
+    expect(await curve.graduated()).to.equal(false);
+    const gradEv = rcSmall.logs.map((l) => { try { return curve.interface.parseLog(l); } catch { return null; } })
+      .find((e) => e && e.name === "Graduated");
+    expect(gradEv, "no Graduated event on an ordinary buy that doesn't reach the ceiling").to.equal(undefined);
   });
 });
 
@@ -227,12 +278,12 @@ describe("[J] graduate()'s fee sweep: creator gets 0% of the WETH leg, same as c
 
     // push the curve to the ceiling with a real buy — a real Uniswap v3 swap, which accrues a real WETH-side
     // LP fee on the curve's own position (the thing collectFees()/graduate()'s sweep exist to realize).
+    // [AUTO-GRAD] this SAME buy also triggers graduation now, in the same transaction — snapshot dev's WETH
+    // balance before it (not before a since-removed separate graduate() call) and read the buy's own receipt
+    // for both the FeesCollected sweep and the Graduated event.
     await ethers.provider.send("hardhat_setBalance", [dev.address, "0x" + (10n ** 24n).toString(16)]);
-    await (await (await ethers.getContractAt("PadRouter", router)).connect(dev).buy(token, 0, { value: ethers.parseEther("2000") })).wait();
-    expect(await curve.ready()).to.equal(true);
-
     const devBefore = await (await ethers.getContractAt("IERC20", weth)).balanceOf(dev.address);
-    const rcGrad = await (await curve.connect(dev).graduate()).wait();
+    const rcGrad = await (await (await ethers.getContractAt("PadRouter", router)).connect(dev).buy(token, 0, { value: ethers.parseEther("2000") })).wait();
     expect(await curve.graduated()).to.equal(true);
     const devAfter = await (await ethers.getContractAt("IERC20", weth)).balanceOf(dev.address);
 

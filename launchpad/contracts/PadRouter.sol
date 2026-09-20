@@ -15,6 +15,8 @@ interface ICurveForBond {
 interface ICurveState {
     function graduated() external view returns (bool);
     function gradSqrtPriceX96() external view returns (uint160);
+    function ready() external view returns (bool);
+    function graduate() external;
 }
 
 interface IBondPoke {
@@ -361,6 +363,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
                 floorEscrow[token] += reward;
             }
         }
+        _autoGraduateIfReady(c.curve);
         emit Bought(token, msg.sender, spent, fee, tokensOut);
     }
 
@@ -427,6 +430,36 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         // the output it sent. We drive fee/refund accounting off `consumedIn` (never off balanceOf, which a
         // donor could inflate to evade the fee).
         (consumedIn, out) = zeroForOne ? (uint256(a0), uint256(-a1)) : (uint256(a1), uint256(-a0));
+    }
+
+    /// @dev [AUTO-GRAD] CurvePool.graduate() is a separate, permissionless call that pays no caller bounty —
+    /// without this, a coin that reaches the ceiling just sits there until an operator or keeper bot notices
+    /// and calls it by hand (see launchpad/scripts/grad-keeper.js, the fallback for a coin this misses).
+    /// Called after every WETH->token buy this router makes (buy, burnDev, flushBurn — never sell, which only
+    /// moves price away from the ceiling). Whoever's buy happens to cross the target pays graduate()'s own gas
+    /// as part of that same transaction — there is no separate pot of "curve ETH" a transaction's gas can be
+    /// paid from; gas is always paid by whoever sends the tx, in their own native ETH. That buyer receives
+    /// nothing extra for triggering it (GRAD_REWARD pays the creator and the platform, unchanged), same
+    /// tradeoff every inline-auto-graduate bonding curve makes elsewhere.
+    ///
+    /// Every external read here is its own try/catch, not just graduate() — a curve that reverts on
+    /// graduated()/ready() (missing the full ICurveState interface, a legacy registration, anything) must
+    /// NEVER brick the buy that triggered this check either. Same reasoning as the graduate() catch below:
+    /// worst case this probe silently does nothing and the trade the caller actually asked for still goes
+    /// through untouched.
+    function _autoGraduateIfReady(address curve) internal {
+        if (curve == address(0)) return;
+        try ICurveState(curve).graduated() returns (bool g) {
+            if (g) return;
+        } catch {
+            return;
+        }
+        try ICurveState(curve).ready() returns (bool r) {
+            if (!r) return;
+        } catch {
+            return;
+        }
+        try ICurveState(curve).graduate() {} catch {}
     }
 
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external override {
@@ -621,6 +654,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             IWETH9(WETH).withdraw(left);
             devEscrow[token] += left;
         }
+        _autoGraduateIfReady(c.curve);
     }
 
     /// @dev [H] The pool's manipulation-resistant WETH-per-token price (1e18-scaled), in the exact shape
@@ -780,5 +814,6 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             IWETH9(WETH).withdraw(left);
             burnEscrow[token] += left;
         }
+        _autoGraduateIfReady(c.curve);
     }
 }
