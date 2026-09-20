@@ -106,6 +106,15 @@ async function main() {
   const lockVault = await legacyDeploy("LockVault", [POSITION_MANAGER, await reg.getAddress()]);
   const curveDeployer = await legacyDeploy("CurveV4Deployer", [await dep.getAddress()]);
   const feeConfig = await legacyDeploy("RobinV4FeeConfig", [deployer.address, DEFAULTS]);
+  // [NO-POOL] noPoolForeverEnabled defaults OFF on a fresh RobinV4FeeConfig (see the contract's own comment) —
+  // without this call, every launch's noPoolForever:true request is silently downgraded to the legacy
+  // permanent-floor graduation path, which is not what this deploy is for: every pad here is the no-pool-forever
+  // type, so the curve itself stays the permanent market and there is no separate locked LP for a copycat pool
+  // to be "protected" against — the tax lives in the hook every real trader (bot or not) already routes through.
+  // 4000 bps matches the value already proven throughout the test suite (RobinCurveV4.noPoolForever.test.js,
+  // scripts/deploy-arc-demo.js, scripts/e2e-lifecycle.js).
+  await (await feeConfig.setNoPoolForeverDefaults(true, 4000)).wait();
+  console.log(`  feeConfig.setNoPoolForeverDefaults(true, 4000) — noPoolForever is now the live default for every future launch`);
   const robinStakingV4Deployer = await legacyDeploy("RobinStakingV4Deployer", []);
   const auctionVaultDeployer = await legacyDeploy("DailyAuctionVaultV4Deployer", [await robinStakingV4Deployer.getAddress()]);
   const factory = await legacyDeploy("CurvePadFactoryV4", [
@@ -142,6 +151,10 @@ async function main() {
     // block the factory landed in — auto-verify.cjs backfills from here
     curveFactoryBlock: rc.blockNumber,
     defaults: DEFAULTS,
+    // [NO-POOL] every launch through this deploy defaults to the no-pool-forever pad type — see the
+    // setNoPoolForeverDefaults call above.
+    noPoolForeverEnabled: true,
+    visibilityWithdrawBpsDefault: 4000,
     contracts: {
       deterministicDeployer: await dep.getAddress(),
       stateView: await stateView.getAddress(),
@@ -157,7 +170,9 @@ async function main() {
     },
   };
   const file = path.join(__dirname, "..", "deploy.curve.json");
-  fs.writeFileSync(file, JSON.stringify(out, null, 2));
+  // DEFAULTS.minFdvWei/maxFdvWei are BigInt (from ethers.parseEther) — JSON.stringify throws on those without
+  // a replacer, which would have broken this write on every real deploy, not just this rehearsal.
+  fs.writeFileSync(file, JSON.stringify(out, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2));
   console.log(`Wrote ${file}`);
   console.log("\nNext:");
   console.log("  1. transfer FeeWalletRegistry + RobinV4FeeConfig ownership to the platform multisig (Ownable2Step)");

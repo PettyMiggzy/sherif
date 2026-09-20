@@ -138,7 +138,10 @@ async function launch() {
   const auctionDays = Number($("auctionDays")?.value || 0);
   const cfg = {
     name, symbol, decimals: 18, supply, curveSupply, reserveSupply, tickSpacing: TS,
-    startTickMag: 0, creator: me, noPoolForever: false, lpFee: FEE, auctionDays,
+    // [NO-POOL] every real launch is the no-pool-forever type — the curve stays the permanent market forever,
+    // there's no separate permanent-LP pool for a copycat pool to matter against. Requires the deployed
+    // feeConfig to have noPoolForeverEnabled (see scripts/deploy-curve.js).
+    startTickMag: 0, creator: me, noPoolForever: true, lpFee: FEE, auctionDays,
   };
 
   log("Mining a branded (…1ab5) token address — matches the factory's own salt-binding, ~a few seconds…");
