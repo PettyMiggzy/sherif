@@ -232,20 +232,24 @@ async function main() {
   // A single big buy overshoots on purpose (same pattern as test/creation-fee-and-pool-fee.test.js's
   // 500-tier graduation case) — the router caps the swap at the graduation price and refunds the rest, so
   // this reaches EXACTLY the ceiling regardless of how much extra ETH is sent.
+  //
+  // [AUTO-GRAD] router.buy() now graduates the curve INSIDE the same transaction the instant it reaches the
+  // ceiling (see PadRouter._autoGraduateIfReady) — there is no longer a separate window where ready()==true
+  // and graduated()==false for this script to observe. Snapshot WETH balances BEFORE the buy (not between the
+  // buy and a follow-up graduate() call, which would now revert AlreadyGraduated()) and pull the Graduated
+  // event out of the buy's own receipt.
+  const wethAddr = await curveC.WETH();
+  const wethC = await ethers.getContractAt(["function balanceOf(address) view returns (uint256)"], wethAddr);
+  const devWethBefore = await wethC.balanceOf(dev.address);
+  const platformWethBefore = await wethC.balanceOf(platformSigner.address);
+
   const bigBuy = ethers.parseEther("2000");
   const buyerEthBefore = await ethers.provider.getBalance(dev.address);
-  await (await router.connect(dev).buy(token, 0, { value: bigBuy })).wait();
-  ok("router buy pushed the curve to its graduation ceiling", await curveC.ready());
+  const gradRc = await (await router.connect(dev).buy(token, 0, { value: bigBuy })).wait();
+  ok("router buy pushed the curve to its graduation ceiling and auto-graduated it in the same tx", await curveC.graduated());
   const buyerEthAfter = await ethers.provider.getBalance(dev.address);
   console.log(`      dev spent ~${ethers.formatEther(buyerEthBefore - buyerEthAfter)} ETH net on the graduating buy (overshoot refunded)`);
 
-  const wethAddr = await curveC.WETH();
-  const wethC = await ethers.getContractAt(["function balanceOf(address) view returns (uint256)"], wethAddr);
-
-  const devWethBefore = await wethC.balanceOf(dev.address);
-  const platformWethBefore = await wethC.balanceOf(platformSigner.address);
-  const gradRc = await (await curveC.connect(dev).graduate()).wait();
-  ok("graduated() flips to true", await curveC.graduated());
   const gradEv = gradRc.logs.map((l) => { try { return curveC.interface.parseLog(l); } catch { return null; } })
     .find((e) => e && e.name === "Graduated");
   const devWethGain = (await wethC.balanceOf(dev.address)) - devWethBefore;
