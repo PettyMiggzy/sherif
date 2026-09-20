@@ -323,7 +323,7 @@ function bondOf(address token) view returns (address)
 
 <span class="c">// creator-only fee controls (projectWallet)</span>
 function withdrawDev(address token)   <span class="c">// collect escrowed sell fees to the wallet</span>
-function burnDev(address token)       <span class="c">// buy + burn with them instead</span>
+function burnDev(address token, uint256 minOut)  <span class="c">// buy + burn with them instead; minOut protects YOUR trade (0 = no floor)</span>
 
 event Bought(address indexed token, address indexed buyer, uint256 ethIn, uint256 fee, uint256 tokensOut)
 event Sold(address indexed token, address indexed seller, uint256 tokensIn, uint256 fee, uint256 ethOut)
@@ -474,9 +474,10 @@ console.log(<span class="s">"launched"</span>, token);</pre></div>
 
 <span class="c">// Creator only: collect your escrowed sell fees - or buy + burn with them.</span>
 <span class="k">const</span> router = <span class="k">new</span> ethers.Contract(ROUTER, [
-  <span class="s">"function withdrawDev(address)"</span>, <span class="s">"function burnDev(address)"</span>,
+  <span class="s">"function withdrawDev(address)"</span>, <span class="s">"function burnDev(address,uint256)"</span>,
 ], signer);
-<span class="k">await</span> (<span class="k">await</span> router.withdrawDev(token)).wait();</pre></div>
+<span class="k">await</span> (<span class="k">await</span> router.withdrawDev(token)).wait();
+<span class="c">// burnDev's second argument is YOUR minOut - pass 0n to accept any price, or a real floor to protect the trade.</span></pre></div>
 
   <!-- ─────────── ECONOMICS ─────────── -->
   <h2 id="fees"><span class="sec">04 · Economics</span>Fee model</h2>

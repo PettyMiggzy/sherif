@@ -1217,9 +1217,20 @@ export async function withdrawDev(token) {
   if (!_signer) await connect();
   return guardedSend(await routerFor(token, true), "withdrawDev", [token], 0n, "Collect fees");
 }
-export async function burnDev(token) {
+/// [H] `minOut` is optional (default 0n — behaves exactly as before, no new friction on the one-click "buy +
+/// burn my fees" button in token.html, which does not collect a slippage tolerance today). Pass a real value
+/// if a future UI wants the creator to set one; either way this is a self-protection the CALLER opts into
+/// (burnDev is gated to the project wallet, unlike flushBurn — see PadRouter.sol's own [H] comments).
+///
+/// The resolved router may be an OLDER generation whose real on-chain burnDev is still the pre-fix 1-arg
+/// version (this fix ships with the NEW generation only) — build the call's args from what THAT router's own
+/// ABI actually declares, not from what the newest one looks like, or this sends the wrong calldata.
+export async function burnDev(token, minOut = 0n) {
   if (!_signer) await connect();
-  return guardedSend(await routerFor(token, true), "burnDev", [token], 0n, "Burn fees");
+  const router = await routerFor(token, true);
+  const frag = router.interface.getFunction("burnDev");
+  const args = frag.inputs.length >= 2 ? [token, minOut] : [token];
+  return guardedSend(router, "burnDev", args, 0n, "Burn fees");
 }
 
 /// Newest-first list of every coin launched on the pad, straight from the chain.

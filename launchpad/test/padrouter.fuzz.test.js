@@ -76,6 +76,25 @@ describe("PadRouter — 300 randomized simulations", function () {
     // price in [0.25, 3] ETH/token
     const price = rndBig(rng, ONE / 4n, 3n * ONE);
     await (await pool.setPrice(price)).wait();
+    // [H] Keep the mock's TWAP oracle (observeMeanTick, a separate field MockUniswapV3Pool never syncs to
+    // setPrice on its own) consistent with the price this coin actually trades at. flushBurn now checks its
+    // execution price against a real TWAP read (see PadRouter.sol's _burnTwapPrice) — on a REAL pool the
+    // oracle legitimately tracks wherever the pool has actually been trading, so a coin whose real price is
+    // 0.25 or 3.0 ETH/token would never look "manipulated" relative to its own history. Leaving the mock's
+    // TWAP field at its default (tick 0 ≈ 1.0 ETH/token) while randomizing price anywhere in [0.25, 3] was
+    // simulating exactly that manipulation signature on every coin whose random price landed outside a ~3%
+    // band around 1.0 — a mock-fidelity gap, not a real flushBurn bug (only a subset of prices ever tripped
+    // it, purely as a function of the random draw, unrelated to anything the sim's trading actually did).
+    // price ≈ 1.0001^tick when the TOKEN is token0 (PoolMath.quoteWethPerToken's direct branch), but when
+    // WETH is token0 instead, quoteWethPerToken returns the INVERSE (1.0001^-tick) — the sign genuinely
+    // flips with ordering, it is not just a relabeling. Missing this the first time round produced a tick
+    // that was the correct MAGNITUDE but wrong SIGN for exactly the coins where the token's address sorts
+    // above WETH's, which the contract then read as a wildly different "TWAP price" than the coin's real
+    // flat trading price — easily outside the 3% tolerance despite nothing having moved.
+    const tokenIsToken0 = tokAddr.toLowerCase() < wethAddr.toLowerCase();
+    const rawTick = Math.log(Number(price) / 1e18) / Math.log(1.0001);
+    const impliedTick = Math.round(tokenIsToken0 ? rawTick : -rawTick);
+    await (await pool.setObserveMeanTick(impliedTick)).wait();
     // deep-ish reserves so swaps always settle within the sim's bounded sizes
     await (await token.transfer(poolAddr, 100_000_000n * ONE)).wait();
     await (await weth.deposit({ value: 40n * ONE })).wait();

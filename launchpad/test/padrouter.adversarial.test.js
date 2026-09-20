@@ -130,6 +130,36 @@ describe("PadRouter — adversarial simulations", function () {
     expect(await weth.balanceOf(await router.getAddress())).to.equal(0n);
   });
 
+  // ── [H] flushBurn is PERMISSIONLESS, so unlike buy/sell/burnDev there is no trusted caller who could pass
+  // a meaningful minOut themselves — the attacker who calls it would simply pass 0. The floor has to come
+  // from the pool's own TWAP instead (PadRouter._burnTwapPrice, same shape Bond.poke() already uses to gate
+  // itself). Prove both directions: a spot price that has drifted far from the TWAP (an in-flight sandwich,
+  // or any other manipulation) gets refused, and an honest flush at the real price still goes through. ──
+  it("[H] flushBurn refuses to execute at a price far from the pool's TWAP (blocks a sandwich)", async () => {
+    const { token, tokAddr, router, pool, buyer } = await fixture({ buy: 400, sell: 100, w: 0, f: 0, b: 10000 });
+    await (await router.connect(buyer).buy(tokAddr, 0, { value: ONE })).wait();
+    const burnEsc = await router.burnEscrow(tokAddr);
+    expect(burnEsc).to.be.greaterThan(0n);
+
+    // The fixture's pool.setPrice(ONE) at construction already matches observeMeanTick's default (tick 0 ≈
+    // 1.0 ETH/token). Simulate the attacker's front-run leg by moving ONLY the pool's spot price — exactly
+    // what a real buy does to a real pool — while leaving the TWAP oracle where it was (a single-block move
+    // cannot have dragged a 15s TWAP with it). 50% worse than TWAP is comfortably outside the 3% tolerance.
+    await (await pool.setPrice((ONE * 3n) / 2n)).wait(); // 1.5 ETH/token spot, TWAP still ~1.0
+    await expect(router.flushBurn(tokAddr)).to.be.revertedWithCustomError(router, "Slippage");
+    // nothing was spent on the revert — the escrow this would have burned is untouched, and can still be
+    // flushed later once the price is back in line
+    expect(await router.burnEscrow(tokAddr)).to.equal(burnEsc);
+
+    // once spot is back within tolerance of the TWAP (the sandwich has unwound, or it just wasn't one), the
+    // exact same call succeeds — the fix bounds manipulation, it does not brick the honest path
+    await (await pool.setPrice(ONE)).wait();
+    const deadBefore = await token.balanceOf(DEAD);
+    await (await router.flushBurn(tokAddr)).wait();
+    expect(await token.balanceOf(DEAD)).to.be.greaterThan(deadBefore);
+    expect(await router.burnEscrow(tokAddr)).to.equal(0n);
+  });
+
   it("conservation: the router's ETH balance always equals the sum of what it owes (escrows)", async () => {
     const { token, tokAddr, router, buyer, mallory } = await fixture({ buy: 300, sell: 200, w: 6000, f: 3000, b: 1000 });
     const routerAddr = await router.getAddress();

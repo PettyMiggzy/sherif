@@ -30,10 +30,27 @@ describe("[v2] the second pad: deep wall, no guard, frozen interfaces", () => {
     const bd = await (await ethers.getContractFactory("BondDeployer")).connect(dep).deploy(NEAR, FAR);
     expect(await bd.bountyNear()).to.equal(NEAR);
     expect(await bd.bountyFar()).to.equal(FAR);
-    // retuning the wall is a ONE-CONTRACT deploy — this is the property that makes it retunable at all
-    const legacy = await (await ethers.getContractFactory("BondDeployer")).connect(dep).deploy(LEGACY_NEAR, LEGACY_FAR);
-    expect(await legacy.bountyNear()).to.equal(LEGACY_NEAR);
+    // retuning the wall is a ONE-CONTRACT deploy — this is the property that makes it retunable at all. A
+    // SECOND, still-safe band (not the vulnerable LEGACY_NEAR/LEGACY_FAR pair below — [J] BondDeployer's own
+    // constructor now rejects any band that fails Bond's real validation, which LEGACY_NEAR=200 always did
+    // since it sits inside MAX_DEV; deploying it here would only have been "successful" because this
+    // constructor used to validate nothing, not because 200 was ever a safe wall).
+    const RETUNED_NEAR = 4000, RETUNED_FAR = 10600; // same wall WIDTH as LEGACY (6600), just moved past MAX_DEV
+    const retuned = await (await ethers.getContractFactory("BondDeployer")).connect(dep).deploy(RETUNED_NEAR, RETUNED_FAR);
+    expect(await retuned.bountyNear()).to.equal(RETUNED_NEAR);
     expect(await bd.bountyNear()).to.equal(NEAR); // and it does not disturb the first one
+  });
+
+  it("[J] BondDeployer refuses a band that would strand every default-tier (1%) coin at graduation", async () => {
+    const BondDeployerF = await ethers.getContractFactory("BondDeployer");
+    // the historical shallow, H-5-vulnerable band: inside MAX_DEV outright
+    await expect(BondDeployerF.connect(dep).deploy(LEGACY_NEAR, LEGACY_FAR)).to.be.revertedWith("band must align to every offered tier");
+    // past MAX_DEV but only 10-aligned (valid for the 0.05% tier), not 200-aligned (the 1% tier — the default)
+    await expect(BondDeployerF.connect(dep).deploy(9010, 15600)).to.be.revertedWith("band must align to every offered tier");
+    // far not strictly past near
+    await expect(BondDeployerF.connect(dep).deploy(NEAR, NEAR)).to.be.revertedWith("band must align to every offered tier");
+    // the shipped band still deploys clean
+    await expect(BondDeployerF.connect(dep).deploy(NEAR, FAR)).to.not.be.reverted;
   });
 
   it("the shipped band is DEEP — past the measured profitability crossover, and honestly not a dip-buyer", async () => {

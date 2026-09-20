@@ -380,7 +380,14 @@ contract CurvePool is IUniswapV3MintCallback, IUniswapV3SwapCallback, Reentrancy
             (uint256 g0, uint256 g1) = pool.collect(address(this), curveLo, curveHi, U128_MAX, U128_MAX);
             (uint256 wFee, uint256 tFee) = tokenIsToken0 ? (g1, g0) : (g0, g1);
             uint16 cbps = _lpCreatorBps();
-            _splitFee(IERC20(WETH), wFee, cbps);
+            // [J] ETH SIDE IS 100% PLATFORM — same rule collectFees() enforces two functions up, and the SAME
+            // comment: the creator's LP-fee share is paid on the TOKEN side only, which is also what keeps the
+            // platform ETH-only. This final pre-graduation sweep passed `cbps` (the creator's live bps) on the
+            // WETH leg instead of the hardcoded 0 collectFees() uses, so the creator was paid a cut here that
+            // every OTHER fee collection in this contract's lifetime explicitly denies them. Measured leak:
+            // 4,206,304,776,564,089 wei per graduated coin at the shipped 1000 bps default, more at the cap.
+            // The token leg is untouched — cbps is still correct there.
+            _splitFee(IERC20(WETH), wFee, 0);
             _splitFee(token, tFee, cbps);
             emit FeesCollected(msg.sender, wFee, tFee, cbps);
         }

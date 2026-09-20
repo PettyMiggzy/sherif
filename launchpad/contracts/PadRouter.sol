@@ -75,6 +75,13 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     uint8 internal constant SIDE_TRADERS = 0;
     uint8 internal constant SIDE_HOLDERS = 1;
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
+    // [H] `flushBurn` below is PERMISSIONLESS and does an unbounded WETH->token market order with no caller-
+    // supplied slippage protection possible (the attacker who calls it themselves would just pass minOut=0,
+    // the way `burnDev`'s own caller-supplied minOut protects a TRUSTED caller but can't protect against the
+    // caller itself being the attacker). Same TWAP-deviation shape Bond.poke() already uses to gate itself
+    // against a manipulated spot price (see Bond.sol's `_requireUnmanipulated`/`MAX_DEV`/`TWAP_WINDOW`).
+    uint32 internal constant BURN_TWAP_WINDOW = 15; // seconds — same window Bond uses for its own manipulation gate
+    uint16 internal constant BURN_TWAP_TOLERANCE_BPS = 300; // 3% worse than TWAP is the most a flush may accept
 
     address public immutable WETH;
 
@@ -593,7 +600,9 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
     /// @notice The creator's alternative to collecting: spend their accrued escrow buying the coin and burning
     /// it. Only the project wallet may choose to burn its OWN money (a random caller can't torch it); the plain
     /// collect above stays public. Pre-graduation the buy is capped at the graduation price (no curve overshoot).
-    function burnDev(address token) external nonReentrant {
+    /// [H] `minOut` protects the CALLER's own trade — same pattern as `buy`/`sell`, meaningful here because the
+    /// caller is trusted (gated to the project wallet) to set it honestly for themselves. Pass 0 to skip.
+    function burnDev(address token, uint256 minOut) external nonReentrant {
         Cfg storage c = _cfg[token];
         if (msg.sender != c.projectWallet) revert NotCreator();
         uint256 amt = devEscrow[token];
@@ -603,6 +612,7 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         uint160 cap;
         if (c.curve != address(0) && !ICurveState(c.curve).graduated()) cap = ICurveState(c.curve).gradSqrtPriceX96();
         (uint256 bought, uint256 consumed) = _swap(token, c.pool, WETH, amt, address(this), cap);
+        if (bought < minOut) revert Slippage();
         IERC20(token).safeTransfer(DEAD, bought);
         // re-credit any WETH the swap couldn't spend (e.g. a burn-buy that hit the graduation cap). Uses the
         // swap's own consumed amount, not balanceOf, so a stray WETH donation can't be scooped into escrow.
@@ -611,6 +621,32 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
             IWETH9(WETH).withdraw(left);
             devEscrow[token] += left;
         }
+    }
+
+    /// @dev [H] The pool's manipulation-resistant WETH-per-token price (1e18-scaled), in the exact shape
+    /// Bond.poke() already uses to gate itself (`_requireUnmanipulated`): a TWAP mean tick over
+    /// BURN_TWAP_WINDOW seconds. `flushBurn` below is PERMISSIONLESS, so unlike `buy`/`sell`/`burnDev` there
+    /// is no trusted caller who could pass a meaningful `minOut` themselves — the attacker who calls it would
+    /// simply pass 0 — so the floor has to come from the pool's own recent history instead of the caller.
+    /// Read ONCE, before the swap: `flushBurn` compares the trade's OWN effective execution price against
+    /// this afterward, which is scale-invariant with respect to a pre-graduation partial fill (the
+    /// graduation-price cap limits how much is bought, not the price achieved on what is), and reading it
+    /// pre-swap avoids any question of whether this call's own trade could contaminate a same-block oracle
+    /// observation read after it.
+    ///
+    /// Reverts (via `pool.observe`'s own "OLD" check) rather than falling back to "no protection" if the pool
+    /// doesn't have BURN_TWAP_WINDOW seconds of oracle history yet — a brand-new coin's very first flushes may
+    /// need to wait a few seconds. That's the safe failure direction: nothing is spent on a revert, the escrow
+    /// is untouched and stays flushable exactly as before, and it can simply be called again once enough time
+    /// has passed. A silent skip-the-check fallback would have reopened the exact hole this closes.
+    function _burnTwapPrice(address pool, address token) internal view returns (uint256 wethPerToken) {
+        uint32[] memory ago = new uint32[](2);
+        ago[0] = BURN_TWAP_WINDOW;
+        ago[1] = 0;
+        (int56[] memory cum,) = IUniswapV3Pool(pool).observe(ago);
+        int24 meanTick = PoolMath.meanTick(cum[0], cum[1], BURN_TWAP_WINDOW);
+        bool tokenIsToken0 = token < WETH;
+        wethPerToken = PoolMath.twapPriceWethPerToken(meanTick, tokenIsToken0); // 1e18-scaled
     }
 
     /// @notice Send a coin's accrued staking share to the sink, which routes it into that coin's pool.
@@ -717,12 +753,25 @@ contract PadRouter is Ownable2Step, ReentrancyGuard, IUniswapV3SwapCallback {
         if (amt == 0) return;
         Cfg storage c = _cfg[token];
         burnEscrow[token] = 0;
+        // [H] Read the TWAP price BEFORE spending anything — see _burnTwapPrice's doc comment for why this
+        // has to be pool history, not a caller-supplied minOut, on a function anyone can call.
+        uint256 twapPrice = _burnTwapPrice(c.pool, token); // WETH per token, 1e18-scaled
         IWETH9(WETH).deposit{value: amt}();
         // pre-graduation, cap at the graduation price so a burn-buy can't overshoot the curve into empty
         // space and brick graduation (same guard the user-facing buy() uses)
         uint160 cap;
         if (c.curve != address(0) && !ICurveState(c.curve).graduated()) cap = ICurveState(c.curve).gradSqrtPriceX96();
         (uint256 bought, uint256 consumed) = _swap(token, c.pool, WETH, amt, address(this), cap);
+        // [H] The price this trade actually paid, WETH per token — HIGHER means worse execution. Bounding it
+        // against the pre-trade TWAP (plus BURN_TWAP_TOLERANCE_BPS of slack for ordinary impact) is what
+        // blocks a sandwich: an attacker who buys first to inflate price, lets this flush overpay into that
+        // inflated price, then sells back, cannot get this trade to clear at a bad enough price to be worth
+        // it — the flush simply reverts instead of executing at their price. Scale-invariant with respect to
+        // a partial fill (the graduation cap limits QUANTITY, not the PRICE achieved on what was bought), so
+        // this needs no special-casing for that.
+        if (bought == 0) revert Slippage();
+        uint256 effectivePrice = (consumed * 1e18) / bought;
+        if (effectivePrice > (twapPrice * (10_000 + BURN_TWAP_TOLERANCE_BPS)) / 10_000) revert Slippage();
         IERC20(token).safeTransfer(DEAD, bought);
         // if the swap couldn't consume all of it, re-credit the residual — using the swap's own consumed
         // amount, not balanceOf, so stray donated WETH can't be swept in

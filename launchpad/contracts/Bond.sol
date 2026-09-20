@@ -10,9 +10,12 @@ import {PoolMath} from "./libraries/PoolMath.sol";
 /// @title Bond — "The Bond"
 /// @notice A protocol-owned market maker posted on a token at graduation and locked forever. It holds three
 /// Uniswap v3 positions and rebalances them so the pool has a floor it can't be rugged below:
-///   - Sherwood     : a full-range LP (baseline liquidity). Principal is NEVER withdrawn; its swap fees are
-///                compounded straight back INTO the position on every poke, so the permanent locked liquidity
-///                only ever grows — forever. Nothing is collected out to any wallet.
+///   - Sherwood     : a full-range LP (baseline liquidity), sized once at `post()` and never grown or shrunk
+///                after — its principal is NEVER withdrawn, and it is never re-minted into either. Its swap
+///                fees ARE realized every poke (WETH side to the platform, token side recycled into Ambush
+///                below) but do not compound back into Sherwood itself: a full-range mint needs both sides,
+///                and after the WETH side is paid out only the token side is left, which
+///                PoolMath.fullRangeLiquidityOrZero correctly returns 0 for on a one-sided input. [J]
 ///   - Bounty     : a single-sided WETH range order just BELOW the price (a falling ladder of bids). Buys dips.
 ///   - Ambush : a single-sided token range order HIGH above the price (~3x–25x). Sells only into strength;
 ///                the WETH it earns funds the Bounty.
@@ -46,10 +49,15 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     // costs to hold. Measured on the live v3 Bond, attacker profit crosses to negative around 6000 ticks below
     // spot and saturates by ~12000; 9000 is the shipped value, inside that margin on both sides.
     //
-    // They are per-BondDeployer rather than per-Bond because the LIVE CurvePool's bytecode calls
-    // `bondDeployer.deploy(token, weth, v3Factory, platform, curve)` with a FROZEN signature — a Bond cannot take
-    // new arguments from the curve. Holding them on the deployer keeps that call byte-identical while making the
-    // wall retunable: deploying another BondDeployer is the whole change, and nothing else moves.
+    // They are per-BondDeployer rather than per-Bond because an ALREADY-DEPLOYED CurvePool's bytecode calls
+    // `bondDeployer.deploy(token, weth, v3Factory, platform, curve, poolFee)` with whatever signature it was
+    // compiled against, frozen for that pool's whole life — this is generation-scoped, not permanent: a new
+    // CurvePoolDeployer generation (each factory round deploys its own, see deploy-v2.js) CAN call a
+    // BondDeployer with a different signature, which is exactly how `poolFee` was added here — this comment
+    // used to list five arguments and claim the signature could never change; it now has six ([J], fixed).
+    // What's still frozen, permanently, is any ALREADY-LIVE CurvePool's own compiled call — that's what
+    // makes holding the wall geometry on the deployer, not the curve, the right shape: retuning the wall for
+    // a NEW generation is a one-contract deploy, and nothing about an OLD generation's pools moves at all.
     int24 public immutable BOUNTY_NEAR;
     int24 public immutable BOUNTY_FAR;
     int24 public constant AMBUSH_NEAR = 11000; // ~3.0x  : Ambush start ~3x
@@ -177,7 +185,10 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
     /// caught supply. Guarded by a spot-vs-TWAP deviation check so it can't be poked at a manipulated price.
     function poke() external nonReentrant {
         if (!posted) revert NotPosted();
-        (uint160 sp, int24 tick,,,,,) = pool.slot0();
+        // [J] sqrtPriceX96 used to feed the dead Sherwood-compounding attempt below (see the comment further
+        // down) — no longer needed now that block is gone, so it's dropped from the destructure rather than
+        // bound and left unused.
+        (, int24 tick,,,,,) = pool.slot0();
         int24 mean = _requireUnmanipulated(tick);
         // Anchor the recenter walls to the CONSERVATIVE side of {spot, TWAP mean}, not raw spot: above-bands to
         // max(spot,mean), below-bands to min(spot,mean). Within the allowed ±MAX_DEV, an attacker who shoves spot to
@@ -188,16 +199,24 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
         int24 aboveAnchor = tick > mean ? tick : mean;
         int24 belowAnchor = tick < mean ? tick : mean;
 
-        // Sherwood: poke the position to realize fees, collect them HERE, and compound them straight back
-        // into the locked full-range position. The permanent, never-withdrawable liquidity therefore GROWS
-        // with every trade — forever — instead of the fees leaving. Any side left over after the balanced
-        // full-range mint (fees are rarely perfectly balanced) falls through to the Bounty/Ambush recenter
-        // below, so nothing is ever stranded.
+        // Sherwood: poke the position to realize fees and collect them HERE. [J] This does NOT compound back
+        // into Sherwood's own principal, despite what this comment used to claim — a full-range mint needs
+        // BOTH token0 and token1, and the WETH side is paid straight to the platform below, so only the
+        // token side is ever left to re-mint with; PoolMath.fullRangeLiquidityOrZero correctly returns 0 for
+        // a one-sided input, which is exactly what a two-argument mint attempt here always got. `sherwoodL`
+        // is therefore fixed at whatever `post()` set it to for the contract's whole life — that dead attempt
+        // (and the `sherwoodL +=`/`_mint` it never reached) has been removed rather than "fixed" into a real
+        // compounding path, since restoring two-sided compounding here would mean either not paying the WETH
+        // fee to the platform (a real behavior change) or minting with WETH pulled from elsewhere — i.e. the
+        // Bounty/floor principal, precisely the inside-drain the CRITICAL comment below exists to prevent.
+        // The token-side fee is not stranded: left as plain ERC20 balance, it is picked up by the ordinary
+        // `tbal = token.balanceOf(address(this))` recenter a few lines down and re-deployed into Ambush.
         pool.burn(sherwoodLo, sherwoodHi, 0);
         (uint128 kf0, uint128 kf1) = pool.collect(address(this), sherwoodLo, sherwoodHi, U128_MAX, U128_MAX);
 
-        // [rev] THE PLATFORM TAKES THE ETH SIDE OF THE LOCKED LP's FEES. The token side still compounds, so the
-        // platform never holds a pad token — the same ETH-only invariant the v4 stack enforces.
+        // [rev] THE PLATFORM TAKES THE ETH SIDE OF THE LOCKED LP's FEES. The token side recycles into the
+        // Ambush wall instead (see the comment above) — either way the platform never holds a pad token, the
+        // same ETH-only invariant the v4 stack enforces.
         //
         // CRITICAL: this takes ONLY the fee just collected from the Sherwood position, measured right here. It
         // must never be derived from `balanceOf` further down, because by then the Bounty has been torn down and
@@ -210,15 +229,6 @@ contract Bond is IUniswapV3MintCallback, ReentrancyGuard {
             (bool okFee, bytes memory ret) =
                 WETH.call(abi.encodeWithSelector(IERC20.transfer.selector, platform, wethFee));
             if (okFee && (ret.length == 0 || abi.decode(ret, (bool)))) emit LpFeeToPlatform(wethFee);
-        }
-        // Whatever is left of the collected fee (the token side, plus the ETH side if that transfer failed)
-        // compounds into the permanent position exactly as before.
-        uint128 keep0 = tokenIsToken0 ? kf0 : 0;
-        uint128 keep1 = tokenIsToken0 ? 0 : kf1;
-        uint128 addL = PoolMath.fullRangeLiquidityOrZero(sp, keep0, keep1);
-        if (addL > 0) {
-            sherwoodL += addL;
-            _mint(sherwoodLo, sherwoodHi, addL);
         }
 
         // tear down Bounty + Ambush, pull everything back here

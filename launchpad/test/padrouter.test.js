@@ -165,11 +165,11 @@ describe("PadRouter — fee model (mock pool)", function () {
     expect(esc).to.be.greaterThan(0n);
 
     // a random caller cannot torch the creator's money
-    await expect(router.connect(buyer).burnDev(tokAddr)).to.be.revertedWithCustomError(router, "NotCreator");
+    await expect(router.connect(buyer).burnDev(tokAddr, 0)).to.be.revertedWithCustomError(router, "NotCreator");
 
     // the creator chooses to burn: escrow buys the token and sends it to dead
     const deadBefore = await token.balanceOf(DEAD);
-    await (await router.connect(dev).burnDev(tokAddr)).wait();
+    await (await router.connect(dev).burnDev(tokAddr, 0)).wait(); // [H] minOut — 0 accepts any price, matching this test's prior behavior
     expect(await token.balanceOf(DEAD)).to.be.greaterThan(deadBefore);
     // escrow is spent (mock pool fully fills, so no residual re-credit)
     expect(await router.devEscrow(tokAddr)).to.equal(0n);

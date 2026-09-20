@@ -81,18 +81,44 @@ export async function goPlusAddress(addr) {
   } catch { return null; }
 }
 
-/// Is this token a genuine Robin Labs launch (our audited template), and what's its on-chain tax?
+// [K] This used to probe ONLY the legacy `padRouter` — a coin registered on a newer generation (padRouterV2,
+// padRouterV3, ...) was never found here. Worse than "not found": PadRouter's `configOf` returns an
+// ALL-ZERO struct rather than reverting for a token it doesn't own, so the try/catch below never fired,
+// `buyBps` came back as the NUMBER 0 (not null), and the gate at `tt.buyBps != null` passed anyway — so the
+// panel rendered a green "Trading fee 0% buy / 0% sell — Set at launch and immutable" for a coin that, on a
+// v3 router, actually charges at least MIN_FEE_BPS_STAKING (1.25%) per side. It also fell into the "Not a
+// Robin Labs launch" branch and lost the "Sells always open" template guarantee at exactly the moment
+// (brand-new coin, GoPlus not indexed yet) it matters most.
+//
+// This mirrors wallet.js's `resolveRouter`/`ROUTER_TIERS` walk rather than importing it — wallet.js already
+// imports `goPlusToken` FROM this file, so the reverse import would be circular. Newest tier first (same
+// reasoning as wallet.js: a coin can only ever be registered on one router, so order is a cost choice, not a
+// correctness one). KEEP THIS LIST IN SYNC WITH wallet.js's ROUTER_TIERS — a generation added there and not
+// here silently reintroduces this exact bug for that generation's coins.
+const ROUTER_TIERS = ["padRouterV3", "padRouterV2"]; // newest first; legacy `padRouter` is the final fallback
+
+/// Is this token a genuine Robin Labs launch (our audited template), and what's its on-chain tax? Probes
+/// every router generation — see ROUTER_TIERS above — and returns the first one that actually knows this
+/// token, never a stale/wrong-tier zero.
 async function templateAndTax(token) {
   const out = { isOurCoin: false, buyBps: null, sellBps: null, pool: null };
-  try {
-    const router = new ethers.Contract(CONTRACTS.padRouter, ABIS.padRouter, _read);
-    const c = await router.configOf(token);
-    out.isOurCoin = !!c.set;
-    out.buyBps = Number(c.buyBps);
-    out.sellBps = Number(c.sellBps);
-    out.pool = c.pool;
-  } catch {}
-  return out;
+  const tiers = [...ROUTER_TIERS, "padRouter"]; // newest -> legacy fallback
+  for (const tier of tiers) {
+    const addr = CONTRACTS[tier];
+    const abi = ABIS[tier];
+    if (!addr || !abi || !/^0x[0-9a-fA-F]{40}$/.test(addr)) continue; // empty slot (not deployed yet) — skip
+    try {
+      const router = new ethers.Contract(addr, abi, _read);
+      const c = await router.configOf(token);
+      if (!c || !c.set) continue; // this router has never heard of this token — try the next tier
+      out.isOurCoin = true;
+      out.buyBps = Number(c.buyBps);
+      out.sellBps = Number(c.sellBps);
+      out.pool = c.pool;
+      return out;
+    } catch { /* this tier reverted outright (not deployed, wrong ABI) — try the next one */ }
+  }
+  return out; // not registered on any known router
 }
 
 // One check row the UI renders. level: "ok" | "warn" | "info".

@@ -58,19 +58,38 @@ async function main() {
 
   ok("factory.platform() matches the deployed platform wallet", (await factory.platform()) === platformSigner.address);
 
-  // ── STEP 1: the setter actually wired ───────────────────────────────────────────────────────
-  console.log("\n[1] auction wiring");
-  const wiredAddr = await factory.auctionVaultDeployer();
-  ok(
-    "factory.auctionVaultDeployer() is set and matches the deployed DailyAuctionVaultDeployer",
-    wiredAddr !== ethers.ZeroAddress && wiredAddr.toLowerCase() === C.dailyAuctionVaultDeployer.toLowerCase(),
-    wiredAddr
-  );
+  // [DEPLOY_AUCTION] deploy-v2.js only deploys the auction contracts when DEPLOY_AUCTION=true — undeployed
+  // by default pending the 6 open HIGH findings on DailyAuctionVault.sol (see the script's own file header).
+  // The manifest records this honestly: dailyAuctionVaultDeployer is null when it wasn't deployed. Steps
+  // 1, 3, 4 and 5 below are auction-only and only run when it was; steps 2 and 6 (launch + graduation) are
+  // the core path and always run, just with auctionDays: 0 when the feature is off.
+  const AUCTION_DEPLOYED = !!(C.dailyAuctionVaultDeployer && C.dailyAuctionVaultDeployer !== ethers.ZeroAddress);
 
-  // ── STEP 2: launch a REAL coin — poolFee=500, auctionDays=2, real creation fee ─────────────────
-  console.log("\n[2] launch — poolFee=500, auctionDays=2, CREATION_FEE paid");
+  // [I] router.setFeeConfig — verify the read-back the deploy script itself asserts, independently, against
+  // the manifest's own recorded feeConfig. This shipped broken once (the live v2 router's feeConfig() reads
+  // the zero address) with no test catching it; this script had ZERO occurrences of the word before this.
+  console.log("\n[0] router.setFeeConfig wiring");
+  ok("router.feeConfig() is set and matches the manifest's reused feeConfig",
+    (await router.feeConfig()).toLowerCase() === out.reused.feeConfig.toLowerCase(), await router.feeConfig());
+
+  // ── STEP 1: the setter actually wired (auction only) ────────────────────────────────────────────
+  if (!AUCTION_DEPLOYED) {
+    console.log("\n[1] auction wiring — SKIPPED: DEPLOY_AUCTION was not set for this deploy (by design)");
+  } else {
+    console.log("\n[1] auction wiring");
+    const wiredAddr = await factory.auctionVaultDeployer();
+    ok(
+      "factory.auctionVaultDeployer() is set and matches the deployed DailyAuctionVaultDeployer",
+      wiredAddr !== ethers.ZeroAddress && wiredAddr.toLowerCase() === C.dailyAuctionVaultDeployer.toLowerCase(),
+      wiredAddr
+    );
+  }
+
+  // ── STEP 2: launch a REAL coin — poolFee=500, auctionDays 2-or-0 depending on AUCTION_DEPLOYED ──
+  const auctionDays = AUCTION_DEPLOYED ? 2 : 0;
+  console.log(`\n[2] launch — poolFee=500, auctionDays=${auctionDays}, CREATION_FEE paid`);
   const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
-  const launchParams = { name: "E2E Proof", symbol: "E2EP", dev: dev.address, tax: NOTAX, poolFee: 500, auctionDays: 2 };
+  const launchParams = { name: "E2E Proof", symbol: "E2EP", dev: dev.address, tax: NOTAX, poolFee: 500, auctionDays };
   const { salt, addr: predictedToken } = await mineFor(
     factory, dev.address, { name: launchParams.name, symbol: launchParams.symbol }, 0n,
     process.env.MINE_SEED || "verify-v2-deploy-e2e"
@@ -93,24 +112,36 @@ async function main() {
   const curveC = await ethers.getContractAt("CurvePool", curve);
   ok("pool's actual fee tier is the requested 500 (0.05%)", (await curveC.POOL_FEE()) === 500n);
   ok("pool spacing matches Uniswap's real 500->10 mapping", (await curveC.SPACING()) === 10n);
-  ok("a DailyAuctionVault was deployed (non-zero)", auctionVault !== ethers.ZeroAddress, auctionVault);
-  ok("factory.auctionVaultOf(token) matches the emitted vault",
-    (await factory.auctionVaultOf(token)).toLowerCase() === auctionVault.toLowerCase());
 
-  const vault = await ethers.getContractAt("DailyAuctionVault", auctionVault);
   const TOK = await ethers.getContractAt("LaunchToken", token);
-  const totalSupply = await factory.TOTAL_SUPPLY();
-  const ambushBps = await factory.AMBUSH_BPS();
-  const preAuctionCurveShare = totalSupply - (totalSupply * ambushBps) / 10_000n; // pre-carve curve share
-  const expectedTranche = preAuctionCurveShare / 10n; // 10% per day, carved BEFORE the curve is seeded
-  const expectedAuctionAmt = expectedTranche * 2n; // auctionDays = 2
-  const vaultTokBal = await TOK.balanceOf(auctionVault);
-  ok(`vault holds the correct carved-out token amount`, vaultTokBal === expectedAuctionAmt,
-    `${ethers.formatUnits(vaultTokBal, 18)} tokens`);
-  ok("vault.dayTranche() matches the expected per-day tranche", (await vault.dayTranche()) === expectedTranche);
-  ok("nothing stranded in the factory", (await TOK.balanceOf(C.padFactory)) === 0n);
+  let vault = null;
+  if (!AUCTION_DEPLOYED) {
+    ok("no auction vault deployed for this launch (auctionDays: 0, as expected)", auctionVault === ethers.ZeroAddress, auctionVault);
+    ok("nothing stranded in the factory", (await TOK.balanceOf(C.padFactory)) === 0n);
+  } else {
+    ok("a DailyAuctionVault was deployed (non-zero)", auctionVault !== ethers.ZeroAddress, auctionVault);
+    ok("factory.auctionVaultOf(token) matches the emitted vault",
+      (await factory.auctionVaultOf(token)).toLowerCase() === auctionVault.toLowerCase());
 
-  // ── STEP 3: a REAL bid day, 2 signers ────────────────────────────────────────────────────────
+    vault = await ethers.getContractAt("DailyAuctionVault", auctionVault);
+    const totalSupply = await factory.TOTAL_SUPPLY();
+    const ambushBps = await factory.AMBUSH_BPS();
+    const preAuctionCurveShare = totalSupply - (totalSupply * ambushBps) / 10_000n; // pre-carve curve share
+    const expectedTranche = preAuctionCurveShare / 10n; // 10% per day, carved BEFORE the curve is seeded
+    const expectedAuctionAmt = expectedTranche * BigInt(auctionDays);
+    const vaultTokBal = await TOK.balanceOf(auctionVault);
+    ok(`vault holds the correct carved-out token amount`, vaultTokBal === expectedAuctionAmt,
+      `${ethers.formatUnits(vaultTokBal, 18)} tokens`);
+    ok("vault.dayTranche() matches the expected per-day tranche", (await vault.dayTranche()) === expectedTranche);
+    ok("nothing stranded in the factory", (await TOK.balanceOf(C.padFactory)) === 0n);
+  }
+
+  // ── STEP 3: a REAL bid day, 2 signers (auction only) ────────────────────────────────────────────
+  if (!AUCTION_DEPLOYED) {
+    console.log("\n[3] bid day — SKIPPED: no auction on this deploy");
+    console.log("[4] claim — SKIPPED: no auction on this deploy");
+    console.log("[5] zero-bid day — SKIPPED: no auction on this deploy");
+  } else {
   console.log("\n[3] bid day 1 — real bids from alice + bob, closeDay(), platform 10% + real burn-buy");
   const DEAD = "0x000000000000000000000000000000000000dEaD";
   const deadAtLaunch = await TOK.balanceOf(DEAD);
@@ -189,6 +220,7 @@ async function main() {
   const stakingTokBal = await TOK.balanceOf(stakingAddr);
   ok("the staking pool actually holds day2's tranche", stakingTokBal === (await vault.dayTranche()),
     `${ethers.formatUnits(stakingTokBal, 18)} tokens`);
+  } // end AUCTION_DEPLOYED (steps 3-5)
 
   // ── STEP 6: buy the curve to graduation via the ROUTER (same path any real trader uses) ────────
   console.log("\n[6] graduation — buy the curve to the ceiling via the router, graduate(), check GRAD_REWARD");

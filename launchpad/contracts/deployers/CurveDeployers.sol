@@ -47,10 +47,11 @@ contract BondingCurveDeployer {
 }
 
 /// @notice Deploys the Bond, and OWNS ITS WALL GEOMETRY.
-/// @dev `deploy(...)`'s signature is FROZEN: the already-deployed CurvePool bytecode calls it with exactly these
-/// five arguments, and that CurvePool is reused by every factory (the pool deployer is shared and stateless). So
-/// the Bounty band cannot be threaded through the curve — it lives here instead, as constructor immutables that
-/// this deployer stamps into every Bond it builds.
+/// @dev [J] `deploy(...)`'s signature is FROZEN: the already-deployed CurvePool bytecode calls it with exactly
+/// these SIX arguments (token, weth, v3Factory, platform, curve, poolFee — this comment used to say five,
+/// stale since poolFee was added), and that CurvePool is reused by every factory (the pool deployer is shared
+/// and stateless). So the Bounty band cannot be threaded through the curve — it lives here instead, as
+/// constructor immutables that this deployer stamps into every Bond it builds.
 ///
 /// The upshot is that RETUNING THE WALL IS A ONE-CONTRACT DEPLOY: stand up another BondDeployer with different
 /// numbers and hand it to a new factory. Nothing else in the stack changes, and no live coin is touched — a
@@ -60,8 +61,24 @@ contract BondDeployer {
     int24 public immutable bountyFar;
 
     /// @param bountyNear_ ticks BELOW spot where the WETH buy wall starts (deeper = harder to farm, see Bond)
-    /// @param bountyFar_  ticks below spot where it ends. Both validated in the Bond constructor.
+    /// @param bountyFar_  ticks below spot where it ends.
+    /// [J] Bond's OWN constructor re-validates both against the SPECIFIC pool it is being built for
+    /// (`bountyNear_ % SPACING == 0`, where SPACING is THAT coin's real tick spacing for its chosen poolFee
+    /// tier) — but that check only ever fires per-launch, at that coin's graduation, long after this deployer
+    /// is already live and other coins may already be pointed at it. A band that happens to be a multiple of
+    /// 10 (valid for the 0.05% tier) but not of 200 (the 1% tier — the DEFAULT) would deploy here cleanly,
+    /// pass every 0.05%-tier smoke test, and then revert `'bounty geometry'` inside `graduate()` for every
+    /// 1%-tier coin that ever points at it — permanently, and discovered only once someone tries to graduate.
+    /// Validate here too, against 200 (the strictest of the two tiers this stack offers — a multiple of 200
+    /// is automatically a multiple of 10), so a bad band can never be deployed in the first place.
     constructor(int24 bountyNear_, int24 bountyFar_) {
+        // 300 mirrors Bond.MAX_DEV exactly (a `public constant` on Bond, but not reachable as `Bond.MAX_DEV`
+        // from here — Solidity does not resolve a contract-level constant through a bare type name across
+        // contracts). Keep this in sync if MAX_DEV is ever retuned.
+        require(
+            bountyNear_ > 300 && bountyFar_ > bountyNear_ && bountyNear_ % 200 == 0 && bountyFar_ % 200 == 0,
+            "band must align to every offered tier"
+        );
         bountyNear = bountyNear_;
         bountyFar = bountyFar_;
     }

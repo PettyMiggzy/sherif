@@ -178,3 +178,76 @@ describe("Creation fee + LP fee-tier choice", function () {
     expect(hi % 10n).to.equal(0n);
   });
 });
+
+// ── [J] graduate()'s pre-grad fee sweep must obey the SAME "ETH side is 100% platform" rule ────────────────
+//
+// collectFees() hardcodes 0 creator bps on the WETH leg — the comment right above it says why: the creator's
+// LP-fee share is paid on the TOKEN side only, so the platform stays ETH-only. graduate() has an identical
+// pre-graduation fee sweep, and it used to pass the LIVE (non-zero) creator bps on the WETH leg instead of
+// the hardcoded 0 — a real leak, not a hypothetical: the source-text regression test guarding this
+// (test/v2-stack.test.js, "[rev] the curve pays the ETH side...") only ever matched collectFees()'s call
+// site by its local variable name (`wethFees`), never graduate()'s (`wFee`), and every OTHER test in this
+// file deploys with `feeConfig = ethers.ZeroAddress`, which forces cbps to 0 and hides the divergence
+// entirely regardless of which line is checked. This is a real balance-delta test against a REAL FeeConfig
+// with its non-zero default (10%), not another source regex.
+describe("[J] graduate()'s fee sweep: creator gets 0% of the WETH leg, same as collectFees()", function () {
+  this.timeout(180000);
+
+  it("a real accrued LP fee before graduation pays the creator EXACTLY GRAD_REWARD in WETH — no extra cut", async () => {
+    const [dep, platform, dev] = (await ethers.getSigners()).slice(-7, -4);
+    const at = async (n, ...a) => (await ethers.getContractFactory(n)).connect(dep).deploy(...a).then((c) => c.getAddress());
+    const weth = await at("MockWETH9");
+    const v3 = await new ethers.ContractFactory(V3_FACTORY_ART.abi, V3_FACTORY_ART.bytecode, dep).deploy().then((c) => c.getAddress());
+    const ltd = await at("LaunchTokenDeployer");
+    const cpd = await at("CurvePoolDeployer");
+    const bd = await at("BondDeployer", 9000, 15600);
+    const router = await at("PadRouter", weth, dep.address);
+    // The ONE difference from this file's shared fixture: a REAL FeeConfig, not ethers.ZeroAddress. Its
+    // shipped default (lpCreatorBps = 1000 = 10%, see test/fn-fee-config.test.js) is exactly what makes the
+    // WETH-leg leak observable — with feeConfig unset, cbps is forced to 0 regardless of which line runs.
+    const feeConfig = await at("FeeConfig", dep.address);
+    const factory = await (await ethers.getContractFactory("CurvePadFactory")).connect(dep).deploy(
+      weth, v3, platform.address, dep.address, router, ltd, cpd, bd, feeConfig, START, WIDTH, MINGRAD
+    );
+    await (await (await ethers.getContractAt("PadRouter", router)).connect(dep).setFactory(await factory.getAddress())).wait();
+
+    // Local to this test — `factory` here is a fresh instance, not the shared one the outer describe's own
+    // `launched` closes over, so that helper can't be reused as-is.
+    const launchedLocal = (rc) => rc.logs.map((l) => { try { return factory.interface.parseLog(l); } catch { return null; } })
+      .find((e) => e && e.name === "Launched");
+
+    const NOTAX = { buyBps: 125, sellBps: 125, walletBps: 10000, floorBps: 0, burnBps: 0, projectWallet: dev.address };
+    const { salt, addr: token } = await mineFor(factory, dev.address, { name: "FeeLeak", symbol: "FLK" }, 0n, "j-fee-leak-check");
+    const rc = await (await factory.connect(dev).launchWithSalt(
+      { name: "FeeLeak", symbol: "FLK", dev: dev.address, tax: NOTAX, poolFee: 0, auctionDays: 0 },
+      salt, { value: CREATION_FEE }
+    )).wait();
+    const ev = launchedLocal(rc);
+    const curve = await ethers.getContractAt("CurvePool", ev.args.curve);
+
+    // push the curve to the ceiling with a real buy — a real Uniswap v3 swap, which accrues a real WETH-side
+    // LP fee on the curve's own position (the thing collectFees()/graduate()'s sweep exist to realize).
+    await ethers.provider.send("hardhat_setBalance", [dev.address, "0x" + (10n ** 24n).toString(16)]);
+    await (await (await ethers.getContractAt("PadRouter", router)).connect(dev).buy(token, 0, { value: ethers.parseEther("2000") })).wait();
+    expect(await curve.ready()).to.equal(true);
+
+    const devBefore = await (await ethers.getContractAt("IERC20", weth)).balanceOf(dev.address);
+    const rcGrad = await (await curve.connect(dev).graduate()).wait();
+    expect(await curve.graduated()).to.equal(true);
+    const devAfter = await (await ethers.getContractAt("IERC20", weth)).balanceOf(dev.address);
+
+    const GRAD_REWARD = await curve.GRAD_REWARD();
+    // The fixture's geometry (same as the rest of this file) raises well past 2 ETH by graduation, so
+    // Math.min(GRAD_REWARD, raisedWeth/4) hits the flat GRAD_REWARD cap, not the raise-scaled one — confirmed
+    // by the assertion below being an EQUALITY, not a >=. If the WETH-leg leak ever comes back, this fails:
+    // devAfter - devBefore would be GRAD_REWARD PLUS a nonzero creator cut of the pre-grad WETH fee sweep.
+    expect(devAfter - devBefore).to.equal(GRAD_REWARD);
+
+    // and confirm there WAS a real WETH fee to leak from, or this test would pass vacuously even with the bug
+    const feesEv = rcGrad.logs.map((l) => { try { return curve.interface.parseLog(l); } catch { return null; } })
+      .find((e) => e && e.name === "FeesCollected");
+    expect(feesEv, "graduate() must emit FeesCollected from its pre-grad sweep").to.not.equal(null);
+    expect(feesEv.args.wethFees > 0n, "the swap above must have accrued a real nonzero WETH-side LP fee").to.equal(true);
+    expect(feesEv.args.creatorBps).to.equal(1000n); // the live, non-zero bps — proves this run was not silently 0
+  });
+});

@@ -275,10 +275,12 @@ export const ABIS = {
     "function flushStaking(address token)",
     "function flushRobin()",
   ],
-  // PadRouter v3 — the router deployed with the v3 factory. PadRouter.sol is unchanged since the v2 deploy
-  // (the v3 round touched CurvePadFactory and added DailyAuctionVault; the router was not part of it), so
-  // this is deliberately the same surface, spelled out rather than aliased: the moment the router DOES
-  // change, only this entry moves, and a coin on the older router keeps decoding against the older tuple.
+  // PadRouter v3 — the router deployed with the v3 factory. [H] PadRouter.sol DID change for this
+  // generation's deploy (audit fix: burnDev now takes a caller minOut, matching buy/sell — flushBurn's own
+  // protection is a TWAP check built into the contract, not a signature change, so it stays 0-arg). Spelled
+  // out rather than aliased to padRouterV2's ABI, which is still the OLD 1-arg burnDev — that entry must NOT
+  // change, since the live v2 router was deployed from the pre-fix source and its real on-chain selector is
+  // still the 1-arg one. Getting this pairing backwards sends the wrong calldata to a live router.
   padRouterV3: [
     "function buy(address token, uint256 minOut) payable returns (uint256 tokensOut)",
     "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256 ethOut)",
@@ -286,7 +288,7 @@ export const ABIS = {
     "function devEscrow(address) view returns (uint256)",
     "function bondOf(address) view returns (address)",
     "function withdrawDev(address token)",
-    "function burnDev(address token)",
+    "function burnDev(address token, uint256 minOut)",
     "function stakingEscrow(address) view returns (uint256)",
     "function robinEscrow() view returns (uint256)",
     "function flushStaking(address token)",
