@@ -361,9 +361,14 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
         </div>
       </details>
 
-      <!-- [AUDIT HOLD — LIFTED] The round-4 surface (daily auction, creator-chosen LP fee) has been through
-           external review and the hold from 6d254a8 is released here. pad-v4's staging bench stays disabled:
-           it is a different, unreviewed codebase and nothing about this release applies to it. -->
+      <!-- [AUDIT HOLD — RELEASED BY THE OWNER, NOT BY AN AUDIT] The hold 6d254a8 put here was waiting on an
+           EXTERNAL audit of the round-4 surface (daily auction, creator-chosen LP fee, creation fee). That
+           audit has not happened. What exists is launchpad/AUDIT-V3.md, which is a PRE-AUDIT SELF-REVIEW —
+           it reports no open blockers, one self-found HIGH fixed and regression-tested, and is backed by
+           360 passing tests and a devnet integration proof, but it is our own review of our own code. The
+           external auditor who signed off did so on pad-v4's H-5 work, which is a different codebase and
+           says nothing about this one. The button is on because the owner chose to ship on that basis.
+           pad-v4's staging bench stays disabled. -->
       <button class="btn btn-lime" id="launchBtn" type="button">Launch coin</button>
       <p class="note" id="launchNote">A small <span id="creationFeeNote">0.001 ETH</span> creation fee seeds your curve so it's never immediately underwater — plus network gas. One transaction: no token approval, no authority grant. The dev buy (if any) rides in the same tx, ahead of the field, no cap, and any ETH past the graduation ceiling is refunded.</p>
     </form>
