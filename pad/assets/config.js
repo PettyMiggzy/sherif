@@ -68,6 +68,13 @@ export const CONTRACTS = {
   // coin from here on, and `routerFor()` asks the chain which is which rather than guessing.
   // Empty until deployed — while empty, every coin resolves to the legacy router and nothing changes.
   padRouterV2: "0x7e3BbfddFd8B18b789710a6E419B12Dee1E9B9b1",
+  // The THIRD router, deployed alongside the v3 factory (the daily auction / LP fee-tier / creation-fee
+  // round). Same reasoning as above, one generation further on: it is additive, and the two routers above
+  // keep every coin already registered on them. Its ABI is byte-for-byte the v2 surface — PadRouter.sol has
+  // not changed since the v2 deploy — so `ABIS.padRouterV3` is that same list, and if the router ever does
+  // gain a function the two entries part ways rather than one shared entry mis-decoding both.
+  // Empty until deployed — while empty, `routerFor()` skips this tier entirely and nothing changes.
+  padRouterV3: "",
 
   // Our FeeConfig - the single owner-governed fee dial (LP creator split + swap platform/creator/floor split).
   // Curves + router read it on-chain; the owner retunes it with a setter (no redeploy). LIVE.
@@ -256,6 +263,23 @@ export const ABIS = {
   // robinBps, so the tuple above cannot decode this one. That is exactly why the two routers need separate
   // ABI entries rather than a shared one.
   padRouterV2: [
+    "function buy(address token, uint256 minOut) payable returns (uint256 tokensOut)",
+    "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256 ethOut)",
+    "function configOf(address token) view returns ((address pool, address curve, address projectWallet, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, uint16 stakingBps, uint16 robinBps, bool set))",
+    "function devEscrow(address) view returns (uint256)",
+    "function bondOf(address) view returns (address)",
+    "function withdrawDev(address token)",
+    "function burnDev(address token)",
+    "function stakingEscrow(address) view returns (uint256)",
+    "function robinEscrow() view returns (uint256)",
+    "function flushStaking(address token)",
+    "function flushRobin()",
+  ],
+  // PadRouter v3 — the router deployed with the v3 factory. PadRouter.sol is unchanged since the v2 deploy
+  // (the v3 round touched CurvePadFactory and added DailyAuctionVault; the router was not part of it), so
+  // this is deliberately the same surface, spelled out rather than aliased: the moment the router DOES
+  // change, only this entry moves, and a coin on the older router keeps decoding against the older tuple.
+  padRouterV3: [
     "function buy(address token, uint256 minOut) payable returns (uint256 tokensOut)",
     "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256 ethOut)",
     "function configOf(address token) view returns ((address pool, address curve, address projectWallet, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, uint16 stakingBps, uint16 robinBps, bool set))",

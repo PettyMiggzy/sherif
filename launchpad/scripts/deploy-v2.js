@@ -225,26 +225,63 @@ async function main() {
     reused: { feeConfig: C.feeConfig },
     v1: { padFactory: C.padFactory, bondDeployer: C.bondDeployer, stillAuthorized: await router.isFactory(C.padFactory) },
   };
-  fs.writeFileSync(path.join(__dirname, "..", "deploy.v2.json"), JSON.stringify(out, null, 2));
+  // deploy.v2.json is the TRACKED manifest of the real mainnet deploy — every address the site, the indexer
+  // and the verifier read. A devnet rehearsal of this script used to overwrite it in place, which is how a
+  // localhost address ends up committed as if it were live. OUT lets a rehearsal write somewhere else; left
+  // unset, a real deploy still lands exactly where it always did.
+  const outPath = process.env.DEPLOY_V2_OUT || path.join(__dirname, "..", "deploy.v2.json");
+  fs.writeFileSync(outPath, JSON.stringify(out, null, 2));
 
   console.log(`\ntotal gas ${totalGas}`);
-  console.log(`\nwritten to deploy.v2.json`);
+  console.log(`\nwritten to ${outPath}`);
   console.log(`\nNEXT, in this order:`);
   console.log(`  1. wire-staking.js, with ROUTER set to the new router — it makes all five connections`);
   console.log(`     and reads every one back:`);
   console.log(`       KEEPER=<keeper address> ROUTER=${routerAddr} \\`);
   console.log(`         npx hardhat run scripts/wire-staking.js --network robinhood`);
-  console.log(`  2. pad/assets/config.js — BOTH of these, and padRouter stays exactly as it is:`);
+  // The router slot to fill is the FIRST EMPTY one, never an occupied one. Every generation's router keeps
+  // its own coins forever (register-once), so overwriting `padRouterV2` with this address does not migrate
+  // those coins — it strands them: the site would probe an address that has never heard of them and fall
+  // through to the legacy router, where they are not registered either, and every trade on them would fail.
+  // Read the config rather than hardcode a slot name, so this stays right for the generation after next.
+  const cfgPath = path.join(__dirname, "..", "..", "pad", "assets", "config.js");
+  let slot = "padRouterV2";
+  try {
+    const cfg = fs.readFileSync(cfgPath, "utf8");
+    for (let i = 2; i <= 9; i++) {
+      const m = cfg.match(new RegExp(`padRouterV${i}\\s*:\\s*"([^"]*)"`));
+      if (!m) break;                       // no such slot in config yet — stop at the last one that exists
+      slot = `padRouterV${i}`;
+      if (!m[1]) break;                    // empty: this is the slot to fill
+    }
+  } catch { /* config not readable from here — fall back to the name below and let a human check */ }
+  console.log(`  2. pad/assets/config.js — BOTH of these, and EVERY existing padRouter* stays exactly as it is:`);
   console.log(`       padFactory:   "${factoryAddr}",`);
-  console.log(`       padRouterV2:  "${routerAddr}",`);
-  console.log(`  3. acceptOwnership() on the new router, from ${owner}. Until that happens the router is`);
-  console.log(`     still owned by the deploying key — launches work either way, but governance does not.`);
+  console.log(`       ${slot}:  "${routerAddr}",`);
+  console.log(`     (${slot} is the first EMPTY router slot in that file — do NOT overwrite a filled one,`);
+  console.log(`      it would strand every coin registered on it. Add a new slot if none is empty, and add`);
+  console.log(`      the matching ABI entry + ROUTER_TIERS entry in wallet.js alongside it.)`);
+  if (owner.toLowerCase() !== deployer.address.toLowerCase()) {
+    console.log(`  3. acceptOwnership() on the new router, from ${owner}. Until that happens the router is`);
+    console.log(`     still owned by the deploying key — launches work either way, but governance does not.`);
+  } else {
+    console.log(`  3. (no ownership handover — the deploying key IS ${owner}, so the router is already its.)`);
+  }
   console.log(`  4. Verify on Blockscout:  node scripts/verify-sourcify.cjs`);
   if (!auctionWired) {
     console.log(`  5. REQUIRED for the auction feature: from ${owner}, call`);
     console.log(`       factory.setAuctionVaultDeployer(${dailyAuctionVaultDeployerAddr})`);
     console.log(`     on ${factoryAddr} — until this runs, every auctionDays > 0 launch reverts BadValue.`);
   }
+  // The indexer defaults to a hardcoded factory/router pair. A coin launched here emits `Launched` from a
+  // factory that list does not contain, so it never appears on the site's browse page, `recordOf` returns a
+  // zero dev for it (failing the creator gate), and its router-routed trades are credited to a contract
+  // address instead of the trader. Widening those two env lists is not optional polish — without it the
+  // coin is invisible.
+  console.log(`  ${auctionWired ? 5 : 6}. indexer/.env on the droplet — ADD, do not replace:`);
+  console.log(`       FACTORIES=${[...new Set([C.padFactory, factoryAddr])].join(",")}   (plus any factory already listed)`);
+  console.log(`       ROUTERS=${[...new Set([C.padRouter, routerAddr])].join(",")}   (plus any router already listed)`);
+  console.log(`       STAKING_ROUTER=${routerAddr}   (single-valued: the fee sweeper can only target one)`);
   console.log(`\nWhat you do NOT need to do:`);
   console.log(`  • Nothing on the legacy router (${C.padRouter}). It is untouched and keeps every coin`);
   console.log(`    launched before now — a coin's fee config is register-once, so those can never move.`);

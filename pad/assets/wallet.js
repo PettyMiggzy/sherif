@@ -905,28 +905,38 @@ const clampBps = (v) => Math.max(100, Math.min(400, Math.round(+v || 100)));
 
 // ── which router owns a coin ─────────────────────────────────────────────────────────────────────
 //
-// There are two, and there will stay two. A coin's fee config is register-once per router — the contract
-// reverts `AlreadySet` — so every coin already trading is bound to the legacy router and cannot be moved to
-// the new one. Pointing the whole site at the new router would stop those coins trading entirely, and
-// re-registering them is not possible. So the legacy router keeps its coins for good, the new one takes
-// everything launched from here, and this asks the CHAIN which is which.
+// There is one router per pad generation, and they accumulate — they are never replaced. A coin's fee config
+// is register-once per router — the contract reverts `AlreadySet` — so every coin already trading is bound to
+// the router it launched on and cannot be moved to a newer one. Pointing the whole site at the newest router
+// would stop every older coin trading entirely, and re-registering them is not possible. So each router keeps
+// its own coins for good, the newest takes everything launched from here, and this asks the CHAIN which is
+// which.
 //
 // Asking beats inferring. A launch-date cutoff or a version column would be a second source of truth that
 // can drift from the registration that actually decides whether a trade works; `configOf().set` IS that
 // registration. Resolved once per coin and cached — the answer cannot change, because a config that exists
 // can never be unset.
+//
+// Probed NEWEST FIRST. A coin can only ever be registered on one router, so order does not change the answer
+// — it only decides how many RPC reads it takes to get there, and most traffic is on the newest pad. An
+// address left empty in config is skipped, so a generation that is not deployed yet simply does not exist
+// here; that is what makes it safe to list padRouterV3 before it has an address.
 const _routerOf = new Map();
+const ROUTER_TIERS = ["padRouterV3", "padRouterV2"]; // newest first; the legacy `padRouter` is the fallback
 async function resolveRouter(token) {
   const key = String(token || "").toLowerCase();
   if (_routerOf.has(key)) return _routerOf.get(key);
 
-  let pick = { addr: CONTRACTS.padRouter, abi: ABIS.padRouter, v2: false };
-  const v2 = CONTRACTS.padRouterV2;
-  if (v2 && /^0x[0-9a-fA-F]{40}$/.test(v2)) {
+  let pick = { addr: CONTRACTS.padRouter, abi: ABIS.padRouter, v2: false, tier: "padRouter" };
+  for (const tier of ROUTER_TIERS) {
+    const addr = CONTRACTS[tier];
+    if (!addr || !/^0x[0-9a-fA-F]{40}$/.test(addr)) continue;
+    const abi = ABIS[tier];
+    if (!abi) continue;
     try {
-      const c = await new ethers.Contract(v2, ABIS.padRouterV2, _read).configOf(token);
-      if (c && c.set) pick = { addr: v2, abi: ABIS.padRouterV2, v2: true };
-    } catch { /* not there, or an older deploy — fall through to legacy */ }
+      const c = await new ethers.Contract(addr, abi, _read).configOf(token);
+      if (c && c.set) { pick = { addr, abi, v2: true, tier }; break; }
+    } catch { /* not there, or an older deploy — fall through to the next tier */ }
   }
   _routerOf.set(key, pick);
   return pick;
@@ -1358,9 +1368,11 @@ async function _tsOf(bn) {
 async function _routerLogs(topics, { lookback = 400000, chunk = 50000 } = {}) {
   const head = await _read.getBlockNumber();
   const start = Math.max(0, head - lookback);
-  // BOTH routers: a coin emits its events from whichever one it is registered on, so reading one address
-  // silently returns half the pad's history — and which half depends on when a coin launched.
-  const addrs = [CONTRACTS.padRouter, CONTRACTS.padRouterV2].filter((a) => /^0x[0-9a-fA-F]{40}$/.test(a || ""));
+  // EVERY router: a coin emits its events from whichever one it is registered on, so reading one address
+  // silently returns a slice of the pad's history — and which slice depends on when a coin launched. Kept in
+  // step with ROUTER_TIERS above; an address still empty in config drops out here.
+  const addrs = [CONTRACTS.padRouter, ...ROUTER_TIERS.map((t) => CONTRACTS[t])]
+    .filter((a) => /^0x[0-9a-fA-F]{40}$/.test(a || ""));
   try { return await _read.getLogs({ address: addrs, fromBlock: start, toBlock: head, topics }); }
   catch {}
   const out = [];

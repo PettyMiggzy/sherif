@@ -361,10 +361,11 @@ input[type=range]{width:100%;accent-color:var(--lime);margin:8px 0 2px}
         </div>
       </details>
 
-      <!-- [AUDIT HOLD] launch disabled on this build pending external audit of the round-4 surface (daily
-           auction, creator-chosen LP fee). Re-enable by removing `disabled` once the audit clears. -->
-      <button class="btn btn-lime" id="launchBtn" type="button" disabled>Launch coin</button>
-      <p class="note" id="launchNote">Launching is temporarily disabled while this build's new features (daily auction, LP-fee choice) go through external audit. Check back soon.</p>
+      <!-- [AUDIT HOLD — LIFTED] The round-4 surface (daily auction, creator-chosen LP fee) has been through
+           external review and the hold from 6d254a8 is released here. pad-v4's staging bench stays disabled:
+           it is a different, unreviewed codebase and nothing about this release applies to it. -->
+      <button class="btn btn-lime" id="launchBtn" type="button">Launch coin</button>
+      <p class="note" id="launchNote">A small <span id="creationFeeNote">0.001 ETH</span> creation fee seeds your curve so it's never immediately underwater — plus network gas. One transaction: no token approval, no authority grant. The dev buy (if any) rides in the same tx, ahead of the field, no cap, and any ETH past the graduation ceiling is refunded.</p>
     </form>
 
     <aside class="summary">
