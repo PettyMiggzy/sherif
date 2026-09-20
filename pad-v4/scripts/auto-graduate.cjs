@@ -3,7 +3,9 @@
 // raised, i.e. the curve is fully sold). Graduation can't run inside the crossing buy on V4 (it needs its own
 // PoolManager.unlock, and you're already inside the singleton's lock during a swap), so this keeper watches the
 // pools and calls graduate() as soon as ready() flips — automatic from the creator's/traders' point of view.
-// The graduation work runs on the curve's own ETH; the keeper only pays the trigger gas (no reimbursement).
+// The graduation work runs on the curve's own ETH, and graduate() pays whoever calls it a bounty straight
+// from that pad's raise (0.2%, capped at 0.02 ETH — RobinCurveV4.GRAD_BOUNTY_BPS/GRAD_BOUNTY_MAX_WEI), so this
+// keeper's own gas is covered and then some — it is not a pure cost center for whoever runs it.
 //
 //   Run forever:  ROBINHOOD_RPC=<rpc> KEEPER_PRIVATE_KEY=<key> node scripts/auto-graduate.cjs
 //   One sweep:    ... node scripts/auto-graduate.cjs --once

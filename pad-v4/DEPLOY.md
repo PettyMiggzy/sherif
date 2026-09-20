@@ -128,6 +128,25 @@ CURVE=0x… HOOK=0x… POOL_ID=0x… LOCK_VAULT=0x… LP_TOKEN_ID=… \
 
 It is read-only and exits non-zero if anything is unset, so it can gate a deploy.
 
+## 2c. Run the auto-graduate keeper (continuous, curve pads)
+
+Graduation can't fire inside the buy that crosses the ceiling — that would need a second
+`PoolManager.unlock()` while a swap already holds the lock, which Uniswap v4 itself blocks. So instead
+`graduate()` is permissionless and pays whoever calls it a bounty straight from that pad's own raised
+ETH (0.2% of the raise, capped at 0.02 ETH) — plenty to cover gas plus profit. This script is the
+"nobody has to babysit it" piece: it watches every curve pad and fires `graduate()` the instant `ready()`
+flips, so pads graduate automatically without anyone manually calling it or relying on a stranger's bot
+to notice the bounty first.
+
+```bash
+# on the droplet, via pm2/cron, as a keeper key (needs only a little gas — graduate() pays it back):
+ROBINHOOD_RPC=<rpc> KEEPER_PRIVATE_KEY=<keeper> node scripts/auto-graduate.cjs
+```
+Idempotent and crash-safe (progress persisted to `.auto-graduate-state.json`; an already-graduated curve
+is skipped; a missed tick self-heals on the next poll since `graduate()` stays permissionless forever).
+Start this alongside the revenue keeper below — both are meant to run continuously from day one, not be
+started by hand after someone notices a pad is stuck.
+
 ## 3. Run the revenue keeper (continuous)
 ```bash
 # on the droplet, via pm2/cron, as the reward-keeper key:
