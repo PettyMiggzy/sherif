@@ -922,7 +922,7 @@ const clampBps = (v) => Math.max(100, Math.min(400, Math.round(+v || 100)));
 // address left empty in config is skipped, so a generation that is not deployed yet simply does not exist
 // here; that is what makes it safe to list padRouterV3 before it has an address.
 const _routerOf = new Map();
-const ROUTER_TIERS = ["padRouterV3", "padRouterV2"]; // newest first; the legacy `padRouter` is the fallback
+const ROUTER_TIERS = ["padRouterV4", "padRouterV3", "padRouterV2"]; // newest first; the legacy `padRouter` is the fallback
 async function resolveRouter(token) {
   const key = String(token || "").toLowerCase();
   if (_routerOf.has(key)) return _routerOf.get(key);

@@ -51,13 +51,14 @@ export const CONTRACTS = {
   v3Factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
 
   // Our CurvePadFactory (one-call launch) - LIVE on Robinhood Chain.
-  // v3: deployed 2026-09-20 (creation fee, creator-chosen LP fee tier; the daily auction shipped in the
-  // contracts but is DELIBERATELY NOT WIRED on this factory — auctionVaultDeployer() reads address(0), so
-  // auctionDays > 0 reverts BadValue on purpose — see launchpad/DEPLOY-V3.md for why). This is the THIRD
-  // factory, not a replacement: the two addresses this replaced (the original, and the v2 that briefly sat
-  // here) both still exist on-chain and nothing routes to them from the site anymore, but the coins they
+  // v4: deployed 2026-09-22, same creation-fee / creator-chosen-LP-fee shape as v3, redeployed ONLY to carry
+  // PadRouter's new auto-graduate fix (a coin now graduates itself inline, in the same transaction as
+  // whichever buy crosses the ceiling — no keeper needed; see PadRouter._autoGraduateIfReady). Auction still
+  // DELIBERATELY NOT WIRED on this factory — auctionVaultDeployer() reads address(0), so auctionDays > 0
+  // reverts BadValue on purpose — see launchpad/DEPLOY-V3.md for why. Not a replacement: every prior factory
+  // address still exists on-chain and nothing routes to them from the site anymore, but the coins they
   // launched still trade through their own routers below, untouched.
-  padFactory: "0x8F3395B601Dbc7A6daC27000482dE3dcCcD314Ec",
+  padFactory: "0x13cC5D4c73A3f1F73c2b903941816637f6959276",
 
   // Our PadRouter - the swap desk + project fee. Robinhood Chain has no canonical
   // Uniswap periphery, so THIS is the router every trade goes through - LIVE.
@@ -74,6 +75,12 @@ export const CONTRACTS = {
   // permissionless and can't take one) — see ABIS.padRouterV3's own comment, which already reflects this;
   // only this address-and-history comment was stale.
   padRouterV3: "0x4608872C4F454AEE27e15BAf4f6602B6B35cdc5e",
+  // The FOURTH router, deployed 2026-09-22 alongside the v4 factory above. Same ABI shape as v3 — no
+  // function signature changed, only internal logic (buy/burnDev/flushBurn now auto-call graduate() on the
+  // curve inline once it's ready, wrapped so a graduate() revert can never brick the trade that triggered
+  // it — see PadRouter._autoGraduateIfReady). Every coin launched from here on graduates itself with no
+  // keeper needed; coins already registered on v3/v2/legacy keep trading there untouched.
+  padRouterV4: "0x2B8CB0Af5d3d790327ECF85F19Eb9f357826e93B",
 
   // Our FeeConfig - the single owner-governed fee dial (LP creator split + swap platform/creator/floor split).
   // Curves + router read it on-chain; the owner retunes it with a setter (no redeploy). LIVE.
@@ -281,6 +288,22 @@ export const ABIS = {
   // change, since the live v2 router was deployed from the pre-fix source and its real on-chain selector is
   // still the 1-arg one. Getting this pairing backwards sends the wrong calldata to a live router.
   padRouterV3: [
+    "function buy(address token, uint256 minOut) payable returns (uint256 tokensOut)",
+    "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256 ethOut)",
+    "function configOf(address token) view returns ((address pool, address curve, address projectWallet, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, uint16 stakingBps, uint16 robinBps, bool set))",
+    "function devEscrow(address) view returns (uint256)",
+    "function bondOf(address) view returns (address)",
+    "function withdrawDev(address token)",
+    "function burnDev(address token, uint256 minOut)",
+    "function stakingEscrow(address) view returns (uint256)",
+    "function robinEscrow() view returns (uint256)",
+    "function flushStaking(address token)",
+    "function flushRobin()",
+  ],
+  // PadRouter v4 — same surface as v3 (no function signature changed for the auto-graduate fix, which is
+  // purely internal), spelled out separately rather than aliased so a future generation's real ABI change
+  // can't accidentally apply to this one too.
+  padRouterV4: [
     "function buy(address token, uint256 minOut) payable returns (uint256 tokensOut)",
     "function sell(address token, uint256 amountIn, uint256 minOutEth) returns (uint256 ethOut)",
     "function configOf(address token) view returns ((address pool, address curve, address projectWallet, uint16 buyBps, uint16 sellBps, uint16 walletBps, uint16 floorBps, uint16 burnBps, uint16 stakingBps, uint16 robinBps, bool set))",

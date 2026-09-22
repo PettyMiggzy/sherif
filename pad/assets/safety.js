@@ -95,7 +95,7 @@ export async function goPlusAddress(addr) {
 // reasoning as wallet.js: a coin can only ever be registered on one router, so order is a cost choice, not a
 // correctness one). KEEP THIS LIST IN SYNC WITH wallet.js's ROUTER_TIERS — a generation added there and not
 // here silently reintroduces this exact bug for that generation's coins.
-const ROUTER_TIERS = ["padRouterV3", "padRouterV2"]; // newest first; legacy `padRouter` is the final fallback
+const ROUTER_TIERS = ["padRouterV4", "padRouterV3", "padRouterV2"]; // newest first; legacy `padRouter` is the final fallback
 
 /// Is this token a genuine Robin Labs launch (our audited template), and what's its on-chain tax? Probes
 /// every router generation — see ROUTER_TIERS above — and returns the first one that actually knows this
