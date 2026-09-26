@@ -8,7 +8,9 @@ against a real `PoolManager` and a real swap router (no mocks of Uniswap's
 own contracts). `test/ForkRobinhood.t.sol` runs the whole stack on real
 Robinhood Chain state with real USDG.
 
-**Deploying: see [docs/ROBINHOOD-DEPLOY.md](docs/ROBINHOOD-DEPLOY.md).**
+**Live on Robinhood Chain mainnet since 2026-09-26.** The house pad is
+`0x923c4443fd996c757646A9753D89F57913aBEe71`. All addresses are listed in
+[docs/ROBINHOOD-DEPLOY.md](docs/ROBINHOOD-DEPLOY.md#deployed-on-mainnet), which also covers how to deploy.
 
 **Where this code came from.** It was ported on 2026-09-26 from the
 `launchpad/` package in `PettyMiggzy/tr`, where it was built and audited for

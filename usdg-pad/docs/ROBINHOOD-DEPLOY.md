@@ -5,6 +5,50 @@ Arc) on Robinhood Chain (chain 4663), with **USDG** as every pool's quote
 asset. The contracts in `src/` are byte-identical to Tr's audited source;
 only the deploy scripts, tests and docs changed.
 
+## Deployed on mainnet
+
+Deployed 2026-09-26 in blocks 73073570-73073800 by
+`0x5899a0576A94327a6316E01190f951edf7645914`, which owns the treasury, the
+factory and the house pad. 11 transactions, 0.0007 ETH in gas. The wiring was
+read back on-chain afterwards: both hook slots are closed, the main portal and
+the house pad are authorized, the factory's quote asset is USDG, and the house
+pad has a 10% platform share. The source of all nine contracts is verified on
+Sourcify with exact matches (creation and runtime bytecode); Blockscout reads
+from Sourcify.
+
+| contract | address |
+|---|---|
+| `RobinTreasury` | `0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f` |
+| `RobinHook` | `0x04abDE4e77036178E0DF13d435B7b7f87265e8cc` |
+| `RobinPortal` (main portal) | `0x7e2f5dEe1A846fF21eE946d2e450F64133d0fD6F` |
+| `PadRevenueSplitter` implementation | `0x05e2f711f8fe02BacC756dadE06396E79A2e77E3` |
+| `RobinPadFactory` | `0xD637De9DA24007D11e60BDf0B8358b060953D4E8` |
+| `PadPortalTemplate` (#1) | `0x116a5f07be9444215143A16ed4B5753a1906B7F7` |
+| `HolderTokenDeployer` | `0xc8B600de96Dab89e86E03280a1E3EA8bc8a58D50` |
+| `HolderPadTemplate` (#2, approved) | `0xe55013eb7E51cbc0FD6f95Cd54EaBCAe573A657F` |
+| **House pad "Robin Labs Pad"** (`HolderPadPortal`) | **`0x923c4443fd996c757646A9753D89F57913aBEe71`** |
+
+External: USDG `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`, PoolManager
+`0x8366a39CC670B4001A1121B8F6A443A643e40951`.
+
+An earlier attempt the same day stopped after its first transaction (the
+base-fee problem described below) and left an unused treasury at
+`0x6fa8b5269e8d8c205a466D6DCDEC44A4E8531933`. Nothing points at it.
+
+To re-run verification (e.g. for Blockscout directly once its Cloudflare
+check lets scripts through):
+
+```bash
+VERIFIER=sourcify NETWORK=mainnet \
+  TREASURY=0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f \
+  HOOK=0x04abDE4e77036178E0DF13d435B7b7f87265e8cc \
+  PORTAL=0x7e2f5dEe1A846fF21eE946d2e450F64133d0fD6F \
+  FACTORY=0xD637De9DA24007D11e60BDf0B8358b060953D4E8 \
+  HOLDER_PAD=0x923c4443fd996c757646A9753D89F57913aBEe71 \
+  DEPLOYER=0x5899a0576A94327a6316E01190f951edf7645914 \
+  bash script/verify.sh
+```
+
 ## What it deploys
 
 One broadcast (`script/DeployRobinhood.s.sol`, built on
@@ -87,7 +131,7 @@ and claimed in USDG, creator and platform paid exactly).
 
 ## After deploying
 
-1. Verify source: `NETWORK=mainnet TREASURY=.. HOOK=.. PORTAL=<main portal> FACTORY=.. HOLDER_PAD=<house pad> DEPLOYER=.. bash script/verify.sh`.
+1. Verify source (done for the mainnet deploy above): `NETWORK=mainnet TREASURY=.. HOOK=.. PORTAL=<main portal> FACTORY=.. HOLDER_PAD=<house pad> DEPLOYER=.. bash script/verify.sh`.
    Blockscout and Sourcify both sit behind Cloudflare bot checks that can
    reject scripted requests; if every attempt gets a 403 "Just a moment..."
    page, retry later or use the explorer's web form.
