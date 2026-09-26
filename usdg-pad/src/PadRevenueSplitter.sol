@@ -10,13 +10,13 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ITrollSplitter} from "./interfaces/ITrollSplitter.sol";
+import {IRobinSplitter} from "./interfaces/IRobinSplitter.sol";
 
 interface IPadOwnerSource {
     function padOwner() external view returns (address);
 }
 
-/// @notice Revenue splitter for one launch on a PadPortal: Troll Pad itself
+/// @notice Revenue splitter for one launch on a PadPortal: Robin Labs Pad itself
 /// (a "house pad") or any white-label pad. Every deposit (the hook's tax
 /// flush, the locker's USDC-side LP fees) is split, then held until
 /// claimed. Nothing is ever pushed out on deposit, so a blocklisted
@@ -24,7 +24,7 @@ interface IPadOwnerSource {
 /// or anyone else's money.
 ///
 /// The split, all fixed when the token launches:
-/// 1. Troll platform: `platformShareBps` (10% on house pads, 15% on
+/// 1. Robin Labs platform: `platformShareBps` (10% on house pads, 15% on
 ///    white-label pads);
 /// 2. the pad owner: `padOwnerShareBps`, whatever that pad charged;
 /// 3. the creator's share, everything left, divided by the creator's own
@@ -39,7 +39,7 @@ interface IPadOwnerSource {
 /// Deployed as EIP-1167 clones of one implementation (initialized in the
 /// portal's createLaunch transaction), which keeps PadPortal under the
 /// contract size limit. The token itself is never a clone.
-contract PadRevenueSplitter is ITrollSplitter, IUnlockCallback {
+contract PadRevenueSplitter is IRobinSplitter, IUnlockCallback {
     using SafeERC20 for IERC20;
 
     uint256 public constant BPS_DENOMINATOR = 10_000;
@@ -241,7 +241,7 @@ contract PadRevenueSplitter is ITrollSplitter, IUnlockCallback {
         }
     }
 
-    /// @notice ITrollSplitter compatibility: a payout wallet claims what all of
+    /// @notice IRobinSplitter compatibility: a payout wallet claims what all of
     /// its slots are owed, to any address it chooses.
     function claim(address to, address asset) external override {
         if (asset != quoteAsset) revert WrongAsset();
@@ -282,7 +282,7 @@ contract PadRevenueSplitter is ITrollSplitter, IUnlockCallback {
         emit PadOwnerClaimed(to, amount);
     }
 
-    /// @notice Pays Troll's share to the treasury. Anyone may call.
+    /// @notice Pays Robin Labs' share to the treasury. Anyone may call.
     function claimPlatform(address asset) external override {
         if (asset != quoteAsset) revert WrongAsset();
         uint256 amount = platformCredit;

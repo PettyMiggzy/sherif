@@ -13,10 +13,10 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {TrollLaunchToken} from "./TrollLaunchToken.sol";
-import {TrollRevenueSplitter} from "./TrollRevenueSplitter.sol";
-import {TrollHook} from "./TrollHook.sol";
-import {TrollLocker} from "./TrollLocker.sol";
+import {RobinLaunchToken} from "./RobinLaunchToken.sol";
+import {RobinRevenueSplitter} from "./RobinRevenueSplitter.sol";
+import {RobinHook} from "./RobinHook.sol";
+import {RobinLocker} from "./RobinLocker.sol";
 
 /// @notice Permissionless factory: one transaction takes a creator from
 /// nothing to a live, real Uniswap v4 pool trading their token's full
@@ -28,13 +28,13 @@ import {TrollLocker} from "./TrollLocker.sol";
 /// capital ever required to seed it, since a pool's starting price is set
 /// for free via `IPoolManager.initialize`, completely independent of how
 /// much liquidity is then deposited.
-contract TrollPortal {
+contract RobinPortal {
     using PoolIdLibrary for PoolKey;
     using SafeERC20 for IERC20;
 
     address public immutable poolManager;
-    address public immutable hook; // the one shared TrollHook instance (see TrollHook.sol)
-    address public immutable treasury; // shared across every launch — see TrollTreasury.sol
+    address public immutable hook; // the one shared RobinHook instance (see RobinHook.sol)
+    address public immutable treasury; // shared across every launch — see RobinTreasury.sol
     // Fixed per portal, not caller-controlled (audit finding M-1: a
     // per-launch quoteAsset let anyone route arbitrary — including
     // fee-on-transfer or non-standard — ERC-20s into the shared treasury,
@@ -44,9 +44,9 @@ contract TrollPortal {
     // is the USDC predeploy.
     address public immutable quoteAsset;
 
-    // True only for Troll Pad's own original Portal, deployed directly (not
-    // through TrollPadFactory). Passed down to each launch's
-    // TrollRevenueSplitter, which uses it to decide the platform/creator
+    // True only for Robin Labs Pad's own original Portal, deployed directly (not
+    // through RobinPadFactory). Passed down to each launch's
+    // RobinRevenueSplitter, which uses it to decide the platform/creator
     // split ratio (10/90 on the main pad, 15/85 on every white-label pad).
     bool public immutable isMainPad;
 
@@ -138,10 +138,10 @@ contract TrollPortal {
             revert StartingMcOutOfRange();
         }
 
-        TrollLaunchToken tokenContract = new TrollLaunchToken(p.name, p.symbol, TOTAL_SUPPLY, address(this));
+        RobinLaunchToken tokenContract = new RobinLaunchToken(p.name, p.symbol, TOTAL_SUPPLY, address(this));
         token = address(tokenContract);
 
-        TrollRevenueSplitter splitter = new TrollRevenueSplitter(msg.sender, treasury, address(this), isMainPad);
+        RobinRevenueSplitter splitter = new RobinRevenueSplitter(msg.sender, treasury, address(this), isMainPad);
 
         SeedResult memory r =
             _seedLaunchPool(token, address(splitter), p.startingMarketCapQuote, p.buyTaxBps, p.sellTaxBps);
@@ -264,20 +264,20 @@ contract TrollPortal {
         startingSqrtPriceX96 = TickMath.getSqrtPriceAtTick(tokenIsToken0 ? tickLower : tickUpper);
         IPoolManager(poolManager).initialize(key, startingSqrtPriceX96);
 
-        TrollLocker lockerContract =
-            new TrollLocker(poolManager, splitter, address(this), key, tickLower, tickUpper, tokenIsToken0);
+        RobinLocker lockerContract =
+            new RobinLocker(poolManager, splitter, address(this), key, tickLower, tickUpper, tokenIsToken0);
         r.locker = address(lockerContract);
 
         // Register before seeding: the hook only lets a pool's registered
         // locker add liquidity (audit hook-1).
-        TrollHook(hook).registerPool(key, splitter, r.locker, quoteAsset, tokenIsToken0, buyTaxBps, sellTaxBps);
+        RobinHook(hook).registerPool(key, splitter, r.locker, quoteAsset, tokenIsToken0, buyTaxBps, sellTaxBps);
 
         IERC20(token).safeTransfer(r.locker, TOTAL_SUPPLY);
         lockerContract.seedLiquidity(liquidity);
 
-        TrollRevenueSplitter(splitter).authorizeSource(hook);
-        TrollRevenueSplitter(splitter).authorizeSource(r.locker);
-        TrollRevenueSplitter(splitter).lockSources();
+        RobinRevenueSplitter(splitter).authorizeSource(hook);
+        RobinRevenueSplitter(splitter).authorizeSource(r.locker);
+        RobinRevenueSplitter(splitter).lockSources();
 
         r.key = key;
         r.tokenIsToken0 = tokenIsToken0;

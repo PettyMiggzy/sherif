@@ -24,14 +24,14 @@ interface IHolderTokenDeployer {
 
 /// @notice A PadPortal whose creators can also give holders a share of the
 /// fees. Everything PadPortal does is inherited unchanged: the pad owner's
-/// controls, the payouts, `createLaunch` (a plain TrollLaunchToken, exactly
+/// controls, the payouts, `createLaunch` (a plain RobinLaunchToken, exactly
 /// as today) and the launch mechanics. It adds `createLaunchWithHolders`:
-/// the token is a TrollHolderToken, and the splitter gets one extra payout
+/// the token is a RobinHolderToken, and the splitter gets one extra payout
 /// wallet, the token itself, for `holdersBps` of the creator's share.
 /// Holders claim their USDC from the token. The split is locked at launch
 /// like every other slice: the token has no way to move its slot.
 ///
-/// Built by HolderPadTemplate through TrollPadFactory's template slot. The
+/// Built by HolderPadTemplate through RobinPadFactory's template slot. The
 /// holder token is created by a separate deployer contract only to keep
 /// this contract under the 24 KB size limit.
 contract HolderPadPortal is PadPortal {

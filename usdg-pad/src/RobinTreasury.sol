@@ -5,10 +5,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice Shared across every launch, on every pad (the original and every
-/// TrollPadFactory white-label one): every launch's platform cut lands here
+/// RobinPadFactory white-label one): every launch's platform cut lands here
 /// once its splitter's `claimPlatform` is called. No automated swap, no
 /// automated burn, no keeper of any kind. What happens to this balance
-/// (buying back $TROLL, or anything else) is a deliberate, manual, human
+/// (buying back $ROBIN, or anything else) is a deliberate, manual, human
 /// decision made by whoever holds `owner`, on whatever cadence they want.
 ///
 /// Deliberately not a "buyback-and-burn" contract: an earlier version of
@@ -18,7 +18,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 /// exactly right, an unsupervised swap running on every single trade) for
 /// a feature nobody asked to keep — if holders want to burn their own
 /// tokens, they can do that themselves.
-contract TrollTreasury {
+contract RobinTreasury {
     using SafeERC20 for IERC20;
 
     address public owner;

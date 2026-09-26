@@ -12,13 +12,13 @@ import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {TrollHook} from "../src/TrollHook.sol";
-import {TrollPortal} from "../src/TrollPortal.sol";
-import {TrollLocker} from "../src/TrollLocker.sol";
-import {TrollRevenueSplitter} from "../src/TrollRevenueSplitter.sol";
+import {RobinHook} from "../src/RobinHook.sol";
+import {RobinPortal} from "../src/RobinPortal.sol";
+import {RobinLocker} from "../src/RobinLocker.sol";
+import {RobinRevenueSplitter} from "../src/RobinRevenueSplitter.sol";
 import {PadPortal} from "../src/PadPortal.sol";
 import {PadRevenueSplitter} from "../src/PadRevenueSplitter.sol";
-import {TrollHolderToken} from "../src/TrollHolderToken.sol";
+import {RobinHolderToken} from "../src/RobinHolderToken.sol";
 import {RobinhoodStack} from "../script/RobinhoodStack.sol";
 
 /// @notice The whole pad on REAL Robinhood Chain state: the live Uniswap v4
@@ -102,7 +102,7 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
 
         vm.prank(creator);
         (address token, address locker) = s.mainPortal.createLaunch(
-            TrollPortal.CreateLaunchParams({
+            RobinPortal.CreateLaunchParams({
                 name: "Fork Robin", symbol: "FROB", startingMarketCapQuote: 1_000e6, buyTaxBps: 300, sellTaxBps: 300
             })
         );
@@ -126,7 +126,7 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
         assertGt(pending, 3e6, "the sell added its own tax, also in USDG");
 
         hook().flush(key);
-        TrollRevenueSplitter sp = TrollRevenueSplitter(TrollLocker(locker).splitter());
+        RobinRevenueSplitter sp = RobinRevenueSplitter(RobinLocker(locker).splitter());
         uint256 creatorCut = sp.creditedToCreator(USDG);
         assertEq(creatorCut, pending - (pending * 1_000) / 10_000, "90% to the creator");
         vm.prank(creator);
@@ -167,7 +167,7 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
         for (uint256 i; i < 24 && !(sawToken0 && sawToken1); ++i) {
             vm.prank(creator);
             (address token,) = s.mainPortal.createLaunch(
-                TrollPortal.CreateLaunchParams({
+                RobinPortal.CreateLaunchParams({
                     name: "Order", symbol: "ORD", startingMarketCapQuote: 5_000e6, buyTaxBps: 500, sellTaxBps: 200
                 })
             );
@@ -285,9 +285,9 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
         assertEq(IERC20(USDG).balanceOf(creator), c0 + creatorPool - bucket, "creator's wallet paid its 70%");
 
         // Both hook slots are closed for good.
-        vm.expectRevert(TrollHook.AlreadyBootstrapped.selector);
+        vm.expectRevert(RobinHook.AlreadyBootstrapped.selector);
         hook().bootstrapFactory(address(s.factory));
-        vm.expectRevert(TrollHook.AlreadyBootstrapped.selector);
+        vm.expectRevert(RobinHook.AlreadyBootstrapped.selector);
         hook().bootstrapMainPortal(address(pad));
     }
 
@@ -324,7 +324,7 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
             0,
             0
         );
-        TrollHolderToken token = TrollHolderToken(t);
+        RobinHolderToken token = RobinHolderToken(t);
         PadRevenueSplitter sp = PadRevenueSplitter(s.housePad.splitterForToken(t));
         (address[] memory r,,) = sp.allocation();
         assertEq(r[2], t, "holders' slot pays the token");
@@ -382,7 +382,7 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
         assertEq(PadRevenueSplitter(s.housePad.splitterForToken(plain)).platformShareBps(), 1_000);
     }
 
-    function hook() internal view returns (TrollHook) {
+    function hook() internal view returns (RobinHook) {
         return s.hook;
     }
 }

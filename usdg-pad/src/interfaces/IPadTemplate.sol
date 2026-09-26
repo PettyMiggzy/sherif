@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice A plug-in that builds a new kind of pad for TrollPadFactory: a
+/// @notice A plug-in that builds a new kind of pad for RobinPadFactory: a
 /// different quote asset, a different launch token, new launch mechanics.
 /// The factory owner approves each template. The factory charges the setup
 /// fee, calls `deployPortal`, checks the new pad is wired to the factory's
-/// own hook, PoolManager and treasury and charges Troll's share, and only
+/// own hook, PoolManager and treasury and charges Robin Labs' share, and only
 /// then authorizes it on the hook. See docs/PAD-FACTORY.md.
 interface IPadTemplate {
     /// @param padOwner Who runs the new pad: the buyer, or a house pad's named owner.
-    /// @param platformShareBps Troll's share the new pad must charge.
+    /// @param platformShareBps Robin Labs' share the new pad must charge.
     /// @param config Template-specific settings, ABI-encoded.
     /// @return portal The new pad, a freshly deployed contract.
     function deployPortal(address padOwner, uint16 platformShareBps, bytes calldata config)

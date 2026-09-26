@@ -1,73 +1,67 @@
-# USDG Pad (Troll Pad on Robinhood Chain)
+# Robin Labs Pad
 
-> **This copy is the Robinhood Chain port, quoted in USDG.** It was ported
-> on 2026-09-26 from `PettyMiggzy/tr`'s `launchpad/` (built for Arc and
-> quoted in Arc's USDC). The contracts in `src/` are byte-identical to that
-> audited source. What changed:
->
-> - `script/DeployRobinhood.s.sol` (+ `RobinhoodStack.sol`) deploys the
->   whole stack fresh, quoted in USDG. Arc's three incremental deploy
->   scripts were removed: they hardcoded Arc's live contracts and Arc's USDC
->   at `0x3600…`, which has no code here.
-> - `test/ForkRobinhood.t.sol` replaces Arc's fork tests, running on real
->   Robinhood state with real USDG.
-> - `script/RehearseOnFork.s.sol` walks a coin through its whole life on a
->   local fork after a rehearsal deploy.
-> - `script/verify.sh` targets Robinhood's Blockscout / Sourcify.
->
-> **Deploying: see [docs/ROBINHOOD-DEPLOY.md](docs/ROBINHOOD-DEPLOY.md).**
-> Everything below is the original design write-up and still applies. Where
-> it says USDC, read USDG. Where it says Arc, read Robinhood Chain (gas is
-> ETH here). Its references to `DeployTrollPad.s.sol` and the Arc fork tests
-> describe the Arc repo.
+A permissionless token launchpad on **Robinhood Chain**, quoted in **USDG**.
+Every launch is a **real Uniswap v4 pool from block one**: no bonding curve,
+no graduation event, no migration, no market-cap cliff. See `src/` for the
+contracts and `test/RobinPad.t.sol` for the full lifecycle, tested end to end
+against a real `PoolManager` and a real swap router (no mocks of Uniswap's
+own contracts). `test/ForkRobinhood.t.sol` runs the whole stack on real
+Robinhood Chain state with real USDG.
 
----
+**Deploying: see [docs/ROBINHOOD-DEPLOY.md](docs/ROBINHOOD-DEPLOY.md).**
 
-# Troll Pad
+**Where this code came from.** It was ported on 2026-09-26 from the
+`launchpad/` package in `PettyMiggzy/tr`, where it was built and audited for
+another chain. The port changed no contract logic. It renamed the contracts
+(see the table below), swapped the quote asset to USDG, rewrote the deploy
+script for a fresh Robinhood deploy, and replaced the fork tests. Renaming
+changed no compiled bytecode: every contract builds to the same bytes as the
+audited source.
 
-A permissionless token launchpad for Arc — "Argus-style": every launch is a
-**real Uniswap v4 pool from block one**. No bonding curve, no graduation
-event, no migration, no MC cliff. See `src/` for the contracts; see
-`test/TrollPad.t.sol` for the full lifecycle, tested end-to-end against a
-real `PoolManager` and a real swap router (no mocks of Uniswap's own
-contracts).
+**It was externally audited before the port (Fable, 2026-09-22 and
+2026-09-24) and fixed:** 3 HIGH, 4 MEDIUM, 8 LOW findings, all addressed.
+The report is `docs/AUDIT-2026-09-24.md`. It predates the rename, so it uses
+the original contract names:
 
-This supersedes an earlier design built in this repo's own history (a
-pump.fun-style virtual-reserve curve that migrated to a real pool at a
-graduation event) — see `PROJECT_NOTES.md`'s "DECIDED: switch to
-Argus-style" section for the full reasoning behind the switch, including
-the real numbers that showed the old design's migration caused a
-55%+ visible price cliff.
+| name in the audit report | name here |
+|---|---|
+| `TrollHook` | `RobinHook` |
+| `TrollPortal` | `RobinPortal` |
+| `TrollPadFactory` | `RobinPadFactory` |
+| `TrollTreasury` | `RobinTreasury` |
+| `TrollLocker` | `RobinLocker` |
+| `TrollLaunchToken` | `RobinLaunchToken` |
+| `TrollRevenueSplitter` | `RobinRevenueSplitter` |
+| `TrollHolderToken` | `RobinHolderToken` |
+| `ITrollSplitter` | `IRobinSplitter` |
 
-**This design was also externally audited (Fable, Sep 22 2026) and fixed**
-— 3 HIGH, 4 MEDIUM, 8 LOW findings, all addressed. See `PROJECT_NOTES.md`'s
-"Audit findings" section for the full writeup; the short version is
-throughout this file below: tax is now always taken in quote (never the
-launch token), swaps never make an external token transfer (a blocklisted
-treasury or splitter can only ever block its own claim, never a swap), and
-pool creation is gated to authorized portals only.
+The short version of the audit's outcome runs through this file: tax is
+always taken in the quote asset (never the launch token), swaps never make
+an external token transfer (a frozen treasury or splitter can only ever
+block its own claim, never a swap), and pool creation is gated to
+authorized portals only.
 
 ## How a launch works
 
-1. **`TrollPortal.createLaunch(...)`** — permissionless, one transaction.
+1. **`RobinPortal.createLaunch(...)`** — permissionless, one transaction.
    - Mints the full 1,000,000,000-token supply straight to the Portal.
-   - Deploys the launch's revenue splitter (`TrollRevenueSplitter`).
+   - Deploys the launch's revenue splitter (`RobinRevenueSplitter`).
    - Picks the pool's opening price from the creator's chosen
      `startingMarketCapQuote` (e.g. $500) — `IPoolManager.initialize` sets
      a pool's starting price for **free**, completely independent of how
      much liquidity is then deposited, so no real capital is ever required
      to open at a meaningful price.
-   - Deploys this launch's `TrollLocker`, transfers the full token supply
+   - Deploys this launch's `RobinLocker`, transfers the full token supply
      to it, and seeds a **single-sided concentrated position** — pure
      launch token, resting entirely above (or below, depending on
      token/quote address ordering) the opening price. No quote asset is
      ever collected to do this.
-   - Registers the pool with the shared `TrollHook` and authorizes both
+   - Registers the pool with the shared `RobinHook` and authorizes both
      the hook and the Locker to deposit revenue into the splitter.
 2. **Trading happens on the real pool from that instant on** — the
    "curve" is just the pool's own natural price-impact at low depth, the
    same math any AMM position has, no custom contract needed to fake it.
-   As real buyers push USDC in, the position naturally shifts from 100%
+   As real buyers push USDG in, the position naturally shifts from 100%
    launch-token composition toward a mix of both currencies, which is what
    makes selling possible (see "No bid-side liquidity at launch" below).
 3. **The platform's cut of everything** — the shared hook's swap tax, and
@@ -76,8 +70,8 @@ pool creation is gated to authorized portals only.
    hosting the white-label frontend, a real cost only white-label pads
    create). The creator gets the rest: a **full, undiluted 90% (or 85%)**,
    credited to a claimable balance, no further subdivision. Both sides are
-   pull-based: the creator calls `TrollRevenueSplitter.claim`, and anyone
-   can call `claimPlatform` to move the platform's cut into `TrollTreasury`
+   pull-based: the creator calls `RobinRevenueSplitter.claim`, and anyone
+   can call `claimPlatform` to move the platform's cut into `RobinTreasury`
    (shared across every pad) — see "No automated buyback" below for what
    happens to it from there. Pull-based on both sides, on purpose (see
    "Revenue never moves during a swap" below) — a broken or blocklisted
@@ -98,13 +92,13 @@ directly in `test_SellWorksOnlyAfterABuyCreatesBidSideDepth`.
 ## No automated buyback-and-burn
 
 An earlier version of this repo auto-swapped the platform's cut for
-$TROLL and burned it on every single deposit, with its own no-keeper
-trigger mechanism, slippage protection, and a dependency on Arc's
+$ROBIN and burned it on every single deposit, with its own no-keeper
+trigger mechanism, slippage protection, and a dependency on the chain's
 UniversalRouter/Permit2/StateView addresses being exactly right. All of
-that is gone. `TrollTreasury` is now genuinely simple: it receives USDC,
+that is gone. `RobinTreasury` is now genuinely simple: it receives USDG,
 and its `owner` can `withdraw` it. Nothing else. No swap logic, no price
 reads, no automatic trigger of any kind — what happens to the accumulated
-platform cut (buying back $TROLL, or anything else) is a deliberate,
+platform cut (buying back $ROBIN, or anything else) is a deliberate,
 manual decision, on whatever cadence the owner wants. If holders of a
 launched token want to burn their own tokens, they can already do that
 themselves; nothing here needs to do it for them.
@@ -112,9 +106,9 @@ themselves; nothing here needs to do it for them.
 ## Creator-controlled tax — always denominated in quote
 
 `buyTaxBps` / `sellTaxBps` are set by the creator at launch time (0–10%
-per side, `TrollPortal.MAX_TAX_BPS` enforces the cap), immutable
+per side, `RobinPortal.MAX_TAX_BPS` enforces the cap), immutable
 afterward — the rate can never change out from under a trader. The shared
-`TrollHook` taxes every swap on every launch's pool, and — post audit fix,
+`RobinHook` taxes every swap on every launch's pool, and — post audit fix,
 see below — the tax is **always taken in the pool's quote asset, on both
 buy and sell, never in the launch token**:
 - Quote as the swap's *specified* leg (exact-in buy, exact-out sell) is
@@ -129,7 +123,7 @@ exactly once. An earlier version of this hook taxed whichever currency was
 exact-input buy (what every router sends by default) was taxed in the
 launch token instead of quote, handing the creator a claimable, dumpable
 cut of the tokens bought on every single buy. A real, external audit
-(Fable, see `PROJECT_NOTES.md`'s "Audit findings" section) caught this as
+(Fable, see `docs/AUDIT-2026-09-24.md`) caught this as
 its top finding; fixed and covered by
 `test_BuyAndSellTaxAreBothAlwaysInQuoteNeverInLaunchToken`.
 
@@ -141,11 +135,11 @@ and paid out through a permissionless `flush(key)` anyone can call at any
 time — no keeper, just a cron job or a curious trader. This exists because
 the ORIGINAL version pushed tax straight to the splitter, which pushed the
 platform's cut on to the treasury, **inside the swap itself** — meaning a
-single blocklisted address anywhere in that chain (a USDC-style token can
-blocklist addresses; Circle blocklisting the treasury would be enough)
+single blocklisted address anywhere in that chain (a regulated stablecoin like
+USDG can freeze addresses; the issuer freezing the treasury would be enough)
 would have permanently reverted every swap on every pool forever, since
 `PoolConfig` is immutable with no way to route around a stuck recipient
-mid-swap. `TrollRevenueSplitter`'s own two claim functions (`claim` for
+mid-swap. `RobinRevenueSplitter`'s own two claim functions (`claim` for
 the creator, `claimPlatform` for the treasury) are pull-based for the same
 reason: a broken or blocklisted recipient can only ever block its own
 claim, never a swap, never `flush`, never the other side's funds. See
@@ -165,11 +159,6 @@ curve-based design's tests never did (its `buy`/`sell` were plain ERC-20
 transfers, never real Uniswap swaps). Required flags, mine for exactly
 these (value `0x28CC`): `BEFORE_INITIALIZE | BEFORE_ADD_LIQUIDITY |
 BEFORE_SWAP | AFTER_SWAP | BEFORE_SWAP_RETURNS_DELTA | AFTER_SWAP_RETURNS_DELTA`.
-
-> **Not yet deployed:** the testnet hook at `0x2941…a0Cc` still carries the
-> old `0x20CC` set and none of the 2026-09-24 audit fixes below. They need a
-> fresh Hook + Portal + Factory deployment (existing launches stay on the
-> old hook, since a pool's hook is part of its key).
 
 ### 2026-09-24 audit fixes (in source, covered by `test/AuditFixes.t.sol`)
 
@@ -193,23 +182,23 @@ BEFORE_SWAP | AFTER_SWAP | BEFORE_SWAP_RETURNS_DELTA | AFTER_SWAP_RETURNS_DELTA`
 - **The factory slot is validated and can be closed** (`factory-trust-1/2`).
   `bootstrapFactory` requires a deployed factory wired to this hook and
   this PoolManager. `renounceFactoryBootstrap` closes the slot for good.
-  The deploy script now does one or the other in the same broadcast
-  (`WHITE_LABEL`, `PAD_SETUP_FEE`), so there is no window where the
-  bootstrapper key could name its own factory.
-  `TrollPadFactory` rejects zero addresses, a hook on another PoolManager,
+  `script/DeployRobinhood.s.sol` fills both hook slots in the same broadcast
+  as the hook, so there is no window where the bootstrapper key could name
+  its own factory or portal.
+  `RobinPadFactory` rejects zero addresses, a hook on another PoolManager,
   and fees in the wrong decimals.
 - **A pool is registered only by the portal that initialized it**
   (`factory-trust-1`). `initializer[id]` is recorded in `beforeInitialize`.
-- **Stray USDC in a splitter is recoverable** (`splitter-treasury-3`).
+- **Stray USDG in a splitter is recoverable** (`splitter-treasury-3`).
   `sweepSurplus(asset)` credits it through the normal split, and
   `claim(to = splitter)` is rejected.
 
 No trading restrictions, by design (no anti-snipe, max-buy, cooldown,
 blacklist or pause: the things token scanners flag).
 `test_NoTradingRestrictions_*` asserts that a launch-block buy, a sell-all
-and a free transfer all work. `test/ForkArc.t.sol` runs the full launch
-lifecycle against a real Arc mainnet fork when `ARC_FORK_URL` is set.
-Mainnet runbook: `../docs/MAINNET-DEPLOY.md`. Source verification:
+and a free transfer all work. `test/ForkRobinhood.t.sol` runs the full
+launch lifecycle on a real Robinhood Chain fork when `ROBINHOOD_FORK_URL` is
+set. Deploy runbook: `docs/ROBINHOOD-DEPLOY.md`. Source verification:
 `script/verify.sh`.
 
 Every fix was mutation-checked. Reverting any one of them makes at least
@@ -231,23 +220,23 @@ Uniswap v4 requires a hook's contract address to have specific bits set,
 which normally means mining a CREATE2 salt per deployment. That's fine
 when it happens in a deploy script, but a customer paying to spin up their
 own white-label pad in one click has no such step available. So there's
-exactly ONE `TrollHook` instance — for every pad, not just the original —
+exactly ONE `RobinHook` instance — for every pad, not just the original —
 mined once via Uniswap's own `HookMiner` library (see
-`script/DeployTrollPad.s.sol` and `test/TrollPad.t.sol`'s `setUp()`; no
+`script/RobinhoodStack.sol` and `test/RobinPad.t.sol`'s `setUp()`; no
 `vm.ffi`, no external process — pure Solidity, run as part of the script's
 own simulation), and every launch's pool, from any pad, registers its own
 tax config into it via a mapping keyed by `poolId`.
 
-## TrollPadFactory — "give everybody a launchpad"
+## RobinPadFactory — "give everybody a launchpad"
 
-`TrollPadFactory.deployPad(label)` is permissionless: pay the flat setup
-fee (in USDC, forwarded straight to the shared `TrollTreasury` — same
+`RobinPadFactory.deployPad(label)` is permissionless: pay the flat setup
+fee (in USDG, forwarded straight to the shared `RobinTreasury` — same
 destination as every dollar of ongoing revenue), get your own
-`TrollPortal` in the same transaction. A white-label pad is NOT separate
-contract logic — it's the exact same `TrollPortal`/`TrollHook`/
-`TrollLocker`/`TrollRevenueSplitter` code, just a new Portal instance
+`RobinPortal` in the same transaction. A white-label pad is NOT separate
+contract logic — it's the exact same `RobinPortal`/`RobinHook`/
+`RobinLocker`/`RobinRevenueSplitter` code, just a new Portal instance
 wired into the same shared hook and the same shared treasury. Verified in
-`test_WhiteLabelPadUsesWhiteLabelSplitRate` — a customer's pad launches a
+`test_Pad_RevenueSplitsFifteenToRobinPadOwnerShareRestToCreator` — a customer's pad launches a
 token straight into a real pool on the same shared hook the main pad
 uses, with zero collision between the two pads' pools, and its revenue
 correctly splits at the white-label 15/85 rate, not the main pad's 10/90.
@@ -277,87 +266,49 @@ dependency directly at its pinned commit instead of relying on
 (`git submodule add`) to work — a plain checkout of this source tree
 doesn't have that, only the `.gitmodules` file for reference.
 
-If this is checked into a real git repository with submodules properly
-registered (as this project's own repo has it), `forge install` works
-as usual instead.
+## Not built here yet
 
-## Deploying the main pad to Arc
+- **The website.** These are the contracts only. The upstream frontend has
+  not been ported or reskinned for Robin Labs yet.
+- **A complete security audit.** The pre-port pass (Fable, 2026-09-22 and
+  2026-09-24) found and got fixed 3 HIGH / 4 MEDIUM / 8 LOW findings; see
+  `docs/AUDIT-2026-09-24.md` and the sections above. That pass is not
+  necessarily final. Treat this as materially safer than the pre-audit
+  version, not as a substitute for a complete, final review before real
+  funds are at risk.
 
-`script/DeployTrollPad.s.sol` deploys the **basic, main pad only** —
-`TrollTreasury`, the shared `TrollHook`, and the original `TrollPortal`
-(`isMainPad = true`). `TrollPadFactory` (white-label pads) is deliberately
-left out of this script; deploy it separately once the basic pad is live
-and it's actually needed (see `PROJECT_NOTES.md`).
+## White-label pads (PadPortal, PadRevenueSplitter, RobinPadFactory)
 
-```
-cp .env.example .env   # fill in DEPLOYER_PRIVATE_KEY
-source .env
-forge script script/DeployTrollPad.s.sol:DeployTrollPad \
-  --rpc-url $ARC_RPC_URL --broadcast -vvvv
-```
-
-Read the contract-level comment at the top of that script before running
-it for real — it calls out what needs checking against Arc directly (not
-assumed from this repo): that the canonical CREATE2 deployer proxy is
-actually deployed there, and that `DEPLOYER_PRIVATE_KEY` is funded, since
-Arc's gas is USDC-denominated. It logs the three deployed addresses at the
-end — save them.
-
-## What's deliberately NOT built yet
-
-- **Holder dividends** — a real "v2" feature, not scrapped: paying token
-  holders a share of tax revenue, proportional to their balance. Doing it
-  *correctly* (unlike a reference implementation that was reviewed and
-  found to have this exact gap) needs the per-holder accounting hooked
-  directly into `TrollLaunchToken`'s own transfer function, not just
-  exposed as a manually-called update function — see `PROJECT_NOTES.md`
-  for the full writeup of why a naive version of this is exploitable.
-- **Mainnet deployment for the main pad** — the script exists
-  (`script/DeployTrollPad.s.sol`) and compiles clean against the real Arc
-  addresses, but hasn't been run against a live key yet.
-- **A deploy script for `TrollPadFactory`** — the factory contract itself
-  is fully built and tested; a near-identical deploy script against an
-  already-live hook is a follow-up once white-label pads are wanted.
-- **A "browse all pads" page** — `TrollPadFactory.allPads`/`padCount` and
-  the `PadDeployed` event give an indexer everything needed to build one;
-  nothing here renders it.
-- **The white-label sign-up site and reskinned frontend template** —
-  the actual customer-facing product: pay $100, upload a logo, name it,
-  get `theirname.trollsfactory.com`. Requirements captured for that build,
-  not buildable against contracts alone: a customer-supplied RPC endpoint
-  (so white-label traffic doesn't share the main site's rate limit), a
-  banner/logo upload field, and auto-verified launch contracts on Arc's
-  block explorer.
-- **A complete security audit.** A first pass (Fable, Sep 22 2026) found
-  and got fixed 3 HIGH / 4 MEDIUM / 8 LOW findings — see
-  `PROJECT_NOTES.md`'s "Audit findings" section for the full writeup, and
-  the "Revenue never moves during a swap" / "Pool creation is gated"
-  sections above for what changed. That pass is not necessarily final;
-  treat this as materially safer than the pre-audit version, not as a
-  substitute for a complete, final review before real funds are at risk.
-
-## White-label pads (PadPortal, PadRevenueSplitter, TrollPadFactory)
-
-Anyone can buy their own launchpad from `TrollPadFactory` for $100. It
-plugs into the same shared hook as the main pad. On a pad, Troll takes a
-fixed 15% of every launch's revenue (tax plus the USDC-side LP fee), the
+Anyone can buy their own launchpad from `RobinPadFactory` for $100. It
+plugs into the same shared hook as the main pad. On a pad, Robin Labs takes a
+fixed 15% of every launch's revenue (tax plus the USDG-side LP fee), the
 pad owner sets their share from 0 to 85%, and the creator gets the rest.
 Each launch's split is locked when it launches, and the creator splits
 their share across up to 5 payout wallets plus buyback & burn. Pad owners
 can also charge a launch fee of up to $1,000, split the same way, and set
-the range of starting market caps creators may pick (Troll Pad: $100 to
+the range of starting market caps creators may pick (Robin Labs Pad: $100 to
 $10k). A pad
 launches tokens exactly the way the main portal does, with the same token,
 pool, lock and no trading restrictions. The factory owner can open house
-pads (Troll takes 10%); the new Troll Pad is one.
+pads (Robin Labs takes 10%); the new Robin Labs Pad is one.
 
 **Templates.** The hook accepts exactly one factory, forever, so the
 factory builds pads through templates (`IPadTemplate`). Template #1,
 `PadPortalTemplate`, is created by the factory's constructor and builds
 every standard pad. The owner can approve more templates later (another
 quote asset, another launch token) without a new hook. The factory checks
-each new pad is on its hook, PoolManager and treasury, charges Troll's
+each new pad is on its hook, PoolManager and treasury, charges Robin Labs'
 share and is owned by the buyer before authorizing it.
 
-Not deployed yet: `script/DeployPadFactory.s.sol`. Full spec:
-`../docs/PAD-FACTORY.md`.
+**Holder dividends (template #2, the house pad's template).** A creator can
+give holders a share of their revenue: `createLaunchWithHolders` adds the
+launch token itself as the last payout wallet. What lands there is shared
+out by `distribute()` pro rata to balances, and each holder claims their own
+USDG with `claim()`. The pool, the locker and the burn address never earn.
+Earnings stay with the wallet that earned them when it sells or transfers,
+and new buyers never receive dividends from before they bought
+(`test/HolderPad.t.sol`, `test/HolderToken.t.sol`). Plain launches still
+work on the same pad.
+
+`script/DeployRobinhood.s.sol` deploys the factory, approves the holders
+template and opens the Robin Labs Pad as a house pad built from it.

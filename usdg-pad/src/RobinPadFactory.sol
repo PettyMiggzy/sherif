@@ -5,43 +5,43 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {PadPortal} from "./PadPortal.sol";
 import {PadPortalTemplate} from "./PadPortalTemplate.sol";
-import {TrollHook} from "./TrollHook.sol";
+import {RobinHook} from "./RobinHook.sol";
 import {IPadTemplate, IPadWiring} from "./interfaces/IPadTemplate.sol";
 
 /// @notice "A pad that launches pads." Anyone pays the setup fee and gets
-/// their own white-label launchpad (a PadPortal, Troll takes 15%) in the
-/// same transaction, wired into the SAME shared TrollHook as Troll Pad. The
+/// their own white-label launchpad (a PadPortal, Robin Labs takes 15%) in the
+/// same transaction, wired into the SAME shared RobinHook as Robin Labs Pad. The
 /// pad owner runs it: their share of every launch's revenue (up to 85%),
 /// a launch fee of up to $1,000, the min and max tax, the minimum starting
 /// market cap, pausing new launches and invite-only mode. The factory owner
-/// can also open "house pads" (Troll takes 10%). Troll Pad itself is one.
+/// can also open "house pads" (Robin Labs takes 10%). Robin Labs Pad itself is one.
 /// See docs/PAD-FACTORY.md.
 ///
 /// The live hook accepts exactly one factory, ever (bootstrapFactory is
 /// one-shot), so this contract is permanent once plugged in. To keep room
 /// for new kinds of pads (another quote asset, another launch token), the
 /// owner can approve pad templates (IPadTemplate): plug-ins the factory
-/// deploys pads through, with the same setup fee and Troll share, checking
+/// deploys pads through, with the same setup fee and Robin Labs share, checking
 /// each new pad's wiring before authorizing it on the hook.
 ///
 /// The factory owner keeps three knobs: the setup fee (capped at
 /// MAX_SETUP_FEE; a buyer passes the most they'll pay), opening house pads,
 /// and approving templates. It has no power over existing pads, launches,
 /// tokens or liquidity. Revoking a template only stops new pads from it.
-contract TrollPadFactory {
+contract RobinPadFactory {
     using SafeERC20 for IERC20;
 
     address public immutable poolManager;
     address public immutable hook; // shared across every pad (and the main pad)
-    address public immutable treasury; // TrollTreasury: receives setup fees and Troll's 15%
+    address public immutable treasury; // RobinTreasury: receives setup fees and Robin Labs' 15%
     address public immutable quoteAsset; // USDC: every pad's quote asset, and what fees are paid in
     address public immutable splitterImplementation; // every launch's splitter is a clone of this
     /// @notice Template #1, created by this constructor: builds every
     /// `deployPad` / `deployHousePad` pad (a standard PadPortal).
     address public immutable padPortalTemplate;
 
-    uint16 public constant PAD_PLATFORM_SHARE_BPS = 1_500; // Troll's share on white-label pads
-    uint16 public constant HOUSE_PLATFORM_SHARE_BPS = 1_000; // Troll's share on house pads (Troll Pad)
+    uint16 public constant PAD_PLATFORM_SHARE_BPS = 1_500; // Robin Labs' share on white-label pads
+    uint16 public constant HOUSE_PLATFORM_SHARE_BPS = 1_000; // Robin Labs' share on house pads (Robin Labs Pad)
 
     /// @dev Sanity ceiling in quoteAsset raw units: $10,000 in 6-decimal
     /// USDC. Also catches a fee written in the wrong decimals (audit
@@ -94,7 +94,7 @@ contract TrollPadFactory {
         ) revert ZeroAddress();
         // Everything above is immutable, so a factory wired to a different
         // PoolManager than its hook could never launch a working pad.
-        if (TrollHook(hook_).poolManager() != poolManager_) revert HookMismatch();
+        if (RobinHook(hook_).poolManager() != poolManager_) revert HookMismatch();
         poolManager = poolManager_;
         hook = hook_;
         treasury = treasury_;
@@ -123,7 +123,7 @@ contract TrollPadFactory {
         emit PadDeployed(portal, msg.sender, label, fee);
     }
 
-    /// @notice Owner only: open a house pad, where Troll takes 10%. Troll Pad
+    /// @notice Owner only: open a house pad, where Robin Labs takes 10%. Robin Labs Pad
     /// itself is deployed this way. No setup fee.
     function deployHousePad(string calldata label, address padOwner, PadPortal.PadSettings calldata settings)
         external
@@ -151,7 +151,7 @@ contract TrollPadFactory {
         emit TemplatePadDeployed(portal, template, msg.sender, label, fee, false);
     }
 
-    /// @notice Owner only: a house pad (Troll takes 10%) built by an
+    /// @notice Owner only: a house pad (Robin Labs takes 10%) built by an
     /// approved template. No setup fee.
     function deployHousePadFromTemplate(address template, string calldata label, address padOwner, bytes calldata config)
         external
@@ -174,7 +174,7 @@ contract TrollPadFactory {
     /// @dev Templates are owner-approved code, but the hook trusts every pad
     /// this factory registers, so check what came back anyway: a fresh
     /// contract on this factory's hook, PoolManager and treasury, charging
-    /// Troll's share, owned by the right wallet.
+    /// Robin Labs' share, owned by the right wallet.
     function _deployFromTemplate(address template, uint16 platformShareBps, address padOwner, bytes memory config)
         internal
         returns (address portal)
@@ -188,7 +188,7 @@ contract TrollPadFactory {
                 || p.platformShareBps() != platformShareBps || p.padOwner() != padOwner
         ) revert InvalidPortal();
         templateOf[portal] = template;
-        TrollHook(hook).authorizePortal(portal);
+        RobinHook(hook).authorizePortal(portal);
         isPad[portal] = true;
         allPads.push(portal);
     }

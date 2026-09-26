@@ -4,19 +4,19 @@ pragma solidity ^0.8.24;
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {HookMiner} from "@uniswap/v4-periphery/test/shared/HookMiner.sol";
 
-import {TrollHook} from "../src/TrollHook.sol";
-import {TrollPortal} from "../src/TrollPortal.sol";
-import {TrollPadFactory} from "../src/TrollPadFactory.sol";
+import {RobinHook} from "../src/RobinHook.sol";
+import {RobinPortal} from "../src/RobinPortal.sol";
+import {RobinPadFactory} from "../src/RobinPadFactory.sol";
 import {PadPortal} from "../src/PadPortal.sol";
 import {PadRevenueSplitter} from "../src/PadRevenueSplitter.sol";
-import {TrollTreasury} from "../src/TrollTreasury.sol";
+import {RobinTreasury} from "../src/RobinTreasury.sol";
 import {HolderTokenDeployer} from "../src/HolderTokenDeployer.sol";
 import {HolderPadTemplate} from "../src/HolderPadTemplate.sol";
 import {HolderPadPortal} from "../src/HolderPadPortal.sol";
 
 /// @notice The whole pad stack for Robinhood Chain, from nothing, in the
 /// state Arc's live deployment reached after its three incremental deploys
-/// (DeployTrollPad -> DeployPadFactory -> DeployHolderPad): shared hook and
+/// (DeployRobinPad -> DeployPadFactory -> DeployHolderPad): shared hook and
 /// treasury, the white-label factory with the holder-dividends template
 /// approved, and the house pad built from that template. Shared by
 /// DeployRobinhood.s.sol and test/ForkRobinhood.t.sol so the fork test runs
@@ -39,18 +39,18 @@ abstract contract RobinhoodStack {
     address internal constant USDG = 0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168;
     address internal constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    // 0x28CC — see TrollHook's contract comment and DeployTrollPad.s.sol.
+    // 0x28CC — see RobinHook's contract comment and DeployRobinPad.s.sol.
     uint160 internal constant HOOK_FLAGS = uint160(
         Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG
             | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
     );
 
     struct Stack {
-        TrollTreasury treasury;
-        TrollHook hook;
-        TrollPortal mainPortal;
+        RobinTreasury treasury;
+        RobinHook hook;
+        RobinPortal mainPortal;
         PadRevenueSplitter splitterImpl;
-        TrollPadFactory factory;
+        RobinPadFactory factory;
         HolderTokenDeployer tokenDeployer;
         HolderPadTemplate holderTemplate;
         HolderPadPortal housePad;
@@ -76,23 +76,23 @@ abstract contract RobinhoodStack {
         internal
         returns (Stack memory s)
     {
-        s.treasury = new TrollTreasury(owner);
+        s.treasury = new RobinTreasury(owner);
 
         bytes memory args = abi.encode(POOL_MANAGER, owner);
-        (address predictedHook, bytes32 salt) = HookMiner.find(create2Deployer, HOOK_FLAGS, type(TrollHook).creationCode, args);
+        (address predictedHook, bytes32 salt) = HookMiner.find(create2Deployer, HOOK_FLAGS, type(RobinHook).creationCode, args);
         require(predictedHook.code.length == 0, "mined hook address already has code - re-mine");
-        s.hook = new TrollHook{salt: salt}(POOL_MANAGER, owner);
+        s.hook = new RobinHook{salt: salt}(POOL_MANAGER, owner);
         require(address(s.hook) == predictedHook, "hook address mismatch - build differs from the one mined against");
         require(uint160(address(s.hook)) & Hooks.ALL_HOOK_MASK == HOOK_FLAGS, "hook address lacks the required flags");
 
         // The main-portal slot is one-shot and, unlike the factory slot, has
         // no renounce. Filling it is the only way to close it, so the fresh
-        // deploy fills it the way Arc did, with the original TrollPortal.
-        s.mainPortal = new TrollPortal(POOL_MANAGER, address(s.hook), address(s.treasury), USDG, true);
+        // deploy fills it the way Arc did, with the original RobinPortal.
+        s.mainPortal = new RobinPortal(POOL_MANAGER, address(s.hook), address(s.treasury), USDG, true);
         s.hook.bootstrapMainPortal(address(s.mainPortal));
 
         s.splitterImpl = new PadRevenueSplitter();
-        s.factory = new TrollPadFactory(
+        s.factory = new RobinPadFactory(
             POOL_MANAGER, address(s.hook), address(s.treasury), USDG, address(s.splitterImpl), setupFee, owner
         );
         s.hook.bootstrapFactory(address(s.factory)); // closes the factory slot for good

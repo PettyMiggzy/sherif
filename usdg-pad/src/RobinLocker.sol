@@ -8,7 +8,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ITrollSplitter} from "./interfaces/ITrollSplitter.sol";
+import {IRobinSplitter} from "./interfaces/IRobinSplitter.sol";
 
 /// @notice Holds a launch's LP position forever. Deliberately the contract
 /// that CREATES the position (via `seedLiquidity`, called once by the
@@ -18,8 +18,8 @@ import {ITrollSplitter} from "./interfaces/ITrollSplitter.sol";
 /// `modifyLiquidity`, so if the Portal created the position itself, the
 /// locker could never reach it. No owner, no withdraw function, no admin of
 /// any kind after seeding — anyone can permissionlessly harvest trading
-/// fees, split the same way as everything else on Troll Pad.
-contract TrollLocker is IUnlockCallback {
+/// fees, split the same way as everything else on Robin Labs Pad.
+contract RobinLocker is IUnlockCallback {
     using SafeERC20 for IERC20;
 
     /// @dev LP fees collected on the launch-token side are routed here
@@ -76,7 +76,7 @@ contract TrollLocker is IUnlockCallback {
     /// launch's full token supply to this contract. Creates the
     /// single-sided concentrated position (pure launch token, resting above
     /// or below the opening price depending on token/quote ordering — see
-    /// TrollPortal._seedLaunchPool), owned by this locker from the moment
+    /// RobinPortal._seedLaunchPool), owned by this locker from the moment
     /// it exists. No quote asset is ever required to seed it.
     function seedLiquidity(uint128 liquidity) external {
         if (msg.sender != portal) revert NotPortal();
@@ -150,7 +150,7 @@ contract TrollLocker is IUnlockCallback {
             IPoolManager(poolManager).take(currency, TOKEN_FEE_SINK, amount);
         } else {
             IPoolManager(poolManager).take(currency, splitter, amount);
-            ITrollSplitter(splitter).depositRevenue(asset, amount);
+            IRobinSplitter(splitter).depositRevenue(asset, amount);
         }
     }
 

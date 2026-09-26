@@ -3,13 +3,13 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ITrollSplitter} from "./interfaces/ITrollSplitter.sol";
+import {IRobinSplitter} from "./interfaces/IRobinSplitter.sol";
 
 /// @notice Splits every dollar of revenue a launch generates — swap tax
 /// flushed from the shared hook, and LP fees harvested from the launch's own
-/// TrollLocker — between the platform treasury and the creator. On Troll
+/// RobinLocker — between the platform treasury and the creator. On Robin Labs
 /// Pad's own original pad: 10% to the platform, 90% to the creator. On a
-/// TrollPadFactory white-label pad: 15/85 instead — the extra 5% covers
+/// RobinPadFactory white-label pad: 15/85 instead — the extra 5% covers
 /// hosting the white-label frontend, since that's a real cost only
 /// white-label pads create. Flat, no further subdivision.
 ///
@@ -18,9 +18,9 @@ import {ITrollSplitter} from "./interfaces/ITrollSplitter.sol";
 /// can never revert because of who the recipient happens to be, so a
 /// blocklisted treasury or a broken creator address can only ever block its
 /// own claim — never the other side's, and never the swap or harvest that
-/// generated the revenue in the first place (see TrollHook's audit fix,
+/// generated the revenue in the first place (see RobinHook's audit fix,
 /// H-2).
-contract TrollRevenueSplitter is ITrollSplitter {
+contract RobinRevenueSplitter is IRobinSplitter {
     using SafeERC20 for IERC20;
 
     uint256 public constant BPS_DENOMINATOR = 10_000;
@@ -29,13 +29,13 @@ contract TrollRevenueSplitter is ITrollSplitter {
 
     address public creator;
     address public pendingCreator;
-    address public immutable treasury; // Troll Pad's shared plain USDC treasury — see TrollTreasury.sol
+    address public immutable treasury; // Robin Labs Pad's shared plain USDC treasury — see RobinTreasury.sol
     address public immutable portal; // the only address allowed to authorize sources, until locked
-    bool public immutable isMainPad; // see TrollPortal.isMainPad — decides the split ratio above
+    bool public immutable isMainPad; // see RobinPortal.isMainPad — decides the split ratio above
 
     /// @dev Only these addresses may deposit revenue into this splitter —
     /// the Portal authorizes this launch's shared hook and its own
-    /// TrollLocker right after deploying them, in the same transaction the
+    /// RobinLocker right after deploying them, in the same transaction the
     /// launch is created, then calls `lockSources` so the set can never grow
     /// again afterward.
     mapping(address => bool) public isAuthorizedSource;
@@ -68,7 +68,7 @@ contract TrollRevenueSplitter is ITrollSplitter {
 
     /// @notice Authorizes a new revenue source. Callable only by the Portal,
     /// only before `lockSources` — used to authorize both the shared hook
-    /// (swap tax) and this launch's own TrollLocker (harvested LP fees), in
+    /// (swap tax) and this launch's own RobinLocker (harvested LP fees), in
     /// the same transaction the launch is created.
     function authorizeSource(address source) external {
         if (msg.sender != portal) revert NotAuthorized();

@@ -11,7 +11,7 @@ interface IHolderSlotSource {
 }
 
 /// @notice ERC-20 for a launch whose creator gave holders a share of the
-/// fees ("holder dividends"). Like TrollLaunchToken: fixed supply, no
+/// fees ("holder dividends"). Like RobinLaunchToken: fixed supply, no
 /// transfer tax, no admin, no owner, no trading restrictions of any kind.
 ///
 /// How holders get paid: the launch's splitter lists THIS contract as one
@@ -35,7 +35,7 @@ interface IHolderSlotSource {
 /// tokens (0.1% of supply) sit outside the pool; the USDC waits for the
 /// next call. That floor also keeps the per-share figure bounded, so the
 /// accounting in every transfer can never overflow and block trading.
-contract TrollHolderToken is ERC20 {
+contract RobinHolderToken is ERC20 {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 

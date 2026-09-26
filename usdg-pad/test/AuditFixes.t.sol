@@ -17,14 +17,14 @@ import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {HookMiner} from "@uniswap/v4-periphery/test/shared/HookMiner.sol";
 
-import {TrollPortal} from "../src/TrollPortal.sol";
-import {TrollHook} from "../src/TrollHook.sol";
-import {TrollRevenueSplitter} from "../src/TrollRevenueSplitter.sol";
-import {TrollLocker} from "../src/TrollLocker.sol";
-import {TrollLaunchToken} from "../src/TrollLaunchToken.sol";
-import {TrollPadFactory} from "../src/TrollPadFactory.sol";
+import {RobinPortal} from "../src/RobinPortal.sol";
+import {RobinHook} from "../src/RobinHook.sol";
+import {RobinRevenueSplitter} from "../src/RobinRevenueSplitter.sol";
+import {RobinLocker} from "../src/RobinLocker.sol";
+import {RobinLaunchToken} from "../src/RobinLaunchToken.sol";
+import {RobinPadFactory} from "../src/RobinPadFactory.sol";
 import {PadRevenueSplitter} from "../src/PadRevenueSplitter.sol";
-import {TrollTreasury} from "../src/TrollTreasury.sol";
+import {RobinTreasury} from "../src/RobinTreasury.sol";
 
 /// @dev Stand-in USDC. Deployed with deployCodeTo at a chosen address so a
 /// test can force either pool orientation (token below or above quote).
@@ -34,7 +34,7 @@ contract TestUSDC is MockERC20 {
 
 /// @notice Regression tests for the 2026-09-24 adversarial audit
 /// (docs/AUDIT-2026-09-24.md). Every tax assertion is exact, and each shape
-/// runs in both orientations — the gaps tests-spec-6 found in TrollPad.t.sol.
+/// runs in both orientations — the gaps tests-spec-6 found in RobinPad.t.sol.
 contract AuditFixesTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
@@ -55,9 +55,9 @@ contract AuditFixesTest is Test, Deployers {
 
     struct Env {
         MockERC20 quote;
-        TrollHook hook;
-        TrollPortal portal;
-        TrollTreasury treasury;
+        RobinHook hook;
+        RobinPortal portal;
+        RobinTreasury treasury;
         address token;
         address locker;
         address splitter;
@@ -69,10 +69,10 @@ contract AuditFixesTest is Test, Deployers {
         deployFreshManagerAndRouters();
     }
 
-    function _hook() internal returns (TrollHook h) {
+    function _hook() internal returns (RobinHook h) {
         bytes memory args = abi.encode(address(manager), address(this));
-        (address predicted, bytes32 salt) = HookMiner.find(address(this), FLAGS, type(TrollHook).creationCode, args);
-        h = new TrollHook{salt: salt}(address(manager), address(this));
+        (address predicted, bytes32 salt) = HookMiner.find(address(this), FLAGS, type(RobinHook).creationCode, args);
+        h = new RobinHook{salt: salt}(address(manager), address(this));
         require(address(h) == predicted, "hook address mismatch");
     }
 
@@ -82,21 +82,21 @@ contract AuditFixesTest is Test, Deployers {
         deployCodeTo("AuditFixes.t.sol:TestUSDC", quoteAt);
         e.quote = MockERC20(quoteAt);
         e.hook = _hook();
-        e.treasury = new TrollTreasury(makeAddr("treasuryOwner"));
-        e.portal = new TrollPortal(address(manager), address(e.hook), address(e.treasury), quoteAt, true);
+        e.treasury = new RobinTreasury(makeAddr("treasuryOwner"));
+        e.portal = new RobinPortal(address(manager), address(e.hook), address(e.treasury), quoteAt, true);
         e.hook.bootstrapMainPortal(address(e.portal));
 
         vm.prank(creator);
         (e.token, e.locker) = e.portal.createLaunch(
-            TrollPortal.CreateLaunchParams({
-                name: "Audit Troll",
+            RobinPortal.CreateLaunchParams({
+                name: "Audit Robin Labs",
                 symbol: "AUDIT",
                 startingMarketCapQuote: STARTING_MC,
                 buyTaxBps: BUY_BPS,
                 sellTaxBps: SELL_BPS
             })
         );
-        e.splitter = TrollLocker(e.locker).splitter();
+        e.splitter = RobinLocker(e.locker).splitter();
         e.tokenIsToken0 = e.token < quoteAt;
         e.key = PoolKey({
             currency0: Currency.wrap(e.tokenIsToken0 ? e.token : quoteAt),
@@ -110,7 +110,7 @@ contract AuditFixesTest is Test, Deployers {
         e.quote.mint(trader, 1_000_000e6);
         vm.startPrank(trader);
         e.quote.approve(address(swapRouter), type(uint256).max);
-        TrollLaunchToken(e.token).approve(address(swapRouter), type(uint256).max);
+        RobinLaunchToken(e.token).approve(address(swapRouter), type(uint256).max);
         vm.stopPrank();
     }
 
@@ -155,7 +155,7 @@ contract AuditFixesTest is Test, Deployers {
         assertEq(_pending(e) - p0, (1_000e6 * uint256(BUY_BPS)) / 10_000, "exact-in buy tax");
 
         // Exact-in sell: 7% of the gross USDC the pool pays out.
-        uint256 bal = TrollLaunchToken(e.token).balanceOf(trader);
+        uint256 bal = RobinLaunchToken(e.token).balanceOf(trader);
         p0 = _pending(e);
         (q,) = _swap(e, false, -int256(bal / 4));
         uint256 tax = _pending(e) - p0;
@@ -182,10 +182,10 @@ contract AuditFixesTest is Test, Deployers {
         uint256 total = _pending(e);
         e.hook.flush(e.key);
         uint256 platform = (total * 1_000) / 10_000;
-        assertEq(TrollRevenueSplitter(e.splitter).creditedToPlatform(quoteAt), platform, "main pad platform share");
-        assertEq(TrollRevenueSplitter(e.splitter).creditedToCreator(quoteAt), total - platform, "creator share");
-        assertEq(TrollRevenueSplitter(e.splitter).creditedToCreator(e.token), 0, "never credited in the launch token");
-        assertEq(TrollLaunchToken(e.token).balanceOf(e.splitter), 0, "splitter never holds the launch token");
+        assertEq(RobinRevenueSplitter(e.splitter).creditedToPlatform(quoteAt), platform, "main pad platform share");
+        assertEq(RobinRevenueSplitter(e.splitter).creditedToCreator(quoteAt), total - platform, "creator share");
+        assertEq(RobinRevenueSplitter(e.splitter).creditedToCreator(e.token), 0, "never credited in the launch token");
+        assertEq(RobinLaunchToken(e.token).balanceOf(e.splitter), 0, "splitter never holds the launch token");
         assertEq(e.quote.balanceOf(e.splitter), total, "splitter holds exactly what it credited");
     }
 
@@ -204,21 +204,21 @@ contract AuditFixesTest is Test, Deployers {
     function _opensAtEdgeAndBlocksFreePush(address quoteAt) internal {
         Env memory e = _launch(quoteAt);
         (uint160 sqrtBefore, int24 tick,,) = manager.getSlot0(e.key.toId());
-        int24 edge = e.tokenIsToken0 ? TrollLocker(e.locker).tickLower() : TrollLocker(e.locker).tickUpper();
+        int24 edge = e.tokenIsToken0 ? RobinLocker(e.locker).tickLower() : RobinLocker(e.locker).tickUpper();
         assertEq(tick, edge, "pool should open exactly at the position's near edge");
 
         // Selling before any buy has nothing to fill: the swap would only
         // move the price across empty ticks, so the hook rejects it.
         deal(e.token, attacker, 1 ether);
         vm.startPrank(attacker);
-        TrollLaunchToken(e.token).approve(address(swapRouter), type(uint256).max);
+        RobinLaunchToken(e.token).approve(address(swapRouter), type(uint256).max);
         bool zeroForOne = e.tokenIsToken0;
         vm.expectRevert(
             abi.encodeWithSelector(
                 CustomRevert.WrappedError.selector,
                 address(e.hook),
                 IHooks.afterSwap.selector,
-                abi.encodeWithSelector(TrollHook.NoLiquidityToFill.selector),
+                abi.encodeWithSelector(RobinHook.NoLiquidityToFill.selector),
                 abi.encodeWithSelector(Hooks.HookCallFailed.selector)
             )
         );
@@ -263,7 +263,7 @@ contract AuditFixesTest is Test, Deployers {
         deal(e.token, attacker, 1_000_000 ether);
         e.quote.mint(attacker, 1_000e6);
         vm.startPrank(attacker);
-        TrollLaunchToken(e.token).approve(address(modifyLiquidityRouter), type(uint256).max);
+        RobinLaunchToken(e.token).approve(address(modifyLiquidityRouter), type(uint256).max);
         e.quote.approve(address(modifyLiquidityRouter), type(uint256).max);
         // A one-sided range just past the price on either side: a limit
         // order that other people's swaps would fill with no tax.
@@ -274,7 +274,7 @@ contract AuditFixesTest is Test, Deployers {
                     CustomRevert.WrappedError.selector,
                     address(e.hook),
                     IHooks.beforeAddLiquidity.selector,
-                    abi.encodeWithSelector(TrollHook.LiquidityLocked.selector),
+                    abi.encodeWithSelector(RobinHook.LiquidityLocked.selector),
                     abi.encodeWithSelector(Hooks.HookCallFailed.selector)
                 )
             );
@@ -303,7 +303,7 @@ contract AuditFixesTest is Test, Deployers {
                 CustomRevert.WrappedError.selector,
                 address(e.hook),
                 IHooks.afterSwap.selector,
-                abi.encodeWithSelector(TrollHook.PartialFillUnsupported.selector),
+                abi.encodeWithSelector(RobinHook.PartialFillUnsupported.selector),
                 abi.encodeWithSelector(Hooks.HookCallFailed.selector)
             )
         );
@@ -320,49 +320,49 @@ contract AuditFixesTest is Test, Deployers {
     // ------------------------------------------------------------------
 
     function test_BootstrapFactoryRejectsNonFactoriesAndMiswiredFactories() public {
-        TrollHook h = _hook();
-        vm.expectRevert(TrollHook.InvalidFactory.selector);
+        RobinHook h = _hook();
+        vm.expectRevert(RobinHook.InvalidFactory.selector);
         h.bootstrapFactory(makeAddr("eoa"));
 
-        TrollHook other = _hook();
-        TrollPadFactory wrong =
-            new TrollPadFactory(address(manager), address(other), makeAddr("treasury"), address(1), address(new PadRevenueSplitter()), 100e6, address(this));
-        vm.expectRevert(TrollHook.InvalidFactory.selector);
+        RobinHook other = _hook();
+        RobinPadFactory wrong =
+            new RobinPadFactory(address(manager), address(other), makeAddr("treasury"), address(1), address(new PadRevenueSplitter()), 100e6, address(this));
+        vm.expectRevert(RobinHook.InvalidFactory.selector);
         h.bootstrapFactory(address(wrong));
 
-        TrollPadFactory right =
-            new TrollPadFactory(address(manager), address(h), makeAddr("treasury"), address(1), address(new PadRevenueSplitter()), 100e6, address(this));
+        RobinPadFactory right =
+            new RobinPadFactory(address(manager), address(h), makeAddr("treasury"), address(1), address(new PadRevenueSplitter()), 100e6, address(this));
         h.bootstrapFactory(address(right));
         assertEq(h.factory(), address(right));
     }
 
     function test_RenounceClosesTheFactorySlotForGood() public {
-        TrollHook h = _hook();
+        RobinHook h = _hook();
         vm.prank(attacker);
-        vm.expectRevert(TrollHook.NotBootstrapper.selector);
+        vm.expectRevert(RobinHook.NotBootstrapper.selector);
         h.renounceFactoryBootstrap();
 
         h.renounceFactoryBootstrap();
         assertTrue(h.factoryBootstrapped());
         assertEq(h.factory(), address(0));
 
-        TrollPadFactory f =
-            new TrollPadFactory(address(manager), address(h), makeAddr("treasury"), address(1), address(new PadRevenueSplitter()), 100e6, address(this));
-        vm.expectRevert(TrollHook.AlreadyBootstrapped.selector);
+        RobinPadFactory f =
+            new RobinPadFactory(address(manager), address(h), makeAddr("treasury"), address(1), address(new PadRevenueSplitter()), 100e6, address(this));
+        vm.expectRevert(RobinHook.AlreadyBootstrapped.selector);
         h.bootstrapFactory(address(f));
     }
 
     function test_FactoryConstructorRejectsBadWiring() public {
-        TrollHook h = _hook();
+        RobinHook h = _hook();
         address impl = address(new PadRevenueSplitter());
-        vm.expectRevert(TrollPadFactory.HookMismatch.selector);
-        new TrollPadFactory(makeAddr("otherManager"), address(h), makeAddr("t"), address(1), impl, 100e6, address(this));
-        vm.expectRevert(TrollPadFactory.FeeTooHigh.selector);
-        new TrollPadFactory(address(manager), address(h), makeAddr("t"), address(1), impl, 100e18, address(this));
-        vm.expectRevert(TrollPadFactory.ZeroAddress.selector);
-        new TrollPadFactory(address(manager), address(h), address(0), address(1), impl, 100e6, address(this));
-        vm.expectRevert(TrollPadFactory.ZeroAddress.selector); // a splitter implementation with no code
-        new TrollPadFactory(address(manager), address(h), makeAddr("t"), address(1), makeAddr("noCode"), 100e6, address(this));
+        vm.expectRevert(RobinPadFactory.HookMismatch.selector);
+        new RobinPadFactory(makeAddr("otherManager"), address(h), makeAddr("t"), address(1), impl, 100e6, address(this));
+        vm.expectRevert(RobinPadFactory.FeeTooHigh.selector);
+        new RobinPadFactory(address(manager), address(h), makeAddr("t"), address(1), impl, 100e18, address(this));
+        vm.expectRevert(RobinPadFactory.ZeroAddress.selector);
+        new RobinPadFactory(address(manager), address(h), address(0), address(1), impl, 100e6, address(this));
+        vm.expectRevert(RobinPadFactory.ZeroAddress.selector); // a splitter implementation with no code
+        new RobinPadFactory(address(manager), address(h), makeAddr("t"), address(1), makeAddr("noCode"), 100e6, address(this));
     }
 
     function test_PortalCannotRegisterAPoolItDidNotInitialize() public {
@@ -370,7 +370,7 @@ contract AuditFixesTest is Test, Deployers {
         PoolKey memory squat = e.key;
         squat.currency1 = Currency.wrap(makeAddr("predictedNextToken")); // some other pool on this hook
         vm.prank(address(e.portal)); // authorized, but never initialized this key
-        vm.expectRevert(TrollHook.NotInitializer.selector);
+        vm.expectRevert(RobinHook.NotInitializer.selector);
         e.hook.registerPool(squat, e.splitter, e.locker, LOW_QUOTE, false, 100, 100);
     }
 
@@ -391,17 +391,17 @@ contract AuditFixesTest is Test, Deployers {
         assertGt(uint256(bought), 1e27 / 2, "one buyer may take most of the supply; no max-wallet");
 
         // Selling the whole bag straight back works in the same block — no cooldown, not a honeypot.
-        uint256 bal = TrollLaunchToken(e.token).balanceOf(trader);
+        uint256 bal = RobinLaunchToken(e.token).balanceOf(trader);
         (int256 got,) = _swap(e, false, -int256(bal));
         assertGt(got, 0, "sell-all must succeed");
-        assertEq(TrollLaunchToken(e.token).balanceOf(trader), 0);
+        assertEq(RobinLaunchToken(e.token).balanceOf(trader), 0);
 
         // Wallet-to-wallet transfers are plain ERC-20: no tax, no restriction.
         (, int256 again) = _swap(e, true, -int256(10e6));
         address friend = makeAddr("friend");
         vm.prank(trader);
-        TrollLaunchToken(e.token).transfer(friend, uint256(again));
-        assertEq(TrollLaunchToken(e.token).balanceOf(friend), uint256(again), "transfers are never taxed");
+        RobinLaunchToken(e.token).transfer(friend, uint256(again));
+        assertEq(RobinLaunchToken(e.token).balanceOf(friend), uint256(again), "transfers are never taxed");
     }
 
     function test_NoTradingRestrictions_TokenIsCurrency1() public {
@@ -420,15 +420,15 @@ contract AuditFixesTest is Test, Deployers {
         Env memory e = _launch(LOW_QUOTE);
         e.quote.mint(e.splitter, 1_000e6); // e.g. someone mistook the splitter for a pay-in address
 
-        TrollRevenueSplitter(e.splitter).sweepSurplus(LOW_QUOTE);
-        assertEq(TrollRevenueSplitter(e.splitter).creditedToPlatform(LOW_QUOTE), 100e6);
-        assertEq(TrollRevenueSplitter(e.splitter).creditedToCreator(LOW_QUOTE), 900e6);
+        RobinRevenueSplitter(e.splitter).sweepSurplus(LOW_QUOTE);
+        assertEq(RobinRevenueSplitter(e.splitter).creditedToPlatform(LOW_QUOTE), 100e6);
+        assertEq(RobinRevenueSplitter(e.splitter).creditedToCreator(LOW_QUOTE), 900e6);
 
-        vm.expectRevert(TrollRevenueSplitter.NothingToClaim.selector);
-        TrollRevenueSplitter(e.splitter).sweepSurplus(LOW_QUOTE);
+        vm.expectRevert(RobinRevenueSplitter.NothingToClaim.selector);
+        RobinRevenueSplitter(e.splitter).sweepSurplus(LOW_QUOTE);
 
         vm.prank(creator);
-        vm.expectRevert(TrollRevenueSplitter.InvalidRecipient.selector);
-        TrollRevenueSplitter(e.splitter).claim(e.splitter, LOW_QUOTE);
+        vm.expectRevert(RobinRevenueSplitter.InvalidRecipient.selector);
+        RobinRevenueSplitter(e.splitter).claim(e.splitter, LOW_QUOTE);
     }
 }

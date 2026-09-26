@@ -13,11 +13,11 @@ separate deploys:
 
 | contract | role |
 |---|---|
-| `TrollTreasury` | shared treasury; receives the platform cut in USDG; owner withdraws |
-| `TrollHook` | the one shared Uniswap v4 hook (mined address, flags `0x28CC`): swap tax in USDG, pool creation and liquidity gated |
-| `TrollPortal` | the original main pad. Deployed mainly to fill the hook's one-shot main-portal slot, which has no renounce. It also works as a plain pad (10% platform / 90% creator) |
+| `RobinTreasury` | shared treasury; receives the platform cut in USDG; owner withdraws |
+| `RobinHook` | the one shared Uniswap v4 hook (mined address, flags `0x28CC`): swap tax in USDG, pool creation and liquidity gated |
+| `RobinPortal` | the original main pad. Deployed mainly to fill the hook's one-shot main-portal slot, which has no renounce. It also works as a plain pad (10% platform / 90% creator) |
 | `PadRevenueSplitter` | implementation every white-label launch's splitter is cloned from |
-| `TrollPadFactory` | sells white-label pads (`PAD_SETUP_FEE`, default $100 in USDG); owner can approve templates. Plugged into the hook, which closes the hook's factory slot |
+| `RobinPadFactory` | sells white-label pads (`PAD_SETUP_FEE`, default $100 in USDG); owner can approve templates. Plugged into the hook, which closes the hook's factory slot |
 | `PadPortalTemplate` | template #1 (plain pads), created by the factory |
 | `HolderTokenDeployer`, `HolderPadTemplate` | template #2: pads whose creators can pay holders dividends in USDG; approved on the factory |
 | house pad (`HolderPadPortal`) | the pad the site points at: platform 10%, tax 0-10%, opening market cap $100-$10k, no launch fee, open to all |
@@ -30,6 +30,18 @@ cannot authorize any other pool-creating contract afterwards.
 - **Gas is ETH.** The whole deploy is about 33M gas: about 0.001 ETH at
   2026-09-26's 0.029 gwei. Hold ~0.005 ETH for headroom. It needs **no USDG**.
 - **`--legacy` is required.** Robinhood Chain takes type-0 transactions only.
+- **Pass `--with-gas-price 40000000` (0.04 gwei).** With `--legacy`, forge
+  prices every transaction at the base fee it quoted at the start, with no
+  headroom. On 2026-09-26 the base fee rose by 0.03% between quote and send
+  and every transaction after the first was rejected ("max fee per gas less
+  than block base fee"). 0.04 gwei is ~40% above that day's base fee. The
+  chain only charges the base fee, so it costs no more in practice, but the
+  wallet must hold enough to cover the higher cap up front.
+- **A deploy that stops partway is safe to run again from the start.** Each
+  contract is only wired to the ones deployed in the same run, so anything
+  from an interrupted run is simply left unused. The one thing that can't be
+  redone is the hook's address; if the hook itself did land, re-mining
+  finds a different one automatically.
 - **Toolchain is pinned** in `foundry.toml` (solc 0.8.26, cancun,
   `bytecode_hash = "none"`). The hook's CREATE2 salt is mined against the
   exact init code, so build with that config. The script re-checks the mined
@@ -51,7 +63,7 @@ ROBINHOOD_FORK_URL=https://rpc.mainnet.chain.robinhood.com forge test   # 86 tes
 
 HOUSE_PAD_NAME="Robin Labs Pad" forge script script/DeployRobinhood.s.sol:DeployRobinhood \
   --rpc-url https://rpc.mainnet.chain.robinhood.com \
-  --broadcast --slow --legacy --account <keystore-name> --sender <address>
+  --broadcast --slow --legacy --with-gas-price 40000000 --account <keystore-name> --sender <address>
 ```
 
 Save every address it prints. The house pad's address is the one the site
@@ -80,10 +92,9 @@ and claimed in USDG, creator and platform paid exactly).
    reject scripted requests; if every attempt gets a 403 "Just a moment..."
    page, retry later or use the explorer's web form.
 2. Point the frontend at the house pad (and the factory, for white-label
-   pads). The Arc frontend lives in `PettyMiggzy/tr` (`troll-pad-web`,
-   `trolls-factory-web`) and has not been ported yet.
+   pads). The website has not been ported or reskinned for Robin Labs yet.
 3. Treasury: the owner withdraws accumulated USDG with
-   `TrollTreasury.withdraw(USDG, to, amount)`. Nothing is automated.
+   `RobinTreasury.withdraw(USDG, to, amount)`. Nothing is automated.
 
 ## Things that differ from Arc
 
@@ -91,7 +102,7 @@ and claimed in USDG, creator and platform paid exactly).
   6 decimals, Paxos), not Arc's USDC predeploy. Same decimals, so every raw
   amount in the contracts (`100e6` = $100) means the same dollars. Wherever
   the source comments say "USDC", read "the quote asset".
-- **Gas:** ETH, not USDC. `TrollTreasury.receive()` therefore accepts ETH
+- **Gas:** ETH, not USDC. `RobinTreasury.receive()` therefore accepts ETH
   here; the owner can withdraw it with `withdraw(address(0), ...)`.
 - **Address ordering:** USDG sorts at `0x5f…`, Arc's USDC at `0x36…`, so a
   larger share of coins land as `currency0`. Both orderings were already

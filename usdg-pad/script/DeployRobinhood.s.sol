@@ -7,7 +7,7 @@ import {RobinhoodStack} from "./RobinhoodStack.sol";
 /// @notice Fresh deploy of the whole pad on Robinhood Chain (chain 4663),
 /// quoted in USDG. One broadcast; see RobinhoodStack.sol for what it builds.
 ///
-/// Arc reached the same state in three steps (DeployTrollPad.s.sol,
+/// Arc reached the same state in three steps (DeployRobinPad.s.sol,
 /// DeployPadFactory.s.sol, DeployHolderPad.s.sol). Those scripts upgrade
 /// Arc's live contracts and hardcode Arc addresses, so they are Arc-only
 /// history; on Robinhood run this one instead.
@@ -16,7 +16,7 @@ import {RobinhoodStack} from "./RobinhoodStack.sol";
 ///   bash script/setup-deps.sh && forge build
 ///   forge script script/DeployRobinhood.s.sol:DeployRobinhood \
 ///     --rpc-url https://rpc.mainnet.chain.robinhood.com \
-///     --broadcast --slow --legacy --account <keystore-name> --sender <address>
+///     --broadcast --slow --legacy --with-gas-price 40000000 --account <keystore-name> --sender <address>
 ///
 /// `--legacy` is required: Robinhood Chain takes type-0 transactions only.
 /// Gas is ETH, not USDG. The deploy needs no USDG at all.
@@ -43,11 +43,11 @@ contract DeployRobinhood is Script, RobinhoodStack {
         s = _deployStack(deployer, CREATE2_DEPLOYER, setupFee, name);
         vm.stopBroadcast();
 
-        console2.log("TrollTreasury:", address(s.treasury));
-        console2.log("TrollHook:", address(s.hook));
-        console2.log("TrollPortal (main portal, closes the hook's one-shot slot):", address(s.mainPortal));
+        console2.log("RobinTreasury:", address(s.treasury));
+        console2.log("RobinHook:", address(s.hook));
+        console2.log("RobinPortal (main portal, closes the hook's one-shot slot):", address(s.mainPortal));
         console2.log("PadRevenueSplitter implementation:", address(s.splitterImpl));
-        console2.log("TrollPadFactory:", address(s.factory));
+        console2.log("RobinPadFactory:", address(s.factory));
         console2.log("PadPortalTemplate (template #1):", s.factory.padPortalTemplate());
         console2.log("HolderTokenDeployer:", address(s.tokenDeployer));
         console2.log("HolderPadTemplate (template #2, approved):", address(s.holderTemplate));

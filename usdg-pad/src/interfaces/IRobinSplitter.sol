@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-interface ITrollSplitter {
+interface IRobinSplitter {
     /// @notice Splits `amount` of `quoteAsset` (already transferred to the
     /// splitter by the caller) into platform and creator credits — nothing
-    /// is pushed out. See TrollRevenueSplitter for the exact ratio.
+    /// is pushed out. See RobinRevenueSplitter for the exact ratio.
     function depositRevenue(address quoteAsset, uint256 amount) external;
 
     /// @notice Pays the creator's accrued `quoteAsset` balance to `to`.

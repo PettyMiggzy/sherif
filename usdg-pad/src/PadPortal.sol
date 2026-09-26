@@ -14,40 +14,40 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
-import {TrollLaunchToken} from "./TrollLaunchToken.sol";
+import {RobinLaunchToken} from "./RobinLaunchToken.sol";
 import {PadRevenueSplitter} from "./PadRevenueSplitter.sol";
-import {TrollHook} from "./TrollHook.sol";
-import {TrollLocker} from "./TrollLocker.sol";
+import {RobinHook} from "./RobinHook.sol";
+import {RobinLocker} from "./RobinLocker.sol";
 
-/// @notice A launchpad deployed by TrollPadFactory: Troll Pad itself (a
-/// "house pad", Troll takes 10%) or a white-label pad bought by anyone
-/// (Troll takes 15%). Launches work exactly like the original TrollPortal:
+/// @notice A launchpad deployed by RobinPadFactory: Robin Labs Pad itself (a
+/// "house pad", Robin Labs takes 10%) or a white-label pad bought by anyone
+/// (Robin Labs takes 15%). Launches work exactly like the original RobinPortal:
 /// the full 1B supply goes into a real Uniswap v4 pool on the shared
-/// TrollHook in one transaction, the liquidity is locked forever, and the
+/// RobinHook in one transaction, the liquidity is locked forever, and the
 /// token is a plain ERC-20 with no trading restrictions: no anti-snipe, no
 /// limits, no blacklist, no pause.
 ///
 /// Money: every launch gets its own PadRevenueSplitter (a clone). It pays
-/// Troll `platformShareBps`, the pad owner the share their pad charges, and
+/// Robin Labs `platformShareBps`, the pad owner the share their pad charges, and
 /// splits the creator's share by the creator's own fee allocation (up to 5
 /// payout wallets plus buyback & burn), all locked at launch. The pad owner
 /// may also charge a launch fee of up to $1,000, split the same way between
-/// Troll and the pad owner.
+/// Robin Labs and the pad owner.
 ///
 /// The pad owner controls their pad: their share, the launch fee, the
 /// minimum and maximum tax, the minimum and maximum starting market cap
-/// (Troll Pad caps it at $10k), pausing new launches, and an invite-only
+/// (Robin Labs Pad caps it at $10k), pausing new launches, and an invite-only
 /// mode. None of it touches trading, and each
 /// setting applies to launches after the change. A creator passes the
 /// highest pad share and launch fee they accept, so a change can't catch
 /// them out mid-transaction. The launch mechanics (_seedLaunchPool) are
-/// TrollPortal's, audited and fork-tested; keep the two in step.
+/// RobinPortal's, audited and fork-tested; keep the two in step.
 contract PadPortal {
     using PoolIdLibrary for PoolKey;
     using SafeERC20 for IERC20;
 
     struct PadSettings {
-        uint16 padOwnerShareBps; // pad owner's share of each launch's revenue; at most 100% minus Troll's share
+        uint16 padOwnerShareBps; // pad owner's share of each launch's revenue; at most 100% minus Robin Labs' share
         uint16 minTaxBps; // lowest buy/sell tax a creator may pick on this pad
         uint16 maxTaxBps; // highest buy/sell tax, at most 1000 (10%)
         uint256 launchFee; // charged per launch in quoteAsset raw units, at most MAX_LAUNCH_FEE
@@ -88,13 +88,13 @@ contract PadPortal {
     address public immutable quoteAsset; // USDC on Arc
     address public immutable factory;
     address public immutable splitterImplementation;
-    uint16 public immutable platformShareBps; // Troll's share of revenue and launch fees: 1000 house pad, 1500 white-label
+    uint16 public immutable platformShareBps; // Robin Labs' share of revenue and launch fees: 1000 house pad, 1500 white-label
 
     uint256 public constant TOTAL_SUPPLY = 1_000_000_000 ether;
     uint16 public constant MAX_TAX_BPS = 1_000; // 10% per side
     uint24 public constant POOL_FEE = 10_000; // 1%
     int24 public constant TICK_SPACING = 200;
-    uint256 public constant MIN_STARTING_MC_QUOTE = 100e6; // $100, see TrollPortal (audit M-2)
+    uint256 public constant MIN_STARTING_MC_QUOTE = 100e6; // $100, see RobinPortal (audit M-2)
     uint256 public constant MAX_STARTING_MC_QUOTE = 1_000_000_000_000e6; // $1T
     uint256 public constant BPS_DENOMINATOR = 10_000;
     uint256 public constant MAX_LAUNCH_FEE = 1_000e6; // $1,000
@@ -118,7 +118,7 @@ contract PadPortal {
     error LaunchesPaused();
     error NotApproved();
 
-    // Same signature as TrollPortal.LaunchCreated, so every existing indexer,
+    // Same signature as RobinPortal.LaunchCreated, so every existing indexer,
     // the SDK and the web app read pad launches unchanged.
     event LaunchCreated(
         address indexed token,
@@ -202,7 +202,7 @@ contract PadPortal {
         }
     }
 
-    /// @notice Most pad owner share a pad can charge: everything but Troll's share.
+    /// @notice Most pad owner share a pad can charge: everything but Robin Labs' share.
     function maxPadOwnerShareBps() external view returns (uint16) {
         return uint16(BPS_DENOMINATOR - platformShareBps);
     }
@@ -254,7 +254,7 @@ contract PadPortal {
             IERC20(quoteAsset).safeTransferFrom(msg.sender, padOwner, s.launchFee - platformCut);
         }
 
-        token = address(new TrollLaunchToken(p.name, p.symbol, TOTAL_SUPPLY, address(this)));
+        token = address(new RobinLaunchToken(p.name, p.symbol, TOTAL_SUPPLY, address(this)));
         address splitter = Clones.clone(splitterImplementation);
         PadRevenueSplitter(splitter).initialize(
             PadRevenueSplitter.InitParams({
@@ -313,7 +313,7 @@ contract PadPortal {
         emit PadOwnerFeesClaimed(padOwner, total);
     }
 
-    /// @notice Sends Troll's share from launches [from, to) to the treasury.
+    /// @notice Sends Robin Labs' share from launches [from, to) to the treasury.
     /// Anyone may call.
     function claimPlatformFees(uint256 from, uint256 to) external returns (uint256 total) {
         uint256 end = to < allLaunches.length ? to : allLaunches.length;
@@ -342,11 +342,11 @@ contract PadPortal {
 
     // ------------------------------------------------------ launch mechanics
 
-    /// @dev TrollPortal._seedLaunchPool, unchanged: initialize the pool at
+    /// @dev RobinPortal._seedLaunchPool, unchanged: initialize the pool at
     /// the position's near edge, deploy the locker, register with the hook,
     /// seed the full supply as one single-sided position, and lock the
     /// splitter's revenue sources to the hook and the locker. See
-    /// TrollPortal for the full reasoning behind each step.
+    /// RobinPortal for the full reasoning behind each step.
     function _seedLaunchPool(
         address token,
         address splitter,
@@ -394,11 +394,11 @@ contract PadPortal {
         startingSqrtPriceX96 = TickMath.getSqrtPriceAtTick(tokenIsToken0 ? tickLower : tickUpper);
         IPoolManager(poolManager).initialize(key, startingSqrtPriceX96);
 
-        TrollLocker lockerContract =
-            new TrollLocker(poolManager, splitter, address(this), key, tickLower, tickUpper, tokenIsToken0);
+        RobinLocker lockerContract =
+            new RobinLocker(poolManager, splitter, address(this), key, tickLower, tickUpper, tokenIsToken0);
         r.locker = address(lockerContract);
 
-        TrollHook(hook).registerPool(key, splitter, r.locker, quoteAsset, tokenIsToken0, buyTaxBps, sellTaxBps);
+        RobinHook(hook).registerPool(key, splitter, r.locker, quoteAsset, tokenIsToken0, buyTaxBps, sellTaxBps);
 
         IERC20(token).safeTransfer(r.locker, TOTAL_SUPPLY);
         lockerContract.seedLiquidity(liquidity);

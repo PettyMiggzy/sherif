@@ -45,9 +45,9 @@ verify() { # address, contract, constructor-args ("" for none)
   fi
 }
 
-verify "$TREASURY" src/TrollTreasury.sol:TrollTreasury "$(cast abi-encode 'constructor(address)' "$DEPLOYER")"
-verify "$HOOK" src/TrollHook.sol:TrollHook "$(cast abi-encode 'constructor(address,address)' "$POOL_MANAGER" "$DEPLOYER")"
-verify "$PORTAL" src/TrollPortal.sol:TrollPortal \
+verify "$TREASURY" src/RobinTreasury.sol:RobinTreasury "$(cast abi-encode 'constructor(address)' "$DEPLOYER")"
+verify "$HOOK" src/RobinHook.sol:RobinHook "$(cast abi-encode 'constructor(address,address)' "$POOL_MANAGER" "$DEPLOYER")"
+verify "$PORTAL" src/RobinPortal.sol:RobinPortal \
   "$(cast abi-encode 'constructor(address,address,address,address,bool)' "$POOL_MANAGER" "$HOOK" "$TREASURY" "$USDG" true)"
 if [ -n "${FACTORY:-}" ]; then
   # Owner = the deployer (see script/RobinhoodStack.sol). The splitter
@@ -55,7 +55,7 @@ if [ -n "${FACTORY:-}" ]; then
   SPLITTER_IMPL=$(cast call "$FACTORY" 'splitterImplementation()(address)' --rpc-url "$RPC")
   TEMPLATE=$(cast call "$FACTORY" 'padPortalTemplate()(address)' --rpc-url "$RPC")
   verify "$SPLITTER_IMPL" src/PadRevenueSplitter.sol:PadRevenueSplitter ""
-  verify "$FACTORY" src/TrollPadFactory.sol:TrollPadFactory \
+  verify "$FACTORY" src/RobinPadFactory.sol:RobinPadFactory \
     "$(cast abi-encode 'constructor(address,address,address,address,address,uint256,address)' "$POOL_MANAGER" "$HOOK" "$TREASURY" "$USDG" "$SPLITTER_IMPL" "${PAD_SETUP_FEE:-100000000}" "$DEPLOYER")"
   # Created by the factory's constructor, so the factory is its deployer.
   verify "$TEMPLATE" src/PadPortalTemplate.sol:PadPortalTemplate \
@@ -88,6 +88,6 @@ if [ -n "${LAUNCH_TOKEN:-}" ]; then
   # Constructor args read back from the token itself: name, symbol, 1B supply, minted to the portal.
   NAME=$(cast call "$LAUNCH_TOKEN" 'name()(string)' --rpc-url "$RPC")
   SYMBOL=$(cast call "$LAUNCH_TOKEN" 'symbol()(string)' --rpc-url "$RPC")
-  verify "$LAUNCH_TOKEN" src/TrollLaunchToken.sol:TrollLaunchToken \
+  verify "$LAUNCH_TOKEN" src/RobinLaunchToken.sol:RobinLaunchToken \
     "$(cast abi-encode 'constructor(string,string,uint256,address)' "$NAME" "$SYMBOL" 1000000000000000000000000000 "$PORTAL")"
 fi

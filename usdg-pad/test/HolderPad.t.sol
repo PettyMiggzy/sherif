@@ -16,31 +16,31 @@ import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {HookMiner} from "@uniswap/v4-periphery/test/shared/HookMiner.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {TrollHook} from "../src/TrollHook.sol";
-import {TrollTreasury} from "../src/TrollTreasury.sol";
-import {TrollPadFactory} from "../src/TrollPadFactory.sol";
+import {RobinHook} from "../src/RobinHook.sol";
+import {RobinTreasury} from "../src/RobinTreasury.sol";
+import {RobinPadFactory} from "../src/RobinPadFactory.sol";
 import {PadPortal} from "../src/PadPortal.sol";
 import {PadRevenueSplitter} from "../src/PadRevenueSplitter.sol";
-import {TrollLaunchToken} from "../src/TrollLaunchToken.sol";
+import {RobinLaunchToken} from "../src/RobinLaunchToken.sol";
 import {HolderPadPortal} from "../src/HolderPadPortal.sol";
 import {HolderPadTemplate} from "../src/HolderPadTemplate.sol";
 import {HolderTokenDeployer} from "../src/HolderTokenDeployer.sol";
-import {TrollHolderToken} from "../src/TrollHolderToken.sol";
+import {RobinHolderToken} from "../src/RobinHolderToken.sol";
 
 /// @notice Holder dividends: HolderPadTemplate through the factory's
-/// template slot, HolderPadPortal launches and TrollHolderToken payouts,
-/// on a local PoolManager with the real TrollHook.
+/// template slot, HolderPadPortal launches and RobinHolderToken payouts,
+/// on a local PoolManager with the real RobinHook.
 contract HolderPadTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
 
     MockERC20 usdc;
-    TrollHook hook;
-    TrollTreasury treasury;
-    TrollPadFactory factory;
+    RobinHook hook;
+    RobinTreasury treasury;
+    RobinPadFactory factory;
     PadRevenueSplitter splitterImpl;
     HolderTokenDeployer tokenDeployer;
     HolderPadTemplate template;
-    HolderPadPortal pad; // the holders house pad (Troll takes 10%)
+    HolderPadPortal pad; // the holders house pad (Robin Labs takes 10%)
 
     address padOwner = makeAddr("padOwner");
     address creator = makeAddr("creator");
@@ -61,12 +61,12 @@ contract HolderPadTest is Test, Deployers {
                 | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
         );
         bytes memory args = abi.encode(address(manager), address(this));
-        (address predicted, bytes32 salt) = HookMiner.find(address(this), flags, type(TrollHook).creationCode, args);
-        hook = new TrollHook{salt: salt}(address(manager), address(this));
+        (address predicted, bytes32 salt) = HookMiner.find(address(this), flags, type(RobinHook).creationCode, args);
+        hook = new RobinHook{salt: salt}(address(manager), address(this));
         require(address(hook) == predicted, "hook address mismatch");
-        treasury = new TrollTreasury(makeAddr("treasuryOwner"));
+        treasury = new RobinTreasury(makeAddr("treasuryOwner"));
         splitterImpl = new PadRevenueSplitter();
-        factory = new TrollPadFactory(
+        factory = new RobinPadFactory(
             address(manager), address(hook), address(treasury), address(usdc), address(splitterImpl), 100e6, address(this)
         );
         hook.bootstrapFactory(address(factory));
@@ -79,7 +79,7 @@ contract HolderPadTest is Test, Deployers {
         );
         factory.setTemplateApproved(address(template), true);
         pad = HolderPadPortal(
-            factory.deployHousePadFromTemplate(address(template), "Troll Pad", padOwner, abi.encode(_settings()))
+            factory.deployHousePadFromTemplate(address(template), "Robin Labs Pad", padOwner, abi.encode(_settings()))
         );
 
         usdc.mint(creator, 100_000e6);
@@ -105,7 +105,7 @@ contract HolderPadTest is Test, Deployers {
 
     function _params(uint16 taxBps) internal pure returns (PadPortal.CreateLaunchParams memory) {
         return PadPortal.CreateLaunchParams({
-            name: "Holder Troll", symbol: "HTROLL", startingMarketCapQuote: STARTING_MC, buyTaxBps: taxBps, sellTaxBps: taxBps
+            name: "Holder Robin Labs", symbol: "HROBIN", startingMarketCapQuote: STARTING_MC, buyTaxBps: taxBps, sellTaxBps: taxBps
         });
     }
 
@@ -122,16 +122,16 @@ contract HolderPadTest is Test, Deployers {
 
     function _launch(PadPortal.FeeAllocation memory a, uint16 holdersBps, uint16 taxBps)
         internal
-        returns (TrollHolderToken token, PadRevenueSplitter sp)
+        returns (RobinHolderToken token, PadRevenueSplitter sp)
     {
         vm.prank(creator);
         (address t,) = pad.createLaunchWithHolders(_params(taxBps), a, holdersBps, 0, 0);
-        token = TrollHolderToken(t);
+        token = RobinHolderToken(t);
         sp = PadRevenueSplitter(pad.splitterForToken(t));
     }
 
     /// @dev Rounding dust the locker keeps from seeding the pool (a few wei).
-    function _dust(TrollHolderToken token) internal view returns (uint256) {
+    function _dust(RobinHolderToken token) internal view returns (uint256) {
         return token.balanceOf(pad.lockerForToken(address(token)));
     }
 
@@ -182,17 +182,17 @@ contract HolderPadTest is Test, Deployers {
 
     // -------------------------------------------------------------- the pad
 
-    function test_TemplateBuildsAHousePadWiredLikeTrollPad() public view {
+    function test_TemplateBuildsAHousePadWiredLikeRobinPad() public view {
         assertTrue(factory.isPad(address(pad)));
         assertTrue(factory.isHousePad(address(pad)));
         assertEq(factory.templateOf(address(pad)), address(template));
         assertTrue(hook.isAuthorizedPortal(address(pad)), "the hook trusts the holders pad");
-        assertEq(pad.platformShareBps(), 1_000, "Troll takes 10% on a house pad");
+        assertEq(pad.platformShareBps(), 1_000, "Robin Labs takes 10% on a house pad");
         assertEq(pad.padOwner(), padOwner);
         assertEq(pad.factory(), address(template));
         assertEq(pad.holderTokenDeployer(), address(tokenDeployer));
         (,,,,,,, uint256 maxMc) = pad.settings();
-        assertEq(maxMc, 10_000e6, "same $10k cap as Troll Pad");
+        assertEq(maxMc, 10_000e6, "same $10k cap as Robin Labs Pad");
     }
 
     function test_OnlyTheFactoryCanUseTheTemplate() public {
@@ -228,10 +228,10 @@ contract HolderPadTest is Test, Deployers {
         (address token,) = pad.createLaunch(_params(300), a, 0, 0);
         assertEq(pad.holdersBpsForToken(token), 0);
         assertEq(
-            TrollLaunchToken(token).balanceOf(address(manager)) + TrollLaunchToken(token).balanceOf(pad.lockerForToken(token)),
+            RobinLaunchToken(token).balanceOf(address(manager)) + RobinLaunchToken(token).balanceOf(pad.lockerForToken(token)),
             TOTAL_SUPPLY
         );
-        // A plain TrollLaunchToken: no dividend functions.
+        // A plain RobinLaunchToken: no dividend functions.
         (bool ok,) = token.call(abi.encodeWithSignature("distribute()"));
         assertFalse(ok, "plain launches get the plain token");
         uint256 got = _swap(alice, token, true, 100e6);
@@ -239,7 +239,7 @@ contract HolderPadTest is Test, Deployers {
     }
 
     function test_HolderLaunchAddsTheTokenAsTheLastPayoutWallet() public {
-        (TrollHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 300);
+        (RobinHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 300);
         (address[] memory r, uint16[] memory bps, uint16 buyback) = sp.allocation();
         assertEq(r.length, 3);
         assertEq(r[0], creator);
@@ -265,7 +265,7 @@ contract HolderPadTest is Test, Deployers {
         PadPortal.FeeAllocation memory none;
         none.recipients = new address[](0);
         none.recipientBps = new uint16[](0);
-        (TrollHolderToken token, PadRevenueSplitter sp) = _launch(none, 10_000, 300);
+        (RobinHolderToken token, PadRevenueSplitter sp) = _launch(none, 10_000, 300);
         (address[] memory r,,) = sp.allocation();
         assertEq(r.length, 1);
         assertEq(r[0], address(token), "100% to holders is allowed");
@@ -311,7 +311,7 @@ contract HolderPadTest is Test, Deployers {
             four.recipients[i] = address(uint160(0x1000 + i));
             four.recipientBps[i] = 2_000;
         }
-        (TrollHolderToken token,) = _launch(four, 2_000, 300);
+        (RobinHolderToken token,) = _launch(four, 2_000, 300);
         assertEq(token.holdersSlot(), 4);
     }
 
@@ -361,7 +361,7 @@ contract HolderPadTest is Test, Deployers {
         usdc.approve(address(pad), 50e6);
         (address token,) = pad.createLaunchWithHolders(_params(300), _alloc(), 2_000, 1_000, 50e6);
         vm.stopPrank();
-        assertEq(usdc.balanceOf(address(treasury)), treasuryBefore + 5e6, "Troll gets 10% of the launch fee");
+        assertEq(usdc.balanceOf(address(treasury)), treasuryBefore + 5e6, "Robin Labs gets 10% of the launch fee");
         assertEq(usdc.balanceOf(padOwner), ownerBefore + 45e6);
         assertEq(PadRevenueSplitter(pad.splitterForToken(token)).padOwnerShareBps(), 1_000);
     }
@@ -379,7 +379,7 @@ contract HolderPadTest is Test, Deployers {
 
     function test_EmitsTheSameLaunchEventPlusTheHolderShare() public {
         vm.recordLogs();
-        (TrollHolderToken token,) = _launch(_alloc(), 2_000, 300);
+        (RobinHolderToken token,) = _launch(_alloc(), 2_000, 300);
         bytes32 launchSig = keccak256(
             "LaunchCreated(address,address,address,address,bytes32,address,bool,uint16,uint16,int24,int24,uint160,string,string)"
         );
@@ -404,7 +404,7 @@ contract HolderPadTest is Test, Deployers {
     // ------------------------------------------------------------ dividends
 
     function test_HoldersSplitTheirSharePerBalanceAndClaimUsdc() public {
-        (TrollHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 500);
+        (RobinHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 500);
         uint256 a = _swap(alice, address(token), true, 300e6);
         uint256 b = _swap(bob, address(token), true, 100e6);
         uint256 revenue = _flush(address(token));
@@ -436,11 +436,11 @@ contract HolderPadTest is Test, Deployers {
         uint256 creatorPool = revenue - (revenue * 1_000) / 10_000;
         assertEq(sp.buybackCredit(), (creatorPool * 1_000) / 10_000);
         assertEq(sp.creditOf(marketing), (creatorPool * 2_000) / 10_000);
-        assertEq(sp.platformCredit(), (revenue * 1_000) / 10_000, "Troll's 10% off the top");
+        assertEq(sp.platformCredit(), (revenue * 1_000) / 10_000, "Robin Labs' 10% off the top");
     }
 
     function test_ClaimSharesOutNewMoneyFirst() public {
-        (TrollHolderToken token,) = _launch(_alloc(), 2_000, 500);
+        (RobinHolderToken token,) = _launch(_alloc(), 2_000, 500);
         uint256 a = _swap(alice, address(token), true, 200e6);
         uint256 revenue = _flush(address(token));
         // No distribute() call: claim does it.
@@ -453,7 +453,7 @@ contract HolderPadTest is Test, Deployers {
     }
 
     function test_EarningsStayAfterSellingAndNewBuyersDontGetOldMoney() public {
-        (TrollHolderToken token,) = _launch(_alloc(), 2_000, 500);
+        (RobinHolderToken token,) = _launch(_alloc(), 2_000, 500);
         uint256 a = _swap(alice, address(token), true, 300e6);
         uint256 revenue1 = _flush(address(token));
         token.distribute();
@@ -475,7 +475,7 @@ contract HolderPadTest is Test, Deployers {
     }
 
     function test_TransfersMoveTokensButNotPastEarnings() public {
-        (TrollHolderToken token,) = _launch(_alloc(), 2_000, 500);
+        (RobinHolderToken token,) = _launch(_alloc(), 2_000, 500);
         uint256 a = _swap(alice, address(token), true, 300e6);
         uint256 revenue = _flush(address(token));
         token.distribute();
@@ -502,7 +502,7 @@ contract HolderPadTest is Test, Deployers {
     }
 
     function test_NoTradingRestrictions() public {
-        (TrollHolderToken token,) = _launch(_alloc(), 2_000, 0);
+        (RobinHolderToken token,) = _launch(_alloc(), 2_000, 0);
         // Tiny and huge trades, wallet to wallet, back and forth.
         uint256 got = _swap(alice, address(token), true, 1);
         got += _swap(alice, address(token), true, 50_000e6);
@@ -522,7 +522,7 @@ contract HolderPadTest is Test, Deployers {
     }
 
     function test_WaitsWhileTooFewTokensAreOutsideThePool() public {
-        (TrollHolderToken token,) = _launch(_alloc(), 2_000, 500);
+        (RobinHolderToken token,) = _launch(_alloc(), 2_000, 500);
         uint256 tiny = _swap(alice, address(token), true, 1e6); // ~200k tokens at $5k MC: under 1M
         assertLt(tiny, token.MIN_ELIGIBLE_SUPPLY());
         uint256 revenue = _flush(address(token));
@@ -541,7 +541,7 @@ contract HolderPadTest is Test, Deployers {
     }
 
     function test_NobodyCanMoveTheHoldersSlot() public {
-        (TrollHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 500);
+        (RobinHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 500);
         vm.prank(creator);
         vm.expectRevert(PadRevenueSplitter.NotAuthorized.selector);
         sp.updateRecipient(2, creator);
@@ -556,7 +556,7 @@ contract HolderPadTest is Test, Deployers {
     }
 
     function test_AnyoneCanPayTheHoldersSlotIntoTheToken() public {
-        (TrollHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 500);
+        (RobinHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 500);
         _swap(alice, address(token), true, 300e6);
         uint256 revenue = _flush(address(token));
         vm.prank(carol);
@@ -569,7 +569,7 @@ contract HolderPadTest is Test, Deployers {
     }
 
     function test_BuybackAndBurnWorksWithHolders() public {
-        (TrollHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 500);
+        (RobinHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 500);
         uint256 a = _swap(alice, address(token), true, 500e6);
         _flush(address(token));
         uint256 bucket = sp.buybackCredit();
@@ -582,7 +582,7 @@ contract HolderPadTest is Test, Deployers {
     }
 
     function test_CreatorsOwnWalletsGetPaidAsUsual() public {
-        (TrollHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 500);
+        (RobinHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 500);
         _swap(alice, address(token), true, 300e6);
         uint256 revenue = _flush(address(token));
         uint256 creatorPool = revenue - (revenue * 1_000) / 10_000;
@@ -595,7 +595,7 @@ contract HolderPadTest is Test, Deployers {
     }
 
     function test_ManyRoundsNeverOverpay() public {
-        (TrollHolderToken token,) = _launch(_alloc(), 2_000, 1_000);
+        (RobinHolderToken token,) = _launch(_alloc(), 2_000, 1_000);
         address[3] memory who = [alice, bob, carol];
         for (uint256 round; round < 12; round++) {
             address w = who[round % 3];

@@ -5,13 +5,13 @@ import {PadPortal} from "./PadPortal.sol";
 import {HolderPadPortal} from "./HolderPadPortal.sol";
 import {IPadTemplate} from "./interfaces/IPadTemplate.sol";
 
-/// @notice Template #2 for TrollPadFactory: builds HolderPadPortals, pads
+/// @notice Template #2 for RobinPadFactory: builds HolderPadPortals, pads
 /// whose creators can give holders a share of the fees in USDC. Same
 /// settings as a standard pad (`config` is `abi.encode(PadPortal.PadSettings)`).
 ///
 /// Deployed by the factory owner, then approved with
 /// `setTemplateApproved`. Only that factory may call it, and the factory
-/// checks every pad it returns (hook, PoolManager, treasury, Troll's share,
+/// checks every pad it returns (hook, PoolManager, treasury, Robin Labs' share,
 /// owner) before authorizing it on the hook.
 contract HolderPadTemplate is IPadTemplate {
     address public immutable factory;

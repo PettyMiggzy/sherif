@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {MockERC20} from "@uniswap/v4-core/lib/solmate/src/test/utils/mocks/MockERC20.sol";
-import {TrollHolderToken} from "../src/TrollHolderToken.sol";
+import {RobinHolderToken} from "../src/RobinHolderToken.sol";
 
 /// @dev Stands in for the splitter: holds the holders' slot and pays it to
 /// the token on claimRecipient, like PadRevenueSplitter does.
@@ -43,13 +43,13 @@ contract MockHolderSlot {
     }
 }
 
-/// @notice TrollHolderToken on its own: the dividend accounting under random
+/// @notice RobinHolderToken on its own: the dividend accounting under random
 /// transfers, payouts and claims, and the overflow bound that keeps
 /// transfers from ever reverting.
 contract HolderTokenTest is Test {
     MockERC20 usdc;
     MockHolderSlot slot;
-    TrollHolderToken token;
+    RobinHolderToken token;
     address pool = makeAddr("poolManager");
     address constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address[6] holders;
@@ -59,7 +59,7 @@ contract HolderTokenTest is Test {
     function setUp() public {
         usdc = new MockERC20("USD Coin", "USDC", 6);
         slot = new MockHolderSlot(usdc);
-        token = new TrollHolderToken("H", "H", SUPPLY, address(this), address(usdc), pool, address(slot), 0);
+        token = new RobinHolderToken("H", "H", SUPPLY, address(this), address(usdc), pool, address(slot), 0);
         slot.setToken(address(token));
         for (uint256 i; i < holders.length; i++) {
             holders[i] = address(uint160(0xA11CE + i));
