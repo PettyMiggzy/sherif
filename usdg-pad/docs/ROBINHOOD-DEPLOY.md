@@ -135,8 +135,8 @@ and claimed in USDG, creator and platform paid exactly).
    Blockscout and Sourcify both sit behind Cloudflare bot checks that can
    reject scripted requests; if every attempt gets a 403 "Just a moment..."
    page, retry later or use the explorer's web form.
-2. Frontend: live at https://pad.robinlabs.fun (`robin-pad-web/`, linked
-   from robinlab.io as "Pad V4" via robinlab.io/v4). It launches on the main
+2. Frontend: live at https://www.robinlab.io (`robin-pad-web/`, Vercel
+   project `labs`; it replaced the old v3 site there). It launches on the main
    portal and verifies each launch token's source on Sourcify automatically.
 3. Treasury: the owner withdraws accumulated USDG with
    `RobinTreasury.withdraw(USDG, to, amount)`. Nothing is automated.

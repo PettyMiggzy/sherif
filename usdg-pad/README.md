@@ -271,7 +271,7 @@ doesn't have that, only the `.gitmodules` file for reference.
 ## Not built here yet
 
 - **The website** lives in `../robin-pad-web` (live at
-  https://pad.robinlabs.fun).
+  https://www.robinlab.io).
 - **A complete security audit.** The pre-port pass (Fable, 2026-09-22 and
   2026-09-24) found and got fixed 3 HIGH / 4 MEDIUM / 8 LOW findings; see
   `docs/AUDIT-2026-09-24.md` and the sections above. That pass is not

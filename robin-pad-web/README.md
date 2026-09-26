@@ -33,15 +33,16 @@ What changed besides the look:
 
 ## Where it lives
 
-- **https://pad.robinlabs.fun** (Vercel project `robin-labs-pad`, root
-  directory `robin-pad-web`). `robinlab.io/v4` redirects here (see
-  `pad/vercel.json`), and every robinlab.io nav has a "Pad V4" link to it.
-- `pad.robinlab.io` is attached to the project too; it goes live once DNS has
-  `CNAME pad -> cname.vercel-dns.com` (today a wildcard record sends every
-  robinlab.io subdomain to the API droplet). To make it the main address,
-  point `/v4` in `pad/vercel.json` and `NEXT_PUBLIC_SITE_URL` at it.
+- **https://www.robinlab.io** (Vercel project `labs`, root directory
+  `robin-pad-web`). It replaced the old v3 static site there; `vercel.json`
+  maps the old `.html` paths onto the new pages, and `public/sw.js` retires
+  the old site's service worker. `robinlab.io`, `robinlabs.fun`,
+  `www.robinlabs.fun`, `pad.robinlabs.fun` and `pad.robinlab.io` all redirect
+  to www.robinlab.io.
+- The Vercel project `robin-labs-pad` builds the same folder and now only
+  serves those redirects.
 - WalletConnect uses robinlab.io's project id; a private Vercel Blob store
-  (`robin-labs-pad`) holds token pictures, descriptions and the launch-list
+  (`robinlab-io`) holds token pictures, descriptions and the launch-list
   snapshot.
 
 ## Run locally

@@ -7,7 +7,40 @@
       "has": [
         {
           "type": "host",
-          "value": "(?:pad\\.robinlabs\\.fun|pad\\.robinlab\\.io|robinlabs\\.fun|www\\.robinlabs\\.fun)"
+          "value": "pad.robinlabs.fun"
+        }
+      ],
+      "destination": "https://www.robinlab.io/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "pad.robinlab.io"
+        }
+      ],
+      "destination": "https://www.robinlab.io/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "robinlabs.fun"
+        }
+      ],
+      "destination": "https://www.robinlab.io/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.robinlabs.fun"
         }
       ],
       "destination": "https://www.robinlab.io/:path*",
