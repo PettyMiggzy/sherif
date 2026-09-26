@@ -87,6 +87,27 @@
     <div class="card"><h3>Coins / graduated</h3><div class="big" id="coinsTot">-</div><div class="sub" id="coinsSub">launched · graduated</div></div>
   </div>
 
+  <!-- USDG PAD TREASURY (Robin Labs Pad, Uniswap v4) -->
+  <section id="secUsdg">
+    <h2>💵 Robin Labs Pad: USDG earnings <span class="pill" style="font-size:.62rem"><span class="dot" id="usdgDot"></span><span id="usdgState">loading</span></span></h2>
+    <p class="desc">Platform fees from every USDG launch (house pad, white-label pads, main portal) plus white-label setup fees. Fees reach the treasury in two steps anyone can trigger: <b>collect</b> moves them out of each launch into the <span class="mono">treasury</span>, then <b>withdraw</b> (treasury owner only) sends them to your wallet. <b>Collect &amp; withdraw all</b> does both.</p>
+    <div class="grid cards" style="margin-bottom:6px">
+      <div class="card"><h3>In treasury: withdraw now</h3><div class="big" id="usdgTreasury">-</div><div class="sub" id="usdgTreasuryEth">-</div></div>
+      <div class="card"><h3>Ready to collect</h3><div class="big" id="usdgReady">-</div><div class="sub" id="usdgReadySub">platform share, sitting in launches</div></div>
+      <div class="card"><h3>Tax not yet flushed</h3><div class="big" id="usdgUnflushed">-</div><div class="sub" id="usdgUnflushedSub">your share after collect</div></div>
+    </div>
+    <div class="row"><div class="lbl"><b>Collect &amp; withdraw all</b><span>collect every launch's platform fees, then send the treasury's whole USDG balance to the connected wallet. Several signatures.</span></div><button class="btn" id="btnUsdgAll">Collect &amp; withdraw all</button></div>
+    <div class="row"><div class="lbl"><b>Collect to treasury</b><span id="usdgCollectSub">flushes pools with tax waiting, then claims the platform share. Anyone can run this; creators' shares are paid to their splitters at the same time.</span></div><button class="btn sm ghost" id="btnUsdgCollect">Collect</button></div>
+    <div class="row"><div class="lbl"><b>Withdraw USDG</b><span>leave amount empty for the full balance; recipient defaults to the connected wallet</span></div>
+      <input class="num" id="inUsdgAmt" placeholder="all" />
+      <input class="addr" id="inUsdgTo" placeholder="0x recipient (default: you)" />
+      <button class="btn sm" id="btnUsdgWithdraw">Withdraw</button></div>
+    <div class="row"><div class="lbl"><b>Withdraw ETH</b><span>any ETH sent to the treasury; full balance to the recipient above</span></div><div class="val" id="usdgEthVal">-</div><button class="btn sm ghost" id="btnUsdgWithdrawEth">Withdraw ETH</button></div>
+    <div class="row"><div class="lbl"><b>White-label setup fee</b><span>what a new white-label pad pays (in USDG, straight to the treasury) · max $10,000</span></div><div class="val" id="usdgSetupFee">-</div><input class="num" id="inUsdgSetupFee" placeholder="USDG, e.g. 100" /><button class="btn sm" id="btnUsdgSetupFee">Set</button></div>
+    <div class="row"><div class="lbl"><b>Owners</b><span>treasury · factory · house pad</span></div><div class="val" id="usdgOwners">-</div></div>
+    <p class="hint">Launches: <span class="mono" id="usdgCounts">-</span> · treasury <a class="mono" id="usdgTreasuryLink" target="_blank" rel="noopener">-</a></p>
+  </section>
+
   <!-- FEES -->
   <section id="secFees">
     <h2>💰 Fees</h2>
@@ -179,7 +200,7 @@
 
 <script type="module">
 import { ethers } from './assets/ethers.min.js';
-import { CHAIN, CONTRACTS, ADMIN_ABI, API_BASE, isDeployed } from './assets/config.js';
+import { CHAIN, CONTRACTS, ADMIN_ABI, API_BASE, USDG_PAD, isDeployed } from './assets/config.js';
 import * as Pad from './assets/wallet.js';
 
 const $ = (id) => document.getElementById(id);
@@ -329,6 +350,7 @@ async function refresh() {
   } else { $('volSub').textContent = 'set API_BASE'; }
 
   $('ownerWarn').style.display = mism.length ? 'block' : 'none';
+  refreshUsdg();
 }
 
 async function runAction(btn) {
@@ -479,6 +501,207 @@ async function setSwapSplit() {
   finally { btn.disabled = false; btn.textContent = label; }
 }
 $('btnSetSwap').addEventListener('click', setSwapSplit);
+
+// ── Robin Labs Pad (USDG) earnings ─────────────────────────────────────────────
+// Money path, all on-chain (usdg-pad/src): swap tax accrues in the hook (pendingTax per pool) → hook.flush(key)
+// pays it to that launch's splitter, which credits the platform share → the pad's claimPlatformFees (or, for
+// main-portal launches, the splitter's own claimPlatform) sends it to RobinTreasury → treasury.withdraw
+// (owner only). White-label setup fees go straight to the treasury. Everything is read from the chain, so this
+// works without the indexer.
+const U = USDG_PAD;
+const U_ABI = {
+  erc20: ['function balanceOf(address) view returns (uint256)'],
+  treasury: ['function owner() view returns (address)', 'function withdraw(address token, address to, uint256 amount)'],
+  factory: ['function owner() view returns (address)', 'function padCount() view returns (uint256)', 'function allPads(uint256) view returns (address)', 'function setupFee() view returns (uint256)', 'function setSetupFee(uint256 newFee)'],
+  portal: ['function launchCount() view returns (uint256)', 'function allLaunches(uint256) view returns (address)'],
+  pad: ['function padOwner() view returns (address)', 'function platformShareBps() view returns (uint16)', 'function claimPlatformFees(uint256 from, uint256 to) returns (uint256)'],
+  hook: ['function pendingTax(bytes32) view returns (uint256)', 'function poolConfigs(bytes32) view returns (address splitter, address quoteAsset, bool tokenIsToken0, uint16 buyTaxBps, uint16 sellTaxBps, bool active, address locker)', 'function flush((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) key)'],
+  splitter: ['function creditedToPlatform(address asset) view returns (uint256)', 'function claimPlatform(address asset)'],
+};
+const uc = (addr, abi, withSigner = false) => new ethers.Contract(addr, U_ABI[abi], withSigner && signer ? signer : read);
+const fmtUsd = (raw) => (raw == null ? '-' : '$' + (+ethers.formatUnits(raw, 6)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const sameAddr = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+const MAIN_PORTAL_SHARE_BPS = 1000n; // RobinRevenueSplitter.MAIN_PAD_PLATFORM_SHARE_BPS
+
+function usdgPoolKey(token) {
+  const tokenFirst = BigInt(token) < BigInt(U.usdg);
+  return { currency0: tokenFirst ? token : U.usdg, currency1: tokenFirst ? U.usdg : token, fee: U.poolFee, tickSpacing: U.tickSpacing, hooks: U.hook };
+}
+const usdgPoolId = (k) => ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(['address', 'address', 'uint24', 'int24', 'address'], [k.currency0, k.currency1, k.fee, k.tickSpacing, k.hooks]));
+
+// Every launch on every USDG pad: its pool key, tax waiting in the hook, splitter, and the platform credit
+// already sitting in that splitter.
+async function scanUsdgLaunches() {
+  const f = uc(U.factory, 'factory'), hook = uc(U.hook, 'hook');
+  const n = Number(await f.padCount());
+  const pads = [U.mainPortal, ...(await Promise.all(Array.from({ length: n }, (_, i) => f.allPads(i))))];
+  const out = { pads: [], launches: [] };
+  for (const pad of pads) {
+    const isMain = sameAddr(pad, U.mainPortal);
+    const p = uc(pad, 'portal');
+    const count = Number(await p.launchCount());
+    const shareBps = isMain ? MAIN_PORTAL_SHARE_BPS : BigInt(await uc(pad, 'pad').platformShareBps());
+    const tokens = await Promise.all(Array.from({ length: count }, (_, i) => p.allLaunches(i)));
+    let padCredit = 0n;
+    const rows = await Promise.all(tokens.map(async (token) => {
+      const key = usdgPoolKey(token), id = usdgPoolId(key);
+      const [pending, cfg] = await Promise.all([hook.pendingTax(id), hook.poolConfigs(id)]);
+      const credit = await uc(cfg.splitter, 'splitter').creditedToPlatform(U.usdg);
+      return { pad, isMain, token, key, id, pending, splitter: cfg.splitter, credit, shareBps };
+    }));
+    rows.forEach((r) => (padCredit += r.credit));
+    out.pads.push({ pad, isMain, count, shareBps, credit: padCredit });
+    out.launches.push(...rows);
+  }
+  return out;
+}
+
+async function refreshUsdg() {
+  try {
+    const usdg = uc(U.usdg, 'erc20');
+    const [bal, ethBal, tOwner, fOwner, hOwner, fee, scan] = await Promise.all([
+      usdg.balanceOf(U.treasury), read.getBalance(U.treasury), uc(U.treasury, 'treasury').owner(),
+      uc(U.factory, 'factory').owner(), uc(U.housePad, 'pad').padOwner(), uc(U.factory, 'factory').setupFee(), scanUsdgLaunches(),
+    ]);
+    let ready = 0n, unflushed = 0n, unflushedShare = 0n, poolsWaiting = 0;
+    for (const l of scan.launches) {
+      ready += l.credit;
+      if (l.pending > 0n) { poolsWaiting++; unflushed += l.pending; unflushedShare += (l.pending * l.shareBps) / 10000n; }
+    }
+    $('usdgTreasury').textContent = fmtUsd(bal);
+    $('usdgTreasuryEth').textContent = `USDG · plus ${fmtEth(ethBal)}`;
+    $('usdgEthVal').textContent = fmtEth(ethBal);
+    $('usdgReady').textContent = fmtUsd(ready);
+    $('usdgUnflushed').textContent = fmtUsd(unflushed);
+    $('usdgUnflushedSub').textContent = `${poolsWaiting} pool${poolsWaiting === 1 ? '' : 's'} · your share ≈ ${fmtUsd(unflushedShare)} after collect`;
+    $('usdgSetupFee').textContent = fmtUsd(fee);
+    $('usdgOwners').textContent = `${short(tOwner)} · ${short(fOwner)} · ${short(hOwner)}`;
+    const nLaunch = scan.launches.length;
+    const wl = scan.pads.length - 2; // minus the main portal and the house pad
+    $('usdgCounts').textContent = `${nLaunch} launch${nLaunch === 1 ? '' : 'es'} · house pad + ${wl} white-label pad${wl === 1 ? '' : 's'} + main portal`;
+    const link = $('usdgTreasuryLink'); link.textContent = short(U.treasury); link.href = `${CHAIN.explorer}/address/${U.treasury}`;
+    const isOwner = account && sameAddr(account, tOwner);
+    $('usdgDot').className = 'dot ' + (account ? (isOwner ? 'ok' : 'bad') : '');
+    $('usdgState').textContent = account ? (isOwner ? 'you own the treasury' : 'connected wallet is not the treasury owner') : 'live · connect the owner wallet to withdraw';
+    return { bal, ethBal, tOwner, fOwner, scan };
+  } catch (e) {
+    $('usdgDot').className = 'dot bad'; $('usdgState').textContent = 'read failed: ' + (e.shortMessage || e.message || e);
+    return null;
+  }
+}
+
+// Robinhood Chain charges only the base fee, but a legacy tx priced at exactly the quoted base fee is rejected
+// if the base fee ticks up before it lands ("max fee per gas less than block base fee"). Pad the price 25%;
+// it costs nothing extra because the chain only charges the base fee.
+async function usdgSend(contract, method, args, label) {
+  const ov = await legacyOv(() => contract[method].estimateGas(...args));
+  ov.gasPrice = (ov.gasPrice * 125n) / 100n;
+  const tx = await contract[method](...args, ov);
+  if (label) label(`Pending ${tx.hash.slice(0, 10)}…`);
+  await tx.wait();
+  return tx.hash;
+}
+
+// Flush every pool with tax waiting, then claim the platform share into the treasury: one batched
+// claimPlatformFees per white-label/house pad, one claimPlatform per main-portal launch.
+async function usdgCollect(setLabel) {
+  const scan = await scanUsdgLaunches();
+  const hookW = uc(U.hook, 'hook', true);
+  const toFlush = scan.launches.filter((l) => l.pending > 0n);
+  let done = 0;
+  for (const l of toFlush) {
+    setLabel(`Flushing ${++done}/${toFlush.length}…`);
+    await usdgSend(hookW, 'flush', [l.key]);
+  }
+  // Re-read credits after flushing: flush is what credits the splitters.
+  const after = toFlush.length ? await scanUsdgLaunches() : scan;
+  let claims = 0;
+  for (const p of after.pads) {
+    if (p.isMain) {
+      for (const l of after.launches.filter((x) => x.isMain && x.credit > 0n)) {
+        setLabel(`Claiming main-portal launch ${++claims}…`);
+        await usdgSend(uc(l.splitter, 'splitter', true), 'claimPlatform', [U.usdg]);
+      }
+    } else if (p.credit > 0n) {
+      setLabel(`Claiming pad ${++claims}…`);
+      await usdgSend(uc(p.pad, 'pad', true), 'claimPlatformFees', [0n, BigInt(p.count)]);
+    }
+  }
+  return { flushed: toFlush.length, claims };
+}
+
+async function usdgWithdraw(token, amount, setLabel) {
+  const to = ($('inUsdgTo').value.trim() || account);
+  if (!ethers.isAddress(to)) throw new Error('recipient is not a valid address');
+  setLabel('Signing…');
+  return usdgSend(uc(U.treasury, 'treasury', true), 'withdraw', [token, ethers.getAddress(to), amount], setLabel);
+}
+
+async function usdgRequireOwner() {
+  if (!signer) throw new Error('Connect the treasury owner wallet first');
+  const owner = await uc(U.treasury, 'treasury').owner();
+  if (!sameAddr(owner, account)) throw new Error(`Only the treasury owner (${short(owner)}) can withdraw. Connected: ${short(account)}`);
+}
+
+async function usdgButton(id, fn) {
+  const btn = $(id), label = btn.textContent;
+  try {
+    if (!signer) throw new Error('Connect your wallet first');
+    btn.disabled = true;
+    const msg = await fn((t) => (btn.textContent = t));
+    if (msg) toast(msg);
+  } catch (e) { toast('✗ ' + (e.shortMessage || e.reason || e.message || 'failed'), true); }
+  finally { btn.disabled = false; btn.textContent = label; refreshUsdg(); }
+}
+
+$('btnUsdgCollect').addEventListener('click', () => usdgButton('btnUsdgCollect', async (set) => {
+  set('Checking…');
+  const r = await usdgCollect(set);
+  return r.flushed || r.claims ? `collected ✓ · ${r.flushed} pool(s) flushed · ${r.claims} claim(s)` : 'nothing to collect right now';
+}));
+
+$('btnUsdgWithdraw').addEventListener('click', () => usdgButton('btnUsdgWithdraw', async (set) => {
+  await usdgRequireOwner();
+  const bal = await uc(U.usdg, 'erc20').balanceOf(U.treasury);
+  const raw = $('inUsdgAmt').value.trim().replace(/[$,]/g, '');
+  const amount = raw ? ethers.parseUnits(raw, 6) : bal;
+  if (amount === 0n) throw new Error('treasury has no USDG to withdraw');
+  if (amount > bal) throw new Error(`treasury only holds ${fmtUsd(bal)}`);
+  const hash = await usdgWithdraw(U.usdg, amount, set);
+  $('inUsdgAmt').value = '';
+  return `withdrew ${fmtUsd(amount)} ✓  ${hash.slice(0, 12)}…`;
+}));
+
+$('btnUsdgWithdrawEth').addEventListener('click', () => usdgButton('btnUsdgWithdrawEth', async (set) => {
+  await usdgRequireOwner();
+  const bal = await read.getBalance(U.treasury);
+  if (bal === 0n) throw new Error('treasury has no ETH');
+  const hash = await usdgWithdraw(ethers.ZeroAddress, bal, set);
+  return `withdrew ${fmtEth(bal)} ✓  ${hash.slice(0, 12)}…`;
+}));
+
+$('btnUsdgAll').addEventListener('click', () => usdgButton('btnUsdgAll', async (set) => {
+  await usdgRequireOwner(); // check before collecting, so a wrong wallet doesn't pay gas for half the job
+  set('Checking…');
+  const r = await usdgCollect(set);
+  const bal = await uc(U.usdg, 'erc20').balanceOf(U.treasury);
+  if (bal === 0n) return r.flushed || r.claims ? 'collected, but the treasury holds no USDG yet' : 'nothing to collect or withdraw yet';
+  const hash = await usdgWithdraw(U.usdg, bal, set);
+  return `withdrew ${fmtUsd(bal)} ✓ (${r.flushed} flushed · ${r.claims} claimed)  ${hash.slice(0, 12)}…`;
+}));
+
+$('btnUsdgSetupFee').addEventListener('click', () => usdgButton('btnUsdgSetupFee', async (set) => {
+  const raw = $('inUsdgSetupFee').value.trim().replace(/[$,]/g, '');
+  if (!raw) throw new Error('enter the new fee in USDG');
+  const fee = ethers.parseUnits(raw, 6);
+  if (fee > 10_000_000_000n) throw new Error('max setup fee is $10,000');
+  const owner = await uc(U.factory, 'factory').owner();
+  if (!sameAddr(owner, account)) throw new Error(`Only the factory owner (${short(owner)}) can set this`);
+  set('Signing…');
+  const hash = await usdgSend(uc(U.factory, 'factory', true), 'setSetupFee', [fee], set);
+  $('inUsdgSetupFee').value = '';
+  return `setup fee set to ${fmtUsd(fee)} ✓  ${hash.slice(0, 12)}…`;
+}));
 
 document.querySelectorAll('button[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b)));
 $('connectBtn').addEventListener('click', connect);

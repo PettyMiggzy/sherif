@@ -559,7 +559,7 @@ footer{border-top:1px solid var(--line-2);margin-top:34px;padding:34px 0 40px}
 <script type="module">
 import * as Pad from './assets/wallet.js';
 import { DEMO, DEMO_COINS, DEMO_STATS } from './assets/demo.js';
-import { OWNER, isDeployed, UNI_TOKENS, API_BASE } from './assets/config.js';
+import { OWNER, USDG_PAD, isDeployed, UNI_TOKENS, API_BASE } from './assets/config.js';
 
 const $ = (id) => document.getElementById(id);
 const ETH_USD = 1920;
@@ -582,7 +582,7 @@ const cbtn = $('connectBtn');
 const refreshBtn = () => {
   const a = Pad.account();
   cbtn.textContent = a ? Pad.short(a) : 'Connect Wallet'; cbtn.title = a ? 'View your profile' : '';
-  const isOwner = a && OWNER && a.toLowerCase() === OWNER.toLowerCase(); // reveal the Admin link only for the owner
+  const isOwner = a && [OWNER, USDG_PAD.owner].some((o) => o && a.toLowerCase() === o.toLowerCase()); // reveal the Admin link only for an owner
   const al = $('adminLink'), alm = $('adminLinkM'); if (al) al.style.display = isOwner ? '' : 'none'; if (alm) alm.style.display = isOwner ? '' : 'none';
   // Reveal the Rewards link only once the RewardVault is deployed (strict no-op while unset).
   const rewardsOn = isDeployed('rewardVault'); const rn = $('rewardsNav'), rnm = $('rewardsNavM'); if (rn) rn.style.display = rewardsOn ? '' : 'none'; if (rnm) rnm.style.display = rewardsOn ? '' : 'none';

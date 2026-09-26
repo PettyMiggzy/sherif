@@ -606,6 +606,22 @@ export const API_BASE = "https://api.robinlab.io";
 // every admin action is enforced on-chain by onlyOwner regardless, so this is pure convenience, not auth.
 export const OWNER = "0xCDD5ff5d521D3694c2a2F31eDF7cd3C0E9a6fabf";
 
+// ── Robin Labs Pad (USDG, Uniswap v4) ───────────────────────────────────────
+// Deployed 2026-09-26 by usdg-pad/script/DeployRobinhood.s.sol (addresses: usdg-pad/docs/ROBINHOOD-DEPLOY.md).
+// `owner` is the deploy wallet: it owns the treasury, the factory and the house pad. The admin panel's
+// USDG section reads these; withdrawals are enforced on-chain by RobinTreasury's owner check.
+export const USDG_PAD = {
+  usdg: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168", // 6 decimals
+  owner: "0x5899a0576A94327a6316E01190f951edf7645914",
+  treasury: "0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f",
+  hook: "0x04abDE4e77036178E0DF13d435B7b7f87265e8cc",
+  mainPortal: "0x7e2f5dEe1A846fF21eE946d2e450F64133d0fD6F",
+  factory: "0xD637De9DA24007D11e60BDf0B8358b060953D4E8",
+  housePad: "0x923c4443fd996c757646A9753D89F57913aBEe71",
+  poolFee: 10000, // every launch's pool: 1% LP fee, tick spacing 200, this hook
+  tickSpacing: 200,
+};
+
 // ── GoPlus token-security (see /assets/safety.js) ───────────────────────────
 // GoPlus supports Robinhood Chain (4663), so our coins get the same honeypot/tax/mint scan wallets use.
 // The token_security endpoint works WITHOUT a key (rate-limited); an optional app-key raises the limit.
