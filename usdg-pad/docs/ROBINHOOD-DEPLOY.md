@@ -35,7 +35,7 @@ cannot authorize any other pool-creating contract afterwards.
   exact init code, so build with that config. The script re-checks the mined
   address before and after deploying and reverts before spending if it
   doesn't match.
-- **Pick the house pad's name** (`HOUSE_PAD_NAME`, default "Troll Pad"). It
+- **Pick the house pad's name** (`HOUSE_PAD_NAME`, default "Robin Labs Pad"). It
   is stored on-chain.
 - Prefer a keystore or hardware wallet over a raw key:
   `--account <keystore-name> --sender <address>` or `--ledger --sender <address>`.
@@ -49,7 +49,7 @@ bash script/setup-deps.sh          # clones lib/ at the commits pinned in foundr
 forge build
 ROBINHOOD_FORK_URL=https://rpc.mainnet.chain.robinhood.com forge test   # 86 tests, incl. real-chain fork tests
 
-HOUSE_PAD_NAME="Troll Pad" forge script script/DeployRobinhood.s.sol:DeployRobinhood \
+HOUSE_PAD_NAME="Robin Labs Pad" forge script script/DeployRobinhood.s.sol:DeployRobinhood \
   --rpc-url https://rpc.mainnet.chain.robinhood.com \
   --broadcast --slow --legacy --account <keystore-name> --sender <address>
 ```

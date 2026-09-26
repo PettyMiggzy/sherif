@@ -44,7 +44,7 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
         }
         vm.createSelectFork(url);
         assertEq(block.chainid, 4663, "not a Robinhood Chain fork");
-        s = _deployStack(address(this), address(this), 100e6, "Troll Pad");
+        s = _deployStack(address(this), address(this), 100e6, "Robin Labs Pad");
         router = new PoolSwapTest(IPoolManager(POOL_MANAGER));
         return true;
     }

@@ -22,7 +22,7 @@ import {RobinhoodStack} from "./RobinhoodStack.sol";
 /// Gas is ETH, not USDG. The deploy needs no USDG at all.
 ///
 /// Env (optional): PAD_SETUP_FEE (raw USDG, default 100e6 = $100 per
-/// white-label pad), HOUSE_PAD_NAME (default "Troll Pad"; stored on-chain).
+/// white-label pad), HOUSE_PAD_NAME (default "Robin Labs Pad"; stored on-chain).
 contract DeployRobinhood is Script, RobinhoodStack {
     function run() external returns (Stack memory s) {
         require(block.chainid == 4663 || vm.envOr("ALLOW_OTHER_CHAIN", false), "not Robinhood Chain (4663)");
@@ -35,7 +35,7 @@ contract DeployRobinhood is Script, RobinhoodStack {
         require(deployer != 0xA95f339fde0fb6846e7d888f6A063EC2aB04C678, "leaked testnet key");
 
         uint256 setupFee = vm.envOr("PAD_SETUP_FEE", uint256(100e6));
-        string memory name = vm.envOr("HOUSE_PAD_NAME", string("Troll Pad"));
+        string memory name = vm.envOr("HOUSE_PAD_NAME", string("Robin Labs Pad"));
         console2.log("Deploying as:", deployer);
 
         if (deployerKey != 0) vm.startBroadcast(deployerKey);
