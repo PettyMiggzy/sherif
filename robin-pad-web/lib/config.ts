@@ -26,8 +26,12 @@ export const CONFIG = {
   explorerUrl: process.env.NEXT_PUBLIC_EXPLORER_URL ?? 'https://robinhoodchain.blockscout.com',
   brand: process.env.NEXT_PUBLIC_BRAND ?? 'Robin Labs Pad',
   tagline: process.env.NEXT_PUBLIC_TAGLINE ?? 'Pick your price. Launch in one transaction.',
-  // Optional: the site's public URL, for absolute social-preview links.
-  siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '',
+  // The site's public URL, for absolute social-preview links. robinlab.io/v4
+  // redirects here (pad/vercel.json).
+  siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? 'https://pad.robinlabs.fun',
+  // WalletConnect (Reown) project id: the same one robinlab.io uses
+  // (pad/assets/config.js). Public by design and not origin-restricted.
+  walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? '89d7a1882c0fa9a5bbe0a58accafc100',
   // Optional: the main Robin Labs site, linked as "Home" in the nav.
   homeUrl: process.env.NEXT_PUBLIC_HOME_URL ?? 'https://robinlab.io',
   // The pad admin wallet (deployer; owns the treasury and factory), shown on the /admin page.

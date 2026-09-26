@@ -4,6 +4,8 @@ import { robinhood } from './chain';
 import { CONFIG } from './config';
 import { chainTransport } from './rpc';
 import { readJson, storeConfigured, writeJson } from './store';
+import { verificationEnabled, verifyLaunchToken } from './sourcify';
+import { waitUntil } from '@vercel/functions';
 
 // The launch list, built from the portal's LaunchCreated events. Launches
 // never change once mined, so the list is kept as a snapshot in the site's
@@ -61,6 +63,7 @@ async function scan(): Promise<boolean> {
   if (from > tip) return false;
   const known = new Set(snap.launches.map((l) => l.token.toLowerCase()));
   let found = 0;
+  const fresh: string[] = [];
   for (let chunks = 0; from <= tip && chunks < MAX_CHUNKS_PER_SYNC; chunks++) {
     const to = from + CHUNK > tip ? tip : from + CHUNK;
     const logs = await chainClient.getLogs({ address: CONFIG.portal, event: LAUNCH_EVENT, fromBlock: from, toBlock: to, strict: true });
@@ -77,10 +80,12 @@ async function scan(): Promise<boolean> {
         sellTaxBps: a.sellTaxBps, tickLower: a.tickLower, tickUpper: a.tickUpper, initSqrtPriceX96: a.initSqrtPriceX96.toString(),
       });
       found++;
+      fresh.push(a.token);
     }
     snap.lastBlock = to.toString();
     from = to + 1n;
   }
+  if (fresh.length) scheduleVerification(fresh);
   if (storeConfigured() && (found > 0 || BigInt(snap.lastBlock) - persistedBlock >= PERSIST_EVERY_BLOCKS)) {
     // Never move the stored snapshot backwards if another server got further.
     const stored = await readJson<Snapshot>(snapshotPath).catch(() => null);
@@ -124,4 +129,17 @@ export async function getLaunches(token?: string): Promise<{ launches: LaunchJso
     try { await syncLaunches(true); list = pick(); } catch (e) { stale = true; console.error('forced launch sync failed', e); }
   }
   return { launches: list, stale };
+}
+
+/**
+ * New launches get their source verified on Sourcify in the background
+ * (lib/sourcify.ts), whether they came from this site or straight from the
+ * contract (bots, scripts). waitUntil keeps the work alive after the response
+ * on Vercel. A cold start without a stored snapshot rescans old launches too,
+ * which only costs one "already verified?" lookup each; capped per scan.
+ */
+function scheduleVerification(tokens: string[]) {
+  if (!verificationEnabled()) return;
+  const job = (async () => { for (const t of tokens.slice(-25)) await verifyLaunchToken(t); })();
+  try { waitUntil(job); } catch { /* outside Vercel the promise simply runs */ }
 }

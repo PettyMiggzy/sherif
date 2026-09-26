@@ -15,7 +15,7 @@ import { useEnsureChain, useWalletChainId } from '@/lib/ensureChain';
 // wallets (see lib/wallets.ts). Without one, a phone browser with no wallet
 // built in (plain Safari or Chrome) has nothing it can connect to, so the
 // button offers to reopen the page inside a wallet app instead.
-const hasWalletConnect = !!process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+const hasWalletConnect = !!CONFIG.walletConnectProjectId;
 
 export function ConnectButton() {
   const ensureChain = useEnsureChain();

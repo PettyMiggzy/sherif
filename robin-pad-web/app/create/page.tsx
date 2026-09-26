@@ -129,7 +129,13 @@ export default function Create() {
       }
       if (!token) throw new Error('The launch went through, but its token address is missing from the receipt');
       setLaunched(token);
-      askExplorerForSource(token);
+      // Verified source on the explorer, so token scanners don't flag it: the
+      // server gets it verified on Sourcify (waiting for the result), then the
+      // explorer is asked to pick it up. Nothing here blocks the launch flow.
+      const launchedToken = token;
+      fetch(`/api/verify/${launchedToken}`, { method: 'POST' })
+        .catch(() => undefined)
+        .finally(() => askExplorerForSource(launchedToken));
       await saveInfo(token);
     } catch (e: unknown) {
       setErr(explainTxError(e));

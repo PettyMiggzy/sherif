@@ -30,7 +30,7 @@ export function Logo() {
         <span className="font-display text-[26px] font-extrabold uppercase tracking-wide text-white">
           Robin <span className="text-brand-hi">Labs</span>
         </span>
-        <span className="mt-0.5 text-[9px] font-bold tracking-[0.55em] text-muted">LAUNCHPAD</span>
+        <span className="mt-0.5 text-[9px] font-bold tracking-[0.5em] text-muted">LAUNCHPAD <span className="text-brand-hi">V4</span></span>
       </span>
     </Link>
   );

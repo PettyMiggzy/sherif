@@ -20,7 +20,7 @@ export function Hero() {
         <div className="max-w-[600px]">
           <h1 className="font-display font-extrabold uppercase leading-[0.9] tracking-tight text-white drop-shadow-[0_10px_30px_rgba(0,0,0,.7)]">
             <span className="block text-[64px] sm:text-[88px] lg:text-[104px]">Robin <span className="text-brand-hi">Labs</span></span>
-            <span className="block text-[40px] tracking-[0.18em] text-text/90 sm:text-[52px] lg:text-[60px]">Launchpad</span>
+            <span className="flex items-center gap-4 text-[40px] tracking-[0.18em] text-text/90 sm:text-[52px] lg:text-[60px]">Launchpad<span className="rounded-lg bg-robin-grad px-2.5 py-1 text-[0.45em] tracking-normal text-ink shadow-btn">V4</span></span>
           </h1>
           <div className="mt-4 flex items-center gap-3 font-display text-xl font-bold uppercase text-muted sm:text-2xl">
             <span>On</span><ChainBadge className="text-xl sm:text-2xl" />

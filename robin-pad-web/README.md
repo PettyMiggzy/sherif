@@ -25,6 +25,24 @@ What changed besides the look:
   across white-label pads and the house pad too.)
 - **Removed:** the pinned $SDOGE card, the SDOGE dev-wallet holdings, and the
   Arc SDK section of the docs.
+- **Verified source, automatically:** every new launch token is sent to
+  Sourcify (`lib/sourcify.ts`), from the launch scan and right after a launch
+  on /create, so scanners never see an unverified token. The compiler input
+  in `lib/verify/` was checked byte for byte against a token launched through
+  the live portal.
+
+## Where it lives
+
+- **https://pad.robinlabs.fun** (Vercel project `robin-labs-pad`, root
+  directory `robin-pad-web`). `robinlab.io/v4` redirects here (see
+  `pad/vercel.json`), and every robinlab.io nav has a "Pad V4" link to it.
+- `pad.robinlab.io` is attached to the project too; it goes live once DNS has
+  `CNAME pad -> cname.vercel-dns.com` (today a wildcard record sends every
+  robinlab.io subdomain to the API droplet). To make it the main address,
+  point `/v4` in `pad/vercel.json` and `NEXT_PUBLIC_SITE_URL` at it.
+- WalletConnect uses robinlab.io's project id; a private Vercel Blob store
+  (`robin-labs-pad`) holds token pictures, descriptions and the launch-list
+  snapshot.
 
 ## Run locally
 
@@ -48,9 +66,8 @@ No env is needed: `lib/config.ts` defaults to the live Robinhood deployment
   half through the real UniversalRouter, then collect and withdraw the
   platform fees on /admin as the treasury owner. See the top of the file.
 
-## Go live
+## Go live (a fresh copy)
 
-Create a Vercel project with this folder as its root directory. Optionally
-connect a private Vercel Blob store (sets `BLOB_READ_WRITE_TOKEN`), set
-`NEXT_PUBLIC_SITE_URL` to the site's domain, and a WalletConnect project id
-for phone wallets.
+Create a Vercel project with this folder as its root directory and connect a
+private Vercel Blob store (sets `BLOB_READ_WRITE_TOKEN`). Everything else has
+working defaults in `lib/config.ts`.

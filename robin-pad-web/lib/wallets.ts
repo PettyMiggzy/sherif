@@ -10,7 +10,7 @@ import { makeWagmiConfig } from './wagmi';
 import { CONFIG } from './config';
 import { browserWalletName, isPhone } from './browserWallet';
 
-const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+const wcProjectId = CONFIG.walletConnectProjectId || undefined;
 
 // The wallet in this browser: an extension on a computer, or the wallet app's
 // own browser on a phone. It carries the wallet's own name ("MetaMask") so
