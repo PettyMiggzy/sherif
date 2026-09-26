@@ -1,4 +1,57 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "bash scripts/vercel-ignore.sh"
+  "ignoreCommand": "bash scripts/vercel-ignore.sh",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "(?:pad\\.robinlabs\\.fun|pad\\.robinlab\\.io|robinlabs\\.fun|www\\.robinlabs\\.fun)"
+        }
+      ],
+      "destination": "https://www.robinlab.io/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/v4",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/index.html",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/browse.html",
+      "destination": "/explore",
+      "permanent": true
+    },
+    {
+      "source": "/create.html",
+      "destination": "/create",
+      "permanent": true
+    },
+    {
+      "source": "/docs.html",
+      "destination": "/docs",
+      "permanent": true
+    },
+    {
+      "source": "/admin.html",
+      "destination": "/admin",
+      "permanent": true
+    },
+    {
+      "source": "/token.html",
+      "destination": "/explore",
+      "permanent": true
+    },
+    {
+      "source": "/:page([a-z0-9-]+)\\.html",
+      "destination": "/",
+      "permanent": true
+    }
+  ]
 }

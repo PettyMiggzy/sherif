@@ -1,18 +1,26 @@
 import { custom, http, type Transport } from 'viem';
 import { CONFIG } from './config';
 
-// Robinhood Chain's public RPC first. When it fails (down, rate-limited), a backup: on the server straight to
-// RPC_FALLBACK_URL (a server-only env var holding a paid provider's URL, key included, so it
-// never reaches a browser), and in the browser through this site's /api/rpc, which relays read
-// calls to that same backup. The browser only uses the relay when the deploy says one is set up
-// (NEXT_PUBLIC_RPC_FALLBACK=1 alongside RPC_FALLBACK_URL); otherwise /api/rpc would only ever answer 503.
+// Robinhood Chain's public RPC first. When it fails (down, rate-limited, or a Cloudflare
+// challenge, which it serves under load), a backup: on the server straight to the backup URL,
+// and in the browser through this site's /api/rpc, which relays read calls to it. The backup is
+// Robin Labs' own read proxy (api.robinlab.io/rpc, Alchemy behind it) unless RPC_FALLBACK_URL
+// names another. NEXT_PUBLIC_RPC_FALLBACK=0 turns the browser relay off.
+export const BACKUP_RPC_URL = process.env.RPC_FALLBACK_URL || 'https://api.robinlab.io/rpc';
+
+// JSON-RPC answers must never come from a cache: Next.js's Data Cache stores
+// server-side fetch() responses (POSTs included) unless told not to, which froze
+// the chain tip and replayed old logs to the launch scan. Every RPC call here opts out.
+const NO_STORE = { cache: 'no-store' } as const;
+
 export function chainTransport({ batch = false }: { batch?: boolean } = {}): Transport {
-  const primary = http(CONFIG.rpcUrl, { batch });
+  const primary = http(CONFIG.rpcUrl, { batch, fetchOptions: NO_STORE });
+  if (/\/\/(localhost|127\.0\.0\.1)[:/]/.test(CONFIG.rpcUrl)) return primary; // a local fork: nothing to fall back to
   const backupUrl = typeof window === 'undefined'
-    ? process.env.RPC_FALLBACK_URL
-    : process.env.NEXT_PUBLIC_RPC_FALLBACK === '1' ? `${window.location.origin}/api/rpc` : undefined;
+    ? BACKUP_RPC_URL
+    : process.env.NEXT_PUBLIC_RPC_FALLBACK === '0' ? undefined : `${window.location.origin}/api/rpc`;
   if (!backupUrl) return primary;
-  return revertAwareFallback(primary, http(backupUrl, { batch: batch ? { batchSize: 50 } : false }));
+  return revertAwareFallback(primary, http(backupUrl, { batch: batch ? { batchSize: 50 } : false, fetchOptions: NO_STORE }));
 }
 
 /**

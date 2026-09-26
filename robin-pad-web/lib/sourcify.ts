@@ -54,6 +54,7 @@ export async function verifyLaunchToken(address: string, opts: { waitMs?: number
     }
     const r = await fetch(`${API}/v2/verify/${CONFIG.chainId}/${address}`, {
       method: 'POST',
+      cache: 'no-store',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ stdJsonInput, compilerVersion: COMPILER, contractIdentifier: CONTRACT }),
       signal: AbortSignal.timeout(TIMEOUT_MS),

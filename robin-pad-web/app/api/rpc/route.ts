@@ -1,7 +1,9 @@
-// POST /api/rpc: this site's read-only relay to its backup Robinhood Chain RPC (RPC_FALLBACK_URL, a paid
-// provider whose key stays on the server). Browsers use it only when the chain's public RPC fails (see
-// lib/rpc.ts). Read calls only, no transactions; no CORS headers, so other sites' pages can't use
-// it; and a per-address rate limit.
+// POST /api/rpc: this site's read-only relay to its backup Robinhood Chain RPC (lib/rpc.ts:
+// api.robinlab.io/rpc unless RPC_FALLBACK_URL names another, whose key stays on the server).
+// Browsers use it only when the chain's public RPC fails. Read calls only, no transactions; no
+// CORS headers, so other sites' pages can't use it; and a per-address rate limit.
+
+import { BACKUP_RPC_URL } from '@/lib/rpc';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,8 +35,7 @@ const rpcError = (status: number, code: number, message: string, id: unknown = n
 export async function POST(req: Request) {
   const ip = (req.headers.get('x-real-ip') ?? req.headers.get('x-forwarded-for')?.split(',')[0] ?? '').trim();
   if (limited(ip)) return rpcError(429, -32005, 'Too many requests');
-  const backup = process.env.RPC_FALLBACK_URL;
-  if (!backup) return rpcError(503, -32000, 'No backup RPC');
+  const backup = BACKUP_RPC_URL;
 
   const raw = await req.text();
   if (raw.length > 200_000) return rpcError(413, -32600, 'Request too large');
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
   try {
     const r = await fetch(backup, {
       method: 'POST',
+      cache: 'no-store',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15_000),

@@ -17,11 +17,12 @@ import { waitUntil } from '@vercel/functions';
 const LAUNCH_EVENT = parseAbiItem(
   'event LaunchCreated(address indexed token, address indexed creator, address locker, address splitter, bytes32 poolId, address quoteAsset, bool tokenIsToken0, uint16 buyTaxBps, uint16 sellTaxBps, int24 tickLower, int24 tickUpper, uint160 initSqrtPriceX96, string name, string symbol)',
 );
-// Robinhood Chain makes ~10 blocks a second (~860k a day). Its RPC serves an
-// address-filtered eth_getLogs over millions of blocks (checked 2026-09-26 with a
-// 5M range), so the scan steps 500k blocks at a time.
-const CHUNK = 499_999n; // inclusive: 500,000 blocks per eth_getLogs
-const MAX_CHUNKS_PER_SYNC = 40; // bounds one request's work; a long backlog finishes over a few requests
+// Robinhood Chain makes ~10 blocks a second (~860k a day). The public RPC serves
+// an address-filtered eth_getLogs over millions of blocks, but the backup
+// (api.robinlab.io/rpc) caps a query at 100k, so the scan steps 100k at a time
+// and either RPC can serve it.
+const CHUNK = 99_999n; // inclusive: 100,000 blocks per eth_getLogs
+const MAX_CHUNKS_PER_SYNC = 60; // bounds one request's work (~7 days of blocks); a longer backlog finishes over a few requests
 const MIN_RESYNC_MS = 2_000;
 const PERSIST_EVERY_BLOCKS = 860_000n; // about a day on Robinhood Chain
 

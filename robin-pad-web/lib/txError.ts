@@ -90,10 +90,21 @@ const clip = (s: string, n = 320) => (s.length > n ? `${s.slice(0, n - 1)}…` :
  * viem puts the reason on the error's second line; the first line alone
  * would end at "reverted with the following reason:" with nothing after it.
  */
+// The wallet itself couldn't sign: MetaMask says "KeyringController - Keyring
+// not found" when asked to sign for an account it has no key for (not the
+// selected one, a removed or unplugged hardware account). viem reports that
+// internal wallet error as a "revert", which it isn't: nothing reached the chain.
+const NO_KEYRING = /keyring not found|no keyring found|keyringcontroller/i;
+const KEYRING_HELP = "Your wallet couldn't sign with the account this site is connected to, so nothing was sent. Open your wallet and select the same account shown at the top right here (or disconnect and connect again). Hardware wallet: plug it in and unlock it first.";
+
 export function explainTxError(e: unknown): string {
-  if (!(e instanceof BaseError)) return clip(e instanceof Error ? e.message : String(e));
+  if (!(e instanceof BaseError)) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NO_KEYRING.test(msg) ? KEYRING_HELP : clip(msg);
+  }
   if (e.walk((x) => x instanceof UserRejectedRequestError)) return 'Declined in the wallet, so nothing was sent.';
   const text = fullText(e);
+  if (NO_KEYRING.test(text)) return KEYRING_HELP;
   if (NO_GAS.test(text)) return GAS_HELP;
   const rev = e.walk((x) => x instanceof ContractFunctionRevertedError);
   if (rev instanceof ContractFunctionRevertedError) {

@@ -6,7 +6,7 @@ import { formatUnits, parseAbi, parseUnits, type Address, type Hash } from 'viem
 import { Landmark } from 'lucide-react';
 import { CONFIG, explorerAddr, explorerTx } from '@/lib/config';
 import { robinhood } from '@/lib/chain';
-import { erc20Abi, hookAbi, portalAbi, splitterAbi } from '@/lib/abi';
+import { erc20Abi, hookAbi, splitterAbi } from '@/lib/abi';
 import { poolId, poolKeyFor } from '@/lib/pool';
 import { explainTxError } from '@/lib/txError';
 import { shortAddr } from '@/lib/format';
@@ -17,17 +17,27 @@ const treasuryAbi = parseAbi([
   'function owner() view returns (address)',
   'function withdraw(address token, address to, uint256 amount)',
 ]);
+const factoryAbi = parseAbi(['function padCount() view returns (uint256)', 'function allPads(uint256) view returns (address)']);
+const padAbi = parseAbi([
+  'function launchCount() view returns (uint256)',
+  'function allLaunches(uint256) view returns (address)',
+  'function platformShareBps() view returns (uint16)',
+  'function claimPlatformFees(uint256 from, uint256 to) returns (uint256)',
+]);
+const MAIN_SHARE_BPS = 1000n; // RobinRevenueSplitter.MAIN_PAD_PLATFORM_SHARE_BPS
 
 const usd = (raw: bigint) => `$${Number(formatUnits(raw, CONFIG.quoteDecimals)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-type Launch = { token: Address; key: ReturnType<typeof poolKeyFor>['key']; pending: bigint; splitter: Address; credit: bigint };
+type Launch = { pad: Address; token: Address; key: ReturnType<typeof poolKeyFor>['key']; pending: bigint; splitter: Address; credit: bigint; shareBps: bigint };
+type Pad = { pad: Address; main: boolean; count: bigint };
 
 /**
  * The platform's 10%. Swap tax waits in the hook until someone flushes the
  * pool to its splitter; the splitter then holds the platform's share until
  * claimPlatform sends it to the treasury, which only its owner can withdraw.
- * "Collect & withdraw" does all three for every launch on this site's portal.
- * (White-label pads and the house pad are handled on robinlab.io/admin.html.)
+ * "Collect & withdraw" does all three for every launch: this site's main
+ * portal and every pad the factory deployed (the house pad and white-label
+ * pads, which claim per pad with claimPlatformFees).
  */
 export function TreasuryPanel() {
   const { address, isConnected: connectedNow } = useAccount();
@@ -49,27 +59,38 @@ export function TreasuryPanel() {
     enabled: !!pc,
     refetchInterval: 20_000,
     queryFn: async () => {
-      const [balance, owner, count] = await Promise.all([
+      const [balance, owner, padCount] = await Promise.all([
         pc!.readContract({ address: CONFIG.usdg, abi: erc20Abi, functionName: 'balanceOf', args: [CONFIG.treasury] }),
         pc!.readContract({ address: CONFIG.treasury, abi: treasuryAbi, functionName: 'owner' }),
-        pc!.readContract({ address: CONFIG.portal, abi: portalAbi, functionName: 'launchCount' }),
+        pc!.readContract({ address: CONFIG.factory, abi: factoryAbi, functionName: 'padCount' }),
       ]);
-      const tokens = await Promise.all(Array.from({ length: Number(count) }, (_, i) =>
-        pc!.readContract({ address: CONFIG.portal, abi: portalAbi, functionName: 'allLaunches', args: [BigInt(i)] })));
-      const launches: Launch[] = await Promise.all(tokens.map(async (token) => {
-        const { key } = poolKeyFor(token);
-        const id = poolId(key);
-        const [pending, cfg] = await Promise.all([
-          pc!.readContract({ address: CONFIG.hook, abi: hookAbi, functionName: 'pendingTax', args: [id] }),
-          pc!.readContract({ address: CONFIG.hook, abi: hookAbi, functionName: 'poolConfigs', args: [id] }),
+      const padAddrs = await Promise.all(Array.from({ length: Number(padCount) }, (_, i) =>
+        pc!.readContract({ address: CONFIG.factory, abi: factoryAbi, functionName: 'allPads', args: [BigInt(i)] })));
+      const pads: Pad[] = [];
+      const launches: Launch[] = [];
+      for (const [pad, main] of [[CONFIG.portal, true] as const, ...padAddrs.map((a) => [a, false] as const)]) {
+        const [count, shareBps] = await Promise.all([
+          pc!.readContract({ address: pad, abi: padAbi, functionName: 'launchCount' }),
+          main ? Promise.resolve(MAIN_SHARE_BPS) : pc!.readContract({ address: pad, abi: padAbi, functionName: 'platformShareBps' }).then(BigInt),
         ]);
-        const splitter = cfg[0];
-        const credit = await pc!.readContract({ address: splitter, abi: splitterAbi, functionName: 'creditedToPlatform', args: [CONFIG.usdg] });
-        return { token, key, pending, splitter, credit };
-      }));
+        pads.push({ pad, main, count });
+        const tokens = await Promise.all(Array.from({ length: Number(count) }, (_, i) =>
+          pc!.readContract({ address: pad, abi: padAbi, functionName: 'allLaunches', args: [BigInt(i)] })));
+        launches.push(...await Promise.all(tokens.map(async (token) => {
+          const { key } = poolKeyFor(token);
+          const id = poolId(key);
+          const [pending, cfg] = await Promise.all([
+            pc!.readContract({ address: CONFIG.hook, abi: hookAbi, functionName: 'pendingTax', args: [id] }),
+            pc!.readContract({ address: CONFIG.hook, abi: hookAbi, functionName: 'poolConfigs', args: [id] }),
+          ]);
+          const splitter = cfg[0];
+          const credit = await pc!.readContract({ address: splitter, abi: splitterAbi, functionName: 'creditedToPlatform', args: [CONFIG.usdg] });
+          return { pad, token, key, pending, splitter, credit, shareBps };
+        })));
+      }
       const ready = launches.reduce((a, l) => a + l.credit, 0n);
-      const unflushed = launches.reduce((a, l) => a + l.pending, 0n);
-      return { balance, owner, launches, ready, unflushedShare: unflushed / 10n };
+      const unflushedShare = launches.reduce((a, l) => a + (l.pending * l.shareBps) / 10_000n, 0n);
+      return { balance, owner, pads, launches, ready, unflushedShare };
     },
   });
 
@@ -94,11 +115,19 @@ export function TreasuryPanel() {
     }
     // Flushing is what credits the splitters, so read the credits again.
     const after = toFlush.length ? (await data.refetch()).data! : fresh;
-    const toClaim = after.launches.filter((l) => l.credit > 0n);
-    for (const [i, l] of toClaim.entries()) {
-      await send(`Claiming ${i + 1}/${toClaim.length}`, { address: l.splitter, abi: splitterAbi, functionName: 'claimPlatform', args: [CONFIG.usdg], chainId: robinhood.id });
+    // Main-portal launches claim one splitter at a time; every other pad
+    // claims all of its launches in one claimPlatformFees call.
+    const mainClaims = after.launches.filter((l) => l.pad === CONFIG.portal && l.credit > 0n);
+    const padClaims = after.pads.filter((p) => !p.main && after.launches.some((l) => l.pad === p.pad && l.credit > 0n));
+    const total = mainClaims.length + padClaims.length;
+    let n = 0;
+    for (const l of mainClaims) {
+      await send(`Claiming ${++n}/${total}`, { address: l.splitter, abi: splitterAbi, functionName: 'claimPlatform', args: [CONFIG.usdg], chainId: robinhood.id });
     }
-    return { flushed: toFlush.length, claimed: toClaim.length };
+    for (const p of padClaims) {
+      await send(`Claiming ${++n}/${total}`, { address: p.pad, abi: padAbi, functionName: 'claimPlatformFees', args: [0n, p.count], chainId: robinhood.id });
+    }
+    return { flushed: toFlush.length, claimed: total };
   }
 
   async function run(kind: 'collect' | 'all' | 'withdraw') {
@@ -164,7 +193,7 @@ export function TreasuryPanel() {
       )}
       {err && <div className="rounded-lg border border-down/40 bg-down/10 p-3 text-sm text-down">{err}</div>}
       <p className="text-xs text-dim">
-        {d ? `${d.launches.length} launch${d.launches.length === 1 ? '' : 'es'} on this portal · ` : ''}treasury{' '}
+        {d ? `${d.launches.length} launch${d.launches.length === 1 ? '' : 'es'} across ${d.pads.length} pad${d.pads.length === 1 ? '' : 's'} · ` : ''}treasury{' '}
         <a className="font-mono text-brand-hi hover:underline" href={explorerAddr(CONFIG.treasury) || undefined} target="_blank" rel="noreferrer">{shortAddr(CONFIG.treasury)}</a>
       </p>
     </div>

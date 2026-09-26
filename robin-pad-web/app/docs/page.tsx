@@ -37,7 +37,7 @@ export default function Docs() {
   // Robin Labs Pad lives on Robinhood Chain mainnet: show its public endpoint,
   // never a paid provider URL.
   const PUBLIC_RPC = 'https://rpc.mainnet.chain.robinhood.com';
-  const siteBase = CONFIG.siteUrl || 'https://pad.robinlabs.fun';
+  const siteBase = CONFIG.siteUrl || 'https://www.robinlab.io';
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">

@@ -1,10 +1,11 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAccount, useWriteContract, usePublicClient, useSignMessage } from 'wagmi';
-import { decodeEventLog, type Address } from 'viem';
+import { useAccount, useWriteContract, usePublicClient, useSignMessage, useReadContract } from 'wagmi';
+import { decodeEventLog, formatUnits, parseUnits, type Address } from 'viem';
 import { FileText, Rocket, PieChart, Eye, ImageUp, ShieldCheck, Check } from 'lucide-react';
-import { portalAbi } from '@/lib/abi';
+import { erc20Abi, portalAbi } from '@/lib/abi';
+import { approveForRouter, buyWithUsdg } from '@/lib/buy';
 import { CONFIG, explorerTx } from '@/lib/config';
 import { fmtUsd } from '@/lib/format';
 import { saveMeta, readImageFile } from '@/lib/metadata';
@@ -22,6 +23,12 @@ const MIN_MC_USD = 100;
 const presetLabel = (v: number) => (v >= 1_000_000 ? `$${v / 1_000_000}M` : `$${v / 1_000}K`);
 const MAX_MC_USD = 1_000_000;
 const TOTAL_SUPPLY = 1_000_000_000;
+// Every launch opens with the creator's own buy: DexScreener (and most
+// scanners) only list a pair once it has traded. It goes through the same
+// router as any buy, right after the launch confirms, with the approvals done
+// before the launch so only the swap is left to sign.
+const MIN_FIRST_BUY_USD = 1;
+const FIRST_BUY_SLIPPAGE_BPS = 500; // 5%: a bot may buy between the launch and this swap
 
 export default function Create() {
   const router = useRouter();
@@ -49,13 +56,19 @@ export default function Create() {
   // Set once createLaunch has confirmed: the token exists from here on, and
   // only the off-chain info (signed separately) may still need saving.
   const [launched, setLaunched] = useState<Address | null>(null);
+  const [firstBuy, setFirstBuy] = useState('10');
+  const [firstBought, setFirstBought] = useState(false);
+  const usdgBal = useReadContract({ address: CONFIG.usdg, abi: erc20Abi, functionName: 'balanceOf', args: [address!], chainId: robinhood.id, query: { enabled: !!address, refetchInterval: 15_000 } });
 
   const startingMcRaw = useMemo(() => BigInt(Math.round(mcUsd * 10 ** CONFIG.quoteDecimals)), [mcUsd]);
   const openingPrice = mcUsd / 1e9;
   const splitTotal = Object.values(split).reduce((a, b) => a + b, 0);
   // The split is an off-chain display preference, never enforced on-chain,
   // so it must not be able to block a real launch.
-  const valid = name.trim().length >= 2 && /^[A-Z0-9]{2,10}$/.test(symbol) && mcUsd >= MIN_MC_USD && mcUsd <= MAX_MC_USD && buyTax <= 10 && sellTax <= 10;
+  const firstBuyRaw = useMemo(() => { try { return parseUnits(firstBuy.trim() || '0', CONFIG.quoteDecimals); } catch { return 0n; } }, [firstBuy]);
+  const firstBuyOk = firstBuyRaw >= BigInt(MIN_FIRST_BUY_USD * 10 ** CONFIG.quoteDecimals);
+  const firstBuyShort = usdgBal.data !== undefined && firstBuyRaw > usdgBal.data;
+  const valid = name.trim().length >= 2 && /^[A-Z0-9]{2,10}$/.test(symbol) && mcUsd >= MIN_MC_USD && mcUsd <= MAX_MC_USD && buyTax <= 10 && sellTax <= 10 && firstBuyOk && !firstBuyShort;
 
   function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -85,10 +98,36 @@ export default function Create() {
     }
   }
 
+  // The creator's first buy, right after the launch. A failure here never loses
+  // the launch: the page offers to try again.
+  async function doFirstBuy(token: Address) {
+    if (!pc || !address) return;
+    setErr(null);
+    try {
+      await ensureChain();
+      await approveForRouter(pc, writeContractAsync, address, CONFIG.usdg, firstBuyRaw, (s) => setBusy(`First buy: ${s}`));
+      const hash = await buyWithUsdg(pc, writeContractAsync, address, token, firstBuyRaw, FIRST_BUY_SLIPPAGE_BPS, (s) => setBusy(`First buy: ${s}`));
+      setTx(hash);
+      setFirstBought(true);
+      usdgBal.refetch();
+      await saveInfo(token);
+    } catch (e: unknown) {
+      setErr(`The token launched, but the first buy didn't go through: ${explainTxError(e)}`);
+      setBusy(null);
+    }
+  }
+
   async function submit() {
     if (!pc || !address) return;
     setErr(null); setBusy('Doing a test run…');
     try {
+      // The first buy is part of every launch, so the USDG for it has to be
+      // there before anything is signed, and its approvals go first.
+      await ensureChain();
+      const bal = await pc.readContract({ address: CONFIG.usdg, abi: erc20Abi, functionName: 'balanceOf', args: [address] });
+      if (bal < firstBuyRaw) throw new Error(`Your first buy is ${fmtUsd(Number(formatUnits(firstBuyRaw, CONFIG.quoteDecimals)))} of USDG, and this wallet holds ${fmtUsd(Number(formatUnits(bal, CONFIG.quoteDecimals)))}. Add USDG or lower the first buy.`);
+      await approveForRouter(pc, writeContractAsync, address, CONFIG.usdg, firstBuyRaw, (s) => setBusy(`Before launch: ${s}`));
+      setBusy('Doing a test run…');
       const call = {
         address: CONFIG.portal,
         abi: [...portalAbi, ...knownErrorsAbi],
@@ -136,7 +175,7 @@ export default function Create() {
       fetch(`/api/verify/${launchedToken}`, { method: 'POST' })
         .catch(() => undefined)
         .finally(() => askExplorerForSource(launchedToken));
-      await saveInfo(token);
+      await doFirstBuy(token);
     } catch (e: unknown) {
       setErr(explainTxError(e));
       setBusy(null);
@@ -209,6 +248,19 @@ export default function Create() {
                 <p className="mt-1.5 text-xs text-dim">Always 1,000,000,000. Every launch here gets the same supply.</p>
               </div>
             </div>
+            <div>
+              <label className="label">Your first buy (USDG)</label>
+              <div className="flex flex-wrap items-center gap-2">
+                {[5, 10, 25, 50].map((v) => (
+                  <button key={v} className={`tab border border-line2 ${firstBuy === String(v) ? 'tab-active' : ''}`} onClick={() => setFirstBuy(String(v))}>${v}</button>
+                ))}
+                <input className="input w-32" inputMode="decimal" value={firstBuy} onChange={(e) => setFirstBuy(e.target.value.replace(/[^0-9.]/g, ''))} />
+                {usdgBal.data !== undefined && <span className="text-xs text-dim">Wallet: {fmtUsd(Number(formatUnits(usdgBal.data, CONFIG.quoteDecimals)))} USDG</span>}
+              </div>
+              <p className={`mt-1.5 text-xs ${firstBuyShort || !firstBuyOk ? 'text-down' : 'text-dim'}`}>
+                {!firstBuyOk ? `At least $${MIN_FIRST_BUY_USD}.` : firstBuyShort ? 'More than this wallet holds.' : 'Required: you make the first trade right after launch, so DexScreener lists your token from the start.'}
+              </p>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Slider label="Buy tax" value={buyTax} onChange={setBuyTax} />
               <Slider label="Sell tax" value={sellTax} onChange={setSellTax} />
@@ -258,8 +310,11 @@ export default function Create() {
               <Row k="Sell tax" v={`${sellTax}%`} />
               <Row k="Your cut" v="90%, set in the contract" />
               <Row k="Starting liquidity" v={`${fmtUsd(mcUsd)} (full supply, locked)`} />
+              <Row k="Your first buy" v={firstBuyOk ? fmtUsd(Number(firstBuy)) : '—'} />
             </dl>
-            {launched && !busy ? (
+            {launched && !busy && !firstBought ? (
+              <button className="btn-brand mt-5 w-full py-3" onClick={() => doFirstBuy(launched)}>Try the first buy again</button>
+            ) : launched && !busy ? (
               <div className="mt-5 grid gap-2">
                 <button className="btn-brand w-full py-3" onClick={() => saveInfo(launched)}>Sign and save details</button>
                 <button className="btn-ghost w-full py-3" onClick={() => router.push(`/token/${launched}`)}>Skip for now</button>

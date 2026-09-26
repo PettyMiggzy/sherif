@@ -26,14 +26,15 @@ export const CONFIG = {
   explorerUrl: process.env.NEXT_PUBLIC_EXPLORER_URL ?? 'https://robinhoodchain.blockscout.com',
   brand: process.env.NEXT_PUBLIC_BRAND ?? 'Robin Labs Pad',
   tagline: process.env.NEXT_PUBLIC_TAGLINE ?? 'Pick your price. Launch in one transaction.',
-  // The site's public URL, for absolute social-preview links. robinlab.io/v4
-  // redirects here (pad/vercel.json).
-  siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? 'https://pad.robinlabs.fun',
+  // The site's public URL, for absolute social-preview links. robinlab.io
+  // (the apex) redirects to www at the domain level.
+  siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.robinlab.io',
   // WalletConnect (Reown) project id: the same one robinlab.io uses
   // (pad/assets/config.js). Public by design and not origin-restricted.
   walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? '89d7a1882c0fa9a5bbe0a58accafc100',
-  // Optional: the main Robin Labs site, linked as "Home" in the nav.
-  homeUrl: process.env.NEXT_PUBLIC_HOME_URL ?? 'https://robinlab.io',
+  // Optional: a separate main site, linked as "Home" in the nav. Empty since
+  // this site is robinlab.io itself.
+  homeUrl: process.env.NEXT_PUBLIC_HOME_URL ?? '',
   // The pad admin wallet (deployer; owns the treasury and factory), shown on the /admin page.
   padAdmin: process.env.NEXT_PUBLIC_PAD_ADMIN ?? '0x5899a0576A94327a6316E01190f951edf7645914',
   milestoneUsd: Number(process.env.NEXT_PUBLIC_MILESTONE_USD ?? 30000),
@@ -43,6 +44,8 @@ export const CONFIG = {
   portal: addr(process.env.NEXT_PUBLIC_PORTAL, 'NEXT_PUBLIC_PORTAL', '0x7e2f5dEe1A846fF21eE946d2e450F64133d0fD6F'),
   hook: addr(process.env.NEXT_PUBLIC_HOOK, 'NEXT_PUBLIC_HOOK', '0x04abDE4e77036178E0DF13d435B7b7f87265e8cc'),
   treasury: addr(process.env.NEXT_PUBLIC_TREASURY, 'NEXT_PUBLIC_TREASURY', '0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f'),
+  // White-label pad factory: its pads (the house pad included) also pay the treasury.
+  factory: addr(process.env.NEXT_PUBLIC_FACTORY, 'NEXT_PUBLIC_FACTORY', '0xD637De9DA24007D11e60BDf0B8358b060953D4E8'),
   // Uniswap v4's PoolManager and UniversalRouter (v2.1.1) on Robinhood Chain.
   poolManager: addr(process.env.NEXT_PUBLIC_POOL_MANAGER, 'NEXT_PUBLIC_POOL_MANAGER', '0x8366a39CC670B4001A1121B8F6A443A643e40951'),
   router: addr(process.env.NEXT_PUBLIC_ROUTER, 'NEXT_PUBLIC_ROUTER', '0x8876789976decbfcbbbe364623c63652db8c0904'),

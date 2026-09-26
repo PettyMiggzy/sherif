@@ -35,7 +35,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/explore" className="hover:text-brand-hi">Explore</Link>
               <Link href="/docs" className="hover:text-brand-hi">Docs &amp; API</Link>
               <Link href="/about" className="hover:text-brand-hi">About</Link>
-              <a href="https://robinlab.io" target="_blank" rel="noreferrer" className="hover:text-brand-hi">robinlab.io</a>
               <a href="https://github.com/Robinlabz/Labs" target="_blank" rel="noreferrer" className="hover:text-brand-hi">GitHub</a>
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
