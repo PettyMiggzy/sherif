@@ -1,0 +1,26 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+
+# Pinned for reproducible bytecode (audit finding D-3): the CREATE2 salt
+# HookMiner finds is only valid for the EXACT init code it was mined
+# against, and solc version / evm_version / metadata all change that init
+# code. Without pinning, forge's own auto-selected solc version has
+# actually been observed to differ between runs in this repo's own history
+# — a real, not theoretical, risk. Mine and deploy using this exact
+# toolchain; if any of these values ever change, re-mine before deploying.
+solc = "0.8.26"
+evm_version = "cancun"     # v4-core uses transient storage (TSTORE/TLOAD)
+bytecode_hash = "none"     # a comment/whitespace edit no longer moves the address
+cbor_metadata = false
+
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+
+# No ffi anywhere in this repo (audit findings D-4/D-6): hook mining uses
+# Uniswap's own pure-Solidity HookMiner library, not an external process.
+ffi = false
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
