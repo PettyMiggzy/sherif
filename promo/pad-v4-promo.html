@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Robin Labs Pad V4 promo</title>
+<!--
+  Robin Labs Pad V4 promo: "you set the starting market cap, and that's your starting liquidity".
+  1920x1080, 27 s. Time-driven, not real-time: render.cjs calls window.setTime(t) for every frame
+  and screenshots it, so the output is frame-exact. Open with ?play in a browser to watch it live.
+-->
+<link rel="stylesheet" href="fonts/local.css" />
+<style>
+  :root{
+    --bg:#050803; --panel:#0B1107; --panel2:#111A0B; --line:#1E2B12; --line2:#2C3F19;
+    --text:#EEF5E3; --muted:#A3B28C; --dim:#6E7D5A; --lime:#D4F21A; --lime2:#A3E635; --ink:#0A1004; --fox:#F08A24;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Plus Jakarta Sans',sans-serif}
+  .display{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;line-height:.9;letter-spacing:.005em}
+  #stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:
+    radial-gradient(1100px 700px at 78% 30%, rgba(163,230,53,.10), transparent 60%),
+    radial-gradient(900px 600px at 10% 90%, rgba(163,230,53,.06), transparent 60%), var(--bg)}
+  /* a faint dotted field, fixed */
+  #stage::before{content:'';position:absolute;inset:0;opacity:.35;background-image:
+    radial-gradient(1px 1px at 23px 41px,#e6f7b0 50%,transparent 51%),radial-gradient(1px 1px at 137px 89px,#e6f7b0 50%,transparent 51%),
+    radial-gradient(1.5px 1.5px at 211px 173px,#fff 50%,transparent 51%),radial-gradient(1px 1px at 311px 29px,#d4f21a 50%,transparent 51%),
+    radial-gradient(1px 1px at 367px 251px,#fff 50%,transparent 51%),radial-gradient(1px 1px at 79px 307px,#e6f7b0 50%,transparent 51%);
+    background-size:400px 400px}
+  .scene{position:absolute;inset:0;opacity:0}
+  .abs{position:absolute}
+  .lime{color:var(--lime)}
+  .chipk{font-family:'Barlow Condensed';font-weight:800;letter-spacing:.14em;font-size:26px;color:var(--muted);text-transform:uppercase}
+
+  /* S1 hook */
+  #s1 .small{left:160px;top:330px;font-size:64px;font-weight:700;color:var(--muted)}
+  #s1 .big{left:150px;top:410px;font-size:170px;font-weight:900}
+  #s1 .strike{left:150px;top:590px;height:14px;background:var(--lime);border-radius:8px;transform-origin:left center}
+  #s1 .not{right:160px;top:720px;font-size:210px;font-weight:900;color:var(--lime);text-shadow:0 0 60px rgba(212,242,26,.35)}
+
+  /* S2 brand */
+  #s2 .mark{left:50%;top:230px;width:300px;height:300px;margin-left:-150px;border-radius:44px;box-shadow:0 0 120px rgba(212,242,26,.35)}
+  #s2 .word{left:0;right:0;top:580px;text-align:center;font-size:190px;font-weight:900}
+  #s2 .sub{left:0;right:0;top:780px;display:flex;justify-content:center;align-items:center;gap:26px}
+  #s2 .sub .lp{font-family:'Barlow Condensed';font-weight:800;font-size:70px;letter-spacing:.3em;color:var(--text);text-transform:uppercase}
+  .v4{font-family:'Barlow Condensed';font-weight:900;font-size:60px;background:linear-gradient(180deg,#DFF55A,#A3E635);color:var(--ink);border-radius:16px;padding:4px 22px 2px;box-shadow:0 12px 40px -10px rgba(163,230,53,.7)}
+  #s2 .chain{left:0;right:0;top:900px;text-align:center}
+
+  /* S3 the demo */
+  #s3 .head{left:120px;top:150px;width:760px}
+  #s3 .head h2{font-size:118px;font-weight:900;line-height:.95}
+  #s3 .head p{margin-top:34px;font-size:40px;color:var(--muted);font-weight:600;line-height:1.35}
+  .card{left:960px;top:150px;width:840px;background:linear-gradient(180deg,rgba(17,26,11,.96),rgba(11,17,7,.96));border:2px solid var(--line2);border-radius:36px;padding:48px 52px;box-shadow:0 40px 120px -30px rgba(0,0,0,.9),0 0 0 1px rgba(163,230,53,.05)}
+  .card .lbl{font-weight:800;font-size:22px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase}
+  .card .mc{font-family:'Barlow Condensed';font-weight:900;font-size:168px;line-height:1;margin-top:14px;color:#fff;font-variant-numeric:tabular-nums}
+  .card .mc small{font-size:64px;color:var(--lime);margin-left:10px}
+  .chips{display:flex;flex-wrap:wrap;gap:14px;margin-top:26px}
+  .chip{font-weight:800;font-size:28px;padding:12px 22px;border-radius:14px;border:2px solid var(--line2);color:var(--muted);background:rgba(5,8,3,.6)}
+  .chip.on{color:var(--ink);background:var(--lime);border-color:var(--lime);box-shadow:0 0 30px rgba(212,242,26,.45)}
+  .typed{font-weight:800;font-size:28px;padding:12px 22px;border-radius:14px;border:2px solid var(--line2);color:var(--text);min-width:190px;background:rgba(5,8,3,.6);font-variant-numeric:tabular-nums}
+  .typed.on{border-color:var(--lime);box-shadow:0 0 0 4px rgba(212,242,26,.2),0 0 30px rgba(212,242,26,.3)}
+  .caret{display:inline-block;width:3px;height:30px;background:var(--lime);vertical-align:-5px;margin-left:3px}
+  .slider{position:relative;height:14px;border-radius:10px;background:var(--line);margin-top:40px}
+  .slider .fill{position:absolute;left:0;top:0;bottom:0;border-radius:10px;background:linear-gradient(90deg,#A3E635,#D4F21A)}
+  .slider .knob{position:absolute;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:#fff;box-shadow:0 0 0 7px rgba(212,242,26,.35),0 6px 20px rgba(0,0,0,.6)}
+  .ends{display:flex;justify-content:space-between;margin-top:16px;font-weight:700;font-size:22px;color:var(--dim)}
+  .rows{margin-top:36px;border-top:2px solid var(--line);padding-top:26px;display:grid;gap:18px}
+  .row{display:flex;justify-content:space-between;align-items:baseline;font-size:32px;font-weight:600;color:var(--muted)}
+  .row b{color:#fff;font-weight:800;font-variant-numeric:tabular-nums}
+  .row b.eq{color:var(--lime)}
+  #s3 .foot{left:120px;top:910px;display:flex;gap:18px;align-items:center}
+  .pill{font-weight:800;font-size:30px;padding:14px 26px;border-radius:999px;border:2px solid var(--line2);background:rgba(11,17,7,.9)}
+  .pill.lime{border-color:rgba(212,242,26,.6);color:var(--lime)}
+
+  /* S4 liquidity = market cap */
+  #s4 .plate{left:0;right:0;bottom:-40px;height:720px;background:url(img/plate.png) center 60%/cover no-repeat;opacity:.9;
+    -webkit-mask-image:linear-gradient(to top,#000 55%,transparent);mask-image:linear-gradient(to top,#000 55%,transparent)}
+  #s4 .eq{left:0;right:0;top:120px;text-align:center}
+  #s4 .eq .l1{font-size:150px;font-weight:900}
+  #s4 .eq .l2{font-size:150px;font-weight:900;color:var(--lime);text-shadow:0 0 60px rgba(212,242,26,.3)}
+  #s4 .sub{left:0;right:0;top:470px;text-align:center;font-size:44px;font-weight:600;color:var(--text)}
+  #s4 .tok{left:50%;top:600px;width:520px;margin-left:-260px;text-align:center}
+  #s4 .tok .n{font-family:'Barlow Condensed';font-weight:900;font-size:92px;color:#fff}
+  #s4 .tok .k{font-weight:800;letter-spacing:.2em;font-size:26px;color:var(--muted)}
+  #s4 .lock{left:50%;top:800px;margin-left:-330px;width:660px;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:18px;font-weight:800;font-size:34px;color:var(--ink);background:var(--lime);border-radius:999px;padding:18px 30px;box-shadow:0 0 60px rgba(212,242,26,.45)}
+
+  /* S5 features */
+  #s5 .t{left:120px;top:140px;font-size:120px;font-weight:900}
+  #s5 .list{left:120px;top:330px;width:1100px;display:grid;gap:28px}
+  #s5 .it{display:flex;align-items:center;gap:30px;font-size:52px;font-weight:700;padding:26px 36px;border:2px solid var(--line2);border-radius:28px;background:rgba(11,17,7,.88)}
+  #s5 .it i{width:58px;height:58px;flex:none;border-radius:50%;background:var(--lime);box-shadow:0 0 30px rgba(212,242,26,.45);position:relative}
+  #s5 .it i::after{content:'';position:absolute;left:18px;top:12px;width:14px;height:26px;border:solid var(--ink);border-width:0 7px 7px 0;transform:rotate(45deg)}
+  #s5 .fox{right:0;top:0;bottom:0;width:760px;background:url(img/fox.webp) center/cover;
+    -webkit-mask-image:linear-gradient(to right,transparent,#000 35%);mask-image:linear-gradient(to right,transparent,#000 35%)}
+
+  /* S6 CTA */
+  #s6 .crew{right:0;top:0;bottom:0;width:1000px;background:url(img/crew.jpg) center 20%/cover;
+    -webkit-mask-image:linear-gradient(to right,transparent,#000 30%);mask-image:linear-gradient(to right,transparent,#000 30%)}
+  #s6 .brand{left:120px;top:150px;display:flex;align-items:center;gap:26px}
+  #s6 .brand img{width:110px;height:110px;border-radius:24px}
+  #s6 .brand .w{font-size:96px;font-weight:900}
+  #s6 .l1{left:120px;top:360px;font-size:150px;font-weight:900}
+  #s6 .l2{left:120px;top:510px;font-size:150px;font-weight:900;color:var(--lime);text-shadow:0 0 60px rgba(212,242,26,.3)}
+  #s6 .url{left:120px;top:730px;display:flex;align-items:center;gap:22px}
+  #s6 .url .go{font-weight:800;font-size:52px;color:var(--ink);background:linear-gradient(180deg,#DFF55A,#A3E635);border-radius:22px;padding:18px 40px;box-shadow:0 20px 60px -16px rgba(163,230,53,.8)}
+  #s6 .alt{left:124px;top:880px;font-size:34px;font-weight:700;color:var(--muted)}
+  #s6 .fine{left:124px;top:980px;font-size:22px;font-weight:600;color:var(--dim)}
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <section class="scene" id="s1">
+    <div class="abs display small" id="s1a">Every other launchpad</div>
+    <div class="abs display big" id="s1b">picks your price <span id="s1fy">for you.</span></div>
+    <div class="abs strike" id="s1s"></div>
+    <div class="abs display not" id="s1n">Not here.</div>
+  </section>
+
+  <section class="scene" id="s2">
+    <img class="abs mark" id="s2m" src="img/logo.png" alt="" />
+    <div class="abs display word" id="s2w">Robin <span class="lime">Labs</span></div>
+    <div class="abs sub" id="s2s"><span class="lp">Launchpad</span><span class="v4">V4</span></div>
+    <div class="abs chain chipk" id="s2c">● Live on Robinhood Chain</div>
+  </section>
+
+  <section class="scene" id="s3">
+    <div class="abs head" id="s3h">
+      <h2 class="display">You set the<br /><span class="lime">starting<br />market cap.</span></h2>
+      <p>Pick a preset or type your own number. Your token opens exactly there.</p>
+    </div>
+    <div class="abs card" id="s3c">
+      <div class="lbl">Starting market cap &amp; liquidity (USDG)</div>
+      <div class="mc" id="mc">$5,000</div>
+      <div class="chips" id="chips">
+        <span class="chip" data-v="5000">$5K</span><span class="chip" data-v="10000">$10K</span><span class="chip" data-v="50000">$50K</span>
+        <span class="chip" data-v="100000">$100K</span><span class="chip" data-v="500000">$500K</span><span class="chip" data-v="1000000">$1M</span>
+        <span class="typed" id="typed">5000</span>
+      </div>
+      <div class="slider"><div class="fill" id="fill"></div><div class="knob" id="knob"></div></div>
+      <div class="ends"><span>$100</span><span>$1M</span></div>
+      <div class="rows">
+        <div class="row"><span>Opens at</span><b id="price">$0.0000050 / token</b></div>
+        <div class="row"><span>Starting liquidity</span><b class="eq" id="liq">$5,000</b></div>
+        <div class="row"><span>Supply</span><b>1,000,000,000</b></div>
+      </div>
+    </div>
+    <div class="abs foot" id="s3f"><span class="pill lime">$100 → $1M</span><span class="pill">Your call. Not a curve's.</span></div>
+  </section>
+
+  <section class="scene" id="s4">
+    <div class="abs plate" id="s4p"></div>
+    <div class="abs eq display" id="s4e"><div class="l1">Your liquidity</div><div class="l2">= your market cap.</div></div>
+    <div class="abs sub" id="s4s">The whole supply goes into a real Uniswap v4 pool.</div>
+    <div class="abs tok" id="s4t"><div class="n" id="toks">1,000,000,000</div><div class="k">TOKENS → THE POOL</div></div>
+    <div class="abs lock" id="s4l"><svg width="34" height="38" viewBox="0 0 24 26" fill="none" stroke="#0A1004" stroke-width="3" stroke-linecap="round"><rect x="3" y="11" width="18" height="13" rx="3"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Locked forever. No withdraw.</div>
+  </section>
+
+  <section class="scene" id="s5">
+    <div class="abs fox" id="s5f"></div>
+    <div class="abs display t" id="s5t">And it's <span class="lime">yours.</span></div>
+    <div class="abs list" id="s5l">
+      <div class="it"><i></i>A real pool from block one. No curve, no graduation.</div>
+      <div class="it"><i></i>Every pool trades against USDG.</div>
+      <div class="it"><i></i>Your tax: 0 to 10% each way.</div>
+      <div class="it"><i></i>90% of the fees paid to you.</div>
+    </div>
+  </section>
+
+  <section class="scene" id="s6">
+    <div class="abs crew" id="s6c"></div>
+    <div class="abs brand" id="s6b"><img src="img/logo.png" alt="" /><span class="display w">Robin <span class="lime">Labs</span></span><span class="v4">V4</span></div>
+    <div class="abs display l1" id="s6l1">Pick your price.</div>
+    <div class="abs display l2" id="s6l2">Launch in minutes.</div>
+    <div class="abs url" id="s6u"><span class="go">robinlab.io</span></div>
+    <div class="abs alt" id="s6a">Launch on Robinhood Chain · pools in USDG</div>
+    <div class="abs fine" id="s6x">Robinhood Chain · not affiliated with Robinhood</div>
+  </section>
+</div>
+
+<script>
+const DURATION = 27;
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const outCubic = (x) => 1 - Math.pow(1 - x, 3);
+const inOutCubic = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const outBack = (x) => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const lerp = (a, b, x) => a + (b - a) * x;
+// A scene's opacity: fades in over `fi` at `a`, out over `fo` before `b`.
+const vis = (t, a, b, fi = .35, fo = .35) => Math.min(seg(t, a, a + fi), 1 - seg(t, b - fo, b));
+function set(el, { o, x = 0, y = 0, s = 1, r = 0, blur = 0 }) {
+  if (o !== undefined) el.style.opacity = o;
+  el.style.transform = `translate(${x}px,${y}px) scale(${s}) rotate(${r}deg)`;
+  el.style.filter = blur ? `blur(${blur}px)` : 'none';
+}
+// Rise-in helper: fades and slides up an element starting at time a.
+const rise = (el, t, a, d = .5, dist = 40) => { const k = outCubic(seg(t, a, a + d)); set(el, { o: k, y: (1 - k) * dist }); };
+
+const usd = (v) => '$' + Math.round(v).toLocaleString('en-US');
+const price = (mc) => { const p = mc / 1e9; return '$' + (p < 0.001 ? p.toFixed(7) : p.toFixed(5)) + ' / token'; };
+// Market-cap script for the demo card: [time, value, how it's picked].
+const MC = [
+  [7.0, 5000, 'chip'], [8.5, 50000, 'chip'], [9.9, 1000000, 'chip'], [11.3, 100000, 'chip'], [12.6, 25000, 'typed'],
+];
+function mcAt(t) {
+  let v = MC[0][1], mode = MC[0][2];
+  for (let i = 1; i < MC.length; i++) {
+    const [ti, vi, mi] = MC[i];
+    if (t >= ti) {
+      // Tween in log space over 0.45 s, like a number rolling.
+      const k = inOutCubic(seg(t, ti, ti + .45));
+      v = Math.exp(lerp(Math.log(MC[i - 1][1]), Math.log(vi), k)); mode = mi;
+      if (k >= 1) v = vi;
+    }
+  }
+  return { v, mode };
+}
+
+function setTime(t) {
+  // ── S1: hook (0 – 3.9) ──
+  $('s1').style.opacity = vis(t, 0, 3.9, .01, .3);
+  rise($('s1a'), t, .15, .5);
+  rise($('s1b'), t, .5, .55, 60);
+  const fy = $('s1fy'), b = $('s1b');
+  const sw = seg(t, 2.1, 2.45);
+  const s = $('s1s');
+  s.style.width = (fy.offsetWidth + 20) + 'px';
+  s.style.left = (150 + fy.offsetLeft - 10) + 'px';
+  s.style.top = (410 + fy.offsetTop + fy.offsetHeight * .52) + 'px';
+  set(s, { o: sw > 0 ? 1 : 0 }); s.style.transform = `scaleX(${outCubic(sw)})`;
+  fy.style.color = sw > 0 ? 'var(--dim)' : '';
+  const n = seg(t, 2.6, 2.95);
+  set($('s1n'), { o: n, s: lerp(1.6, 1, outBack(n)), blur: (1 - n) * 10 });
+
+  // ── S2: brand (3.9 – 6.7) ──
+  $('s2').style.opacity = vis(t, 3.9, 6.7, .2, .35);
+  const m = seg(t, 3.95, 4.55);
+  set($('s2m'), { o: m, s: lerp(.4, 1, outBack(m)), r: lerp(-12, 0, outCubic(m)) });
+  rise($('s2w'), t, 4.35, .5, 50);
+  rise($('s2s'), t, 4.7, .5, 40);
+  rise($('s2c'), t, 5.05, .5, 30);
+
+  // ── S3: the demo (6.7 – 15.6) ──
+  $('s3').style.opacity = vis(t, 6.7, 15.6, .3, .4);
+  rise($('s3h'), t, 6.8, .6, 60);
+  const c = outCubic(seg(t, 6.95, 7.6));
+  set($('s3c'), { o: c, x: (1 - c) * 120 });
+  rise($('s3f'), t, 7.6, .5, 30);
+  const { v, mode } = mcAt(t);
+  $('mc').innerHTML = usd(v).replace(/^\$/, '$<span style="letter-spacing:-.01em">') + '</span><small>MC</small>';
+  $('liq').textContent = usd(v);
+  $('price').textContent = price(v);
+  const settled = MC.find(([ti, vi]) => Math.abs(vi - v) < 0.5 && t >= ti);
+  document.querySelectorAll('#chips .chip').forEach((el) => el.classList.toggle('on', mode === 'chip' && !!settled && +el.dataset.v === Math.round(v)));
+  const typing = mode === 'typed';
+  const typedEl = $('typed');
+  typedEl.classList.toggle('on', typing);
+  if (typing) {
+    const full = '25000', k = Math.floor(seg(t, 12.6, 13.2) * full.length + .001);
+    typedEl.innerHTML = full.slice(0, Math.max(1, k)) + (Math.floor(t * 2.5) % 2 ? '<span class="caret"></span>' : '<span class="caret" style="opacity:0"></span>');
+  } else {
+    typedEl.textContent = 'custom';
+    typedEl.style.color = 'var(--dim)';
+  }
+  if (typing) typedEl.style.color = '';
+  const pos = clamp((Math.log10(v) - 2) / 4);
+  $('fill').style.width = (pos * 100) + '%';
+  $('knob').style.left = (pos * 100) + '%';
+
+  // ── S4: liquidity = market cap (15.6 – 20.4) ──
+  $('s4').style.opacity = vis(t, 15.6, 20.4, .3, .4);
+  const p = outCubic(seg(t, 15.6, 16.6));
+  set($('s4p'), { o: p * .9, y: (1 - p) * 80 });
+  rise($('s4e'), t, 15.75, .6, 60);
+  rise($('s4s'), t, 16.35, .5, 30);
+  const tk = seg(t, 16.8, 17.9);
+  set($('s4t'), { o: outCubic(seg(t, 16.8, 17.1)), y: lerp(-10, 40, inOutCubic(tk)), s: lerp(1, .92, inOutCubic(tk)) });
+  $('toks').textContent = Math.round(lerp(0, 1e9, outCubic(tk))).toLocaleString('en-US');
+  const l = seg(t, 18.1, 18.5);
+  set($('s4l'), { o: l, s: lerp(.6, 1, outBack(l)) });
+
+  // ── S5: the rest of the pitch (20.4 – 23.9) ──
+  $('s5').style.opacity = vis(t, 20.4, 23.9, .3, .35);
+  const f = outCubic(seg(t, 20.4, 21.2));
+  set($('s5f'), { o: f, x: (1 - f) * 80 });
+  rise($('s5t'), t, 20.5, .5, 50);
+  [...$('s5l').children].forEach((el, i) => { const k = outCubic(seg(t, 20.85 + i * .32, 21.25 + i * .32)); set(el, { o: k, x: (1 - k) * -60 }); });
+
+  // ── S6: CTA (23.9 – 27) ──
+  $('s6').style.opacity = vis(t, 23.9, 27.5, .35, .01);
+  const cr = outCubic(seg(t, 23.9, 25));
+  set($('s6c'), { o: cr, s: lerp(1.08, 1, cr) });
+  rise($('s6b'), t, 24.0, .5, 30);
+  rise($('s6l1'), t, 24.2, .5, 50);
+  rise($('s6l2'), t, 24.45, .5, 50);
+  const u = seg(t, 24.85, 25.3);
+  set($('s6u'), { o: u, s: lerp(.7, 1, outBack(u)) });
+  rise($('s6a'), t, 25.2, .5, 20);
+  rise($('s6x'), t, 25.4, .5, 10);
+}
+window.setTime = setTime;
+window.DURATION = DURATION;
+setTime(0);
+if (location.search.includes('play')) {
+  const t0 = performance.now();
+  const tick = () => { const t = ((performance.now() - t0) / 1000) % DURATION; setTime(t); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}
+</script>
+</body>
+</html>
