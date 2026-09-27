@@ -209,6 +209,17 @@ async function trade(p, side, amountText) {
     assert.ok(stocked > 0n, 'harvest put no tokens on the desk');
     assert.ok(lpUsdg > 0n, 'harvest paid the treasury no USDG');
     const [, cost] = await client.readContract({ address: FEE_DESK, abi: deskAbi, functionName: 'quoteAll', args: [token] });
+    // /deals lists it, and its link lands back on the token's fee desk.
+    await p.goto(`${SITE}/deals`, { waitUntil: 'domcontentloaded' });
+    const row = p.locator(`a[href$="#fee-desk" i][href*="${token.slice(2)}" i]`); // the link carries the checksummed address
+    await row.waitFor({ timeout: 60000 });
+    const rowText = await row.innerText();
+    assert.ok(rowText.includes(SYMBOL) && /Yours for/.test(rowText), 'the deal is not listed on /deals');
+    await p.screenshot({ path: `${S}/e2e-2b-deals.png` });
+    await row.click();
+    await p.waitForURL(/#fee-desk$/);
+    await connect(p, TRADER);
+    await p.getByRole('button', { name: 'All', exact: true }).waitFor({ timeout: 60000 });
     await p.getByRole('button', { name: 'All', exact: true }).click();
     const deskBuy = p.getByRole('button', { name: new RegExp(`^Buy [\\d.,]+[KMB]? ${SYMBOL}$`) });
     await deskBuy.waitFor({ timeout: 30000 });

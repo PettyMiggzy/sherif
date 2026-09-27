@@ -35,6 +35,11 @@ export function FeeDeskCard({ launch, symbol }: { launch: Launch; symbol: string
   const [err, setErr] = useState<string | null>(null);
   const [tx, setTx] = useState<string | null>(null);
   useEffect(() => { const t = setTimeout(() => setDebounced(amount), 300); return () => clearTimeout(t); }, [amount]);
+  // Linked from /deals as /token/<address>#fee-desk: the card renders after the
+  // launch record loads, too late for the browser's own jump to the anchor.
+  useEffect(() => {
+    if (window.location.hash === '#fee-desk') document.getElementById('fee-desk')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
 
   const enabled = !!desk && !!pc;
   const all = useReadContract({ address: desk || undefined, abi: feeDeskAbi, functionName: 'quoteAll', args: [launch.token], chainId: robinhood.id, query: { enabled, refetchInterval: 15_000 } });
@@ -117,7 +122,7 @@ export function FeeDeskCard({ launch, symbol }: { launch: Launch; symbol: string
 
   const empty = stock === 0n;
   return (
-    <div className="panel space-y-3 p-5">
+    <div id="fee-desk" className="panel scroll-mt-24 space-y-3 p-5">
       <div className="flex items-center justify-between">
         <h3 className="flex items-center gap-2 font-bold"><Tag className="h-4 w-4 text-brand-hi" />Fee desk</h3>
         <span className="chip bg-brand/15 text-brand-hi">{fees.deskDiscountPct}% under the pool</span>
