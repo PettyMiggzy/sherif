@@ -4,6 +4,7 @@ import {
   Rocket, BarChart3, Trophy, Users, CheckCircle2, ShieldCheck, Zap, Gem, Wallet, FileText, ArrowRight,
 } from 'lucide-react';
 import { ChainBadge } from './Nav';
+import { FEES } from '@/lib/fees';
 
 type Icon = ComponentType<{ className?: string }>;
 
@@ -29,7 +30,7 @@ export function Hero() {
             Pick your price.<br /><span className="text-brand-hi">Launch in one transaction.</span>
           </p>
           <p className="mt-3 max-w-md text-[15px] text-text/85 sm:text-base">
-            Set your own starting market cap, get a real Uniswap v4 pool from the first block, and keep 90% of your token&apos;s fees in USDG.
+            Set your own starting market cap, get a real Uniswap v4 pool from the first block, and keep {FEES.creatorPct}% of your token&apos;s tax in USDG.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link href="/create" className="btn-brand px-6 py-3.5 text-base"><Rocket className="h-5 w-5" />Create a Launch</Link>
@@ -65,7 +66,7 @@ export function StatsBar({ items }: { items: Stat[] }) {
 export const STAT_ICONS = { Rocket, BarChart3, Trophy, Users };
 
 export function LaunchPromo() {
-  const points = ['Your starting market cap: $100 to $1M', 'A Uniswap v4 pool in USDG, live at once', 'Your own tax, 0 to 10% each way', '90% of the fees paid to you'];
+  const points = ['Your starting market cap: $100 to $1M', 'A Uniswap v4 pool in USDG, live at once', 'Your own tax, 0 to 10% each way', `${FEES.creatorPct}% of your tax paid to you`];
   return (
     <div className="panel relative overflow-hidden">
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -90,7 +91,7 @@ export function WhyPanel() {
     [Gem, 'You set the price', 'Open anywhere from $100 to $1M market cap.'],
     [Zap, 'Real pool, block one', 'A Uniswap v4 pool, liquidity locked forever.'],
     [ShieldCheck, 'Nothing hidden', 'All 1B tokens go in the pool. No team bag.'],
-    [Users, 'Creators get paid', '90% of the tax and LP fees, in USDG.'],
+    [Users, 'Creators get paid', FEES.lpToPlatform ? `${FEES.creatorPct}% of the tax, in USDG.` : `${FEES.creatorPct}% of the tax and LP fees, in USDG.`],
   ];
   return (
     <div className="panel p-5 sm:p-6">
@@ -115,7 +116,7 @@ export function HowItWorks() {
     [Wallet, 'Connect wallet', 'Any wallet on Robinhood Chain. A little ETH covers gas.'],
     [FileText, 'Name it, price it', 'Name, ticker, picture, your tax and your starting market cap.'],
     [Rocket, 'Launch', 'One transaction mints the token and opens its USDG pool.'],
-    [BarChart3, 'Get paid', 'Claim 90% of the fees in USDG whenever you like.'],
+    [BarChart3, 'Get paid', `Claim ${FEES.creatorPct}% of the tax in USDG whenever you like.`],
   ];
   return (
     <section id="how-it-works" className="grid scroll-mt-24 items-center gap-6 lg:grid-cols-[1.5fr_1fr]">

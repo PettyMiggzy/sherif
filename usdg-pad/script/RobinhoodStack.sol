@@ -10,6 +10,7 @@ import {RobinPadFactory} from "../src/RobinPadFactory.sol";
 import {PadPortal} from "../src/PadPortal.sol";
 import {PadRevenueSplitter} from "../src/PadRevenueSplitter.sol";
 import {RobinTreasury} from "../src/RobinTreasury.sol";
+import {RobinFeeDesk} from "../src/RobinFeeDesk.sol";
 import {HolderTokenDeployer} from "../src/HolderTokenDeployer.sol";
 import {HolderPadTemplate} from "../src/HolderPadTemplate.sol";
 import {HolderPadPortal} from "../src/HolderPadPortal.sol";
@@ -48,6 +49,7 @@ abstract contract RobinhoodStack {
     struct Stack {
         RobinTreasury treasury;
         RobinHook hook;
+        RobinFeeDesk feeDesk;
         RobinPortal mainPortal;
         PadRevenueSplitter splitterImpl;
         RobinPadFactory factory;
@@ -56,8 +58,8 @@ abstract contract RobinhoodStack {
         HolderPadPortal housePad;
     }
 
-    /// The house pad's terms, same as Arc's live house pad: platform takes
-    /// its fixed 10%, creators pick any tax 0-10%, opening market cap
+    /// The house pad's terms: platform takes its fixed 20%
+    /// (HOUSE_PLATFORM_SHARE_BPS), creators pick any tax 0-10%, opening market cap
     /// $100-$10k, no launch fee, open to everyone.
     function _housePadSettings() internal pure returns (PadPortal.PadSettings memory) {
         return PadPortal.PadSettings({
@@ -72,11 +74,21 @@ abstract contract RobinhoodStack {
         });
     }
 
-    function _deployStack(address owner, address create2Deployer, uint256 setupFee, string memory housePadName)
-        internal
-        returns (Stack memory s)
-    {
-        s.treasury = new RobinTreasury(owner);
+    /// `existingTreasury`: keep collecting into a treasury that's already
+    /// live (its owner must be `owner`); zero deploys a new one.
+    function _deployStack(
+        address owner,
+        address create2Deployer,
+        uint256 setupFee,
+        string memory housePadName,
+        address existingTreasury
+    ) internal returns (Stack memory s) {
+        if (existingTreasury != address(0)) {
+            s.treasury = RobinTreasury(payable(existingTreasury));
+            require(s.treasury.owner() == owner, "existing treasury has another owner");
+        } else {
+            s.treasury = new RobinTreasury(owner);
+        }
 
         bytes memory args = abi.encode(POOL_MANAGER, owner);
         (address predictedHook, bytes32 salt) = HookMiner.find(create2Deployer, HOOK_FLAGS, type(RobinHook).creationCode, args);
@@ -88,7 +100,11 @@ abstract contract RobinhoodStack {
         // The main-portal slot is one-shot and, unlike the factory slot, has
         // no renounce. Filling it is the only way to close it, so the fresh
         // deploy fills it the way Arc did, with the original RobinPortal.
-        s.mainPortal = new RobinPortal(POOL_MANAGER, address(s.hook), address(s.treasury), USDG, true);
+        // The main pad's LP fees: USDG side to the treasury in full, token
+        // side to the fee desk, which sells it at a discount for USDG.
+        s.feeDesk = new RobinFeeDesk(POOL_MANAGER, address(s.hook), USDG, address(s.treasury));
+        s.mainPortal =
+            new RobinPortal(POOL_MANAGER, address(s.hook), address(s.treasury), USDG, true, address(s.feeDesk));
         s.hook.bootstrapMainPortal(address(s.mainPortal));
 
         s.splitterImpl = new PadRevenueSplitter();
@@ -128,7 +144,9 @@ abstract contract RobinhoodStack {
         require(s.factory.isApprovedTemplate(address(s.holderTemplate)), "holders template not approved");
         require(s.factory.isHousePad(address(s.housePad)), "not a house pad");
         require(s.factory.templateOf(address(s.housePad)) == address(s.holderTemplate), "house pad not from the holders template");
-        require(s.housePad.platformShareBps() == 1_000 && s.housePad.padOwner() == owner, "wrong house pad share or owner");
+        require(s.housePad.platformShareBps() == 2_000 && s.housePad.padOwner() == owner, "wrong house pad share or owner");
+        require(s.mainPortal.feeDesk() == address(s.feeDesk), "main portal not wired to the fee desk");
+        require(s.feeDesk.treasury() == address(s.treasury) && s.feeDesk.hook() == address(s.hook), "fee desk miswired");
         require(s.housePad.holderTokenDeployer() == address(s.tokenDeployer), "wrong holder token deployer");
     }
 }

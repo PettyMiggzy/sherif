@@ -40,7 +40,7 @@ contract HolderPadTest is Test, Deployers {
     PadRevenueSplitter splitterImpl;
     HolderTokenDeployer tokenDeployer;
     HolderPadTemplate template;
-    HolderPadPortal pad; // the holders house pad (Robin Labs takes 10%)
+    HolderPadPortal pad; // the holders house pad (Robin Labs takes 20%)
 
     address padOwner = makeAddr("padOwner");
     address creator = makeAddr("creator");
@@ -52,6 +52,7 @@ contract HolderPadTest is Test, Deployers {
 
     uint256 constant STARTING_MC = 5_000e6;
     uint256 constant TOTAL_SUPPLY = 1_000_000_000 ether;
+    uint16 constant HOUSE_BPS = 2_000; // RobinPadFactory.HOUSE_PLATFORM_SHARE_BPS
 
     function setUp() public {
         deployFreshManagerAndRouters();
@@ -176,7 +177,7 @@ contract HolderPadTest is Test, Deployers {
 
     /// @dev The holders' USDC out of `revenue` flushed into the splitter.
     function _holdersCut(uint256 revenue, uint16 holdersBps) internal pure returns (uint256) {
-        uint256 creatorPool = revenue - (revenue * 1_000) / 10_000;
+        uint256 creatorPool = revenue - (revenue * HOUSE_BPS) / 10_000;
         return (creatorPool * holdersBps) / 10_000;
     }
 
@@ -187,7 +188,7 @@ contract HolderPadTest is Test, Deployers {
         assertTrue(factory.isHousePad(address(pad)));
         assertEq(factory.templateOf(address(pad)), address(template));
         assertTrue(hook.isAuthorizedPortal(address(pad)), "the hook trusts the holders pad");
-        assertEq(pad.platformShareBps(), 1_000, "Robin Labs takes 10% on a house pad");
+        assertEq(pad.platformShareBps(), HOUSE_BPS, "Robin Labs takes 20% on a house pad");
         assertEq(pad.padOwner(), padOwner);
         assertEq(pad.factory(), address(template));
         assertEq(pad.holderTokenDeployer(), address(tokenDeployer));
@@ -361,8 +362,8 @@ contract HolderPadTest is Test, Deployers {
         usdc.approve(address(pad), 50e6);
         (address token,) = pad.createLaunchWithHolders(_params(300), _alloc(), 2_000, 1_000, 50e6);
         vm.stopPrank();
-        assertEq(usdc.balanceOf(address(treasury)), treasuryBefore + 5e6, "Robin Labs gets 10% of the launch fee");
-        assertEq(usdc.balanceOf(padOwner), ownerBefore + 45e6);
+        assertEq(usdc.balanceOf(address(treasury)), treasuryBefore + 10e6, "Robin Labs gets 20% of the launch fee");
+        assertEq(usdc.balanceOf(padOwner), ownerBefore + 40e6);
         assertEq(PadRevenueSplitter(pad.splitterForToken(token)).padOwnerShareBps(), 1_000);
     }
 
@@ -433,10 +434,10 @@ contract HolderPadTest is Test, Deployers {
         assertEq(token.claim(), 0, "nothing twice");
 
         // The rest of the split is unchanged: creator, marketing, buyback.
-        uint256 creatorPool = revenue - (revenue * 1_000) / 10_000;
+        uint256 creatorPool = revenue - (revenue * HOUSE_BPS) / 10_000;
         assertEq(sp.buybackCredit(), (creatorPool * 1_000) / 10_000);
         assertEq(sp.creditOf(marketing), (creatorPool * 2_000) / 10_000);
-        assertEq(sp.platformCredit(), (revenue * 1_000) / 10_000, "Robin Labs' 10% off the top");
+        assertEq(sp.platformCredit(), (revenue * HOUSE_BPS) / 10_000, "Robin Labs' 20% off the top");
     }
 
     function test_ClaimSharesOutNewMoneyFirst() public {
@@ -585,7 +586,7 @@ contract HolderPadTest is Test, Deployers {
         (RobinHolderToken token, PadRevenueSplitter sp) = _launch(_alloc(), 2_000, 500);
         _swap(alice, address(token), true, 300e6);
         uint256 revenue = _flush(address(token));
-        uint256 creatorPool = revenue - (revenue * 1_000) / 10_000;
+        uint256 creatorPool = revenue - (revenue * HOUSE_BPS) / 10_000;
         uint256 before = usdc.balanceOf(marketing);
         sp.claimRecipient(1);
         assertEq(usdc.balanceOf(marketing), before + (creatorPool * 2_000) / 10_000);

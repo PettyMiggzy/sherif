@@ -24,6 +24,7 @@ import {RobinPadFactory} from "../src/RobinPadFactory.sol";
 import {PadPortal} from "../src/PadPortal.sol";
 import {PadRevenueSplitter} from "../src/PadRevenueSplitter.sol";
 import {RobinTreasury} from "../src/RobinTreasury.sol";
+import {RobinFeeDesk} from "../src/RobinFeeDesk.sol";
 import {PadPortalTemplate} from "../src/PadPortalTemplate.sol";
 import {IPadTemplate} from "../src/interfaces/IPadTemplate.sol";
 
@@ -37,6 +38,7 @@ contract RobinPadTest is Test, Deployers {
     RobinPadFactory factory;
     PadRevenueSplitter splitterImpl;
     RobinTreasury treasury;
+    RobinFeeDesk feeDesk;
     address treasuryOwner = makeAddr("treasuryOwner");
     address creator = makeAddr("creator");
     address trader1 = makeAddr("trader1");
@@ -78,7 +80,8 @@ contract RobinPadTest is Test, Deployers {
 
         treasury = new RobinTreasury(treasuryOwner);
 
-        portal = new RobinPortal(address(manager), address(hook), address(treasury), address(usdc), true);
+        feeDesk = new RobinFeeDesk(address(manager), address(hook), address(usdc), address(treasury));
+        portal = new RobinPortal(address(manager), address(hook), address(treasury), address(usdc), true, address(feeDesk));
         hook.bootstrapMainPortal(address(portal));
 
         splitterImpl = new PadRevenueSplitter();
@@ -401,29 +404,33 @@ contract RobinPadTest is Test, Deployers {
     }
 
     // ------------------------------------------------------------------
-    // LP fee harvesting — permissionless, routes through the same splitter
+    // LP fee harvesting — permissionless. On the main pad the USDC side goes
+    // to the treasury in full and the launch-token side to the fee desk.
     // ------------------------------------------------------------------
 
-    function test_HarvestFeesCollectsPoolFeesAndSplitsThem() public {
+    function test_HarvestFeesMainPad_QuoteToTreasuryTokenToDesk() public {
         (address token, address locker) = _createLaunch(portal, 0, 0); // isolate pool-fee harvesting from hook tax
         PoolKey memory key = _keyFor(token);
         address splitter = RobinLocker(locker).splitter();
+        assertEq(RobinLocker(locker).quoteFeeSink(), address(treasury));
+        assertEq(RobinLocker(locker).tokenFeeSink(), address(feeDesk));
 
         _buy(trader1, token, key, 300 * USDC_DECIMALS);
         uint256 tokenBal = RobinLaunchToken(token).balanceOf(trader1);
         _sell(trader1, token, key, tokenBal / 2);
 
-        uint256 creditedBefore0 = RobinRevenueSplitter(splitter).creditedToCreator(token);
-        uint256 creditedBefore1 = RobinRevenueSplitter(splitter).creditedToCreator(address(usdc));
-
+        uint256 treasuryBefore = usdc.balanceOf(address(treasury));
         RobinLocker(locker).harvestFees();
 
-        uint256 creditedAfter0 = RobinRevenueSplitter(splitter).creditedToCreator(token);
-        uint256 creditedAfter1 = RobinRevenueSplitter(splitter).creditedToCreator(address(usdc));
-        assertTrue(
-            creditedAfter0 > creditedBefore0 || creditedAfter1 > creditedBefore1,
-            "harvesting real trading activity should produce some LP fees to split"
-        );
+        // 1% of the $300 buy, less rounding, is the USDC side.
+        uint256 toTreasury = usdc.balanceOf(address(treasury)) - treasuryBefore;
+        assertApproxEqAbs(toTreasury, 3 * USDC_DECIMALS, 2, "USDC-side LP fees: all of it to the treasury");
+        // 1% of the tokens sold is the token side.
+        assertApproxEqAbs(RobinLaunchToken(token).balanceOf(address(feeDesk)), (tokenBal / 2) / 100, 1e6, "token-side LP fees: to the desk");
+        assertEq(RobinLaunchToken(token).balanceOf(address(0xdEaD)), 0, "nothing burned on the main pad");
+        assertEq(RobinLaunchToken(token).balanceOf(address(treasury)), 0, "treasury never holds the launch token");
+        assertEq(RobinRevenueSplitter(splitter).creditedToCreator(address(usdc)), 0, "LP fees skip the creator split");
+        assertEq(RobinRevenueSplitter(splitter).creditedToPlatform(address(usdc)), 0);
     }
 
     // ------------------------------------------------------------------
@@ -436,14 +443,18 @@ contract RobinPadTest is Test, Deployers {
         address splitter = RobinLocker(locker).splitter();
 
         _buy(trader1, token, key, 200 * USDC_DECIMALS);
-        RobinLocker(locker).harvestFees();
+        RobinLocker(locker).harvestFees(); // main pad: LP fees straight to the treasury
+        uint256 lpFees = usdc.balanceOf(address(treasury));
+        assertGt(lpFees, 0, "USDC-side LP fees land in the treasury at harvest");
         hook.flush(key); // moves the hook's accrued swap tax into the splitter
 
-        // Revenue is credited but not yet pushed anywhere (pull-based, per
-        // the H-2 fix) — the treasury only receives it once claimPlatform
-        // is actually called. Anyone may call it.
-        assertEq(usdc.balanceOf(address(treasury)), 0, "treasury should hold nothing until claimPlatform is called");
+        // Tax is credited but not yet pushed anywhere (pull-based, per the
+        // H-2 fix) — the treasury only receives the platform's 20% once
+        // claimPlatform is actually called. Anyone may call it.
+        assertEq(usdc.balanceOf(address(treasury)), lpFees, "tax reaches the treasury only through claimPlatform");
+        uint256 platformTax = RobinRevenueSplitter(splitter).creditedToPlatform(address(usdc));
         RobinRevenueSplitter(splitter).claimPlatform(address(usdc));
+        assertEq(usdc.balanceOf(address(treasury)), lpFees + platformTax);
 
         uint256 treasuryTokenBal = RobinLaunchToken(token).balanceOf(address(treasury));
         uint256 treasuryUsdcBal = usdc.balanceOf(address(treasury));
@@ -537,6 +548,25 @@ contract RobinPadTest is Test, Deployers {
         hook.flush(key);
     }
 
+    /// White-label pads keep the original LP-fee route: USDC side through
+    /// the launch's splitter, token side burned. Only the main pad uses the fee desk.
+    function test_Pad_WhiteLabelLpFeesStillSplitAndBurn() public {
+        PadPortal pad = PadPortal(factory.deployHousePad("Robin Labs Pad", address(this), _settings(0, 1_000, 0, 100e6)));
+        (address token, PadRevenueSplitter sp) = _padLaunch(pad, creator, 0, 0);
+        RobinLocker locker = RobinLocker(pad.lockerForToken(token));
+        assertEq(locker.quoteFeeSink(), address(0));
+        assertEq(locker.tokenFeeSink(), address(0));
+        PoolKey memory key = _keyFor(token);
+        uint256 got = _buy(trader1, token, key, 300 * USDC_DECIMALS);
+        _sell(trader1, token, key, got / 2);
+        uint256 treasuryBefore = usdc.balanceOf(address(treasury));
+        locker.harvestFees();
+        assertGt(sp.platformCredit(), 0, "USDC-side LP fees credited through the splitter");
+        assertEq(usdc.balanceOf(address(treasury)), treasuryBefore, "not paid to the treasury directly");
+        assertGt(RobinLaunchToken(token).balanceOf(address(0xdEaD)), 0, "token side burned");
+        assertEq(RobinLaunchToken(token).balanceOf(address(feeDesk)), 0, "the fee desk is the main pad's only");
+    }
+
     function test_Pad_DeployChargesSetupFeeAndWiresThePad() public {
         uint256 treasuryBefore = usdc.balanceOf(address(treasury));
         PadPortal pad = _deployPad(_settings(2_000, 1_000, 0, 100e6));
@@ -559,7 +589,7 @@ contract RobinPadTest is Test, Deployers {
         assertEq(minMc, 100e6);
     }
 
-    function test_Pad_HousePadTakesTenPercentAndIsOwnerOnly() public {
+    function test_Pad_HousePadTakesTwentyPercentAndIsOwnerOnly() public {
         vm.prank(customer);
         vm.expectRevert(RobinPadFactory.NotOwner.selector);
         factory.deployHousePad("Fake Robin Labs Pad", customer, _settings(0, 1_000, 0, 100e6));
@@ -567,14 +597,14 @@ contract RobinPadTest is Test, Deployers {
         uint256 treasuryBefore = usdc.balanceOf(address(treasury));
         PadPortal house = PadPortal(factory.deployHousePad("Robin Labs Pad", address(this), _settings(0, 1_000, 0, 100e6)));
         assertTrue(factory.isHousePad(address(house)));
-        assertEq(house.platformShareBps(), 1_000);
+        assertEq(house.platformShareBps(), 2_000);
         assertEq(usdc.balanceOf(address(treasury)), treasuryBefore, "no setup fee for a house pad");
 
         (address token, PadRevenueSplitter sp) = _padLaunch(house, creator, 300, 300);
         uint256 revenue = _tradeAndFlush(token);
-        assertEq(sp.platformCredit(), (revenue * 1_000) / 10_000, "Robin Labs: 10%");
+        assertEq(sp.platformCredit(), (revenue * 2_000) / 10_000, "Robin Labs: 20%");
         assertEq(sp.padOwnerCredit(), 0);
-        assertEq(sp.creditOf(creator), revenue - (revenue * 1_000) / 10_000, "creator: 90%");
+        assertEq(sp.creditOf(creator), revenue - (revenue * 2_000) / 10_000, "creator: 80%");
     }
 
     function test_Pad_BuyerIsProtectedFromASetupFeeRaise() public {
@@ -1052,7 +1082,7 @@ contract RobinPadTest is Test, Deployers {
 
         RobinTreasury blockedTreasury = new RobinTreasury(treasuryOwner);
         RobinPortal freshPortal =
-            new RobinPortal(address(manager), address(freshHook), address(blockedTreasury), address(blockableQuote), true);
+            new RobinPortal(address(manager), address(freshHook), address(blockedTreasury), address(blockableQuote), true, address(0));
         freshHook.bootstrapMainPortal(address(freshPortal));
 
         // Block the treasury's INCOMING transfers only — simulating e.g. a
@@ -1225,7 +1255,7 @@ contract RobinPadTest is Test, Deployers {
         assertEq(parent.balanceOf(address(treasury)), (revenue * 1_500) / 10_000, "treasury paid in the parent coin");
     }
 
-    function test_Template_HousePadIsOwnerOnlyAndTakesTenPercent() public {
+    function test_Template_HousePadIsOwnerOnlyAndTakesTwentyPercent() public {
         MockPadTemplate t = _mockTemplate(address(usdc));
         factory.setTemplateApproved(address(t), true);
         bytes memory cfg = abi.encode(_settings(0, 1_000, 0, 100e6));
@@ -1238,7 +1268,7 @@ contract RobinPadTest is Test, Deployers {
         uint256 treasuryBefore = usdc.balanceOf(address(treasury));
         PadPortal house = PadPortal(factory.deployHousePadFromTemplate(address(t), "House Fork", address(this), cfg));
         assertTrue(factory.isHousePad(address(house)));
-        assertEq(house.platformShareBps(), 1_000);
+        assertEq(house.platformShareBps(), 2_000);
         assertEq(house.padOwner(), address(this));
         assertEq(usdc.balanceOf(address(treasury)), treasuryBefore, "no setup fee");
     }

@@ -2,10 +2,59 @@
 
 Deploys the pad (ported from `PettyMiggzy/tr`'s `launchpad/`, built for
 Arc) on Robinhood Chain (chain 4663), with **USDG** as every pool's quote
-asset. The contracts in `src/` are byte-identical to Tr's audited source;
-only the deploy scripts, tests and docs changed.
+asset. The 2026-09-26 deploy ran Tr's audited source unchanged. The relaunch
+below changes the fee routing (RobinLocker, RobinPortal, RobinRevenueSplitter,
+RobinPadFactory's house share), adds a block-open price record to RobinHook,
+and adds RobinFeeDesk; those changes have tests but no external audit yet.
 
-## Deployed on mainnet
+## Relaunch: 20% of the tax and every LP fee (ready, not yet deployed)
+
+What changes for launches on the new main portal (older launches keep the
+terms they launched with; the site keeps listing and trading them):
+
+| | 2026-09-26 portal | relaunch |
+|---|---|---|
+| Creator's tax (0-10% each way, their pick) | 90% creator / 10% platform | **80% creator / 20% platform** |
+| LP fee, 1% every swap, USDG side | split 90/10 like the tax | **100% to the treasury** |
+| LP fee, token side (sells pay it in the token) | burned | **sold by `RobinFeeDesk` for USDG at 10% under the pool price; USDG to the treasury** |
+| House pad platform share | 10% | **20%** |
+| White-label pads | 15% | 15% (unchanged) |
+
+`RobinFeeDesk` has no owner and no withdraw: tokens leave only through
+`buy`, paid in full. It prices off the pool, using the higher of the live
+price and the price the pool opened the block at (`RobinHook` now records
+that), so pushing the price down inside one block never makes the desk
+cheaper. The platform never holds launch tokens and never sells into a pool.
+
+Tests: 88 unit tests plus the 4 real-chain fork tests pass. The deploy was
+rehearsed on a mainnet fork (2026-09-27, block 73769230) exactly as below,
+as the real owner with the live treasury reused; the site's browser E2E then
+passed on that fork: launch with a first buy, buy, sell, fee desk stocked and
+bought out at exactly 10.00% under the pool, an old-portal coin (ROBINDOGE)
+traded on its old hook, and /admin collected LP fees and tax from both
+deployments and withdrew everything.
+
+```bash
+cd usdg-pad && export PATH="$HOME/.foundry/bin:$PATH"
+bash script/setup-deps.sh && forge build
+EXISTING_TREASURY=0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f \
+forge script script/DeployRobinhood.s.sol:DeployRobinhood \
+  --rpc-url https://rpc.mainnet.chain.robinhood.com \
+  --broadcast --slow --legacy --with-gas-price 40000000 \
+  --account <keystore-name> --sender 0x5899a0576A94327a6316E01190f951edf7645914
+```
+
+Run it from the treasury's owner: `EXISTING_TREASURY` keeps all platform
+revenue in the one treasury, and the script refuses a treasury owned by
+anyone else. It needs about 0.001 ETH of gas and no USDG. Then point the site
+at the printed addresses (in `robin-pad-web/lib/config.ts` or the Vercel
+env): `NEXT_PUBLIC_PORTAL`, `NEXT_PUBLIC_HOOK`, `NEXT_PUBLIC_FACTORY`,
+`NEXT_PUBLIC_FEE_DESK`, and `NEXT_PUBLIC_PORTAL_GENESIS_BLOCK` (the block it
+printed). The old portal is already listed in `GENERATIONS` there, so its
+coins stay on the site. Verify with `script/verify.sh`, passing `FEE_DESK`
+and `TREASURY_DEPLOYER=0x5899a0576A94327a6316E01190f951edf7645914`.
+
+## Deployed on mainnet (2026-09-26 portal)
 
 Deployed 2026-09-26 in blocks 73073570-73073800 by
 `0x5899a0576A94327a6316E01190f951edf7645914`, which owns the treasury, the

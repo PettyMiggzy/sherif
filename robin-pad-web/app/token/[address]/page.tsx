@@ -22,6 +22,7 @@ import { StatCards } from '@/components/StatCards';
 import { FeatureStrip } from '@/components/FeatureStrip';
 import { CreatorCard, InfoTab, AddrLink } from '@/components/TokenExtras';
 import { GoPlusPanel } from '@/components/GoPlusPanel';
+import { FeeDeskCard } from '@/components/FeeDeskCard';
 import { askExplorerForSource } from '@/lib/explorerSource';
 
 type Tab = 'chart' | 'trades' | 'holders' | 'info';
@@ -40,13 +41,14 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   const meta = useQuery({ queryKey: ['meta', token], enabled: valid, queryFn: () => loadMeta(token) });
   // So the explorer (and the scanners that read it) have this token's source.
   useEffect(() => { if (launch.data) askExplorerForSource(token); }, [launch.data, token]);
-  const { key: poolKey, tokenIsToken0 } = useMemo(() => poolKeyFor(token), [token]);
+  const hook = launch.data?.hook;
+  const { key: poolKey, tokenIsToken0 } = useMemo(() => poolKeyFor(token, hook), [token, hook]);
 
   // Price reads wait for the launch record so they can clamp to its liquidity
   // range (see fetchSpot) — an out-of-range slot0 is free to push and not a price.
   const range = launch.data && launch.data.tickLower !== undefined && launch.data.tickUpper !== undefined
     ? { tickLower: launch.data.tickLower, tickUpper: launch.data.tickUpper } : undefined;
-  const spot = useQuery({ queryKey: ['spot', token, range?.tickLower, range?.tickUpper], enabled: valid && launch.isFetched, queryFn: () => fetchSpot(token, range), refetchInterval: 12_000 });
+  const spot = useQuery({ queryKey: ['spot', token, range?.tickLower, range?.tickUpper, hook], enabled: valid && launch.isFetched, queryFn: () => fetchSpot(token, range, hook), refetchInterval: 12_000 });
   const stats = useQuery({ queryKey: ['stats', token, !!launch.data], enabled: valid && launch.isFetched, queryFn: () => getStats(token, launch.data, { liquidity: true }), refetchInterval: 20_000 });
   const trades = useQuery({ queryKey: ['trades', token], enabled: valid, queryFn: () => getTrades(token), refetchInterval: 20_000 });
   const holders = useQuery({ queryKey: ['holders', token], enabled: valid && launch.isFetched, queryFn: () => getHolders(token, launch.data) });
@@ -55,7 +57,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   const taxes = useQuery({
     queryKey: ['tax', token, spot.data?.poolId],
     enabled: !!spot.data?.poolId,
-    queryFn: () => publicClient.readContract({ address: CONFIG.hook, abi: hookAbi, functionName: 'poolConfigs', args: [spot.data!.poolId] }),
+    queryFn: () => publicClient.readContract({ address: hook ?? CONFIG.hook, abi: hookAbi, functionName: 'poolConfigs', args: [spot.data!.poolId] }),
   });
 
   // Real ranking by 24h volume across every launch. Only with an indexer:
@@ -190,10 +192,14 @@ export default function TokenPage({ params }: { params: { address: string } }) {
         </div>
 
         <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
-          <TradePanel
-            token={token} symbol={symbol} poolKey={poolKey} tokenIsToken0={tokenIsToken0}
-            lpFeeBps={LP_FEE_BPS} buyTaxBps={buyTaxBps} sellTaxBps={sellTaxBps}
-          />
+          {/* Waits for the launch record: it names the pool's hook, and an older launch's differs. */}
+          {launch.data ? (
+            <TradePanel
+              token={token} symbol={symbol} poolKey={poolKey} tokenIsToken0={tokenIsToken0}
+              lpFeeBps={LP_FEE_BPS} buyTaxBps={buyTaxBps} sellTaxBps={sellTaxBps}
+            />
+          ) : <div className="panel h-72 animate-pulse" />}
+          {launch.data && <FeeDeskCard launch={launch.data} symbol={symbol} />}
           {launch.data && <CreatorCard launch={launch.data} />}
           {launch.data && <GoPlusPanel token={token} />}
         </aside>

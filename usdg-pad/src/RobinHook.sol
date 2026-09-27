@@ -11,6 +11,7 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from
     "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {IRobinSplitter} from "./interfaces/IRobinSplitter.sol";
 
 /// @dev The two getters bootstrapFactory checks; an interface rather than
@@ -77,6 +78,7 @@ interface IFactoryWiring {
 contract RobinHook is IHooks, IUnlockCallback {
     using SafeCast for uint256;
     using PoolIdLibrary for PoolKey;
+    using StateLibrary for IPoolManager;
 
     struct PoolConfig {
         address splitter; // where this launch's tax revenue goes
@@ -135,6 +137,9 @@ contract RobinHook is IHooks, IUnlockCallback {
     /// @notice Tax accrued per pool, in quote units, held as ERC-6909
     /// claims on the PoolManager until `flush` pays it out.
     mapping(bytes32 => uint256) public pendingTax;
+    /// @dev Per pool: the price before its first swap in the latest block
+    /// that saw one, packed as `block.number << 160 | sqrtPriceX96`.
+    mapping(bytes32 => uint256) private _blockOpen;
 
     error NotPoolManager();
     error NotAuthorizedPortal();
@@ -296,6 +301,19 @@ contract RobinHook is IHooks, IUnlockCallback {
         return "";
     }
 
+    /// @notice The pool's price as this block opened: before its first swap
+    /// in the current block, or the live price if it hasn't traded in this
+    /// block. Swaps earlier in the same block (the same transaction
+    /// included) can't move it, so a price read against it can't be pushed
+    /// around and exploited atomically. RobinFeeDesk prices its sales off
+    /// the higher of this and the live price.
+    function blockOpenSqrtPrice(bytes32 poolId) external view returns (uint160) {
+        uint256 open = _blockOpen[poolId];
+        if (open >> 160 == block.number) return uint160(open);
+        (uint160 sqrtPriceX96,,,) = IPoolManager(poolManager).getSlot0(PoolId.wrap(poolId));
+        return sqrtPriceX96;
+    }
+
     // ------------------------------------------------------------------
     // IHooks
     // ------------------------------------------------------------------
@@ -390,6 +408,12 @@ contract RobinHook is IHooks, IUnlockCallback {
         bytes32 id = PoolId.unwrap(key.toId());
         PoolConfig memory cfg = poolConfigs[id];
         if (!cfg.active) return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+
+        uint256 open = _blockOpen[id];
+        if (open >> 160 != block.number) {
+            (uint160 sqrtPriceX96,,,) = IPoolManager(poolManager).getSlot0(PoolId.wrap(id));
+            _blockOpen[id] = (block.number << 160) | sqrtPriceX96;
+        }
 
         bool specifiedIsCurrency0 = (params.amountSpecified < 0) == params.zeroForOne;
         bool quoteIsCurrency0 = !cfg.tokenIsToken0;

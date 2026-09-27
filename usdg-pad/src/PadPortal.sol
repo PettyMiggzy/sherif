@@ -395,7 +395,9 @@ contract PadPortal {
         IPoolManager(poolManager).initialize(key, startingSqrtPriceX96);
 
         RobinLocker lockerContract =
-            new RobinLocker(poolManager, splitter, address(this), key, tickLower, tickUpper, tokenIsToken0);
+            new RobinLocker(
+                poolManager, splitter, address(this), key, tickLower, tickUpper, tokenIsToken0, address(0), address(0)
+            );
         r.locker = address(lockerContract);
 
         RobinHook(hook).registerPool(key, splitter, r.locker, quoteAsset, tokenIsToken0, buyTaxBps, sellTaxBps);

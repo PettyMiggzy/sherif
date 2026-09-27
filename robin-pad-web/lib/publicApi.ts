@@ -48,7 +48,7 @@ const SUPPLY = Number(CONFIG.totalSupply / 10n ** 18n);
 /** Live price of each launch, read for all of them in one eth_call. */
 export async function marketFor(launches: LaunchJson[]): Promise<MarketRow[]> {
   if (!launches.length) return [];
-  const ids = launches.map((l) => poolId(poolKeyFor(l.token).key));
+  const ids = launches.map((l) => poolId(poolKeyFor(l.token, l.hook).key));
   const words = await chainClient.readContract({ address: CONFIG.poolManager, abi: extsloadManyAbi, functionName: 'extsload', args: [ids.map(slot0Slot)] });
   return launches.map((l, i) => {
     const s = decodeSlot0(words[i] as Hex);

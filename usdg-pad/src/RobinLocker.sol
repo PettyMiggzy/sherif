@@ -18,7 +18,15 @@ import {IRobinSplitter} from "./interfaces/IRobinSplitter.sol";
 /// `modifyLiquidity`, so if the Portal created the position itself, the
 /// locker could never reach it. No owner, no withdraw function, no admin of
 /// any kind after seeding — anyone can permissionlessly harvest trading
-/// fees, split the same way as everything else on Robin Labs Pad.
+/// fees.
+///
+/// Where harvested fees go is fixed at construction:
+///   - white-label pads (both sinks zero): quote-side fees into the
+///     launch's splitter, split like its tax; launch-token-side fees burned.
+///   - the main pad (both sinks set): quote-side fees straight to the
+///     platform treasury, and launch-token-side fees to the fee desk
+///     (RobinFeeDesk), which sells them to anyone for USDG at a discount,
+///     so the platform never holds launch tokens or sells them into the pool.
 contract RobinLocker is IUnlockCallback {
     using SafeERC20 for IERC20;
 
@@ -32,6 +40,10 @@ contract RobinLocker is IUnlockCallback {
 
     address public immutable poolManager;
     address public immutable splitter;
+    /// @notice Where quote-side LP fees go; zero sends them to `splitter`.
+    address public immutable quoteFeeSink;
+    /// @notice Where launch-token-side LP fees go; zero burns them.
+    address public immutable tokenFeeSink;
     address public immutable portal; // the only address allowed to call seedLiquidity, and only once
     PoolKey public poolKey;
     int24 public immutable tickLower;
@@ -61,10 +73,14 @@ contract RobinLocker is IUnlockCallback {
         PoolKey memory poolKey_,
         int24 tickLower_,
         int24 tickUpper_,
-        bool tokenIsToken0_
+        bool tokenIsToken0_,
+        address quoteFeeSink_,
+        address tokenFeeSink_
     ) {
         poolManager = poolManager_;
         splitter = splitter_;
+        quoteFeeSink = quoteFeeSink_;
+        tokenFeeSink = tokenFeeSink_;
         portal = portal_;
         poolKey = poolKey_;
         tickLower = tickLower_;
@@ -138,16 +154,19 @@ contract RobinLocker is IUnlockCallback {
         }
     }
 
-    /// @dev Quote-side LP fees are real revenue and flow through the same
-    /// splitter as everything else. Launch-token-side LP fees go to
-    /// `TOKEN_FEE_SINK` instead (audit finding L-6) — neither the creator
-    /// nor the platform should be able to accumulate a claimable pile of
-    /// the launch's own token through the platform's own fee-harvesting
-    /// path; that's a soft-rug shape no different from H-1's.
+    /// @dev Quote-side LP fees are real revenue: to `quoteFeeSink` when set,
+    /// otherwise through the splitter like the launch's tax. Launch-token-side
+    /// LP fees go to `tokenFeeSink` when set (the main pad's fee desk, which
+    /// can only sell them for USDG at a discount, never hand them to anyone
+    /// for free), otherwise to `TOKEN_FEE_SINK` (audit finding L-6) —
+    /// neither the creator nor the platform may accumulate a claimable pile
+    /// of the launch's own token; that's a soft-rug shape no different from H-1's.
     function _payout(Currency currency, uint256 amount, bool isLaunchToken) internal {
         address asset = Currency.unwrap(currency);
         if (isLaunchToken) {
-            IPoolManager(poolManager).take(currency, TOKEN_FEE_SINK, amount);
+            IPoolManager(poolManager).take(currency, tokenFeeSink == address(0) ? TOKEN_FEE_SINK : tokenFeeSink, amount);
+        } else if (quoteFeeSink != address(0)) {
+            IPoolManager(poolManager).take(currency, quoteFeeSink, amount);
         } else {
             IPoolManager(poolManager).take(currency, splitter, amount);
             IRobinSplitter(splitter).depositRevenue(asset, amount);

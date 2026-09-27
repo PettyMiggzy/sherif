@@ -8,6 +8,8 @@ import { poolKeyFor, poolId, slot0Slot, decodeSlot0, priceFromSqrt, priceFromTic
 export const publicClient = createPublicClient({ chain: robinhood, transport: chainTransport({ batch: true }) });
 
 export type Launch = {
+  /** The portal that launched it and its pool's hook (older deployments have their own). */
+  portal: Address; hook: Address;
   token: Address; creator: Address; locker: Address; splitter: Address; poolId: `0x${string}`;
   name: string; symbol: string; blockNumber: bigint; txHash: `0x${string}`; createdAt: number;
   // From LaunchCreated; optional because pad-indexer's /launches payload doesn't carry them.
@@ -93,8 +95,8 @@ export async function fetchLaunch(token: Address): Promise<Launch | null> {
  * ticks costs nothing), which would otherwise let a griefer make any fresh
  * launch show a ~$0 or absurd market cap.
  */
-export async function fetchSpot(token: Address, range?: { tickLower: number; tickUpper: number }) {
-  const { key, tokenIsToken0 } = poolKeyFor(token);
+export async function fetchSpot(token: Address, range?: { tickLower: number; tickUpper: number }, hook?: Address) {
+  const { key, tokenIsToken0 } = poolKeyFor(token, hook);
   const id = poolId(key);
   const word = await publicClient.readContract({ address: CONFIG.poolManager, abi: poolManagerAbi, functionName: 'extsload', args: [slot0Slot(id)] });
   const s0 = decodeSlot0(word);
@@ -122,7 +124,7 @@ export async function getStats(token: Address, launch?: Launch | null, opts: { l
   const indexed = await indexerGet<TokenStats>(`/stats/${token}`);
   if (indexed) return indexed;
 
-  const { priceUsd, marketCapUsd } = await fetchSpot(token, rangeOf(launch)).catch(() => ({ priceUsd: 0, marketCapUsd: 0 }));
+  const { priceUsd, marketCapUsd } = await fetchSpot(token, rangeOf(launch), launch?.hook).catch(() => ({ priceUsd: 0, marketCapUsd: 0 }));
   const liquidityUsd = opts.liquidity && launch && priceUsd > 0 ? await poolLiquidityUsd(launch, priceUsd).catch(() => undefined) : undefined;
   return { priceUsd, marketCapUsd, liquidityUsd };
 }
@@ -160,7 +162,7 @@ async function poolLiquidityUsd(l: Launch, priceUsd: number): Promise<number | u
   if (l.tickLower === undefined || l.tickUpper === undefined || l.tokenIsToken0 === undefined) return undefined;
   const L = await positionLiquidity(l);
   if (L === undefined) return undefined;
-  const word = await publicClient.readContract({ address: CONFIG.poolManager, abi: poolManagerAbi, functionName: 'extsload', args: [slot0Slot(poolId(poolKeyFor(l.token).key))] });
+  const word = await publicClient.readContract({ address: CONFIG.poolManager, abi: poolManagerAbi, functionName: 'extsload', args: [slot0Slot(poolId(poolKeyFor(l.token, l.hook).key))] });
   const { sqrtPriceX96 } = decodeSlot0(word);
   // Standard concentrated-liquidity amounts, in floating point (display only).
   const sa = Math.pow(1.0001, l.tickLower / 2);

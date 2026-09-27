@@ -14,7 +14,7 @@ import {IPadTemplate, IPadWiring} from "./interfaces/IPadTemplate.sol";
 /// pad owner runs it: their share of every launch's revenue (up to 85%),
 /// a launch fee of up to $1,000, the min and max tax, the minimum starting
 /// market cap, pausing new launches and invite-only mode. The factory owner
-/// can also open "house pads" (Robin Labs takes 10%). Robin Labs Pad itself is one.
+/// can also open "house pads" (Robin Labs takes 20%). Robin Labs Pad itself is one.
 /// See docs/PAD-FACTORY.md.
 ///
 /// The live hook accepts exactly one factory, ever (bootstrapFactory is
@@ -41,7 +41,7 @@ contract RobinPadFactory {
     address public immutable padPortalTemplate;
 
     uint16 public constant PAD_PLATFORM_SHARE_BPS = 1_500; // Robin Labs' share on white-label pads
-    uint16 public constant HOUSE_PLATFORM_SHARE_BPS = 1_000; // Robin Labs' share on house pads (Robin Labs Pad)
+    uint16 public constant HOUSE_PLATFORM_SHARE_BPS = 2_000; // Robin Labs' share on house pads (Robin Labs Pad)
 
     /// @dev Sanity ceiling in quoteAsset raw units: $10,000 in 6-decimal
     /// USDC. Also catches a fee written in the wrong decimals (audit
@@ -123,7 +123,7 @@ contract RobinPadFactory {
         emit PadDeployed(portal, msg.sender, label, fee);
     }
 
-    /// @notice Owner only: open a house pad, where Robin Labs takes 10%. Robin Labs Pad
+    /// @notice Owner only: open a house pad, where Robin Labs takes 20%. Robin Labs Pad
     /// itself is deployed this way. No setup fee.
     function deployHousePad(string calldata label, address padOwner, PadPortal.PadSettings calldata settings)
         external
@@ -151,7 +151,7 @@ contract RobinPadFactory {
         emit TemplatePadDeployed(portal, template, msg.sender, label, fee, false);
     }
 
-    /// @notice Owner only: a house pad (Robin Labs takes 10%) built by an
+    /// @notice Owner only: a house pad (Robin Labs takes 20%) built by an
     /// approved template. No setup fee.
     function deployHousePadFromTemplate(address template, string calldata label, address padOwner, bytes calldata config)
         external

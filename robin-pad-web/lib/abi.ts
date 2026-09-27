@@ -71,3 +71,15 @@ export const poolManagerAbi = parseAbi([
   'function extsload(bytes32 slot) view returns (bytes32)',
   'event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)',
 ]);
+
+// RobinFeeDesk (usdg-pad/src/RobinFeeDesk.sol): sells the main pad's
+// token-side LP fees for USDG at 10% under the pool price. No owner.
+export const feeDeskAbi = parseAbi([
+  'function DISCOUNT_BPS() view returns (uint16)',
+  'function treasury() view returns (address)',
+  'function inventory(address token) view returns (uint256)',
+  'function quote(address token, uint256 quoteIn) view returns (uint256 tokensOut, uint256 quotePaid, uint256 available)',
+  'function quoteAll(address token) view returns (uint256 tokens, uint256 quoteCost)',
+  'function buy(address token, uint256 quoteIn, uint256 minTokensOut, address to) returns (uint256 tokensOut, uint256 quotePaid)',
+  'event Sold(address indexed token, address indexed buyer, address indexed to, uint256 tokens, uint256 quotePaid)',
+]);

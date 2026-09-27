@@ -9,8 +9,12 @@
 # one is verified here Blockscout can match the rest.
 #
 # Usage (addresses from DeployRobinhood.s.sol's output):
-#   NETWORK=mainnet TREASURY=0x.. HOOK=0x.. PORTAL=0x.. FACTORY=0x.. DEPLOYER=0x.. \
+#   NETWORK=mainnet TREASURY=0x.. HOOK=0x.. FEE_DESK=0x.. PORTAL=0x.. FACTORY=0x.. DEPLOYER=0x.. \
 #   HOUSE_PAD=0x.. PAD_SETUP_FEE=100000000 LAUNCH_TOKEN=0x.. bash script/verify.sh
+# FEE_DESK: the RobinFeeDesk the main portal was built with. Leave it unset
+# for the 2026-09-26 deploy, whose portal has none (and set HOUSE_SHARE_BPS=1000).
+# TREASURY_DEPLOYER: who deployed the treasury, if it was reused from an
+# earlier deploy by someone else (defaults to DEPLOYER).
 # FACTORY, HOLDER_PAD (the house pad DeployRobinhood builds; needs FACTORY),
 # HOUSE_PAD (a template-#1 house pad, if you ever open one) and LAUNCH_TOKEN
 # are optional.
@@ -45,10 +49,15 @@ verify() { # address, contract, constructor-args ("" for none)
   fi
 }
 
-verify "$TREASURY" src/RobinTreasury.sol:RobinTreasury "$(cast abi-encode 'constructor(address)' "$DEPLOYER")"
+HOUSE_SHARE="${HOUSE_SHARE_BPS:-2000}" # RobinPadFactory.HOUSE_PLATFORM_SHARE_BPS
+verify "$TREASURY" src/RobinTreasury.sol:RobinTreasury "$(cast abi-encode 'constructor(address)' "${TREASURY_DEPLOYER:-$DEPLOYER}")"
 verify "$HOOK" src/RobinHook.sol:RobinHook "$(cast abi-encode 'constructor(address,address)' "$POOL_MANAGER" "$DEPLOYER")"
+if [ -n "${FEE_DESK:-}" ]; then
+  verify "$FEE_DESK" src/RobinFeeDesk.sol:RobinFeeDesk \
+    "$(cast abi-encode 'constructor(address,address,address,address)' "$POOL_MANAGER" "$HOOK" "$USDG" "$TREASURY")"
+fi
 verify "$PORTAL" src/RobinPortal.sol:RobinPortal \
-  "$(cast abi-encode 'constructor(address,address,address,address,bool)' "$POOL_MANAGER" "$HOOK" "$TREASURY" "$USDG" true)"
+  "$(cast abi-encode 'constructor(address,address,address,address,bool,address)' "$POOL_MANAGER" "$HOOK" "$TREASURY" "$USDG" true "${FEE_DESK:-0x0000000000000000000000000000000000000000}")"
 if [ -n "${FACTORY:-}" ]; then
   # Owner = the deployer (see script/RobinhoodStack.sol). The splitter
   # implementation and template #1 are read back from the factory.
@@ -65,7 +74,7 @@ if [ -n "${FACTORY:-}" ]; then
     # was DEPLOYED with, not whatever it has now.
     verify "$HOUSE_PAD" src/PadPortal.sol:PadPortal \
       "$(cast abi-encode 'constructor(address,address,address,address,address,uint16,address,(uint16,uint16,uint16,uint256,uint256,bool,bool,uint256))' \
-        "$POOL_MANAGER" "$HOOK" "$TREASURY" "$USDG" "$SPLITTER_IMPL" 1000 "$DEPLOYER" "${HOUSE_PAD_SETTINGS:-(0,0,1000,0,100000000,false,false,10000000000)}")"
+        "$POOL_MANAGER" "$HOOK" "$TREASURY" "$USDG" "$SPLITTER_IMPL" "$HOUSE_SHARE" "$DEPLOYER" "${HOUSE_PAD_SETTINGS:-(0,0,1000,0,100000000,false,false,10000000000)}")"
   fi
 fi
 if [ -n "${HOLDER_PAD:-}" ]; then
@@ -82,7 +91,7 @@ if [ -n "${HOLDER_PAD:-}" ]; then
   # default is RobinhoodStack._housePadSettings().
   verify "$HOLDER_PAD" src/HolderPadPortal.sol:HolderPadPortal \
     "$(cast abi-encode 'constructor(address,address,address,address,address,uint16,address,(uint16,uint16,uint16,uint256,uint256,bool,bool,uint256),address)' \
-      "$POOL_MANAGER" "$HOOK" "$TREASURY" "$USDG" "$SPLITTER_IMPL" 1000 "$DEPLOYER" "${HOLDER_PAD_SETTINGS:-(0,0,1000,0,100000000,false,false,10000000000)}" "$HOLDER_TOKEN_DEPLOYER")"
+      "$POOL_MANAGER" "$HOOK" "$TREASURY" "$USDG" "$SPLITTER_IMPL" "$HOUSE_SHARE" "$DEPLOYER" "${HOLDER_PAD_SETTINGS:-(0,0,1000,0,100000000,false,false,10000000000)}" "$HOLDER_TOKEN_DEPLOYER")"
 fi
 if [ -n "${LAUNCH_TOKEN:-}" ]; then
   # Constructor args read back from the token itself: name, symbol, 1B supply, minted to the portal.

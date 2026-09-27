@@ -104,7 +104,7 @@ contract RehearseOnFork is Script {
         uint256 shared = RobinHolderToken(t).distribute();
         uint256 dividend = RobinHolderToken(t).claim();
         vm.stopBroadcast();
-        uint256 creatorPool = revenue - (revenue * 1_000) / 10_000;
+        uint256 creatorPool = revenue - (revenue * 2_000) / 10_000;
         require(shared == (creatorPool * 2_000) / 10_000, "holders did not get their 20%");
         require(dividend > 0, "trader earned no dividend");
         console2.log("holders shared (raw USDG):", shared);
@@ -121,7 +121,7 @@ contract RehearseOnFork is Script {
         vm.startBroadcast(traderKey);
         pad.claimPlatformFees(0, pad.launchCount());
         vm.stopBroadcast();
-        require(IERC20(USDG).balanceOf(treasury) - tBefore == (revenue * 1_000) / 10_000, "platform 10% not paid");
+        require(IERC20(USDG).balanceOf(treasury) - tBefore == (revenue * 2_000) / 10_000, "platform 20% not paid");
 
         console2.log("REHEARSAL PASSED: launch, buy, sell, flush, dividends and payouts all in USDG");
     }

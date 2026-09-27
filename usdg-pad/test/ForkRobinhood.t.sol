@@ -44,7 +44,7 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
         }
         vm.createSelectFork(url);
         assertEq(block.chainid, 4663, "not a Robinhood Chain fork");
-        s = _deployStack(address(this), address(this), 100e6, "Robin Labs Pad");
+        s = _deployStack(address(this), address(this), 100e6, "Robin Labs Pad", address(0));
         router = new PoolSwapTest(IPoolManager(POOL_MANAGER));
         return true;
     }
@@ -128,19 +128,38 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
         hook().flush(key);
         RobinRevenueSplitter sp = RobinRevenueSplitter(RobinLocker(locker).splitter());
         uint256 creatorCut = sp.creditedToCreator(USDG);
-        assertEq(creatorCut, pending - (pending * 1_000) / 10_000, "90% to the creator");
+        assertEq(creatorCut, pending - (pending * 2_000) / 10_000, "80% to the creator");
         vm.prank(creator);
         sp.claim(creator, USDG);
         assertEq(IERC20(USDG).balanceOf(creator), creatorCut, "creator paid in real USDG");
 
         uint256 t0 = IERC20(USDG).balanceOf(address(s.treasury));
         sp.claimPlatform(USDG);
-        assertEq(IERC20(USDG).balanceOf(address(s.treasury)), t0 + pending - creatorCut, "platform's 10% reached the treasury");
+        assertEq(IERC20(USDG).balanceOf(address(s.treasury)), t0 + pending - creatorCut, "platform's 20% reached the treasury");
 
         // The treasury owner can withdraw it.
         address to = makeAddr("ops");
         s.treasury.withdraw(USDG, to, pending - creatorCut);
         assertEq(IERC20(USDG).balanceOf(to), pending - creatorCut);
+
+        // LP fees: the USDG side to the treasury in full, the token side to
+        // the fee desk, which sells it for real USDG at 10% off.
+        uint256 t1 = IERC20(USDG).balanceOf(address(s.treasury));
+        RobinLocker(locker).harvestFees();
+        uint256 lpUsdg = IERC20(USDG).balanceOf(address(s.treasury)) - t1;
+        assertGt(lpUsdg, 0, "USDG-side LP fees to the treasury");
+        assertApproxEqRel(s.feeDesk.inventory(token), bought / 100, 0.001e18, "1% of the sell, in the token, at the desk");
+        assertEq(IERC20(token).balanceOf(DEAD), 0, "nothing burned on the main pad");
+        address deskBuyer = makeAddr("deskBuyer");
+        _fund(deskBuyer, 0.5e6);
+        vm.roll(block.number + 1);
+        vm.startPrank(deskBuyer);
+        IERC20(USDG).approve(address(s.feeDesk), 0.5e6);
+        (uint256 deskOut, uint256 deskPaid) = s.feeDesk.buy(token, 0.5e6, 1, deskBuyer);
+        vm.stopPrank();
+        assertEq(deskPaid, 0.5e6, "the desk held more than $0.50 worth");
+        assertEq(IERC20(token).balanceOf(deskBuyer), deskOut);
+        assertEq(IERC20(USDG).balanceOf(address(s.treasury)), t1 + lpUsdg + 0.5e6, "desk sale paid to the treasury");
 
         // Third parties still can't add liquidity on the real PoolManager.
         PoolModifyLiquidityTest lp = new PoolModifyLiquidityTest(IPoolManager(POOL_MANAGER));
@@ -340,7 +359,7 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
 
         uint256 revenue = hook().pendingTax(PoolId.unwrap(key.toId()));
         hook().flush(key);
-        uint256 creatorPool = revenue - (revenue * 1_000) / 10_000;
+        uint256 creatorPool = revenue - (revenue * 2_000) / 10_000;
         uint256 holdersCut = (creatorPool * 2_000) / 10_000;
         assertEq(sp.recipientCredits()[2], holdersCut);
 
@@ -362,7 +381,7 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
         assertEq(IERC20(USDG).balanceOf(team), u0 + (creatorPool * 2_000) / 10_000, "team wallet paid");
         uint256 t0 = IERC20(USDG).balanceOf(address(s.treasury));
         s.housePad.claimPlatformFees(0, 10);
-        assertEq(IERC20(USDG).balanceOf(address(s.treasury)), t0 + (revenue * 1_000) / 10_000, "platform's 10% reached the treasury");
+        assertEq(IERC20(USDG).balanceOf(address(s.treasury)), t0 + (revenue * 2_000) / 10_000, "platform's 20% reached the treasury");
         uint256 bucket = sp.buybackCredit();
         vm.prank(creator);
         uint256 burned = sp.executeBuyback(bucket, 1);
@@ -379,7 +398,7 @@ contract ForkRobinhoodTest is Test, RobinhoodStack {
             0,
             0
         );
-        assertEq(PadRevenueSplitter(s.housePad.splitterForToken(plain)).platformShareBps(), 1_000);
+        assertEq(PadRevenueSplitter(s.housePad.splitterForToken(plain)).platformShareBps(), 2_000);
     }
 
     function hook() internal view returns (RobinHook) {

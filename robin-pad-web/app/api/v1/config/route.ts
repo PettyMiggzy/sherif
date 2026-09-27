@@ -1,4 +1,5 @@
-import { CONFIG } from '@/lib/config';
+import { CONFIG, GENERATIONS } from '@/lib/config';
+import { FEES } from '@/lib/fees';
 import { apiJson, apiOptions, padIsLive } from '@/lib/publicApi';
 import { chainClient } from '@/lib/launches';
 import { portalAbi } from '@/lib/abi';
@@ -20,7 +21,12 @@ export async function GET() {
     contracts: {
       portal: CONFIG.portal, hook: CONFIG.hook, treasury, poolManager: CONFIG.poolManager,
       universalRouter: CONFIG.router, permit2: CONFIG.permit2, usdg: CONFIG.usdg,
+      feeDesk: CONFIG.feeDesk || null,
     },
+    // New launches: the creator's share of the tax, and who gets the LP fee.
+    fees: { creatorTaxPct: FEES.creatorPct, platformTaxPct: FEES.platformPct, lpFeeToPlatform: FEES.lpToPlatform, feeDeskDiscountPct: FEES.deskDiscountPct },
+    // Earlier deployments whose launches still trade (each launch names its own hook in /api/launches).
+    olderPortals: GENERATIONS.slice(1).map((g) => ({ portal: g.portal, hook: g.hook, factory: g.factory })),
     poolFee: CONFIG.poolFee,
     tickSpacing: CONFIG.tickSpacing,
     totalSupply: CONFIG.totalSupply.toString(),

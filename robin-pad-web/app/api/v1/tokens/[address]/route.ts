@@ -20,10 +20,10 @@ export async function GET(req: NextRequest, { params }: { params: { address: str
     const { launches } = await getLaunches(token);
     const launch = launches[0];
     if (!launch) return apiError('Robin Labs Pad did not launch that token.', 404);
-    const { key } = poolKeyFor(launch.token);
+    const { key } = poolKeyFor(launch.token, launch.hook);
     const [[market], pendingTax, meta] = await Promise.all([
       marketFor([launch]),
-      chainClient.readContract({ address: CONFIG.hook, abi: pendingTaxAbi, functionName: 'pendingTax', args: [poolId(key)] }),
+      chainClient.readContract({ address: launch.hook, abi: pendingTaxAbi, functionName: 'pendingTax', args: [poolId(key)] }),
       storeConfigured() ? getTokenMeta(token).catch(() => null) : Promise.resolve(null),
     ]);
     const signed = !!meta && meta.signedAt > 0;

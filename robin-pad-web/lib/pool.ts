@@ -3,14 +3,15 @@ import { CONFIG } from './config';
 
 export type PoolKey = { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address };
 
-export function poolKeyFor(token: Address): { key: PoolKey; tokenIsToken0: boolean } {
+/** `hook`: the launch's own (see Launch.hook); defaults to the current portal's. */
+export function poolKeyFor(token: Address, hook: Address = CONFIG.hook): { key: PoolKey; tokenIsToken0: boolean } {
   const tokenIsToken0 = token.toLowerCase() < CONFIG.usdg.toLowerCase();
   const key: PoolKey = {
     currency0: tokenIsToken0 ? token : CONFIG.usdg,
     currency1: tokenIsToken0 ? CONFIG.usdg : token,
     fee: CONFIG.poolFee,
     tickSpacing: CONFIG.tickSpacing,
-    hooks: CONFIG.hook,
+    hooks: hook,
   };
   return { key, tokenIsToken0 };
 }

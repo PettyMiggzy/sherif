@@ -24,6 +24,11 @@ export const knownErrorsAbi = parseAbi([
   'error NotAuthorized()',
   'error NothingToClaim()',
   'error InvalidRecipient()',
+  // RobinFeeDesk
+  'error UnknownLaunch()',
+  'error NothingForSale()',
+  'error ZeroAmount()',
+  'error Slippage()',
   // Uniswap v4 PoolManager and UniversalRouter, Permit2
   'error WrappedError(address target, bytes4 selector, bytes reason, bytes details)',
   'error ExecutionFailed(uint256 commandIndex, bytes message)',
@@ -54,6 +59,10 @@ const MESSAGES: Record<string, string> = {
   NothingToClaim: 'Your claimable balance is zero for now.',
   NotAuthorized: "That action is reserved for the token's creator.",
   InvalidRecipient: "That address can't receive this payout.",
+  UnknownLaunch: "The fee desk only sells tokens launched on this pad.",
+  NothingForSale: 'The fee desk has none of this token right now.',
+  ZeroAmount: 'Enter an amount first.',
+  Slippage: 'The desk price moved up since your quote. Get a fresh price and try again.',
 };
 
 const GAS_HELP = 'This wallet is short on ETH for gas. Robinhood Chain charges gas in ETH; a few cents of ETH covers many trades.';

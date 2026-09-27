@@ -1,12 +1,13 @@
 import { Rocket, Lock, CircleDollarSign, Users } from 'lucide-react';
 import { CONFIG } from '@/lib/config';
+import { FEES } from '@/lib/fees';
 
 export function FeatureStrip() {
   const items = [
     [Rocket, 'Fair start', 'Whole supply goes into the pool'],
     [Lock, 'Locked liquidity', 'No withdraw function exists'],
     [CircleDollarSign, 'Priced in USDG', `A dollar pool on ${CONFIG.chainName}`],
-    [Users, 'Creator-first', '90% of the fees go to the creator'],
+    [Users, 'Creator-first', `${FEES.creatorPct}% of the tax goes to the creator`],
   ] as const;
   return (
     <div className="panel grid grid-cols-2 divide-y divide-line md:grid-cols-4 md:divide-x md:divide-y-0">

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { CONFIG } from '@/lib/config';
+import { FEES } from '@/lib/fees';
 
 function Code({ children }: { children: string }) {
   return (
@@ -67,6 +68,7 @@ export default function Docs() {
             <AddrRow label="RPC (public)" value={PUBLIC_RPC} />
             <AddrRow label="Portal" value={CONFIG.portal} />
             <AddrRow label="Hook" value={CONFIG.hook} />
+            {CONFIG.feeDesk && <AddrRow label="Fee desk" value={CONFIG.feeDesk} />}
             <AddrRow label="PoolManager" value={CONFIG.poolManager} />
             <AddrRow label="UniversalRouter" value={CONFIG.router} />
             <AddrRow label="Permit2" value={CONFIG.permit2} />
@@ -166,13 +168,23 @@ router.execute(commands, inputs, deadline)
       <Section id="fees" title="Fees and claims">
         <p className="text-sm text-muted">
           A trade pays two things: the pool&apos;s 1% LP fee, and the creator&apos;s tax for that side, anywhere from 0 to
-          10%, picked at launch and fixed from then on. The tax is always collected in USDG. The tax, plus whatever
-          LP fees are earned in USDG, is shared <span className="font-semibold text-text">90% to the creator and 10% to the platform</span>.
+          10%, picked at launch and fixed from then on. The tax is always collected in USDG.{' '}
+          {FEES.lpToPlatform ? (
+            <>The tax is shared <span className="font-semibold text-text">{FEES.creatorPct}% to the creator and {FEES.platformPct}% to the platform</span>.
+            The LP fee goes to the platform: the USDG side to the treasury, and the token side (sells pay it in the token)
+            to the fee desk, which sells those tokens for USDG at {FEES.deskDiscountPct}% under the pool price instead of selling them into the pool.</>
+          ) : (
+            <>The tax, plus whatever LP fees are earned in USDG, is shared <span className="font-semibold text-text">{FEES.creatorPct}% to the creator and {FEES.platformPct}% to the platform</span>.</>
+          )}
         </p>
-        <Code>{`hook.flush(poolKey)            // anyone: pushes a pool's waiting tax into its splitter
+        <Code>{FEES.lpToPlatform ? `hook.flush(poolKey)            // anyone: pushes a pool's waiting tax into its splitter
+locker.harvestFees()           // anyone: collects LP fees; USDG to the treasury, tokens to the fee desk
+feeDesk.buy(token, usdgIn, minOut, to)  // anyone: buys the desk's tokens at ${FEES.deskDiscountPct}% off, USDG to the treasury
+splitter.claim(to, USDG)       // creator only: pays out the creator's ${FEES.creatorPct}%
+splitter.claimPlatform(USDG)   // anyone: pays the platform's ${FEES.platformPct}% to the treasury` : `hook.flush(poolKey)            // anyone: pushes a pool's waiting tax into its splitter
 locker.harvestFees()           // anyone: collects LP fees; USDG fees go to the splitter, token fees are burned
-splitter.claim(to, USDG)       // creator only: pays out the creator's 90%
-splitter.claimPlatform(USDG)   // anyone: pays the platform's 10% to the treasury`}</Code>
+splitter.claim(to, USDG)       // creator only: pays out the creator's ${FEES.creatorPct}%
+splitter.claimPlatform(USDG)   // anyone: pays the platform's ${FEES.platformPct}% to the treasury`}</Code>
         <p className="text-xs text-dim">
           Swaps never pay anyone out directly, so if a payout address gets stuck or blocklisted, only its own claim
           fails and trading carries on. A creator can pass the role to another wallet in two steps:{' '}

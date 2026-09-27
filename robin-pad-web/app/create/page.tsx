@@ -7,6 +7,7 @@ import { FileText, Rocket, PieChart, Eye, ImageUp, ShieldCheck, Check } from 'lu
 import { erc20Abi, portalAbi } from '@/lib/abi';
 import { approveForRouter, buyWithUsdg } from '@/lib/buy';
 import { CONFIG, explorerTx } from '@/lib/config';
+import { FEES } from '@/lib/fees';
 import { fmtUsd } from '@/lib/format';
 import { saveMeta, readImageFile } from '@/lib/metadata';
 import { robinhood } from '@/lib/chain';
@@ -269,11 +270,13 @@ export default function Create() {
 
           <div className="panel space-y-4 p-6">
             <div className="flex items-center justify-between">
-              <SectionTitle icon={PieChart} n={3} title="Your share plan" subtitle="Tell holders what you plan to do with your 90%." />
+              <SectionTitle icon={PieChart} n={3} title="Your share plan" subtitle={`Tell holders what you plan to do with your ${FEES.creatorPct}%.`} />
               <span className={`chip shrink-0 ${splitTotal === 100 ? '' : 'border border-down text-down'}`}>{splitTotal}%</span>
             </div>
             <p className="text-xs text-dim">
-              The contract always pays 90% of a launch&apos;s revenue to its creator and 10% to the platform.
+              {FEES.lpToPlatform
+                ? `The contract always pays ${FEES.creatorPct}% of a launch's tax to its creator and ${FEES.platformPct}% to the platform; the pool's 1% LP fee goes to the platform.`
+                : `The contract always pays ${FEES.creatorPct}% of a launch's revenue to its creator and ${FEES.platformPct}% to the platform.`}
               These numbers are only a note on your token page about how you plan to use your share. Nothing enforces them.
             </p>
             <div className="grid gap-3 sm:grid-cols-4">
@@ -308,7 +311,7 @@ export default function Create() {
               <Row k="Supply" v={TOTAL_SUPPLY.toLocaleString()} />
               <Row k="Buy tax" v={`${buyTax}%`} />
               <Row k="Sell tax" v={`${sellTax}%`} />
-              <Row k="Your cut" v="90%, set in the contract" />
+              <Row k="Your cut" v={`${FEES.creatorPct}% of the tax, set in the contract`} />
               <Row k="Starting liquidity" v={`${fmtUsd(mcUsd)} (full supply, locked)`} />
               <Row k="Your first buy" v={firstBuyOk ? fmtUsd(Number(firstBuy)) : '—'} />
             </dl>

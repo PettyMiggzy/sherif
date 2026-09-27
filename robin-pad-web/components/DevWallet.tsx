@@ -8,13 +8,14 @@ import { CONFIG, explorerAddr } from '@/lib/config';
 import { robinhood } from '@/lib/chain';
 import { erc20Abi, portalAbi } from '@/lib/abi';
 import { shortAddr } from '@/lib/format';
+import { FEES } from '@/lib/fees';
 
 type Balances = { devUsdg: bigint; devEth: bigint; treasury: Address; treasuryUsdg: bigint };
 
 /**
  * Out in the open: what the dev wallet (the wallet that deployed and runs
  * the pad) holds, and what the pad's treasury has collected from the
- * platform's 10%. Read live from the chain.
+ * platform's cut (lib/fees.ts). Read live from the chain.
  */
 export function DevWallet() {
   const pc = usePublicClient({ chainId: robinhood.id });
@@ -58,7 +59,7 @@ export function DevWallet() {
         <Holder
           icon={<Landmark className="h-5 w-5" />}
           title="Pad treasury"
-          note="The platform's 10% of every launch's fees lands here."
+          note={FEES.lpToPlatform ? `Every LP fee and the platform's ${FEES.platformPct}% of the tax land here.` : `The platform's ${FEES.platformPct}% of every launch's fees lands here.`}
           address={d?.treasury}
           rows={[['USDG', d ? `$${usd(d.treasuryUsdg, CONFIG.quoteDecimals).toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '…']]}
         />

@@ -15,6 +15,12 @@ function addr(value: string | undefined, label: string, fallback?: string): Addr
   return v as Address;
 }
 
+/** Like addr(), but empty means "not deployed" and gives ''. */
+function optAddr(value: string | undefined, label: string, fallback = ''): Address | '' {
+  const v = value ?? fallback;
+  return v === '' ? '' : addr(v, label);
+}
+
 export const CONFIG = {
   // Robinhood Chain's own RPC: CORS-open and write-capable (wallets are handed
   // it when they add the network, so it must accept eth_sendRawTransaction).
@@ -39,11 +45,16 @@ export const CONFIG = {
   padAdmin: process.env.NEXT_PUBLIC_PAD_ADMIN ?? '0x5899a0576A94327a6316E01190f951edf7645914',
   milestoneUsd: Number(process.env.NEXT_PUBLIC_MILESTONE_USD ?? 30000),
   // Robin Labs Pad on Robinhood Chain (usdg-pad/docs/ROBINHOOD-DEPLOY.md): the
-  // main portal (10% platform / 90% creator, opening market cap $100 and up) and
-  // the one shared hook. Deployed 2026-09-26.
+  // main portal (opening market cap $100 and up) and its shared hook.
+  // Deployed 2026-09-26.
   portal: addr(process.env.NEXT_PUBLIC_PORTAL, 'NEXT_PUBLIC_PORTAL', '0x7e2f5dEe1A846fF21eE946d2e450F64133d0fD6F'),
   hook: addr(process.env.NEXT_PUBLIC_HOOK, 'NEXT_PUBLIC_HOOK', '0x04abDE4e77036178E0DF13d435B7b7f87265e8cc'),
   treasury: addr(process.env.NEXT_PUBLIC_TREASURY, 'NEXT_PUBLIC_TREASURY', '0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f'),
+  // RobinFeeDesk: on a portal that has one, the platform takes every LP fee
+  // (the USDG side to the treasury, the token side to this desk, which sells
+  // it at 10% off) and 20% of the tax. Empty: the 2026-09-26 portal, where
+  // LP fees and tax both split 90% creator / 10% platform. See lib/fees.ts.
+  feeDesk: optAddr(process.env.NEXT_PUBLIC_FEE_DESK, 'NEXT_PUBLIC_FEE_DESK'),
   // White-label pad factory: its pads (the house pad included) also pay the treasury.
   factory: addr(process.env.NEXT_PUBLIC_FACTORY, 'NEXT_PUBLIC_FACTORY', '0xD637De9DA24007D11e60BDf0B8358b060953D4E8'),
   // Uniswap v4's PoolManager and UniversalRouter (v2.1.1) on Robinhood Chain.
@@ -79,3 +90,29 @@ export const CONFIG = {
 
 export const explorerTx = (h: string) => (CONFIG.explorerUrl ? `${CONFIG.explorerUrl}/tx/${h}` : '');
 export const explorerAddr = (a: string) => (CONFIG.explorerUrl ? `${CONFIG.explorerUrl}/address/${a}` : '');
+
+/**
+ * One deployment of the pad: a portal, the hook its pools use, and its
+ * white-label factory. Launches live forever, so after a redeploy the older
+ * portals stay listed and tradeable next to the current one.
+ */
+export type PadGeneration = {
+  portal: Address; hook: Address; factory: Address; genesisBlock: bigint;
+  /** The fee desk its launches send token-side LP fees to; '' if none. */
+  feeDesk: Address | '';
+};
+
+const ALL_GENERATIONS: PadGeneration[] = [
+  { portal: CONFIG.portal, hook: CONFIG.hook, factory: CONFIG.factory, genesisBlock: CONFIG.portalGenesisBlock, feeDesk: CONFIG.feeDesk },
+  // 2026-09-26: 10% platform on tax and USDG LP fees, token-side LP fees burned.
+  { portal: '0x7e2f5dEe1A846fF21eE946d2e450F64133d0fD6F', hook: '0x04abDE4e77036178E0DF13d435B7b7f87265e8cc', factory: '0xD637De9DA24007D11e60BDf0B8358b060953D4E8', genesisBlock: 73073570n, feeDesk: '' },
+];
+
+/** The current deployment first, then older ones (each once). */
+export const GENERATIONS: PadGeneration[] = ALL_GENERATIONS.filter(
+  (g, i) => ALL_GENERATIONS.findIndex((x) => x.portal.toLowerCase() === g.portal.toLowerCase()) === i,
+);
+
+export function generationOf(portal?: string): PadGeneration {
+  return GENERATIONS.find((g) => g.portal.toLowerCase() === portal?.toLowerCase()) ?? GENERATIONS[0];
+}

@@ -6,9 +6,11 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IRobinSplitter} from "./interfaces/IRobinSplitter.sol";
 
 /// @notice Splits every dollar of revenue a launch generates — swap tax
-/// flushed from the shared hook, and LP fees harvested from the launch's own
-/// RobinLocker — between the platform treasury and the creator. On Robin Labs
-/// Pad's own original pad: 10% to the platform, 90% to the creator. On a
+/// flushed from the shared hook, and (on white-label pads) LP fees harvested
+/// from the launch's own RobinLocker — between the platform treasury and the
+/// creator. The main pad's LP fees skip the splitter: the quote side goes to
+/// the treasury in full, the token side to RobinFeeDesk. On Robin Labs
+/// Pad's own original pad: 20% to the platform, 80% to the creator. On a
 /// RobinPadFactory white-label pad: 15/85 instead — the extra 5% covers
 /// hosting the white-label frontend, since that's a real cost only
 /// white-label pads create. Flat, no further subdivision.
@@ -24,7 +26,7 @@ contract RobinRevenueSplitter is IRobinSplitter {
     using SafeERC20 for IERC20;
 
     uint256 public constant BPS_DENOMINATOR = 10_000;
-    uint256 public constant MAIN_PAD_PLATFORM_SHARE_BPS = 1_000; // 10%
+    uint256 public constant MAIN_PAD_PLATFORM_SHARE_BPS = 2_000; // 20%
     uint256 public constant WHITE_LABEL_PLATFORM_SHARE_BPS = 1_500; // 15% — covers hosting the white-label frontend
 
     address public creator;

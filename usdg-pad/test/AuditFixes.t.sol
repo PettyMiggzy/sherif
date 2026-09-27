@@ -13,6 +13,7 @@ import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {HookMiner} from "@uniswap/v4-periphery/test/shared/HookMiner.sol";
@@ -25,6 +26,7 @@ import {RobinLaunchToken} from "../src/RobinLaunchToken.sol";
 import {RobinPadFactory} from "../src/RobinPadFactory.sol";
 import {PadRevenueSplitter} from "../src/PadRevenueSplitter.sol";
 import {RobinTreasury} from "../src/RobinTreasury.sol";
+import {RobinFeeDesk} from "../src/RobinFeeDesk.sol";
 
 /// @dev Stand-in USDC. Deployed with deployCodeTo at a chosen address so a
 /// test can force either pool orientation (token below or above quote).
@@ -58,6 +60,7 @@ contract AuditFixesTest is Test, Deployers {
         RobinHook hook;
         RobinPortal portal;
         RobinTreasury treasury;
+        RobinFeeDesk desk;
         address token;
         address locker;
         address splitter;
@@ -83,7 +86,8 @@ contract AuditFixesTest is Test, Deployers {
         e.quote = MockERC20(quoteAt);
         e.hook = _hook();
         e.treasury = new RobinTreasury(makeAddr("treasuryOwner"));
-        e.portal = new RobinPortal(address(manager), address(e.hook), address(e.treasury), quoteAt, true);
+        e.desk = new RobinFeeDesk(address(manager), address(e.hook), quoteAt, address(e.treasury));
+        e.portal = new RobinPortal(address(manager), address(e.hook), address(e.treasury), quoteAt, true, address(e.desk));
         e.hook.bootstrapMainPortal(address(e.portal));
 
         vm.prank(creator);
@@ -181,7 +185,7 @@ contract AuditFixesTest is Test, Deployers {
         // Flush: exactly 10% to the platform, 90% to the creator, all in quote.
         uint256 total = _pending(e);
         e.hook.flush(e.key);
-        uint256 platform = (total * 1_000) / 10_000;
+        uint256 platform = (total * 2_000) / 10_000;
         assertEq(RobinRevenueSplitter(e.splitter).creditedToPlatform(quoteAt), platform, "main pad platform share");
         assertEq(RobinRevenueSplitter(e.splitter).creditedToCreator(quoteAt), total - platform, "creator share");
         assertEq(RobinRevenueSplitter(e.splitter).creditedToCreator(e.token), 0, "never credited in the launch token");
@@ -421,8 +425,8 @@ contract AuditFixesTest is Test, Deployers {
         e.quote.mint(e.splitter, 1_000e6); // e.g. someone mistook the splitter for a pay-in address
 
         RobinRevenueSplitter(e.splitter).sweepSurplus(LOW_QUOTE);
-        assertEq(RobinRevenueSplitter(e.splitter).creditedToPlatform(LOW_QUOTE), 100e6);
-        assertEq(RobinRevenueSplitter(e.splitter).creditedToCreator(LOW_QUOTE), 900e6);
+        assertEq(RobinRevenueSplitter(e.splitter).creditedToPlatform(LOW_QUOTE), 200e6);
+        assertEq(RobinRevenueSplitter(e.splitter).creditedToCreator(LOW_QUOTE), 800e6);
 
         vm.expectRevert(RobinRevenueSplitter.NothingToClaim.selector);
         RobinRevenueSplitter(e.splitter).sweepSurplus(LOW_QUOTE);
@@ -430,5 +434,132 @@ contract AuditFixesTest is Test, Deployers {
         vm.prank(creator);
         vm.expectRevert(RobinRevenueSplitter.InvalidRecipient.selector);
         RobinRevenueSplitter(e.splitter).claim(e.splitter, LOW_QUOTE);
+    }
+
+    // ------------------------------------------------------------------
+    // RobinFeeDesk: the main pad's token-side LP fees, sold at 10% off
+    // ------------------------------------------------------------------
+
+    uint256 constant Q96 = 1 << 96;
+
+    function test_FeeDesk_TokenIsCurrency0() public {
+        _feeDesk(HIGH_QUOTE);
+    }
+
+    function test_FeeDesk_TokenIsCurrency1() public {
+        _feeDesk(LOW_QUOTE);
+    }
+
+    function test_FeeDesk_SameBlockDumpDoesNotCheapenIt_TokenIsCurrency0() public {
+        _feeDeskGuard(HIGH_QUOTE);
+    }
+
+    function test_FeeDesk_SameBlockDumpDoesNotCheapenIt_TokenIsCurrency1() public {
+        _feeDeskGuard(LOW_QUOTE);
+    }
+
+    /// Trades, harvests and returns the launch with the desk stocked, one block later.
+    function _stockedDesk(address quoteAt) internal returns (Env memory e, uint256 sold) {
+        e = _launch(quoteAt);
+        (, int256 bought) = _swap(e, true, -int256(2_000e6));
+        sold = uint256(bought) / 2;
+        _swap(e, false, -int256(sold));
+        uint256 treasuryBefore = e.quote.balanceOf(address(e.treasury));
+        RobinLocker(e.locker).harvestFees();
+        assertGt(e.quote.balanceOf(address(e.treasury)), treasuryBefore, "USDC-side LP fees to the treasury");
+        assertApproxEqRel(e.desk.inventory(e.token), sold / 100, 0.001e18, "1% of what was sold, in the token");
+        vm.roll(block.number + 1);
+    }
+
+    /// The desk's rate for `quoteIn` computed independently from the pool
+    /// price: tokens at the full price, then 1/0.9 of that.
+    function _expectedAt(Env memory e, uint160 sqrtP, uint256 quoteIn) internal pure returns (uint256) {
+        uint256 priceX96 = FullMath.mulDiv(sqrtP, sqrtP, Q96); // currency1 per currency0, Q96
+        uint256 full = e.tokenIsToken0 ? FullMath.mulDiv(quoteIn, Q96, priceX96) : FullMath.mulDiv(quoteIn, priceX96, Q96);
+        return (full * 10) / 9;
+    }
+
+    function _sqrtP(Env memory e) internal view returns (uint160 p) {
+        (p,,,) = manager.getSlot0(e.key.toId());
+    }
+
+    function _feeDesk(address quoteAt) internal {
+        (Env memory e,) = _stockedDesk(quoteAt);
+        address buyer = makeAddr("deskBuyer");
+        e.quote.mint(buyer, 1_000_000e6);
+        vm.prank(buyer);
+        e.quote.approve(address(e.desk), type(uint256).max);
+
+        // A small buy: 10% more tokens than the pool price gives, paid in full to the treasury.
+        uint256 expected = _expectedAt(e, _sqrtP(e), 1e6);
+        (uint256 q,,) = e.desk.quote(e.token, 1e6);
+        assertApproxEqRel(q, expected, 1e12, "priced at 90% of the pool");
+        uint256 inv = e.desk.inventory(e.token);
+        uint256 tBefore = e.quote.balanceOf(address(e.treasury));
+        vm.prank(buyer);
+        vm.expectRevert(RobinFeeDesk.Slippage.selector);
+        e.desk.buy(e.token, 1e6, q + 1, buyer);
+        vm.prank(buyer);
+        (uint256 out, uint256 paid) = e.desk.buy(e.token, 1e6, q, buyer);
+        assertEq(out, q);
+        assertEq(paid, 1e6);
+        assertEq(RobinLaunchToken(e.token).balanceOf(buyer), out);
+        assertEq(e.quote.balanceOf(address(e.treasury)), tBefore + 1e6, "every cent to the treasury");
+        assertEq(e.desk.inventory(e.token), inv - out);
+
+        // More than it holds: sells what's left, charges only for that.
+        (uint256 allTokens, uint256 allCost) = e.desk.quoteAll(e.token);
+        uint256 buyerBefore = e.quote.balanceOf(buyer);
+        vm.prank(buyer);
+        (out, paid) = e.desk.buy(e.token, 1_000_000e6, 0, buyer);
+        assertEq(out, allTokens, "the whole inventory");
+        assertApproxEqAbs(paid, allCost, 2, "costs what quoteAll said");
+        assertEq(buyerBefore - e.quote.balanceOf(buyer), paid, "pays only for what it got");
+        assertEq(e.desk.inventory(e.token), 0);
+        vm.prank(buyer);
+        vm.expectRevert(RobinFeeDesk.NothingForSale.selector);
+        e.desk.buy(e.token, 1e6, 0, buyer);
+
+        // Only launch pools on this hook have a price.
+        vm.expectRevert(RobinFeeDesk.UnknownLaunch.selector);
+        e.desk.quote(quoteAt, 1e6);
+        vm.expectRevert(RobinFeeDesk.UnknownLaunch.selector);
+        e.desk.quote(makeAddr("notALaunch"), 1e6);
+    }
+
+    function _feeDeskGuard(address quoteAt) internal {
+        (Env memory e,) = _stockedDesk(quoteAt);
+        uint160 open = _sqrtP(e);
+        (uint256 before,,) = e.desk.quote(e.token, 1e6);
+
+        // Dump in this block: the live price falls, the desk's does not.
+        RobinLaunchToken t = RobinLaunchToken(e.token);
+        _swap(e, false, -int256(t.balanceOf(trader) / 2));
+        assertTrue(e.tokenIsToken0 ? _sqrtP(e) < open : _sqrtP(e) > open, "the dump moved the price down");
+        (uint256 sameBlock,,) = e.desk.quote(e.token, 1e6);
+        assertEq(sameBlock, before, "still priced at the block's opening price");
+
+        // Next block the lower price is the real one.
+        vm.roll(block.number + 1);
+        (uint256 nextBlock,,) = e.desk.quote(e.token, 1e6);
+        assertGt(nextBlock, before, "follows the pool once the block has passed");
+
+        // A pump in the same block counts at once: never cheaper than live.
+        _swap(e, true, -int256(500e6));
+        (uint256 pumped,,) = e.desk.quote(e.token, 1e6);
+        assertLt(pumped, nextBlock);
+        assertApproxEqRel(pumped, _expectedAt(e, _sqrtP(e), 1e6), 1e12);
+    }
+
+    function test_FeeDesk_PortalRejectsADeskWiredElsewhere() public {
+        deployCodeTo("AuditFixes.t.sol:TestUSDC", LOW_QUOTE);
+        RobinHook h = _hook();
+        RobinTreasury t = new RobinTreasury(makeAddr("treasuryOwner"));
+        RobinFeeDesk otherTreasury = new RobinFeeDesk(address(manager), address(h), LOW_QUOTE, makeAddr("elsewhere"));
+        vm.expectRevert(RobinPortal.FeeDeskMismatch.selector);
+        new RobinPortal(address(manager), address(h), address(t), LOW_QUOTE, true, address(otherTreasury));
+        RobinFeeDesk otherHook = new RobinFeeDesk(address(manager), makeAddr("hook"), LOW_QUOTE, address(t));
+        vm.expectRevert(RobinPortal.FeeDeskMismatch.selector);
+        new RobinPortal(address(manager), address(h), address(t), LOW_QUOTE, true, address(otherHook));
     }
 }

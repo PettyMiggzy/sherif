@@ -1,14 +1,19 @@
 // Browser E2E of the whole flow against an anvil fork of Robinhood Chain
-// mainnet, where Robin Labs Pad is already deployed: launch a token at a
-// custom starting market cap, buy it and sell it through the real Universal
-// Router, then collect the platform's fees and withdraw them on /admin.
+// mainnet: launch a token at a custom starting market cap (with its first
+// buy), buy and sell it through the real Universal Router, buy the LP-fee
+// tokens off the fee desk at 10% off, trade a coin from the older portal,
+// then collect the platform's fees and withdraw them on /admin.
 //
 // The site must be built with its RPC pointed at the fork, so the server's
-// launch list and the browser both read the fork:
+// launch list and the browser both read the fork. With the current stack
+// deployed on the fork (usdg-pad/script/DeployRobinhood.s.sol, as the owner,
+// EXISTING_TREASURY set), point the build at it too:
 //
-//   anvil --fork-url https://rpc.mainnet.chain.robinhood.com --port 8547 --chain-id 4663
-//   NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8547 npx next build && npx next start -p 3100
-//   SITE=http://localhost:3100 node scripts/e2e-fork.cjs
+//   anvil --fork-url https://api.robinlab.io/rpc --port 8547 --chain-id 4663
+//   NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8547 NEXT_PUBLIC_PORTAL=… NEXT_PUBLIC_HOOK=… \
+//     NEXT_PUBLIC_FACTORY=… NEXT_PUBLIC_FEE_DESK=… NEXT_PUBLIC_PORTAL_GENESIS_BLOCK=… npx next build
+//   (same env) npx next start -p 3100
+//   SITE=http://localhost:3100 PORTAL=… HOOK=… FEE_DESK=… HOUSE=… LEGACY_TOKEN=… node scripts/e2e-fork.cjs
 //
 // A stand-in injected "MetaMask" sends transactions from impersonated fork
 // accounts (the trader, then the treasury owner). It refuses to sign
@@ -21,8 +26,13 @@ const assert = require('node:assert/strict');
 const S = process.env.OUT_DIR || '.';
 const FORK = process.env.FORK_RPC || 'http://127.0.0.1:8547';
 const SITE = process.env.SITE || 'http://localhost:3100';
-const PORTAL = '0x7e2f5dEe1A846fF21eE946d2e450F64133d0fD6F';
-const HOOK = '0x04abDE4e77036178E0DF13d435B7b7f87265e8cc';
+const PORTAL = process.env.PORTAL || '0x7e2f5dEe1A846fF21eE946d2e450F64133d0fD6F';
+const HOOK = process.env.HOOK || '0x04abDE4e77036178E0DF13d435B7b7f87265e8cc';
+const FEE_DESK = process.env.FEE_DESK || ''; // set when the portal has one
+const HOUSE_PAD = process.env.HOUSE || '0x923c4443fd996c757646A9753D89F57913aBEe71';
+// A coin from the 2026-09-26 portal, which the site keeps listing and trading.
+const LEGACY_TOKEN = process.env.LEGACY_TOKEN || '';
+const LEGACY_HOOK = '0x04abDE4e77036178E0DF13d435B7b7f87265e8cc';
 const USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168';
 const TREASURY = '0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f';
 const OWNER = '0x5899a0576A94327a6316E01190f951edf7645914';
@@ -181,12 +191,74 @@ async function trade(p, side, amountText) {
   console.log(`sold half: got back $${(Number(usdg2 - usdg1) / 1e6).toFixed(4)} USDG`);
   assert.ok(usdg2 > usdg1, 'the sell returned no USDG');
   await p.screenshot({ path: `${S}/e2e-2-token.png` });
+  const v = await import('viem');
+  const client = v.createPublicClient({ transport: v.http(FORK) });
+
+  // ── 2a. The fee desk: the sell paid its 1% LP fee in the token; collect it
+  // onto the desk and buy it all at 10% under the pool price. ─────────────────
+  if (FEE_DESK) {
+    const deskAbi = v.parseAbi(['function inventory(address) view returns (uint256)', 'function quoteAll(address) view returns (uint256 tokens, uint256 quoteCost)']);
+    const inv = () => client.readContract({ address: FEE_DESK, abi: deskAbi, functionName: 'inventory', args: [token] });
+    assert.equal(await inv(), 0n, 'the desk should start empty');
+    const t0 = await usdgOf(TREASURY);
+    await p.getByRole('button', { name: 'Bring in new fees to buy' }).click();
+    await p.getByRole('button', { name: 'All', exact: true }).waitFor({ timeout: 90000 });
+    const stocked = await inv();
+    const lpUsdg = (await usdgOf(TREASURY)) - t0;
+    console.log(`fee desk: stocked with ${Number(stocked) / 1e18} ${SYMBOL}; USDG-side LP fees to the treasury: $${Number(lpUsdg) / 1e6}`);
+    assert.ok(stocked > 0n, 'harvest put no tokens on the desk');
+    assert.ok(lpUsdg > 0n, 'harvest paid the treasury no USDG');
+    const [, cost] = await client.readContract({ address: FEE_DESK, abi: deskAbi, functionName: 'quoteAll', args: [token] });
+    await p.getByRole('button', { name: 'All', exact: true }).click();
+    const deskBuy = p.getByRole('button', { name: new RegExp(`^Buy [\\d.,]+[KMB]? ${SYMBOL}$`) });
+    await deskBuy.waitFor({ timeout: 30000 });
+    await p.screenshot({ path: `${S}/e2e-2a-desk.png` });
+    const tokBefore = word(await call(token, '0x70a08231' + pad32(TRADER)));
+    const usdgBefore = await usdgOf(TRADER);
+    const tBefore = await usdgOf(TREASURY);
+    await deskBuy.click();
+    await p.getByText('Nothing for sale yet. The next sells will stock it.').waitFor({ timeout: 90000 });
+    const gotTok = word(await call(token, '0x70a08231' + pad32(TRADER))) - tokBefore;
+    const paid = usdgBefore - (await usdgOf(TRADER));
+    console.log(`fee desk: bought ${Number(gotTok) / 1e18} ${SYMBOL} for $${Number(paid) / 1e6} (desk price for all: $${Number(cost) / 1e6})`);
+    assert.equal(gotTok, stocked, 'did not get the whole desk');
+    assert.ok(paid > 0n && paid <= cost + 2n, 'paid more than the desk quoted');
+    assert.equal((await usdgOf(TREASURY)) - tBefore, paid, 'the desk payment did not go to the treasury');
+    assert.equal(await inv(), 0n, 'desk not emptied');
+    // 10% off: the tokens are worth ~1/0.9 of what was paid at the pool price.
+    const { priceFromSqrt } = { priceFromSqrt: (spx, t0f) => { const x = Number(spx) / 2 ** 96; return t0f ? x * x * 1e12 : (1 / (x * x)) * 1e12; } };
+    const s0 = word(await rpc('eth_call', [{ to: '0x8366a39CC670B4001A1121B8F6A443A643e40951', data: '0x1e2eaeaf' + slot.slice(2) }, 'latest']));
+    const worth = (Number(gotTok) / 1e18) * priceFromSqrt(s0 & ((1n << 160n) - 1n), tokenFirst);
+    const discount = 1 - Number(paid) / 1e6 / worth;
+    console.log(`fee desk discount vs the pool price: ${(discount * 100).toFixed(2)}%`);
+    assert.ok(Math.abs(discount - 0.1) < 0.002, 'the desk did not sell at 10% off');
+  }
+
+  // ── 2d. A coin from the older portal still trades, on its own hook. ──────────
+  let legacyId = null;
+  if (LEGACY_TOKEN) {
+    await p.goto(`${SITE}/token/${LEGACY_TOKEN}`, { waitUntil: 'domcontentloaded' });
+    await connect(p, TRADER);
+    const lFirst = BigInt(LEGACY_TOKEN) < BigInt(USDG);
+    legacyId = keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }, { type: 'int24' }, { type: 'address' }], [lFirst ? LEGACY_TOKEN : USDG, lFirst ? USDG : LEGACY_TOKEN, 10000, 200, LEGACY_HOOK]));
+    const lSym = await client.readContract({ address: LEGACY_TOKEN, abi: v.parseAbi(['function symbol() view returns (string)']), functionName: 'symbol' });
+    const lBefore = word(await call(LEGACY_TOKEN, '0x70a08231' + pad32(TRADER)));
+    await p.getByRole('button', { name: 'Buy', exact: true }).click();
+    await p.getByPlaceholder('0.0').fill('5');
+    const go = p.getByRole('button', { name: `Buy ${lSym}`, exact: true });
+    await p.waitForFunction((sel) => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent === sel); return b && !b.disabled; }, `Buy ${lSym}`, { timeout: 30000 });
+    await go.click();
+    await p.waitForFunction(() => document.querySelector('input[placeholder="0.0"]')?.value === '', null, { timeout: 90000 });
+    const lGot = word(await call(LEGACY_TOKEN, '0x70a08231' + pad32(TRADER))) - lBefore;
+    console.log(`older portal: bought ${Number(lGot) / 1e18} ${lSym} for $5 on its own hook`);
+    assert.ok(lGot > 0n, 'the older coin did not trade');
+    await p.screenshot({ path: `${S}/e2e-2d-legacy.png` });
+  }
 
   // ── 2b. A launch and a trade on the house pad (a factory pad, not the main
   // portal), so /admin has to collect from both kinds of pad. Straight
   // transactions, like a bot would send them; the site only lists main-portal launches.
-  const v = await import('viem');
-  const HOUSE = '0x923c4443fd996c757646A9753D89F57913aBEe71';
+  const HOUSE = HOUSE_PAD;
   const ROUTER = '0x8876789976decbfcbbbe364623c63652db8c0904';
   const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
   const sendTx = async (from, to, data) => {
@@ -207,7 +279,6 @@ async function trade(p, side, amountText) {
   await sendTx(TRADER, HOUSE, v.encodeFunctionData({ abi: houseAbi, functionName: 'createLaunch', args: [
     { name: 'House Test', symbol: 'HOUSE', startingMarketCapQuote: 5_000_000_000n, buyTaxBps: 500, sellTaxBps: 500 },
     { recipients: [TRADER], recipientBps: [10_000], buybackBps: 0 }, 0, 0n] }));
-  const client = v.createPublicClient({ transport: v.http(FORK) });
   const hCount = await client.readContract({ address: HOUSE, abi: houseAbi, functionName: 'launchCount' });
   const hToken = await client.readContract({ address: HOUSE, abi: houseAbi, functionName: 'allLaunches', args: [hCount - 1n] });
   const hFirst = BigInt(hToken) < BigInt(USDG);
@@ -247,6 +318,11 @@ async function trade(p, side, amountText) {
   assert.equal(word(await call(HOOK, '0xea940ca0' + id.slice(2))), 0n, 'tax still waiting in the hook'); // pendingTax(id)
   assert.equal(word(await call(HOOK, '0xea940ca0' + hId.slice(2))), 0n, 'house-pad tax still waiting in the hook');
   assert.equal(word(await call(hSplitter, '0x75cda51c')), 0n, 'house-pad platform credit not claimed'); // platformCredit()
+  if (legacyId) assert.equal(word(await call(LEGACY_HOOK, '0xea940ca0' + legacyId.slice(2))), 0n, 'older-portal tax still waiting in its hook');
+  // LP fees were collected too: nothing left to harvest on the new launch.
+  const lockerOf = v.parseAbi(['function lockerForToken(address) view returns (address)', 'function harvestFees()']);
+  const locker = await client.readContract({ address: PORTAL, abi: lockerOf, functionName: 'lockerForToken', args: [token] });
+  await assert.rejects(client.simulateContract({ address: locker, abi: lockerOf, functionName: 'harvestFees', account: OWNER }), 'LP fees left unharvested');
   await p.screenshot({ path: `${S}/e2e-3-admin.png`, fullPage: true });
 
   // React's hydration warnings (#418/#423/#425: server and browser rendered a

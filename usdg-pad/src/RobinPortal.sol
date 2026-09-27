@@ -17,6 +17,7 @@ import {RobinLaunchToken} from "./RobinLaunchToken.sol";
 import {RobinRevenueSplitter} from "./RobinRevenueSplitter.sol";
 import {RobinHook} from "./RobinHook.sol";
 import {RobinLocker} from "./RobinLocker.sol";
+import {RobinFeeDesk} from "./RobinFeeDesk.sol";
 
 /// @notice Permissionless factory: one transaction takes a creator from
 /// nothing to a live, real Uniswap v4 pool trading their token's full
@@ -47,8 +48,15 @@ contract RobinPortal {
     // True only for Robin Labs Pad's own original Portal, deployed directly (not
     // through RobinPadFactory). Passed down to each launch's
     // RobinRevenueSplitter, which uses it to decide the platform/creator
-    // split ratio (10/90 on the main pad, 15/85 on every white-label pad).
+    // split ratio (20/80 on the main pad, 15/85 on every white-label pad).
     bool public immutable isMainPad;
+
+    // Where this portal's launches send their LP fees (see RobinLocker). Set:
+    // quote-side LP fees go to `treasury` in full and launch-token-side LP
+    // fees to this RobinFeeDesk, which sells them for USDG at a discount.
+    // Zero: the white-label behaviour (quote side through the splitter,
+    // token side burned).
+    address public immutable feeDesk;
 
     uint256 public constant TOTAL_SUPPLY = 1_000_000_000 ether;
     uint16 public constant MAX_TAX_BPS = 1_000; // 10% per side, same cap Argus uses
@@ -73,6 +81,7 @@ contract RobinPortal {
     error TaxTooHigh();
     error StartingMcOutOfRange();
     error ZeroAddress();
+    error FeeDeskMismatch();
 
     event LaunchCreated(
         address indexed token,
@@ -91,13 +100,29 @@ contract RobinPortal {
         string symbol
     );
 
-    constructor(address poolManager_, address hook_, address treasury_, address quoteAsset_, bool isMainPad_) {
+    constructor(
+        address poolManager_,
+        address hook_,
+        address treasury_,
+        address quoteAsset_,
+        bool isMainPad_,
+        address feeDesk_
+    ) {
         if (quoteAsset_ == address(0)) revert ZeroAddress();
+        if (feeDesk_ != address(0)) {
+            if (treasury_ == address(0)) revert ZeroAddress();
+            RobinFeeDesk desk = RobinFeeDesk(feeDesk_);
+            if (
+                desk.hook() != hook_ || desk.poolManager() != poolManager_ || desk.quoteAsset() != quoteAsset_
+                    || desk.treasury() != treasury_
+            ) revert FeeDeskMismatch();
+        }
         poolManager = poolManager_;
         hook = hook_;
         treasury = treasury_;
         quoteAsset = quoteAsset_;
         isMainPad = isMainPad_;
+        feeDesk = feeDesk_;
     }
 
     struct CreateLaunchParams {
@@ -264,8 +289,18 @@ contract RobinPortal {
         startingSqrtPriceX96 = TickMath.getSqrtPriceAtTick(tokenIsToken0 ? tickLower : tickUpper);
         IPoolManager(poolManager).initialize(key, startingSqrtPriceX96);
 
-        RobinLocker lockerContract =
-            new RobinLocker(poolManager, splitter, address(this), key, tickLower, tickUpper, tokenIsToken0);
+        bool toDesk = feeDesk != address(0);
+        RobinLocker lockerContract = new RobinLocker(
+            poolManager,
+            splitter,
+            address(this),
+            key,
+            tickLower,
+            tickUpper,
+            tokenIsToken0,
+            toDesk ? treasury : address(0),
+            toDesk ? feeDesk : address(0)
+        );
         r.locker = address(lockerContract);
 
         // Register before seeding: the hook only lets a pool's registered

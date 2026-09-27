@@ -22,7 +22,8 @@ import {RobinhoodStack} from "./RobinhoodStack.sol";
 /// Gas is ETH, not USDG. The deploy needs no USDG at all.
 ///
 /// Env (optional): PAD_SETUP_FEE (raw USDG, default 100e6 = $100 per
-/// white-label pad), HOUSE_PAD_NAME (default "Robin Labs Pad"; stored on-chain).
+/// white-label pad), HOUSE_PAD_NAME (default "Robin Labs Pad"; stored on-chain),
+/// EXISTING_TREASURY (reuse a live RobinTreasury owned by the deployer).
 contract DeployRobinhood is Script, RobinhoodStack {
     function run() external returns (Stack memory s) {
         require(block.chainid == 4663 || vm.envOr("ALLOW_OTHER_CHAIN", false), "not Robinhood Chain (4663)");
@@ -36,15 +37,19 @@ contract DeployRobinhood is Script, RobinhoodStack {
 
         uint256 setupFee = vm.envOr("PAD_SETUP_FEE", uint256(100e6));
         string memory name = vm.envOr("HOUSE_PAD_NAME", string("Robin Labs Pad"));
+        // Keep the live treasury (all platform revenue lands in one place):
+        // EXISTING_TREASURY=0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f. Unset deploys a new one.
+        address existingTreasury = vm.envOr("EXISTING_TREASURY", address(0));
         console2.log("Deploying as:", deployer);
 
         if (deployerKey != 0) vm.startBroadcast(deployerKey);
         else vm.startBroadcast();
-        s = _deployStack(deployer, CREATE2_DEPLOYER, setupFee, name);
+        s = _deployStack(deployer, CREATE2_DEPLOYER, setupFee, name, existingTreasury);
         vm.stopBroadcast();
 
         console2.log("RobinTreasury:", address(s.treasury));
         console2.log("RobinHook:", address(s.hook));
+        console2.log("RobinFeeDesk (sells the main pad's token-side LP fees at 10% off):", address(s.feeDesk));
         console2.log("RobinPortal (main portal, closes the hook's one-shot slot):", address(s.mainPortal));
         console2.log("PadRevenueSplitter implementation:", address(s.splitterImpl));
         console2.log("RobinPadFactory:", address(s.factory));

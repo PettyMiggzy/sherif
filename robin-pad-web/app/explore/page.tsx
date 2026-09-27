@@ -37,7 +37,7 @@ export default function Explore() {
     enabled: !!launches.data?.length,
     queryFn: async () => {
       const res = await publicClient.multicall({
-        contracts: launches.data!.map((l) => ({ address: CONFIG.hook, abi: hookAbi, functionName: 'poolConfigs' as const, args: [l.poolId] })),
+        contracts: launches.data!.map((l) => ({ address: l.hook, abi: hookAbi, functionName: 'poolConfigs' as const, args: [l.poolId] })),
       });
       return Object.fromEntries(launches.data!.map((l, i) => {
         const r = res[i];

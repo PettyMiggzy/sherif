@@ -292,7 +292,7 @@ the range of starting market caps creators may pick (Robin Labs Pad: $100 to
 $10k). A pad
 launches tokens exactly the way the main portal does, with the same token,
 pool, lock and no trading restrictions. The factory owner can open house
-pads (Robin Labs takes 10%); the new Robin Labs Pad is one.
+pads (Robin Labs takes 20% since the relaunch; 10% on the 2026-09-26 deploy); the new Robin Labs Pad is one.
 
 **Templates.** The hook accepts exactly one factory, forever, so the
 factory builds pads through templates (`IPadTemplate`). Template #1,

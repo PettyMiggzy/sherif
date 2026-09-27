@@ -1,5 +1,6 @@
 import { Coins, Lock, Percent, Eye } from 'lucide-react';
 import { CONFIG } from '@/lib/config';
+import { FEES } from '@/lib/fees';
 
 export default function About() {
   return (
@@ -24,7 +25,7 @@ export default function About() {
       <section className="grid gap-4 sm:grid-cols-2">
         <Fact icon={Coins} title="Same start for every token" body="Each launch mints exactly 1,000,000,000 tokens and all of them go into the pool. No team bag, no presale. The creator buys from the pool like everyone else." />
         <Fact icon={Lock} title="Liquidity that stays put" body="The pool position belongs to a locker contract with no owner and no withdraw function. Nobody can pull it out, us included." />
-        <Fact icon={Percent} title="A split set in code" body="A launch's revenue (its tax plus the LP fees it earns in USDG) goes 90% to the creator and 10% to the platform. That ratio is a constant in the contract, not a setting." />
+        <Fact icon={Percent} title="A split set in code" body={FEES.lpToPlatform ? `A launch's tax goes ${FEES.creatorPct}% to the creator and ${FEES.platformPct}% to the platform, and the pool's 1% LP fee goes to the platform. Both are constants in the contract, not settings.` : `A launch's revenue (its tax plus the LP fees it earns in USDG) goes ${FEES.creatorPct}% to the creator and ${FEES.platformPct}% to the platform. That ratio is a constant in the contract, not a setting.`} />
         <Fact icon={Eye} title="Real numbers or a dash" body="Numbers here are read from the chain, or from the indexer. When there is no real figure to show, you get a “—”, not a guess." />
       </section>
 
