@@ -22,7 +22,7 @@ import { StatCards } from '@/components/StatCards';
 import { FeatureStrip } from '@/components/FeatureStrip';
 import { CreatorCard, InfoTab, AddrLink } from '@/components/TokenExtras';
 import { GoPlusPanel } from '@/components/GoPlusPanel';
-import { FeeDeskCard } from '@/components/FeeDeskCard';
+import { DiscountLink } from '@/components/DiscountLink';
 import { askExplorerForSource } from '@/lib/explorerSource';
 
 type Tab = 'chart' | 'trades' | 'holders' | 'info';
@@ -199,7 +199,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
               lpFeeBps={LP_FEE_BPS} buyTaxBps={buyTaxBps} sellTaxBps={sellTaxBps}
             />
           ) : <div className="panel h-72 animate-pulse" />}
-          {launch.data && <FeeDeskCard launch={launch.data} symbol={symbol} />}
+          {launch.data && <DiscountLink launch={launch.data} symbol={symbol} />}
           {launch.data && <CreatorCard launch={launch.data} />}
           {launch.data && <GoPlusPanel token={token} />}
         </aside>

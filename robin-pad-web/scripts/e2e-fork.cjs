@@ -200,30 +200,33 @@ async function trade(p, side, amountText) {
     const deskAbi = v.parseAbi(['function inventory(address) view returns (uint256)', 'function quoteAll(address) view returns (uint256 tokens, uint256 quoteCost)']);
     const inv = () => client.readContract({ address: FEE_DESK, abi: deskAbi, functionName: 'inventory', args: [token] });
     assert.equal(await inv(), 0n, 'the desk should start empty');
+    // Two separate swaps: the token page has the market swap only, plus a link
+    // to this coin's discount swap on /deals once there are fees for it.
+    assert.ok(await p.getByRole('heading', { name: 'Swap', exact: true }).isVisible(), 'no market swap heading');
+    assert.equal(await p.getByText(/^Discount swap:/).count(), 0, 'the discount swap should not be on the token page');
+    const toDeals = p.getByRole('link', { name: /under market/ });
+    await toDeals.waitFor({ timeout: 60000 });
+    await toDeals.click();
+    await p.waitForURL(/\/deals\?token=/);
+    await connect(p, TRADER);
+    await p.getByText(`Discount swap: ${SYMBOL}`).waitFor({ timeout: 60000 });
     const t0 = await usdgOf(TREASURY);
     await p.getByRole('button', { name: 'Bring in new fees to buy' }).click();
     await p.getByRole('button', { name: 'All', exact: true }).waitFor({ timeout: 90000 });
     const stocked = await inv();
     const lpUsdg = (await usdgOf(TREASURY)) - t0;
-    console.log(`fee desk: stocked with ${Number(stocked) / 1e18} ${SYMBOL}; USDG-side LP fees to the treasury: $${Number(lpUsdg) / 1e6}`);
+    console.log(`discount swap: stocked with ${Number(stocked) / 1e18} ${SYMBOL}; USDG-side LP fees to the treasury: $${Number(lpUsdg) / 1e6}`);
     assert.ok(stocked > 0n, 'harvest put no tokens on the desk');
     assert.ok(lpUsdg > 0n, 'harvest paid the treasury no USDG');
     const [, cost] = await client.readContract({ address: FEE_DESK, abi: deskAbi, functionName: 'quoteAll', args: [token] });
-    // /deals lists it, and its link lands back on the token's fee desk.
-    await p.goto(`${SITE}/deals`, { waitUntil: 'domcontentloaded' });
-    const row = p.locator(`a[href$="#fee-desk" i][href*="${token.slice(2)}" i]`); // the link carries the checksummed address
-    await row.waitFor({ timeout: 60000 });
-    const rowText = await row.innerText();
-    assert.ok(rowText.includes(SYMBOL) && /Yours for/.test(rowText), 'the deal is not listed on /deals');
-    await p.screenshot({ path: `${S}/e2e-2b-deals.png` });
-    await row.click();
-    await p.waitForURL(/#fee-desk$/);
-    await connect(p, TRADER);
-    await p.getByRole('button', { name: 'All', exact: true }).waitFor({ timeout: 60000 });
+    // The coin is listed on the left with its price.
+    const row = p.locator(`button[data-token]`, { hasText: SYMBOL });
+    await p.waitForFunction((sym) => [...document.querySelectorAll('button[data-token]')].some((b) => b.textContent.includes(sym) && /Yours for/.test(b.textContent)), SYMBOL, { timeout: 60000 });
+    assert.equal(await row.getAttribute('aria-pressed'), 'true', 'the coin is not the one in the discount swap');
     await p.getByRole('button', { name: 'All', exact: true }).click();
     const deskBuy = p.getByRole('button', { name: new RegExp(`^Buy [\\d.,]+[KMB]? ${SYMBOL}$`) });
     await deskBuy.waitFor({ timeout: 30000 });
-    await p.screenshot({ path: `${S}/e2e-2a-desk.png` });
+    await p.screenshot({ path: `${S}/e2e-2a-deals.png` });
     const tokBefore = word(await call(token, '0x70a08231' + pad32(TRADER)));
     const usdgBefore = await usdgOf(TRADER);
     const tBefore = await usdgOf(TREASURY);

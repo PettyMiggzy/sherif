@@ -18,9 +18,11 @@ import { useEnsureChain } from '@/lib/ensureChain';
 const DESK_SLIPPAGE_BPS = 100n;
 
 /**
- * The fee desk: every sell pays its 1% LP fee in this token, and on the
- * current portal those tokens are sold here for USDG at 10% under the pool
- * price instead of being sold into the pool. The USDG goes to the platform.
+ * The discount swap (the fee desk): every sell pays its 1% LP fee in this
+ * token, and on the current portal those tokens are sold here for USDG at
+ * 10% under the pool price instead of being sold into the pool. The USDG
+ * goes to the platform. It lives on /deals, apart from the token page's
+ * market swap, so the two are never confused.
  */
 export function FeeDeskCard({ launch, symbol }: { launch: Launch; symbol: string }) {
   const desk = generationOf(launch.portal).feeDesk;
@@ -35,11 +37,6 @@ export function FeeDeskCard({ launch, symbol }: { launch: Launch; symbol: string
   const [err, setErr] = useState<string | null>(null);
   const [tx, setTx] = useState<string | null>(null);
   useEffect(() => { const t = setTimeout(() => setDebounced(amount), 300); return () => clearTimeout(t); }, [amount]);
-  // Linked from /deals as /token/<address>#fee-desk: the card renders after the
-  // launch record loads, too late for the browser's own jump to the anchor.
-  useEffect(() => {
-    if (window.location.hash === '#fee-desk') document.getElementById('fee-desk')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, []);
 
   const enabled = !!desk && !!pc;
   const all = useReadContract({ address: desk || undefined, abi: feeDeskAbi, functionName: 'quoteAll', args: [launch.token], chainId: robinhood.id, query: { enabled, refetchInterval: 15_000 } });
@@ -122,13 +119,13 @@ export function FeeDeskCard({ launch, symbol }: { launch: Launch; symbol: string
 
   const empty = stock === 0n;
   return (
-    <div id="fee-desk" className="panel scroll-mt-24 space-y-3 p-5">
+    <div className="panel space-y-3 p-5">
       <div className="flex items-center justify-between">
-        <h3 className="flex items-center gap-2 font-bold"><Tag className="h-4 w-4 text-brand-hi" />Fee desk</h3>
+        <h3 className="flex items-center gap-2 font-bold"><Tag className="h-4 w-4 text-brand-hi" />Discount swap: {symbol}</h3>
         <span className="chip bg-brand/15 text-brand-hi">{fees.deskDiscountPct}% under the pool</span>
       </div>
       <p className="text-xs text-muted">
-        Every sell pays its 1% LP fee in {symbol}. Those tokens are sold here, never into the pool.
+        Not the market swap. Every sell pays its 1% LP fee in {symbol}; those tokens are sold here at {fees.deskDiscountPct}% under the pool price, never into the pool.
       </p>
       <dl className="space-y-1.5 text-sm">
         <div className="flex justify-between"><dt className="text-muted">For sale</dt><dd className="font-bold">{stock === undefined ? '…' : fmtTok(stock)}</dd></div>

@@ -164,6 +164,10 @@ export function TradePanel(p: Props) {
 
   return (
     <div className="panel p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="font-bold">Swap</h3>
+        <span className="chip">Market price · the pool</span>
+      </div>
       <div className="grid grid-cols-2 rounded-xl2 bg-panel2 p-1">
         <button className={clsx('rounded-xl py-2.5 text-sm font-bold', isBuy ? 'bg-robin-grad text-ink shadow-btn' : 'text-muted')} onClick={() => setSide('buy')}>Buy</button>
         <button className={clsx('rounded-xl py-2.5 text-sm font-bold', !isBuy ? 'bg-robin-grad text-ink shadow-btn' : 'text-muted')} onClick={() => setSide('sell')}>Sell</button>
