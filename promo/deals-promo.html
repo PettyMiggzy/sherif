@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Robin Labs Deals promo</title>
+<!--
+  Robin Labs Deals promo: sell-side LP fees are sold at 10% under the pool, never dumped into it.
+  1920x1080, 20 s, same time-driven setup as pad-v4-promo.html:
+    node promo/render.cjs 30 deals-promo
+  Numbers on the demo card are illustrative, not a real coin.
+-->
+<link rel="stylesheet" href="fonts/local.css" />
+<style>
+  :root{
+    --bg:#050803; --panel:#0B1107; --panel2:#111A0B; --line:#1E2B12; --line2:#2C3F19;
+    --text:#EEF5E3; --muted:#A3B28C; --dim:#6E7D5A; --lime:#D4F21A; --lime2:#A3E635; --ink:#0A1004; --fox:#F08A24;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Plus Jakarta Sans',sans-serif}
+  .display{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;line-height:.9;letter-spacing:.005em}
+  #stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:
+    radial-gradient(1100px 700px at 78% 30%, rgba(163,230,53,.10), transparent 60%),
+    radial-gradient(900px 600px at 10% 90%, rgba(163,230,53,.06), transparent 60%), var(--bg)}
+  /* a faint dotted field, fixed */
+  #stage::before{content:'';position:absolute;inset:0;opacity:.35;background-image:
+    radial-gradient(1px 1px at 23px 41px,#e6f7b0 50%,transparent 51%),radial-gradient(1px 1px at 137px 89px,#e6f7b0 50%,transparent 51%),
+    radial-gradient(1.5px 1.5px at 211px 173px,#fff 50%,transparent 51%),radial-gradient(1px 1px at 311px 29px,#d4f21a 50%,transparent 51%),
+    radial-gradient(1px 1px at 367px 251px,#fff 50%,transparent 51%),radial-gradient(1px 1px at 79px 307px,#e6f7b0 50%,transparent 51%);
+    background-size:400px 400px}
+  .scene{position:absolute;inset:0;opacity:0}
+  .abs{position:absolute}
+  .lime{color:var(--lime)}
+  .chipk{font-family:'Barlow Condensed';font-weight:800;letter-spacing:.14em;font-size:26px;color:var(--muted);text-transform:uppercase}
+
+  .pill{font-weight:800;font-size:30px;padding:14px 26px;border-radius:999px;border:2px solid var(--line2);background:rgba(11,17,7,.9)}
+  .pill.lime{border-color:rgba(212,242,26,.6);color:var(--lime)}
+
+
+  .v4{font-family:'Barlow Condensed';font-weight:900;font-size:60px;background:linear-gradient(180deg,#DFF55A,#A3E635);color:var(--ink);border-radius:16px;padding:4px 22px 2px;box-shadow:0 12px 40px -10px rgba(163,230,53,.7);text-transform:uppercase}
+  /* S1 hook */
+  #s1 .small{left:160px;top:300px;font-size:72px;font-weight:700;color:var(--muted)}
+  #s1 .big{left:150px;top:390px;font-size:180px;font-weight:900}
+  #s1 .q{left:150px;top:640px;font-size:150px;font-weight:900;color:var(--lime);text-shadow:0 0 60px rgba(212,242,26,.35)}
+
+  /* S2 the flow */
+  #s2 .h{left:0;right:0;top:110px;text-align:center;font-size:130px;font-weight:900}
+  .box{width:440px;padding:34px 30px;border-radius:30px;border:2px solid var(--line2);background:rgba(11,17,7,.92);text-align:center}
+  .box .k{font-weight:800;font-size:24px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase}
+  .box .v{font-family:'Barlow Condensed';font-weight:900;font-size:72px;text-transform:uppercase;margin-top:6px}
+  .box.hot{border-color:var(--lime);box-shadow:0 0 0 4px rgba(212,242,26,.15),0 0 80px rgba(212,242,26,.35)}
+  .box.hot .v{color:var(--lime)}
+  #b1{left:130px;top:400px} #b2{left:740px;top:400px} #b3{left:1350px;top:400px}
+  .arrow{height:8px;top:494px;background:linear-gradient(90deg,#A3E635,#D4F21A);border-radius:6px;transform-origin:left center}
+  .arrow::after{content:'';position:absolute;right:-6px;top:-13px;border:17px solid transparent;border-left:24px solid #D4F21A;border-right:0}
+  #a1{left:588px;width:136px} #a2{left:1198px;width:136px}
+  #pool{left:740px;top:720px;border-style:dashed;opacity:.9}
+  #pool .v{color:var(--dim)}
+  #x{left:950px;top:612px;width:8px;height:96px;background:var(--line2);border-radius:6px}
+  .no{left:1010px;top:625px;font-family:'Barlow Condensed';font-weight:900;font-size:64px;color:#FF5A4E;text-transform:uppercase}
+
+  /* S3 the deal */
+  #s3 .head{left:120px;top:150px;width:760px}
+  #s3 .head h2{font-size:136px;font-weight:900;line-height:.93}
+  #s3 .head p{margin-top:34px;font-size:40px;color:var(--muted);font-weight:600;line-height:1.35}
+  .card{left:960px;top:170px;width:840px;background:linear-gradient(180deg,rgba(17,26,11,.96),rgba(11,17,7,.96));border:2px solid var(--line2);border-radius:36px;padding:44px 52px;box-shadow:0 40px 120px -30px rgba(0,0,0,.9)}
+  .card .top{display:flex;justify-content:space-between;align-items:center}
+  .card .title{font-family:'Barlow Condensed';font-weight:900;font-size:60px;text-transform:uppercase}
+  .card .tag{font-weight:800;font-size:26px;color:var(--lime);background:rgba(212,242,26,.12);border:2px solid rgba(212,242,26,.5);border-radius:999px;padding:8px 20px}
+  .card .rows{margin-top:30px;display:grid;gap:22px}
+  .card .row{display:flex;justify-content:space-between;align-items:baseline;font-size:36px;font-weight:600;color:var(--muted)}
+  .card .row b{color:#fff;font-weight:800;font-variant-numeric:tabular-nums}
+  .card .was{position:relative;color:var(--dim)!important}
+  .card .was::after{content:'';position:absolute;left:-6px;right:-6px;top:52%;height:5px;background:#FF5A4E;border-radius:4px;transform-origin:left;transform:scaleX(var(--k,0))}
+  .card .pay{font-family:'Barlow Condensed';font-weight:900;font-size:120px;color:var(--lime);line-height:1;text-shadow:0 0 50px rgba(212,242,26,.3)}
+  .card .btn{margin-top:34px;text-align:center;font-weight:800;font-size:38px;color:var(--ink);background:linear-gradient(180deg,#DFF55A,#A3E635);border-radius:22px;padding:22px}
+  .stamp{left:1590px;top:52px;font-family:'Barlow Condensed';font-weight:900;font-size:78px;color:var(--ink);background:var(--lime);border-radius:26px;padding:10px 28px;box-shadow:0 0 70px rgba(212,242,26,.55)}
+  #s3 .foot{left:120px;top:900px;display:flex;gap:18px}
+
+  /* S6 CTA */
+  #s6 .crew{right:0;top:0;bottom:0;width:1000px;background:url(img/crew.jpg) center 20%/cover;
+    -webkit-mask-image:linear-gradient(to right,transparent,#000 30%);mask-image:linear-gradient(to right,transparent,#000 30%)}
+  #s6 .brand{left:120px;top:150px;display:flex;align-items:center;gap:26px}
+  #s6 .brand img{width:110px;height:110px;border-radius:24px}
+  #s6 .brand .w{font-size:96px;font-weight:900}
+  #s6 .l1{left:120px;top:360px;font-size:150px;font-weight:900}
+  #s6 .l2{left:120px;top:510px;font-size:150px;font-weight:900;color:var(--lime);text-shadow:0 0 60px rgba(212,242,26,.3)}
+  #s6 .url{left:120px;top:730px;display:flex;align-items:center;gap:22px}
+  #s6 .url .go{font-weight:800;font-size:52px;color:var(--ink);background:linear-gradient(180deg,#DFF55A,#A3E635);border-radius:22px;padding:18px 40px;box-shadow:0 20px 60px -16px rgba(163,230,53,.8)}
+  #s6 .alt{left:124px;top:880px;font-size:34px;font-weight:700;color:var(--muted)}
+  #s6 .fine{left:124px;top:980px;font-size:22px;font-weight:600;color:var(--dim)}
+  #s6 .url .go{font-size:48px}
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <section class="scene" id="s1">
+    <div class="abs display small" id="s1a">Every sell pays a 1% fee</div>
+    <div class="abs display big" id="s1b">in the coin itself.</div>
+    <div class="abs display q" id="s1q">So where does it go?</div>
+  </section>
+
+  <section class="scene" id="s2">
+    <div class="abs display h" id="s2h">Not into <span class="lime">your chart.</span></div>
+    <div class="abs box" id="b1"><div class="k">Someone sells</div><div class="v">$FOX</div></div>
+    <div class="abs arrow" id="a1"></div>
+    <div class="abs box" id="b2"><div class="k">1% LP fee</div><div class="v">in $FOX</div></div>
+    <div class="abs arrow" id="a2"></div>
+    <div class="abs box hot" id="b3"><div class="k">Straight to</div><div class="v">Fee desk</div></div>
+    <div class="abs" id="x"></div>
+    <div class="abs no" id="xn">✕ Never dumped</div>
+    <div class="abs box" id="pool"><div class="k">The pool</div><div class="v">Untouched</div></div>
+  </section>
+
+  <section class="scene" id="s3">
+    <div class="abs head" id="s3h">
+      <h2 class="display">Buy it<br /><span class="lime">10% under<br />market.</span></h2>
+      <p>The desk prices off the pool itself, then takes 10% off. Paid in USDG.</p>
+    </div>
+    <div class="abs card" id="s3c">
+      <div class="top"><span class="title">Fee desk</span><span class="tag">10% under the pool</span></div>
+      <div class="rows">
+        <div class="row"><span>For sale</span><b>1,200,000 $FOX</b></div>
+        <div class="row"><span>Pool value</span><b class="was" id="was">$1,000</b></div>
+        <div class="row"><span>Yours for</span></div>
+      </div>
+      <div class="pay" id="pay">$1,000</div>
+      <div class="btn">Buy 1.2M $FOX</div>
+    </div>
+    <div class="abs stamp display" id="stamp">10% off</div>
+    <div class="abs foot" id="s3f"><span class="pill lime">Priced live by the pool</span><span class="pill">On every new coin</span></div>
+  </section>
+
+  <section class="scene" id="s6">
+    <div class="abs crew" id="s6c"></div>
+    <div class="abs brand" id="s6b"><img src="img/logo.png" alt="" /><span class="display w">Robin <span class="lime">Labs</span></span><span class="v4">Deals</span></div>
+    <div class="abs display l1" id="s6l1">Buy below</div>
+    <div class="abs display l2" id="s6l2">market.</div>
+    <div class="abs url" id="s6u"><span class="go">robinlab.io/deals</span></div>
+    <div class="abs alt" id="s6a">Robinhood Chain · pools in USDG</div>
+    <div class="abs fine" id="s6x">Robinhood Chain · not affiliated with Robinhood · demo numbers</div>
+  </section>
+</div>
+
+<script>
+const DURATION = 20;
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const outCubic = (x) => 1 - Math.pow(1 - x, 3);
+const inOutCubic = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const outBack = (x) => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const lerp = (a, b, x) => a + (b - a) * x;
+const vis = (t, a, b, fi = .35, fo = .35) => Math.min(seg(t, a, a + fi), 1 - seg(t, b - fo, b));
+function set(el, { o, x = 0, y = 0, s = 1, r = 0, blur = 0 }) {
+  if (o !== undefined) el.style.opacity = o;
+  el.style.transform = `translate(${x}px,${y}px) scale(${s}) rotate(${r}deg)`;
+  el.style.filter = blur ? `blur(${blur}px)` : 'none';
+}
+const rise = (el, t, a, d = .5, dist = 40) => { const k = outCubic(seg(t, a, a + d)); set(el, { o: k, y: (1 - k) * dist }); };
+
+function setTime(t) {
+  // S1 hook (0 - 3.6)
+  $('s1').style.opacity = vis(t, 0, 3.6, .01, .3);
+  rise($('s1a'), t, .15, .5);
+  rise($('s1b'), t, .5, .55, 60);
+  const q = seg(t, 1.9, 2.3);
+  set($('s1q'), { o: q, s: lerp(1.4, 1, outBack(q)), blur: (1 - q) * 8 });
+
+  // S2 the flow (3.6 - 9.4)
+  $('s2').style.opacity = vis(t, 3.6, 9.4, .3, .4);
+  rise($('s2h'), t, 3.7, .55, 50);
+  rise($('b1'), t, 4.2, .45, 40);
+  const a1 = seg(t, 4.7, 5.1); $('a1').style.opacity = a1 > 0 ? 1 : 0; $('a1').style.transform = `scaleX(${outCubic(a1)})`;
+  rise($('b2'), t, 5.0, .45, 40);
+  const a2 = seg(t, 5.6, 6.0); $('a2').style.opacity = a2 > 0 ? 1 : 0; $('a2').style.transform = `scaleX(${outCubic(a2)})`;
+  const b3 = seg(t, 5.95, 6.4); set($('b3'), { o: b3, s: lerp(.7, 1, outBack(b3)) });
+  rise($('pool'), t, 6.8, .45, 30);
+  const xk = seg(t, 7.2, 7.5); set($('x'), { o: xk * .9 });
+  const xn = seg(t, 7.35, 7.7); set($('xn'), { o: xn, s: lerp(1.5, 1, outBack(xn)) });
+
+  // S3 the deal (9.4 - 15.4)
+  $('s3').style.opacity = vis(t, 9.4, 15.4, .3, .4);
+  rise($('s3h'), t, 9.5, .6, 60);
+  const c = outCubic(seg(t, 9.65, 10.3)); set($('s3c'), { o: c, x: (1 - c) * 120 });
+  const k = inOutCubic(seg(t, 11.3, 12.2));
+  $('was').style.setProperty('--k', outCubic(seg(t, 11.0, 11.35)));
+  $('pay').textContent = '$' + Math.round(lerp(1000, 900, k)).toLocaleString('en-US');
+  const st = seg(t, 12.25, 12.55); set($('stamp'), { o: st, s: lerp(1.8, 1, outBack(st)), r: lerp(-18, -8, st) });
+  rise($('s3f'), t, 12.8, .5, 30);
+
+  // S6 CTA (15.4 - 20)
+  $('s6').style.opacity = vis(t, 15.4, 20.5, .35, .01);
+  const cr = outCubic(seg(t, 15.4, 16.5)); set($('s6c'), { o: cr, s: lerp(1.08, 1, cr) });
+  rise($('s6b'), t, 15.5, .5, 30);
+  rise($('s6l1'), t, 15.7, .5, 50);
+  rise($('s6l2'), t, 15.95, .5, 50);
+  const u = seg(t, 16.35, 16.8); set($('s6u'), { o: u, s: lerp(.7, 1, outBack(u)) });
+  rise($('s6a'), t, 16.7, .5, 20);
+  rise($('s6x'), t, 16.9, .5, 10);
+}
+window.setTime = setTime;
+window.DURATION = DURATION;
+setTime(0);
+if (location.search.includes('play')) {
+  const t0 = performance.now();
+  const tick = () => { const t = ((performance.now() - t0) / 1000) % DURATION; setTime(t); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}
+</script>
+</body>
+</html>

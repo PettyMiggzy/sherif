@@ -1,6 +1,7 @@
-// Renders pad-v4-promo.html to pad-v4-promo.mp4, frame by frame: every frame is
-// window.setTime(t) + a screenshot piped into ffmpeg, so the video is exact
-// no matter how fast the machine is.  node promo/render.cjs [fps]
+// Renders a promo page (default pad-v4-promo.html) to an .mp4 of the same name,
+// frame by frame: every frame is window.setTime(t) + a screenshot piped into
+// ffmpeg, so the video is exact no matter how fast the machine is.
+//   node promo/render.cjs [fps] [name]      e.g. node promo/render.cjs 30 deals-promo
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const http = require('node:http');
@@ -9,7 +10,8 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
 const FFMPEG = process.env.FFMPEG || 'ffmpeg';
 const FPS = Number(process.argv[2] || 30);
 const DIR = __dirname;
-const OUT = path.join(DIR, 'pad-v4-promo.mp4');
+const NAME = process.argv[3] || 'pad-v4-promo';
+const OUT = path.join(DIR, `${NAME}.mp4`);
 const TYPES = { '.html': 'text/html', '.css': 'text/css', '.woff2': 'font/woff2', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp' };
 
 (async () => {
@@ -23,7 +25,7 @@ const TYPES = { '.html': 'text/html', '.css': 'text/css', '.woff2': 'font/woff2'
   const base = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
-  await page.goto(`${base}/pad-v4-promo.html`, { waitUntil: 'load' });
+  await page.goto(`${base}/${NAME}.html`, { waitUntil: 'load' });
   await page.evaluate(() => document.fonts.ready);
   const duration = await page.evaluate(() => window.DURATION);
   const frames = Math.round(duration * FPS);
