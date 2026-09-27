@@ -75,19 +75,26 @@ abstract contract RobinhoodStack {
     }
 
     /// `existingTreasury`: keep collecting into a treasury that's already
-    /// live (its owner must be `owner`); zero deploys a new one.
+    /// live (its owner must be `admin`); zero deploys a new one for `admin`.
+    /// `admin`: who ends up in charge. `owner` (the deployer) must make the
+    /// wiring calls, so it bootstraps the hook and owns the factory while
+    /// deploying; with a different `admin`, the house pad is created owned by
+    /// `admin` and the factory is offered to `admin` (it calls
+    /// acceptOwnership to take it). Pass `admin == owner` for one wallet.
     function _deployStack(
         address owner,
         address create2Deployer,
         uint256 setupFee,
         string memory housePadName,
-        address existingTreasury
+        address existingTreasury,
+        address admin
     ) internal returns (Stack memory s) {
+        require(admin != address(0), "admin is zero");
         if (existingTreasury != address(0)) {
             s.treasury = RobinTreasury(payable(existingTreasury));
-            require(s.treasury.owner() == owner, "existing treasury has another owner");
+            require(s.treasury.owner() == admin, "existing treasury has another owner");
         } else {
-            s.treasury = new RobinTreasury(owner);
+            s.treasury = new RobinTreasury(admin);
         }
 
         bytes memory args = abi.encode(POOL_MANAGER, owner);
@@ -126,25 +133,27 @@ abstract contract RobinhoodStack {
         s.factory.setTemplateApproved(address(s.holderTemplate), true);
         s.housePad = HolderPadPortal(
             s.factory.deployHousePadFromTemplate(
-                address(s.holderTemplate), housePadName, owner, abi.encode(_housePadSettings())
+                address(s.holderTemplate), housePadName, admin, abi.encode(_housePadSettings())
             )
         );
+        if (admin != owner) s.factory.transferOwnership(admin);
 
-        _checkStack(s, owner);
+        _checkStack(s, owner, admin);
     }
 
     /// Read everything back off the chain; any miswiring reverts here.
-    function _checkStack(Stack memory s, address owner) internal view {
+    function _checkStack(Stack memory s, address owner, address admin) internal view {
         require(s.hook.mainPortalBootstrapped() && s.hook.factoryBootstrapped(), "a hook slot is still open");
         require(s.hook.factory() == address(s.factory), "factory not plugged into the hook");
         require(s.hook.isAuthorizedPortal(address(s.mainPortal)), "main portal not authorized");
         require(s.hook.isAuthorizedPortal(address(s.housePad)), "house pad not authorized");
         require(s.mainPortal.quoteAsset() == USDG && s.factory.quoteAsset() == USDG, "quote is not USDG");
-        require(s.factory.owner() == owner && s.treasury.owner() == owner, "wrong owner");
+        require(s.factory.owner() == owner && s.treasury.owner() == admin, "wrong owner");
+        require(admin == owner || s.factory.pendingOwner() == admin, "factory not offered to the admin");
         require(s.factory.isApprovedTemplate(address(s.holderTemplate)), "holders template not approved");
         require(s.factory.isHousePad(address(s.housePad)), "not a house pad");
         require(s.factory.templateOf(address(s.housePad)) == address(s.holderTemplate), "house pad not from the holders template");
-        require(s.housePad.platformShareBps() == 2_000 && s.housePad.padOwner() == owner, "wrong house pad share or owner");
+        require(s.housePad.platformShareBps() == 2_000 && s.housePad.padOwner() == admin, "wrong house pad share or owner");
         require(s.mainPortal.feeDesk() == address(s.feeDesk), "main portal not wired to the fee desk");
         require(s.feeDesk.treasury() == address(s.treasury) && s.feeDesk.hook() == address(s.hook), "fee desk miswired");
         require(s.housePad.holderTokenDeployer() == address(s.tokenDeployer), "wrong holder token deployer");

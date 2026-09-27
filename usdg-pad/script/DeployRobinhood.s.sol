@@ -40,11 +40,16 @@ contract DeployRobinhood is Script, RobinhoodStack {
         // Keep the live treasury (all platform revenue lands in one place):
         // EXISTING_TREASURY=0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f. Unset deploys a new one.
         address existingTreasury = vm.envOr("EXISTING_TREASURY", address(0));
+        // ADMIN: who ends up owning the treasury, house pad and factory, if not
+        // the deployer (see RobinhoodStack._deployStack). It accepts the factory
+        // later with acceptOwnership().
+        address admin = vm.envOr("ADMIN", deployer);
         console2.log("Deploying as:", deployer);
+        console2.log("Admin:", admin);
 
         if (deployerKey != 0) vm.startBroadcast(deployerKey);
         else vm.startBroadcast();
-        s = _deployStack(deployer, CREATE2_DEPLOYER, setupFee, name, existingTreasury);
+        s = _deployStack(deployer, CREATE2_DEPLOYER, setupFee, name, existingTreasury, admin);
         vm.stopBroadcast();
 
         console2.log("RobinTreasury:", address(s.treasury));
