@@ -46,17 +46,18 @@ export const CONFIG = {
   milestoneUsd: Number(process.env.NEXT_PUBLIC_MILESTONE_USD ?? 30000),
   // Robin Labs Pad on Robinhood Chain (usdg-pad/docs/ROBINHOOD-DEPLOY.md): the
   // main portal (opening market cap $100 and up) and its shared hook.
-  // Deployed 2026-09-26.
-  portal: addr(process.env.NEXT_PUBLIC_PORTAL, 'NEXT_PUBLIC_PORTAL', '0x7e2f5dEe1A846fF21eE946d2e450F64133d0fD6F'),
-  hook: addr(process.env.NEXT_PUBLIC_HOOK, 'NEXT_PUBLIC_HOOK', '0x04abDE4e77036178E0DF13d435B7b7f87265e8cc'),
+  // Relaunched 2026-09-27 (20% of tax, every LP fee, fee desk); the
+  // 2026-09-26 portal is listed in GENERATIONS below.
+  portal: addr(process.env.NEXT_PUBLIC_PORTAL, 'NEXT_PUBLIC_PORTAL', '0xC7006415A6633f87edbbF0feb091c9C460D7D0eC'),
+  hook: addr(process.env.NEXT_PUBLIC_HOOK, 'NEXT_PUBLIC_HOOK', '0xcd7098a79B4D5EC5105EE11120f09A93AF81e8cc'),
   treasury: addr(process.env.NEXT_PUBLIC_TREASURY, 'NEXT_PUBLIC_TREASURY', '0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f'),
   // RobinFeeDesk: on a portal that has one, the platform takes every LP fee
   // (the USDG side to the treasury, the token side to this desk, which sells
   // it at 10% off) and 20% of the tax. Empty: the 2026-09-26 portal, where
   // LP fees and tax both split 90% creator / 10% platform. See lib/fees.ts.
-  feeDesk: optAddr(process.env.NEXT_PUBLIC_FEE_DESK, 'NEXT_PUBLIC_FEE_DESK'),
+  feeDesk: optAddr(process.env.NEXT_PUBLIC_FEE_DESK, 'NEXT_PUBLIC_FEE_DESK', '0x7151193a74EFBA9026596a09Ac4C43584c3E316D'),
   // White-label pad factory: its pads (the house pad included) also pay the treasury.
-  factory: addr(process.env.NEXT_PUBLIC_FACTORY, 'NEXT_PUBLIC_FACTORY', '0xD637De9DA24007D11e60BDf0B8358b060953D4E8'),
+  factory: addr(process.env.NEXT_PUBLIC_FACTORY, 'NEXT_PUBLIC_FACTORY', '0x42dfB0740Ee799494F15b791e348A7488bc76970'),
   // Uniswap v4's PoolManager and UniversalRouter (v2.1.1) on Robinhood Chain.
   poolManager: addr(process.env.NEXT_PUBLIC_POOL_MANAGER, 'NEXT_PUBLIC_POOL_MANAGER', '0x8366a39CC670B4001A1121B8F6A443A643e40951'),
   router: addr(process.env.NEXT_PUBLIC_ROUTER, 'NEXT_PUBLIC_ROUTER', '0x8876789976decbfcbbbe364623c63652db8c0904'),
@@ -81,7 +82,7 @@ export const CONFIG = {
   // lib/launches.ts — it avoids an unbounded fromBlock:0 eth_getLogs call,
   // which public RPC providers (Alchemy included) reject past a ~10k block
   // range on any chain with real age.
-  portalGenesisBlock: BigInt(process.env.NEXT_PUBLIC_PORTAL_GENESIS_BLOCK || 73073570),
+  portalGenesisBlock: BigInt(process.env.NEXT_PUBLIC_PORTAL_GENESIS_BLOCK || 73877789),
   poolFee: 10_000,
   tickSpacing: 200,
   totalSupply: 1_000_000_000n * 10n ** 18n,

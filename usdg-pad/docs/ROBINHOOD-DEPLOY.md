@@ -7,7 +7,30 @@ below changes the fee routing (RobinLocker, RobinPortal, RobinRevenueSplitter,
 RobinPadFactory's house share), adds a block-open price record to RobinHook,
 and adds RobinFeeDesk; those changes have tests but no external audit yet.
 
-## Relaunch: 20% of the tax and every LP fee (ready, not yet deployed)
+## Relaunch: 20% of the tax and every LP fee (live since 2026-09-27)
+
+Deployed 2026-09-27 in blocks 73877789-73878012 (12 transactions, 0.0005
+ETH of gas) by `0x33a64a660277799525544780b323CB8D8D9082A9`, with
+`ADMIN=0x5899a0576A94327a6316E01190f951edf7645914` and the live treasury
+reused. Read back on-chain afterwards: the hook's slots are both closed and
+point at this portal and factory; the portal and the fee desk pay
+`0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f` (owner `0x5899…5914`); the house
+pad is owned by `0x5899…5914` with a 20% share; the factory's ownership is
+offered to `0x5899…5914`, which takes it by calling `acceptOwnership()` on it.
+
+| contract | address |
+|---|---|
+| `RobinTreasury` (reused) | `0x2F59476D23dE13e1Cd171d69Efe1227dE8349D3f` |
+| `RobinHook` | `0xcd7098a79B4D5EC5105EE11120f09A93AF81e8cc` |
+| `RobinFeeDesk` | `0x7151193a74EFBA9026596a09Ac4C43584c3E316D` |
+| **`RobinPortal` (main portal, the site's)** | **`0xC7006415A6633f87edbbF0feb091c9C460D7D0eC`** |
+| `PadRevenueSplitter` implementation | `0x2F2be68711E6dA0c25d9e5c04e71a908849bCEb5` |
+| `RobinPadFactory` | `0x42dfB0740Ee799494F15b791e348A7488bc76970` |
+| `PadPortalTemplate` (#1) | `0x2c173477943B1253ce1ecF30563C6c0a3Bc59F9D` |
+| `HolderTokenDeployer` | `0x8ea6d1F92b68Ab0751FDD26219b09252202FEe0A` |
+| `HolderPadTemplate` (#2, approved) | `0x03EBc130A5a801b0EeCc89733aAB6040F33585e3` |
+| House pad "Robin Labs Pad" (`HolderPadPortal`) | `0x202Df71eF80cfbfc5731573DF82408Cd158c6247` |
+
 
 What changes for launches on the new main portal (older launches keep the
 terms they launched with; the site keeps listing and trading them):
