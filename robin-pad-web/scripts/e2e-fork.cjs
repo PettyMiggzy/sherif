@@ -301,6 +301,13 @@ async function trade(p, side, amountText) {
   assert.equal(hPending, 2_000_000n, 'house-pad buy tax is not exactly 5% of $40');
   const hSplitter = await client.readContract({ address: HOUSE, abi: houseAbi, functionName: 'splitterForToken', args: [hToken] });
 
+  // Tax on the new launch so far (first buy, buy, sell), before /admin flushes it.
+  const pendingMain = word(await call(HOOK, '0xea940ca0' + id.slice(2)));
+  const splitterAbi = v.parseAbi(['function creditedToCreator(address) view returns (uint256)']);
+  const mainSplitter = (await client.readContract({ address: PORTAL, abi: v.parseAbi(['function lockerForToken(address) view returns (address)']), functionName: 'lockerForToken', args: [token] }));
+  const mainSplitterAddr = await client.readContract({ address: mainSplitter, abi: v.parseAbi(['function splitter() view returns (address)']), functionName: 'splitter' });
+  const creatorBefore = await client.readContract({ address: mainSplitterAddr, abi: splitterAbi, functionName: 'creditedToCreator', args: [USDG] });
+
   // ── 3. Collect and withdraw as the treasury owner ─────────────────────────
   await p.evaluate((a) => localStorage.setItem('e2e-account', a), OWNER);
   await p.goto(`${SITE}/admin`, { waitUntil: 'domcontentloaded' });
@@ -318,6 +325,11 @@ async function trade(p, side, amountText) {
   assert.equal(word(await call(HOOK, '0xea940ca0' + id.slice(2))), 0n, 'tax still waiting in the hook'); // pendingTax(id)
   assert.equal(word(await call(HOOK, '0xea940ca0' + hId.slice(2))), 0n, 'house-pad tax still waiting in the hook');
   assert.equal(word(await call(hSplitter, '0x75cda51c')), 0n, 'house-pad platform credit not claimed'); // platformCredit()
+  // The creator's share of that tax, credited when /admin flushed it.
+  const creatorPct = BigInt(process.env.CREATOR_PCT || (FEE_DESK ? 80 : 90));
+  const creatorGot = (await client.readContract({ address: mainSplitterAddr, abi: splitterAbi, functionName: 'creditedToCreator', args: [USDG] })) - creatorBefore;
+  console.log(`tax split: $${Number(pendingMain) / 1e6} flushed, creator credited $${Number(creatorGot) / 1e6} (${creatorPct}%), platform $${Number(pendingMain - creatorGot) / 1e6}`);
+  assert.equal(creatorGot, pendingMain - (pendingMain * (100n - creatorPct)) / 100n, `creator did not get exactly ${creatorPct}% of the tax`);
   if (legacyId) assert.equal(word(await call(LEGACY_HOOK, '0xea940ca0' + legacyId.slice(2))), 0n, 'older-portal tax still waiting in its hook');
   // LP fees were collected too: nothing left to harvest on the new launch.
   const lockerOf = v.parseAbi(['function lockerForToken(address) view returns (address)', 'function harvestFees()']);
