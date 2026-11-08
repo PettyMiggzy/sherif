@@ -54,7 +54,7 @@ export default function Docs() {
           any launch or in the hook, and the first block of every launch is open to everyone.
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
-          {[['#network', 'Contracts'], ['#api', 'JSON API'], ['#reading', 'Read'], ['#trading', 'Trade'], ['#creating', 'Launch'], ['#fees', 'Fees'], ['#events', 'Events']].map(([href, label]) => (
+          {[['#network', 'Contracts'], ['#api', 'JSON API'], ['#mcp', 'MCP & agents'], ['#reading', 'Read'], ['#trading', 'Trade'], ['#creating', 'Launch'], ['#fees', 'Fees'], ['#events', 'Events']].map(([href, label]) => (
             <a key={href} href={href} className="chip border border-transparent hover:border-brand-hi/60">{label}</a>
           ))}
         </div>
@@ -118,6 +118,49 @@ GET ${indexerBase}/candles/:token?n=96&interval=900   # OHLCV; interval in secon
 # { "priceUsd": 0.000042, "marketCapUsd": 42000, "volume24hUsd": 3150.5,
 #   "change24hPct": -2.7, "holders": 88, "txns24h": 19, "liquidityUsd": 7400 }`}</Code>
         </div>
+      </Section>
+
+      <Section id="mcp" title="MCP server and agent files">
+        <p className="text-sm text-muted">
+          AI agents can use {CONFIG.brand} through an MCP server: <code className="font-mono">{siteBase}/mcp</code>.
+          No key and no sign-up. It reads the same live chain data as the JSON API, and for anything that spends money
+          it returns a link the person opens and signs in their own wallet. It holds no keys, signs nothing and sends no
+          transactions.
+        </p>
+        <div className="overflow-x-auto rounded-lg border border-line2">
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs uppercase tracking-wider text-dim"><tr><th className="p-3">Tool</th><th className="p-3">What it does</th></tr></thead>
+            <tbody className="divide-y divide-line">
+              {[
+                ['elysium_config', 'Chain, RPC, every contract, the fee model, and whether launching is live'],
+                ['elysium_list_launches', 'Launches, newest first (limit, before)'],
+                ['elysium_market', 'Live price, market cap and change since launch'],
+                ['elysium_get_token', 'One launch: pool key, price, pending tax, creator details'],
+                ['elysium_launch_link', 'A pre-filled create page link (name, symbol, market cap $100 to $1M, taxes 0 to 10%)'],
+                ['elysium_trade_link', 'The token page, for the market swap'],
+                ['elysium_deals_link', `The discount swap for a token (${FEES.deskDiscountPct}% under the pool)`],
+              ].map(([t, d]) => (
+                <tr key={t}><td className="whitespace-nowrap p-3 font-mono text-xs text-brand-hi">{t}</td><td className="p-3 text-muted">{d}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs uppercase tracking-wider text-dim">Add it to a client</p>
+        <Code>{`# Claude Code
+claude mcp add --transport http elysium-pad ${siteBase}/mcp
+
+# Any client that takes a JSON config (Streamable HTTP)
+{ "mcpServers": { "elysium-pad": { "type": "http", "url": "${siteBase}/mcp" } } }
+
+# Or call it directly
+curl -s ${siteBase}/mcp -H 'content-type: application/json' \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"elysium_market","arguments":{"limit":5}}}'`}</Code>
+        <p className="text-sm text-muted">
+          For code generators there is an OpenAPI 3.1 description of the JSON API at{' '}
+          <a className="text-brand-hi underline" href="/api/v1/openapi.json">/api/v1/openapi.json</a>, and a plain-text
+          map of the site for agents at <a className="text-brand-hi underline" href="/llms.txt">/llms.txt</a>. The create page
+          also accepts <code className="font-mono">?name=&amp;symbol=&amp;mc=&amp;buyTax=&amp;sellTax=</code> to pre-fill the form.
+        </p>
       </Section>
 
       <Section id="trading" title="Buying and selling">

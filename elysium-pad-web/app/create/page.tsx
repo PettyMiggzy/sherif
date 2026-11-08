@@ -1,6 +1,6 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAccount, useWriteContract, usePublicClient, useSignMessage, useReadContract } from 'wagmi';
 import { decodeEventLog, formatUnits, parseAbi, parseUnits, type Address } from 'viem';
@@ -34,6 +34,10 @@ const FIRST_BUY_SLIPPAGE_BPS = 500; // 5%: a bot may buy between the launch and 
 
 export default function Create() {
   const router = useRouter();
+  // ?name=&symbol=&mc=&buyTax=&sellTax= pre-fills the form (links from the MCP server and bots).
+  const prefill = useSearchParams();
+  const pre = (k: string) => prefill.get(k) ?? '';
+  const preNum = (k: string, lo: number, hi: number, d: number) => { const n = Number(pre(k)); return pre(k) !== '' && Number.isFinite(n) && n >= lo && n <= hi ? n : d; };
   const { address, isConnected } = useAccount();
   const pc = usePublicClient({ chainId: padChain.id });
   const { writeContractAsync } = useWriteContract();
@@ -41,14 +45,14 @@ export default function Create() {
   const { signMessageAsync } = useSignMessage();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [name, setName] = useState('');
-  const [symbol, setSymbol] = useState('');
+  const [name, setName] = useState(() => pre('name').slice(0, 32));
+  const [symbol, setSymbol] = useState(() => pre('symbol').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10));
   const [description, setDescription] = useState('');
   const [imgPreview, setImgPreview] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [mcUsd, setMcUsd] = useState(10_000);
-  const [buyTax, setBuyTax] = useState(3);
-  const [sellTax, setSellTax] = useState(3);
+  const [mcUsd, setMcUsd] = useState(() => preNum('mc', MIN_MC_USD, MAX_MC_USD, 10_000));
+  const [buyTax, setBuyTax] = useState(() => preNum('buyTax', 0, 10, 3));
+  const [sellTax, setSellTax] = useState(() => preNum('sellTax', 0, 10, 3));
   // Off-chain display info only: RobinRevenueSplitter is a flat 90/10 and
   // splits nothing further. Saved with the token's other details.
   const [split, setSplit] = useState({ creator: 80, buyback: 10, dividends: 5, liquidity: 5 });
