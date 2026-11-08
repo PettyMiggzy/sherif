@@ -26,7 +26,7 @@ export function Logo() {
   return (
     <Link href="/" className="flex shrink-0 items-center gap-2.5 leading-none" aria-label={CONFIG.brand}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/brand/emblem.png" alt="" className="h-9 w-9 sm:h-11 sm:w-11" />
+      <img src="/brand/emblem-3d.webp" alt="" className="h-10 w-10 sm:h-12 sm:w-12" />
       <span className="flex flex-col">
         <span className="whitespace-nowrap font-display text-[17px] font-bold uppercase tracking-[0.04em] text-white sm:text-[24px] sm:tracking-[0.08em]">
           Elysium <span className="text-brand-hi">Pad</span>

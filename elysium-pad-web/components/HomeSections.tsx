@@ -20,7 +20,9 @@ export function Hero() {
       <div className="relative mx-auto max-w-[1440px] px-6 pb-20 pt-8 sm:pt-10 lg:pb-24 lg:pt-12">
         <div className="max-w-[600px]">
           <h1 className="font-display font-bold uppercase leading-[0.95] text-white drop-shadow-[0_10px_30px_rgba(0,0,0,.7)]">
-            <span className="block text-[52px] tracking-[0.04em] sm:text-[80px] lg:text-[96px]">Elysium</span>
+            <span className="sr-only">Elysium</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/wordmark-3d.webp" alt="" aria-hidden className="block w-[300px] drop-shadow-[0_12px_28px_rgba(0,0,0,.55)] sm:w-[440px] lg:w-[520px]" />
             <span className="mt-1 flex items-center gap-4 text-[30px] tracking-[0.2em] text-brand-hi sm:text-[44px] lg:text-[52px]">Launchpad<span className="rounded-lg bg-ely-gold px-2.5 py-1 font-sans text-[0.42em] font-bold tracking-normal text-ink">V4</span></span>
           </h1>
           <div className="mt-4 flex items-center gap-3 font-display text-xl font-bold uppercase text-muted sm:text-2xl">
