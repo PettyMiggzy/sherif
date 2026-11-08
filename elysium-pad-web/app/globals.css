@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+html, body { background: #05110F; color: #EEF3EE; }
+/* Elysian dusk behind everything, fixed so content scrolls over it: a mint
+   glow from the top, a gold one low on the right, and a few faint stars. */
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(124,245,208,.10), transparent 70%),
+    radial-gradient(900px 500px at 100% 100%, rgba(233,196,106,.06), transparent 70%);
+}
+body::after {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .45;
+  background-image:
+    radial-gradient(1px 1px at 23px 41px, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 137px 89px, #c9f7ea 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 211px 173px, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 311px 29px, #f5dc9a 50%, transparent 51%),
+    radial-gradient(1px 1px at 367px 251px, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 79px 307px, #c9f7ea 50%, transparent 51%);
+  background-size: 400px 400px;
+}
+* { border-color: #16302B; }
+h1, h2, h3 { font-family: var(--font-display), Georgia, serif; }
+::selection { background: rgba(124, 245, 208, 0.28); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #224039; border-radius: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@layer components {
+  .panel { @apply rounded-xl3 border border-line bg-panel/90 shadow-card; }
+  .panel2 { @apply bg-panel2 border border-line2 rounded-xl2; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold transition disabled:opacity-40 disabled:cursor-not-allowed; }
+  .btn-brand { @apply btn border border-brand-hi/50 bg-ely-grad text-ink shadow-btn hover:brightness-110; }
+  .btn-ghost { @apply btn border border-line2 bg-[#081613]/90 text-text hover:border-brand-hi hover:bg-panel2; }
+  .btn-up { @apply btn bg-up/10 text-up border border-up/40 hover:bg-up/20; }
+  .btn-down { @apply btn bg-down/10 text-down border border-down/40 hover:bg-down/20; }
+  .input { @apply w-full rounded-lg bg-panel2 border border-line2 px-4 py-2 text-sm text-text placeholder:text-dim outline-none focus:border-brand-hi focus:shadow-glow; }
+  .label { @apply block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5; }
+  .chip { @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-panel2 px-2.5 py-1 text-xs font-medium text-muted; }
+  .tab { @apply px-3 py-1.5 text-sm font-medium rounded-lg text-muted hover:text-text; }
+  .tab-active { @apply bg-panel2 text-brand-hi; }
+  .grad-text { @apply bg-ely-text bg-clip-text text-transparent; }
+  .gold-text { @apply bg-ely-gold bg-clip-text text-transparent; }
+  .section-title { @apply font-display text-3xl font-bold uppercase tracking-[0.06em] text-white md:text-4xl; }
+  /* Round mint-rimmed badge behind an icon, as in the stats and how-it-works rows. */
+  .icon-badge { @apply grid shrink-0 place-items-center rounded-full border border-brand-hi/40 bg-gradient-to-b from-[#12443A] to-[#08201B] text-brand-hi shadow-icon; }
+}
+
+@keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.ticker-track { animation: ticker 40s linear infinite; }
+.ticker-track:hover { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .ticker-track { animation: none; } }
