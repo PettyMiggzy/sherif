@@ -1,8 +1,9 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { useAccount, useWriteContract, usePublicClient, useSignMessage, useReadContract } from 'wagmi';
-import { decodeEventLog, formatUnits, parseUnits, type Address } from 'viem';
+import { decodeEventLog, formatUnits, parseAbi, parseUnits, type Address } from 'viem';
 import { FileText, Rocket, PieChart, Eye, ImageUp, ShieldCheck, Check } from 'lucide-react';
 import { erc20Abi, portalAbi } from '@/lib/abi';
 import { approveForRouter, buyWithUsdc } from '@/lib/buy';
@@ -28,6 +29,7 @@ const TOTAL_SUPPLY = 1_000_000_000;
 // router as any buy, right after the launch confirms, with the approvals done
 // before the launch so only the swap is left to sign.
 const MIN_FIRST_BUY_USD = 1;
+const hookLiveAbi = parseAbi(['function isAuthorizedPortal(address) view returns (bool)']);
 const FIRST_BUY_SLIPPAGE_BPS = 500; // 5%: a bot may buy between the launch and this swap
 
 export default function Create() {
@@ -59,6 +61,21 @@ export default function Create() {
   const [firstBuy, setFirstBuy] = useState('10');
   const [firstBought, setFirstBought] = useState(false);
   const usdcBal = useReadContract({ address: CONFIG.usdc, abi: erc20Abi, functionName: 'balanceOf', args: [address!], chainId: padChain.id, query: { enabled: !!address, refetchInterval: 15_000 } });
+  // Launching only works once the portal's contracts are on this network and
+  // the hook has authorized it. Until then the form says so instead of
+  // letting a launch fail. Only a clear "no" counts: a failed read (RPC
+  // trouble) leaves the button alone.
+  const padLive = useQuery({
+    queryKey: ['pad-live', CONFIG.hook, CONFIG.portal],
+    enabled: !!pc,
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      const code = await pc!.getCode({ address: CONFIG.portal });
+      if (!code || code === '0x') return false;
+      return pc!.readContract({ address: CONFIG.hook, abi: hookLiveAbi, functionName: 'isAuthorizedPortal', args: [CONFIG.portal] });
+    },
+  });
+  const padOff = padLive.data === false;
 
   const startingMcRaw = useMemo(() => BigInt(Math.round(mcUsd * 10 ** CONFIG.quoteDecimals)), [mcUsd]);
   const openingPrice = mcUsd / 1e9;
@@ -311,6 +328,11 @@ export default function Create() {
               <Row k="Starting liquidity" v={`${fmtUsd(mcUsd)} (full supply, locked)`} />
               <Row k="Your first buy" v={firstBuyOk ? fmtUsd(Number(firstBuy)) : '—'} />
             </dl>
+            {padOff && !launched && (
+              <div className="mt-5 rounded-lg border border-gold/40 bg-gold/10 p-3 text-sm text-text">
+                Not live yet: {CONFIG.brand}&apos;s contracts aren&apos;t switched on for {CONFIG.chainName}. Launching opens the moment they are.
+              </div>
+            )}
             {launched && !busy && !firstBought ? (
               <button className="btn-brand mt-5 w-full py-3" onClick={() => doFirstBuy(launched)}>Try the first buy again</button>
             ) : launched && !busy ? (
@@ -321,8 +343,8 @@ export default function Create() {
             ) : !isConnected ? (
               <div className="mt-5 panel2 p-3 text-center text-sm text-muted">Plug in a wallet to launch.</div>
             ) : (
-              <button className="btn-brand mt-5 w-full py-3.5 text-base" disabled={!valid || !!busy || !!launched} onClick={submit}>
-                <Rocket className="h-4 w-4" />{busy ?? 'Launch token'}
+              <button className="btn-brand mt-5 w-full py-3.5 text-base" disabled={!valid || !!busy || !!launched || padOff} onClick={submit}>
+                <Rocket className="h-4 w-4" />{busy ?? (padOff ? 'Not live yet' : 'Launch token')}
               </button>
             )}
             {tx && <a className="mt-2 block truncate text-xs text-brand-hi" href={explorerTx(tx) || undefined} target="_blank" rel="noreferrer">tx {tx}</a>}

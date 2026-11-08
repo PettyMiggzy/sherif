@@ -31,12 +31,22 @@ the same contracts (`usdg-pad/src`, deployed by
 
 ## Deploy
 
-Vercel project with root directory `elysium-pad-web`, production branch
-`claude/robinhood-chain-website-8loxcm`. `scripts/vercel-ignore.sh` skips
-builds when nothing under this folder changed. `www.elysiumpad.world`
-redirects to `elysiumpad.world` (vercel.json). A private Vercel Blob store
-(`BLOB_READ_WRITE_TOKEN`) holds token pictures, descriptions and the
-launch-list snapshot.
+**Vyre box (current host).** `Dockerfile` builds a self-contained Node server
+(Next.js standalone output) listening on port 3000. Deploy it with the Vyre
+connector: repo `PettyMiggzy/sherif`, branch
+`claude/robinhood-chain-website-8loxcm`, root `elysium-pad-web`, domain
+`elysiumpad.world`. Set `DATABASE_URL` (a Postgres database; Neon `elysium-pad`
+in the King Petty org) on the app, then redeploy. The A records for
+`elysiumpad.world` and `www` point at the box, and `www` redirects to the
+apex (next.config.mjs).
+
+**Vercel (alternative).** Project with root directory `elysium-pad-web`;
+`scripts/vercel-ignore.sh` skips builds when nothing under this folder
+changed. A private Vercel Blob store (`BLOB_READ_WRITE_TOKEN`) takes the place
+of `DATABASE_URL`.
+
+Either way the store (`lib/store.ts`) holds token pictures, descriptions and
+the launch-list snapshot.
 
 No env is needed: `lib/config.ts` defaults to the Elysium testnet
 deployment. For mainnet, once Kinetiq publishes its chain id and USDC

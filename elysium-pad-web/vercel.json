@@ -1,17 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "bash scripts/vercel-ignore.sh",
-  "redirects": [
-    {
-      "source": "/:path*",
-      "has": [
-        {
-          "type": "host",
-          "value": "www.elysiumpad.world"
-        }
-      ],
-      "destination": "https://elysiumpad.world/:path*",
-      "permanent": true
-    }
-  ]
+  "ignoreCommand": "bash scripts/vercel-ignore.sh"
 }
