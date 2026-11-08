@@ -15,7 +15,7 @@ import {RobinRevenueSplitter} from "../src/RobinRevenueSplitter.sol";
 import {PadRouter} from "../src/PadRouter.sol";
 import {ElysiumStack} from "../script/ElysiumStack.sol";
 
-/// @notice The whole pad on REAL Kinetiq Elysium testnet state (chain 99801):
+/// @notice The whole pad on REAL Kinetiq Elysium state (testnet 99801 by default; mainnet 99901 with ELYSIUM_CHAIN_ID/ELYSIUM_USDC):
 /// the deploy routine the script runs (ElysiumStack), the chain's bridged
 /// USDC and canonical Permit2, swaps through PadRouter encoded exactly as the
 /// site encodes them. Skipped unless ELYSIUM_FORK_URL is set:
@@ -23,7 +23,8 @@ import {ElysiumStack} from "../script/ElysiumStack.sol";
 contract ForkElysiumTest is Test, ElysiumStack {
     using PoolIdLibrary for PoolKey;
 
-    address constant USDC = 0x7D29d8047B905000459c0E80c34a26CeedcB47b2; // bridged from HyperEVM testnet
+    // Bridged USDC. Defaults to the testnet one; for another chain set ELYSIUM_CHAIN_ID and ELYSIUM_USDC.
+    address USDC;
     address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
     struct ExactInSingle {
@@ -45,7 +46,8 @@ contract ForkElysiumTest is Test, ElysiumStack {
             return false;
         }
         vm.createSelectFork(url);
-        assertEq(block.chainid, 99801, "not an Elysium testnet fork");
+        assertEq(block.chainid, vm.envOr("ELYSIUM_CHAIN_ID", uint256(99801)), "forked the wrong Elysium chain");
+        USDC = vm.envOr("ELYSIUM_USDC", address(0x7D29d8047B905000459c0E80c34a26CeedcB47b2));
         d = _deployElysium(address(this), address(this), address(this), USDC, address(0), PERMIT2, 100e6, "Elysium Pad", address(0));
         router = PadRouter(d.router);
         return true;

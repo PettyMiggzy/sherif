@@ -27,13 +27,10 @@ function optAddr(value: string | undefined, label: string, fallback = ''): Addre
   return v === '' ? '' : addr(v, label);
 }
 
-// Network profiles. The site runs on one of them: NEXT_PUBLIC_NETWORK picks it
-// ('testnet' or 'mainnet'), and every value can still be overridden by its own
-// NEXT_PUBLIC_* variable. Going live on mainnet = fill in the mainnet profile
-// below (Kinetiq publishes its RPC, explorer and USDC at launch; the pad's own
-// addresses come from usdg-pad/script/DeployElysium.s.sol) and set ACTIVE to
-// 'mainnet'. A mainnet build with a blank value stops with a clear message
-// instead of pointing at a wrong address.
+// Network profiles. The site runs on mainnet unless NEXT_PUBLIC_NETWORK=testnet,
+// and every value can still be overridden by its own NEXT_PUBLIC_* variable.
+// A profile with a blank value stops the build with a clear message instead
+// of pointing at a wrong address.
 type Profile = {
   chainId: number; chainName: string; rpcUrl: string; explorerUrl: string; usdc: string;
   portal: string; hook: string; treasury: string; feeDesk: string; factory: string; poolManager: string; router: string;
@@ -52,12 +49,20 @@ const PROFILES: Record<'testnet' | 'mainnet', Profile> = {
   },
   mainnet: {
     chainId: 99901, chainName: 'Elysium',
-    rpcUrl: '', explorerUrl: '', usdc: '',            // Kinetiq: published at launch
-    portal: '', hook: '', treasury: '', feeDesk: '', factory: '', poolManager: '', router: '', // from the mainnet deploy
-    genesisBlock: 0, backupRpc: '',
+    // Elyscan (independent explorer and public RPC) until Kinetiq publishes its own endpoints.
+    rpcUrl: 'https://rpc.elyscan.live', explorerUrl: 'https://elyscan.live',
+    // USDC bridged from HyperEVM's native USDC (l1Address() checked, and HyperEVM's gateway computes this same address).
+    usdc: '0xb47c4C8F73F009CC0C0d3f92B388d13E293F0B65',
+    // usdg-pad/script/DeployElysium.s.sol as the deployer 0xDaF4…5fBD0 at nonce 0; rehearsed on a mainnet fork.
+    portal: '0x788A959628C49b7eB92e6FCe9154dF775B4d709c', hook: '0x4eB7CD0299021045A92B67a8EE48DE8aA4CA68Cc',
+    treasury: '0x256772d87147C91749646F8365A2D760336F9E92', feeDesk: '0xBfBBa2Db88caf8ae43Db5f066F340229967965e9',
+    factory: '0xc7891BB84805D2919573499e0D11149C8972F06D', poolManager: '0xD1a514C574E60aAfCBf9fd822eF64fe963D3B4FA',
+    router: '0x4ff52c870735200162A971396a6E599536E67254',
+    genesisBlock: 2710000, // before the deploy (mainnet block 2,710,841 when rehearsed); replace with the real deploy block
+    backupRpc: 'https://rpc-live.elysp.com', // a second, independent provider; agrees with the primary on block hashes
   },
 };
-export const NETWORK: 'testnet' | 'mainnet' = process.env.NEXT_PUBLIC_NETWORK === 'mainnet' ? 'mainnet' : 'testnet';
+export const NETWORK: 'testnet' | 'mainnet' = process.env.NEXT_PUBLIC_NETWORK === 'testnet' ? 'testnet' : 'mainnet';
 const P = PROFILES[NETWORK];
 export const BACKUP_RPC_DEFAULT = P.backupRpc;
 
