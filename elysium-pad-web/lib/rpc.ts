@@ -1,5 +1,5 @@
 import { custom, http, type Transport } from 'viem';
-import { CONFIG } from './config';
+import { BACKUP_RPC_DEFAULT, CONFIG } from './config';
 
 // Kinetiq's public Elysium RPC first. When it fails (down or rate-limited), a backup: on the
 // server straight to the backup URL, and in the browser through this site's /api/rpc, which
@@ -7,8 +7,7 @@ import { CONFIG } from './config';
 // on any other chain there is none unless RPC_FALLBACK_URL names one (a backup on the wrong
 // chain would answer every call with the wrong chain's state). NEXT_PUBLIC_RPC_FALLBACK=0
 // turns the browser relay off.
-const DEFAULT_BACKUP: Record<number, string> = { 99801: 'https://elysium-testnet-rpc.hypedexer.com' };
-export const BACKUP_RPC_URL = process.env.RPC_FALLBACK_URL || DEFAULT_BACKUP[CONFIG.chainId] || '';
+export const BACKUP_RPC_URL = process.env.RPC_FALLBACK_URL || BACKUP_RPC_DEFAULT;
 
 // JSON-RPC answers must never come from a cache: Next.js's Data Cache stores
 // server-side fetch() responses (POSTs included) unless told not to, which froze

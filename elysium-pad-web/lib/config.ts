@@ -15,21 +15,61 @@ function addr(value: string | undefined, label: string, fallback?: string): Addr
   return v as Address;
 }
 
+/** A profile value that must be filled in before this network can run. */
+function need(v: string, label: string): string {
+  if (!v) throw new Error(`The ${NETWORK} profile in lib/config.ts has no ${label} yet. Fill it in (or set its NEXT_PUBLIC_ variable).`);
+  return v;
+}
+
 /** Like addr(), but empty means "not deployed" and gives ''. */
 function optAddr(value: string | undefined, label: string, fallback = ''): Address | '' {
   const v = value ?? fallback;
   return v === '' ? '' : addr(v, label);
 }
 
+// Network profiles. The site runs on one of them: NEXT_PUBLIC_NETWORK picks it
+// ('testnet' or 'mainnet'), and every value can still be overridden by its own
+// NEXT_PUBLIC_* variable. Going live on mainnet = fill in the mainnet profile
+// below (Kinetiq publishes its RPC, explorer and USDC at launch; the pad's own
+// addresses come from usdg-pad/script/DeployElysium.s.sol) and set ACTIVE to
+// 'mainnet'. A mainnet build with a blank value stops with a clear message
+// instead of pointing at a wrong address.
+type Profile = {
+  chainId: number; chainName: string; rpcUrl: string; explorerUrl: string; usdc: string;
+  portal: string; hook: string; treasury: string; feeDesk: string; factory: string; poolManager: string; router: string;
+  genesisBlock: number; backupRpc: string;
+};
+const PROFILES: Record<'testnet' | 'mainnet', Profile> = {
+  testnet: {
+    chainId: 99801, chainName: 'Elysium Testnet',
+    rpcUrl: 'https://testnet-rpc.elysium.kinetiq.xyz', explorerUrl: 'https://test-explorer.elysium.kinetiq.xyz',
+    usdc: '0x7D29d8047B905000459c0E80c34a26CeedcB47b2',
+    portal: '0x788A959628C49b7eB92e6FCe9154dF775B4d709c', hook: '0x4eB7CD0299021045A92B67a8EE48DE8aA4CA68Cc',
+    treasury: '0x256772d87147C91749646F8365A2D760336F9E92', feeDesk: '0xBfBBa2Db88caf8ae43Db5f066F340229967965e9',
+    factory: '0xc7891BB84805D2919573499e0D11149C8972F06D', poolManager: '0xD1a514C574E60aAfCBf9fd822eF64fe963D3B4FA',
+    router: '0x4ff52c870735200162A971396a6E599536E67254', genesisBlock: 26320181,
+    backupRpc: 'https://elysium-testnet-rpc.hypedexer.com',
+  },
+  mainnet: {
+    chainId: 99901, chainName: 'Elysium',
+    rpcUrl: '', explorerUrl: '', usdc: '',            // Kinetiq: published at launch
+    portal: '', hook: '', treasury: '', feeDesk: '', factory: '', poolManager: '', router: '', // from the mainnet deploy
+    genesisBlock: 0, backupRpc: '',
+  },
+};
+export const NETWORK: 'testnet' | 'mainnet' = process.env.NEXT_PUBLIC_NETWORK === 'mainnet' ? 'mainnet' : 'testnet';
+const P = PROFILES[NETWORK];
+export const BACKUP_RPC_DEFAULT = P.backupRpc;
+
 export const CONFIG = {
   // Kinetiq's own Elysium RPC: CORS-open and write-capable (wallets are handed
   // it when they add the network, so it must accept eth_sendRawTransaction).
-  rpcUrl: process.env.NEXT_PUBLIC_RPC_URL ?? 'https://testnet-rpc.elysium.kinetiq.xyz',
+  rpcUrl: process.env.NEXT_PUBLIC_RPC_URL ?? need(P.rpcUrl, 'rpcUrl'),
   // An env var rather than a constant: the default, 99801, is Elysium
   // testnet. Mainnet gets its id from Kinetiq's own docs, set here by env.
-  chainId: Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 99801),
-  chainName: process.env.NEXT_PUBLIC_CHAIN_NAME ?? 'Elysium Testnet',
-  explorerUrl: process.env.NEXT_PUBLIC_EXPLORER_URL ?? 'https://test-explorer.elysium.kinetiq.xyz',
+  chainId: Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? P.chainId),
+  chainName: process.env.NEXT_PUBLIC_CHAIN_NAME ?? P.chainName,
+  explorerUrl: process.env.NEXT_PUBLIC_EXPLORER_URL ?? P.explorerUrl,
   brand: process.env.NEXT_PUBLIC_BRAND ?? 'Elysium Pad',
   tagline: process.env.NEXT_PUBLIC_TAGLINE ?? 'Pick your market cap. Launch in one transaction.',
   // The site's public URL, for absolute social-preview links.
@@ -44,24 +84,24 @@ export const CONFIG = {
   // Elysium Pad on Elysium testnet (usdg-pad/script/DeployElysium.s.sol):
   // the main portal (opening market cap $100 to $1M) and its shared hook.
   // The platform takes 20% of the tax and every LP fee (fee desk below).
-  portal: addr(process.env.NEXT_PUBLIC_PORTAL, 'NEXT_PUBLIC_PORTAL', '0x788A959628C49b7eB92e6FCe9154dF775B4d709c'),
-  hook: addr(process.env.NEXT_PUBLIC_HOOK, 'NEXT_PUBLIC_HOOK', '0x4eB7CD0299021045A92B67a8EE48DE8aA4CA68Cc'),
-  treasury: addr(process.env.NEXT_PUBLIC_TREASURY, 'NEXT_PUBLIC_TREASURY', '0x256772d87147C91749646F8365A2D760336F9E92'),
+  portal: addr(process.env.NEXT_PUBLIC_PORTAL, 'NEXT_PUBLIC_PORTAL', need(P.portal, 'portal')),
+  hook: addr(process.env.NEXT_PUBLIC_HOOK, 'NEXT_PUBLIC_HOOK', need(P.hook, 'hook')),
+  treasury: addr(process.env.NEXT_PUBLIC_TREASURY, 'NEXT_PUBLIC_TREASURY', need(P.treasury, 'treasury')),
   // RobinFeeDesk: the platform takes every LP fee (the USDC side to the
   // treasury, the token side to this desk, which sells it at 10% off) and
   // 20% of the tax. See lib/fees.ts.
-  feeDesk: optAddr(process.env.NEXT_PUBLIC_FEE_DESK, 'NEXT_PUBLIC_FEE_DESK', '0xBfBBa2Db88caf8ae43Db5f066F340229967965e9'),
+  feeDesk: optAddr(process.env.NEXT_PUBLIC_FEE_DESK, 'NEXT_PUBLIC_FEE_DESK', P.feeDesk),
   // White-label pad factory: its pads (the house pad included) also pay the treasury.
-  factory: addr(process.env.NEXT_PUBLIC_FACTORY, 'NEXT_PUBLIC_FACTORY', '0xc7891BB84805D2919573499e0D11149C8972F06D'),
+  factory: addr(process.env.NEXT_PUBLIC_FACTORY, 'NEXT_PUBLIC_FACTORY', need(P.factory, 'factory')),
   // Elysium has no Uniswap deployment of its own, so the pad brings both:
   // a v4 PoolManager (Uniswap's v4-core, owned by the pad admin) and
   // PadRouter, which speaks UniversalRouter's execute() for v4 swaps and is
   // paid through the chain's canonical Permit2.
-  poolManager: addr(process.env.NEXT_PUBLIC_POOL_MANAGER, 'NEXT_PUBLIC_POOL_MANAGER', '0xD1a514C574E60aAfCBf9fd822eF64fe963D3B4FA'),
-  router: addr(process.env.NEXT_PUBLIC_ROUTER, 'NEXT_PUBLIC_ROUTER', '0x4ff52c870735200162A971396a6E599536E67254'),
+  poolManager: addr(process.env.NEXT_PUBLIC_POOL_MANAGER, 'NEXT_PUBLIC_POOL_MANAGER', need(P.poolManager, 'poolManager')),
+  router: addr(process.env.NEXT_PUBLIC_ROUTER, 'NEXT_PUBLIC_ROUTER', need(P.router, 'router')),
   permit2: addr(process.env.NEXT_PUBLIC_PERMIT2, 'NEXT_PUBLIC_PERMIT2', '0x000000000022D473030F116dDEE9F6B43aC78BA3'),
   // USDC bridged from HyperEVM, 6 decimals: every pool's quote asset. Gas is HYPE.
-  usdc: addr(process.env.NEXT_PUBLIC_USDC, 'NEXT_PUBLIC_USDC', '0x7D29d8047B905000459c0E80c34a26CeedcB47b2'),
+  usdc: addr(process.env.NEXT_PUBLIC_USDC, 'NEXT_PUBLIC_USDC', need(P.usdc, 'usdc')),
   // FALSE, not true: RobinHook/RobinPortal explicitly revert on
   // quoteAsset == address(0) (NativeQuoteUnsupported / ZeroAddress). There
   // is no native-currency code path in these contracts at all; the quote
@@ -76,7 +116,7 @@ export const CONFIG = {
   // LaunchCreated log can exist before this, so it's a safe, permanent floor
   // for the launch scan in lib/launches.ts, which avoids an unbounded
   // fromBlock:0 eth_getLogs call.
-  portalGenesisBlock: BigInt(process.env.NEXT_PUBLIC_PORTAL_GENESIS_BLOCK || 26320181),
+  portalGenesisBlock: BigInt(process.env.NEXT_PUBLIC_PORTAL_GENESIS_BLOCK || P.genesisBlock),
   poolFee: 10_000,
   tickSpacing: 200,
   totalSupply: 1_000_000_000n * 10n ** 18n,
