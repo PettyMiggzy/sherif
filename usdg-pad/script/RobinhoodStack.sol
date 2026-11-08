@@ -46,6 +46,17 @@ abstract contract RobinhoodStack {
             | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
     );
 
+    /// The PoolManager and quote asset the stack is built on: Robinhood
+    /// Chain's by default. A stack for another chain (script/ElysiumStack.sol)
+    /// overrides these two and reuses everything else unchanged.
+    function _poolManager() internal view virtual returns (address) {
+        return POOL_MANAGER;
+    }
+
+    function _quote() internal view virtual returns (address) {
+        return USDG;
+    }
+
     struct Stack {
         RobinTreasury treasury;
         RobinHook hook;
@@ -97,10 +108,10 @@ abstract contract RobinhoodStack {
             s.treasury = new RobinTreasury(admin);
         }
 
-        bytes memory args = abi.encode(POOL_MANAGER, owner);
+        bytes memory args = abi.encode(_poolManager(), owner);
         (address predictedHook, bytes32 salt) = HookMiner.find(create2Deployer, HOOK_FLAGS, type(RobinHook).creationCode, args);
         require(predictedHook.code.length == 0, "mined hook address already has code - re-mine");
-        s.hook = new RobinHook{salt: salt}(POOL_MANAGER, owner);
+        s.hook = new RobinHook{salt: salt}(_poolManager(), owner);
         require(address(s.hook) == predictedHook, "hook address mismatch - build differs from the one mined against");
         require(uint160(address(s.hook)) & Hooks.ALL_HOOK_MASK == HOOK_FLAGS, "hook address lacks the required flags");
 
@@ -109,24 +120,24 @@ abstract contract RobinhoodStack {
         // deploy fills it the way Arc did, with the original RobinPortal.
         // The main pad's LP fees: USDG side to the treasury in full, token
         // side to the fee desk, which sells it at a discount for USDG.
-        s.feeDesk = new RobinFeeDesk(POOL_MANAGER, address(s.hook), USDG, address(s.treasury));
+        s.feeDesk = new RobinFeeDesk(_poolManager(), address(s.hook), _quote(), address(s.treasury));
         s.mainPortal =
-            new RobinPortal(POOL_MANAGER, address(s.hook), address(s.treasury), USDG, true, address(s.feeDesk));
+            new RobinPortal(_poolManager(), address(s.hook), address(s.treasury), _quote(), true, address(s.feeDesk));
         s.hook.bootstrapMainPortal(address(s.mainPortal));
 
         s.splitterImpl = new PadRevenueSplitter();
         s.factory = new RobinPadFactory(
-            POOL_MANAGER, address(s.hook), address(s.treasury), USDG, address(s.splitterImpl), setupFee, owner
+            _poolManager(), address(s.hook), address(s.treasury), _quote(), address(s.splitterImpl), setupFee, owner
         );
         s.hook.bootstrapFactory(address(s.factory)); // closes the factory slot for good
 
         s.tokenDeployer = new HolderTokenDeployer();
         s.holderTemplate = new HolderPadTemplate(
             address(s.factory),
-            POOL_MANAGER,
+            _poolManager(),
             address(s.hook),
             address(s.treasury),
-            USDG,
+            _quote(),
             address(s.splitterImpl),
             address(s.tokenDeployer)
         );
@@ -147,7 +158,7 @@ abstract contract RobinhoodStack {
         require(s.hook.factory() == address(s.factory), "factory not plugged into the hook");
         require(s.hook.isAuthorizedPortal(address(s.mainPortal)), "main portal not authorized");
         require(s.hook.isAuthorizedPortal(address(s.housePad)), "house pad not authorized");
-        require(s.mainPortal.quoteAsset() == USDG && s.factory.quoteAsset() == USDG, "quote is not USDG");
+        require(s.mainPortal.quoteAsset() == _quote() && s.factory.quoteAsset() == _quote(), "wrong quote asset");
         require(s.factory.owner() == owner && s.treasury.owner() == admin, "wrong owner");
         require(admin == owner || s.factory.pendingOwner() == admin, "factory not offered to the admin");
         require(s.factory.isApprovedTemplate(address(s.holderTemplate)), "holders template not approved");
