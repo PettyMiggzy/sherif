@@ -110,6 +110,7 @@ label.chk{display:flex;gap:8px;align-items:center;justify-content:center;color:v
 'use strict';
 const W = 960, H = 540, GROUND = 436;
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const DPR = Math.min(2, window.devicePixelRatio || 1); cv.width = W * DPR; cv.height = H * DPR;
 const $ = (id) => document.getElementById(id);
 
 /* ---------- save ---------- */
@@ -151,7 +152,7 @@ function sfx(kind) {
 function mkFighter(o) {
   return Object.assign({ x: 0, vx: 0, face: 1, hp: 100, maxHp: 100, st: 100, maxSt: 100, stDelay: 0, state: 'idle', phase: '', t: 0, hit: false, weapon: 'gladius',
     dmgMul: 1, spd: 1, atkSpd: 1, name: '', isPlayer: false, blocking: false, blockT: 9, rollT: 0, rollDir: 1, stun: 0, hurtT: 0, dead: false, deadT: 0, flash: 0,
-    bleed: 0, walk: 0, charge: 0, charging: false, counter: 0, kind: 'normal', intent: 'approach', hold: 0, skill: .4, telegraph: .3, pose: 0, pal: 0, dmgBase: 1 }, o);
+    bleed: 0, walk: 0, charge: 0, charging: false, counter: 0, kind: 'normal', intent: 'approach', hold: 0, skill: .4, telegraph: .3, pose: 0, pal: 0, dmgBase: 1, rig: {}, trail: [] }, o);
 }
 let player, enemy, wave = 1, mode = 'menu', time = 0, hitStop = 0, shake = 0, hype = 0, paused = false;
 const particles = [], texts = [];
@@ -179,7 +180,7 @@ function startAttack(f, kind) {
   const cost = kind === 'bash' ? 16 : kind === 'heavy' ? wp.st * 2 : wp.st;
   if (f.st < Math.min(cost, 8)) return false;
   spend(f, cost);
-  f.state = 'attack'; f.kind = kind; f.phase = 'wind'; f.t = 0; f.hit = false; f.blocking = false;
+  f.rig.sw0 = f.rig.sw; f.trail = []; f.state = 'attack'; f.kind = kind; f.phase = 'wind'; f.t = 0; f.hit = false; f.blocking = false;
   const tele = f.isPlayer ? 0 : f.telegraph;
   f.dur = { wind: ((kind === 'bash' ? .12 : wp.wind) + tele) / f.atkSpd, act: kind === 'bash' ? .08 : wp.act, rec: (kind === 'bash' ? .3 : wp.rec) / f.atkSpd };
   if (kind === 'heavy') { f.dur.wind = .16; f.dur.rec = wp.rec * 1.5; }
@@ -286,59 +287,144 @@ const PALS = [
   { tunic: '#4b3f6b', trim: '#c9a24a', plume: '#3a2f55', skin: '#d0a07a', metal: '#b3b8bd' },
   { tunic: '#6a5a2c', trim: '#d8c07a', plume: '#6a5a2c', skin: '#a8724c', metal: '#a5aaae' },
 ];
+let rdt = 1 / 60, shk = { x: 0, y: 0 };
+const E = { out: (k) => 1 - Math.pow(1 - k, 3), io: (k) => (k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2) };
+function shade(hex, amt) { const n = parseInt(hex.slice(1), 16); const c = (s) => Math.max(0, Math.min(255, Math.round(((n >> s) & 255) * (1 + amt)))); return 'rgb(' + c(16) + ',' + c(8) + ',' + c(0) + ')'; }
+/* exponential smoothing of a rig value toward a target: this is what removes the snapping between poses */
+function sm(f, k, target, rate) { const r = f.rig; if (r[k] === undefined) r[k] = target; r[k] += (target - r[k]) * (1 - Math.exp(-rdt * rate)); return r[k]; }
+/* two-bone IK: returns [rootX, rootY, jointX, jointY, endX, endY] */
+function ik(hx, hy, tx, ty, l1, l2, bend) {
+  let dx = tx - hx, dy = ty - hy, d = Math.hypot(dx, dy) || .001; const max = l1 + l2 - .01;
+  if (d > max) { dx *= max / d; dy *= max / d; d = max; }
+  const a = Math.atan2(dy, dx), c = Math.max(-1, Math.min(1, (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d))), b = Math.acos(c) * bend;
+  return [hx, hy, hx + Math.cos(a + b) * l1, hy + Math.sin(a + b) * l1, hx + dx, hy + dy];
+}
+function limb(p, w, col) { ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[2], p[3]); ctx.lineTo(p[4], p[5]); ctx.stroke(); }
+function toWorld(px, py) { const m = ctx.getTransform(); return [(m.a * px + m.c * py + m.e) / DPR - shk.x, (m.b * px + m.d * py + m.f) / DPR - shk.y]; }
+
 function swordAngle(f) {
-  const idle = -.95 + Math.sin(f.walk * .5) * .05;
+  const idle = -.95 + Math.sin(time * 2.2 + f.pal) * .035;
   if (f.state === 'attack') {
-    const d = f.dur, kind = f.kind;
-    if (f.phase === 'wind') { const k = Math.min(1, f.t / d.wind); return idle + (-2.2 - idle) * k; }
-    if (f.phase === 'act') { const k = Math.min(1, f.t / d.act); return -2.2 + (kind === 'bash' ? 2.4 : 3.2) * k; }
-    const k = Math.min(1, f.t / d.rec); return (kind === 'bash' ? .2 : 1.0) + (idle - (kind === 'bash' ? .2 : 1.0)) * k;
+    const d = f.dur, kind = f.kind, a0 = f.rig.sw0 !== undefined ? f.rig.sw0 : idle, endA = kind === 'bash' ? .2 : 1.0;
+    if (f.phase === 'wind') return a0 + (-2.2 - a0) * E.io(Math.min(1, f.t / d.wind));
+    if (f.phase === 'act') return -2.2 + (kind === 'bash' ? 2.4 : 3.2) * E.out(Math.min(1, f.t / d.act));
+    return endA + (idle - endA) * E.io(Math.min(1, f.t / d.rec));
   }
+  if (f.dead) return 1.4;
+  if (f.charging) return -2.0;
   if (f.blocking) return -1.5;
   return idle;
 }
+
+function drawWeapon(f, pal, wp, fl) {
+  ctx.lineCap = 'butt';
+  if (f.weapon === 'gladius') { ctx.fillStyle = '#7a5a2b'; ctx.fillRect(-6, -2, 8, 4); ctx.fillStyle = pal.trim; ctx.fillRect(1, -5, 3, 10); ctx.fillStyle = '#e6ecee'; ctx.beginPath(); ctx.moveTo(4, -3); ctx.lineTo(wp.len - 8, -3); ctx.lineTo(wp.len, 0); ctx.lineTo(wp.len - 8, 3); ctx.lineTo(4, 3); ctx.fill(); ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(4, 0, wp.len - 12, 1.2); }
+  else if (f.weapon === 'spear') { ctx.fillStyle = '#7a5a2b'; ctx.fillRect(-26, -1.5, wp.len + 14, 3); ctx.fillStyle = '#e6ecee'; ctx.beginPath(); ctx.moveTo(wp.len - 10, -5); ctx.lineTo(wp.len + 12, 0); ctx.lineTo(wp.len - 10, 5); ctx.fill(); }
+  else { ctx.fillStyle = '#7a5a2b'; ctx.fillRect(-22, -1.5, wp.len + 6, 3); ctx.strokeStyle = '#e6ecee'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.moveTo(wp.len - 6, -9); ctx.lineTo(wp.len + 12, -9); ctx.moveTo(wp.len - 6, 9); ctx.lineTo(wp.len + 12, 9); ctx.moveTo(wp.len - 6, 0); ctx.lineTo(wp.len + 14, 0); ctx.moveTo(wp.len - 6, -9); ctx.lineTo(wp.len - 6, 9); ctx.stroke(); }
+}
+
 function drawFighter(f) {
-  const pal = PALS[f.pal % PALS.length], wp = WEAP[f.weapon];
+  const pal = PALS[f.pal % PALS.length], wp = WEAP[f.weapon], fl = f.flash > 0;
+  const C = (c) => (fl ? '#fff' : c);
+  const st = f.state, ph = f.phase, d = f.dur;
+  const moving = Math.abs(f.vx) > 20 && !f.dead && st !== 'roll';
+  const dir = Math.sign(f.vx * f.face) || 1;
+  const sp = sm(f, 'sp', moving ? Math.min(1, Math.abs(f.vx) / 190) : 0, 12);
+
+  /* pose targets per state, then eased */
+  let lean = .03 * sp, crouch = 0, lunge = 0, tuck = 0;
+  if (f.dead) { lean = 0; }
+  else if (st === 'attack') {
+    if (ph === 'wind') { const k = E.io(Math.min(1, f.t / d.wind)); lean = -.2 * k; crouch = 5 * k; }
+    else if (ph === 'act') { const k = E.out(Math.min(1, f.t / d.act)); lean = -.2 + .55 * k; crouch = 5 - 2 * k; lunge = 14 * k; }
+    else { const k = E.io(Math.min(1, f.t / d.rec)); lean = .35 * (1 - k); crouch = 3 * (1 - k); lunge = 14 * (1 - k); }
+  } else if (st === 'hurt') { lean = -.34; crouch = 3; }
+  else if (st === 'roll') { lean = .7; crouch = 20; tuck = 20; }
+  else if (f.blocking) { lean = .06; crouch = 5; }
+  else if (f.charging) { lean = -.18; crouch = 5; }
+  if (f.stun > 0 && st === 'idle') { lean = -.12; crouch = 2; }
+  lean = sm(f, 'lean', lean, 28); crouch = sm(f, 'crouch', crouch, 22); lunge = sm(f, 'lunge', lunge, 30);
+  const breathe = Math.sin(time * 2.4 + f.pal * 2) * (1 - sp);
+  const bob = Math.abs(Math.cos(f.walk)) * 2.4 * sp;
+  const hx = lunge * .45, hy = -40 + crouch + bob + breathe * .9;
+  const cl = Math.cos(lean), sl = Math.sin(lean);
+  const R = (x, y) => [hx + x * cl - y * sl, hy + x * sl + y * cl];
+
+  /* feet: walk cycle with lift, lunge, roll tuck */
+  const stride = Math.sin(f.walk) * dir * sp;
+  let fx0 = 11 + stride * 17 + lunge, fx1 = -11 - stride * 17 - lunge * .3;
+  if (st === 'roll') { fx0 = 7; fx1 = -7; }
+  const lift0 = Math.max(0, Math.cos(f.walk) * dir) * 7 * sp + tuck, lift1 = Math.max(0, -Math.cos(f.walk) * dir) * 7 * sp + tuck;
+  const leg0 = ik(hx + 4, hy, fx0, -lift0, 21, 20, -1), leg1 = ik(hx - 4, hy, fx1, -lift1, 21, 20, -1);
+
   ctx.save(); ctx.translate(f.x, GROUND);
-  // shadow
-  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(0, 2, 28, 7, 0, 0, 7); ctx.fill();
-  if (f.dead) { const k = Math.min(1, f.deadT / .55); ctx.rotate(-f.face * k * Math.PI * .47); ctx.translate(0, k * 6); }
-  else if (f.state === 'roll') { const k = Math.min(1, f.rollT / .38); ctx.translate(0, -22); ctx.rotate(f.rollDir * k * Math.PI * 2); ctx.translate(0, 22); }
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(0, 2, 28 - crouch * .3, 7, 0, 0, 7); ctx.fill();
+  if (f.dead) { const k = E.out(Math.min(1, f.deadT / .55)); ctx.rotate(-f.face * k * Math.PI * .47); ctx.translate(0, k * 6); }
+  else if (st === 'roll') { const k = E.io(Math.min(1, f.rollT / .38)); ctx.translate(0, -22); ctx.rotate(f.rollDir * k * Math.PI * 2); ctx.translate(0, 22); }
   ctx.scale(f.face, 1);
-  const moving = Math.abs(f.vx) > 20, sw = Math.sin(f.walk) * (moving ? .7 : .04), flash = f.flash > 0;
-  const lean = f.state === 'hurt' ? -.16 : f.state === 'attack' && f.phase === 'act' ? .14 : f.blocking ? .05 : 0;
-  // back leg + front leg
-  ctx.lineCap = 'round'; ctx.lineWidth = 9; ctx.strokeStyle = flash ? '#fff' : pal.skin;
-  ctx.beginPath(); ctx.moveTo(-4, -34); ctx.lineTo(-4 + Math.sin(-sw) * 14, -2); ctx.moveTo(6, -34); ctx.lineTo(6 + Math.sin(sw) * 14, -2); ctx.stroke();
-  ctx.lineWidth = 7; ctx.strokeStyle = '#3a2a1c'; ctx.beginPath(); ctx.moveTo(-4 + Math.sin(-sw) * 12, -12); ctx.lineTo(-4 + Math.sin(-sw) * 14, -2); ctx.moveTo(6 + Math.sin(sw) * 12, -12); ctx.lineTo(6 + Math.sin(sw) * 14, -2); ctx.stroke();
-  ctx.save(); ctx.rotate(lean); ctx.translate(0, f.state === 'attack' ? 0 : Math.sin(f.walk * 2) * (moving ? 1.6 : .4));
-  // tunic + torso
-  ctx.fillStyle = flash ? '#fff' : pal.tunic; ctx.beginPath(); ctx.moveTo(-13, -30); ctx.lineTo(13, -30); ctx.lineTo(10, -50); ctx.lineTo(-10, -50); ctx.fill();
-  ctx.fillStyle = flash ? '#fff' : pal.skin; ctx.fillRect(-12, -84, 24, 36);
-  ctx.fillStyle = pal.trim; ctx.fillRect(-12, -62, 24, 5); ctx.fillStyle = pal.metal; ctx.beginPath(); ctx.moveTo(-12, -84); ctx.lineTo(-2, -82); ctx.lineTo(-2, -66); ctx.lineTo(-12, -64); ctx.fill();
-  // head + helmet
-  ctx.fillStyle = flash ? '#fff' : pal.skin; ctx.beginPath(); ctx.arc(2, -98, 10.5, 0, 7); ctx.fill();
-  ctx.fillStyle = flash ? '#fff' : pal.metal; ctx.beginPath(); ctx.arc(2, -100, 12, Math.PI, 0); ctx.fill(); ctx.fillRect(-10, -100, 22, 4); ctx.fillRect(9, -100, 4, 16);
-  ctx.fillStyle = flash ? '#fff' : pal.plume; ctx.beginPath(); ctx.moveTo(-6, -111); ctx.quadraticCurveTo(-4, -132, 14, -124); ctx.quadraticCurveTo(4, -118, 8, -110); ctx.fill();
-  ctx.fillStyle = '#1a1a1a'; ctx.fillRect(7, -99, 3, 3);
-  // sword arm + weapon
-  const a = swordAngle(f), shx = 6, shy = -78, ax = shx + Math.cos(a - .35) * 18, ay = shy + Math.sin(a - .35) * 18;
-  ctx.strokeStyle = flash ? '#fff' : pal.skin; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(shx, shy); ctx.lineTo(ax, ay); ctx.stroke();
-  ctx.save(); ctx.translate(ax, ay); ctx.rotate(a);
-  if (f.weapon === 'gladius') { ctx.fillStyle = '#7a5a2b'; ctx.fillRect(-6, -2, 8, 4); ctx.fillStyle = pal.trim; ctx.fillRect(1, -5, 3, 10); ctx.fillStyle = '#dfe6e8'; ctx.beginPath(); ctx.moveTo(4, -3); ctx.lineTo(wp.len - 8, -3); ctx.lineTo(wp.len, 0); ctx.lineTo(wp.len - 8, 3); ctx.lineTo(4, 3); ctx.fill(); }
-  else if (f.weapon === 'spear') { ctx.fillStyle = '#7a5a2b'; ctx.fillRect(-26, -1.5, wp.len + 14, 3); ctx.fillStyle = '#dfe6e8'; ctx.beginPath(); ctx.moveTo(wp.len - 10, -5); ctx.lineTo(wp.len + 12, 0); ctx.lineTo(wp.len - 10, 5); ctx.fill(); }
-  else { ctx.fillStyle = '#7a5a2b'; ctx.fillRect(-22, -1.5, wp.len + 6, 3); ctx.strokeStyle = '#dfe6e8'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.moveTo(wp.len - 6, -9); ctx.lineTo(wp.len + 12, -9); ctx.moveTo(wp.len - 6, 9); ctx.lineTo(wp.len + 12, 9); ctx.moveTo(wp.len - 6, 0); ctx.lineTo(wp.len + 14, 0); ctx.moveTo(wp.len - 6, -9); ctx.lineTo(wp.len - 6, 9); ctx.stroke(); }
-  if (f.state === 'attack' && f.phase === 'act') { ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(-ax + 0, -ay + 0, 1, 0, 0); ctx.stroke(); }
+
+  /* legs */
+  const skinB = shade(pal.skin, -.28), skinF = pal.skin;
+  const shin = (L, col) => { ctx.strokeStyle = col; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(L[2], L[3]); ctx.lineTo(L[4], L[5]); ctx.stroke(); };
+  limb(leg1, 8.5, C(skinB)); shin(leg1, C(shade(pal.metal, -.35)));
+  ctx.fillStyle = '#2b1f15'; ctx.fillRect(leg1[4] - 4, leg1[5] - 3, 12, 4);
+  limb(leg0, 8.5, C(skinF)); shin(leg0, C(pal.metal));
+  ctx.fillStyle = '#2b1f15'; ctx.fillRect(leg0[4] - 4, leg0[5] - 3, 12, 4);
+
+  /* torso */
+  ctx.save(); ctx.translate(hx, hy); ctx.rotate(lean);
+  ctx.fillStyle = C(pal.tunic); ctx.beginPath(); ctx.moveTo(-12, -6); ctx.lineTo(12, -6); ctx.lineTo(14 + stride * 3, 13); ctx.lineTo(-14 + stride * 3, 13); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = C(pal.trim); ctx.beginPath(); ctx.moveTo(-14 + stride * 3, 10); ctx.lineTo(14 + stride * 3, 10); ctx.lineTo(14 + stride * 3, 13); ctx.lineTo(-14 + stride * 3, 13); ctx.fill();
+  ctx.fillStyle = C(pal.skin); ctx.beginPath(); ctx.moveTo(-11, -6); ctx.lineTo(11, -6); ctx.lineTo(13, -36); ctx.lineTo(-13, -36); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = C(pal.trim); ctx.fillRect(-12, -10, 24, 5);
+  ctx.strokeStyle = C('#3a2a1c'); ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(-9, -35); ctx.lineTo(8, -10); ctx.stroke();
+  ctx.fillStyle = C(pal.metal); ctx.beginPath(); ctx.ellipse(6, -34, 8.5, 6, -.2, 0, 7); ctx.fill();
+  const pl = sm(f, 'pl', -f.vx * f.face * .0012 + Math.sin(time * 3 + f.pal) * .04 + (st === 'hurt' ? -.4 : 0), 9);
+  ctx.fillStyle = C(shade(pal.skin, -.05)); ctx.fillRect(-3, -42, 6, 8);
+  ctx.fillStyle = C(pal.skin); ctx.beginPath(); ctx.arc(2, -48, 10.5, 0, 7); ctx.fill();
+  ctx.fillStyle = C(pal.metal); ctx.beginPath(); ctx.arc(2, -50, 12, Math.PI, 0); ctx.fill(); ctx.fillRect(-10, -50, 22, 4); ctx.fillRect(9, -50, 4, 16);
+  const tipx = 8 + pl * 60, tipy = -75 + Math.abs(pl) * 14;
+  ctx.fillStyle = C(pal.plume); ctx.beginPath(); ctx.moveTo(-6, -61); ctx.quadraticCurveTo(-6, -80, tipx, tipy); ctx.quadraticCurveTo(tipx * .3 + 4, -66, 8, -60); ctx.fill();
+  ctx.fillStyle = '#1a1a1a'; ctx.fillRect(7, -49, 3, 3);
   ctx.restore();
-  if (f.state === 'attack' && f.phase === 'act') { ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(shx, shy, wp.len + 14, -1.7, .9); ctx.stroke(); }
-  // shield
-  const sx = f.blocking ? 22 : 12, sy = f.blocking ? -70 : -62;
-  ctx.fillStyle = flash ? '#fff' : pal.tunic; ctx.strokeStyle = pal.trim; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(sx - 9, sy - 24, 18, 46, 7) : ctx.rect(sx - 9, sy - 24, 18, 46); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = pal.metal; ctx.beginPath(); ctx.arc(sx, sy - 1, 4.5, 0, 7); ctx.fill();
+
+  /* shield arm + shield (eased toward block / bash positions) */
+  const bashAct = st === 'attack' && f.kind === 'bash' && ph !== 'wind';
+  const sT = bashAct ? [33, -30] : f.blocking ? [22, -34] : [12, -26];
+  const sx = sm(f, 'sx', sT[0], 26), sy = sm(f, 'sy', sT[1], 26);
+  const [shx, shy] = R(sx, sy), bs = R(-4, -33);
+  limb(ik(bs[0], bs[1], shx - 3, shy + 4, 11, 11, 1), 6, C(shade(pal.skin, -.15)));
+  ctx.save(); ctx.translate(shx, shy); ctx.rotate(lean * .5);
+  ctx.fillStyle = C(pal.tunic); ctx.strokeStyle = pal.trim; ctx.lineWidth = 3; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-9, -23, 18, 46, 7); else ctx.rect(-9, -23, 18, 46); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = C(pal.metal); ctx.beginPath(); ctx.arc(0, 0, 4.5, 0, 7); ctx.fill();
   ctx.restore();
+
+  /* sword arm + weapon */
+  const a = swordAngle(f);
+  if (st === 'attack') f.rig.sw = a; else { f.rig.sw0 = undefined; }
+  const aa = st === 'attack' ? a : sm(f, 'sw', a, 16);
+  if (st === 'attack') f.rig.sw = a;
+  const fs = R(7, -33), hand = [fs[0] + Math.cos(aa - .35) * 19, fs[1] + Math.sin(aa - .35) * 19];
+  limb(ik(fs[0], fs[1], hand[0], hand[1], 11, 11, 1), 6, C(skinF));
+  ctx.save(); ctx.translate(hand[0], hand[1]); ctx.rotate(aa);
+  drawWeapon(f, pal, wp, fl);
   ctx.restore();
-  // telegraph marker (enemy about to strike)
-  if (!f.isPlayer && f.state === 'attack' && f.phase === 'wind' && !f.dead) { ctx.fillStyle = '#ff6b5a'; ctx.font = 'bold 26px Georgia,serif'; ctx.textAlign = 'center'; ctx.fillText('!', f.x, GROUND - 150); }
+
+  /* sword trail samples (world space) */
+  const swinging = st === 'attack' && (ph === 'act' || (ph === 'rec' && f.t < .07));
+  if (swinging) {
+    const b = toWorld(hand[0] + Math.cos(aa) * wp.len * .35, hand[1] + Math.sin(aa) * wp.len * .35), t = toWorld(hand[0] + Math.cos(aa) * (wp.len + 6), hand[1] + Math.sin(aa) * (wp.len + 6));
+    f.trail.push({ bx: b[0], by: b[1], tx: t[0], ty: t[1], t: time });
+  }
+  ctx.restore();
+  if (!f.isPlayer && st === 'attack' && ph === 'wind' && !f.dead) { ctx.fillStyle = '#ff6b5a'; ctx.font = 'bold 26px Georgia,serif'; ctx.textAlign = 'center'; ctx.fillText('!', f.x, GROUND - 150); }
+}
+function drawTrail(f) {
+  const tr = f.trail; while (tr.length && time - tr[0].t > .16) tr.shift();
+  for (let i = 1; i < tr.length; i++) {
+    const a = tr[i - 1], b = tr[i], al = Math.max(0, 1 - (time - b.t) / .16) * .5;
+    ctx.fillStyle = 'rgba(235,245,240,' + al + ')'; ctx.beginPath(); ctx.moveTo(a.bx, a.by); ctx.lineTo(a.tx, a.ty); ctx.lineTo(b.tx, b.ty); ctx.lineTo(b.bx, b.by); ctx.closePath(); ctx.fill();
+  }
 }
 
 /* ---------- HUD ---------- */
@@ -422,7 +508,7 @@ function endFight(won) {
   r.classList.add('on');
 }
 function frame(now) {
-  const rawDt = Math.min(.05, (now - last) / 1000); last = now;
+  const rawDt = Math.min(.05, (now - last) / 1000); last = now; rdt = rawDt;
   if (!paused) {
     time += rawDt;
     const dt = hitStop > 0 ? (hitStop -= rawDt, 0) : rawDt;
@@ -441,9 +527,10 @@ function frame(now) {
     if (enemy && enemy.dead && save.gore && Math.random() < rawDt * 12) { sctx.fillStyle = 'rgba(100,10,8,.25)'; sctx.beginPath(); sctx.ellipse(enemy.x + (Math.random() - .5) * 40, GROUND - 6 + Math.random() * 12, 14 + Math.random() * 10, 4 + Math.random() * 3, 0, 0, 7); sctx.fill(); }
   }
   // draw
-  ctx.save(); if (shake > 0) ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); shk.x = shake > 0 ? Math.sin(time * 90) * shake * .5 : 0; shk.y = shake > 0 ? Math.cos(time * 73) * shake * .5 : 0;
+  ctx.save(); ctx.translate(shk.x, shk.y);
   drawBackground();
-  if (player) { const fs = [player, enemy].sort((a, b) => a.x - b.x); fs.forEach(drawFighter); }
+  if (player) { const fs = [player, enemy].sort((a, b) => a.x - b.x); fs.forEach(drawFighter); fs.forEach(drawTrail); }
   for (const p of particles) { ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 2)); ctx.fillStyle = p.kind === 'blood' ? (save.gore ? '#a3130f' : '#e9c46a') : p.kind === 'spark' ? '#ffe9a8' : 'rgba(230,205,150,.7)'; ctx.beginPath(); ctx.arc(p.x, p.y, p.kind === 'blood' && !save.gore ? 1.4 : p.r, 0, 7); ctx.fill(); }
   ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.font = 'bold 18px Georgia,serif';
   for (const t of texts) { ctx.globalAlpha = Math.min(1, t.life * 2); ctx.fillStyle = t.color; ctx.fillText(t.text, t.x, t.y); } ctx.globalAlpha = 1;
