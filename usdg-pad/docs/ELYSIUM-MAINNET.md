@@ -1,6 +1,8 @@
 # Elysium mainnet launch runbook (chain 99901)
 
-**Status (Nov 8 2026):** mainnet is already running (block 2.7M+). Public RPCs in use: `https://rpc.elyscan.live`
+**DEPLOYED Nov 9 2026 (blocks 3,035,141 to 3,035,644), every contract at the addresses below, verified on-chain (hook authorizes the portal, quote = USDC, admin owns treasury and PoolManager).**
+
+**Earlier status (Nov 8 2026):** mainnet is already running (block 2.7M+). Public RPCs in use: `https://rpc.elyscan.live`
 (primary) and `https://rpc-live.elysp.com` (backup); both agree on block hashes. Mainnet USDC =
 `0xb47c4C8F73F009CC0C0d3f92B388d13E293F0B65` (6 decimals; `l1Address()` is HyperEVM's native USDC and
 HyperEVM's own gateway computes the same address). The deploy was rehearsed on a fork of mainnet: `forge test`

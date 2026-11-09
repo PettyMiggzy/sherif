@@ -58,7 +58,7 @@ const PROFILES: Record<'testnet' | 'mainnet', Profile> = {
     treasury: '0x256772d87147C91749646F8365A2D760336F9E92', feeDesk: '0xBfBBa2Db88caf8ae43Db5f066F340229967965e9',
     factory: '0xc7891BB84805D2919573499e0D11149C8972F06D', poolManager: '0xD1a514C574E60aAfCBf9fd822eF64fe963D3B4FA',
     router: '0x4ff52c870735200162A971396a6E599536E67254',
-    genesisBlock: 2710000, // before the deploy (mainnet block 2,710,841 when rehearsed); replace with the real deploy block
+    genesisBlock: 3035000, // deployed Nov 9 2026 at blocks 3,035,141 to 3,035,644; no launch can predate it
     backupRpc: 'https://rpc-live.elysp.com', // a second, independent provider; agrees with the primary on block hashes
   },
 };
