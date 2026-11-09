@@ -1,0 +1,11 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "world.elysiumpad/elysium-pad",
+  "title": "Elysium Pad",
+  "description": "Launch and trade tokens on Elysium (Kinetiq): live market data plus ready-to-sign launch and swap transactions for your own wallet. No key; the server never signs or sends.",
+  "version": "1.1.0",
+  "websiteUrl": "https://elysiumpad.world",
+  "remotes": [
+    { "type": "streamable-http", "url": "https://elysiumpad.world/mcp" }
+  ]
+}

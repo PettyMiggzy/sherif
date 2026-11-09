@@ -17,7 +17,7 @@ export async function GET() {
     info: {
       title: `${CONFIG.brand} public API`,
       version: '1.0.0',
-      description: `Read-only JSON about ${CONFIG.brand} on ${CONFIG.chainName} (chain ${CONFIG.chainId}). No key, no sign-up, CORS open. New launches pay creators ${FEES.creatorPct}% of the tax; the platform takes ${FEES.platformPct}% of the tax and the pool's LP fee. Trading and launching happen on-chain through the contracts listed by /config; this API sends nothing.`,
+      description: `JSON about ${CONFIG.brand} on ${CONFIG.chainName} (chain ${CONFIG.chainId}). No key, no sign-up, CORS open. New launches pay creators ${FEES.creatorPct}% of the tax; the platform takes ${FEES.platformPct}% of the tax and the pool's LP fee. Trading and launching happen on-chain through the contracts listed by /config; the /tx endpoints return transactions for the caller's own wallet to sign; this API holds no keys and sends nothing.`,
     },
     servers: [{ url: siteUrl() }],
     paths: {
@@ -30,6 +30,26 @@ export async function GET() {
         { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 30 } },
       ], responses: { 200: ok('Market rows'), 503: err } } },
       '/api/v1/tokens/{address}': { get: { operationId: 'getToken', summary: 'One launch: pool key, price, pending tax, details', parameters: [addrParam], responses: { 200: ok('Token'), 400: err, 404: err, 503: err } } },
+      '/api/v1/tx/launch': { get: { operationId: 'prepareLaunch', summary: 'Launch transaction for your wallet to sign', parameters: [
+        { name: 'name', in: 'query', required: true, schema: { type: 'string', minLength: 2, maxLength: 32 } },
+        { name: 'symbol', in: 'query', required: true, schema: { type: 'string', pattern: '^[A-Za-z0-9]{2,10}$' } },
+        { name: 'market_cap_usd', in: 'query', schema: { type: 'number', minimum: 100, maximum: 1000000, default: 10000 } },
+        { name: 'buy_tax_pct', in: 'query', schema: { type: 'number', minimum: 0, maximum: 10, default: 3 } },
+        { name: 'sell_tax_pct', in: 'query', schema: { type: 'number', minimum: 0, maximum: 10, default: 3 } },
+        { name: 'from', in: 'query', schema: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' }, description: 'Signing wallet; enables a dry run and exact gas' },
+      ], responses: { 200: ok('Steps to sign'), 400: err } } },
+      '/api/v1/tx/trade': { get: { operationId: 'prepareTrade', summary: 'Approvals and swap to buy or sell a launch', parameters: [
+        { name: 'token', in: 'query', required: true, schema: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' } },
+        { name: 'side', in: 'query', required: true, schema: { type: 'string', enum: ['buy', 'sell'] } },
+        { name: 'amount', in: 'query', required: true, schema: { type: 'string' }, description: 'Buy: USDC to spend. Sell: tokens to sell.' },
+        { name: 'slippage_bps', in: 'query', schema: { type: 'integer', minimum: 0, maximum: 5000, default: 300 } },
+        { name: 'from', in: 'query', schema: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' }, description: 'Signing wallet; skips approvals already in place' },
+      ], responses: { 200: ok('Quote and steps to sign'), 400: err } } },
+      '/api/v1/tx/details-message': { get: { operationId: 'detailsMessage', summary: 'Message the launching wallet signs to set the token page', parameters: [
+        { name: 'token', in: 'query', required: true, schema: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' } },
+        { name: 'description', in: 'query', schema: { type: 'string', maxLength: 200 } },
+        { name: 'image_sha256', in: 'query', schema: { type: 'string' } },
+      ], responses: { 200: ok('Message and how to submit'), 400: err } } },
     },
     externalDocs: { description: 'Docs, MCP server and contract guide', url: `${siteUrl()}/docs` },
   };

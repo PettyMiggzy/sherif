@@ -123,9 +123,9 @@ GET ${indexerBase}/candles/:token?n=96&interval=900   # OHLCV; interval in secon
       <Section id="mcp" title="MCP server and agent files">
         <p className="text-sm text-muted">
           AI agents can use {CONFIG.brand} through an MCP server: <code className="font-mono">{siteBase}/mcp</code>.
-          No key and no sign-up. It reads the same live chain data as the JSON API, and for anything that spends money
-          it returns a link the person opens and signs in their own wallet. It holds no keys, signs nothing and sends no
-          transactions.
+          No key and no sign-up. It reads the same live chain data as the JSON API. To launch or trade, an agent calls
+          a prepare tool and signs the returned transactions with its own wallet; people get links instead. The server
+          holds no keys, signs nothing and sends no transactions.
         </p>
         <div className="overflow-x-auto rounded-lg border border-line2">
           <table className="w-full text-left text-sm">
@@ -136,6 +136,9 @@ GET ${indexerBase}/candles/:token?n=96&interval=900   # OHLCV; interval in secon
                 ['elysium_list_launches', 'Launches, newest first (limit, before)'],
                 ['elysium_market', 'Live price, market cap and change since launch'],
                 ['elysium_get_token', 'One launch: pool key, price, pending tax, creator details'],
+                ['elysium_prepare_launch', 'The launch transaction, ready for your wallet to sign (name, symbol, market cap $100 to $1M, taxes 0 to 10%). Pass from to dry-run it'],
+                ['elysium_prepare_trade', 'Approvals plus the router swap to buy with USDC or sell a token, with a live quote and a minimum-out guard'],
+                ['elysium_details_message', 'The message the launching wallet signs to set a token\'s description, image and links'],
                 ['elysium_launch_link', 'A pre-filled create page link (name, symbol, market cap $100 to $1M, taxes 0 to 10%)'],
                 ['elysium_trade_link', 'The token page, for the market swap'],
                 ['elysium_deals_link', `The discount swap for a token (${FEES.deskDiscountPct}% under the pool)`],
@@ -154,11 +157,17 @@ claude mcp add --transport http elysium-pad ${siteBase}/mcp
 
 # Or call it directly
 curl -s ${siteBase}/mcp -H 'content-type: application/json' \\
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"elysium_market","arguments":{"limit":5}}}'`}</Code>
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"elysium_market","arguments":{"limit":5}}}'
+
+# Plain REST for the same transactions (GET, no key)
+${siteBase}/api/v1/tx/launch?name=Gladius&symbol=GLAD&market_cap_usd=30000&from=0xYourWallet
+${siteBase}/api/v1/tx/trade?token=0xToken&side=buy&amount=25&from=0xYourWallet`}</Code>
         <p className="text-sm text-muted">
           For code generators there is an OpenAPI 3.1 description of the JSON API at{' '}
           <a className="text-brand-hi underline" href="/api/v1/openapi.json">/api/v1/openapi.json</a>, and a plain-text
-          map of the site for agents at <a className="text-brand-hi underline" href="/llms.txt">/llms.txt</a>. The create page
+          map of the site for agents at <a className="text-brand-hi underline" href="/llms.txt">/llms.txt</a>, with a
+          fuller guide at <a className="text-brand-hi underline" href="/llms-full.txt">/llms-full.txt</a> and the MCP server card at{' '}
+          <a className="text-brand-hi underline" href="/.well-known/mcp/server-card.json">/.well-known/mcp/server-card.json</a>. The create page
           also accepts <code className="font-mono">?name=&amp;symbol=&amp;mc=&amp;buyTax=&amp;sellTax=</code> to pre-fill the form.
         </p>
       </Section>

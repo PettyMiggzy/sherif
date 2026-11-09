@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { isAddress } from 'viem';
 import { CONFIG } from './config';
 import { FEES } from './fees';
+import { detailsMessage, prepareLaunch, prepareTrade } from './agentTx';
 import { GET as configGET } from '@/app/api/v1/config/route';
 import { GET as launchesGET } from '@/app/api/v1/launches/route';
 import { GET as marketGET } from '@/app/api/v1/market/route';
@@ -91,6 +92,51 @@ export const TOOLS: Tool[] = [
       const q = new URLSearchParams({ name, symbol, mc: String(mc), buyTax: String(buy), sellTax: String(sell) });
       return { url: `${siteUrl()}/create?${q}`, note: 'Open it, connect a wallet on this network, and sign the launch.' };
     },
+  },
+  {
+    name: 'elysium_prepare_launch',
+    description: `Builds the transaction that launches a token, ready for the agent's own wallet to sign and send (this server holds no keys and sends nothing). Market cap $100 to $1M, liquidity equals market cap, tax 0 to 10% each way, creator gets ${FEES.creatorPct}% of the tax. Pass \`from\` (the wallet address) to dry-run it on chain first and get an exact gas limit.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', minLength: 2, maxLength: 32 }, symbol: { type: 'string', description: '2-10 letters or digits' },
+        market_cap_usd: { type: 'number', minimum: 100, maximum: 1000000, default: 10000 },
+        buy_tax_pct: { type: 'number', minimum: 0, maximum: 10, default: 3 }, sell_tax_pct: { type: 'number', minimum: 0, maximum: 10, default: 3 },
+        from: { type: 'string', description: 'Wallet that will sign (optional, enables the dry run)' },
+      },
+      required: ['name', 'symbol'], additionalProperties: false,
+    },
+    run: async (a) => prepareLaunch(a),
+  },
+  {
+    name: 'elysium_prepare_trade',
+    description: 'Builds the transactions to buy (spend USDC) or sell (spend the token) a launch: exact-amount approvals, then the router swap, with a live quote and a minimum-out slippage guard. The agent signs and sends each step in order from its own wallet. Pass `from` to skip approvals already in place.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        token: { type: 'string', description: 'Token address (0x…)' },
+        side: { type: 'string', enum: ['buy', 'sell'] },
+        amount: { type: 'string', description: 'Buy: USDC to spend (e.g. "25.5"). Sell: tokens to sell (e.g. "1000000").' },
+        slippage_bps: { type: 'integer', minimum: 0, maximum: 5000, default: 300 },
+        from: { type: 'string', description: 'Wallet that will sign (optional)' },
+      },
+      required: ['token', 'side', 'amount'], additionalProperties: false,
+    },
+    run: async (a) => prepareTrade(a),
+  },
+  {
+    name: 'elysium_details_message',
+    description: 'For a token the agent launched: returns the exact message its wallet signs (personal_sign) to set the token page (description, links, image), and how to POST it. Only the launching wallet can edit a token\'s page.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        token: { type: 'string' }, description: { type: 'string', maxLength: 200 },
+        links: { type: 'object', properties: { x: { type: 'string' }, website: { type: 'string' }, telegram: { type: 'string' } }, additionalProperties: false },
+        image_sha256: { type: 'string', description: '0x SHA-256 of the image file, if one will be uploaded' },
+      },
+      required: ['token'], additionalProperties: false,
+    },
+    run: async (a) => detailsMessage(a, siteUrl()),
   },
   {
     name: 'elysium_trade_link',

@@ -19,6 +19,8 @@ export const metadata: Metadata = {
   title: CONFIG.brand,
   description: CONFIG.tagline,
   openGraph: { title: CONFIG.brand, description: CONFIG.tagline, images: ['/brand/og.jpg'] },
+  alternates: { types: { 'application/json': [{ url: '/.well-known/mcp/server-card.json', title: 'MCP server card' }, { url: '/api/v1/openapi.json', title: 'OpenAPI' }], 'text/plain': [{ url: '/llms.txt', title: 'llms.txt' }] } },
+  other: { 'mcp-server': '/mcp' },
   twitter: { card: 'summary_large_image', title: CONFIG.brand, description: CONFIG.tagline, images: ['/brand/og.jpg'] },
 };
 
