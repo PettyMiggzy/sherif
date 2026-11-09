@@ -10,7 +10,11 @@ const nextConfig = {
   experimental: { serverComponentsExternalPackages: ['pg'] },
   // www.elysiumpad.world -> elysiumpad.world, wherever the site is hosted.
   async redirects() {
-    return [{ source: '/:path*', has: [{ type: 'host', value: 'www.elysiumpad.world' }], destination: 'https://elysiumpad.world/:path*', permanent: true }];
+    return [
+      // The game lives in public/arena; its sprites load relative to this URL.
+      { source: '/arena', destination: '/arena/index.html', permanent: false },
+      { source: '/:path*', has: [{ type: 'host', value: 'www.elysiumpad.world' }], destination: 'https://elysiumpad.world/:path*', permanent: true },
+    ];
   },
 };
 export default nextConfig;
