@@ -1,3 +1,4 @@
+import { isHidden } from './hidden';
 import 'server-only';
 import { createPublicClient, parseAbiItem, type Address } from 'viem';
 import { padChain } from './chain';
@@ -137,7 +138,7 @@ export async function getLaunches(token?: string): Promise<{ launches: LaunchJso
   try { scanned = await syncLaunches(); } catch (e) { stale = true; console.error('launch sync failed', e); }
   const pick = () => {
     const all = scanners.flatMap((sc) => sc.mem?.launches ?? []).sort((a, b) => b.createdAt - a.createdAt || Number(BigInt(b.blockNumber) - BigInt(a.blockNumber)));
-    return token ? all.filter((l) => l.token.toLowerCase() === token.toLowerCase()) : all;
+    return token ? all.filter((l) => l.token.toLowerCase() === token.toLowerCase()) : all.filter((l) => !isHidden(l.token));
   };
   let list = pick();
   if (token && list.length === 0 && !stale && !scanned) {
