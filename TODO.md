@@ -3,6 +3,8 @@
 Say "I'm home" and we go through these in order. Everything else is already done or running.
 
 ## Quick (a few minutes each)
+- [ ] **Accept factory ownership** from the admin wallet `0x5899a0576A94327a6316E01190f951edf7645914`: send `0x79ba5097` (acceptOwnership) to the factory `0xc7891BB84805D2919573499e0D11149C8972F06D`, amount 0, gas limit 100000. Fees already go to the Treasury, which that wallet owns; this just lets you change the setup fee and approve templates.
+- [ ] **Deployer key is gone** (lost with the old working folder). The leftover HYPE/USDC/GLAD at `0xDaF4…fBD0` is stuck. For tiny keep-alive trades, fund a new small wallet I generate.
 - [ ] **Play Gladius Arena** and tell me what feels off: https://elysiumpad.world/arena (after the deploy) or the artifact link. Speed, difficulty, how limbs and the shield feel, anything ugly.
 - [ ] **MCP registry listing** so AI clients find the server: add one DNS TXT record to elysiumpad.world at GoDaddy (I'll give you the exact value), then run `mcp-publisher` (I'll walk you through it). `server.json` is already in the repo.
 - [ ] **Kinetiq ecosystem page**: join the Kinetiq Discord and the Conduit support channel and ask to be listed. I'll draft the message.
