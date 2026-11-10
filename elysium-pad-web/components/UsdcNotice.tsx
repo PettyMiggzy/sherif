@@ -20,6 +20,7 @@ export function UsdcNotice({ full = false, className = '' }: { full?: boolean; c
         <button type="button" onClick={copy} className="rounded-md border border-line2 px-2 py-0.5 text-[11px] hover:border-brand">{copied ? 'Copied' : 'Copy'}</button>
         {href && <a className="text-[11px] text-brand-hi underline" href={href} target="_blank" rel="noreferrer">View on explorer</a>}
       </div>
+      <p className="mt-1.5"><a className="text-brand-hi underline" href="/bridge">How to get this USDC</a></p>
       {full && (
         <p className="mt-1.5">
           It has {CONFIG.quoteDecimals} decimals and is bridged in from HyperEVM&apos;s native USDC. Check this address before you buy or

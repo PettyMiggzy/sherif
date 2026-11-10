@@ -24,6 +24,9 @@ export function GET() {
 ## Which USDC
 - Every pool pairs with USDC on ${CONFIG.chainName}: ${CONFIG.usdc} (${CONFIG.quoteDecimals} decimals). USDC on other chains does not work here; gas is HYPE.
 
+## Getting USDC
+- ${s}/bridge explains how to bridge it to ${CONFIG.chainName} with Relay (https://relay.link/bridge/elysium).
+
 ## Pages
 - ${s}/ launchpad home
 - ${s}/create launch a token

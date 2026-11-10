@@ -17,6 +17,7 @@ const ITEMS: Item[] = [
   { label: 'Create', href: '/create' },
   { label: 'Explore', href: '/explore' },
   { label: 'Deals', href: '/deals' },
+  { label: 'Get USDC', href: '/bridge' },
   { label: 'How it works', href: '/#how-it-works' },
   ...(home ? [{ label: 'Stake', href: `${home}/stake.html`, external: true }] : []),
   { label: 'Leaderboard', href: '/leaderboard' },
