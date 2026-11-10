@@ -14,6 +14,9 @@ ${CONFIG.brand} is a token launchpad on ${CONFIG.chainName} (chain ${CONFIG.chai
 
 Nothing on this site holds keys or sends transactions. Every write is calldata that YOUR wallet signs and broadcasts to the chain.
 
+## Which USDC
+Every pool pairs with this exact token: ${CONFIG.usdc} on ${CONFIG.chainName} (chain ${CONFIG.chainId}, ${CONFIG.quoteDecimals} decimals), bridged from HyperEVM's native USDC. Tokens on other chains, or other tokens named "USDC", do not work. Gas is HYPE.
+
 ## Connect
 - MCP (Streamable HTTP, no auth): POST ${s}/mcp
 - Server card: ${s}/.well-known/mcp/server-card.json

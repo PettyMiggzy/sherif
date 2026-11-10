@@ -8,6 +8,7 @@ import { FileText, Rocket, PieChart, Eye, ImageUp, ShieldCheck, Check } from 'lu
 import { erc20Abi, portalAbi } from '@/lib/abi';
 import { approveForRouter, buyWithUsdc } from '@/lib/buy';
 import { CONFIG, explorerTx } from '@/lib/config';
+import { UsdcNotice } from '@/components/UsdcNotice';
 import { FEES } from '@/lib/fees';
 import { fmtUsd } from '@/lib/format';
 import { saveMeta, readImageFile } from '@/lib/metadata';
@@ -267,6 +268,7 @@ export default function Create() {
               </div>
             </div>
             <div>
+              <UsdcNotice className="mb-3" />
               <label className="label">Your first buy (USDC)</label>
               <div className="flex flex-wrap items-center gap-2">
                 {[5, 10, 25, 50].map((v) => (

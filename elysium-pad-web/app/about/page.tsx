@@ -1,6 +1,7 @@
 import { Coins, Lock, Percent, Eye } from 'lucide-react';
 import { CONFIG } from '@/lib/config';
 import { FEES } from '@/lib/fees';
+import { UsdcNotice } from '@/components/UsdcNotice';
 
 export default function About() {
   return (
@@ -32,6 +33,7 @@ export default function About() {
 
       <section className="panel space-y-2 p-6 text-sm text-muted">
         <h2 className="font-bold text-text">Before you buy</h2>
+        <UsdcNotice full />
         <p>
           Have fun, but please be careful: this is experimental software that handles real USDC on {CONFIG.chainName}.
           The contracts have been reviewed, though not by an outside audit firm. Prices move only with trading,

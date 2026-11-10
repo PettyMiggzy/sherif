@@ -21,6 +21,9 @@ export function GET() {
 - Transactions for your own wallet (GET): ${s}/api/v1/tx/launch, /api/v1/tx/trade, /api/v1/tx/details-message
 - Docs (contracts, swap encoding, fees, events): ${s}/docs
 
+## Which USDC
+- Every pool pairs with USDC on ${CONFIG.chainName}: ${CONFIG.usdc} (${CONFIG.quoteDecimals} decimals). USDC on other chains does not work here; gas is HYPE.
+
 ## Pages
 - ${s}/ launchpad home
 - ${s}/create launch a token

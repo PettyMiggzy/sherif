@@ -12,6 +12,7 @@ import { feeModel } from '@/lib/fees';
 import { fmtCompact, parseUnitsSafe } from '@/lib/format';
 import { explainTxError } from '@/lib/txError';
 import { useEnsureChain } from '@/lib/ensureChain';
+import { UsdcNotice } from '@/components/UsdcNotice';
 
 // The desk's price can only rise between the quote and the transaction (it
 // never goes below the block's opening price), so leave a little room.
@@ -127,6 +128,7 @@ export function FeeDeskCard({ launch, symbol }: { launch: Launch; symbol: string
       <p className="text-xs text-muted">
         Not the market swap. Every sell pays its 1% LP fee in {symbol}; those tokens are sold here at {fees.deskDiscountPct}% under the pool price, never into the pool.
       </p>
+      <UsdcNotice />
       <dl className="space-y-1.5 text-sm">
         <div className="flex justify-between"><dt className="text-muted">For sale</dt><dd className="font-bold">{stock === undefined ? '…' : fmtTok(stock)}</dd></div>
         <div className="flex justify-between"><dt className="text-muted">Buy it all for</dt><dd className="font-bold">{cost === undefined ? '…' : empty ? '—' : fmtUsd(cost)}</dd></div>

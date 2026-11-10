@@ -12,6 +12,7 @@ import { buildExactInSwap, quoteExactIn } from '@/lib/swap';
 import { fmtCompact, parseUnitsSafe } from '@/lib/format';
 import { explainTxError } from '@/lib/txError';
 import { useEnsureChain } from '@/lib/ensureChain';
+import { UsdcNotice } from '@/components/UsdcNotice';
 
 type Props = {
   token: Address; symbol: string; poolKey: PoolKey; tokenIsToken0: boolean;
@@ -172,6 +173,7 @@ export function TradePanel(p: Props) {
         <button className={clsx('rounded-xl py-2.5 text-sm font-bold', !isBuy ? 'bg-ely-grad text-ink shadow-btn' : 'text-muted')} onClick={() => setSide('sell')}>Sell</button>
       </div>
 
+      {isBuy && <UsdcNotice className="mt-4" />}
       <div className="mt-5 flex items-center justify-between text-sm">
         <span className="font-semibold">{isBuy ? 'Amount in USDC' : `Amount in ${p.symbol}`}</span>
         <button className="text-muted hover:text-text" onClick={() => fillPct(100)}>Wallet: {balLabel}</button>

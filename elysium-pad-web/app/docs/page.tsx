@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { CONFIG } from '@/lib/config';
 import { FEES } from '@/lib/fees';
+import { UsdcNotice } from '@/components/UsdcNotice';
 
 function Code({ children }: { children: string }) {
   return (
@@ -61,6 +62,7 @@ export default function Docs() {
       </div>
 
       <Section id="network" title={`Contracts on ${CONFIG.chainName}`}>
+        <UsdcNotice full />
         <div>
           <div className="mb-1 text-xs uppercase tracking-wider text-dim">Addresses this site uses (chain id {CONFIG.chainId})</div>
           <div className="rounded-lg border border-line2 px-3">
